@@ -36,7 +36,31 @@ import {
   type IyCompanyProfile,
   type IyRouteKpis,
 } from "@/lib/api";
-import { formatUserFriendlyDate } from "@/lib/dateUtils";
+import {
+  formatSafeShipmentDate,
+  parseImportYetiDate,
+} from "@/lib/dateUtils";
+
+// Phase B.12 — popup Shipments-tab date parser. ImportYeti delivers
+// `date_formatted` as DD/MM/YYYY, which `new Date()` mis-parses in the
+// US locale (treats it as MM/DD/YYYY, e.g. "13/04/2026" → Invalid Date),
+// dropping a real shipment row to "—". `formatSafeShipmentDate` already
+// runs the input through `parseImportYetiDate` + the 24h future-cap, so
+// we route the row date through it. The sort helper below converts a
+// raw value to a comparable timestamp (0 for unparseable) so newest
+// shipments float to the top and "Unknown" rows sink.
+function parseShipmentDateForSort(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return 0;
+  const iy = parseImportYetiDate(trimmed);
+  if (iy) {
+    const d = new Date(iy);
+    if (!Number.isNaN(d.getTime())) return d.getTime();
+  }
+  const native = new Date(trimmed);
+  return Number.isNaN(native.getTime()) ? 0 : native.getTime();
+}
 
 type SearchPreviewShipper = {
   id?: string;
@@ -413,10 +437,16 @@ export default function ShipperDetailModal({
     [profile, routeKpis],
   );
 
-  const shipmentRows = useMemo(
-    () => buildShipmentRows(profile),
-    [profile],
-  );
+  const shipmentRows = useMemo(() => {
+    const rows = buildShipmentRows(profile);
+    // Phase B.12 — newest first; rows with unparseable dates sink to
+    // the bottom (timestamp 0). Underlying `row.date` source field is
+    // not mutated — display layer only.
+    return rows
+      .map((row) => ({ row, ts: parseShipmentDateForSort(row.date) }))
+      .sort((a, b) => b.ts - a.ts)
+      .map(({ row }) => row);
+  }, [profile]);
 
   const suppliers = useMemo(
     () => buildSuppliers(shipper || {}, profile),
@@ -599,7 +629,10 @@ export default function ShipperDetailModal({
                 <KpiCard
                   icon={<CalendarDays className="h-4 w-4 text-emerald-500" />}
                   label="Last shipment"
-                  value={lastShipment ? formatUserFriendlyDate(lastShipment) : "—"}
+                  // Phase B.12 — same DD/MM/YYYY-aware parser as the
+                  // Shipments-tab rows so the KPI doesn't render "—"
+                  // for an ImportYeti-formatted last_shipment string.
+                  value={formatSafeShipmentDate(lastShipment, "—")}
                   accent="hover:bg-emerald-50/60"
                 />
               </div>
@@ -828,7 +861,12 @@ export default function ShipperDetailModal({
                         shipmentRows.map((row, index) => (
                           <tr key={`${row.bol || row.date || "shipment"}-${index}`} className="hover:bg-indigo-50/40">
                             <td className="px-4 py-3 text-sm text-slate-700">
-                              {row.date ? formatUserFriendlyDate(row.date) : "—"}
+                              {/* Phase B.12 — DD/MM/YYYY-aware parser
+                                  with 24h future-tolerance cap. Falls
+                                  back to "Unknown" for unparseable
+                                  values rather than silently rendering
+                                  Invalid-Date "—" rows. */}
+                              {formatSafeShipmentDate(row.date, "Unknown")}
                             </td>
                             <td className="px-4 py-3 text-sm font-medium text-slate-900">
                               {row.bol || "—"}

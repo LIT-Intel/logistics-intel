@@ -57,13 +57,26 @@ export function canonicalContainerLabel(
   if (!normalized) return { code: "", detail: "" };
   const upper = normalized.toUpperCase();
 
+  // Phase H P1 fix — regex coverage widened so real vendor variants land
+  // on the canonical 7 instead of passing through as raw strings.
+  //   * REEFER: added REEFER BOX, REF CONT
+  //   * TANK:   added plain TK / TK20 / TK40 shorthand
+  //   * 40HC:   added standalone HQ (common in feeder lines)
+  //   * DRY:    added STD / STANDARD (most common missing match)
+  // Canonical set (20FT / 40FT / 40HC / 45FT / REEFER / DRY / TANK) is
+  // unchanged — FLATRACK / OPEN TOP intentionally pass through as raw
+  // detail since they're not in the approved display taxonomy.
   if (/\bREEFER\b|\bRF\b|\bREF\b|REFRIGERATE|FROZEN|CHILL/.test(upper)) {
     return { code: "REEFER", detail: normalized };
   }
-  if (/\bTANK\b|ISO[- ]?TANK|LIQUID/.test(upper)) {
+  if (/\bTANK\b|ISO[- ]?TANK|LIQUID|\bTK\d*\b/.test(upper)) {
     return { code: "TANK", detail: normalized };
   }
-  if (/\b40\b[^0-9]*(HC|HIGH[- ]?CUBE|HQ)/.test(upper) || /\b40HC\b|\b40HQ\b/.test(upper)) {
+  if (
+    /\b40\b[^0-9]*(HC|HIGH[- ]?CUBE|HQ)/.test(upper) ||
+    /\b40HC\b|\b40HQ\b/.test(upper) ||
+    /\bHQ\b/.test(upper)
+  ) {
     return { code: "40HC", detail: normalized };
   }
   if (/\b45\b/.test(upper)) {
@@ -75,7 +88,7 @@ export function canonicalContainerLabel(
   if (/\b20\b/.test(upper)) {
     return { code: "20FT", detail: normalized };
   }
-  if (/\bDRY\b|\bGP\b|GENERAL[- ]?PURPOSE/.test(upper)) {
+  if (/\bDRY\b|\bGP\b|GENERAL[- ]?PURPOSE|\bSTD\b|STANDARD/.test(upper)) {
     return { code: "DRY", detail: normalized };
   }
   return { code: normalized, detail: normalized };

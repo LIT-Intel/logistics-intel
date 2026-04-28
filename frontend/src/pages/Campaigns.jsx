@@ -1,20 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { AlertTriangle } from 'lucide-react';
-import CampaignCreator from '../components/campaigns/CampaignCreator';
-import { canAccessFeature } from '@/lib/planLimits';
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { useAuth } from '@/auth/AuthProvider';
-import { api, sendCampaignEmail } from '@/lib/api';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import LitPageHeader from '@/components/ui/LitPageHeader';
-import LitPanel from '@/components/ui/LitPanel';
-import LitKpi from '@/components/ui/LitKpi';
-import LitSidebar from '@/components/ui/LitSidebar';
-import LitWatermark from '@/components/ui/LitWatermark';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { AlertTriangle, ArrowRight, RefreshCw, Send } from "lucide-react";
+import { api } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
+import { listEmailAccounts, getPrimaryEmailAccount } from "@/lib/api";
+import CampaignCard from "@/components/campaigns/CampaignCard";
+import CampaignStatsRibbon from "@/components/campaigns/CampaignStatsRibbon";
+import CampaignReadinessCard from "@/components/campaigns/CampaignReadinessCard";
+import CampaignEmptyState from "@/components/campaigns/CampaignEmptyState";
 
-// Helper function to ensure data is an array, handling various API response formats
+// ---------------------------------------------------------------------------
+// Phase B rewrite — Outbound Engine list / overview page.
+//
+//   * Real data only: `api.getCrmCampaigns()` for campaigns, Phase A helpers
+//     for inbox readiness, supabase.from('lit_saved_companies') for the
+//     "Add companies" step count.
+//   * No hardcoded metrics. No stub sequence builder. No fake templates.
+//     No manual `campaign_email_id` test box.
+//   * Internal `AccessFallback` / `canAccessFeature` check removed — route
+//     `RequirePlan` already gates this page per App.jsx. Keeping the check
+//     here would double-gate and was the source of the enterprise
+//     misread before the Tier-1 plan fix.
+//   * New Campaign CTA navigates to `/app/campaigns/new` (unchanged route).
+//   * Builder / Templates / Analytics tabs removed — those belonged to the
+//     builder (Phase C) and detail page (Phase D). Keeping them here was
+//     confusing the UX.
+// ---------------------------------------------------------------------------
+
 const asArray = (data) => {
   if (!data) return [];
   if (Array.isArray(data)) return data;
@@ -23,423 +35,272 @@ const asArray = (data) => {
   return [];
 };
 
-function AccessFallback({ plan }) {
+function extractRecipientCount(campaign) {
+  const m = campaign?.metrics && typeof campaign.metrics === "object" ? campaign.metrics : {};
+  const candidates = [
+    m.recipients,
+    m.recipient_count,
+    m.contacts,
+    m.contact_count,
+    campaign?.recipient_count,
+    campaign?.contact_count,
+  ];
+  for (const value of candidates) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0) return num;
+  }
+  return null;
+}
+
+function PageHeader({ onNewCampaign, onOpenBilling }) {
   return (
-    <div className="flex items-center justify-center min-h-screen bg-[#F6F8FB] p-6">
-      <div className="max-w-xl w-full bg-white border rounded-2xl p-6 shadow-sm">
-        <h2 className="text-xl font-semibold text-slate-900">Campaigns requires Growth Plan</h2>
-        <p className="text-sm text-slate-600 mt-2">
-          Upgrade to Growth or Enterprise to create and manage outreach campaigns.
+    <header className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-indigo-600">
+          Engage · Outbound
         </p>
-        <p className="text-xs text-slate-500 mt-4">Current plan: {plan || 'free_trial'}</p>
+        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+          Outbound Engine
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm text-slate-500">
+          Reach shippers with sequenced outreach across email and LinkedIn.
+          Pull target companies from Command Center, build a step-by-step
+          sequence, and launch when your inbox is connected.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={onOpenBilling}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+        >
+          View usage
+        </button>
+        <button
+          type="button"
+          onClick={onNewCampaign}
+          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700"
+        >
+          <Send className="h-4 w-4" />
+          New campaign
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="h-24 animate-pulse rounded-3xl bg-slate-100" />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-28 animate-pulse rounded-2xl bg-slate-100" />
+        ))}
+      </div>
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-32 animate-pulse rounded-2xl bg-slate-100" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ErrorCard({ message, onRetry }) {
+  return (
+    <div className="rounded-3xl border border-rose-200 bg-rose-50/60 p-6 shadow-sm">
+      <div className="flex items-start gap-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-600 ring-1 ring-rose-200">
+          <AlertTriangle className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base font-semibold text-slate-900">
+            Couldn&rsquo;t load your campaigns
+          </h3>
+          <p className="mt-1 text-sm text-slate-600">
+            {message || "Something went wrong fetching campaigns from the server."}
+          </p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Try again
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
 export default function CampaignsPage() {
-  const { user } = useAuth();
+  const navigate = useNavigate();
   const [campaigns, setCampaigns] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isCreating, setIsCreating] = useState(false);
-  const [editingCampaign, setEditingCampaign] = useState(null);
-  const [debugInfo, setDebugInfo] = useState('');
-  const [hasAccess, setHasAccess] = useState(false);
-  const [tab, setTab] = useState('overview');
-  const [activeId, setActiveId] = useState(null);
-  const [sequenceById, setSequenceById] = useState({});
-  const [manualCampaignEmailId, setManualCampaignEmailId] = useState('');
-  const [isSendingManual, setIsSendingManual] = useState(false);
-  const [manualSendMessage, setManualSendMessage] = useState('');
 
-  useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      setError(null);
-      setDebugInfo('Starting to load campaigns...');
+  const [savedCompaniesCount, setSavedCompaniesCount] = useState(0);
+  const [primaryInboxEmail, setPrimaryInboxEmail] = useState(null);
+  const [inboxStatusKnown, setInboxStatusKnown] = useState(false);
 
-      try {
-        const userData = user || null;
-
-        const userPlan = user?.plan || user?.user_metadata?.plan || 'free_trial';
-  	  if (!canAccessFeature(userPlan, 'campaign_builder')) {
-          console.log('CampaignsPage: User does not have campaigns access');
-          setHasAccess(false);
-          setIsLoading(false);
-          setDebugInfo('User does not have access to Campaigns feature.');
-          return;
-        }
-
-        setHasAccess(true);
-        try {
-          const resp = await api.getCrmCampaigns();
-          const rows = asArray(resp);
-          setCampaigns(rows);
-          setDebugInfo(prev => prev + `\nLoaded ${rows.length} campaigns.`);
-        } catch (campaignError) {
-          console.warn('CampaignsPage: Failed to load campaigns:', campaignError);
-          setError('Failed to load campaigns. Please try again.');
-          setCampaigns([]);
-        }
-
-      } catch (e) {
-        console.error('CampaignsPage: Critical error loading user or initial data:', e);
-        const errorMsg = `Failed to load initial data: ${e.message}`;
-        setError(errorMsg);
-        setHasAccess(false);
-        setDebugInfo(`ERROR: ${errorMsg}`);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
-  }, [user]);
-
-  useEffect(() => {
-    if (!activeId && campaigns.length) setActiveId(campaigns[0].id);
-  }, [campaigns, activeId]);
-
-  const handleCreateNew = () => {
-    setEditingCampaign(null);
-    setIsCreating(true);
-  };
-
-  const handleSave = async (campaignData) => {
-    setIsCreating(false);
-    setEditingCampaign(null);
+  const loadCampaigns = useCallback(async () => {
     setIsLoading(true);
+    setError(null);
     try {
-      if (editingCampaign) {
-        console.warn('Update campaign not yet implemented');
-      } else {
-        await api.createCrmCampaign({
-          name: campaignData.name || 'New Campaign',
-          sequence: campaignData.sequence || [],
-          settings: campaignData.settings || {},
-        });
-      }
       const resp = await api.getCrmCampaigns();
       setCampaigns(asArray(resp));
-      setError(null);
     } catch (e) {
-      console.error('Failed to save campaign:', e);
-      setError('Failed to save campaign');
+      const msg = e instanceof Error ? e.message : "Failed to load campaigns.";
+      setError(msg);
+      setCampaigns([]);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const handleSendManualTest = async () => {
-    if (!manualCampaignEmailId.trim()) {
-      alert('Paste a campaign_email_id first.');
-      return;
+  // Secondary (non-blocking) loaders: saved-companies count + inbox status.
+  // Failures here never block the page render — readiness card falls back
+  // to honest "not connected yet" / "0 saved" states.
+  const loadReadinessSignals = useCallback(async () => {
+    try {
+      const { count } = await supabase
+        .from("lit_saved_companies")
+        .select("id", { count: "exact", head: true });
+      setSavedCompaniesCount(count ?? 0);
+    } catch {
+      setSavedCompaniesCount(0);
     }
-
-    setIsSendingManual(true);
-    setManualSendMessage('');
 
     try {
-      const result = await sendCampaignEmail(manualCampaignEmailId.trim());
-      const providerMessageId = result?.provider_message_id || 'sent';
-      setManualSendMessage(`Success. Provider message id: ${providerMessageId}`);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Failed to send campaign email';
-      setManualSendMessage(`Failed: ${message}`);
-    } finally {
-      setIsSendingManual(false);
+      const primary = await getPrimaryEmailAccount();
+      if (primary?.email) {
+        setPrimaryInboxEmail(primary.email);
+        setInboxStatusKnown(true);
+      } else {
+        // Fall back to full list; maybe a connected-but-not-primary row exists.
+        const list = await listEmailAccounts();
+        const connected = (list || []).find((a) => a.status === "connected");
+        setPrimaryInboxEmail(connected?.email ?? null);
+        setInboxStatusKnown(true);
+      }
+    } catch {
+      // Phase A migration may not yet be applied on the target Supabase
+      // project — the lit_email_accounts table returns "relation does not
+      // exist". Surface an honest "not available yet" state instead of
+      // crashing the page.
+      setPrimaryInboxEmail(null);
+      setInboxStatusKnown(false);
     }
-  };
+  }, []);
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-6 h-full bg-[#F6F8FB] min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1E5EFF] mb-4"></div>
-        <p className="text-sm text-gray-600">Loading data...</p>
-        {debugInfo && (
-          <div className="mt-4 p-3 bg-gray-100 rounded text-xs text-gray-700 max-w-md">
-            Debug: {debugInfo}
+  useEffect(() => {
+    void loadCampaigns();
+    void loadReadinessSignals();
+  }, [loadCampaigns, loadReadinessSignals]);
+
+  const summary = useMemo(() => {
+    let active = 0;
+    let draft = 0;
+    let recipientsKnown = false;
+    let recipientsTotal = 0;
+    for (const c of campaigns) {
+      const status = String(c?.status || "draft").toLowerCase();
+      if (status === "active") active += 1;
+      else if (status === "draft") draft += 1;
+      const recipients = extractRecipientCount(c);
+      if (recipients !== null) {
+        recipientsKnown = true;
+        recipientsTotal += recipients;
+      }
+    }
+    return {
+      total: campaigns.length,
+      active,
+      draft,
+      recipientsKnown,
+      recipientsTotal,
+    };
+  }, [campaigns]);
+
+  const handleNewCampaign = useCallback(() => {
+    navigate("/app/campaigns/new");
+  }, [navigate]);
+
+  const handleOpenCommandCenter = useCallback(() => {
+    navigate("/app/command-center");
+  }, [navigate]);
+
+  const handleConnectInbox = useCallback(() => {
+    // Outreach / inbox connection is managed from Settings today; Phase E
+    // will replace this with a real Gmail OAuth flow.
+    navigate("/app/settings");
+  }, [navigate]);
+
+  const handleOpenBilling = useCallback(() => {
+    navigate("/app/billing");
+  }, [navigate]);
+
+  return (
+    <div className="min-h-full bg-slate-100 p-4 md:p-6 xl:p-8">
+      <div className="mx-auto max-w-[1200px]">
+        <PageHeader
+          onNewCampaign={handleNewCampaign}
+          onOpenBilling={handleOpenBilling}
+        />
+
+        {isLoading ? (
+          <LoadingSkeleton />
+        ) : error ? (
+          <ErrorCard message={error} onRetry={loadCampaigns} />
+        ) : (
+          <div className="space-y-6">
+            <CampaignReadinessCard
+              savedCompaniesCount={savedCompaniesCount}
+              campaignsCount={summary.total}
+              activeCampaignsCount={summary.active}
+              primaryInboxEmail={primaryInboxEmail}
+              inboxStatusKnown={inboxStatusKnown}
+              onOpenCommandCenter={handleOpenCommandCenter}
+              onNewCampaign={handleNewCampaign}
+              onConnectInbox={handleConnectInbox}
+            />
+
+            <CampaignStatsRibbon
+              totalCampaigns={summary.total}
+              activeCampaigns={summary.active}
+              draftCampaigns={summary.draft}
+              totalRecipients={summary.recipientsTotal}
+              recipientsKnown={summary.recipientsKnown}
+            />
+
+            {campaigns.length === 0 ? (
+              <CampaignEmptyState onNewCampaign={handleNewCampaign} />
+            ) : (
+              <section>
+                <div className="mb-3 flex items-end justify-between">
+                  <h2 className="text-base font-semibold text-slate-900">
+                    Your campaigns
+                  </h2>
+                  <span className="text-xs text-slate-400">
+                    {campaigns.length} total
+                  </span>
+                </div>
+                <div className="grid gap-3">
+                  {campaigns.map((campaign) => (
+                    <CampaignCard
+                      key={campaign.id ?? campaign.name ?? Math.random()}
+                      campaign={campaign}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </div>
-    );
-  }
-
-  if (!hasAccess && !isLoading) {
-    return <AccessFallback plan={user?.plan || user?.user_metadata?.plan || 'free_trial'} />;
-  }
-
-  if (isCreating || editingCampaign) {
-    return (
-      <CampaignCreator
-        campaign={editingCampaign}
-        onSave={handleSave}
-        onClose={() => {
-          setIsCreating(false);
-          setEditingCampaign(null);
-        }}
-      />
-    );
-  }
-
-  return (
-    <div className="w-full flex gap-[5px] pl-[5px] pr-[5px] min-h-screen">
-      <aside className="hidden md:block w-[340px] shrink-0">
-        <LitSidebar title="Campaigns">
-          <Button
-            onClick={handleCreateNew}
-            className="w-full py-2 mb-4 bg-gradient-to-r from-sky-400 to-violet-500 text-white font-semibold rounded-lg shadow hover:opacity-90"
-          >
-            + New Campaign
-          </Button>
-
-          <div className="space-y-3">
-            {campaigns.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => {
-                  setActiveId(c.id);
-                  setTab('builder');
-                }}
-                className={`w-full text-left p-3 rounded-xl bg-white shadow hover:shadow-md transition border ${
-                  activeId === c.id ? 'border-violet-400 ring-1 ring-violet-200' : 'border-slate-200'
-                }`}
-              >
-                <div className="font-semibold">{c.name || c.title || 'Campaign'}</div>
-                <div className="text-xs text-slate-500">{c.status || 'Draft'}</div>
-                <div className="flex justify-between text-xs mt-2">
-                  <span>Open: {(c.open ?? 0)}%</span>
-                  <span>Reply: {(c.reply ?? 0)}%</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </LitSidebar>
-      </aside>
-
-      <main className="flex-1 min-w-0 max-w-none p-[5px] relative">
-        <LitWatermark />
-        <LitPageHeader title="LIT Campaigns" />
-
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Data Loading Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        <Tabs defaultValue="overview" value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="builder">Builder</TabsTrigger>
-            <TabsTrigger value="templates">Templates</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="overview" className="mt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              <LitKpi label="Emails Sent" value="1,240" accentClass="from-sky-400 to-violet-500" />
-              <LitKpi label="Open Rate" value="68%" accentClass="from-sky-400 to-violet-500" />
-              <LitKpi label="Reply Rate" value="24%" accentClass="from-sky-400 to-violet-500" />
-              <LitKpi label="LinkedIn Connects" value="82" accentClass="from-sky-400 to-violet-500" />
-            </div>
-            <div className="mt-6">
-              <LitPanel title="Recent Activity">
-                <p className="text-sm text-slate-600">Recent activity timeline will appear here…</p>
-              </LitPanel>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="builder" className="mt-6">
-            <div className="space-y-6">
-              <LitPanel title="Sequence Builder">
-                {(() => {
-                  const currentId = activeId || (campaigns[0] && campaigns[0].id);
-                  const seq = sequenceById[currentId] || [
-                    { channel: 'email', subject: 'Intro', message: 'Quick intro about savings…', wait: 2 },
-                    { channel: 'linkedin', subject: '', message: 'Connect note', wait: 3 },
-                    { channel: 'email', subject: 'Follow-up', message: 'Just floating this back…', wait: 4 },
-                  ];
-
-                  const updateSeq = (next) => setSequenceById(prev => ({ ...prev, [currentId]: next }));
-                  const onChange = (idx, key, val) => {
-                    const next = seq.map((s, i) => (i === idx ? { ...s, [key]: val } : s));
-                    updateSeq(next);
-                  };
-
-                  return (
-                    <div className="grid gap-3">
-                      {seq.map((step, i) => (
-                        <div key={i} className="rounded-xl border p-3 bg-white">
-                          <div className="flex items-center gap-2 mb-2">
-                            <select
-                              value={step.channel}
-                              onChange={e => onChange(i, 'channel', e.target.value)}
-                              className="border rounded px-2 py-1 text-sm"
-                            >
-                              <option value="email">Email</option>
-                              <option value="linkedin">LinkedIn</option>
-                            </select>
-
-                            {step.channel === 'email' && (
-                              <input
-                                value={step.subject}
-                                onChange={e => onChange(i, 'subject', e.target.value)}
-                                placeholder="Subject"
-                                className="flex-1 border rounded px-2 py-1 text-sm"
-                              />
-                            )}
-
-                            <input
-                              type="number"
-                              min="0"
-                              value={step.wait}
-                              onChange={e => onChange(i, 'wait', Number(e.target.value || 0))}
-                              className="w-20 border rounded px-2 py-1 text-sm"
-                            />
-
-                            <button
-                              className="text-xs px-2 py-1 border rounded"
-                              onClick={() => updateSeq(seq.filter((_, idx) => idx !== i))}
-                            >
-                              Remove
-                            </button>
-                          </div>
-
-                          <textarea
-                            value={step.message}
-                            onChange={e => onChange(i, 'message', e.target.value)}
-                            placeholder="Message"
-                            className="w-full h-24 border rounded p-2 text-sm"
-                          />
-                        </div>
-                      ))}
-
-                      <div className="flex gap-2">
-                        <button
-                          className="text-xs px-3 py-1.5 border rounded"
-                          onClick={() => updateSeq([...seq, { channel: 'email', subject: '', message: '', wait: 3 }])}
-                        >
-                          Add Step
-                        </button>
-                        <button
-                          className="text-xs px-3 py-1.5 border rounded"
-                          onClick={() => alert('Sequence saved (stub).')}
-                        >
-                          Save
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </LitPanel>
-
-              <LitPanel title="Send Test Campaign Email">
-                <div className="space-y-3">
-                  <p className="text-sm text-slate-600">
-                    Paste a real <code>campaign_email_id</code> from your database to test the
-                    <code className="ml-1">send-campaign-email</code> function from the Campaigns UI.
-                  </p>
-
-                  <input
-                    value={manualCampaignEmailId}
-                    onChange={(e) => setManualCampaignEmailId(e.target.value)}
-                    placeholder="campaign_email_id"
-                    className="w-full border rounded px-3 py-2 text-sm"
-                  />
-
-                  <div className="flex gap-2">
-                    <Button onClick={handleSendManualTest} disabled={isSendingManual}>
-                      {isSendingManual ? 'Sending…' : 'Send Test Email'}
-                    </Button>
-                  </div>
-
-                  {manualSendMessage ? (
-                    <div className="text-sm rounded-lg bg-slate-50 border px-3 py-2 text-slate-700">
-                      {manualSendMessage}
-                    </div>
-                  ) : null}
-                </div>
-              </LitPanel>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="templates" className="mt-6">
-            <TemplateList
-              onApply={(tpl) => {
-                const currentId = activeId || (campaigns[0] && campaigns[0].id);
-                const preset = tpl === 'Logistics Buyer Intro'
-                  ? [
-                      { channel: 'email', subject: 'Intro', message: 'We help reduce freight costs by 12–18%…', wait: 2 },
-                      { channel: 'linkedin', subject: '', message: 'Exploring ways to streamline freight ops…', wait: 3 },
-                    ]
-                  : [{ channel: 'email', subject: tpl, message: `Template: ${tpl}`, wait: 2 }];
-                setSequenceById(prev => ({ ...prev, [currentId]: preset }));
-                setTab('builder');
-              }}
-            />
-          </TabsContent>
-
-          <TabsContent value="analytics" className="mt-6">
-            <LitPanel title="Engagement Analytics">
-              {(() => {
-                const c = campaigns.find(x => x.id === activeId) || campaigns[0] || { open: 0, reply: 0 };
-                const data = [
-                  { k: 'Open', v: c.open || 0 },
-                  { k: 'Reply', v: c.reply || 0 },
-                ];
-
-                return (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={data}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="k" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="v" fill="#7c3aed" radius={[6, 6, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                );
-              })()}
-            </LitPanel>
-          </TabsContent>
-        </Tabs>
-      </main>
-    </div>
-  );
-}
-
-function TemplateList({ onApply }) {
-  const templates = [
-    'Logistics Buyer Intro',
-    'Warehouse Ops Outreach',
-    'Freight Cost Savings',
-    'Customs Compliance Help',
-    'Air Freight Quick Quote',
-    'New Lane Opportunity',
-    'Follow-up Reminder',
-    'Seasonal Shipping Offer',
-    'Tech/Automation Value Prop',
-    'Reconnect after Trade Show',
-  ];
-
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {templates.map((t, i) => (
-        <button
-          type="button"
-          key={i}
-          onClick={() => onApply?.(t)}
-          className="text-left p-4 bg-white rounded-lg shadow hover:shadow-md transition cursor-pointer border border-slate-200"
-        >
-          <h3 className="font-semibold">{t}</h3>
-          <p className="text-xs text-slate-500 mt-2">Click to apply this template</p>
-        </button>
-      ))}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { CompanyHit } from "@/lib/api";
+import { capFutureDate } from "@/lib/dateUtils";
 
 type CompanyCardProps = {
   data: CompanyHit;
@@ -8,9 +9,12 @@ type CompanyCardProps = {
   saving?: boolean;
 };
 
+// Phase B.5 — cap future-dated `last_activity` strings before rendering.
+// The MM/DD/YYYY card-style format is preserved; the cap rule is shared.
 function formatDate(value: string): string {
-  if (!value) return "—";
-  const parsed = new Date(value);
+  const capped = capFutureDate(value);
+  if (!capped) return "—";
+  const parsed = new Date(capped);
   if (Number.isNaN(parsed.getTime())) return "—";
   return new Intl.DateTimeFormat("en-US", {
     month: "2-digit",

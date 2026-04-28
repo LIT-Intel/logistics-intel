@@ -12,13 +12,15 @@ import { motion } from "framer-motion";
 import type { IyShipperHit } from "@/lib/api";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
-import { formatUserFriendlyDate } from "@/lib/dateUtils";
+import { formatSafeShipmentDate } from "@/lib/dateUtils";
 
 const formatNumber = (value: number | null | undefined) =>
   typeof value === "number" ? value.toLocaleString() : "—";
 
+// Phase B.5 — share the cap-future-date rule so a misparsed shipper
+// `lastShipmentDate` never paints "Dec 26, 2027" on a search-result card.
 const formatDate = (value: string | null | undefined) =>
-  formatUserFriendlyDate(value, { fallback: "—" });
+  formatSafeShipmentDate(value, "—");
 
 const buildAddress = (shipper: IyShipperHit) => {
   if (shipper.address) return shipper.address;

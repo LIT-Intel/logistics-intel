@@ -126,6 +126,43 @@ Deno.serve(async (req: Request) => {
 
     const now = new Date().toISOString();
 
+    // ── Usage gate ─────────────────────────────────────────────────────
+    // saved_company is a TOTAL-mode quota. The gate is skipped for
+    // re-saves (same user_id + company_id already exists) so updating
+    // the stage/notes of an already-saved company doesn't burn a slot.
+    const { data: existingSave } = await supabase
+      .from('lit_saved_companies')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('company_id', companyRecord.id)
+      .maybeSingle();
+
+    if (!existingSave) {
+      // Resolve org and gate.
+      const { data: orgRow } = await supabase
+        .from('org_members')
+        .select('org_id')
+        .eq('user_id', user.id)
+        .order('joined_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      const orgId = orgRow?.org_id ?? null;
+      const { data: gateData, error: gateError } = await supabase.rpc('check_usage_limit', {
+        p_org_id: orgId,
+        p_user_id: user.id,
+        p_feature_key: 'saved_company',
+        p_quantity: 1,
+      });
+      if (gateError) {
+        console.error(JSON.stringify({ fn: 'save-company', requestId, gateError: gateError.message }));
+      } else if (gateData && gateData.ok === false) {
+        return new Response(
+          JSON.stringify(gateData),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+    }
+
     const { data: savedCompany, error: saveError } = await supabase
       .from('lit_saved_companies')
       .upsert({
@@ -141,6 +178,8 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (saveError) throw saveError;
+    // saved_company is total-mode; consume_usage is a no-op for that
+    // feature (the new lit_saved_companies row IS the consumption).
 
     await supabase
       .from('lit_activity_events')

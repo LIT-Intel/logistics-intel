@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LIT — Admin Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; }
+  body { font-family: 'DM Sans', system-ui, sans-serif; background:#020617; color:#0F172A; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  button { font-family: inherit; }
+  input, textarea, select { font-family: inherit; }
+  select option { background:#fff; color:#0F172A; }
+
+  @keyframes aPulse { 0% { transform: scale(1); opacity: 0.5; } 100% { transform: scale(2.6); opacity: 0; } }
+  @keyframes aSpin { 0% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
+  @keyframes aFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Layout grids */
+  .ak-grid-main { display:grid; grid-template-columns: 1.55fr 1fr; gap:14px; }
+  .ak-kpi-grid  { display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; }
+  .ak-split     { display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
+  .ak-queue-tiles { display:grid; grid-template-columns: repeat(2, 1fr); gap:10px; }
+
+  /* Horizontal scroll tables on narrow screens */
+  .ak-scroll-table { overflow-x: auto; }
+  .ak-scroll-table > div { min-width: 900px; }
+
+  /* Responsive */
+  @media (max-width: 1400px) {
+    .ak-kpi-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+  @media (max-width: 1280px) {
+    .ak-kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
+    .ak-grid-main { grid-template-columns: 1fr !important; }
+  }
+  @media (max-width: 1100px) {
+    .ak-sidebar-inner { display:none !important; }
+    .ak-header-right > div:first-child { display:none !important; } /* hide search on tablet */
+  }
+  @media (max-width: 900px) {
+    .ak-split    { grid-template-columns: 1fr !important; }
+    .ak-mobile-hide { display:none !important; }
+    .ak-header { padding: 16px 20px 14px !important; }
+    .ak-body { padding: 18px 20px 28px !important; }
+  }
+  @media (max-width: 720px) {
+    .ak-body { padding: 14px 14px 24px !important; }
+    .ak-header { padding: 14px 16px 12px !important; }
+    .ak-header-title { font-size: 18px !important; }
+    .ak-header-right { display:none !important; }
+    .ak-kpi-grid { grid-template-columns: 1fr !important; }
+    .ak-queue-tiles { grid-template-columns: 1fr !important; }
+  }
+  @media (max-width: 560px) {
+    .ak-sidebar-outer > aside:first-child { display:none !important; }
+  }
+
+  .ak-denied-orb {
+    width: 120px; height: 120px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(239,68,68,0.18), transparent 70%);
+    position: relative;
+  }
+  .ak-denied-orb::before {
+    content:''; position:absolute; inset: 0; border-radius:50%;
+    border: 1.5px solid rgba(239,68,68,0.35);
+    animation: aPulse 2.2s ease-out infinite;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="Sidebar.jsx"></script>
+<script type="text/babel" src="AdminShared.jsx"></script>
+<script type="text/babel" src="AdminData.jsx"></script>
+<script type="text/babel" src="AdminPanels.jsx"></script>
+
+<script type="text/babel">
+'use strict';
+
+/* ══ Tweakable defaults ═══════════════════════════════ */
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "role": "superadmin",
+  "impersonate": false,
+  "section": "overview"
+}/*EDITMODE-END*/;
+
+/* ══ Nav sections ═════════════════════════════════════ */
+const ADMIN_SECTIONS = [
+  { id:'overview',   label:'Overview',       icon:'layout-dashboard', group:'Monitor' },
+  { id:'users',      label:'Users',          icon:'users',            group:'Manage' },
+  { id:'campaigns',  label:'Campaigns',      icon:'send',             group:'Manage' },
+  { id:'queue',      label:'Queue & Errors', icon:'cpu',              group:'Monitor' },
+  { id:'ingestion',  label:'Data & Ingest',  icon:'database-zap',     group:'Monitor' },
+  { id:'flags',      label:'Feature Flags',  icon:'flask-conical',    group:'Controls', superOnly:true },
+  { id:'audit',      label:'Audit Trail',    icon:'scroll-text',      group:'Controls' },
+];
+
+/* ══ Access denied screen ═════════════════════════════ */
+function AccessDenied({ role, onBack }) {
+  React.useEffect(()=>{ if(window.lucide) window.lucide.createIcons(); });
+  return (
+    <div style={{display:'flex',height:'100vh',background:'#020617'}}>
+      <Sidebar active="admin" onNav={()=>{}}/>
+      <main style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:20,background:'#F8FAFC',position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',inset:0,background:'radial-gradient(ellipse at center, rgba(239,68,68,0.05), transparent 60%)',pointerEvents:'none'}}/>
+        <div style={{textAlign:'center',maxWidth:460,animation:'aFadeIn 350ms cubic-bezier(0.16,1,0.3,1)',position:'relative'}}>
+          <div className="ak-denied-orb" style={{margin:'0 auto 28px',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <i data-lucide="shield-off" style={{width:46,height:46,color:'#EF4444'}}></i>
+          </div>
+          <APill tone="red" icon="lock">HTTP 403 · Forbidden</APill>
+          <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:32,fontWeight:700,color:'#0F172A',letterSpacing:'-0.025em',marginTop:18}}>Access restricted</div>
+          <div style={{fontFamily:'DM Sans,sans-serif',fontSize:14,color:'#64748b',marginTop:10,lineHeight:1.55}}>
+            The Admin Dashboard is limited to internal admins and superadmins. Your current role is <span style={{fontFamily:'JetBrains Mono,monospace',color:'#1d4ed8',background:'#EFF6FF',padding:'1px 6px',borderRadius:4,border:'1px solid #BFDBFE'}}>{role}</span> — this request has been logged and the dashboard link is hidden from your sidebar.
+          </div>
+          <div style={{marginTop:22,display:'flex',gap:10,justifyContent:'center',flexWrap:'wrap'}}>
+            <button style={aBtnPrimary} onClick={onBack}><i data-lucide="arrow-left" style={{width:13,height:13}}></i> Back to app</button>
+            <button style={aBtnGhost}><i data-lucide="life-buoy" style={{width:13,height:13}}></i> Contact workspace owner</button>
+          </div>
+          <div style={{marginTop:28,padding:'12px 16px',background:'#fff',border:'1px solid #E5E7EB',borderRadius:10,fontFamily:'JetBrains Mono,monospace',fontSize:10.5,color:'#64748B',lineHeight:1.8,textAlign:'left',boxShadow:'0 1px 3px rgba(15,23,42,0.04)'}}>
+            <div><span style={{color:'#94a3b8'}}>event:</span>      <span style={{color:'#334155'}}>admin.access.denied</span></div>
+            <div><span style={{color:'#94a3b8'}}>required:</span>   <span style={{color:'#334155'}}>role ∈ &#123;admin, superadmin&#125;</span></div>
+            <div><span style={{color:'#94a3b8'}}>actual:</span>     <span style={{color:'#b91c1c'}}>role = "{role}"</span></div>
+            <div><span style={{color:'#94a3b8'}}>logged_to:</span>  <span style={{color:'#334155'}}>lit_audit_log (server-enforced)</span></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* ══ Header (matches Settings) ════════════════════════ */
+function AdminHeader({ role, impersonate, search, onSearch, onRefresh }) {
+  const roleTone = role==='superadmin' ? 'violet' : 'blue';
+  return (
+    <div className="ak-header" style={{padding:'20px 32px 18px',borderBottom:'1px solid #E5E7EB',background:'#FFFFFF',flexShrink:0,display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:16,flexWrap:'wrap'}}>
+      <div style={{minWidth:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div className="ak-header-title" style={{fontFamily:'Space Grotesk,sans-serif',fontSize:22,fontWeight:700,color:'#0F172A',letterSpacing:'-0.02em'}}>Admin Dashboard</div>
+          <APill tone={roleTone} icon={role==='superadmin'?'crown':'shield'}>{role}</APill>
+          {impersonate && <APill tone="amber" dot>impersonating u_5e</APill>}
+        </div>
+        <div style={{fontFamily:'DM Sans,sans-serif',fontSize:13,color:'#64748b',marginTop:4}}>Internal ops console · every action is written to the audit log</div>
+      </div>
+      <div className="ak-header-right" style={{display:'flex',alignItems:'center',gap:10}}>
+        <AInput icon="search" value={search} onChange={e=>onSearch(e.target.value)} placeholder="Search users, campaigns, log entries…" style={{width:300}}/>
+        <APill tone="green" dot>env · prod</APill>
+        <button style={aBtnGhost} onClick={onRefresh}><i data-lucide="refresh-ccw" style={{width:12,height:12}}></i> Refresh</button>
+      </div>
+    </div>
+  );
+}
+
+/* ══ Section nav (matches Settings nav) ═══════════════ */
+function AdminSectionNav({ active, onNav, role }) {
+  const items = ADMIN_SECTIONS.filter(s => s.superOnly ? role==='superadmin' : true);
+  const groups = {};
+  items.forEach(it => { (groups[it.group] ||= []).push(it); });
+
+  return (
+    <aside className="ak-sidebar-inner" style={{width:228,minWidth:228,borderRight:'1px solid #E5E7EB',background:'#FAFBFC',display:'flex',flexDirection:'column',flexShrink:0,overflow:'hidden'}}>
+      <nav style={{flex:1,padding:'16px 12px',overflowY:'auto',display:'flex',flexDirection:'column',gap:14}}>
+        {Object.entries(groups).map(([g, its]) => (
+          <div key={g} style={{display:'flex',flexDirection:'column',gap:2}}>
+            <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:10,fontWeight:700,color:'#94a3b8',letterSpacing:'0.1em',textTransform:'uppercase',padding:'4px 10px 6px'}}>{g}</div>
+            {its.map(it => {
+              const isActive = active === it.id;
+              return (
+                <button key={it.id} onClick={()=>onNav(it.id)}
+                  style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:7,fontSize:13,fontWeight:isActive?600:500,fontFamily:'Space Grotesk,sans-serif',background: isActive?'#EFF6FF':'transparent',color: isActive?'#1d4ed8':'#334155',border:'none',cursor:'pointer',textAlign:'left',width:'100%',transition:'all 120ms'}}
+                  onMouseEnter={e=>{if(!isActive)e.currentTarget.style.background='#F1F5F9'}}
+                  onMouseLeave={e=>{if(!isActive)e.currentTarget.style.background='transparent'}}>
+                  <i data-lucide={it.icon} style={{width:14,height:14,color: isActive?'#3b82f6':'#64748b'}}></i>
+                  <span>{it.label}</span>
+                  {it.superOnly && <i data-lucide="shield-alert" style={{width:11,height:11,color:'#8b5cf6',marginLeft:'auto'}}></i>}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+      <div style={{padding:'12px 14px 16px',borderTop:'1px solid #E5E7EB'}}>
+        <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:10,fontWeight:700,color:'#94a3b8',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:8}}>Environment</div>
+        <div style={{display:'flex',flexDirection:'column',gap:4,fontFamily:'JetBrains Mono,monospace',fontSize:10.5}}>
+          <div style={{display:'flex',alignItems:'center',gap:7,color:'#334155'}}><ADot tone="green" live size={6}/> api · us-west-1</div>
+          <div style={{display:'flex',alignItems:'center',gap:7,color:'#334155'}}><ADot tone="green" live size={6}/> db · primary</div>
+          <div style={{display:'flex',alignItems:'center',gap:7,color:'#B45309'}}><ADot tone="amber" size={6}/> ingest · degraded</div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+/* ══ Toast ════════════════════════════════════════════ */
+function Toast({ toast }) {
+  if (!toast) return null;
+  const icon = toast.tone==='warn'?'alert-triangle':toast.tone==='error'?'x-octagon':'check-circle';
+  const color = toast.tone==='warn'?'#f59e0b':toast.tone==='error'?'#ef4444':'#22c55e';
+  return (
+    <div style={{position:'fixed',bottom:20,right:20,zIndex:80,background:'#0F172A',color:'#fff',border:'1px solid #1e293b',borderRadius:10,padding:'12px 16px',display:'flex',alignItems:'center',gap:12,boxShadow:'0 12px 30px rgba(15,23,42,0.3)',animation:'aFadeIn 220ms cubic-bezier(0.16,1,0.3,1)',maxWidth:380}}>
+      <i data-lucide={icon} style={{width:16,height:16,color, flexShrink:0}}></i>
+      <div>
+        <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:12.5,fontWeight:600}}>{toast.title}</div>
+        {toast.sub && <div style={{fontFamily:'DM Sans,sans-serif',fontSize:11.5,color:'#94A3B8',marginTop:2}}>{toast.sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ══ Tweaks panel ═════════════════════════════════════ */
+function TweaksPanel({ tweaks, onChange, onClose }) {
+  const set = (k,v) => onChange({...tweaks, [k]:v});
+  return (
+    <div style={{position:'fixed',bottom:20,right:20,zIndex:90,width:280,background:'#0F172A',border:'1px solid #1e293b',borderRadius:12,padding:16,boxShadow:'0 20px 60px rgba(15,23,42,0.4)',color:'#E2E8F0',animation:'aFadeIn 220ms cubic-bezier(0.16,1,0.3,1)'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+        <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:13,fontWeight:700,letterSpacing:'-0.01em',display:'flex',alignItems:'center',gap:6}}>
+          <i data-lucide="sliders" style={{width:13,height:13,color:'#60a5fa'}}></i> Tweaks
+        </div>
+        <button onClick={onClose} style={{background:'none',border:'none',color:'#64748b',cursor:'pointer',display:'flex'}}><i data-lucide="x" style={{width:13,height:13}}></i></button>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:12}}>
+        <div>
+          <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:10.5,fontWeight:600,color:'#94a3b8',letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:6}}>View as role</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+            {['user','admin','superadmin','viewer'].map(r => (
+              <button key={r} onClick={()=>set('role',r)}
+                style={{padding:'7px 10px',borderRadius:7,fontSize:12,fontWeight:600,fontFamily:'Space Grotesk,sans-serif',background: tweaks.role===r?'#1e3a8a':'#020617',border: tweaks.role===r?'1px solid #3b82f6':'1px solid #1e293b',color: tweaks.role===r?'#93c5fd':'#94a3b8',cursor:'pointer',textTransform:'capitalize',transition:'all 120ms'}}>{r}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:10.5,fontWeight:600,color:'#94a3b8',letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:6}}>Jump to section</div>
+          <select value={tweaks.section} onChange={e=>set('section',e.target.value)} style={{width:'100%',background:'#020617',border:'1px solid #1e293b',borderRadius:7,padding:'7px 10px',color:'#E2E8F0',fontSize:12.5,outline:'none'}}>
+            {ADMIN_SECTIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+        </div>
+        <div onClick={()=>set('impersonate', !tweaks.impersonate)} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,cursor:'pointer',padding:'8px 0'}}>
+          <div>
+            <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:12,fontWeight:600,color:'#cbd5e1'}}>Impersonation banner</div>
+            <div style={{fontFamily:'DM Sans,sans-serif',fontSize:10.5,color:'#64748b',marginTop:1}}>Show in header</div>
+          </div>
+          <div style={{width:30,height:17,borderRadius:9,background:tweaks.impersonate?'#3b82f6':'#334155',position:'relative',flexShrink:0,transition:'all 160ms'}}>
+            <div style={{position:'absolute',top:2,left:tweaks.impersonate?15:2,width:13,height:13,borderRadius:'50%',background:'#fff',transition:'all 160ms'}}/>
+          </div>
+        </div>
+        <div style={{fontFamily:'DM Sans,sans-serif',fontSize:10.5,color:'#64748b',lineHeight:1.5,padding:'8px 10px',background:'#020617',borderRadius:7,border:'1px dashed #1e293b'}}>
+          Switch role to <span style={{color:'#fca5a5',fontFamily:'JetBrains Mono,monospace'}}>user</span> to see the access-denied state.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══ Main App ═════════════════════════════════════════ */
+function AdminApp() {
+  const [tweaks, setTweaks] = React.useState(TWEAK_DEFAULTS);
+  const [section, setSection] = React.useState(() => localStorage.getItem('lit_admin_section') || TWEAK_DEFAULTS.section);
+  const [search, setSearch] = React.useState('');
+  const [toast, setToast] = React.useState(null);
+  const [showTweaks, setShowTweaks] = React.useState(false);
+
+  const role = tweaks.role;
+  const isAdmin = role==='admin' || role==='superadmin';
+
+  React.useEffect(() => { setSection(tweaks.section); }, [tweaks.section]);
+  React.useEffect(() => { localStorage.setItem('lit_admin_section', section); }, [section]);
+
+  React.useEffect(() => {
+    const handler = (e) => {
+      if (!e.data) return;
+      if (e.data.type === '__activate_edit_mode')   setShowTweaks(true);
+      if (e.data.type === '__deactivate_edit_mode') setShowTweaks(false);
+    };
+    window.addEventListener('message', handler);
+    window.parent.postMessage({type:'__edit_mode_available'}, '*');
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  React.useEffect(() => { if (window.lucide) window.lucide.createIcons(); });
+
+  const fireToast = React.useCallback((title, sub, tone='ok') => {
+    setToast({title, sub, tone});
+    setTimeout(()=>setToast(null), 3200);
+  }, []);
+
+  const onUserAction = (action, u) => ({
+    view:    ()=>fireToast(`Opening profile`, `${u.email} · ${u.org}`, 'ok'),
+    role:    ()=>fireToast(`Role change requested`, `${u.name} · requires confirmation · audit logged`, 'warn'),
+    suspend: ()=>fireToast(u.status==='suspended'?`Reactivating user`:`Suspending user`, `${u.email} · action written to lit_audit_log`, 'warn'),
+  }[action]?.());
+
+  const onCampaignAction = (action, c) => {
+    if (action==='pauseAll') return fireToast('Pause all campaigns?', 'Confirmation modal would appear · action audited', 'warn');
+    ({
+      pause: ()=>fireToast(c.status==='paused'?'Resuming campaign':'Pausing campaign', c.name, 'warn'),
+      stop:  ()=>fireToast('Campaign force-stopped', `${c.id} · ${c.name} · audit logged`, 'warn'),
+      open:  ()=>fireToast('Opening campaign detail', c.name, 'ok'),
+    }[action]?.());
+  };
+
+  const onErrorAction = (action, e) => {
+    if (action==='retryAll') return fireToast('Retrying all queued errors', 'Re-queued 6 jobs', 'ok');
+    fireToast('Error retried', `${e.code} · ${e.campaign}`, 'ok');
+  };
+
+  if (!isAdmin) {
+    return (
+      <>
+        <AccessDenied role={role} onBack={()=>setTweaks({...tweaks, role:'superadmin'})}/>
+        {showTweaks && <TweaksPanel tweaks={tweaks} onChange={setTweaks} onClose={()=>setShowTweaks(false)}/>}
+      </>
+    );
+  }
+
+  return (
+    <div className="ak-sidebar-outer" style={{display:'flex',height:'100vh',overflow:'hidden',background:'#020617'}}>
+      <Sidebar active="admin" onNav={()=>{}}/>
+      <main style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:'#F8FAFC',minWidth:0}}>
+        <AdminHeader role={role} impersonate={tweaks.impersonate}
+          search={search} onSearch={setSearch}
+          onRefresh={()=>fireToast('Data refreshed', 'All panels · just now', 'ok')}/>
+        <div style={{flex:1,display:'flex',overflow:'hidden',minHeight:0}}>
+          <AdminSectionNav active={section} onNav={setSection} role={role}/>
+          <div className="ak-body" style={{flex:1,overflowY:'auto',padding:'22px 32px 32px',minWidth:0}}>
+            <div style={{maxWidth:1280,margin:'0 auto'}}>
+              {section==='overview'  && <OverviewBody onUserAction={onUserAction} onCampaignAction={onCampaignAction} onErrorAction={onErrorAction}/>}
+              {section==='users'     && <UserManagement onAction={onUserAction}/>}
+              {section==='campaigns' && <CampaignMonitoring onAction={onCampaignAction}/>}
+              {section==='queue'     && <QueueBody onAction={onErrorAction}/>}
+              {section==='ingestion' && <IngestionStatus/>}
+              {section==='flags'     && <FeatureFlags role={role==='superadmin'?'super':'admin'}/>}
+              {section==='audit'     && <AuditLog/>}
+            </div>
+          </div>
+        </div>
+      </main>
+      <Toast toast={toast}/>
+      {showTweaks && <TweaksPanel tweaks={tweaks} onChange={setTweaks} onClose={()=>setShowTweaks(false)}/>}
+    </div>
+  );
+}
+
+/* ══ Bodies ═══════════════════════════════════════════ */
+function OverviewBody({ onUserAction, onCampaignAction, onErrorAction }) {
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+      <AdminOverview/>
+      <div className="ak-grid-main">
+        <SystemHealth/>
+        <PlanDistribution/>
+      </div>
+      <div className="ak-split">
+        <QueueMonitor/>
+        <ErrorLog onAction={onErrorAction}/>
+      </div>
+      <CampaignMonitoring onAction={onCampaignAction}/>
+      <AuditLog/>
+    </div>
+  );
+}
+
+function QueueBody({ onAction }) {
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+      <div className="ak-split">
+        <QueueMonitor/>
+        <APanel title={<><i data-lucide="activity" style={{width:14,height:14,color:'#3b82f6'}}></i> Scheduler stats</>} subtitle="Per-provider throughput · 24h">
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>
+            {[
+              {p:'Gmail',    tone:'cyan',   sent:12840, fail:18, ok:99.86},
+              {p:'Outlook',  tone:'blue',   sent: 4210, fail:24, ok:99.43},
+              {p:'LinkedIn', tone:'violet', sent:  920, fail: 5, ok:99.46},
+              {p:'Webhook',  tone:'amber',  sent: 1820, fail: 2, ok:99.89},
+            ].map(s => (
+              <div key={s.p} style={{padding:'10px 12px',background:'#F8FAFC',border:'1px solid #E5E7EB',borderRadius:8}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6,flexWrap:'wrap',gap:6}}>
+                  <span style={{display:'flex',alignItems:'center',gap:8}}>
+                    <APill tone={s.tone}>{s.p}</APill>
+                    <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:11,color:'#64748b'}}>{s.sent.toLocaleString()} sent</span>
+                  </span>
+                  <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:11,color: s.fail>20?'#b91c1c':'#15803d'}}>{s.ok}% ok · {s.fail} fail</span>
+                </div>
+                <ABar value={s.ok} max={100} tone={s.ok>99.5?'green':'amber'} showLabel/>
+              </div>
+            ))}
+          </div>
+        </APanel>
+      </div>
+      <ErrorLog onAction={onAction}/>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<AdminApp/>);
+</script>
+</body>
+</html>

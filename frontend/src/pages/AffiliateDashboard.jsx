@@ -1,373 +1,288 @@
-import React, { useState, useEffect } from 'react';
-import { User } from '@/api/entities';
-import { Affiliate } from '@/api/entities';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { 
-  Users, 
-  DollarSign, 
-  TrendingUp, 
-  Copy, 
-  Share, 
-  CheckCircle,
-  ExternalLink,
-  Star,
-  Gift,
-  Target,
-  Zap
-} from 'lucide-react';
-import { format } from 'date-fns';
-import { motion } from 'framer-motion';
-import LitPageHeader from '../components/ui/LitPageHeader';
-import LitPanel from '../components/ui/LitPanel';
-import LitWatermark from '../components/ui/LitWatermark';
+// /app/affiliate — orchestrator that dispatches to the design-system
+// affiliate components based on the authenticated user's real affiliate
+// state. No fake earnings, no fake referrals, no fake payouts.
+//
+// Phase B wires:
+//   - useAffiliateState reads real Supabase data (partner / referrals /
+//     commissions / payouts) when the backend tables exist.
+//   - Application form submits to the affiliate-apply edge function.
+//   - Stripe Connect button calls stripe-connect-onboard and redirects
+//     to the returned account-link URL.
+//   - When the user returns to /app/affiliate?stripe=return we hit
+//     stripe-connect-status to refresh the partner's stripe_status.
+//
+// Design source: docs/design-specs/lit-design-system/affiliate/
 
-export default function AffiliateDashboard() {
-  const [user, setUser] = useState(null);
-  const [affiliate, setAffiliate] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [copiedLink, setCopiedLink] = useState(false);
-  const [stats, setStats] = useState({
-    totalReferrals: 0,
-    activeReferrals: 0,
-    totalCommissions: 0,
-    pendingCommissions: 0,
-    conversionRate: 0
-  });
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/auth/AuthProvider';
+import {
+  useAffiliateState,
+  submitAffiliateApplication,
+  startStripeConnect,
+  refreshStripeConnectStatus,
+} from '@/lib/affiliate';
+import AffiliateApplication from '@/components/affiliate/AffiliateApplication';
+import AffiliateDashboardView from '@/components/affiliate/AffiliateDashboardView';
+import { T } from '@/components/affiliate/tokens';
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      const userData = await User.me();
-      setUser(userData);
-
-      // Check if user is admin or has affiliate status
-      if (userData.role === 'admin' || userData.affiliate_status === 'active') {
-        const affiliateData = await Affiliate.filter({ user_id: userData.id });
-        if (affiliateData && affiliateData.length > 0) {
-          setAffiliate(affiliateData[0]);
-        }
-      }
-
-      // Mock stats for now - in a real implementation, these would come from the backend
-      setStats({
-        totalReferrals: 12,
-        activeReferrals: 8,
-        totalCommissions: 2450.00,
-        pendingCommissions: 450.00,
-        conversionRate: 15.2
-      });
-
-    } catch (error) {
-      console.error("Error loading affiliate data:", error);
-    }
-    setIsLoading(false);
-  };
-
-  const handleCopyReferralLink = async () => {
-    const referralLink = `https://logisticintel.com?ref=${affiliate?.ref_code || 'YOUR_CODE'}`;
-    try {
-      await navigator.clipboard.writeText(referralLink);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
-    } catch (error) {
-      console.error('Failed to copy link:', error);
-    }
-  };
-
-  const shareOnSocial = (platform) => {
-    const referralLink = `https://logisticintel.com?ref=${affiliate?.ref_code || 'YOUR_CODE'}`;
-    const message = "Discover powerful trade intelligence with Logistic Intel - the platform that's transforming freight sales!";
-    
-    const urls = {
-      twitter: `https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}&url=${encodeURIComponent(referralLink)}`,
-      linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(referralLink)}`,
-      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(referralLink)}`
-    };
-    
-    window.open(urls[platform], '_blank', 'width=600,height=400');
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[#F6F8FB]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1E5EFF]"></div>
-      </div>
-    );
+function formatSubmittedAt(iso) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      month: 'short', day: 'numeric', year: 'numeric',
+    });
+  } catch {
+    return null;
   }
+}
 
-  const hasAffiliateAccess = user?.role === 'admin' || user?.affiliate_status === 'active';
-
-  if (!hasAffiliateAccess) {
-    return (
-      <div className="p-6 bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen">
-        <div className="max-w-4xl mx-auto">
-          <Card className="bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60">
-            <CardContent className="p-8 text-center">
-              <Gift className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Join Our Affiliate Program</h2>
-              <p className="text-gray-600 mb-6">
-                Partner with us and earn generous commissions by referring new customers to Logistic Intel.
-              </p>
-              <Button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
-                Apply to Join
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
+function LoadingShell() {
   return (
-    <div className="relative p-4 md:p-6 lg:p-8 min-h-screen">
-      <LitWatermark />
-      <div className="max-w-7xl mx-auto">
-        <LitPageHeader title="Affiliate Dashboard" />
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-          >
-            <Card className="bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60 hover:shadow-xl transition-all duration-300">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
-                  <Users className="w-4 h-4 mr-2" />
-                  Total Referrals
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900">{stats.totalReferrals}</div>
-                <p className="text-sm text-green-600 mt-1">
-                  +3 this month
-                </p>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-          >
-            <Card className="bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60 hover:shadow-xl transition-all duration-300">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
-                  <Target className="w-4 h-4 mr-2" />
-                  Active Users
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-blue-600">{stats.activeReferrals}</div>
-                <p className="text-sm text-gray-500 mt-1">
-                  Currently paying
-                </p>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-          >
-            <Card className="bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60 hover:shadow-xl transition-all duration-300">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
-                  <DollarSign className="w-4 h-4 mr-2" />
-                  Total Earned
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-green-600">
-                  ${stats.totalCommissions.toFixed(2)}
-                </div>
-                <p className="text-sm text-gray-500 mt-1">
-                  All time
-                </p>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
-          >
-            <Card className="bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60 hover:shadow-xl transition-all duration-300">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
-                  <TrendingUp className="w-4 h-4 mr-2" />
-                  Conversion Rate
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-purple-600">{stats.conversionRate}%</div>
-                <p className="text-sm text-green-600 mt-1">
-                  +2.1% vs last month
-                </p>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Referral Link & Sharing */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.5 }}
-            className="lg:col-span-2"
-          >
-            <Card className="bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Share className="w-5 h-5 mr-2" />
-                  Your Referral Link
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex gap-3">
-                  <Input
-                    value={`https://logisticintel.com?ref=${affiliate?.ref_code || 'YOUR_CODE'}`}
-                    readOnly
-                    className="flex-1 font-mono text-sm"
-                  />
-                  <Button
-                    onClick={handleCopyReferralLink}
-                    variant={copiedLink ? "default" : "outline"}
-                    className={copiedLink ? "bg-green-600 hover:bg-green-700" : ""}
-                  >
-                    {copiedLink ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  </Button>
-                </div>
-
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-3">Share on Social Media</h4>
-                  <div className="flex gap-3">
-                    <Button
-                      onClick={() => shareOnSocial('twitter')}
-                      variant="outline"
-                      size="sm"
-                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                    >
-                      Twitter
-                    </Button>
-                    <Button
-                      onClick={() => shareOnSocial('linkedin')}
-                      variant="outline"
-                      size="sm"
-                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                    >
-                      LinkedIn
-                    </Button>
-                    <Button
-                      onClick={() => shareOnSocial('facebook')}
-                      variant="outline"
-                      size="sm"
-                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                    >
-                      Facebook
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-900 mb-2 flex items-center">
-                    <Zap className="w-4 h-4 mr-2 text-blue-600" />
-                    Commission Structure
-                  </h4>
-                  <ul className="text-sm text-gray-600 space-y-1">
-                    <li>• <strong>20%</strong> recurring commission on all plans</li>
-                    <li>• <strong>$50</strong> bonus for first 5 referrals</li>
-                    <li>• Monthly payouts via Stripe</li>
-                    <li>• 90-day cookie duration</li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* Quick Stats */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.6 }}
-          >
-            <Card className="bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60">
-              <CardHeader>
-                <CardTitle>This Month</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">New Referrals</span>
-                  <span className="font-semibold">3</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Conversions</span>
-                  <span className="font-semibold">2</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Commission Earned</span>
-                  <span className="font-semibold text-green-600">$450.00</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Pending Payout</span>
-                  <span className="font-semibold text-orange-600">${stats.pendingCommissions.toFixed(2)}</span>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-
-        {/* Recent Activity */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.7 }}
-          className="mt-8"
-        >
-          <LitPanel title="Recent Activity">
-              <div className="space-y-4">
-                {[
-                  { type: 'signup', name: 'John Smith', email: 'john@freightco.com', date: '2 hours ago', status: 'Trial Started' },
-                  { type: 'conversion', name: 'Sarah Chen', email: 'sarah@logistics.net', date: '1 day ago', status: 'Upgraded to Growth' },
-                  { type: 'signup', name: 'Mike Rodriguez', email: 'mike@shipping.com', date: '3 days ago', status: 'Trial Started' }
-                ].map((activity, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        activity.type === 'conversion' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'
-                      }`}>
-                        {activity.type === 'conversion' ? <DollarSign className="w-4 h-4" /> : <Users className="w-4 h-4" />}
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{activity.name}</p>
-                        <p className="text-sm text-gray-500">{activity.email}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <Badge className={
-                        activity.type === 'conversion' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
-                      }>
-                        {activity.status}
-                      </Badge>
-                      <p className="text-xs text-gray-500 mt-1">{activity.date}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-          </LitPanel>
-        </motion.div>
-      </div>
+    <div
+      style={{
+        background: T.bgApp,
+        minHeight: '100%',
+        fontFamily: T.ffBody,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 40,
+      }}
+    >
+      <div
+        style={{
+          width: 28, height: 28, borderRadius: '50%',
+          border: `3px solid ${T.bgSunken}`,
+          borderTopColor: T.brand,
+          animation: 'lit-aff-spin 0.8s linear infinite',
+        }}
+      />
+      <style>{`@keyframes lit-aff-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
+}
+
+function GlobalNotice({ tone, children, onDismiss }) {
+  if (!children) return null;
+  const palette = {
+    success: { bg: T.greenBg, border: T.greenBorder, color: T.green },
+    warn:    { bg: T.amberBg, border: T.amberBorder, color: T.amber },
+    danger:  { bg: T.redBg,   border: T.redBorder,   color: T.red },
+    info:    { bg: T.brandSoft, border: T.brandBorder, color: T.brand },
+  }[tone || 'info'];
+  return (
+    <div
+      style={{
+        margin: '16px 32px 0',
+        background: palette.bg,
+        border: `1px solid ${palette.border}`,
+        borderRadius: 10,
+        padding: '10px 14px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        fontFamily: T.ffBody,
+      }}
+    >
+      <div style={{ flex: 1, fontSize: 12.5, color: T.inkMuted }}>
+        <strong style={{ color: palette.color, fontFamily: T.ffDisplay }}>
+          {tone === 'success' ? 'Done' : tone === 'danger' ? 'Error' : 'Heads up'}:
+        </strong>{' '}
+        {children}
+      </div>
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: T.inkSoft, fontSize: 16, padding: '4px 8px',
+            fontFamily: T.ffBody,
+          }}
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default function AffiliateDashboard() {
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id || null;
+  const aff = useAffiliateState(userId);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const [notice, setNotice] = useState(null);
+  const [stripeBusy, setStripeBusy] = useState(false);
+
+  const submittedAt = useMemo(
+    () => formatSubmittedAt(aff.application?.submittedAt),
+    [aff.application?.submittedAt],
+  );
+
+  // Handle ?stripe=return / ?stripe=refresh query params after Stripe
+  // Connect onboarding redirects the user back.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const stripeFlag = params.get('stripe');
+    if (!stripeFlag) return;
+    let cancelled = false;
+    (async () => {
+      if (stripeFlag === 'return' || stripeFlag === 'refresh') {
+        const result = await refreshStripeConnectStatus();
+        if (cancelled) return;
+        if (result.ok) {
+          if (result.stripe_status === 'payouts_enabled') {
+            setNotice({ tone: 'success', text: 'Stripe payouts are now enabled.' });
+          } else if (result.stripe_status === 'verification_required') {
+            setNotice({
+              tone: 'warn',
+              text: 'Stripe still needs additional verification — open your Stripe dashboard to finish.',
+            });
+          } else if (stripeFlag === 'refresh') {
+            setNotice({
+              tone: 'info',
+              text: 'Stripe onboarding paused. Resume when you’re ready.',
+            });
+          }
+          await aff.refresh();
+        } else if (result.code === 'STRIPE_NOT_CONFIGURED') {
+          setNotice({
+            tone: 'warn',
+            text: 'Stripe Connect is not configured yet. Contact support to enable payouts.',
+          });
+        } else {
+          setNotice({
+            tone: 'danger',
+            text: result.error || 'Could not refresh Stripe status.',
+          });
+        }
+      }
+      // Strip the stripe= param from the URL so reloads don't re-trigger.
+      params.delete('stripe');
+      const next = `${location.pathname}${
+        params.toString() ? `?${params.toString()}` : ''
+      }`;
+      navigate(next, { replace: true });
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
+
+  const handleSubmitApplication = useCallback(
+    async (form) => {
+      const result = await submitAffiliateApplication(form);
+      if (result?.ok) {
+        await aff.refresh();
+      }
+      return result;
+    },
+    [aff],
+  );
+
+  const handleConnectStripe = useCallback(async () => {
+    if (stripeBusy) return;
+    setStripeBusy(true);
+    try {
+      const result = await startStripeConnect();
+      if (!result?.ok) {
+        if (result?.code === 'STRIPE_NOT_CONFIGURED') {
+          setNotice({
+            tone: 'warn',
+            text: 'Stripe Connect is not configured yet. Contact support to enable payouts.',
+          });
+        } else {
+          setNotice({
+            tone: 'danger',
+            text: result?.error || 'Could not start Stripe Connect onboarding.',
+          });
+        }
+        return;
+      }
+      if (result.url) {
+        window.location.href = result.url;
+      }
+    } finally {
+      setStripeBusy(false);
+    }
+  }, [stripeBusy]);
+
+  if (authLoading || aff.loading) {
+    return <LoadingShell />;
+  }
+
+  // Bare-shell wrapper that lets us hang a top-of-page notice across
+  // every state without having to thread it into each design component.
+  const wrapWithNotice = (node) => (
+    <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+      {notice && (
+        <GlobalNotice tone={notice.tone} onDismiss={() => setNotice(null)}>
+          {notice.text}
+        </GlobalNotice>
+      )}
+      <div style={{ flex: 1, minHeight: 0 }}>{node}</div>
+    </div>
+  );
+
+  switch (aff.status) {
+    case 'no_backend':
+      return wrapWithNotice(
+        <AffiliateApplication state="form" backendUnavailable />,
+      );
+
+    case 'not_applied':
+      return wrapWithNotice(
+        <AffiliateApplication
+          state="form"
+          onSubmit={handleSubmitApplication}
+        />,
+      );
+
+    case 'pending':
+      return wrapWithNotice(
+        <AffiliateApplication
+          state="pending"
+          submittedAt={submittedAt}
+          reviewer={aff.application?.reviewer}
+        />,
+      );
+
+    case 'rejected':
+      return wrapWithNotice(
+        <AffiliateApplication
+          state="rejected"
+          rejectionReason={aff.application?.rejectionReason}
+        />,
+      );
+
+    case 'invited':
+    case 'active':
+    case 'suspended':
+    case 'deactivated':
+      return wrapWithNotice(
+        <AffiliateDashboardView
+          affiliateStatus={aff.status}
+          stripeStatus={aff.partner?.stripeStatus || 'not_connected'}
+          partner={aff.partner}
+          referralLink={aff.referralLink}
+          stats={aff.stats}
+          referrals={aff.referrals}
+          payouts={aff.payouts}
+          activity={aff.activity}
+          earningsByMonth={aff.earningsByMonth}
+          commissionBreakdown={null}
+          onConnectStripe={handleConnectStripe}
+        />,
+      );
+
+    default:
+      return wrapWithNotice(
+        <AffiliateApplication state="form" backendUnavailable />,
+      );
+  }
 }

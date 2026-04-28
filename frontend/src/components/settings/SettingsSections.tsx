@@ -23,45 +23,32 @@ import {
   ExternalLink,
   Lock,
 } from "lucide-react";
+import { PLAN_LIMITS, normalizePlan as normalizePlanCode } from "@/lib/planLimits";
 
-// Phase F — 11-section nav approved by the user. Previous sections
-// "Email", "LinkedIn", "Company & Signature", "Workspace Credits", and
-// "Team Subscriptions" are folded:
-//   - Email + LinkedIn    → Integrations
-//   - email_signature     → Outreach Accounts
-//   - Company & Signature → Organization (renamed)
-//   - Billing & Plans     → Billing (renamed; Workspace Credits info
-//                          surfaces on the canonical /app/billing page)
-//   - Team Subscriptions  → Access & Roles (seat capacity rendered there)
+// User-facing /app/settings exposes six tabs. The legacy admin-only
+// sections (Outreach Accounts, Campaign Preferences, RFP & Pipeline,
+// Affiliate Program, Organization config, Billing config) are still
+// exported for use by the admin route — only the visible nav here is
+// curated.
 export type SettingsSectionId =
   | "Profile"
-  | "Security & API"
-  | "Alerts & Notifications"
-  | "Access & Roles"
+  | "Workspace"
+  | "Security"
+  | "Notifications"
   | "Integrations"
-  | "Outreach Accounts"
-  | "Campaign Preferences"
-  | "RFP & Pipeline"
-  | "Affiliate Program"
-  | "Organization"
-  | "Billing";
+  | "Preferences";
 
 export const SETTINGS_SECTIONS: Array<{
   id: SettingsSectionId;
   title: string;
   icon: React.ComponentType<any>;
 }> = [
-  { id: "Profile", title: "Profile", icon: User },
-  { id: "Security & API", title: "Security & API", icon: KeyRound },
-  { id: "Alerts & Notifications", title: "Alerts & Notifications", icon: Bell },
-  { id: "Access & Roles", title: "Access & Roles", icon: ShieldCheck },
-  { id: "Integrations", title: "Integrations", icon: Plug },
-  { id: "Outreach Accounts", title: "Outreach Accounts", icon: Send },
-  { id: "Campaign Preferences", title: "Campaign Preferences", icon: Megaphone },
-  { id: "RFP & Pipeline", title: "RFP & Pipeline", icon: FileText },
-  { id: "Affiliate Program", title: "Affiliate Program", icon: Gift },
-  { id: "Organization", title: "Organization", icon: Building2 },
-  { id: "Billing", title: "Billing", icon: CreditCard },
+  { id: "Profile",       title: "Profile",       icon: User },
+  { id: "Workspace",     title: "Workspace",     icon: Building2 },
+  { id: "Security",      title: "Security",      icon: ShieldCheck },
+  { id: "Notifications", title: "Notifications", icon: Bell },
+  { id: "Integrations",  title: "Integrations",  icon: Plug },
+  { id: "Preferences",   title: "Preferences",   icon: KeyRound },
 ];
 
 function SectionShell({
@@ -183,6 +170,8 @@ function StatusMessage({ error, success }: { error?: string | null; success?: st
   );
 }
 
+type MessagingKey = "mentions" | "weekly_digest" | "direct_messages" | "assignments";
+
 type ProfileSectionProps = {
   initialData?: {
     name?: string;
@@ -191,26 +180,129 @@ type ProfileSectionProps = {
     phone?: string;
     location?: string;
     bio?: string;
+    timezone?: string;
     avatar_url?: string;
-    savedCount?: number;
-    campaignsCount?: number;
-    rfpsCount?: number;
     plan?: string;
+    planStatus?: string;
     isAdmin?: boolean;
   };
+  messagingPrefs?: Partial<Record<MessagingKey, boolean>>;
   onSave?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
   onUploadAvatar?: (file: File) => Promise<{ error?: string } | void>;
+  onSaveMessagingPreferences?: (data: Record<MessagingKey, boolean>) => Promise<{ error?: string } | void>;
   isAdmin?: boolean;
 };
 
-export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }: ProfileSectionProps) {
+const BIO_MAX_CHARS = 160;
+
+// Common IANA zones surfaced in the picker. Persists the raw IANA ID so
+// server-side scheduling keeps working if we wire it later.
+const TIMEZONE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "America/Los_Angeles", label: "America/Los_Angeles" },
+  { value: "America/Denver", label: "America/Denver" },
+  { value: "America/Chicago", label: "America/Chicago" },
+  { value: "America/New_York", label: "America/New_York" },
+  { value: "America/Sao_Paulo", label: "America/Sao_Paulo" },
+  { value: "Europe/London", label: "Europe/London" },
+  { value: "Europe/Paris", label: "Europe/Paris" },
+  { value: "Europe/Berlin", label: "Europe/Berlin" },
+  { value: "Africa/Johannesburg", label: "Africa/Johannesburg" },
+  { value: "Asia/Dubai", label: "Asia/Dubai" },
+  { value: "Asia/Kolkata", label: "Asia/Kolkata" },
+  { value: "Asia/Singapore", label: "Asia/Singapore" },
+  { value: "Asia/Shanghai", label: "Asia/Shanghai" },
+  { value: "Asia/Tokyo", label: "Asia/Tokyo" },
+  { value: "Australia/Sydney", label: "Australia/Sydney" },
+];
+
+function ToggleSwitch({ on }: { on: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`relative block h-5 w-9 shrink-0 rounded-full transition ${
+        on ? "bg-indigo-600" : "bg-slate-300"
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 inline-block h-4 w-4 rounded-full bg-white shadow transition-all ${
+          on ? "left-4" : "left-0.5"
+        }`}
+      />
+    </span>
+  );
+}
+
+function MessagingTile({
+  label,
+  description,
+  on,
+  onToggle,
+  disabled,
+}: {
+  label: string;
+  description: string;
+  on: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onToggle}
+      className={`flex w-full items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 px-4 py-3 text-left transition hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-wait disabled:opacity-60`}
+    >
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-slate-900">{label}</span>
+        <span className="mt-0.5 block text-xs text-slate-500">{description}</span>
+      </span>
+      <ToggleSwitch on={on} />
+    </button>
+  );
+}
+
+const MESSAGING_ROWS: Array<{ key: MessagingKey; label: string; description: string }> = [
+  { key: "mentions", label: "@mentions in comments", description: "Email me when teammates tag me." },
+  { key: "weekly_digest", label: "Weekly digest", description: "Monday morning summary of pipeline." },
+  { key: "direct_messages", label: "Direct messages", description: "In-app DMs from workspace members." },
+  { key: "assignments", label: "Assignments", description: "Notify when a deal is routed to me." },
+];
+
+function defaultMessagingPrefs(): Record<MessagingKey, boolean> {
+  return { mentions: true, weekly_digest: true, direct_messages: true, assignments: true };
+}
+
+function normalizeMessagingPrefs(
+  input?: Partial<Record<MessagingKey, boolean>>,
+): Record<MessagingKey, boolean> {
+  const base = defaultMessagingPrefs();
+  if (!input) return base;
+  for (const row of MESSAGING_ROWS) {
+    if (typeof input[row.key] === "boolean") base[row.key] = input[row.key] as boolean;
+  }
+  return base;
+}
+
+export function ProfileSection({
+  initialData,
+  messagingPrefs,
+  onSave,
+  onUploadAvatar,
+  onSaveMessagingPreferences,
+  isAdmin,
+}: ProfileSectionProps) {
   const [form, setForm] = useState({
     name: initialData?.name || "",
     title: initialData?.title || "",
     phone: initialData?.phone || "",
     location: initialData?.location || "",
+    timezone: initialData?.timezone || "",
     bio: initialData?.bio || "",
   });
+  const [initial, setInitial] = useState(form);
   const [avatarUrl, setAvatarUrl] = useState(initialData?.avatar_url || "");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -218,28 +310,48 @@ export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }:
   const [success, setSuccess] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const rawPlan = initialData?.plan || "free_trial";
-  const planLabel = rawPlan.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const [msg, setMsg] = useState<Record<MessagingKey, boolean>>(() =>
+    normalizeMessagingPrefs(messagingPrefs),
+  );
+  const [msgSaving, setMsgSaving] = useState<MessagingKey | null>(null);
+  const [msgError, setMsgError] = useState<string | null>(null);
 
   useEffect(() => {
-    setForm({
+    const next = {
       name: initialData?.name || "",
       title: initialData?.title || "",
       phone: initialData?.phone || "",
       location: initialData?.location || "",
+      timezone: initialData?.timezone || "",
       bio: initialData?.bio || "",
-    });
+    };
+    setForm(next);
+    setInitial(next);
     setAvatarUrl(initialData?.avatar_url || "");
   }, [
     initialData?.name,
     initialData?.title,
     initialData?.phone,
     initialData?.location,
+    initialData?.timezone,
     initialData?.bio,
     initialData?.avatar_url,
   ]);
 
+  useEffect(() => {
+    setMsg(normalizeMessagingPrefs(messagingPrefs));
+  }, [messagingPrefs]);
+
+  const dirty =
+    form.name !== initial.name ||
+    form.title !== initial.title ||
+    form.phone !== initial.phone ||
+    form.location !== initial.location ||
+    form.timezone !== initial.timezone ||
+    form.bio !== initial.bio;
+
   async function handleSave() {
+    if (!dirty) return;
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -249,12 +361,19 @@ export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }:
         setError((result as any).error);
       } else {
         setSuccess("Profile saved");
+        setInitial(form);
       }
     } catch (e: any) {
       setError(e?.message || "Failed saving profile");
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleCancel() {
+    setForm(initial);
+    setError(null);
+    setSuccess(null);
   }
 
   async function handleAvatarChange(file?: File | null) {
@@ -276,105 +395,228 @@ export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }:
     }
   }
 
+  async function toggleMessaging(key: MessagingKey) {
+    if (!onSaveMessagingPreferences) return;
+    const optimistic = { ...msg, [key]: !msg[key] };
+    setMsg(optimistic);
+    setMsgError(null);
+    setMsgSaving(key);
+    try {
+      const result = await onSaveMessagingPreferences(optimistic);
+      if ((result as any)?.error) {
+        setMsg(msg);
+        setMsgError((result as any).error);
+      }
+    } catch (e: any) {
+      setMsg(msg);
+      setMsgError(e?.message || "Failed updating preference");
+    } finally {
+      setMsgSaving(null);
+    }
+  }
+
+  const initials =
+    (initialData?.name || initialData?.email || "U")
+      .split(/\s+|@/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((s) => s[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2) || "U";
+
   return (
-    <SectionShell
-      title="User profile"
-      description="Update your personal profile, contact details, and account identity."
-    >
-      <StatusMessage error={error} success={success} />
-      <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-          <div className="flex flex-col items-center text-center">
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="group relative mb-4 h-28 w-28 overflow-hidden rounded-full border-4 border-white bg-slate-200 shadow"
+    <div className="space-y-6">
+      <StatusMessage error={error || msgError} success={success} />
+
+      {/* Identity card */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-black/[0.02]">
+        <div className="mb-6">
+          <h3 className="text-base font-semibold text-slate-900">Identity</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Public profile details visible to your workspace and in outbound signatures.
+          </p>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-[160px_minmax(0,1fr)]">
+          <div className="flex flex-col items-center">
+            <div
+              aria-label={avatarUrl ? "Profile image" : `Initials avatar ${initials}`}
+              className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-3xl font-bold text-white shadow"
             >
               {avatarUrl ? (
-                <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" />
+                <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-2xl font-semibold text-slate-600">
-                  {(initialData?.name || "U").slice(0, 2).toUpperCase()}
-                </div>
+                <span>{initials}</span>
               )}
-              <div className="absolute inset-x-0 bottom-0 bg-black/50 px-2 py-1 text-xs text-white opacity-0 transition group-hover:opacity-100">
-                Change
-              </div>
+            </div>
+            {/* No file storage backend wired yet — surface an honest
+                disabled affordance rather than a button that throws when
+                clicked. Re-enable once UploadFile is wired. */}
+            <button
+              type="button"
+              disabled
+              title="Photo upload ships with the storage integration"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-400"
+            >
+              <Upload className="h-3 w-3" />
+              Change photo · soon
             </button>
-            <input
-              ref={inputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleAvatarChange(e.target.files?.[0])}
-            />
-            <div className="text-lg font-semibold text-slate-900">{initialData?.name || "User"}</div>
-            <div className="mt-1 text-sm text-slate-500">{initialData?.email || "—"}</div>
-            <div className="mt-4 inline-flex rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
-              {planLabel}
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  Full name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  Job title
+                </label>
+                <input
+                  type="text"
+                  value={form.title}
+                  onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
             </div>
-            <div className="mt-5 grid w-full grid-cols-3 gap-3 text-center">
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="text-lg font-semibold text-slate-900">{initialData?.savedCount ?? 0}</div>
-                <div className="text-xs text-slate-500">Saved</div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={initialData?.email || ""}
+                  readOnly
+                  className="w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500"
+                />
+                <p className="mt-1 text-xs text-emerald-600">Primary login email — verified</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="text-lg font-semibold text-slate-900">{initialData?.campaignsCount ?? 0}</div>
-                <div className="text-xs text-slate-500">Campaigns</div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="text-lg font-semibold text-slate-900">{initialData?.rfpsCount ?? 0}</div>
-                <div className="text-xs text-slate-500">RFPs</div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  Phone
+                </label>
+                <input
+                  type="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
               </div>
             </div>
-            <div className="mt-4 w-full">
-              <ActionButton
-                type="button"
-                variant="secondary"
-                onClick={() => inputRef.current?.click()}
-                disabled={uploading}
-                className="w-full"
-              >
-                <Upload size={16} />
-                {uploading ? "Uploading..." : "Upload profile image"}
-              </ActionButton>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  Location
+                </label>
+                <input
+                  type="text"
+                  value={form.location}
+                  onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  Timezone
+                </label>
+                <select
+                  value={form.timezone}
+                  onChange={(e) => setForm((p) => ({ ...p, timezone: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="">Select timezone…</option>
+                  {TIMEZONE_OPTIONS.map((tz) => (
+                    <option key={tz.value} value={tz.value}>
+                      {tz.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                Short bio
+              </label>
+              <textarea
+                rows={3}
+                maxLength={BIO_MAX_CHARS}
+                value={form.bio}
+                onChange={(e) => setForm((p) => ({ ...p, bio: e.target.value }))}
+                className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                {BIO_MAX_CHARS} chars max. Shown on your outbound signature and teammate cards.
+              </p>
             </div>
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-5">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Full name">
-              <Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
-            </Field>
-            <Field label="Title">
-              <Input value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} />
-            </Field>
-            <Field label="Phone">
-              <Input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
-            </Field>
-            <Field label="Location">
-              <Input value={form.location} onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))} />
-            </Field>
-            <div className="md:col-span-2">
-              <Field label="Bio">
-                <Textarea
-                  rows={5}
-                  value={form.bio}
-                  onChange={(e) => setForm((p) => ({ ...p, bio: e.target.value }))}
-                />
-              </Field>
-            </div>
-          </div>
-
-          <div className="mt-5 flex justify-end">
-            <ActionButton onClick={handleSave} disabled={saving}>
-              {saving ? "Saving..." : "Save profile"}
-            </ActionButton>
-          </div>
+        <div className="mt-6 flex items-center justify-end gap-2 border-t border-slate-100 pt-5">
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={saving || !dirty}
+            className="rounded-full border border-slate-200 px-5 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !dirty}
+            className="rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? "Saving…" : "Save changes"}
+          </button>
         </div>
       </div>
-    </SectionShell>
+
+      {/* Messaging preferences */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-black/[0.02]">
+        <div className="mb-5">
+          <h3 className="text-base font-semibold text-slate-900">Messaging preferences</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            How teammates and automated systems contact you inside the app.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {MESSAGING_ROWS.map((row) => (
+            <MessagingTile
+              key={row.key}
+              label={row.label}
+              description={row.description}
+              on={msg[row.key]}
+              onToggle={() => toggleMessaging(row.key)}
+              disabled={msgSaving !== null && msgSaving !== row.key}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Account handoff */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-black/[0.02]">
+        <h3 className="text-base font-semibold text-slate-900">Account</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Session, password reset, and two-factor security are managed
+          through your account email — sign-in flow handles all of those
+          today.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -1656,6 +1898,627 @@ export function AffiliateProgramSection() {
           <ExternalLink className="h-3 w-3" />
         </a>
       </div>
+    </SectionShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Email Accounts — user-facing inbox connection surface. Narrowed
+// version of IntegrationsSection: only Gmail + Outlook tiles. The rest
+// of the integrations catalog (PhantomBuster / Apollo / ImportYeti /
+// logo.dev) is admin-only and stays in IntegrationsSection for the
+// admin route. No fake connect flow — the OAuth handshake ships in a
+// future phase, so unconnected tiles say so honestly.
+// ─────────────────────────────────────────────────────────────────────────────
+const EMAIL_ACCOUNT_CATALOG = [
+  {
+    id: "gmail",
+    name: "Gmail",
+    description: "Send outbound directly from your Gmail account.",
+  },
+  {
+    id: "outlook",
+    name: "Outlook",
+    description: "Send outbound directly from Microsoft 365 / Outlook.",
+  },
+] as const;
+
+export function EmailAccountsSection({
+  integrations,
+  onDisconnect,
+}: {
+  integrations?: Array<{
+    id?: string;
+    integration_type?: string;
+    type?: string;
+    status?: string;
+    external_id?: string;
+  }>;
+  onDisconnect?: (id: string) => Promise<void> | void;
+}) {
+  const wired = Array.isArray(integrations) ? integrations : [];
+  const connectedByType = new Map<string, { id?: string; external_id?: string }>();
+  for (const row of wired) {
+    const key = String(row?.integration_type || row?.type || "").toLowerCase();
+    if (!key) continue;
+    connectedByType.set(key, { id: row?.id, external_id: row?.external_id });
+  }
+
+  return (
+    <SectionShell
+      title="Email Accounts"
+      description="Connect Gmail or Outlook so the Outbound Engine can send on your behalf."
+    >
+      <div className="grid gap-4 md:grid-cols-2">
+        {EMAIL_ACCOUNT_CATALOG.map((entry) => {
+          const connection = connectedByType.get(entry.id);
+          const isConnected = Boolean(connection);
+          return (
+            <div
+              key={entry.id}
+              className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200">
+                    <Mail className="h-4 w-4 text-slate-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-900">{entry.name}</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Inbox / Sending
+                    </div>
+                  </div>
+                </div>
+                {isConnected ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    Connected
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+                    Not connected
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500">{entry.description}</p>
+              {isConnected ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="truncate text-xs text-slate-600">
+                    {connection?.external_id || "Active"}
+                  </div>
+                  {onDisconnect && connection?.id ? (
+                    <button
+                      type="button"
+                      onClick={() => onDisconnect(connection.id as string)}
+                      className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-white px-3 py-1 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Disconnect
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-400">
+                  OAuth connect ships with the Outbound Engine launch flow.
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </SectionShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Team — plan-gated wrapper around the existing AccessRolesSection.
+//   - Free Trial / Free / Starter: upgrade-required card. No invite UI
+//     rendered, so a misconfigured org_invites insert can't even reach
+//     the network from this surface.
+//   - Growth / Enterprise: full AccessRolesSection (members list,
+//     invite, revoke, change role) — backed by the real org_invites
+//     table + send-org-invite edge function that already exist.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Single source of truth: planLimits.PLAN_LIMITS[plan].features.seat_management.
+// normalizePlanCode handles aliases (free/standard/pro/unlimited) + the
+// canonical free_trial/starter/growth/enterprise codes the DB seeds use.
+function isInviteAllowedPlan(plan?: string | null): boolean {
+  return PLAN_LIMITS[normalizePlanCode(plan)].features.seat_management === true;
+}
+
+function planLabel(plan?: string | null): string {
+  return PLAN_LIMITS[normalizePlanCode(plan)].label;
+}
+
+function TeamUpgradeCard({
+  plan,
+  onUpgrade,
+}: {
+  plan?: string | null;
+  onUpgrade?: () => void;
+}) {
+  return (
+    <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 ring-1 ring-amber-200">
+          <Lock className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-amber-700">
+            Upgrade required
+          </p>
+          <h3 className="mt-1 text-base font-semibold text-slate-900">
+            Team invites are on Growth and above
+          </h3>
+          <p className="mt-1 text-sm text-slate-600">
+            Your current plan is <span className="font-semibold text-slate-900">{planLabel(plan)}</span>.
+            Upgrade to Growth or Enterprise to invite teammates, manage
+            roles, and share saved companies and campaigns.
+          </p>
+          <button
+            type="button"
+            onClick={onUpgrade}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700"
+          >
+            View plans
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function TeamSection(props: {
+  plan?: string | null;
+  members?: any[];
+  invites?: any[];
+  seatLimit?: number;
+  onInvite?: (email: string, role: string) => Promise<{ error?: string } | void>;
+  onRevoke?: (memberId: string) => Promise<{ error?: string } | void>;
+  onUpdateRole?: (memberId: string, role: string) => Promise<{ error?: string } | void>;
+  onRevokeInvite?: (inviteId: string) => Promise<{ error?: string } | void>;
+  isAdmin?: boolean;
+  onUpgrade?: () => void;
+  inviteBackendAvailable?: boolean;
+}) {
+  const allowed = isInviteAllowedPlan(props.plan);
+
+  if (!allowed) {
+    return (
+      <SectionShell
+        title="Team"
+        description="Invite teammates and assign roles for shared campaigns and saved companies."
+      >
+        <TeamUpgradeCard plan={props.plan} onUpgrade={props.onUpgrade} />
+      </SectionShell>
+    );
+  }
+
+  const backendDown = props.inviteBackendAvailable === false;
+  if (backendDown) {
+    return (
+      <SectionShell
+        title="Team"
+        description="Invite teammates and assign roles for shared campaigns and saved companies."
+      >
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-slate-500 ring-1 ring-slate-200">
+              <Lock className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900">
+                Team invites unavailable
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Team invites require the invite endpoint to be enabled. Contact
+                support if your workspace should have access.
+              </p>
+            </div>
+          </div>
+        </div>
+      </SectionShell>
+    );
+  }
+
+  // Real invite flow — defers to the existing AccessRolesSection wired
+  // to org_invites + send-org-invite. The wrapper just adds a small
+  // header card with current plan + seat capacity context.
+  return (
+    <SectionShell
+      title="Team"
+      description="Invite teammates and assign roles for shared campaigns and saved companies."
+    >
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-indigo-600">
+              Plan · Team
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              <span className="font-semibold text-slate-900">{planLabel(props.plan)}</span>
+              {props.seatLimit ? (
+                <>
+                  <span className="mx-2 text-slate-300">·</span>
+                  Up to {props.seatLimit} seat{props.seatLimit === 1 ? "" : "s"}
+                </>
+              ) : null}
+              <span className="mx-2 text-slate-300">·</span>
+              {(props.members?.length ?? 0)} active
+              {props.invites?.length
+                ? ` · ${props.invites.length} pending`
+                : ""}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <AccessRolesSection
+        members={props.members}
+        invites={props.invites}
+        seatLimit={props.seatLimit}
+        onInvite={props.onInvite}
+        onRevoke={props.onRevoke}
+        onUpdateRole={props.onUpdateRole}
+        onRevokeInvite={props.onRevokeInvite}
+        isAdmin={props.isAdmin}
+      />
+    </SectionShell>
+  );
+}
+
+// ── Workspace ───────────────────────────────────────────────────────────
+// Org info card + the existing real TeamSection (members / invites / roles).
+export function WorkspaceSection(props: {
+  workspaceName?: string;
+  workspaceRole?: string;
+  joinedLabel?: string;
+  plan?: string | null;
+  members?: any[];
+  invites?: any[];
+  seatLimit?: number;
+  onInvite?: (email: string, role: string) => Promise<{ error?: string } | void>;
+  onRevoke?: (memberId: string) => Promise<{ error?: string } | void>;
+  onUpdateRole?: (memberId: string, role: string) => Promise<{ error?: string } | void>;
+  onRevokeInvite?: (inviteId: string) => Promise<{ error?: string } | void>;
+  isAdmin?: boolean;
+  onUpgrade?: () => void;
+}) {
+  const seatLine = props.seatLimit
+    ? `${props.members?.length ?? 0} of ${props.seatLimit} seats used`
+    : `${props.members?.length ?? 0} active members`;
+
+  return (
+    <SectionShell
+      title="Workspace"
+      description="Your shared organization, role, and team membership."
+    >
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 text-base font-bold text-white shadow-sm">
+            {(props.workspaceName?.[0] || "L").toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-base font-semibold text-slate-900">
+              {props.workspaceName || "Logistic Intel workspace"}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {props.workspaceRole ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                  {props.workspaceRole}
+                </span>
+              ) : null}
+              {props.joinedLabel ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                  Joined {props.joinedLabel}
+                </span>
+              ) : null}
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                {seatLine}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <TeamSection
+        plan={props.plan}
+        members={props.members}
+        invites={props.invites}
+        seatLimit={props.seatLimit}
+        onInvite={props.onInvite}
+        onRevoke={props.onRevoke}
+        onUpdateRole={props.onUpdateRole}
+        onRevokeInvite={props.onRevokeInvite}
+        isAdmin={props.isAdmin}
+        onUpgrade={props.onUpgrade}
+      />
+    </SectionShell>
+  );
+}
+
+// ── Security ────────────────────────────────────────────────────────────
+// Slim, user-facing version: password reset CTA, sign-in method indicator,
+// recent audit events. API-key management stays on the admin route.
+export function SecuritySection(props: {
+  email?: string | null;
+  authProvider?: string | null;
+  auditLog?: Array<{ id: string; action: string; ip_address?: string; created_at: string }>;
+}) {
+  const provider = (props.authProvider || "email").toLowerCase();
+  const providerLabel =
+    provider === "google" ? "Google" :
+    provider === "azure" || provider === "microsoft" ? "Microsoft" :
+    "Email + password";
+
+  return (
+    <SectionShell
+      title="Security"
+      description="Password and recent activity on your Logistic Intel account."
+    >
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Sign-in method
+            </div>
+            <div className="mt-1 text-sm font-medium text-slate-900">
+              {providerLabel}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Email
+            </div>
+            <div className="mt-1 break-all text-sm font-medium text-slate-900">
+              {props.email || "—"}
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <a
+            href="/reset-password"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            <KeyRound size={14} />
+            Change password
+          </a>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-sm font-semibold text-slate-900">
+            Recent activity
+          </div>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Last {Math.min(20, props.auditLog?.length ?? 0)} events
+          </span>
+        </div>
+        {(!props.auditLog || props.auditLog.length === 0) ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+            No recent activity yet. Sign-ins and security events will appear here.
+          </div>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {props.auditLog.map((event) => (
+              <li key={event.id} className="flex items-start justify-between gap-4 py-3 text-sm">
+                <div className="min-w-0">
+                  <div className="font-medium text-slate-900">{event.action}</div>
+                  <div className="font-mono text-[11px] text-slate-400">
+                    {event.ip_address ? `${event.ip_address} · ` : ""}
+                    {new Date(event.created_at).toLocaleString()}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </SectionShell>
+  );
+}
+
+// ── Preferences (timezone + signature; explicit "coming soon" for future) ──
+export function PreferencesSection(props: {
+  timezone?: string;
+  emailSignature?: string;
+  onSaveTimezone?: (tz: string) => Promise<{ error?: string } | void>;
+  onSaveEmailSignature?: (sig: string) => Promise<{ error?: string } | void>;
+}) {
+  const [tz, setTz] = useState(props.timezone || "");
+  const [sig, setSig] = useState(props.emailSignature || "");
+  const [savingTz, setSavingTz] = useState(false);
+  const [savingSig, setSavingSig] = useState(false);
+  const [tzMsg, setTzMsg] = useState<string | null>(null);
+  const [sigMsg, setSigMsg] = useState<string | null>(null);
+
+  useEffect(() => { setTz(props.timezone || ""); }, [props.timezone]);
+  useEffect(() => { setSig(props.emailSignature || ""); }, [props.emailSignature]);
+
+  async function saveTz() {
+    if (!props.onSaveTimezone) return;
+    setSavingTz(true);
+    setTzMsg(null);
+    const r = await props.onSaveTimezone(tz.trim());
+    setSavingTz(false);
+    setTzMsg(r && (r as any).error ? `Could not save: ${(r as any).error}` : "Saved.");
+    setTimeout(() => setTzMsg(null), 2500);
+  }
+
+  async function saveSig() {
+    if (!props.onSaveEmailSignature) return;
+    setSavingSig(true);
+    setSigMsg(null);
+    const r = await props.onSaveEmailSignature(sig);
+    setSavingSig(false);
+    setSigMsg(r && (r as any).error ? `Could not save: ${(r as any).error}` : "Saved.");
+    setTimeout(() => setSigMsg(null), 2500);
+  }
+
+  return (
+    <SectionShell
+      title="Preferences"
+      description="Personal defaults for time, email signature, and search."
+    >
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 text-sm font-semibold text-slate-900">Timezone</div>
+        <Field label="Display dates and reset times in this timezone">
+          <Input
+            type="text"
+            value={tz}
+            onChange={(e) => setTz(e.target.value)}
+            placeholder="America/New_York"
+          />
+        </Field>
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={saveTz}
+            disabled={savingTz}
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
+          >
+            {savingTz ? "Saving…" : "Save timezone"}
+          </button>
+          {tzMsg ? <span className="text-xs text-slate-500">{tzMsg}</span> : null}
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 text-sm font-semibold text-slate-900">Email signature</div>
+        <Field label="Appended to outbound campaign emails">
+          <Textarea
+            rows={4}
+            value={sig}
+            onChange={(e) => setSig(e.target.value)}
+            placeholder={"— Jane Smith\nLogistic Intel\nyour-email@company.com"}
+          />
+        </Field>
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={saveSig}
+            disabled={savingSig}
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
+          >
+            {savingSig ? "Saving…" : "Save signature"}
+          </button>
+          {sigMsg ? <span className="text-xs text-slate-500">{sigMsg}</span> : null}
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500">
+        <div className="mb-1 font-semibold text-slate-900">Default search filters</div>
+        Coming soon — pin lane, mode, or country filters so they apply by default whenever you open Search.
+      </div>
+    </SectionShell>
+  );
+}
+
+// ── Integrations (email + enrichment + affiliate payouts) ─────────────
+// Wraps the existing EmailAccountsSection and surfaces other connected
+// integrations + a partner-aware Stripe Connect link if applicable.
+export function IntegrationsHubSection(props: {
+  integrations?: Array<{
+    id?: string;
+    integration_type?: string;
+    type?: string;
+    status?: string;
+    external_id?: string;
+  }>;
+  onDisconnect?: (id: string) => Promise<void> | void;
+  isPartner?: boolean;
+}) {
+  const wired = Array.isArray(props.integrations) ? props.integrations : [];
+  const enrichmentTypes = new Set(["apollo", "lusha", "hunter"]);
+  const enrichmentRows = wired.filter((r) => {
+    const k = String(r?.integration_type || r?.type || "").toLowerCase();
+    return enrichmentTypes.has(k);
+  });
+
+  return (
+    <SectionShell
+      title="Integrations"
+      description="Outbound mailboxes, enrichment providers, and partner payouts."
+    >
+      <EmailAccountsSection
+        integrations={props.integrations}
+        onDisconnect={props.onDisconnect}
+      />
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-sm font-semibold text-slate-900">Enrichment</div>
+          {enrichmentRows.length === 0 ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+              Not connected
+            </span>
+          ) : null}
+        </div>
+        {enrichmentRows.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Apollo, Lusha, or Hunter aren't connected. Enrichment runs through
+            your workspace admin's API keys today.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {enrichmentRows.map((row) => {
+              const k = String(row?.integration_type || row?.type || "").toLowerCase();
+              const label = k.charAt(0).toUpperCase() + k.slice(1);
+              return (
+                <li key={row.id || k} className="flex items-center justify-between gap-3 py-3 text-sm">
+                  <div>
+                    <div className="font-medium text-slate-900">{label}</div>
+                    <div className="font-mono text-[11px] text-slate-400">
+                      {row.external_id || "Connected"}
+                    </div>
+                  </div>
+                  {row.id ? (
+                    <button
+                      type="button"
+                      onClick={() => props.onDisconnect?.(row.id as string)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                    >
+                      <Trash2 size={12} />
+                      Disconnect
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {props.isPartner ? (
+        <div className="rounded-3xl border border-blue-200 bg-blue-50/40 p-6 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-blue-600 ring-1 ring-blue-200">
+              <Coins size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-slate-900">
+                Stripe Connect — partner payouts
+              </div>
+              <p className="mt-1 text-xs text-slate-600">
+                Manage your partner payout account and view connection status
+                from the Affiliate dashboard.
+              </p>
+            </div>
+            <a
+              href="/app/affiliate"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
+            >
+              Manage payouts
+              <ExternalLink size={12} />
+            </a>
+          </div>
+        </div>
+      ) : null}
     </SectionShell>
   );
 }

@@ -14,6 +14,17 @@
     @apply bg-background text-foreground;
     font-family: "Outfit", sans-serif;
   }
+
+  /* iOS auto-zooms focused inputs whose computed font-size is < 16px.
+     Clamp form fields to 16px on mobile viewports so focus doesn't
+     jank the layout. Desktop keeps its designed 14px via text-sm. */
+  @media (max-width: 767.98px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
 }
 
 /* TailAdmin-inspired dashboard theme additions for LIT */

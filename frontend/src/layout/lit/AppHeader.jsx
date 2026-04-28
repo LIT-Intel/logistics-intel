@@ -16,9 +16,12 @@ import {
   Shield,
   Database,
   Bug,
+  Award,
+  ExternalLink,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
+import { usePartnerStatus } from "@/lib/affiliate";
 
 const BASE_MOBILE_SECTIONS = [
   {
@@ -58,6 +61,13 @@ const ADMIN_MOBILE_SECTION = {
 };
 
 const PAGE_META = [
+  // Company profile routes — Company.jsx renders into AppLayout via the
+  // `/company/:id` and `/app/companies/:id` routes. Keep these checks above
+  // the broader `/app/companies` index match so the detail-page header text
+  // wins over the listing-page text.
+  { match: /^\/company\/[^/]+/, title: "Company Intelligence", subtitle: "Shipment profile and trade activity" },
+  { match: /^\/app\/companies\/[^/]+/, title: "Company Intelligence", subtitle: "Shipment profile and trade activity" },
+  { match: /^\/app\/companies\/?$/, title: "Companies", subtitle: "Saved accounts and trade intelligence" },
   { match: /^\/app\/dashboard/, title: "Dashboard", subtitle: "Trade Intelligence overview" },
   { match: /^\/app\/search/, title: "Search", subtitle: "Find companies and shipment intelligence" },
   { match: /^\/app\/command-center/, title: "Command Center", subtitle: "Your saved accounts and CRM workspace" },
@@ -89,14 +99,27 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, fullName, role, isSuperAdmin, logout } = useAuth();
+  const partner = usePartnerStatus(user?.id);
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const profileRef = useRef(null);
 
-  const mobileSections = isSuperAdmin
-    ? [...BASE_MOBILE_SECTIONS, ADMIN_MOBILE_SECTION]
-    : BASE_MOBILE_SECTIONS;
+  // Mobile nav adapts the Account section to the partner state so an
+  // affiliate sees their dashboard while a non-partner sees the apply CTA.
+  const mobileSections = useMemo(() => {
+    const sections = BASE_MOBILE_SECTIONS.map((section) => {
+      if (section.title !== "Account") return section;
+      const items = section.items.map((item) => {
+        if (item.label !== "Affiliate") return item;
+        return partner.isPartner
+          ? { label: "Affiliate dashboard", href: "/app/affiliate", icon: Award }
+          : { label: "Become a partner", href: "/partners/apply", icon: Award };
+      });
+      return { ...section, items };
+    });
+    return isSuperAdmin ? [...sections, ADMIN_MOBILE_SECTION] : sections;
+  }, [isSuperAdmin, partner.isPartner]);
 
   const currentMeta = useMemo(
     () => PAGE_META.find((item) => item.match.test(location.pathname)) || PAGE_META[0],
@@ -158,13 +181,28 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
     }
   };
 
-  const profileMenuItems = useMemo(
-    () => [
-      { label: "Settings", href: "/app/settings", icon: Settings },
-      { label: "Billing", href: "/app/billing", icon: CreditCard },
-    ],
-    [],
-  );
+  const profileMenuItems = useMemo(() => {
+    const items = [{ label: "Settings", href: "/app/settings", icon: Settings }];
+    // Active partners see Affiliate ahead of Billing. Non-partners and
+    // 'invited'-state users still see Billing for their subscriber plan.
+    if (partner.isPartner) {
+      items.push({ label: "Affiliate dashboard", href: "/app/affiliate", icon: Award });
+    }
+    items.push({ label: "Billing", href: "/app/billing", icon: CreditCard });
+    return items;
+  }, [partner.isPartner]);
+
+  // Partner pill that replaces the noisy plan label in the dropdown header
+  // when the user has an active partner record. Non-partners keep their
+  // subscriber role label intact.
+  const partnerBadge =
+    partner.isPartner && partner.status === "active"
+      ? { tone: "success", label: "Partner · active" }
+      : partner.isPartner && partner.status === "invited"
+        ? { tone: "warn", label: "Partner · finish onboarding" }
+        : partner.isPartner && (partner.status === "suspended" || partner.status === "deactivated")
+          ? { tone: "danger", label: `Partner · ${partner.status}` }
+          : null;
 
   return (
     <>
@@ -237,10 +275,27 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
               </button>
 
               {profileOpen && (
-                <div className="absolute right-0 top-[calc(100%+12px)] z-50 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                <div className="absolute right-0 top-[calc(100%+12px)] z-50 w-64 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
                   <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
                     <div className="text-sm font-semibold text-slate-900">{displayName}</div>
-                    <div className="text-xs text-slate-500">{displayRole}</div>
+                    <div className="mt-0.5 truncate text-xs text-slate-500">
+                      {user?.email || displayRole}
+                    </div>
+                    {partnerBadge ? (
+                      <span
+                        className={[
+                          "mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                          partnerBadge.tone === "success"
+                            ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : partnerBadge.tone === "warn"
+                              ? "border border-amber-200 bg-amber-50 text-amber-700"
+                              : "border border-rose-200 bg-rose-50 text-rose-700",
+                        ].join(" ")}
+                      >
+                        <Award size={11} />
+                        {partnerBadge.label}
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="p-2">
@@ -258,10 +313,21 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
                         </Link>
                       );
                     })}
+                    {!partner.loading && !partner.isPartner ? (
+                      <Link
+                        to="/partners/apply"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-500 hover:bg-slate-50"
+                      >
+                        <Award size={16} />
+                        Become a partner
+                        <ExternalLink size={11} className="ml-auto opacity-60" />
+                      </Link>
+                    ) : null}
                     <button
                       type="button"
                       onClick={handleSignOut}
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-rose-600 hover:bg-rose-50"
+                      className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-slate-100 px-3 py-2 pt-3 text-sm text-rose-600 hover:bg-rose-50"
                     >
                       <LogOut size={16} />
                       Sign out
@@ -311,7 +377,22 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
                 </div>
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-white">{displayName}</div>
-                  <div className="text-xs text-slate-300">{displayRole}</div>
+                  <div className="truncate text-xs text-slate-300">{user?.email || displayRole}</div>
+                  {partnerBadge ? (
+                    <span
+                      className={[
+                        "mt-1.5 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                        partnerBadge.tone === "success"
+                          ? "bg-emerald-500/15 text-emerald-300"
+                          : partnerBadge.tone === "warn"
+                            ? "bg-amber-500/15 text-amber-300"
+                            : "bg-rose-500/15 text-rose-300",
+                      ].join(" ")}
+                    >
+                      <Award size={10} />
+                      {partnerBadge.label}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             </div>

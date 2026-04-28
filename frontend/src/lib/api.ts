@@ -2936,6 +2936,44 @@ export async function getIyRouteKpisForCompany(
 
 export const getIyRouteKpis = getIyRouteKpisForCompany;
 
+const LIT_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+
+/**
+ * Resolves the canonical `lit_companies.id` UUID for a saved company.
+ *
+ * Phase B.7: contact save broke when the page was reached via deep link
+ * (`/company/:slug`) because `record.company.id` was never hydrated.
+ * Returns null when nothing resolves to a UUID.
+ */
+export async function resolveLitCompanyUuid(input: {
+  record?: any;
+  rawProfile?: any;
+  sourceCompanyKey?: string | null;
+}): Promise<string | null> {
+  const direct =
+    input?.record?.company?.id ||
+    input?.rawProfile?.id ||
+    null;
+  if (direct && LIT_UUID_RE.test(String(direct))) return String(direct);
+
+  const slug =
+    input?.sourceCompanyKey ||
+    input?.record?.company?.company_id ||
+    input?.record?.company?.source_company_key ||
+    input?.rawProfile?.company_id ||
+    input?.rawProfile?.source_company_key ||
+    null;
+  if (!slug) return null;
+
+  const { data, error } = await supabase
+    .from("lit_companies")
+    .select("id")
+    .eq("source_company_key", String(slug))
+    .maybeSingle();
+  if (error || !data?.id) return null;
+  return String(data.id);
+}
+
 export async function getSavedCompanyDetail(
   companyKey: string,
   signal?: AbortSignal,
@@ -2953,6 +2991,100 @@ export async function getSavedCompanyDetail(
   return {
     profile: profileResult.companyProfile,
     routeKpis,
+  };
+}
+
+/**
+ * Phase B.15 — cached-first company profile read.
+ *
+ * Reads ONLY the cached snapshot stored in `lit_importyeti_company_snapshot`
+ * (system of record, populated by the importyeti-proxy Edge Function). Never
+ * triggers a fresh ImportYeti fetch — the caller is responsible for deciding
+ * whether to follow up with `getSavedCompanyDetail` based on `isStale`.
+ *
+ * Schema source: supabase/migrations/20260119195457_create_importyeti_snapshot_tables.sql
+ *   - lit_importyeti_company_snapshot (company_id, raw_payload jsonb,
+ *     parsed_summary jsonb, updated_at)
+ *
+ * The snapshot's `parsed_summary` jsonb is reshaped through
+ * `normalizeIyCompanyProfile`, which already handles every flavour of cached
+ * snapshot the proxy has emitted across phases.
+ *
+ * Returns null fields when no cache row exists — callers must treat that as
+ * "no data yet" and decide whether to surface an error or fall back to a
+ * shell render from localStorage.
+ */
+export async function getSavedCompanyShellOnly(
+  companyKey: string,
+): Promise<{
+  profile: IyCompanyProfile | null;
+  routeKpis: IyRouteKpis | null;
+  snapshotUpdatedAt: string | null;
+  isStale: boolean;
+}> {
+  const STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+  const normalizedSlug = normalizeCompanyIdToSlug(companyKey);
+  if (!normalizedSlug) {
+    return {
+      profile: null,
+      routeKpis: null,
+      snapshotUpdatedAt: null,
+      isStale: true,
+    };
+  }
+
+  // System of record — `lit_importyeti_company_snapshot` keys on the slug
+  // form (e.g. "samsung-electronics"), not the prefixed key form. The
+  // importyeti-proxy writes the same slug shape on each refresh.
+  let snapshotUpdatedAt: string | null = null;
+  let parsedProfile: IyCompanyProfile | null = null;
+  let parsedRouteKpis: IyRouteKpis | null = null;
+
+  try {
+    const { data: snapshotRow, error: snapshotErr } = await supabase
+      .from("lit_importyeti_company_snapshot")
+      .select("company_id, parsed_summary, raw_payload, updated_at")
+      .eq("company_id", normalizedSlug)
+      .maybeSingle();
+
+    if (snapshotErr) {
+      console.warn("getSavedCompanyShellOnly snapshot lookup failed:", snapshotErr);
+    } else if (snapshotRow) {
+      snapshotUpdatedAt =
+        typeof snapshotRow.updated_at === "string"
+          ? snapshotRow.updated_at
+          : null;
+
+      const cachedSnapshot =
+        snapshotRow.parsed_summary ?? snapshotRow.raw_payload ?? null;
+      if (cachedSnapshot && typeof cachedSnapshot === "object") {
+        try {
+          parsedProfile = normalizeIyCompanyProfile(
+            cachedSnapshot,
+            normalizedSlug,
+          );
+          parsedRouteKpis = parsedProfile?.routeKpis ?? null;
+        } catch (normErr) {
+          console.warn(
+            "getSavedCompanyShellOnly: failed to normalize cached snapshot",
+            normErr,
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("getSavedCompanyShellOnly: snapshot table query threw", err);
+  }
+
+  const isStale =
+    !snapshotUpdatedAt ||
+    Date.now() - new Date(snapshotUpdatedAt).getTime() > STALE_AFTER_MS;
+
+  return {
+    profile: parsedProfile,
+    routeKpis: parsedRouteKpis,
+    snapshotUpdatedAt,
+    isStale,
   };
 }
 
@@ -3232,7 +3364,14 @@ export async function getSavedCompanies(signal?: AbortSignal) {
 
 
     const rows = (data || []).map((item: any) => ({
+      // Phase C fix: surface the canonical lit_companies UUID + saved row
+      // id so consumers needing FK writes (e.g. Campaign Builder ->
+      // attachCompaniesToCampaign) can use the real primary key. Existing
+      // callers that read `company_id` (the source_company_key slug) keep
+      // working unchanged.
+      saved_id: item.id,
       company: {
+        id: item.lit_companies?.id ?? null,
         company_id: item.lit_companies?.source_company_key || item.lit_companies?.id,
         name: item.lit_companies?.name || 'Unknown Company',
         domain: item.lit_companies?.domain,
@@ -3386,38 +3525,40 @@ export async function saveCompanyToCrm(
     });
   }
 
-  const res = await fetch(
-    withGatewayKey(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`),
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        company_id: companyId,
-        stage: "prospect",
-        provider: "importyeti",
-        payload: company,
-      }),
-    },
-  );
+  // Phase: legacy `/crm/saveCompany` gateway is not deployed (4xx).
+  // Route through the canonical Supabase-direct path used by Search →
+  // Add to Command Center so saves from the company drawer (Workspace.tsx)
+  // land in the same `lit_companies` + `lit_saved_companies` tables that
+  // Command Center and Campaign Builder read.
+  const synthesizedShipper: IyShipperHit = {
+    key: companyId,
+    companyId,
+    companyKey: companyId,
+    name:
+      (company as any)?.name ||
+      (company as any)?.company_name ||
+      (company as any)?.title ||
+      companyId,
+    title:
+      (company as any)?.title ||
+      (company as any)?.name ||
+      (company as any)?.company_name ||
+      companyId,
+    domain: (company as any)?.domain ?? null,
+    website: (company as any)?.website ?? null,
+    address: (company as any)?.address ?? null,
+    city: (company as any)?.city ?? null,
+    state: (company as any)?.state ?? null,
+    countryCode: (company as any)?.country_code ?? (company as any)?.countryCode ?? null,
+  } as IyShipperHit;
 
-  if (!res.ok) {
-    let errorBody: any = null;
-    try {
-      errorBody = await res.json();
-    } catch {
-      // swallow parse error
-    }
-    if (typeof window !== "undefined") {
-      console.warn("[LIT] saveCompanyToCrm failed", {
-        status: res.status,
-        statusText: res.statusText,
-        errorBody,
-      });
-    }
-    throw new Error(`saveCompanyToCrm failed with status ${res.status}`);
-  }
-
-  return res.json();
+  return saveCompanyDirectToSupabase({
+    shipper: synthesizedShipper,
+    profile: null,
+    stage: "prospect",
+    provider: "importyeti",
+    source: (company as any)?.source || (input as any)?.source,
+  });
 }
 
 
@@ -3785,17 +3926,25 @@ export async function getCrmCompanyDetail(company_id: string, signal?: AbortSign
   return res.json();
 }
 
-export async function getCrmCampaigns(signal?: AbortSignal) {
-  const url = withGatewayKey(`${API_BASE}/crm/campaigns`);
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { accept: "application/json" },
-    signal,
-  });
-  if (!res.ok) {
-    throw new Error(`getCrmCampaigns ${res.status}`);
+export async function getCrmCampaigns(_signal?: AbortSignal) {
+  // The CRM gateway endpoint `/crm/campaigns` is not currently deployed
+  // (returns 404). The canonical campaign source is the `lit_campaigns`
+  // table, which is owner-scoped via RLS (migration
+  // 20260115001224_create_lit_schema_part3.sql). Read directly via
+  // Supabase. Existing callers (`pages/Campaigns.jsx`,
+  // `components/command-center/AddToCampaignModal.tsx`,
+  // `pages/Dashboard.jsx`) already accept both `{rows: []}` and
+  // array-direct shapes, so we keep the `{rows}` envelope to match the
+  // legacy gateway response shape and avoid breaking any consumer.
+  const { data, error } = await supabase
+    .from("lit_campaigns")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (error) {
+    const code = error.code ? ` ${error.code}` : "";
+    throw new Error(`getCrmCampaigns${code}: ${error.message}`);
   }
-  return res.json();
+  return { rows: data ?? [] };
 }
 
 export async function createCrmCampaign(body: {
@@ -4450,4 +4599,501 @@ export function buildCommandCenterDetailModel(
     shipmentLedger,
     monthlyPivot,
   };
+}
+
+// ============================================================================
+// LIT Outbound Engine — Phase A (append-only)
+//
+// Direct-Supabase helpers for the new Outbound tables created in
+// `supabase/migrations/20260424000000_create_lit_outbound_schema.sql`.
+//
+// Rules for this block:
+//   - Append-only. Do not modify existing helpers above.
+//   - No helper selects raw OAuth tokens from `lit_oauth_tokens`
+//     (RLS blocks it anyway — tokens are service-role only).
+//   - RLS does the user scoping; client-side `.eq('user_id', ...)` is
+//     omitted unless needed for a secondary filter (e.g. is_primary).
+// ============================================================================
+
+import type {
+  LitSequenceRow,
+  LitSequenceInput,
+  LitCampaignStepRow,
+  LitCampaignStepInput,
+  LitOutreachHistoryRow,
+  LitEmailAccountRow,
+  LitCampaignReadiness,
+} from "@/types/lit-outbound";
+
+async function getCurrentUserIdOrThrow(): Promise<string> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  const userId = data.session?.user?.id;
+  if (!userId) throw new Error("No active Supabase session");
+  return userId;
+}
+
+// ---------------- Sequences ----------------
+
+export async function listSequences(
+  opts: { status?: string; limit?: number } = {},
+): Promise<LitSequenceRow[]> {
+  let query = supabase
+    .from("lit_sequences")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (opts.status) query = query.eq("status", opts.status);
+  if (opts.limit) query = query.limit(opts.limit);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as LitSequenceRow[];
+}
+
+export async function getSequence(
+  sequenceId: string,
+): Promise<LitSequenceRow | null> {
+  const { data, error } = await supabase
+    .from("lit_sequences")
+    .select("*")
+    .eq("id", sequenceId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as LitSequenceRow) ?? null;
+}
+
+export async function createSequence(
+  input: LitSequenceInput,
+): Promise<LitSequenceRow> {
+  const userId = await getCurrentUserIdOrThrow();
+  const payload = {
+    user_id: userId,
+    name: input.name,
+    description: input.description ?? null,
+    channel: input.channel ?? "email",
+    status: input.status ?? "draft",
+    metadata: input.metadata ?? {},
+  };
+  const { data, error } = await supabase
+    .from("lit_sequences")
+    .insert(payload)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as LitSequenceRow;
+}
+
+export async function updateSequence(
+  sequenceId: string,
+  patch: Partial<LitSequenceInput>,
+): Promise<LitSequenceRow> {
+  const updates: Record<string, unknown> = {};
+  if (patch.name !== undefined) updates.name = patch.name;
+  if (patch.description !== undefined) updates.description = patch.description;
+  if (patch.channel !== undefined) updates.channel = patch.channel;
+  if (patch.status !== undefined) updates.status = patch.status;
+  if (patch.metadata !== undefined) updates.metadata = patch.metadata;
+  const { data, error } = await supabase
+    .from("lit_sequences")
+    .update(updates)
+    .eq("id", sequenceId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as LitSequenceRow;
+}
+
+/**
+ * Upsert helper for the builder: if `id` is provided, update in place;
+ * otherwise insert. Returns the resulting row.
+ */
+export async function upsertSequence(
+  input: LitSequenceInput & { id?: string },
+): Promise<LitSequenceRow> {
+  if (input.id) {
+    return updateSequence(input.id, input);
+  }
+  return createSequence(input);
+}
+
+// ---------------- Campaign steps ----------------
+
+export async function listCampaignSteps(
+  campaignId: string,
+): Promise<LitCampaignStepRow[]> {
+  const { data, error } = await supabase
+    .from("lit_campaign_steps")
+    .select("*")
+    .eq("campaign_id", campaignId)
+    .order("step_order", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as LitCampaignStepRow[];
+}
+
+export async function upsertCampaignStep(
+  input: LitCampaignStepInput,
+): Promise<LitCampaignStepRow> {
+  const userId = await getCurrentUserIdOrThrow();
+  const payload: Record<string, unknown> = {
+    campaign_id: input.campaign_id,
+    sequence_id: input.sequence_id ?? null,
+    user_id: userId,
+    step_order: input.step_order,
+    channel: input.channel ?? "email",
+    step_type: input.step_type ?? "email",
+    subject: input.subject ?? null,
+    body: input.body ?? null,
+    delay_days: input.delay_days ?? 0,
+    delay_hours: input.delay_hours ?? 0,
+    metadata: input.metadata ?? {},
+  };
+  if (input.id) payload.id = input.id;
+
+  const { data, error } = await supabase
+    .from("lit_campaign_steps")
+    .upsert(payload, { onConflict: "campaign_id,step_order" })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as LitCampaignStepRow;
+}
+
+export async function deleteCampaignStep(stepId: string): Promise<void> {
+  const { error } = await supabase
+    .from("lit_campaign_steps")
+    .delete()
+    .eq("id", stepId);
+  if (error) throw error;
+}
+
+// ---------------- Outreach history ----------------
+
+export async function listOutreachHistory(
+  opts: {
+    campaignId?: string;
+    campaignStepId?: string;
+    contactId?: string;
+    eventType?: string;
+    limit?: number;
+  } = {},
+): Promise<LitOutreachHistoryRow[]> {
+  let query = supabase
+    .from("lit_outreach_history")
+    .select("*")
+    .order("occurred_at", { ascending: false });
+  if (opts.campaignId) query = query.eq("campaign_id", opts.campaignId);
+  if (opts.campaignStepId) query = query.eq("campaign_step_id", opts.campaignStepId);
+  if (opts.contactId) query = query.eq("contact_id", opts.contactId);
+  if (opts.eventType) query = query.eq("event_type", opts.eventType);
+  if (opts.limit) query = query.limit(opts.limit);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as LitOutreachHistoryRow[];
+}
+
+// ---------------- Email accounts (metadata only; tokens are service-role) ----------------
+
+export async function listEmailAccounts(): Promise<LitEmailAccountRow[]> {
+  const { data, error } = await supabase
+    .from("lit_email_accounts")
+    .select("*")
+    .order("is_primary", { ascending: false })
+    .order("updated_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as LitEmailAccountRow[];
+}
+
+export async function getPrimaryEmailAccount(): Promise<LitEmailAccountRow | null> {
+  const { data, error } = await supabase
+    .from("lit_email_accounts")
+    .select("*")
+    .eq("is_primary", true)
+    .eq("status", "connected")
+    .maybeSingle();
+  if (error) throw error;
+  return (data as LitEmailAccountRow) ?? null;
+}
+
+// ---------------- Campaign readiness (computed) ----------------
+
+/**
+ * Readiness snapshot for the Outbound UI. Composed from three safe
+ * reads (campaign_companies count, campaign_steps count, primary email
+ * account). Does not launch, dispatch, or send anything — purely a
+ * read-only health-check the UI surfaces as a checklist.
+ */
+export async function getCampaignReadiness(
+  campaignId: string,
+): Promise<LitCampaignReadiness> {
+  const [recipientsRes, stepsRes, inboxRes] = await Promise.all([
+    supabase
+      .from("lit_campaign_companies")
+      .select("id", { count: "exact", head: true })
+      .eq("campaign_id", campaignId),
+    supabase
+      .from("lit_campaign_steps")
+      .select("id", { count: "exact", head: true })
+      .eq("campaign_id", campaignId),
+    supabase
+      .from("lit_email_accounts")
+      .select("email")
+      .eq("is_primary", true)
+      .eq("status", "connected")
+      .maybeSingle(),
+  ]);
+
+  if (recipientsRes.error) throw recipientsRes.error;
+  if (stepsRes.error) throw stepsRes.error;
+  // inboxRes.error is tolerated — RLS misconfig or missing table would
+  // still let readiness surface "no inbox" honestly.
+
+  const recipientCount = recipientsRes.count ?? 0;
+  const stepCount = stepsRes.count ?? 0;
+  const primaryEmail = (inboxRes.data as { email?: string } | null)?.email ?? null;
+
+  const blockers: string[] = [];
+  if (!recipientCount) blockers.push("Add at least one recipient company");
+  if (!stepCount) blockers.push("Add at least one sequence step");
+  if (!primaryEmail) blockers.push("Connect a primary email inbox");
+
+  return {
+    campaign_id: campaignId,
+    has_recipients: recipientCount > 0,
+    recipient_count: recipientCount,
+    has_steps: stepCount > 0,
+    step_count: stepCount,
+    has_connected_inbox: Boolean(primaryEmail),
+    primary_inbox_email: primaryEmail,
+    blockers,
+  };
+}
+
+// ---------------- Campaign drafts (Phase C, append-only) ----------------
+
+/**
+ * Create a draft campaign in `lit_campaigns`. The base table has no
+ * `description` column, so the description (when provided) lands in
+ * the `metrics` JSONB under the `description` key. RLS already
+ * scopes inserts to the authenticated user.
+ */
+export async function createCampaignDraft(input: {
+  name: string;
+  channel?: string;
+  description?: string | null;
+  metrics?: Record<string, unknown>;
+}): Promise<{
+  id: string;
+  name: string;
+  status: string;
+  channel: string | null;
+  metrics: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}> {
+  const userId = await getCurrentUserIdOrThrow();
+  const metrics: Record<string, unknown> = { ...(input.metrics ?? {}) };
+  if (input.description && input.description.trim()) {
+    metrics.description = input.description.trim();
+  }
+  const { data, error } = await supabase
+    .from("lit_campaigns")
+    .insert({
+      user_id: userId,
+      name: input.name,
+      channel: input.channel ?? "email",
+      status: "draft",
+      metrics,
+    })
+    .select("id, name, status, channel, metrics, created_at, updated_at")
+    .single();
+  if (error) {
+    const code = error.code ? ` ${error.code}` : "";
+    throw new Error(`createCampaignDraft${code}: ${error.message}`);
+  }
+  return data as any;
+}
+
+/**
+ * Bulk-attach saved companies to a campaign. Writes to
+ * `lit_campaign_companies` keyed on UNIQUE(campaign_id, company_id).
+ *
+ * RLS on this table only registers SELECT / INSERT / DELETE policies —
+ * there is no UPDATE policy. Even when called with ignoreDuplicates,
+ * supabase-js / PostgREST has been observed to require the UPDATE
+ * policy because of how `INSERT ... ON CONFLICT (cols) DO NOTHING`
+ * can still trip planner-level UPDATE evaluation, returning 42501
+ * "new row violates row-level security policy".
+ *
+ * To dodge the conflict path entirely we run two simple, RLS-safe
+ * queries:
+ *   1. SELECT existing (campaign_id, company_id) rows for the inputs.
+ *   2. Plain INSERT only the missing pairs — no upsert, no ON CONFLICT.
+ *
+ * The INSERT therefore never touches the UPDATE policy. If the input
+ * is fully redundant we return 0 without issuing any write at all.
+ * A 23505 unique-violation from a concurrent writer (rare for this
+ * UI) is swallowed because the desired end state is already achieved.
+ *
+ * Returns the count of rows newly inserted. Re-runs with the same
+ * input return 0 — the correct, idempotent answer.
+ */
+export async function attachCompaniesToCampaign(
+  campaignId: string,
+  companyIds: string[],
+): Promise<number> {
+  if (!campaignId || !Array.isArray(companyIds) || companyIds.length === 0) {
+    return 0;
+  }
+  const cleanIds = Array.from(
+    new Set(
+      companyIds.filter(
+        (id): id is string => typeof id === "string" && id.length > 0,
+      ),
+    ),
+  );
+  if (cleanIds.length === 0) return 0;
+
+  // Step 1: SELECT existing pairs. RLS allows SELECT for the parent
+  // campaign owner.
+  const { data: existingRows, error: selectError } = await supabase
+    .from("lit_campaign_companies")
+    .select("company_id")
+    .eq("campaign_id", campaignId)
+    .in("company_id", cleanIds);
+  if (selectError) {
+    const code = selectError.code ? ` ${selectError.code}` : "";
+    throw new Error(
+      `attachCompaniesToCampaign select${code}: ${selectError.message}`,
+    );
+  }
+
+  const existing = new Set(
+    ((existingRows ?? []) as Array<{ company_id: string }>).map(
+      (r) => r.company_id,
+    ),
+  );
+  const toInsert = cleanIds.filter((id) => !existing.has(id));
+  if (toInsert.length === 0) {
+    return 0;
+  }
+
+  // Step 2: plain INSERT — no upsert, no ON CONFLICT. Only the INSERT
+  // policy is evaluated.
+  const rows = toInsert.map((company_id) => ({
+    campaign_id: campaignId,
+    company_id,
+  }));
+  const { error: insertError, count } = await supabase
+    .from("lit_campaign_companies")
+    .insert(rows, { count: "exact" });
+
+  if (insertError) {
+    // Race window between SELECT and INSERT: another writer just
+    // inserted the same pair. Desired state already achieved; no-op.
+    if (insertError.code === "23505") {
+      return 0;
+    }
+    const code = insertError.code ? ` ${insertError.code}` : "";
+    throw new Error(
+      `attachCompaniesToCampaign insert${code}: ${insertError.message}`,
+    );
+  }
+  return count ?? rows.length;
+}
+
+// ---------------- Campaign contact enrichment (Phase D-0b) ----------------
+
+/**
+ * Persona filter passed to the `enrich-campaign-contacts` Edge
+ * Function. All fields are optional — Apollo's people search accepts
+ * any subset.
+ */
+export interface EnrichCampaignContactsPersona {
+  departments?: string[];
+  seniorities?: string[];
+  titles?: string[];
+}
+
+export interface EnrichCampaignContactsOptions {
+  companyIds?: string[];
+  limitPerCompany?: number;
+  persona?: EnrichCampaignContactsPersona;
+  force?: boolean;
+}
+
+export interface EnrichCampaignContactsError {
+  company_id?: string;
+  stage: string;
+  message: string;
+}
+
+export interface EnrichCampaignContactsResult {
+  ok: true;
+  campaign_id: string;
+  companies_attempted: number;
+  companies_skipped_no_domain: number;
+  companies_skipped_already_enriched: number;
+  providers_used: { apollo: number; hunter: number; lusha: number };
+  contacts_inserted: number;
+  contacts_existing: number;
+  errors: EnrichCampaignContactsError[];
+  notes?: string[];
+}
+
+/**
+ * Invoke the `enrich-campaign-contacts` Edge Function (D-0a).
+ *
+ * Append-only helper. Not called from anywhere yet — the UI wiring
+ * (D-4) lands behind an explicit user click on the campaign detail
+ * page. Existing api.ts helpers are untouched.
+ *
+ * Throws when the function reports `ok: false` (including the daily
+ * guard `ALREADY_RAN_TODAY`) so the caller can surface a real error.
+ * On `ok: true` returns the typed summary so the caller can render
+ * inserted / existing / skipped counts.
+ */
+export async function enrichCampaignContacts(
+  campaignId: string,
+  opts: EnrichCampaignContactsOptions = {},
+): Promise<EnrichCampaignContactsResult> {
+  if (!campaignId || typeof campaignId !== "string") {
+    throw new Error("enrichCampaignContacts: campaign_id is required");
+  }
+
+  const { data, error } = await supabase.functions.invoke(
+    "enrich-campaign-contacts",
+    {
+      body: {
+        campaign_id: campaignId,
+        company_ids: opts.companyIds,
+        limit_per_company: opts.limitPerCompany,
+        persona: opts.persona,
+        force: opts.force,
+      },
+    },
+  );
+
+  if (error) {
+    // supabase.functions.invoke surfaces non-2xx responses as `error`.
+    // Read the underlying message verbatim so callers see the real
+    // 401 / 403 / 404 / 500 reason from the Edge Function.
+    const message = error?.message || "enrich-campaign-contacts failed";
+    throw new Error(`enrichCampaignContacts: ${message}`);
+  }
+
+  if (!data || typeof data !== "object") {
+    throw new Error("enrichCampaignContacts: empty response from Edge Function");
+  }
+
+  const payload = data as
+    | EnrichCampaignContactsResult
+    | { ok: false; error?: string; code?: string };
+
+  if (payload.ok !== true) {
+    const failure = payload as { ok: false; error?: string; code?: string };
+    const codePart = failure.code ? ` ${failure.code}` : "";
+    const messagePart = failure.error || "Unknown enrichment failure";
+    throw new Error(`enrichCampaignContacts${codePart}: ${messagePart}`);
+  }
+
+  return payload;
 }

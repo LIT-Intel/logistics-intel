@@ -62,6 +62,7 @@ export default function SettingsPage() {
   const [savedCount, setSavedCount] = useState(0);
   const [campaignCount, setCampaignCount] = useState(0);
   const [rfpCount, setRfpCount] = useState(0);
+  const [isPartner, setIsPartner] = useState(false);
 
   const isAdminEmail = isSuperAdmin;
 
@@ -116,57 +117,61 @@ export default function SettingsPage() {
       return;
     }
 
-    const { data: userProfileData, error: userProfileError } = await supabase
-      .from("user_profiles")
-      .select("*")
-      .eq("user_id", uid)
-      .maybeSingle();
-    requireNoError(userProfileError, "Failed loading user profile");
-
+    // Schema reality (verified against migrations):
+    //   * `profiles` columns: id, full_name, company_name,
+    //     organization_name. NO avatar_url. (20260403_005)
+    //   * `user_profiles` columns: user_id, full_name, title, phone,
+    //     avatar_url, bio, location. (20260126215600 + 20260421_005)
+    //   * Onboarding Step 5 writes profiles.full_name +
+    //     user_profiles.{full_name, title} + auth.users.user_metadata.
+    // Hydration order (each field independently): user_profiles >
+    // profiles > auth.users.user_metadata > email-derived fallback.
     const { data: baseProfileData, error: baseProfileError } = await supabase
       .from("profiles")
-      .select("id, full_name, company_name, organization_name, avatar_url")
+      .select("id, full_name, company_name, organization_name")
       .eq("id", uid)
       .maybeSingle();
     requireNoError(baseProfileError, "Failed loading base profile");
 
-    const authFullName = user?.user_metadata?.full_name || user?.user_metadata?.display_name || user?.email?.split("@")[0] || "User";
-    const profileName = userProfileData?.full_name || baseProfileData?.full_name || authFullName;
+    const { data: userProfileData, error: userProfileError } = await supabase
+      .from("user_profiles")
+      .select("user_id, full_name, title, phone, location, bio, avatar_url")
+      .eq("user_id", uid)
+      .maybeSingle();
+    requireNoError(userProfileError, "Failed loading user profile");
 
-    // Upsert missing profiles from auth metadata for superadmin/early users
-    if (!userProfileData && (authFullName !== "User" || user?.email)) {
-      const { error: upsertError } = await supabase
-        .from("user_profiles")
-        .upsert(
-          { user_id: uid, full_name: profileName, avatar_url: user?.user_metadata?.avatar_url || null },
-          { onConflict: "user_id" }
-        );
-      if (upsertError) console.warn("[SettingsPage] Upsert user_profiles warning:", upsertError);
-    }
+    const meta = (user?.user_metadata ?? {}) as Record<string, any>;
+    const authFullName =
+      meta.full_name ||
+      meta.display_name ||
+      user?.email?.split("@")[0] ||
+      "User";
+
+    // Prefer the canonical profile rows; only fall back to onboarding
+    // metadata when the table value is empty.
+    const profileName =
+      baseProfileData?.full_name || userProfileData?.full_name || authFullName;
+    const profileTitle = userProfileData?.title || meta.role || "";
+    const profilePhone = userProfileData?.phone || meta.phone || "";
+    const profileLocation = userProfileData?.location || meta.location || "";
+    const profileBio = userProfileData?.bio || meta.bio || "";
+    const profileAvatar = userProfileData?.avatar_url || meta.avatar_url || "";
 
     if (!baseProfileData) {
       const { error: upsertError } = await supabase
         .from("profiles")
-        .upsert(
-          { id: uid, full_name: profileName, avatar_url: user?.user_metadata?.avatar_url || null },
-          { onConflict: "id" }
-        );
+        .upsert({ id: uid, full_name: profileName }, { onConflict: "id" });
       if (upsertError) console.warn("[SettingsPage] Upsert profiles warning:", upsertError);
     }
 
-    // Will be updated after subscriptions load below; set temporary value
     safeSet(() => {
       setProfile({
         name: profileName,
-        title: userProfileData?.title || "",
-        phone: userProfileData?.phone || "",
-        location: userProfileData?.location || "",
-        bio: userProfileData?.bio || "",
-        avatar_url:
-          userProfileData?.avatar_url ||
-          baseProfileData?.avatar_url ||
-          user?.user_metadata?.avatar_url ||
-          "",
+        title: profileTitle,
+        phone: profilePhone,
+        location: profileLocation,
+        bio: profileBio,
+        avatar_url: profileAvatar,
         email: user?.email || "",
         plan: plan ?? "free_trial",
         isAdmin,
@@ -326,6 +331,17 @@ export default function SettingsPage() {
       requireNoError(rfpRes.value.error, "Failed loading RFP count");
       safeSet(() => setRfpCount(rfpRes.value.count ?? 0));
     }
+
+    // Surface affiliate status to drive the Stripe Connect link in Settings →
+    // Integrations. Soft-fail if the table is missing (RLS will already
+    // restrict reads to the user's own row).
+    const { data: partnerRow } = await supabase
+      .from("affiliate_partners")
+      .select("id, status, deleted_at")
+      .eq("user_id", uid)
+      .is("deleted_at", null)
+      .maybeSingle();
+    safeSet(() => setIsPartner(Boolean(partnerRow)));
   }, [user?.id, user?.email, user?.user_metadata, plan, isAdmin, safeSet]);
 
   useEffect(() => {
@@ -337,6 +353,13 @@ export default function SettingsPage() {
     };
   }, [loadAll]);
 
+  // Phase H Step 3.1 — dual-write removed. `profiles.full_name` /
+  // `profiles.avatar_url` are the canonical SSoT for name + avatar (used by
+  // app sidebar + invite flow). Extended fields (title/phone/location/bio)
+  // only exist on `user_profiles` and stay there. Timezone has no column on
+  // either profile table — it lands in `user_preferences.preferences.
+  // profile_preferences.timezone` alongside the other JSONB prefs.
+  // `updateProfile` keeps auth metadata in sync with name/avatar.
   const onSaveProfile = async (data: Record<string, unknown>) => {
     const uid = user?.id;
     if (!uid) throw new Error("No authenticated user");
@@ -351,25 +374,38 @@ export default function SettingsPage() {
       data.location !== undefined ? String(data.location || "").trim() || null : undefined;
     const trimmedBio =
       data.bio !== undefined ? String(data.bio || "").trim() || null : undefined;
-
-    const profileUpdates: JsonMap = { user_id: uid };
-    if (trimmedName !== undefined) profileUpdates.full_name = trimmedName;
-    if (trimmedTitle !== undefined) profileUpdates.title = trimmedTitle;
-    if (trimmedPhone !== undefined) profileUpdates.phone = trimmedPhone;
-    if (trimmedLocation !== undefined) profileUpdates.location = trimmedLocation;
-    if (trimmedBio !== undefined) profileUpdates.bio = trimmedBio;
-
-    const { error: userProfileError } = await supabase
-      .from("user_profiles")
-      .upsert(profileUpdates, { onConflict: "user_id" });
-    requireNoError(userProfileError, "Failed saving user profile");
+    const trimmedTimezone =
+      data.timezone !== undefined
+        ? String(data.timezone || "").trim() || null
+        : undefined;
 
     if (trimmedName !== undefined) {
       const { error: baseProfileSaveError } = await supabase
         .from("profiles")
         .upsert({ id: uid, full_name: trimmedName }, { onConflict: "id" });
-      requireNoError(baseProfileSaveError, "Failed saving base profile");
+      requireNoError(baseProfileSaveError, "Failed saving profile");
       await updateProfile({ full_name: trimmedName ?? "" });
+    }
+
+    const extendedUpdates: JsonMap = { user_id: uid };
+    if (trimmedTitle !== undefined) extendedUpdates.title = trimmedTitle;
+    if (trimmedPhone !== undefined) extendedUpdates.phone = trimmedPhone;
+    if (trimmedLocation !== undefined) extendedUpdates.location = trimmedLocation;
+    if (trimmedBio !== undefined) extendedUpdates.bio = trimmedBio;
+    if (Object.keys(extendedUpdates).length > 1) {
+      const { error: extendedError } = await supabase
+        .from("user_profiles")
+        .upsert(extendedUpdates, { onConflict: "user_id" });
+      requireNoError(extendedError, "Failed saving profile details");
+    }
+
+    if (trimmedTimezone !== undefined) {
+      const existingPrefs =
+        (preferences as any)?.preferences?.profile_preferences ?? {};
+      await onSavePreferences("profile_preferences", {
+        ...existingPrefs,
+        timezone: trimmedTimezone,
+      });
     }
 
     setProfile((prev) => ({
@@ -379,6 +415,7 @@ export default function SettingsPage() {
       ...(data.phone !== undefined ? { phone: trimmedPhone ?? "" } : {}),
       ...(data.location !== undefined ? { location: trimmedLocation ?? "" } : {}),
       ...(data.bio !== undefined ? { bio: trimmedBio ?? "" } : {}),
+      ...(data.timezone !== undefined ? { timezone: trimmedTimezone ?? "" } : {}),
     }));
 
     await loadAll();
@@ -386,26 +423,44 @@ export default function SettingsPage() {
 
   const onUploadAvatar = async (file: File) => {
     const uid = user?.id;
-    if (!uid) throw new Error("No authenticated user");
+    if (!uid) return { error: "No authenticated user" };
 
-    const result = await UploadFile({ file });
-    if (!result?.file_url) throw new Error("Avatar upload failed");
+    // base44.integrations.Core is stubbed in this build, so UploadFile
+    // is undefined. Surface that honestly instead of throwing
+    // "UploadFile is not a function" (minified to "Ae is not a function"
+    // in production).
+    if (typeof UploadFile !== "function") {
+      return {
+        error:
+          "Avatar upload is not available in this environment yet. The file storage integration ships with the Outbound Engine launch.",
+      };
+    }
+
+    let result: { file_url?: string } | null = null;
+    try {
+      result = (await UploadFile({ file })) as { file_url?: string } | null;
+    } catch (e: any) {
+      return { error: e?.message || "Avatar upload failed" };
+    }
+    if (!result?.file_url) {
+      return { error: "Avatar upload failed" };
+    }
 
     const avatarUrl = result.file_url;
 
-    const { error: userProfileAvatarError } = await supabase
+    // avatar_url lives on user_profiles (not profiles) per the actual
+    // schema. profiles only has id/full_name/company_name/organization_name.
+    const { error: avatarSaveError } = await supabase
       .from("user_profiles")
       .upsert({ user_id: uid, avatar_url: avatarUrl }, { onConflict: "user_id" });
-    requireNoError(userProfileAvatarError, "Failed saving avatar to user_profiles");
-
-    const { error: baseProfileAvatarError } = await supabase
-      .from("profiles")
-      .upsert({ id: uid, avatar_url: avatarUrl }, { onConflict: "id" });
-    requireNoError(baseProfileAvatarError, "Failed saving avatar to profiles");
+    if (avatarSaveError) {
+      return { error: avatarSaveError.message || "Failed saving avatar" };
+    }
 
     await updateProfile({ avatar_url: avatarUrl });
     setProfile((prev) => ({ ...prev, avatar_url: avatarUrl }));
   };
+
 
   const onSaveOrgProfile = async (data: Record<string, unknown>) => {
     if (!orgId) throw new Error("No organization found for this user");
@@ -472,18 +527,30 @@ export default function SettingsPage() {
   };
 
   const onUploadLogo = async (file: File) => {
-    if (!orgId) throw new Error("No organization found for this user");
+    if (!orgId) return { error: "No organization found for this user" };
 
-    const result = await UploadFile({ file });
-    if (!result?.file_url) throw new Error("Logo upload failed");
+    if (typeof UploadFile !== "function") {
+      return {
+        error:
+          "Logo upload is not available in this environment yet. The file storage integration ships with the Outbound Engine launch.",
+      };
+    }
+
+    let result: { file_url?: string } | null = null;
+    try {
+      result = (await UploadFile({ file })) as { file_url?: string } | null;
+    } catch (e: any) {
+      return { error: e?.message || "Logo upload failed" };
+    }
+    if (!result?.file_url) return { error: "Logo upload failed" };
 
     const { error } = await supabase
       .from("organizations")
       .update({ logo_url: result.file_url })
       .eq("id", orgId);
-    requireNoError(error, "Failed saving logo");
+    if (error) return { error: error.message || "Failed saving logo" };
 
-    setOrgProfile((prev) => ({ ...prev, logo_url: result.file_url }));
+    setOrgProfile((prev) => ({ ...prev, logo_url: result?.file_url }));
   };
 
   const onSavePreferences = async (section: string, data: Record<string, unknown>) => {
@@ -525,22 +592,53 @@ export default function SettingsPage() {
   };
 
   const onInviteMember = async (email: string, role: string) => {
-    if (!orgId) throw new Error("No organization found for this user");
+    if (!orgId) return { error: "No organization found for this user" };
 
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { error } = await supabase.from("org_invites").insert({
-      org_id: orgId,
-      email: email.trim().toLowerCase(),
-      role,
-      token,
-      status: "pending",
-      expires_at: expiresAt,
-    });
-    requireNoError(error, "Failed creating invite");
+    const { data: inserted, error: insertError } = await supabase
+      .from("org_invites")
+      .insert({
+        org_id: orgId,
+        email: email.trim().toLowerCase(),
+        role,
+        token,
+        status: "pending",
+        expires_at: expiresAt,
+        invited_by_user_id: user?.id ?? null,
+      })
+      .select("id")
+      .single();
+
+    if (insertError) {
+      return { error: insertError.message || "Failed creating invite" };
+    }
+
+    // Backend exists — call send-org-invite so the email actually goes
+    // out. Don't claim success unless the edge function did its job.
+    let emailError: string | null = null;
+    try {
+      const { data: sendResult, error: sendError } = await supabase.functions.invoke(
+        "send-org-invite",
+        { body: { inviteId: inserted?.id } },
+      );
+      if (sendError) {
+        emailError = sendError.message || "Failed to send invite email";
+      } else if (sendResult && (sendResult as any).error) {
+        emailError = String((sendResult as any).error);
+      }
+    } catch (e: any) {
+      emailError = e?.message || "Failed to reach invite service";
+    }
 
     await loadAll();
+
+    if (emailError) {
+      return {
+        error: `Invite saved but email could not be sent: ${emailError}`,
+      };
+    }
   };
 
   const onRevokeMember = async (memberId: string) => {
@@ -629,18 +727,43 @@ export default function SettingsPage() {
     setIntegrations((prev) => prev.filter((i) => i.id !== integrationId));
   };
 
+  const profileTimezone =
+    (preferences as any)?.preferences?.profile_preferences?.timezone || "";
+
   const profileWithStats = {
     ...profile,
-    savedCount,
-    campaignsCount: campaignCount,
-    rfpsCount: rfpCount,
+    timezone: profileTimezone,
+    planStatus: subscription?.status,
   };
 
-  const effectiveSubscription = subscription ?? undefined;
+  const joinedIso =
+    currentMembership?.joined_at ||
+    (user as any)?.created_at ||
+    user?.user_metadata?.created_at;
+  const joinedLabel = joinedIso
+    ? new Date(joinedIso).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : undefined;
+
+  const workspaceName =
+    orgProfile?.company ||
+    (orgProfile as any)?.name ||
+    "LIT · Logistics Intelligence";
+  const workspacePlanLabel = profile?.plan
+    ? String(profile.plan)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase()) + " Plan"
+    : "Free Trial";
+  const workspaceRoleLabel = currentOrgRole
+    ? currentOrgRole.replace(/\b\w/g, (c) => c.toUpperCase())
+    : undefined;
 
   return (
     <div className="min-h-full bg-slate-100 p-4 md:p-6 xl:p-8">
-      <div className="mx-auto max-w-[1600px]">
+      <div className="mx-auto max-w-[1200px]">
         <SettingsLayout
           profile={profileWithStats}
           orgProfile={orgProfile}
@@ -653,8 +776,20 @@ export default function SettingsPage() {
           auditLog={auditLog}
           tokenUsage={tokenUsage}
           integrations={integrations}
+          workspace={{
+            name: workspaceName,
+            planLabel: workspacePlanLabel,
+            roleLabel: workspaceRoleLabel,
+            joinedLabel,
+          }}
           isAdmin={isAdmin}
           canAccess={canAccess}
+          isPartner={isPartner}
+          authProvider={
+            (user?.app_metadata as Record<string, any> | undefined)?.provider ||
+            (user?.user_metadata as Record<string, any> | undefined)?.provider ||
+            null
+          }
           onSaveProfile={onSaveProfile}
           onUploadAvatar={onUploadAvatar}
           onSaveOrgProfile={onSaveOrgProfile}

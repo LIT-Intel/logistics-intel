@@ -74,10 +74,15 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       credit_rating_ready: false,
       contact_intel_ready: false,
     },
+    // Note: these values are the FALLBACK only. The DB `plans` table is
+    // the source of truth and the backend enforces against it. The
+    // frontend reads real values from get-entitlements via useEntitlements;
+    // these constants are used only when the snapshot hasn't loaded yet
+    // (initial render) and for static copy.
     limits: {
-      searches_per_month: 25,
-      company_views_per_month: 15,
-      command_center_saves_per_month: 10,
+      searches_per_month: 10,
+      company_views_per_month: 10,
+      command_center_saves_per_month: 5,
       enrichment_credits_per_month: 0,
       campaigns_active: 0,
       rfp_drafts: 0,

@@ -1,21 +1,29 @@
 import React from "react";
-import SettingsSidebar from "./SettingsSidebar";
+import { ChevronRight } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   SETTINGS_SECTIONS,
   type SettingsSectionId,
   ProfileSection,
-  CompanySignatureSection,
-  AccessRolesSection,
-  BillingPlansSection,
-  RfpPipelineSection,
-  CampaignPreferencesSection,
   AlertsNotificationsSection,
-  SecurityApiSection,
-  IntegrationsSection,
-  OutreachAccountsSection,
-  AffiliateProgramSection,
+  WorkspaceSection,
+  SecuritySection,
+  PreferencesSection,
+  IntegrationsHubSection,
 } from "./SettingsSections";
-import { KpiCard, SettingsHeader } from "./SettingsPrimitives";
+
+// Accepts ?tab=… (case/spacing tolerant) so deep links route correctly.
+function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
+  if (!value) return null;
+  const v = String(value).trim().toLowerCase().replace(/[-_\s]+/g, "");
+  if (v === "profile") return "Profile";
+  if (v === "workspace" || v === "team" || v === "members" || v === "access" || v === "roles" || v === "organization" || v === "org") return "Workspace";
+  if (v === "security" || v === "auth" || v === "password") return "Security";
+  if (v === "notifications" || v === "alerts") return "Notifications";
+  if (v === "integrations" || v === "emailaccounts" || v === "email" || v === "inbox" || v === "integration") return "Integrations";
+  if (v === "preferences" || v === "prefs" || v === "timezone" || v === "signature") return "Preferences";
+  return null;
+}
 
 type OrgMember = {
   id?: string;
@@ -43,12 +51,11 @@ type ProfileData = {
   phone?: string;
   location?: string;
   bio?: string;
+  timezone?: string;
   avatar_url?: string;
-  savedCount?: number;
-  campaignsCount?: number;
-  rfpsCount?: number;
   planName?: string;
   plan?: string;
+  planStatus?: string;
   isAdmin?: boolean;
 };
 
@@ -116,6 +123,13 @@ type PlanData = {
   seat_limit?: number;
 };
 
+type WorkspaceChip = {
+  name?: string;
+  planLabel?: string;
+  roleLabel?: string;
+  joinedLabel?: string;
+};
+
 export type SettingsLayoutProps = {
   profile?: ProfileData;
   orgProfile?: OrgProfileData;
@@ -128,6 +142,7 @@ export type SettingsLayoutProps = {
   auditLog?: AuditEvent[];
   tokenUsage?: TokenUsage[];
   integrations?: Integration[];
+  workspace?: WorkspaceChip;
   isAdmin?: boolean;
   canAccess?: (minPlan: string) => boolean;
   onSaveProfile?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
@@ -143,84 +158,96 @@ export type SettingsLayoutProps = {
   onGenerateApiKey?: (keyName: string) => Promise<string | null>;
   onRevokeApiKey?: (keyId: string) => Promise<void>;
   onDisconnectIntegration?: (id: string) => Promise<void>;
+  isPartner?: boolean;
+  authProvider?: string | null;
 };
 
-function buildKpiData(
-  members: OrgMember[],
-  subscription?: SubscriptionData,
-  integrations?: Integration[],
-) {
-  const activeMemberCount = members.length || 0;
-  const planName = subscription?.plan_code
-    ? subscription.plan_code.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-    : "Free Trial";
-  const renewalText = subscription?.current_period_end
-    ? `Renews ${new Date(subscription.current_period_end).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-    : "No active plan";
+const SECTION_KICKER: Record<SettingsSectionId, string> = {
+  Profile:       "Account · Settings",
+  Workspace:     "Workspace · Settings",
+  Security:      "Account · Settings",
+  Notifications: "Account · Settings",
+  Integrations:  "Account · Settings",
+  Preferences:   "Account · Settings",
+};
 
-  const connectedInboxes = (integrations ?? []).filter((i) => {
-    const t = i.integration_type ?? i.type ?? "";
-    return t === "gmail" || t === "outlook";
-  }).length;
+const SECTION_TITLE: Record<SettingsSectionId, string> = {
+  Profile:       "Profile",
+  Workspace:     "Workspace",
+  Security:      "Security",
+  Notifications: "Notifications",
+  Integrations:  "Integrations",
+  Preferences:   "Preferences",
+};
 
-  return [
-    {
-      title: "Active users",
-      value: activeMemberCount > 0 ? String(activeMemberCount) : "—",
-      helper: "workspace members",
-      accent: "indigo" as const,
-    },
-    {
-      title: "Plan",
-      value: planName,
-      helper: renewalText,
-      accent: "emerald" as const,
-    },
-    {
-      title: "Connected inboxes",
-      value: connectedInboxes > 0 ? String(connectedInboxes) : "—",
-      helper: connectedInboxes > 0 ? "Gmail / Outlook" : "No inboxes connected",
-      accent: "sky" as const,
-    },
-    {
-      title: "Plan status",
-      value: subscription?.status === "active" ? "Active" : subscription?.status === "past_due" ? "Past due" : "Trial",
-      helper: subscription?.cancel_at_period_end ? "Cancels at period end" : "Auto-renews",
-      accent: "slate" as const,
-    },
-  ] as const;
+const SECTION_DESCRIPTION: Partial<Record<SettingsSectionId, string>> = {
+  Profile:
+    "Your personal identity across Logistic Intel. Displayed on your outbound sends, comments, and teammate mentions.",
+  Workspace:
+    "Your shared organization, role, and team membership.",
+  Security:
+    "Password and recent activity on your Logistic Intel account.",
+  Notifications:
+    "Route the signals you care about to email, in-app, or Slack. Everything else stays quiet.",
+  Integrations:
+    "Outbound mailboxes, enrichment providers, and partner payouts.",
+  Preferences:
+    "Personal defaults for time, email signature, and search.",
+};
+
+function WorkspaceChipBlock({ workspace }: { workspace?: WorkspaceChip }) {
+  const name = workspace?.name || "LIT · Logistics Intelligence";
+  const meta = [workspace?.planLabel, workspace?.roleLabel, workspace?.joinedLabel]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 text-xs font-bold text-white shadow-sm">
+        L
+      </div>
+      <div className="min-w-0 md:text-right">
+        <p className="truncate text-sm font-semibold text-slate-900">{name}</p>
+        {meta ? (
+          <p className="truncate font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">
+            {meta}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
-function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
+function renderSection(
+  section: SettingsSectionId,
+  props: SettingsLayoutProps,
+  navigate: (to: string) => void,
+) {
+  const messagingPrefs = props.preferences?.preferences?.messaging_preferences;
+  const profileTimezone =
+    props.profile?.timezone || props.preferences?.preferences?.profile_preferences?.timezone || "";
+
   switch (section) {
     case "Profile":
       return (
         <ProfileSection
-          initialData={props.profile}
+          initialData={{ ...props.profile, timezone: profileTimezone }}
+          messagingPrefs={messagingPrefs}
           onSave={props.onSaveProfile}
           onUploadAvatar={props.onUploadAvatar}
+          onSaveMessagingPreferences={async (data) => {
+            if (!props.onSavePreferences) return;
+            return props.onSavePreferences("messaging_preferences", data);
+          }}
           isAdmin={props.isAdmin}
         />
       );
-    case "Security & API":
+    case "Workspace":
       return (
-        <SecurityApiSection
-          apiKeys={props.apiKeys}
-          auditLog={props.auditLog}
-          onGenerateKey={props.onGenerateApiKey}
-          onRevokeKey={props.onRevokeApiKey}
-        />
-      );
-    case "Alerts & Notifications":
-      return (
-        <AlertsNotificationsSection
-          preferences={props.preferences?.preferences?.alerts_notifications}
-          onSavePreferences={(data) => props.onSavePreferences?.("alerts_notifications", data)}
-        />
-      );
-    case "Access & Roles":
-      return (
-        <AccessRolesSection
+        <WorkspaceSection
+          workspaceName={props.workspace?.name}
+          workspaceRole={props.workspace?.roleLabel}
+          joinedLabel={props.workspace?.joinedLabel}
+          plan={props.subscription?.plan_code ?? props.profile?.plan ?? null}
           members={props.members}
           invites={props.invites}
           seatLimit={props.subscription?.seat_limit}
@@ -229,62 +256,58 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
           onUpdateRole={props.onUpdateMemberRole}
           onRevokeInvite={props.onRevokeInvite}
           isAdmin={props.isAdmin}
+          onUpgrade={() => navigate("/app/billing")}
+        />
+      );
+    case "Security":
+      return (
+        <SecuritySection
+          email={props.profile?.email}
+          authProvider={props.authProvider}
+          auditLog={props.auditLog}
+        />
+      );
+    case "Notifications":
+      return (
+        <AlertsNotificationsSection
+          preferences={props.preferences?.preferences?.alerts_notifications}
+          onSavePreferences={(data: Record<string, unknown>) =>
+            props.onSavePreferences?.("alerts_notifications", data)
+          }
         />
       );
     case "Integrations":
       return (
-        <IntegrationsSection
+        <IntegrationsHubSection
           integrations={props.integrations}
           onDisconnect={props.onDisconnectIntegration}
+          isPartner={props.isPartner}
         />
       );
-    case "Outreach Accounts":
+    case "Preferences":
       return (
-        <OutreachAccountsSection
+        <PreferencesSection
+          timezone={profileTimezone}
           emailSignature={props.preferences?.email_signature}
-          onSaveSignature={props.onSaveEmailSignature}
-        />
-      );
-    case "Campaign Preferences":
-      return (
-        <CampaignPreferencesSection
-          preferences={props.preferences?.preferences?.campaign_preferences}
-          onSavePreferences={(data) => props.onSavePreferences?.("campaign_preferences", data)}
-        />
-      );
-    case "RFP & Pipeline":
-      return (
-        <RfpPipelineSection
-          preferences={props.preferences?.preferences?.rfp_pipeline}
-          onSavePreferences={(data) => props.onSavePreferences?.("rfp_pipeline", data)}
-        />
-      );
-    case "Affiliate Program":
-      return <AffiliateProgramSection />;
-    case "Organization":
-      return (
-        <CompanySignatureSection
-          orgProfile={props.orgProfile}
-          emailSignature={props.preferences?.email_signature}
-          onSaveOrg={props.onSaveOrgProfile}
-          onSaveSignature={props.onSaveEmailSignature}
-          onUploadLogo={props.onUploadLogo}
-        />
-      );
-    case "Billing":
-      return (
-        <BillingPlansSection
-          subscription={props.subscription}
-          plans={props.plans}
-          isAdmin={props.isAdmin}
+          onSaveTimezone={async (tz) => {
+            if (!props.onSavePreferences) return;
+            const existing = props.preferences?.preferences?.profile_preferences ?? {};
+            return props.onSavePreferences("profile_preferences", { ...existing, timezone: tz });
+          }}
+          onSaveEmailSignature={props.onSaveEmailSignature}
         />
       );
     default:
       return (
         <ProfileSection
-          initialData={props.profile}
+          initialData={{ ...props.profile, timezone: profileTimezone }}
+          messagingPrefs={messagingPrefs}
           onSave={props.onSaveProfile}
           onUploadAvatar={props.onUploadAvatar}
+          onSaveMessagingPreferences={async (data) => {
+            if (!props.onSavePreferences) return;
+            return props.onSavePreferences("messaging_preferences", data);
+          }}
           isAdmin={props.isAdmin}
         />
       );
@@ -292,55 +315,93 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
 }
 
 export default function SettingsLayout(props: SettingsLayoutProps) {
-  const { members = [], subscription, integrations } = props;
-  const [activeSection, setActiveSection] = React.useState<SettingsSectionId>("Profile");
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = tabParamToSectionId(searchParams.get("tab")) ?? "Profile";
+  const [activeSection, setActiveSection] = React.useState<SettingsSectionId>(initialTab);
 
-  const kpiData = buildKpiData(members, subscription, integrations);
+  // Keep state in sync if the URL changes (e.g. sidebar nav while page is mounted).
+  React.useEffect(() => {
+    const fromUrl = tabParamToSectionId(searchParams.get("tab"));
+    if (fromUrl && fromUrl !== activeSection) {
+      setActiveSection(fromUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const handleSelectSection = React.useCallback(
+    (id: SettingsSectionId) => {
+      setActiveSection(id);
+      const next = new URLSearchParams(searchParams);
+      if (id === "Profile") {
+        next.delete("tab");
+      } else {
+        next.set("tab", id.toLowerCase().replace(/\s+/g, "-"));
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
+  const kicker = SECTION_KICKER[activeSection] || "Account · Settings";
+  const title = SECTION_TITLE[activeSection] || activeSection;
+  const description = SECTION_DESCRIPTION[activeSection];
 
   return (
-    <div className="flex w-full flex-col gap-6 xl:flex-row xl:gap-8">
-      <div className="xl:w-[320px] xl:shrink-0">
-        <SettingsSidebar
-          sections={SETTINGS_SECTIONS}
-          activeSection={activeSection}
-          onSelectSection={setActiveSection}
-        />
+    <div className="flex w-full flex-col">
+      {/* Page header: kicker + title on left, workspace chip on right */}
+      <header className="mb-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-indigo-600">
+            {kicker}
+          </p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+            {title}
+          </h1>
+        </div>
+        <WorkspaceChipBlock workspace={props.workspace} />
+      </header>
+
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-1.5 px-1 pb-3 text-sm">
+        <span className="text-slate-400">Settings</span>
+        <ChevronRight className="h-3 w-3 text-slate-300" />
+        <span className="font-medium text-slate-900">{title}</span>
+      </nav>
+
+      {/* Horizontal tab bar */}
+      <div className="sticky top-0 z-10 -mx-4 border-b border-slate-200 bg-white/95 px-4 backdrop-blur md:-mx-6 md:px-6 xl:-mx-8 xl:px-8">
+        <div className="-mb-px flex gap-0 overflow-x-auto">
+          {SETTINGS_SECTIONS.map((section) => {
+            const isActive = section.id === activeSection;
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => handleSelectSection(section.id)}
+                className={
+                  "whitespace-nowrap border-b-2 px-4 py-3.5 text-sm transition " +
+                  (isActive
+                    ? "border-slate-900 font-medium text-slate-900"
+                    : "border-transparent text-slate-500 hover:text-slate-700")
+                }
+              >
+                {section.title}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <main className="min-w-0 flex-1 space-y-6">
-        <div
-          className="relative overflow-hidden rounded-3xl border border-slate-200 p-5 shadow-sm md:p-6"
-          style={{
-            background:
-              "radial-gradient(circle at 100% 0%, rgba(99,102,241,0.10) 0%, rgba(99,102,241,0) 45%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)",
-          }}
-        >
-          <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-indigo-500">
-            Account · Settings
-          </div>
-          <div className="mt-1">
-            <SettingsHeader
-              title="Workspace controls"
-              description="Profile, security, access, integrations, outreach, pipelines, affiliate — one place to configure how your workspace behaves."
-            />
-          </div>
+      {/* Section header: sentence-case H2 + description */}
+      <main className="mx-auto w-full max-w-5xl pt-6">
+        <div className="mb-5">
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h2>
+          {description ? (
+            <p className="mt-1 text-sm text-slate-500">{description}</p>
+          ) : null}
         </div>
-
-        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
-          {kpiData.map((kpi) => (
-            <KpiCard
-              key={kpi.title}
-              title={kpi.title}
-              value={kpi.value}
-              helper={kpi.helper}
-              accent={kpi.accent}
-            />
-          ))}
-        </div>
-
-        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-          {renderSection(activeSection, props)}
-        </div>
+        {renderSection(activeSection, props, navigate)}
       </main>
     </div>
   );

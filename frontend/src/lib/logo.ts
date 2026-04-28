@@ -65,7 +65,13 @@ function buildLogoDevUrl(domain: string): string {
  *   1. logo.dev — highest fidelity when VITE_LOGO_DEV_TOKEN is configured
  *   2. Clearbit — free, no token
  *   3. Unavatar — aggregates multiple providers
- *   4. DuckDuckGo ip3 — favicon fallback
+ *
+ * Phase H P1 fix — DuckDuckGo's ip3 favicon endpoint was previously the
+ * final candidate. It intentionally returns a monochrome (black / white)
+ * favicon for many domains, which made logos look broken to users. We
+ * now exhaust the candidate list after Unavatar; CompanyAvatar's
+ * `exhausted` state kicks in next and renders the gradient-initials
+ * block, which is the intended honest fallback.
  */
 export function getLogoCandidates(source?: string | null): string[] {
   const domain = extractDomain(source);
@@ -75,7 +81,6 @@ export function getLogoCandidates(source?: string | null): string[] {
   if (LOGO_DEV_TOKEN) candidates.push(buildLogoDevUrl(domain));
   candidates.push(`https://logo.clearbit.com/${domain}`);
   candidates.push(`https://unavatar.io/${domain}?fallback=false`);
-  candidates.push(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
   return candidates;
 }
 

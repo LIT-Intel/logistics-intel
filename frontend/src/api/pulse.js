@@ -138,7 +138,7 @@ export async function searchPulse(payload = {}) {
       pageSize: raw?.meta?.pageSize ?? normalizedResults.length,
       requestedLimit: raw?.meta?.requestedLimit ?? null,
       estimatedMarketSize: raw?.meta?.estimatedMarketSize ?? null,
-      provider: raw?.meta?.provider ?? 'explorium',
+      provider: raw?.meta?.provider ?? null,
       partial: Boolean(raw?.meta?.partial),
       warnings: toArray(raw?.meta?.warnings),
       classificationReasons: toArray(raw?.meta?.classificationReasons),

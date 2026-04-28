@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { listSavedCompanies, enrichCompaniesFromKpis } from "@/lib/api";
+import { formatSafeShipmentDate } from "@/lib/dateUtils";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { supabase } from "@/lib/supabase";
@@ -12,18 +13,15 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
-  DollarSign,
   Filter,
-  Layers,
   Loader2,
-  Package,
+  Plus,
   Search,
   Send,
-  Users2,
+  Upload,
 } from "lucide-react";
 import AddToCampaignModal from "./AddToCampaignModal";
-
-type FilterTab = "all" | "high_value" | "active" | "recent";
+import AddCompanyModal from "./AddCompanyModal";
 
 type SavedCompaniesResponse =
   | CommandCenterRecord[]
@@ -37,6 +35,12 @@ type ListRow = {
   record: CommandCenterRecord;
   key: string;
   companyId: string | null;
+  // companyUuid is the lit_companies.id primary key (FK target for
+  // lit_campaign_companies.company_id). companyId above stays as the
+  // human-readable source_company_key slug used everywhere else for
+  // display + KPI joins. Surfaced from getSavedCompanies's
+  // `record.company.id` after the Phase C unify fix.
+  companyUuid: string | null;
   companyName: string;
   stage: string;
   address: string | null;
@@ -55,25 +59,26 @@ type ListRow = {
 
 type SortableKey = keyof Pick<ListRow, 'companyName' | 'lastActivity' | 'shipments12m' | 'teu12m' | 'estSpend12m' | 'topRoute12m'>;
 
-const FILTER_TABS: Array<{ id: FilterTab; label: string }> = [
-  { id: "all", label: "All saved" },
-  { id: "high_value", label: "High value" },
-  { id: "active", label: "Active shippers" },
-  { id: "recent", label: "Recent activity" },
-];
-
-const TABLE_COLS: Array<{ key: SortableKey | 'activity' | 'status' | 'actions' | 'contacts' | 'stage'; label: string; width: string; sortable: boolean }> = [
-  { key: 'companyName',  label: 'Company',       width: '19%', sortable: true },
-  { key: 'lastActivity', label: 'Last Shipment',  width: '10%', sortable: true },
-  { key: 'shipments12m', label: 'Shipments 12m',  width: '10%', sortable: true },
-  { key: 'teu12m',       label: 'TEU 12m',        width: '8%',  sortable: true },
-  { key: 'estSpend12m',  label: 'Est. Spend',     width: '9%',  sortable: true },
-  { key: 'topRoute12m',  label: 'Top Route',      width: '10%', sortable: true },
-  { key: 'stage',        label: 'Stage',          width: '8%',  sortable: false },
-  { key: 'contacts',     label: 'Contacts',       width: '7%',  sortable: false },
-  { key: 'activity',     label: 'Activity',       width: '7%',  sortable: false },
-  { key: 'status',       label: 'Status',         width: '7%',  sortable: false },
-  { key: 'actions',      label: '',               width: '5%',  sortable: false },
+// Phase B.3 — table trimmed to 9 columns. Stage and Contacts dropped per the
+// validated design source (LIT Platform.html). Stage data still gets fetched
+// to avoid breaking server contracts; we just stop rendering it. Contact
+// counts are still loaded and stored in `contactCounts` so we never break
+// the upstream lit_contacts probe.
+//
+// Phase B.6 — column widths re-tuned. The B.3 split squeezed Top Route into
+// 11% which overlapped Activity/Status/View on common 1280–1440 viewports.
+// New split (sums to 100%) gives Top Route a comfortable 15% with explicit
+// truncation, while clamping the right-hand badges/actions to 9% each.
+const TABLE_COLS: Array<{ key: SortableKey | 'activity' | 'status' | 'actions'; label: string; width: string; sortable: boolean }> = [
+  { key: 'companyName',  label: 'Company',       width: '22%', sortable: true },
+  { key: 'lastActivity', label: 'Last Shipment', width: '10%', sortable: true },
+  { key: 'shipments12m', label: 'Shipments 12M', width: '9%',  sortable: true },
+  { key: 'teu12m',       label: 'TEU 12M',       width: '8%',  sortable: true },
+  { key: 'estSpend12m',  label: 'Est. Spend',    width: '9%',  sortable: true },
+  { key: 'topRoute12m',  label: 'Top Route',     width: '15%', sortable: true },
+  { key: 'activity',     label: 'Activity',      width: '9%',  sortable: false },
+  { key: 'status',       label: 'Status',        width: '9%',  sortable: false },
+  { key: 'actions',      label: 'View',          width: '9%',  sortable: false },
 ];
 
 const STATUS_STYLE = {
@@ -81,26 +86,6 @@ const STATUS_STYLE = {
   pending:  { bg: '#FFFBEB', color: '#B45309', border: '#FDE68A', dot: '#F59E0B', label: 'Pending'  },
   inactive: { bg: '#F1F5F9', color: '#64748b', border: '#E2E8F0', dot: '#94A3B8', label: 'Inactive' },
 };
-
-// Stage pill palette — aligned with Settings RFP & pipeline stage colors
-// (Discovery / Qualified / Proposal / Negotiation / Closed Won / Closed Lost).
-// "prospect" is treated as Discovery. Unknown values fall through to slate.
-const STAGE_STYLE: Record<string, { bg: string; color: string; border: string; label: string }> = {
-  prospect:     { bg: '#F1F5F9', color: '#475569', border: '#E2E8F0', label: 'Prospect'     },
-  discovery:    { bg: '#F1F5F9', color: '#475569', border: '#E2E8F0', label: 'Discovery'    },
-  qualified:    { bg: '#EFF6FF', color: '#1D4ED8', border: '#BFDBFE', label: 'Qualified'    },
-  proposal:     { bg: '#F5F3FF', color: '#6D28D9', border: '#DDD6FE', label: 'Proposal'     },
-  negotiation:  { bg: '#FFFBEB', color: '#B45309', border: '#FDE68A', label: 'Negotiation'  },
-  closed_won:   { bg: '#F0FDF4', color: '#15803D', border: '#BBF7D0', label: 'Closed Won'   },
-  won:          { bg: '#F0FDF4', color: '#15803D', border: '#BBF7D0', label: 'Closed Won'   },
-  closed_lost:  { bg: '#FEF2F2', color: '#B91C1C', border: '#FECACA', label: 'Closed Lost'  },
-  lost:         { bg: '#FEF2F2', color: '#B91C1C', border: '#FECACA', label: 'Closed Lost'  },
-};
-
-function stageStyleFor(stage?: string | null) {
-  const key = String(stage || 'prospect').toLowerCase();
-  return STAGE_STYLE[key] || STAGE_STYLE.prospect;
-}
 
 const PAGE_SIZE = 25;
 
@@ -134,11 +119,12 @@ function formatCurrency(value: number | null | undefined) {
   return `$${n.toLocaleString()}`;
 }
 
+// Phase B.5 — delegate to the shared safe-shipment-date helper so a
+// future-dated `last_shipment_date` (an artefact of bad source data) no
+// longer leaks into the Command Center "Last Shipment" column. The
+// helper returns "—" for null / unparseable / future inputs.
 function formatDate(value?: string | null) {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return formatSafeShipmentDate(value, "—");
 }
 
 
@@ -157,6 +143,7 @@ function buildListRow(record: CommandCenterRecord): ListRow {
     record,
     key: recordKey(record),
     companyId: sourceCompanyKey,
+    companyUuid: ((company as any)?.id as string | null) ?? null,
     companyName: company?.name || (company as any)?.company_name || "Company",
     stage: String((record as any)?.stage || "prospect"),
     address: company?.address || null,
@@ -182,7 +169,6 @@ export default function CommandCenter() {
   const [savedLoading, setSavedLoading] = useState(true);
   const [savedError, setSavedError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortableKey>('shipments12m');
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
@@ -190,71 +176,72 @@ export default function CommandCenter() {
   // Phase E — per-company contact counts. Loaded once after saved companies
   // arrive, via a single bulk `lit_contacts` select scoped by the set of
   // company_ids on the page. Silent-fail: if the query errors the map stays
-  // empty and rows render "—" for their contact count. Command Center load
-  // is never blocked on this.
-  const [contactCounts, setContactCounts] = useState<Record<string, number>>({});
+  // empty. Phase B.3 — counts no longer rendered (column removed) but we
+  // keep the probe to preserve the API surface.
+  const [, setContactCounts] = useState<Record<string, number>>({});
 
   // Phase E — "Add to Campaign" per-row action. When set, the existing
   // AddToCampaignModal mounts with that row's company id + name pre-filled.
   const [campaignModalRow, setCampaignModalRow] = useState<ListRow | null>(null);
 
+  // Phase B.3 — top-right "Add Company" action wires to the existing
+  // AddCompanyModal (not modified in this phase, only consumed).
+  const [addCompanyOpen, setAddCompanyOpen] = useState(false);
+
+  const reloadSavedCompanies = useCallback(async () => {
+    setSavedLoading(true);
+    setSavedError(null);
+    try {
+      const response = (await listSavedCompanies()) as SavedCompaniesResponse;
+      const rows = normalizeSavedCompaniesResponse(response);
+      try {
+        const companyIds = rows
+          .map((r) => r.company?.company_id ?? (r as any)?.company?.source_company_key)
+          .filter((id): id is string => Boolean(id));
+        const kpiMap = await enrichCompaniesFromKpis(companyIds);
+        const enriched = rows.map((r) => {
+          const cid = r.company?.company_id ?? (r as any)?.company?.source_company_key;
+          const kpiRow = cid ? kpiMap[cid] : null;
+          if (!kpiRow) return r;
+          const existingKpis = (r.company as any)?.kpis || {};
+          return {
+            ...r,
+            company: {
+              ...r.company,
+              kpis: {
+                ...existingKpis,
+                last_activity:     existingKpis.last_activity     ?? kpiRow.last_shipment_date    ?? null,
+                teu_12m:           existingKpis.teu_12m           ?? kpiRow.all_time_teu_from_series ?? null,
+                fcl_shipments_12m: existingKpis.fcl_shipments_12m ?? kpiRow.fcl_shipments ?? null,
+                lcl_shipments_12m: existingKpis.lcl_shipments_12m ?? kpiRow.lcl_shipments ?? null,
+              },
+            },
+          };
+        });
+        setSavedCompanies(enriched);
+      } catch {
+        setSavedCompanies(rows);
+      }
+    } catch (error: any) {
+      setSavedError(error?.message ?? "Failed to load saved companies");
+      setSavedCompanies([]);
+    } finally {
+      setSavedLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
-
-    async function loadSavedCompanies() {
-      setSavedLoading(true);
-      setSavedError(null);
-
-      try {
-        const response = (await listSavedCompanies()) as SavedCompaniesResponse;
-        const rows = normalizeSavedCompaniesResponse(response);
-
-        if (!isMounted) return;
-
-        try {
-          const companyIds = rows
-            .map((r) => r.company?.company_id ?? (r as any)?.company?.source_company_key)
-            .filter((id): id is string => Boolean(id));
-          const kpiMap = await enrichCompaniesFromKpis(companyIds);
-          const enriched = rows.map((r) => {
-            const cid = r.company?.company_id ?? (r as any)?.company?.source_company_key;
-            const kpiRow = cid ? kpiMap[cid] : null;
-            if (!kpiRow) return r;
-            const existingKpis = (r.company as any)?.kpis || {};
-            return {
-              ...r,
-              company: {
-                ...r.company,
-                kpis: {
-                  ...existingKpis,
-                  last_activity:     existingKpis.last_activity     ?? kpiRow.last_shipment_date    ?? null,
-                  teu_12m:           existingKpis.teu_12m           ?? kpiRow.all_time_teu_from_series ?? null,
-                  fcl_shipments_12m: existingKpis.fcl_shipments_12m ?? kpiRow.fcl_shipments ?? null,
-                  lcl_shipments_12m: existingKpis.lcl_shipments_12m ?? kpiRow.lcl_shipments ?? null,
-                },
-              },
-            };
-          });
-          setSavedCompanies(enriched);
-        } catch {
-          setSavedCompanies(rows);
-        }
-      } catch (error: any) {
-        if (!isMounted) return;
-        setSavedError(error?.message ?? "Failed to load saved companies");
-        setSavedCompanies([]);
-      } finally {
-        if (isMounted) setSavedLoading(false);
-      }
-    }
-
-    loadSavedCompanies();
+    (async () => {
+      if (!isMounted) return;
+      await reloadSavedCompanies();
+    })();
     return () => { isMounted = false; };
-  }, []);
+  }, [reloadSavedCompanies]);
 
   // Bulk-load contact counts once saved companies arrive. One query
   // (`.select("company_id").in("company_id", [...])`), counted client-side
-  // into a Record<company_id, number>. No per-row requests. Silent fail.
+  // into a Record<company_id, number>. Silent fail.
   useEffect(() => {
     let isMounted = true;
     const ids = savedCompanies
@@ -274,7 +261,6 @@ export default function CommandCenter() {
           .in("company_id", ids);
         if (!isMounted) return;
         if (error || !Array.isArray(data)) {
-          // Silent: leave map empty, rows show "—". Never blocks CC render.
           setContactCounts({});
           return;
         }
@@ -296,21 +282,16 @@ export default function CommandCenter() {
 
   const listRows = useMemo(() => savedCompanies.map(buildListRow).filter((r) => r.key), [savedCompanies]);
 
+  // Phase B.3 — search-only filtering. The four "All / High value / Active /
+  // Recent" chips were removed per the validated design source.
   const filteredRows = useMemo(() => {
     const lower = searchTerm.trim().toLowerCase();
     return listRows.filter((row) => {
       const haystack = [row.companyName, row.domain, row.website, row.address, row.countryCode, row.topRoute12m, row.recentRoute]
         .filter(Boolean).join(" ").toLowerCase();
-      const matchesSearch = !lower || haystack.includes(lower);
-      const lastActivityTime = row.lastActivity ? new Date(row.lastActivity).getTime() : null;
-      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      let matchesFilter = true;
-      if (activeFilter === "high_value")   matchesFilter = (row.estSpend12m || 0) >= 100000 || (row.teu12m || 0) >= 100;
-      else if (activeFilter === "active")  matchesFilter = (row.shipments12m || 0) >= 12;
-      else if (activeFilter === "recent")  matchesFilter = !!lastActivityTime && lastActivityTime >= thirtyDaysAgo;
-      return matchesSearch && matchesFilter;
+      return !lower || haystack.includes(lower);
     });
-  }, [listRows, searchTerm, activeFilter]);
+  }, [listRows, searchTerm]);
 
   const sortedRows = useMemo(() => {
     return [...filteredRows].sort((a, b) => {
@@ -323,7 +304,7 @@ export default function CommandCenter() {
     });
   }, [filteredRows, sortKey, sortDir]);
 
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, activeFilter]);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm]);
 
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
 
@@ -338,23 +319,6 @@ export default function CommandCenter() {
 
   const pageStart = sortedRows.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0;
   const pageEnd   = sortedRows.length ? Math.min(currentPage * PAGE_SIZE, sortedRows.length) : 0;
-
-  const summaryMetrics = useMemo(() => {
-    // Phase E — adds TEU + Est Spend aggregates for the hero KPI strip.
-    // Est Spend is `null` when every row is null (so the tile renders "—"
-    // rather than "$0"). TEU sums `teu_12m` only where present.
-    const teuSum = listRows.reduce((s, r) => s + (Number(r.teu12m) || 0), 0);
-    const spendVals = listRows
-      .map((r) => (r.estSpend12m != null && Number.isFinite(Number(r.estSpend12m)) ? Number(r.estSpend12m) : null))
-      .filter((v): v is number => v != null);
-    return {
-      totalCompanies: listRows.length,
-      totalShipments: listRows.reduce((s, r) => s + (r.shipments12m || 0), 0),
-      activeAccounts: listRows.filter((r) => (r.shipments12m || 0) > 0).length,
-      totalTeu12m: teuSum,
-      totalEstSpend12m: spendVals.length > 0 ? spendVals.reduce((s, v) => s + v, 0) : null,
-    };
-  }, [listRows]);
 
   function toggleSort(key: SortableKey) {
     if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
@@ -380,7 +344,12 @@ export default function CommandCenter() {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#F8FAFC' }}>
-      {/* Header */}
+      {/* Header — Phase B.3 design-source alignment.
+          KPI strip removed (was 4 tiles). Filter chips removed (was All /
+          High value / Active / Recent). Subtitle now exactly:
+          "{N} saved companies · Sorted by shipments". Top-right action row
+          adds an Import button (disabled, "coming soon") and an Add Company
+          button that mounts the existing AddCompanyModal. */}
       <div
         style={{
           padding: '20px 24px 16px',
@@ -390,8 +359,8 @@ export default function CommandCenter() {
           flexShrink: 0,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
-          <div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 14 }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 10, fontWeight: 700, color: '#6366F1', letterSpacing: '0.24em', textTransform: 'uppercase' }}>
               Revenue Intelligence
             </div>
@@ -399,146 +368,60 @@ export default function CommandCenter() {
               Command Center
             </div>
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#64748b', marginTop: 2 }}>
-              {sortedRows.length} saved companies · {formatNumber(summaryMetrics.totalShipments)} shipments · {summaryMetrics.activeAccounts} active
+              {sortedRows.length} saved companies · Sorted by shipments
             </div>
           </div>
-        </div>
 
-        {/* Phase E — KPI strip. Reads client-side aggregates from listRows
-            only; no fetches. Tiles render "—" when underlying value is null.
-            Layout tokens reused from Dashboard / Discover / Company Detail
-            hero so the system feels cohesive. No navy backgrounds. */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-            gap: 12,
-            marginBottom: 14,
-          }}
-          className="lg:!grid-cols-4"
-        >
-          {[
-            {
-              label: 'Saved Companies',
-              value: summaryMetrics.totalCompanies > 0 ? formatNumber(summaryMetrics.totalCompanies) : '—',
-              Icon: Building2,
-              tintBg: '#EEF2FF',
-              tintText: '#4F46E5',
-              tintRing: '#E0E7FF',
-            },
-            {
-              label: 'Active Shippers',
-              value: summaryMetrics.activeAccounts > 0 ? formatNumber(summaryMetrics.activeAccounts) : '—',
-              Icon: Package,
-              tintBg: '#ECFEFF',
-              tintText: '#0E7490',
-              tintRing: '#CFFAFE',
-            },
-            {
-              label: 'Total TEU 12m',
-              value: summaryMetrics.totalTeu12m > 0 ? formatNumber(summaryMetrics.totalTeu12m, 1) : '—',
-              Icon: Layers,
-              tintBg: '#FEF3C7',
-              tintText: '#B45309',
-              tintRing: '#FDE68A',
-            },
-            {
-              label: 'Est Spend 12m',
-              value: summaryMetrics.totalEstSpend12m != null ? formatCurrency(summaryMetrics.totalEstSpend12m) : '—',
-              Icon: DollarSign,
-              tintBg: '#ECFDF5',
-              tintText: '#047857',
-              tintRing: '#D1FAE5',
-            },
-          ].map((tile) => (
-            <div
-              key={tile.label}
+          {/* Top-right action buttons — Import (disabled) + Add Company. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <button
+              type="button"
+              disabled
+              title="Import flow coming soon"
+              className="cursor-not-allowed opacity-60"
               style={{
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
-                gap: 12,
+                gap: 6,
+                padding: '7px 14px',
+                borderRadius: 9999,
                 background: '#FFFFFF',
                 border: '1px solid #E2E8F0',
-                borderRadius: 16,
-                padding: '12px 14px',
-                boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+                color: '#475569',
+                fontSize: 13,
+                fontWeight: 600,
+                fontFamily: "'Space Grotesk', sans-serif",
               }}
             >
-              <div
-                style={{
-                  width: 40,
-                  height: 40,
-                  flexShrink: 0,
-                  borderRadius: 12,
-                  background: tile.tintBg,
-                  boxShadow: `0 0 0 1px ${tile.tintRing}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <tile.Icon style={{ width: 16, height: 16, color: tile.tintText }} />
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <div
-                  style={{
-                    fontFamily: "'Space Grotesk', sans-serif",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    letterSpacing: '0.18em',
-                    textTransform: 'uppercase',
-                    color: '#64748B',
-                  }}
-                >
-                  {tile.label}
-                </div>
-                <div
-                  style={{
-                    fontFamily: "'Space Grotesk', sans-serif",
-                    fontSize: 18,
-                    fontWeight: 700,
-                    color: '#0F172A',
-                    letterSpacing: '-0.01em',
-                    marginTop: 2,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {tile.value}
-                </div>
-              </div>
-            </div>
-          ))}
+              <Upload style={{ width: 14, height: 14 }} />
+              Import
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddCompanyOpen(true)}
+              className="bg-[#0F172A] text-white hover:bg-[#1E293B]"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '7px 14px',
+                borderRadius: 9999,
+                border: '1px solid #0F172A',
+                fontSize: 13,
+                fontWeight: 600,
+                fontFamily: "'Space Grotesk', sans-serif",
+                cursor: 'pointer',
+              }}
+            >
+              <Plus style={{ width: 14, height: 14 }} />
+              Add Company
+            </button>
+          </div>
         </div>
 
-        {/* Filter tabs + search */}
+        {/* Search row — chips removed in Phase B.3. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {FILTER_TABS.map((tab) => {
-              const active = activeFilter === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveFilter(tab.id)}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center',
-                    borderRadius: 9999, padding: '5px 12px',
-                    fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 120ms',
-                    fontFamily: "'Space Grotesk', sans-serif",
-                    ...(active
-                      ? { background: '#0F172A', color: '#fff', border: '1px solid #0F172A' }
-                      : { background: '#FFFFFF', color: '#475569', border: '1px solid #E5E7EB' }),
-                  }}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div style={{ position: 'relative', flex: 1, minWidth: 220, maxWidth: 340, marginLeft: 4 }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 220, maxWidth: 340 }}>
             <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: '#94a3b8' }} />
             <input
               value={searchTerm}
@@ -576,10 +459,15 @@ export default function CommandCenter() {
               <Building2 style={{ width: 24, height: 24, color: '#94a3b8' }} />
             </div>
             <div style={{ fontSize: 15, fontWeight: 600, color: '#0F172A', fontFamily: "'Space Grotesk', sans-serif" }}>No saved companies match this view</div>
-            <div style={{ fontSize: 13, color: '#64748b', fontFamily: "'DM Sans', sans-serif", marginTop: 4 }}>Try changing your filters or save more companies from Search.</div>
+            <div style={{ fontSize: 13, color: '#64748b', fontFamily: "'DM Sans', sans-serif", marginTop: 4 }}>Try changing your search, or add a new company.</div>
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <>
+          {/* Phase B.7 — desktop renders the 9-column table (≥md). Mobile
+              renders compact cards instead so narrow viewports don't have to
+              horizontally scroll a 1200px table. */}
+          <div className="hidden md:block" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1200 }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
               <tr style={{ background: '#FFFFFF', borderBottom: '1px solid #E5E7EB' }}>
                 {TABLE_COLS.map((col) => {
@@ -621,7 +509,7 @@ export default function CommandCenter() {
                     onMouseLeave={(e) => (e.currentTarget.style.background = '')}
                   >
                     {/* Company */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                         <CompanyAvatar
                           name={row.companyName}
@@ -641,101 +529,69 @@ export default function CommandCenter() {
                     </td>
 
                     {/* Last Shipment */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
                       <span style={{ fontSize: 12, color: '#64748b', fontFamily: "'DM Sans', sans-serif" }}>
                         {formatDate(row.lastActivity)}
                       </span>
                     </td>
 
-                    {/* Shipments 12m */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    {/* Shipments 12M */}
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#1d4ed8' }}>
                         {formatNumber(row.shipments12m)}
                       </span>
                     </td>
 
-                    {/* TEU 12m */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    {/* TEU 12M */}
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#374151' }}>
                         {formatNumber(row.teu12m, 1)}
                       </span>
                     </td>
 
                     {/* Est. Spend */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#374151' }}>
                         {formatCurrency(row.estSpend12m)}
                       </span>
                     </td>
 
-                    {/* Top Route */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#64748b', background: '#F1F5F9', padding: '2px 7px', borderRadius: 4 }}>
+                    {/* Top Route — Phase B.6: truncate inside the fixed
+                        column width so long lane labels don't bleed into the
+                        Activity column. The <span> wraps on its container so
+                        the chip background sizes to text up to the column
+                        edge, then ellipses; full label surfaces via title. */}
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', overflow: 'hidden' }}>
+                      <span
+                        title={row.topRoute12m || row.recentRoute || ''}
+                        style={{
+                          display: 'block',
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                          textOverflow: 'ellipsis',
+                          fontFamily: "'JetBrains Mono', monospace",
+                          fontSize: 11,
+                          color: '#64748b',
+                          background: '#F1F5F9',
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                        }}
+                      >
                         {row.topRoute12m || row.recentRoute || '—'}
                       </span>
                     </td>
 
-                    {/* Stage — read-only pill, backed by existing row.stage field */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
-                      {(() => {
-                        const ss = stageStyleFor(row.stage);
-                        return (
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              fontSize: 11,
-                              fontWeight: 600,
-                              padding: '3px 9px',
-                              borderRadius: 9999,
-                              background: ss.bg,
-                              color: ss.color,
-                              border: `1px solid ${ss.border}`,
-                              fontFamily: "'Space Grotesk', sans-serif",
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {ss.label}
-                          </span>
-                        );
-                      })()}
-                    </td>
-
-                    {/* Contacts — bulk-loaded from lit_contacts keyed on company_id. "—" on silent fail. */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
-                      {(() => {
-                        const count = row.companyId ? contactCounts[row.companyId] : 0;
-                        if (!count) {
-                          return (
-                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#94A3B8' }}>
-                              —
-                            </span>
-                          );
-                        }
-                        return (
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4,
-                              fontFamily: "'JetBrains Mono', monospace",
-                              fontSize: 12,
-                              fontWeight: 600,
-                              color: '#1D4ED8',
-                            }}
-                          >
-                            <Users2 style={{ width: 12, height: 12 }} />
-                            {formatNumber(count)}
-                          </span>
-                        );
-                      })()}
-                    </td>
-
-                    {/* Activity */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    {/* Activity — Phase B.6: td gets overflow:hidden + nowrap
+                        and an explicit minWidth: 84 so the badge sizes to its
+                        content within the 9% column width without ever
+                        pushing into Status/View, and never collapses below
+                        legibility on narrow viewports. */}
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 84 }}>
                       <span style={{
+                        display: 'inline-flex', alignItems: 'center',
                         fontSize: 11, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif",
-                        padding: '2px 7px', borderRadius: 9999,
+                        padding: '2px 7px', borderRadius: 9999, whiteSpace: 'nowrap',
                         ...(hasActivity
                           ? { color: '#15803d', background: 'rgba(34,197,94,0.1)' }
                           : { color: '#94A3B8', background: '#F1F5F9' }),
@@ -744,8 +600,10 @@ export default function CommandCenter() {
                       </span>
                     </td>
 
-                    {/* Status */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    {/* Status — Phase B.6: minWidth 96 floors the column
+                        so the dot+label pill always renders in full at any
+                        viewport above the 1200px table min-width. */}
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 96 }}>
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', gap: 4,
                         fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999,
@@ -757,9 +615,11 @@ export default function CommandCenter() {
                       </span>
                     </td>
 
-                    {/* Actions */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {/* View action — Phase B.6: minWidth 80 keeps the
+                        "View →" + Add buttons on a single line at narrow
+                        viewports. */}
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 80 }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleOpenCompany(row); }}
                           style={{
@@ -801,19 +661,121 @@ export default function CommandCenter() {
               })}
             </tbody>
           </table>
+          </div>
+
+          {/* Phase B.7 — mobile card view (<md). Each card mirrors the table
+              row's data: company identity, last shipment, shipments 12M, TEU
+              12M, top route, status pill, and View affordance. Tapping the
+              card opens the company; the small Add icon stops propagation
+              and opens the Add-to-Campaign modal. */}
+          <div className="block md:hidden p-3 space-y-2">
+            {paginatedRows.map((row) => {
+              const st = STATUS_STYLE[statusForRow(row)];
+              return (
+                <div
+                  key={`m-${row.key}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleOpenCompany(row)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpenCompany(row); } }}
+                  className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm hover:bg-slate-50 transition cursor-pointer"
+                >
+                  <div className="flex items-start gap-3">
+                    <CompanyAvatar
+                      name={row.companyName}
+                      domain={row.domain || row.website || undefined}
+                      size="sm"
+                      className="shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-slate-900 truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                        {row.companyName}
+                      </div>
+                      <div className="text-[11px] text-slate-500 truncate" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+                        {row.address || row.countryCode || row.domain || '—'}
+                      </div>
+                    </div>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 9999,
+                      background: st.bg, color: st.color, border: `1px solid ${st.border}`,
+                      fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap', flexShrink: 0,
+                    }}>
+                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
+                      {st.label}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Last Shipment</div>
+                      <div className="text-slate-700">{formatSafeShipmentDate(row.lastActivity, '—')}</div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Shipments 12M</div>
+                      <div className="font-mono text-blue-700 font-semibold">{formatNumber(row.shipments12m)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">TEU 12M</div>
+                      <div className="font-mono text-slate-900">{formatNumber(row.teu12m, 1)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Top Route</div>
+                      <div className="truncate text-slate-700" title={row.topRoute12m || row.recentRoute || ''}>
+                        {row.topRoute12m || row.recentRoute || '—'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-blue-600">View →</span>
+                    {row.companyId ? (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setCampaignModalRow(row); }}
+                        title="Add to Campaign"
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                        style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                      >
+                        <Send className="h-3 w-3" />
+                        Add
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          </>
         )}
       </div>
 
-      {/* Phase E — Add-to-Campaign modal. Uses existing AddToCampaignModal
-          + addCompanyToCampaign flow; no new campaign API. Mounts only
-          when a row is targeted; closes on success or cancel. */}
+      {/* Add-to-Campaign modal. Pass the lit_companies.id UUID — the FK
+          target — not the source_company_key slug. */}
       {campaignModalRow ? (
         <AddToCampaignModal
           open={Boolean(campaignModalRow)}
           onClose={() => setCampaignModalRow(null)}
           company={{
-            company_id: campaignModalRow.companyId,
+            company_id: campaignModalRow.companyUuid,
             name: campaignModalRow.companyName,
+          }}
+        />
+      ) : null}
+
+      {/* Phase B.3 — top-right "Add Company" hooks the existing AddCompanyModal.
+          On close (whether saved or cancelled) we re-call listSavedCompanies()
+          so a freshly saved row appears without a hard reload. */}
+      {addCompanyOpen ? (
+        <AddCompanyModal
+          open={addCompanyOpen}
+          onClose={() => {
+            setAddCompanyOpen(false);
+            // Defer the refresh until the next tick so the modal's own
+            // localStorage write (in saveRow / submit) lands first.
+            setTimeout(() => { void reloadSavedCompanies(); }, 0);
+          }}
+          onSaved={() => {
+            setAddCompanyOpen(false);
+            setTimeout(() => { void reloadSavedCompanies(); }, 0);
           }}
         />
       ) : null}

@@ -9,6 +9,20 @@ import {
 import { feature } from "topojson-client";
 import type { Topology } from "topojson-specification";
 
+/**
+ * Display metadata attached to a resolved lane endpoint. Mirrors the
+ * `ResolvedEndpoint` shape from `@/lib/laneGlobe` without forcing an import
+ * cycle (consumers populate it; this canvas just reads optional fields).
+ */
+export type GlobeLaneEndpointMeta = {
+  label: string;
+  canonicalKey: string;
+  countryName: string;
+  countryCode: string;
+  flag: string;
+  coords: [number, number];
+};
+
 export type GlobeLane = {
   id: string;
   from: string;
@@ -18,12 +32,105 @@ export type GlobeLane = {
   teu?: string;
   trend?: string;
   up?: boolean;
+  /** Optional resolved metadata for the origin endpoint. */
+  fromMeta?: GlobeLaneEndpointMeta;
+  /** Optional resolved metadata for the destination endpoint. */
+  toMeta?: GlobeLaneEndpointMeta;
+};
+
+type GlobePalette = {
+  oceanInner: string;
+  oceanOuter: string;
+  sphereStroke: string;
+  graticule: string;
+  landFill: string;
+  landStroke: string;
+  highlightFill: string;
+  arcGlow: string;
+  arcStroke: string;
+  dotFill: string;
+  dotStroke: string;
+  pulseStroke: (alpha: number) => string;
+  /** Soft atmosphere ring drawn behind the sphere. */
+  atmosphere: string;
+  /** Floating-globe drop shadow ellipse below the sphere. */
+  dropShadow: string;
+};
+
+// Phase B.6 — 4-tone earth palette used by the dark theme to break the
+// flat sage-green of the B.5 landFill. Tones are intentionally close in
+// luminance and saturation to avoid a comic-book look — only the hue
+// shifts. Hashed by `feature.id % 4` so every render of the same
+// country uses the same tone. Sand-grass-forest-tundra approximation,
+// not biome-correct, but enough to register as varied terrain.
+const LAND_TONE_PALETTE = ["#C9B98E", "#8FA371", "#6B8364", "#9DA388"];
+
+const LIGHT_PALETTE: GlobePalette = {
+  oceanInner: "#F0F7FF",
+  oceanOuter: "#DBEAFE",
+  sphereStroke: "#BFDBFE",
+  graticule: "rgba(59,130,246,0.07)",
+  landFill: "#E2E8F0",
+  landStroke: "#FFFFFF",
+  highlightFill: "rgba(59,130,246,0.48)",
+  arcGlow: "rgba(59,130,246,0.2)",
+  arcStroke: "#3B82F6",
+  dotFill: "#3B82F6",
+  dotStroke: "#FFFFFF",
+  pulseStroke: (alpha) => `rgba(59,130,246,${alpha})`,
+  atmosphere: "rgba(96, 165, 250, 0.18)",
+  dropShadow: "rgba(15, 23, 42, 0.18)",
+};
+
+// Higher-contrast variant used by the Company Detail trade-lane card. The
+// Dashboard trade-lanes consumer keeps the legacy "light" palette by default.
+//
+// Phase B.5 — globe realism upgrade. The B.4 palette painted both land
+// and ocean in shades of blue, so the sphere read as a stylised blue
+// ball rather than an Earth. Land now uses a muted sage-green base
+// (#A8B89A) with deeper olive borders, the ocean retunes to a more
+// saturated medium → deep navy gradient, and the atmosphere halo drops
+// alpha so it reads as a soft cloud haze instead of a neon ring. The
+// "selected country" highlight is intentionally a slightly lighter
+// shade of the land fill (rather than a saturated violet) so picking a
+// lane produces a subtle land-tint rather than a colour bomb.
+// Phase B.6 — realism evaluation. After the B.5 sage-land + navy-ocean
+// pass the user still reads the sphere as stylised. A second pass within
+// the canvas budget tightens it: land stroke drops to alpha 0.25 (less
+// cell-shaded outline), a softer land base, and the atmosphere ring is
+// supplemented by a fainter outer halo. Anything beyond that (per-country
+// topography sampling, painted height bands, real Earth imagery) requires
+// either a static texture asset or a three.js dependency — both flagged in
+// the parent agent report and intentionally not done here.
+const DARK_PALETTE: GlobePalette = {
+  oceanInner: "#4A7BB7",
+  oceanOuter: "#1E3A6A",
+  sphereStroke: "rgba(30,58,138,0.65)",
+  graticule: "rgba(148,163,184,0.18)",
+  landFill: "#A8B89A",
+  // Phase B.6 — drop alpha from 0.45 to 0.25 so country outlines whisper
+  // rather than chunk the sphere into cell-shaded patches.
+  landStroke: "rgba(101, 122, 88, 0.25)",
+  highlightFill: "#C5D5B5",
+  arcGlow: "rgba(167,139,250,0.40)",
+  arcStroke: "#818CF8",
+  dotFill: "#22D3EE",
+  dotStroke: "rgba(14,116,144,0.55)",
+  pulseStroke: (alpha) => `rgba(34,211,238,${alpha})`,
+  atmosphere: "rgba(180, 215, 255, 0.22)",
+  dropShadow: "rgba(15, 23, 42, 0.18)",
 };
 
 type Props = {
   lanes: GlobeLane[];
   selectedLane: string | null;
   size?: number;
+  /**
+   * "light" (default, used by dashboard) renders the legacy pale-blue ocean.
+   * "dark" renders a higher-contrast navy ocean with brighter land/arcs so
+   *  the globe reads clearly against a light premium background.
+   */
+  theme?: "light" | "dark";
 };
 
 type GlobeState = {
@@ -36,7 +143,13 @@ type GlobeState = {
   loaded: boolean;
 };
 
-export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) {
+export default function GlobeCanvas({
+  lanes,
+  selectedLane,
+  size = 268,
+  theme = "light",
+}: Props) {
+  const palette: GlobePalette = theme === "dark" ? DARK_PALETTE : LIGHT_PALETTE;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<GlobeState>({
     world: null,
@@ -119,34 +232,85 @@ export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) 
       }
       s.dashOffset = (s.dashOffset + 0.4) % 24;
 
+      // Phase B.4 — leave room between sphere edge and canvas edge so the
+      // atmosphere halo and drop shadow can render without being clipped.
+      // Phase B.6 — bumped from 16 → 24 to fit the secondary outer halo
+      // ring at sphereRadius + 22 without clipping at the canvas edge.
+      const sphereRadius = size / 2 - 24;
+      const cx = size / 2;
+      const cy = size / 2;
+
       const proj: GeoProjection = geoOrthographic()
-        .scale(size / 2 - 6)
-        .translate([size / 2, size / 2])
+        .scale(sphereRadius)
+        .translate([cx, cy])
         .rotate([s.rotation[0], s.rotation[1], 0])
         .clipAngle(90);
 
       const pathGen = geoPath(proj, ctx);
       ctx.clearRect(0, 0, size, size);
 
-      // Sphere background gradient
-      const grad = ctx.createRadialGradient(
-        size * 0.42, size * 0.38, size * 0.05,
-        size / 2, size / 2, size / 2 - 6
+      // Phase B.4 — drop shadow ellipse beneath the sphere. Drawn first so
+      // every later layer paints over it. Soft blur via shadowBlur on a
+      // transparent fill stroke approximates SVG feGaussianBlur.
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + sphereRadius - 4, sphereRadius * 0.78, sphereRadius * 0.16, 0, 0, Math.PI * 2);
+      ctx.fillStyle = palette.dropShadow;
+      ctx.filter = "blur(6px)";
+      ctx.fill();
+      ctx.restore();
+
+      // Phase B.4 — atmosphere halo ring. A radial gradient from soft blue
+      // at the sphere edge fading to transparent ~16px outside the sphere.
+      const atmosGrad = ctx.createRadialGradient(
+        cx, cy, sphereRadius * 0.92,
+        cx, cy, sphereRadius + 14
       );
-      grad.addColorStop(0, "#F0F7FF");
-      grad.addColorStop(1, "#DBEAFE");
+      atmosGrad.addColorStop(0, palette.atmosphere);
+      atmosGrad.addColorStop(1, "rgba(96,165,250,0)");
+      ctx.beginPath();
+      ctx.arc(cx, cy, sphereRadius + 14, 0, Math.PI * 2);
+      ctx.fillStyle = atmosGrad;
+      ctx.fill();
+
+      // Phase B.6 — secondary outer halo at sphereRadius+22 with very low
+      // alpha. Reads as the bloom past the inner atmosphere, suggesting
+      // depth rather than a hard sphere edge. Alpha 0.10 keeps it well
+      // below the inner ring so it doesn't compete visually.
+      if (theme === "dark") {
+        const outerHaloGrad = ctx.createRadialGradient(
+          cx, cy, sphereRadius + 14,
+          cx, cy, sphereRadius + 22
+        );
+        outerHaloGrad.addColorStop(0, "rgba(180,215,255,0.10)");
+        outerHaloGrad.addColorStop(1, "rgba(180,215,255,0)");
+        ctx.beginPath();
+        ctx.arc(cx, cy, sphereRadius + 22, 0, Math.PI * 2);
+        ctx.fillStyle = outerHaloGrad;
+        ctx.fill();
+      }
+
+      // Sphere background gradient — center light, edge dark for a true
+      // 3D-globe highlight. The bright spot sits up-and-left of center,
+      // matching the conventional sun-from-upper-left lighting.
+      const grad = ctx.createRadialGradient(
+        cx - sphereRadius * 0.18, cy - sphereRadius * 0.22, sphereRadius * 0.05,
+        cx, cy, sphereRadius
+      );
+      grad.addColorStop(0, palette.oceanInner);
+      grad.addColorStop(1, palette.oceanOuter);
       ctx.beginPath();
       pathGen({ type: "Sphere" } as any);
       ctx.fillStyle = grad;
       ctx.fill();
-      ctx.strokeStyle = "#BFDBFE";
+      ctx.strokeStyle = palette.sphereStroke;
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // Graticule
+      // Graticule — softer opacity so it whispers behind the land masses.
       ctx.beginPath();
       pathGen(geoGraticule().step([30, 30])() as any);
-      ctx.strokeStyle = "rgba(59,130,246,0.07)";
+      ctx.strokeStyle = palette.graticule;
       ctx.lineWidth = 0.5;
       ctx.stroke();
 
@@ -159,9 +323,25 @@ export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) 
         features.forEach((f: any) => {
           ctx.beginPath();
           pathGen(f);
-          ctx.fillStyle = "#E2E8F0";
+          // Phase B.6 — light per-country tone variation. Without a real
+          // Earth texture (would require a static image asset) or a
+          // three.js globe (would require a new dependency), the canvas
+          // approach can only suggest realism. Hashing each feature's
+          // numeric ISO id into one of 4 muted earth tones breaks the
+          // monotone-sage look of B.5 without introducing colour bombs.
+          // Tones are kept perceptually close to the base #A8B89A so the
+          // sphere still reads as a coherent landmass rather than a
+          // patchwork of saturated hues. Highlight pass below still wins
+          // because it paints in a second loop.
+          if (theme === "dark") {
+            const fid = Number(f?.id) || 0;
+            const tone = LAND_TONE_PALETTE[fid % LAND_TONE_PALETTE.length];
+            ctx.fillStyle = tone;
+          } else {
+            ctx.fillStyle = palette.landFill;
+          }
           ctx.fill();
-          ctx.strokeStyle = "#fff";
+          ctx.strokeStyle = palette.landStroke;
           ctx.lineWidth = 0.4;
           ctx.stroke();
         });
@@ -175,7 +355,7 @@ export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) 
                 fromMatch.includes(name) || toMatch.includes(name)) {
               ctx.beginPath();
               pathGen(f);
-              ctx.fillStyle = "rgba(59,130,246,0.48)";
+              ctx.fillStyle = palette.highlightFill;
               ctx.fill();
             }
           });
@@ -188,21 +368,29 @@ export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) 
         const lane = lanesRef.current.find((l) => l.id === sel);
         if (lane) {
           const arc = { type: "LineString", coordinates: [lane.coords[0], lane.coords[1]] };
-          // Glow
+          // Phase B.4 — soft glow on the arc, then animated dashed stroke.
+          // shadowBlur gives the indigo arc a subtle aura without needing
+          // SVG filters.
+          ctx.save();
           ctx.beginPath();
           pathGen(arc as any);
-          ctx.strokeStyle = "rgba(59,130,246,0.2)";
+          ctx.strokeStyle = palette.arcGlow;
           ctx.lineWidth = 7;
           ctx.setLineDash([]);
           ctx.stroke();
-          // Animated dash
+          ctx.restore();
+          // Animated dash with subtle shadow halo for depth.
+          ctx.save();
           ctx.beginPath();
           pathGen(arc as any);
-          ctx.strokeStyle = "#3B82F6";
+          ctx.strokeStyle = palette.arcStroke;
           ctx.lineWidth = 2.5;
           ctx.setLineDash([8, 4]);
           ctx.lineDashOffset = -s.dashOffset;
+          ctx.shadowColor = palette.arcGlow;
+          ctx.shadowBlur = 6;
           ctx.stroke();
+          ctx.restore();
           ctx.setLineDash([]);
 
           // Endpoint pulse dots
@@ -221,15 +409,15 @@ export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) 
             const alpha = Math.max(0, 0.45 - (s.dashOffset % 12) / 26);
             ctx.beginPath();
             ctx.arc(px, py, pr, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(59,130,246,${alpha})`;
+            ctx.strokeStyle = palette.pulseStroke(alpha);
             ctx.lineWidth = 1.5;
             ctx.stroke();
             // Dot
             ctx.beginPath();
             ctx.arc(px, py, 5, 0, Math.PI * 2);
-            ctx.fillStyle = "#3B82F6";
+            ctx.fillStyle = palette.dotFill;
             ctx.fill();
-            ctx.strokeStyle = "#fff";
+            ctx.strokeStyle = palette.dotStroke;
             ctx.lineWidth = 2;
             ctx.stroke();
           });
@@ -241,11 +429,19 @@ export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) 
     return () => {
       if (s.animFrame) cancelAnimationFrame(s.animFrame);
     };
-  }, [loaded, size]);
+    // palette is read inside the rAF tick; including it in deps means a theme
+    // change will rebuild the loop with the new colours rather than retain
+    // the stale closure from mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, size, theme]);
 
   return (
     <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      <canvas ref={canvasRef} style={{ display: "block", borderRadius: "50%" }} />
+      {/* Phase B.4 — no `borderRadius: 50%` clip on the canvas: the
+          atmosphere halo and drop shadow paint outside the sphere edge
+          and need the full canvas square to render. The sphere itself
+          stays a perfect circle via `pathGen({type:"Sphere"})`. */}
+      <canvas ref={canvasRef} style={{ display: "block" }} />
       {!loaded && (
         <div
           style={{

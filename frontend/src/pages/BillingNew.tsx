@@ -13,6 +13,7 @@ import {
   type BillingInterval,
   type PlanCode,
 } from '@/lib/planLimits';
+import { useEntitlements } from '@/lib/usage';
 import {
   CheckCircle2,
   Zap,
@@ -430,12 +431,19 @@ export default function Billing() {
     (user as any).stripe_customer_id ||
     (user as any).user_metadata?.stripe_customer_id;
 
-  // Phase F — usage meters read real counters loaded by loadRealUsageCounters().
-  // The previous `user.user_metadata.monthly_*` reads were removed because no
-  // real writer populates those fields; rendering them would be mock data.
-  const searchesUsed = realSearches;
-  const savesUsed = realSaves;
+  // Phase G — read real entitlements from get-entitlements (single source
+  // of truth). Falls back to the legacy lit_activity_events / saved-rows
+  // counts so the page never shows nothing while the snapshot loads.
+  const { entitlements } = useEntitlements();
+  const searchesUsed = entitlements?.used?.company_search ?? realSearches;
+  const savesUsed = entitlements?.used?.saved_company ?? realSaves;
   const activeCampaignsUsed = realActiveCampaigns;
+  // Real plan limits from DB (NULL == unlimited). Falls back to the
+  // hardcoded planLimits.ts values until entitlements load.
+  const limitSearches =
+    entitlements?.limits?.company_search ?? currentPlan.limits.searches_per_month;
+  const limitSaves =
+    entitlements?.limits?.saved_company ?? currentPlan.limits.command_center_saves_per_month;
 
   const renewalDate = subscription?.current_period_end
     ? new Date(subscription.current_period_end).toLocaleDateString('en-US', {
@@ -676,14 +684,14 @@ export default function Billing() {
                 icon={Search}
                 label="Searches Used"
                 current={searchesUsed}
-                max={currentPlan.limits.searches_per_month}
+                max={limitSearches}
                 accentClass="bg-blue-500"
               />
               <MetricCard
                 icon={Bookmark}
                 label="Saved Companies"
                 current={savesUsed}
-                max={currentPlan.limits.command_center_saves_per_month}
+                max={limitSaves}
                 accentClass="bg-violet-500"
               />
               <MetricCard

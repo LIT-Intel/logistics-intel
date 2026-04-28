@@ -5,17 +5,19 @@ import {
   CalendarClock,
   DollarSign,
   Globe,
+  Layers,
   Package,
   Phone,
   Ship,
   TrendingUp,
   MapPin,
   Truck,
+  UserRound,
   Users,
   Briefcase,
   Building2,
   ArrowUpRight,
-  Waves,
+  ArrowRight,
   BarChart3,
   Container,
   Search,
@@ -28,19 +30,33 @@ import {
   buildCommandCenterDetailModel,
   buildYearScopedProfile,
   getCommandCenterAvailableYears,
+  resolveLitCompanyUuid,
 } from "@/lib/api";
 import type { IyCompanyProfile, IyRouteKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CompanyActivityChart from "./CompanyActivityChart";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
-import { laneStringToGlobeLane } from "@/lib/laneGlobe";
+import {
+  canonicalizeLanes,
+  laneStringToGlobeLane,
+  resolveEndpoint,
+  type CanonicalLane,
+  type NonCanonicalLane,
+  type ResolvedEndpoint,
+} from "@/lib/laneGlobe";
 import {
   CANONICAL_CONTAINER_CODES,
   canonicalContainerLabel,
   normalizeContainerTypeLabel,
 } from "@/lib/containerUtils";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/auth/AuthProvider";
+import {
+  capFutureDate,
+  formatSafeShipmentDate,
+  latestValidPastDate,
+} from "@/lib/dateUtils";
 import CommandCenterEmptyState from "./CommandCenterEmptyState";
 import {
   PieChart,
@@ -218,6 +234,21 @@ const isValidPastOrCurrentDate = (value?: string | null) => {
   maxAllowed.setDate(maxAllowed.getDate() + FUTURE_DATE_TOLERANCE_DAYS);
   return parsed.getTime() <= maxAllowed.getTime();
 };
+
+/**
+ * Stricter clamp used at KPI display points only. Returns the original
+ * value when it parses as a date at or before "now"; otherwise returns
+ * null so the caller can render "—". Does not mutate any source data.
+ *
+ * Phase B.5 — delegates to the shared `capFutureDate` helper from
+ * `@/lib/dateUtils` so every shipment-date render path (Search cards,
+ * Command Center table, Company hero, this panel) shares one cap rule.
+ * Kept as a local symbol so existing imports inside this file (which
+ * already reference `capDateAtToday` at multiple points) continue to
+ * work without a sweeping rename.
+ */
+const capDateAtToday = (value?: string | null): string | null =>
+  capFutureDate(value ?? null);
 
 const getDateTime = (value?: string | null) => {
   if (!value) return 0;
@@ -929,6 +960,42 @@ const extractContainerNumbers = (shipment: any) => {
 };
 
 const extractContainerTypes = (shipment: any) => {
+  // Phase H P1 fix — upstream returns `container_type_descriptions` as
+  // either a comma-joined string OR an array of short codes. Previously
+  // we stringified the array (e.g. "40HC,40GP") and ran the whole thing
+  // through normalizeContainerTypeLabel, which collapsed the distinct
+  // types into one garbled token. Now we check for the array form first
+  // and map each element through the normalizer individually.
+  const rawDescriptions = pickFirst(
+    getShipmentValue(
+      shipment,
+      ["container_type_descriptions"],
+      ["containerTypeDescriptions"],
+      ["container_types"],
+      ["containerTypes"],
+    ),
+    null,
+  );
+  if (Array.isArray(rawDescriptions)) {
+    const types = rawDescriptions
+      .map((item: any) =>
+        normalizeContainerTypeLabel(
+          typeof item === "string"
+            ? item
+            : item?.container_type ||
+                item?.type ||
+                item?.equipment_type ||
+                item?.equipmentType ||
+                item?.description ||
+                "",
+        ),
+      )
+      .filter(Boolean);
+    if (types.length) {
+      return [...new Set(types)].join(", ");
+    }
+  }
+
   const direct = normalizeContainerTypeLabel(
     String(
       pickFirst(
@@ -1241,6 +1308,181 @@ const aggregateCarrierRows = (shipments: NormalizedShipment[]) => {
     .slice(0, 10);
 };
 
+/**
+ * Canonical lane row consumed by both the Trade Lanes table/globe and the
+ * hero's Top/Recent route pills.
+ *
+ * `resolvable` = both endpoints resolve through `resolveEndpoint`. Only
+ * resolvable rows feed the globe arc array. Non-resolvable real-name rows
+ * (e.g. "Chengalpattu district, India → United States of America") still
+ * render in the table — they're not "Unknown".
+ */
+type SafeLane = {
+  lane: string;
+  shipments: number;
+  teu: number;
+  spend: number | null;
+  resolvable: boolean;
+};
+
+const looksLikeRealLane = (label: string) => {
+  if (!label) return false;
+  const cleaned = label.trim();
+  if (!cleaned || cleaned === "—") return false;
+  if (isUnknownRoute(cleaned)) return false;
+  // Reject if either side is the literal "Unknown".
+  const parts = cleaned.split(/→|->|>/).map((s) => s.trim()).filter(Boolean);
+  if (parts.length < 2) return false;
+  return !parts.some((part) => /^unknown$/i.test(part));
+};
+
+const dedupeLanes = (rows: SafeLane[]): SafeLane[] => {
+  const map = new Map<string, SafeLane>();
+  rows.forEach((row) => {
+    const key = row.lane.toLowerCase();
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, row);
+      return;
+    }
+    map.set(key, {
+      lane: existing.lane,
+      shipments: Math.max(existing.shipments, row.shipments),
+      teu: Math.max(existing.teu, row.teu),
+      spend: existing.spend ?? row.spend,
+      resolvable: existing.resolvable || row.resolvable,
+    });
+  });
+  return [...map.values()];
+};
+
+/**
+ * Build a single canonical lane list for the Trade Lanes panel + the hero
+ * pills. Priority chain: detail.topRoutes → routeKpis.topRoutesLast12m →
+ * synthesised single rows from KPI fields → profile fallbacks → BOL
+ * aggregation. Each row is filtered through `looksLikeRealLane`. Resolvable
+ * rows are surfaced first so the globe arc still picks the strongest
+ * resolvable lane even when raw-name lanes outrank it numerically.
+ */
+const safeRouteList = (
+  detail: { topRoutes: Array<{ lane: string; shipments: number; teu: number; spend: number | null }> },
+  routeKpis: any,
+  profile: any,
+  normalizedShipments: NormalizedShipment[],
+): SafeLane[] => {
+  const collected: SafeLane[] = [];
+
+  const pushLane = (
+    rawLane: string | null | undefined,
+    stats?: { shipments?: number; teu?: number; spend?: number | null },
+  ) => {
+    const lane = buildRouteLabel(rawLane);
+    if (!looksLikeRealLane(lane)) return;
+    const parts = lane.split(/→|->|>/).map((s) => s.trim());
+    const fromMeta = resolveEndpoint(parts[0]);
+    const toMeta = resolveEndpoint(parts[1]);
+    collected.push({
+      lane,
+      shipments: Math.max(0, Number(stats?.shipments ?? 0) || 0),
+      teu: Math.max(0, Number(stats?.teu ?? 0) || 0),
+      spend: stats?.spend ?? null,
+      resolvable: Boolean(fromMeta && toMeta),
+    });
+  };
+
+  // 1. Already-built detail.topRoutes from buildDetailModel.
+  detail.topRoutes.forEach((row) =>
+    pushLane(row.lane, { shipments: row.shipments, teu: row.teu, spend: row.spend }),
+  );
+
+  // 2. routeKpis.topRoutesLast12m raw rows.
+  safeArray(routeKpis?.topRoutesLast12m).forEach((row: any) =>
+    pushLane(row?.route || row?.lane, {
+      shipments: toNumber(row?.shipments),
+      teu: toNumber(row?.teu),
+      spend: toNumber(pickFirst(row?.estSpendUsd, row?.estSpendUsd12m)) || null,
+    }),
+  );
+
+  // 3. Synthesised single-row from `topRouteLast12m` / `mostRecentRoute`.
+  pushLane(routeKpis?.topRouteLast12m);
+  pushLane(routeKpis?.mostRecentRoute);
+
+  // 4. Profile-level fallbacks.
+  pushLane(profile?.topRouteLast12m);
+  pushLane(profile?.top_route);
+  pushLane(profile?.kpis?.top_route_12m);
+  pushLane(profile?.mostRecentRoute);
+  pushLane(profile?.recent_route);
+  pushLane(profile?.kpis?.recent_route);
+
+  safeArray(profile?.topRoutes).forEach((row: any) =>
+    pushLane(row?.label || row?.route, {
+      shipments: toNumber(row?.shipments),
+      teu: toNumber(row?.teu),
+      spend: toNumber(row?.estSpendUsd) || null,
+    }),
+  );
+
+  // 5. Aggregate from raw recent_bols (origin + destination pairs).
+  const bolRows = safeArray(
+    profile?.recent_bols || profile?.recentBols || profile?.bols,
+  );
+  const bolMap = new Map<string, { shipments: number; teu: number }>();
+  bolRows.forEach((shipment: any) => {
+    const origin = pickFirst(
+      shipment?.origin,
+      shipment?.port_of_lading,
+      shipment?.portOfLading,
+      shipment?.port_of_origin,
+      shipment?.shipper_country,
+    );
+    const dest = pickFirst(
+      shipment?.destination,
+      shipment?.port_of_unlading,
+      shipment?.portOfUnlading,
+      shipment?.port_of_destination,
+      shipment?.consignee_country,
+    );
+    const lane = buildCleanRoute(
+      typeof origin === "string" ? origin : null,
+      typeof dest === "string" ? dest : null,
+    );
+    if (!looksLikeRealLane(lane)) return;
+    const current = bolMap.get(lane) || { shipments: 0, teu: 0 };
+    current.shipments += 1;
+    current.teu += toNumber(pickFirst(shipment?.teu, shipment?.TEU));
+    bolMap.set(lane, current);
+  });
+  bolMap.forEach((stats, lane) =>
+    pushLane(lane, { shipments: stats.shipments, teu: stats.teu }),
+  );
+
+  // 6. Aggregate from normalisedShipments (origin/destination strings).
+  const shipMap = new Map<string, { shipments: number; teu: number }>();
+  normalizedShipments.forEach((shipment) => {
+    if (!looksLikeRealLane(shipment.route)) return;
+    const current = shipMap.get(shipment.route) || { shipments: 0, teu: 0 };
+    current.shipments += 1;
+    current.teu += shipment.teu;
+    shipMap.set(shipment.route, current);
+  });
+  shipMap.forEach((stats, lane) =>
+    pushLane(lane, { shipments: stats.shipments, teu: stats.teu }),
+  );
+
+  const deduped = dedupeLanes(collected);
+
+  // Resolvable lanes win the sort tiebreak so the globe-eligible lane
+  // ranks first when shipment counts are equal. Non-resolvable real-name
+  // lanes still surface (they go to the table even if not the globe).
+  return deduped.sort((a, b) => {
+    if (a.resolvable !== b.resolvable) return a.resolvable ? -1 : 1;
+    if (b.shipments !== a.shipments) return b.shipments - a.shipments;
+    return b.teu - a.teu;
+  });
+};
+
 const aggregateRouteRows = (shipments: NormalizedShipment[]) => {
   const map = new Map<string, { shipments: number; teu: number; spend: number }>();
   shipments.forEach((shipment) => {
@@ -1375,14 +1617,64 @@ const getContactFullName = (contact: any) => {
 const getContactTitle = (contact: any) =>
   contact.title || contact.role || contact.position || contact.jobTitle || "";
 
+// Phase B.6 — broaden field mappers to cover every Lusha / generic
+// provider response shape we've observed. Previously we only checked
+// `email` / `email_address`, which left valid emails (e.g. `work_email`,
+// `emails: [...]` arrays) reading as missing on the UI.
 const getContactEmail = (contact: any) =>
-  contact.email || contact.email_address || contact.emailAddress || "";
+  contact?.email ||
+  contact?.email_address ||
+  contact?.emailAddress ||
+  contact?.work_email ||
+  contact?.businessEmail ||
+  (Array.isArray(contact?.emails) ? contact.emails[0] : "") ||
+  "";
 
 const getContactPhone = (contact: any) =>
-  contact.phone || contact.phone_number || contact.phoneNumber || "";
+  contact?.phone ||
+  contact?.phone_number ||
+  contact?.phoneNumber ||
+  contact?.directDial ||
+  contact?.work_phone ||
+  contact?.mobile_phone ||
+  (Array.isArray(contact?.phones) ? contact.phones[0] : "") ||
+  "";
 
 const getContactLinkedIn = (contact: any) =>
-  contact.linkedin_url || contact.linkedinUrl || contact.linkedInUrl || "";
+  contact?.linkedin ||
+  contact?.linkedinUrl ||
+  contact?.linkedin_url ||
+  contact?.linkedInUrl ||
+  contact?.profileUrl ||
+  contact?.url ||
+  contact?.social?.linkedin ||
+  "";
+
+/**
+ * Phase B.6 — explicit predicate for "this contact has zero contact-method
+ * fields". Used to render the "Details require enrichment." copy under the
+ * title for shallow-Lusha records where only name+title made it through.
+ * Honest signal: the user can see we found a person but not their reach
+ * details, and we don't pretend with empty <a> tags or empty pills.
+ */
+const contactHasNoDetails = (contact: any): boolean => {
+  return !getContactEmail(contact) && !getContactPhone(contact) && !getContactLinkedIn(contact);
+};
+
+/**
+ * Phase B.3 — strict verification gate. Returns true ONLY when an upstream
+ * provider explicitly flagged the contact's email as verified. Falsy /
+ * absent fields all collapse to false so we don't slap a green "Verified"
+ * pill on every Lusha row by default. Anything else renders as "Found".
+ */
+const isContactVerified = (contact: any): boolean => {
+  if (!contact) return false;
+  if (contact.email_verified === true) return true;
+  if (contact.source_provider_verified === true) return true;
+  const status = String(contact.email_status || "").toLowerCase().trim();
+  return status === "verified";
+};
+
   const getContactLocation = (contact: any) =>
   contact.location ||
   [contact.city, contact.state, contact.country].filter(Boolean).join(", ") ||
@@ -1579,23 +1871,44 @@ const InfoChip = ({
   </span>
 );
 
+/**
+ * Phase B.4 — SmallMetric now supports an `emptyHint`. When set AND the
+ * passed `value` is null/undefined/empty/em-dash, the card renders the hint
+ * as a small italic explanatory line ("Not enough history") instead of a
+ * bare em-dash. Card chrome is unchanged so the row never shifts.
+ */
 const SmallMetric = ({
   label,
   value,
   icon: Icon,
+  emptyHint,
 }: {
   label: string;
   value: React.ReactNode;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-}) => (
-  <div className="min-h-[96px] rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-      <Icon className="h-3.5 w-3.5 text-indigo-500" />
-      <span>{label}</span>
+  emptyHint?: string;
+}) => {
+  const isEmpty =
+    value == null ||
+    value === "" ||
+    value === "—" ||
+    (typeof value === "string" && value.trim() === "—");
+  return (
+    <div className="min-h-[96px] rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+        <Icon className="h-3.5 w-3.5 text-indigo-500" />
+        <span>{label}</span>
+      </div>
+      {isEmpty && emptyHint ? (
+        <div className="mt-2 text-sm italic text-slate-500">{emptyHint}</div>
+      ) : (
+        <div className="mt-2 text-lg font-semibold tracking-tight text-slate-950">
+          {isEmpty ? "—" : value}
+        </div>
+      )}
     </div>
-    <div className="mt-2 text-lg font-semibold tracking-tight text-slate-950">{value}</div>
-  </div>
-);
+  );
+};
 
 const MetricList = ({
   title,
@@ -2092,6 +2405,17 @@ export default function CompanyDetailPanel({
   error,
   selectedYear,
 }: CompanyDetailPanelProps) {
+  // Phase B.11 — Market Benchmark tab is gated to super-admins only until
+  // a reliable paid rate source is confirmed. We consume the existing
+  // `useAuth()` helper from `@/auth/AuthProvider` (the SAME hook used for
+  // every other admin-only surface in the app, e.g. AdminDashboard /
+  // AppHeader / AppSidebar). No auth state is mutated here. While
+  // `loading` is true (auth not yet resolved) we treat the user as
+  // non-admin so a deep-linked URL cannot flash the iframe before role
+  // resolves. If a future build breaks the import, the gate fails
+  // CLOSED — the tab simply hides — which is the safer default.
+  const { isSuperAdmin, loading: authLoading } = useAuth();
+  const isBenchmarkAdmin = Boolean(isSuperAdmin) && !authLoading;
   const key = getRecordKey(record);
   const rawProfile = profile as any;
   const rawRouteKpis = routeKpis as any;
@@ -2247,14 +2571,117 @@ export default function CompanyDetailPanel({
     };
   }, [normalizedShipments, effectiveSelectedYear, rawProfile, rawRouteKpis, availableYears, profile, routeKpis]);
 
+  // Phase B.8 — tabs restored to 5 per the executive Company Profile rework.
+  // Trade Lane Intelligence pulled out of Overview into its own tab so the
+  // globe + canonical lane table get the full panel width (and the
+  // origin/destination flag pills stop overflowing on 1024-1280 viewports).
+  // Shipments tab restored as a real BOL ledger view backed by the same
+  // normalizedShipments memo that already powers Overview previews — no new
+  // fetches.
   const [activeTab, setActiveTab] = useState<
-    "overview" | "equipment" | "shipments" | "suppliers" | "contacts" | "credit"
+    "overview" | "shipments" | "trade-lanes" | "equipment" | "contacts" | "market-benchmark"
   >("overview");
+  // Phase B.10 — Market Benchmark tab uses an iframe to embed the Freight
+  // Right Rate Index. The native <iframe> does not fire `onError` for
+  // CSP / X-Frame-Options blocks, so we run a 6s onLoad watchdog: if the
+  // iframe never reports `load`, we assume it is blocked at the
+  // browser/CDN layer and render a clean honest fallback card.
+  const [benchmarkIframeStatus, setBenchmarkIframeStatus] = useState<
+    "pending" | "loaded" | "blocked"
+  >("pending");
+  useEffect(() => {
+    if (activeTab !== "market-benchmark") return;
+    if (benchmarkIframeStatus !== "pending") return;
+    const t = window.setTimeout(() => {
+      setBenchmarkIframeStatus((s) => (s === "pending" ? "blocked" : s));
+    }, 6000);
+    return () => window.clearTimeout(t);
+  }, [activeTab, benchmarkIframeStatus]);
   const [suppliersPage, setSuppliersPage] = useState(0);
   const [historyPage, setHistoryPage] = useState(0);
   const [productsPage, setProductsPage] = useState(0);
+  const [shipmentsPage, setShipmentsPage] = useState(0);
   const [selectedLane, setSelectedLane] = useState<string | null>(null);
-  const activeLane = selectedLane || detail.topRoutes[0]?.lane || null;
+
+  // Build the canonical lane list once. Phase B.3 — all consumers (hero
+  // pill, Trade Lane Intelligence table, globe arc, Overview previews) read
+  // from the same canonicalizeLanes() output so "Italy → United States of
+  // America US" and "Italy → USA" merge into one row labelled
+  // "🇮🇹 Italy → 🇺🇸 USA". `combinedLanes` keeps the raw list around so
+  // unresolved rows still show in the table.
+  const safeLanes = useMemo(
+    () => safeRouteList(detail, rawRouteKpis, rawProfile, normalizedShipments),
+    [detail, rawRouteKpis, rawProfile, normalizedShipments],
+  );
+
+  const { canonical: canonicalLanes, nonCanonical: nonCanonicalLanes } = useMemo(
+    () =>
+      canonicalizeLanes(
+        safeLanes.map((row) => ({
+          lane: row.lane,
+          shipments: row.shipments,
+          teu: row.teu,
+          spend: row.spend,
+        })),
+      ),
+    [safeLanes],
+  );
+
+  const combinedLanes: Array<CanonicalLane | NonCanonicalLane> = useMemo(
+    () => [...canonicalLanes, ...nonCanonicalLanes],
+    [canonicalLanes, nonCanonicalLanes],
+  );
+
+  // Globe / lane-summary key — the canonical displayLabel. Unresolved rows
+  // never feed the globe arc array (they have no coords).
+  const firstResolvableLane = useMemo(
+    () => canonicalLanes[0]?.displayLabel ?? null,
+    [canonicalLanes],
+  );
+
+  // Default-select the first canonical (resolvable) lane on mount / when the
+  // company changes. We only auto-pick if the user has not chosen a lane yet
+  // (or their selection is no longer valid for the current company).
+  useEffect(() => {
+    if (!firstResolvableLane) {
+      if (selectedLane) setSelectedLane(null);
+      return;
+    }
+    if (
+      !selectedLane ||
+      !canonicalLanes.some((l) => l.displayLabel === selectedLane)
+    ) {
+      setSelectedLane(firstResolvableLane);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstResolvableLane, canonicalLanes]);
+
+  const activeLane = selectedLane || firstResolvableLane;
+  const activeLaneMeta = useMemo(
+    () => canonicalLanes.find((l) => l.displayLabel === activeLane) || null,
+    [canonicalLanes, activeLane],
+  );
+  const activeFromMeta: ResolvedEndpoint | null = activeLaneMeta?.fromMeta ?? null;
+  const activeToMeta: ResolvedEndpoint | null = activeLaneMeta?.toMeta ?? null;
+
+  // Responsive globe size — clamp to viewport width minus ~64px of horizontal
+  // padding so the canvas never overflows on a 390px mobile viewport.
+  const [globeSize, setGlobeSize] = useState<number>(268);
+  useEffect(() => {
+    const update = () => {
+      if (typeof window === "undefined") return;
+      const w = window.innerWidth || 0;
+      // Container padding ≈ 32px (panel) + 32px (card) + 16px (block) ≈ 80px.
+      const next = Math.max(180, Math.min(268, w - 80));
+      setGlobeSize(next);
+    };
+    update();
+    if (typeof window !== "undefined") {
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
+    }
+    return undefined;
+  }, []);
 
   const [phantomContacts, setPhantomContacts] = useState<any[]>([]);
   const [selectedContact, setSelectedContact] = useState<any | null>(null);
@@ -2264,9 +2691,25 @@ export default function CompanyDetailPanel({
   const [contactFetchTrigger, setContactFetchTrigger] = useState(0);
   const [contactPreviewSource, setContactPreviewSource] = useState<"cache" | "lusha" | null>(null);
   const [contactMessage, setContactMessage] = useState<string | null>(null);
+  // Phase B.17 — toast tone for the contact save banner. Promoted from a
+  // buried empty-state line into a sticky banner at the top of the
+  // Contact Intel tab so users actually see save outcomes (success,
+  // already-saved, RLS denied, FK missing). `null` hides the banner.
+  const [contactMessageTone, setContactMessageTone] = useState<
+    "info" | "success" | "warning" | "error" | null
+  >(null);
   const [contactDebug, setContactDebug] = useState<any | null>(null);
+  // Phase B.2 G — when the enrich-contacts edge function returns a 5xx
+  // / non-2xx (rate limited, provider down, etc.) we store the raw error
+  // here and render the friendly "Contact enrichment unavailable" copy.
+  // The raw text only shows up inside a collapsed `<details>` toggle.
+  const [contactError, setContactError] = useState<string | null>(null);
   const [savedContactKeys, setSavedContactKeys] = useState<Set<string>>(new Set());
   const [contactSearchQuery, setContactSearchQuery] = useState("");
+  // Phase B.3 Contact Intel: department/role filter chip state. Default "all"
+  // matches the leading FILTER_CHIPS entry. The chip's `matcher` runs against
+  // each contact's title; the helper handles missing titles safely.
+  const [contactDeptFilter, setContactDeptFilter] = useState<string>("all");
 
   useEffect(() => {
     const companyId =
@@ -2311,6 +2754,7 @@ if (!companyDomain && companyName) {
 
     const run = async () => {
       setContactsLoading(true);
+      setContactError(null);
 
       try {
         if (companyId) {
@@ -2380,14 +2824,20 @@ if (!cancelled) {
   console.error("Contact preview fetch error", err);
 
   if (!cancelled) {
-    const message =
+    const rawMessage =
       err instanceof Error
         ? err.message
+        : typeof err === "string"
+        ? err
         : "Contact enrichment failed.";
 
     setPhantomContacts((current) => current);
     setContactPreviewSource((current) => current);
-    setContactMessage(message);
+    // Phase B.2 G — never leak raw "Edge Function returned a non-2xx
+    // status code." into the primary UI copy. We store the raw error
+    // separately so it can be expanded inside a collapsed `<details>`.
+    setContactError(rawMessage);
+    setContactMessage(null);
   }
 } finally {
         if (!cancelled) {
@@ -2417,7 +2867,11 @@ if (!cancelled) {
   // Trade lane signal, Recency risk, and Volume profile cards removed per UX cleanup.
   // Only Contact Intelligence remains in the bottom overview section.
 
-  const trendPct = (() => {
+  // Phase B.4 — track BOTH the trend % AND whether prior-year data exists
+  // separately. The KPI card uses `priorYearMissing` to show the
+  // "Not enough history" hint instead of a bare em-dash when the prior
+  // year has zero shipments.
+  const { trendPct, priorYearMissing } = (() => {
     const activeYear = effectiveSelectedYear || new Date().getFullYear();
     const series = safeArray(rawProfile?.timeSeries);
     const byYear = new Map<number, number>();
@@ -2439,8 +2893,14 @@ if (!cancelled) {
 
     const thisYear = byYear.get(activeYear) ?? null;
     const priorYear = byYear.get(activeYear - 1) ?? null;
-    if (!thisYear || !priorYear || priorYear === 0) return null;
-    return ((thisYear - priorYear) / priorYear) * 100;
+    const missing = !priorYear || priorYear === 0;
+    if (!thisYear || missing) {
+      return { trendPct: null as number | null, priorYearMissing: missing };
+    }
+    return {
+      trendPct: ((thisYear - (priorYear as number)) / (priorYear as number)) * 100,
+      priorYearMissing: false,
+    };
   })();
   const trendArrow = trendPct == null ? null : trendPct > 5 ? "↑" : trendPct < -5 ? "↓" : "→";
   const trendColor =
@@ -2452,7 +2912,24 @@ if (!cancelled) {
       ? "text-rose-600"
       : "text-amber-600";
 
-  const suppliersRawCount = safeArray((rawProfile as any)?.suppliers_table).length;
+  // Phase H P1 fix — the proxy's buildSnapshotFromCompanyData emits
+  // `top_suppliers` but never `suppliers_table`. The panel was reading
+  // only `suppliers_table` and getting nothing. We now fall through to
+  // top_suppliers (snake_case, canonical from proxy) and topSuppliers
+  // (camelCase, legacy variant) so suppliers populate in production.
+  const rawSuppliersSource =
+    (rawProfile as any)?.suppliers_table ||
+    (rawProfile as any)?.top_suppliers ||
+    (rawProfile as any)?.topSuppliers ||
+    [];
+  // Mirror the same filter the render sites apply so the diversity score
+  // doesn't include empty / "—" rows.
+  const suppliersRawCount = safeArray(rawSuppliersSource).filter((sup: any) => {
+    const candidate = String(sup?.supplier_name || sup?.name || "").trim();
+    if (!candidate) return false;
+    const lower = candidate.toLowerCase();
+    return !(lower === "—" || lower === "unknown" || lower === "n/a" || lower === "na");
+  }).length;
   const diversityScore =
     suppliersRawCount === 0
       ? null
@@ -2552,47 +3029,124 @@ if (!cancelled) {
     return [linkedin, name, title].join("|").toLowerCase();
   };
 
+  // Phase B.6 — schema-true save. The pre-B.6 payload sent five columns
+  // that don't exist on `lit_contacts` (company_name, company_domain,
+  // source_provider, raw_contact, updated_at) plus an `onConflict` against
+  // a unique index that doesn't exist (company_id,linkedin_url). The
+  // confirmed live schema (supabase/migrations/20260115001208_create_lit
+  // _schema_part2.sql lines 66–97) is:
+  //   id (uuid, default), source (NOT NULL, default 'lusha'),
+  //   source_contact_key, company_id (uuid FK lit_companies.id),
+  //   full_name (NOT NULL), first_name, last_name, title, department,
+  //   seniority, email, phone, linkedin_url, avatar_url, city, state,
+  //   country_code, buying_intent, raw_payload, created_at, updated_at.
+  // Unique constraint: (source, source_contact_key) — NOT
+  // (company_id, linkedin_url).
+  //
+  // RLS: only a SELECT policy ("Contacts are viewable by authenticated
+  // users") is granted. There is no INSERT policy for `authenticated`,
+  // so this insert will be denied with code 42501 until a follow-up
+  // migration adds one. We surface the user-facing copy
+  //   "Contact saving is not enabled for your account yet."
+  // exactly as briefed and never expose raw RLS / schema wording.
+  //
+  // We also resolve the lit_companies UUID (record.company.id) rather
+  // than the source_company_key slug (record.company.company_id) so the
+  // FK to lit_companies(id) holds. Slug-as-UUID was producing 23503 FK
+  // violations on the few companies that were seeded into lit_companies
+  // with a real UUID.
   const saveContactToSupabase = async (contact: any) => {
-    const companyId =
-      (record as any)?.company?.company_id ||
-      (record as any)?.company?.id ||
-      (rawProfile as any)?.company_id ||
+    // Phase B.7: resolve the lit_companies UUID via the shared helper. When
+    // opened from Command Center the UUID is already on record.company.id;
+    // when opened via deep-link/Search we only have the slug, so the helper
+    // queries lit_companies by source_company_key to fetch the UUID.
+    const companyUuid = await resolveLitCompanyUuid({ record, rawProfile });
+
+    if (!companyUuid) {
+      setContactMessage(
+        "Save needs a saved company. Add this company to Command Center first.",
+      );
+      setContactMessageTone("warning");
+      return;
+    }
+
+    const linkedinUrl =
+      contact?.linkedin ||
+      contact?.linkedinUrl ||
+      contact?.linkedin_url ||
+      contact?.profileUrl ||
+      contact?.url ||
       null;
-    const companyName =
-      (record as any)?.company?.name ||
-      (record as any)?.company?.company_name ||
-      (rawProfile as any)?.companyName ||
-      (rawProfile as any)?.company_name ||
-      null;
-    const companyDomain =
-      (record as any)?.company?.domain ||
-      (rawProfile as any)?.domain ||
-      (rawProfile as any)?.companyDomain ||
+
+    const sourceContactKey =
+      contact?.id ||
+      contact?.contactId ||
+      contact?.contact_id ||
+      contact?.lushaId ||
+      contact?.lusha_id ||
+      // Fall back to the linkedin URL as a stable per-(source,key) handle so
+      // the (source, source_contact_key) unique index still triggers a
+      // 23505 on duplicates instead of letting the row sneak in twice.
+      linkedinUrl ||
       null;
 
     const payload = {
-      company_id: companyId,
-      company_name: companyName,
-      company_domain: companyDomain,
-      full_name: getContactFullName(contact),
+      source: "lusha",
+      source_contact_key: sourceContactKey,
+      company_id: companyUuid,
+      full_name: getContactFullName(contact) || "Unknown",
+      first_name: contact?.firstName || contact?.first_name || null,
+      last_name: contact?.lastName || contact?.last_name || null,
       title: getContactTitle(contact) || null,
-      email: contact.email || contact.email_address || null,
-      phone: contact.phone || contact.phone_number || null,
-      linkedin_url:
-        contact.linkedin || contact.linkedinUrl || contact.profileUrl || contact.url || null,
-      source_provider: "lusha",
-      raw_contact: contact,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      department: contact?.department || contact?.dept || null,
+      seniority: contact?.seniority || contact?.seniorityLevel || null,
+      email: getContactEmail(contact) || null,
+      phone: getContactPhone(contact) || null,
+      linkedin_url: linkedinUrl,
     };
 
-    const { error } = await supabase
-      .from("lit_contacts")
-      .upsert(payload, { onConflict: "company_id,linkedin_url" });
+    // Plain insert (no upsert) — the live unique index is on
+    // (source, source_contact_key), so any duplicate raises 23505 and we
+    // surface the friendly "Contact already saved." copy below.
+    const { error } = await supabase.from("lit_contacts").insert(payload);
 
     if (error) {
       console.error("Save contact error", error);
-      setContactMessage("Could not save contact yet. Check lit_contacts schema/RLS.");
+      // Honest, non-technical error mapping by Postgres SQLSTATE code.
+      if ((error as any)?.code === "23505") {
+        setContactMessage("Contact already saved.");
+        setContactMessageTone("info");
+        // Treat as locally-saved so the row stops re-prompting the save.
+        setSavedContactKeys((prev) => {
+          const next = new Set(prev);
+          next.add(getContactKey(contact));
+          return next;
+        });
+        return;
+      }
+      if ((error as any)?.code === "42501") {
+        // RLS denial — no INSERT policy on lit_contacts for authenticated.
+        // Phase B.17 — be explicit: this almost always means the
+        // 20260426000000_lit_contacts_save_rls.sql migration has not been
+        // applied to the live Supabase database. The frontend cannot fix
+        // this — surface honest copy and tone so the user (or admin)
+        // can act.
+        setContactMessage(
+          "Contact saving is not enabled for your account yet. Database policy migration may be pending.",
+        );
+        setContactMessageTone("error");
+        return;
+      }
+      if ((error as any)?.code === "23503") {
+        // FK violation — companyUuid not in lit_companies.
+        setContactMessage(
+          "Save needs a saved company. Add this company to Command Center first.",
+        );
+        setContactMessageTone("warning");
+        return;
+      }
+      setContactMessage("Could not save contact. Try again or contact support.");
+      setContactMessageTone("error");
       return;
     }
 
@@ -2601,7 +3155,46 @@ if (!cancelled) {
       next.add(getContactKey(contact));
       return next;
     });
+
+    // Phase B.17 — verify the row actually persisted. Some RLS configs
+    // (notably WITH CHECK without USING) let the insert "succeed" but
+    // make the row invisible to subsequent SELECTs. Catch that silent
+    // failure honestly instead of leaving the user with a green tick
+    // that doesn't match reality.
+    try {
+      let verifyQuery = supabase
+        .from("lit_contacts")
+        .select("id")
+        .eq("source", "lusha")
+        .eq("company_id", companyUuid)
+        .limit(1);
+      if (sourceContactKey) {
+        verifyQuery = verifyQuery.eq("source_contact_key", sourceContactKey);
+      } else {
+        verifyQuery = verifyQuery.is("source_contact_key", null);
+      }
+      const { data: verifyRows, error: verifyError } = await verifyQuery;
+      if (verifyError) {
+        console.warn("Save verify select error", verifyError);
+        setContactMessage(
+          "Contact saved, but we couldn't confirm the row is readable. RLS migration may need to be applied.",
+        );
+        setContactMessageTone("warning");
+        return;
+      }
+      if (!Array.isArray(verifyRows) || verifyRows.length === 0) {
+        setContactMessage(
+          "Save reported success but the row is not visible. RLS migration may need to be applied to the live database.",
+        );
+        setContactMessageTone("warning");
+        return;
+      }
+    } catch (verifyErr) {
+      console.warn("Save verify threw", verifyErr);
+    }
+
     setContactMessage("Contact saved.");
+    setContactMessageTone("success");
   };
 
   const contactOverviewRows = phantomContacts.slice(0, CONTACT_PREVIEW_LIMIT);
@@ -2619,7 +3212,30 @@ if (!cancelled) {
     return <CommandCenterEmptyState />;
   }
 
-  const suppliersRaw: any[] = safeArray((rawProfile as any)?.suppliers_table);
+  // Phase H P1 fix — same fallback chain as above so the Suppliers tab
+  // and Overview mini card both render real rows from top_suppliers
+  // when suppliers_table is absent (which is the case for every real
+  // company today per the proxy output).
+  //
+  // Phase B.2 F — drop rows that have no usable name AT ALL. Previously
+  // suppliers with neither `supplier_name` nor `name` rendered as
+  // "— / 0", which read as a real row but carried zero signal. The
+  // canonical filter is: trim → reject empty / "—" / "unknown".
+  const suppliersRawAll: any[] = safeArray(
+    (rawProfile as any)?.suppliers_table ||
+      (rawProfile as any)?.top_suppliers ||
+      (rawProfile as any)?.topSuppliers ||
+      [],
+  );
+  const suppliersRaw: any[] = suppliersRawAll.filter((sup: any) => {
+    const candidate = String(sup?.supplier_name || sup?.name || "").trim();
+    if (!candidate) return false;
+    const lower = candidate.toLowerCase();
+    if (lower === "—" || lower === "unknown" || lower === "n/a" || lower === "na") {
+      return false;
+    }
+    return true;
+  });
   const supplierPageSize = 25;
   const suppliersPageCount = Math.ceil(suppliersRaw.length / supplierPageSize);
   const suppliersSlice = suppliersRaw.slice(
@@ -2647,8 +3263,139 @@ if (!cancelled) {
     (historyPage + 1) * historyPageSize,
   );
 
+  // Phase B.9 — floating KPI bridge values. The page-shell hero no longer
+  // renders a KPI strip (the dark navy 4-up was demoted in favor of a
+  // light hero with a glossy blue action zone). KPIs now sit in a
+  // standalone bridge row between the hero and the tabs panel. We compute
+  // the values here because `detail`, `canonicalLanes`, `phantomContacts`,
+  // and `isContactVerified` already live in this panel's scope — no new
+  // data fetches, no fake values.
+  const bridgeShipments = Number(detail.shipments) || 0;
+  const bridgeTeu = Number(detail.teu) || 0;
+  const bridgeSpend = detail.spend;
+  const bridgeActiveLaneCount = canonicalLanes.filter(
+    (l) => l.shipments > 0,
+  ).length;
+  const bridgeContactCount = phantomContacts.length;
+  const bridgeVerifiedContactCount = phantomContacts.filter(
+    isContactVerified,
+  ).length;
+
   return (
-    <section className="w-full rounded-[30px] border border-slate-200 bg-slate-50 p-4 shadow-sm">
+    <div className="space-y-6">
+      {/* Phase B.11 — KPI bridge polish. Each tile body now picks up a
+          very faint tint matching its icon badge (Gemini-style: never
+          plain white, never saturated). Border softened to
+          `border-slate-200/80` and uppercase label tracking bumped to
+          `tracking-[0.2em]` so the typography reads as premium. The
+          values, helpers, and underlying data plumbing are unchanged —
+          purely visual. */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-indigo-50/40 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Shipments 12M
+            </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
+              <Package className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+            {bridgeShipments > 0 ? formatNumber(bridgeShipments) : "—"}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {bridgeShipments > 0
+              ? "Trailing 12-month BOL count"
+              : "No verified data yet"}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-cyan-50/40 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+              TEU 12M
+            </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600 ring-1 ring-cyan-100">
+              <Layers className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+            {bridgeTeu > 0 ? formatNumber(bridgeTeu, 1) : "—"}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {bridgeTeu > 0
+              ? "Twenty-foot equivalents"
+              : "No verified data yet"}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-emerald-50/40 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Est. Freight Spend
+            </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
+              <DollarSign className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+            {bridgeSpend != null && bridgeSpend > 0
+              ? formatCurrency(bridgeSpend)
+              : "—"}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {bridgeSpend != null && bridgeSpend > 0
+              ? "Modeled from FCL/LCL mix"
+              : "No verified data yet"}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-blue-50/40 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Active Trade Lanes
+            </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 ring-1 ring-blue-100">
+              <Globe className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+            {bridgeActiveLaneCount > 0
+              ? formatNumber(bridgeActiveLaneCount)
+              : "—"}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {bridgeActiveLaneCount > 0
+              ? "Resolvable canonical lanes"
+              : "No resolvable lanes yet"}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-violet-50/40 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Contacts
+            </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600 ring-1 ring-violet-100">
+              <UserRound className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+            {bridgeContactCount > 0
+              ? `${formatNumber(bridgeContactCount)} found · ${formatNumber(
+                  bridgeVerifiedContactCount,
+                )} verified`
+              : "—"}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {bridgeContactCount > 0
+              ? "Lusha enrichment scope"
+              : "No verified data yet"}
+          </div>
+        </div>
+      </section>
+
+      <section className="w-full rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
       {loading ? (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
           Loading company profile…
@@ -2661,901 +3408,1261 @@ if (!cancelled) {
         </div>
       ) : null}
 
-      {/* Hero KPI strip — light-premium (no dark navy). Values come from the
-          already-normalized `detail` memo, which resolves each field through
-          the canonical parsed_summary / companyProfile fallback chain. */}
-      <div
-        className="mb-4 rounded-[30px] border border-slate-200 p-4 shadow-sm"
-        style={{
-          background:
-            "radial-gradient(circle at 0% 0%, rgba(99,102,241,0.08) 0%, rgba(99,102,241,0) 42%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 60%, #EEF2FF 100%)",
-        }}
-      >
-        <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-500">
-          Company Intelligence · 12-month window
-        </div>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {[
-            {
-              label: "Shipments 12m",
-              value: formatNumber(detail.shipments),
-              icon: Package,
-              tintBg: "bg-indigo-50",
-              tintText: "text-indigo-600",
-              tintRing: "ring-indigo-100",
-            },
-            {
-              label: "TEU 12m",
-              value: formatNumber(detail.teu, 1),
-              icon: Container,
-              tintBg: "bg-cyan-50",
-              tintText: "text-cyan-600",
-              tintRing: "ring-cyan-100",
-            },
-            {
-              label: "Est Spend 12m",
-              value: formatCurrency(detail.spend),
-              icon: DollarSign,
-              tintBg: "bg-amber-50",
-              tintText: "text-amber-600",
-              tintRing: "ring-amber-100",
-            },
-            {
-              label: "Latest Shipment",
-              value: formatDate(detail.latestShipmentDate),
-              icon: CalendarClock,
-              tintBg: "bg-emerald-50",
-              tintText: "text-emerald-600",
-              tintRing: "ring-emerald-100",
-            },
-          ].map((k) => (
-            <div
-              key={k.label}
-              className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
-            >
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${k.tintBg} ${k.tintRing}`}>
-                <k.icon className={`h-4 w-4 ${k.tintText}`} />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  {k.label}
-                </div>
-                <div className="mt-0.5 truncate text-lg font-semibold tracking-tight text-slate-950">
-                  {k.value}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Phase B.9 — the panel-local "Company Intelligence · 12-month
+          window" KPI strip was removed in B.5 and the floating KPI bridge
+          row above (rendered as a sibling section) is the single source of
+          truth for the snapshot KPIs. The thin divider below preserves
+          breathing room before the tabs. */}
+      <div className="mb-3 border-b border-slate-200" aria-hidden />
 
       <Tabs
         value={activeTab}
         onValueChange={(v: string) => setActiveTab(v as typeof activeTab)}
         className="space-y-4"
       >
-        <TabsList className="flex h-auto w-full gap-0 overflow-x-auto rounded-none border-0 border-b border-slate-200 bg-white p-0 shadow-none">
-          <TabsTrigger
-            value="overview"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Overview
-          </TabsTrigger>
-          <TabsTrigger
-            value="equipment"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Equipment
-          </TabsTrigger>
-          <TabsTrigger
-            value="shipments"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Shipments
-          </TabsTrigger>
-          <TabsTrigger
-            value="suppliers"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Suppliers
-          </TabsTrigger>
-          <TabsTrigger
-            value="contacts"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Contact Intel
-          </TabsTrigger>
-          <TabsTrigger
-            value="credit"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Credit &amp; Company Health
-          </TabsTrigger>
-        </TabsList>
+        {/* Phase B.8 — 3 → 5 tabs. Shipments restored as a real BOL ledger
+            (no new fetches; reads normalizedShipments). Trade Lanes pulled
+            back out of Overview so the globe + canonical lane table get
+            full panel width and the flag pills stop overflowing on
+            1024-1280 viewports. */}
+        {/* Phase B.17 — mobile-first tab bar. Wrapped in a `-mx-4 md:mx-0`
+            container so on mobile tabs flow edge-to-edge (no internal
+            gutter eats the scroll runway). `snap-x snap-mandatory` +
+            `snap-start` on triggers locks each tab to a snap point so
+            the user never lands on a half-cut label. Padding is reduced
+            on mobile (px-3 py-1.5 text-xs) and restored at md (px-4 py-2.5
+            text-sm). `whitespace-nowrap` retained inline so labels never
+            wrap regardless of viewport. */}
+        <div className="-mx-4 md:mx-0">
+          <TabsList className="flex h-auto w-full gap-0 overflow-x-auto snap-x snap-mandatory scroll-smooth rounded-none border-0 border-b border-slate-200 bg-white p-0 shadow-none">
+            <TabsTrigger
+              value="overview"
+              className="snap-start h-auto rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs md:px-4 md:py-2.5 md:text-sm text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Overview
+            </TabsTrigger>
+            <TabsTrigger
+              value="shipments"
+              className="snap-start h-auto rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs md:px-4 md:py-2.5 md:text-sm text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Shipments
+            </TabsTrigger>
+            <TabsTrigger
+              value="trade-lanes"
+              className="snap-start h-auto rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs md:px-4 md:py-2.5 md:text-sm text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Trade Lanes
+            </TabsTrigger>
+            <TabsTrigger
+              value="equipment"
+              className="snap-start h-auto rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs md:px-4 md:py-2.5 md:text-sm text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Equipment
+            </TabsTrigger>
+            <TabsTrigger
+              value="contacts"
+              className="snap-start h-auto rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs md:px-4 md:py-2.5 md:text-sm text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Contact Intel
+            </TabsTrigger>
+            {/* Phase B.11 — Market Benchmark trigger is gated to super-admins
+                only. Hidden for everyone else (and during the auth-resolving
+                window) so the embedded Domo iframe never flashes for a
+                regular user. The TabsContent block below is gated with the
+                same predicate to prevent URL deep-link bypass. */}
+            {isBenchmarkAdmin ? (
+              <TabsTrigger
+                value="market-benchmark"
+                className="snap-start h-auto rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs md:px-4 md:py-2.5 md:text-sm text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+                style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, whiteSpace: 'nowrap' }}
+              >
+                Market Benchmark
+              </TabsTrigger>
+            ) : null}
+          </TabsList>
+        </div>
 
-        <TabsContent value="overview" className="space-y-3">
-          <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
-            <SmallMetric
-              label="Avg TEU / shipment"
-              value={formatNumber(detail.avgTeuPerShipment, 2)}
-              icon={TrendingUp}
-            />
-            <SmallMetric
-              label="Oldest shipment"
-              value={formatDate(detail.oldestShipmentDate)}
-              icon={CalendarClock}
-            />
-            <SmallMetric
-              label="Latest shipment"
-              value={formatDate(detail.latestShipmentDate)}
-              icon={CalendarClock}
-            />
-            <SmallMetric
-              label="Volume trend (YoY)"
-              value={
-                trendArrow ? (
-                  <span className={trendColor}>
-                    {trendArrow} {Math.abs(trendPct || 0).toFixed(1)}%
-                  </span>
+        <TabsContent value="overview" className="space-y-6">
+          {/* Phase B.9 — executive 60/40 Overview. The Phase B.5 secondary
+              KPI grid was removed because the floating KPI bridge above
+              now owns those numbers (Shipments / TEU / Spend / Active
+              Lanes / Contacts). Overview leads with a Strategic Brief +
+              Trade Intelligence Summary + Peak Seasonality on the LEFT
+              and a polished honest Action Panel (Top Contacts / Campaign
+              Status / Engagement History) on the RIGHT. The duplicate
+              full Contact Intelligence block was removed — Contacts has
+              its own tab and the Top Contacts card on the right links
+              there. */}
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.48fr)_minmax(360px,0.9fr)]">
+            <div className="space-y-6">
+              {/* Strategic Brief — visual anchor. Templated assembly from
+                  real fields only. Forbidden language ("savings",
+                  "AI-generated", "risk index", etc.) is NOT used. */}
+              {(() => {
+                const companyDisplayName: string =
+                  ((record as any)?.company?.name as string | undefined) ||
+                  ((record as any)?.company?.company_name as string | undefined) ||
+                  ((rawProfile as any)?.companyName as string | undefined) ||
+                  ((rawProfile as any)?.company_name as string | undefined) ||
+                  "This company";
+
+                const shipmentsCount = Number(detail.shipments) || 0;
+                const teuCount = Number(detail.teu) || 0;
+                const spend = detail.spend;
+                const topLane = canonicalLanes[0];
+                const topRouteLabelClause = (() => {
+                  if (!topLane || !topLane.displayLabel) return "";
+                  return `, with ${topLane.displayLabel} as the strongest lane`;
+                })();
+                const spendClause =
+                  spend != null && spend > 0
+                    ? `, valued at an estimated ${formatCurrency(spend)} in market spend`
+                    : "";
+
+                const laneCount = canonicalLanes.filter((l) => l.shipments > 0).length;
+                const countrySet = new Set<string>();
+                for (const lane of canonicalLanes) {
+                  if (lane.fromMeta?.canonicalKey) countrySet.add(lane.fromMeta.canonicalKey);
+                  if (lane.toMeta?.canonicalKey) countrySet.add(lane.toMeta.canonicalKey);
+                }
+                const countryCount = countrySet.size;
+
+                const verifiedContactCount = phantomContacts.filter(isContactVerified).length;
+                const contactStatement = (() => {
+                  if (phantomContacts.length === 0) return "";
+                  return ` ${formatNumber(phantomContacts.length)} contact${
+                    phantomContacts.length === 1 ? "" : "s"
+                  } loaded${
+                    verifiedContactCount > 0
+                      ? ` (${formatNumber(verifiedContactCount)} verified)`
+                      : ""
+                  }.`;
+                })();
+
+                const hasShipmentSignal = shipmentsCount > 0 || teuCount > 0;
+
+                const headline = (() => {
+                  if (topLane && topLane.displayLabel) {
+                    return `${topLane.displayLabel} is the strongest visible lane`;
+                  }
+                  if (shipmentsCount > 0) {
+                    return `${companyDisplayName} · 12-month shipment profile`;
+                  }
+                  return `${companyDisplayName} · Snapshot in progress`;
+                })();
+
+                const briefBody = !hasShipmentSignal ? (
+                  <p className="text-sm leading-relaxed text-indigo-50">
+                    This snapshot does not yet have shipment volume data. Run an ImportYeti refresh to populate the brief.
+                  </p>
                 ) : (
-                  "—"
-                )
-              }
-              icon={BarChart3}
-            />
-          </div>
-
-          <div className="grid gap-3 items-stretch xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
-            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                Peak seasonality index
-              </div>
-              <p className="mb-4 text-xs text-slate-500">
-                Monthly shipment profile for actual active months in {effectiveSelectedYear ?? "the selected year"}.
-              </p>
-              <div className="flex-1 min-h-[320px]">
-                <CompanyActivityChart data={detail.monthlySeries} />
-              </div>
-              <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                <span className="font-semibold text-indigo-600">Observation:</span>{" "}
-                This chart only renders real active months from the selected year. No future-month placeholders.
-              </div>
-            </div>
-
-            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    {freightosBenchmark?.title || "Market Rate Benchmark"}
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Matched to the company’s primary trade lane
+                  <p className="text-sm leading-relaxed text-indigo-50">
+                    {`${companyDisplayName} ran ${formatNumber(shipmentsCount)} shipment${
+                      shipmentsCount === 1 ? "" : "s"
+                    } over the trailing 12 months${
+                      teuCount > 0 ? `, totaling ${formatNumber(teuCount, 1)} TEU` : ""
+                    }${topRouteLabelClause}${spendClause}.`}
+                    {laneCount > 0
+                      ? ` ${formatNumber(laneCount)} resolvable trade lane${
+                          laneCount === 1 ? "" : "s"
+                        }${
+                          countryCount > 0
+                            ? ` across ${formatNumber(countryCount)} ${
+                                countryCount === 1 ? "country" : "countries"
+                              }`
+                            : ""
+                        }.`
+                      : ""}
+                    {contactStatement}
                   </p>
-                </div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                  <Waves className="h-3.5 w-3.5 text-indigo-500" />
-                  Freightos
-                </div>
-              </div>
+                );
 
-              {freightosBenchmark ? (
-                <div className="mt-5 space-y-4">
-                  <div className="rounded-3xl border border-indigo-200 bg-indigo-50/60 p-4">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
-                      Benchmark matched
+                return (
+                  <div className="overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-950 via-slate-950 to-blue-950 p-6 text-white shadow-lg">
+                    <div className="text-cyan-300 tracking-[0.22em] text-[10px] font-semibold uppercase">
+                      STRATEGIC BRIEF
                     </div>
-                    <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
-                      {freightosBenchmark.code}
-                    </div>
-                    <div className="mt-2 text-sm font-medium text-slate-700">
-                      {freightosBenchmark.lane}
+                    <h3 className="mt-2 text-2xl font-bold tracking-[-0.02em] text-white">
+                      {headline}
+                    </h3>
+                    <div className="mt-3">{briefBody}</div>
+                    <div className="mt-4">
+                      <span className="inline-flex items-center rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/70">
+                        Based on current snapshot fields only
+                      </span>
                     </div>
                   </div>
+                );
+              })()}
 
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      <Ship className="h-3.5 w-3.5 text-cyan-500" />
-                      Why this index
+              {/* Trade Intelligence Summary — top 3 lanes only, no globe.
+                  Globe lives in the Trade Lanes tab. */}
+              {(() => {
+                const topLanes = canonicalLanes.slice(0, 3);
+                const topShipments = topLanes[0]?.shipments || 0;
+                const activeLaneCount = canonicalLanes.filter(
+                  (l) => l.shipments > 0,
+                ).length;
+                return (
+                  <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          TOP VISIBLE LANES
+                        </div>
+                        <h3 className="mt-1 text-base font-bold text-slate-950">
+                          Trade Intelligence Summary
+                        </h3>
+                      </div>
+                      <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-indigo-700">
+                        {activeLaneCount} active
+                      </span>
                     </div>
-                    <div className="mt-2 text-sm text-slate-700">
-                      The company’s route intelligence aligns best to {freightosBenchmark.code}. Use this as market
-                      benchmark context beside shipment activity and lane concentration.
-                    </div>
-                  </div>
-
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-3">
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Live rate chart — {freightosBenchmark.code}
-                    </div>
-                    <iframe
-                      src={`https://fbx.freightos.com/widget/?index=${freightosBenchmark.code}`}
-                      title={`${freightosBenchmark.code} Freightos Rate Index`}
-                      className="w-full rounded-2xl border-0"
-                      style={{ height: 240 }}
-                      loading="lazy"
-                      sandbox="allow-scripts allow-same-origin"
-                    />
-                    <div className="mt-2 text-xs text-slate-500">
-                      Spot rate for 40 ft containers · Freightos Baltic Exchange · not company-specific pricing
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-5 flex flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                  No high-confidence Freightos benchmark match found from current route intelligence.
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="grid gap-3 items-stretch xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
-            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    Trade lane intelligence
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Strongest lanes by shipment count, TEU, and estimated spend
-                  </p>
-                </div>
-                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {detail.topRoutes.length} lanes
-                </div>
-              </div>
-
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
-                        <th className="px-3 py-2 font-semibold">#</th>
-                        <th className="px-3 py-2 font-semibold">Lane</th>
-                        <th className="px-3 py-2 text-right font-semibold">Shipments</th>
-                        <th className="px-3 py-2 text-right font-semibold">TEU</th>
-                        <th className="px-3 py-2 text-right font-semibold">Est. Spend</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detail.topRoutes.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500">
-                            No trade lane data available yet.
-                          </td>
-                        </tr>
-                      ) : (
-                        detail.topRoutes.map((route, i) => (
-                          <tr
-                            key={i}
-                            onClick={() => setSelectedLane(selectedLane === route.lane ? null : route.lane)}
-                            className={`cursor-pointer border-b border-slate-50 last:border-b-0 transition-colors ${
-                              route.lane === activeLane
-  ? "bg-indigo-50 ring-1 ring-indigo-200"
-  : "hover:bg-slate-50/70"
-                            }`}
-                          >
-                            <td className="px-3 py-3 text-xs font-semibold text-slate-400">{i + 1}</td>
-                            <td className="px-3 py-3">
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                                  style={{
-  backgroundColor:
-    route.lane === activeLane
-      ? TEU_BAR_PRIMARY
-      : CHART_COLORS[i % CHART_COLORS.length],
-}}
-                                />
-                                <span className="max-w-[260px] truncate font-semibold text-slate-900">
-                                  {route.lane}
-                                </span>
+                    {topLanes.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
+                        No resolvable trade lanes yet.
+                      </div>
+                    ) : (
+                      <ul className="space-y-3">
+                        {topLanes.map((lane) => {
+                          const shipPct = topShipments > 0
+                            ? Math.max(6, Math.round((lane.shipments / topShipments) * 100))
+                            : 0;
+                          return (
+                            <li key={lane.displayLabel}>
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0 truncate text-sm font-semibold text-slate-900">
+                                  {lane.displayLabel}
+                                </div>
+                                <div className="shrink-0 text-xs text-slate-500">
+                                  <span className="font-semibold text-slate-700">
+                                    {formatNumber(lane.shipments)}
+                                  </span>{" "}
+                                  ship · TEU{" "}
+                                  <span className="font-semibold text-slate-700">
+                                    {Number(lane.teu) > 0 ? formatNumber(lane.teu, 1) : "—"}
+                                  </span>
+                                </div>
                               </div>
-                            </td>
-                            <td className="px-3 py-3 text-right font-semibold text-indigo-600">
-                              {formatNumber(route.shipments)}
-                            </td>
-                            <td className="px-3 py-3 text-right text-slate-700">
-                              {formatNumber(route.teu, 1)}
-                            </td>
-                            <td className="px-3 py-3 text-right text-slate-700">
-                              {formatCurrency(route.spend)}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div style={{ background: '#F8FAFC', borderRadius: 24, border: '1px solid #F1F5F9', padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                  {(() => {
-                    const globeLanes: GlobeLane[] = detail.topRoutes
-                      .slice(0, 6)
-                      .map((r, i) => laneStringToGlobeLane(r.lane, i))
-                      .filter((l): l is GlobeLane => l !== null);
-                    const selectedGlobeLane = selectedLane ?? null;
-                    return (
-                      <>
-                        <GlobeCanvas lanes={globeLanes} selectedLane={selectedGlobeLane} size={268} />
-                        {selectedGlobeLane && (
-                          <div style={{ alignSelf: 'stretch', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 8, padding: '7px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 600, color: '#1d4ed8' }}>{selectedGlobeLane}</span>
-                            <button onClick={() => setSelectedLane(null)} style={{ fontSize: 10, color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Space Grotesk', sans-serif" }}>✕</button>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    Equipment intelligence
+                              <div className="mt-1.5 h-1.5 w-full rounded-full bg-slate-100">
+                                <div
+                                  className="h-1.5 rounded-full bg-indigo-500/70"
+                                  style={{ width: `${shipPct}%` }}
+                                />
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    {canonicalLanes.length > 0 ? (
+                      <div className="mt-4">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("trade-lanes")}
+                          className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+                        >
+                          View all trade lanes <ArrowUpRight className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Load split, container mix, and equipment footprint
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("equipment")}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
-                >
-                  View Equipment <ArrowUpRight className="h-3 w-3" />
-                </button>
-              </div>
+                );
+              })()}
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    <Container className="h-3.5 w-3.5 text-indigo-500" />
-                    Load type split
+              {/* Peak Seasonality — kept on the LEFT column. YTD framing
+                  for the current calendar year, per Phase B.5. */}
+              {(() => {
+                const now = new Date();
+                const currentYear = now.getFullYear();
+                const currentMonth = now.getMonth();
+                const isYtd =
+                  effectiveSelectedYear != null &&
+                  effectiveSelectedYear === currentYear;
+
+                const PERIOD_TO_MONTH: Record<string, number> = {};
+                for (let m = 0; m < 12; m++) {
+                  const label = new Date(2000, m, 1).toLocaleDateString(undefined, {
+                    month: "short",
+                  });
+                  PERIOD_TO_MONTH[label] = m;
+                }
+
+                const seasonalitySeries = isYtd
+                  ? detail.monthlySeries.filter((p) => {
+                      const idx = PERIOD_TO_MONTH[p.period];
+                      return typeof idx === "number" && idx <= currentMonth;
+                    })
+                  : detail.monthlySeries;
+
+                const subtitle = isYtd
+                  ? `${currentYear} year-to-date · Monthly shipment profile for active months year-to-date.`
+                  : `Monthly shipment profile for active months in ${effectiveSelectedYear ?? "the selected year"}.`;
+
+                const badgeLabel = isYtd
+                  ? `${seasonalitySeries.length} active month${seasonalitySeries.length === 1 ? "" : "s"} YTD`
+                  : `${seasonalitySeries.length} active month${seasonalitySeries.length === 1 ? "" : "s"}`;
+
+                return (
+                  // Phase B.12 — Peak Seasonality card height tightened.
+                  // Was `flex h-full min-h-[360px]` with a flex-1 chart
+                  // pane that, combined with `CompanyActivityChart`'s
+                  // own `h-[240px]` inner box, pushed the card body to
+                  // ~400px on wide displays. We drop the min-height
+                  // floor and the flex-1 pane: the chart now self-sizes
+                  // at 240px (its internal contract) and the card
+                  // settles at ~310px (header ~58 + subtitle ~24 +
+                  // chart 240 + observation footer ~46 + p-4 padding).
+                  <div className="flex flex-col rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-4 shadow-sm">
+                    <div className="mb-2 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          PEAK SEASONALITY INDEX
+                        </div>
+                        <h3 className="mt-1 text-base font-bold text-slate-950">
+                          Monthly shipment cadence
+                        </h3>
+                      </div>
+                      {seasonalitySeries.length > 0 ? (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                          {badgeLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mb-3 text-xs text-slate-500">{subtitle}</p>
+                    <CompanyActivityChart data={seasonalitySeries} />
+                    <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                      <span className="font-semibold text-indigo-600">Observation:</span>{" "}
+                      {isYtd
+                        ? "Only active months through today are rendered — no future-month placeholders."
+                        : "This chart only renders real active months from the selected year. No future-month placeholders."}
+                    </div>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 px-3 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-widest text-indigo-500">FCL</div>
-                      <div className="mt-1 text-lg font-semibold text-slate-900">
-                        {formatNumber(detail.fclShipments)}
+                );
+              })()}
+
+              {/* Phase B.11 — Top Suppliers MOVED from below the 60/40 grid
+                  into the LEFT column under Peak Seasonality. The card chrome
+                  matches the other left-column cards (rounded-2xl border
+                  shadow-sm), with a faint slate gradient added by Gemini
+                  polish so it doesn't read as a flat white panel. The
+                  underlying data (suppliersRaw.slice(0, 3)) is unchanged. */}
+              {(() => {
+                const topSuppliers = suppliersRaw.slice(0, 3);
+                return (
+                  <div className="flex flex-col rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          TOP SUPPLIERS
+                        </div>
+                        <h3 className="mt-1 text-base font-bold text-slate-950">
+                          Verified BOL counterparties
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {suppliersRaw.length > 0
+                            ? `Top 3 of ${suppliersRaw.length} verified suppliers`
+                            : "From verified BOL records"}
+                        </p>
                       </div>
                     </div>
-                    <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 px-3 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-widest text-cyan-600">LCL</div>
-                      <div className="mt-1 text-lg font-semibold text-slate-900">
-                        {formatNumber(detail.lclShipments)}
+                    {topSuppliers.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
+                        No supplier data yet
                       </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    <Boxes className="h-3.5 w-3.5 text-violet-500" />
-                    Container type mix
-                  </div>
-
-                  {detail.containerMix.length === 0 ? (
-                    <div className="mt-4 rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
-                      Container type data unavailable.
-                    </div>
-                  ) : (
-                    <>
-                      <div className="mt-4 h-[220px]">
-                        <RechartContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={detail.containerMix}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius="44%"
-                              outerRadius="68%"
-                              paddingAngle={2}
-                              dataKey="value"
+                    ) : (
+                      <ul className="space-y-2">
+                        {topSuppliers.map((sup: any, idx: number) => {
+                          const name = sup.supplier_name || sup.name || "—";
+                          const shipments =
+                            Number(sup.shipments_12m ?? sup.shipments ?? 0) || 0;
+                          const country = sup.supplier_country || sup.country || null;
+                          return (
+                            <li
+                              key={`${name}-${idx}`}
+                              className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white/70 px-3 py-2"
                             >
-                              {detail.containerMix.map((_, i) => (
-                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <RechartTooltip formatter={(v: number) => formatNumber(v)} />
-                          </PieChart>
-                        </RechartContainer>
-                      </div>
-                      <div className="mt-3 space-y-1">
-                        {detail.containerMix.map((ct, i) => (
-                          <div
-                            key={ct.name}
-                            className="flex items-center justify-between rounded-xl border border-slate-100 px-3 py-1.5 text-xs"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="inline-block h-2.5 w-2.5 rounded-full"
-                                style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
-                              />
-                              <span className="font-medium text-slate-700">{ct.name}</span>
-                            </div>
-                            <span className="font-semibold text-indigo-600">{formatNumber(ct.value)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Top Suppliers + Recent Shipments — compact summary cards using
-              real suppliers_table / normalizedShipments data. No mock names,
-              no mock rows. Each card cross-links to its dedicated tab. */}
-          <div className="grid gap-3 md:grid-cols-2">
-            {(() => {
-              const topSuppliers = suppliersRaw.slice(0, 3);
-              return (
-                <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="mb-3 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                        Top suppliers
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {suppliersRaw.length > 0
-                          ? `Top 3 of ${suppliersRaw.length} verified suppliers`
-                          : "From verified BOL records"}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("suppliers")}
-                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
-                    >
-                      View Suppliers <ArrowUpRight className="h-3 w-3" />
-                    </button>
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-slate-900">
+                                  {name}
+                                </div>
+                                {country ? (
+                                  <div className="mt-0.5 truncate text-xs text-slate-500">
+                                    {country}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                  12m
+                                </div>
+                                <div className="text-sm font-semibold text-indigo-600">
+                                  {formatNumber(shipments)}
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                   </div>
-                  {topSuppliers.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
-                      No supplier data yet
+                );
+              })()}
+
+              {/* Phase B.12 — Notify Parties / BOL Counterparties.
+                  Source: profile.notify_party_table (camelCase profile
+                  field) ←  raw `notify_party_table` from the
+                  ImportYeti snapshot. Each row has a free-form name
+                  field (`name` / `notify_party_name` / `company_name`)
+                  plus an optional `total_shipments` count. We render
+                  the top 5 with non-empty names. No extra fetches —
+                  the array is already on the loaded profile. */}
+              {(() => {
+                const rawNotifyParties: any[] = Array.isArray(
+                  (rawProfile as any)?.notify_party_table,
+                )
+                  ? (rawProfile as any).notify_party_table
+                  : Array.isArray((rawProfile as any)?.notifyParties)
+                    ? (rawProfile as any).notifyParties
+                    : Array.isArray((rawProfile as any)?.notify_parties)
+                      ? (rawProfile as any).notify_parties
+                      : [];
+
+                const cleanedNotifyParties = rawNotifyParties
+                  .map((row: any) => {
+                    const name = String(
+                      row?.notify_party_name ||
+                        row?.notify_party ||
+                        row?.name ||
+                        row?.company_name ||
+                        "",
+                    ).trim();
+                    const lower = name.toLowerCase();
+                    if (
+                      !name ||
+                      lower === "—" ||
+                      lower === "unknown" ||
+                      lower === "n/a" ||
+                      lower === "na"
+                    ) {
+                      return null;
+                    }
+                    const shipments =
+                      Number(
+                        row?.total_shipments ??
+                          row?.shipments ??
+                          row?.shipments_12m ??
+                          0,
+                      ) || 0;
+                    const country = String(
+                      row?.country || row?.country_code || "",
+                    ).trim();
+                    return { name, shipments, country };
+                  })
+                  .filter(Boolean) as Array<{
+                  name: string;
+                  shipments: number;
+                  country: string;
+                }>;
+
+                const topNotify = cleanedNotifyParties.slice(0, 5);
+                return (
+                  <div className="flex flex-col rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          BOL COUNTERPARTIES
+                        </div>
+                        <h3 className="mt-1 text-base font-bold text-slate-950">
+                          Notify parties on file
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {cleanedNotifyParties.length > 0
+                            ? `Top ${topNotify.length} of ${cleanedNotifyParties.length} verified notify parties`
+                            : "From verified bill-of-lading records"}
+                        </p>
+                      </div>
                     </div>
-                  ) : (
-                    <ul className="space-y-2">
-                      {topSuppliers.map((sup: any, idx: number) => {
-                        const name = sup.supplier_name || sup.name || "—";
-                        const shipments =
-                          Number(sup.shipments_12m ?? sup.shipments ?? 0) || 0;
-                        const country = sup.supplier_country || sup.country || null;
-                        return (
+                    {topNotify.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
+                        No BOL counterparties available in this snapshot.
+                      </div>
+                    ) : (
+                      <ul className="space-y-2">
+                        {topNotify.map((np, idx) => (
                           <li
-                            key={`${name}-${idx}`}
-                            className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-2"
+                            key={`${np.name}-${idx}`}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white/70 px-3 py-2"
                           >
                             <div className="min-w-0">
                               <div className="truncate text-sm font-semibold text-slate-900">
-                                {name}
+                                {np.name}
                               </div>
-                              {country ? (
+                              {np.country ? (
                                 <div className="mt-0.5 truncate text-xs text-slate-500">
-                                  {country}
+                                  {np.country}
                                 </div>
                               ) : null}
                             </div>
-                            <div className="shrink-0 text-right">
-                              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                                12m
+                            {np.shipments > 0 ? (
+                              <div className="shrink-0 text-right">
+                                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                  Shipments
+                                </div>
+                                <div className="text-sm font-semibold text-indigo-600">
+                                  {formatNumber(np.shipments)}
+                                </div>
                               </div>
-                              <div className="text-sm font-semibold text-indigo-600">
-                                {formatNumber(shipments)}
-                              </div>
-                            </div>
+                            ) : null}
                           </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              );
-            })()}
-
-            {(() => {
-              const recentShipments = [...normalizedShipments]
-                .sort((a, b) => {
-                  const da = a.date ? new Date(a.date).getTime() : 0;
-                  const db = b.date ? new Date(b.date).getTime() : 0;
-                  return db - da;
-                })
-                .slice(0, 3);
-              return (
-                <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="mb-3 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                        Recent shipments
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {normalizedShipments.length > 0
-                          ? `Latest 3 of ${normalizedShipments.length} BOL records`
-                          : "From verified bill-of-lading records"}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("shipments")}
-                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
-                    >
-                      View Shipments <ArrowUpRight className="h-3 w-3" />
-                    </button>
+                        ))}
+                      </ul>
+                    )}
                   </div>
-                  {recentShipments.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
-                      No shipment records yet
-                    </div>
-                  ) : (
-                    <ul className="space-y-2">
-                      {recentShipments.map((s, idx) => (
+                );
+              })()}
+            </div>
+
+            <aside className="space-y-6">
+              {/* Right Action Panel — Phase B.11 expands to four cards.
+                  Top Contacts / Campaign Status / Engagement History stay
+                  here from Phase B.9; Recent Shipments preview is moved
+                  in from the demoted below-grid block so the right rail
+                  reads as a single contiguous action column. Gemini polish:
+                  a very faint slate gradient replaces flat `bg-white` so
+                  the cards don't read as identical white panels. */}
+
+              {/* Top Contacts */}
+              <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700">
+                  TOP CONTACTS
+                </div>
+                {phantomContacts.length > 0 ? (
+                  <h3 className="mt-1 text-base font-bold text-slate-950">
+                    {formatNumber(phantomContacts.length)} found ·{" "}
+                    {formatNumber(bridgeVerifiedContactCount)} verified
+                  </h3>
+                ) : (
+                  <h3 className="mt-1 text-base font-bold text-slate-950">
+                    No verified contacts yet
+                  </h3>
+                )}
+                {phantomContacts.length > 0 ? (
+                  <ul className="mt-3 space-y-2">
+                    {phantomContacts.slice(0, 3).map((c, idx) => {
+                      const fullName = getContactFullName(c) || "—";
+                      const title = getContactTitle(c);
+                      const initials =
+                        fullName
+                          .split(" ")
+                          .slice(0, 2)
+                          .map((p: string) => p[0])
+                          .join("")
+                          .toUpperCase() || "CT";
+                      return (
                         <li
-                          key={s.id || idx}
-                          className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-2"
+                          key={`${fullName}-${idx}`}
+                          className="flex items-center gap-2.5"
                         >
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                            {initials}
+                          </div>
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold text-slate-900">
-                              {s.route || "—"}
+                              {fullName}
                             </div>
-                            <div className="mt-0.5 flex items-center gap-2 truncate text-xs text-slate-500">
-                              <span>{formatDate(s.date)}</span>
-                              {s.containerTypes && s.containerTypes !== "—" ? (
-                                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                                  {s.containerTypes}
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="shrink-0 text-right">
-                            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                              TEU
-                            </div>
-                            <div className="text-sm font-semibold text-cyan-700">
-                              {formatNumber(s.teu, 1)}
-                            </div>
+                            {title ? (
+                              <div className="truncate text-xs text-slate-500">
+                                {title}
+                              </div>
+                            ) : null}
                           </div>
                         </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Contact Intelligence — full-width bottom section */}
-          <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Contact Intelligence
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Auto-enriched supply chain and logistics decision makers
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {contactsLoading
-                    ? "Enriching…"
-                    : `${phantomContacts.length} found${contactPreviewSource ? ` · ${contactPreviewSource}` : ""}`}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setContactFetchTrigger((n) => n + 1)}
-                  disabled={contactsLoading}
-                  className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
-                >
-                  {contactsLoading ? "Searching…" : "Refresh contacts"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setSlideContact(null); setContactSlideOpen(true); }}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-                >
-                  Open panel
-                </button>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">
+                    Run enrichment or add a contact to begin outreach.
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={() => setActiveTab("contacts")}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
+                  className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
                 >
-                  View all <ArrowUpRight className="h-3 w-3" />
+                  View Contact Intel <ArrowUpRight className="h-3.5 w-3.5" />
                 </button>
+              </div>
+
+              {/* Campaign Status */}
+              <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700">
+                  CAMPAIGN STATUS
+                </div>
+                <h3 className="mt-1 text-base font-bold text-slate-950">
+                  Not in campaign
+                </h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Add this company to a campaign after contact enrichment is complete.
+                </p>
+              </div>
+
+              {/* Engagement History */}
+              <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700">
+                  ENGAGEMENT HISTORY
+                </div>
+                <h3 className="mt-1 text-base font-bold text-slate-950">
+                  No activity yet
+                </h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Outreach history will appear here once engagement logging is available.
+                </p>
+              </div>
+
+              {/* Phase B.11 — Recent Shipments MOVED from below the 60/40
+                  grid into the right rail under Engagement History. Compact
+                  3-row preview with a "View all" link to the Shipments tab.
+                  Source data (normalizedShipments) and sort logic are
+                  unchanged. */}
+              {(() => {
+                const recentShipments = [...normalizedShipments]
+                  .sort((a, b) => {
+                    const da = a.date ? new Date(a.date).getTime() : 0;
+                    const db = b.date ? new Date(b.date).getTime() : 0;
+                    return db - da;
+                  })
+                  .slice(0, 3);
+                return (
+                  <div className="flex flex-col rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700">
+                          RECENT SHIPMENTS
+                        </div>
+                        <h3 className="mt-1 text-base font-bold text-slate-950">
+                          Latest BOL records
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {normalizedShipments.length > 0
+                            ? `Latest 3 of ${normalizedShipments.length} BOL records`
+                            : "From verified bill-of-lading records"}
+                        </p>
+                      </div>
+                    </div>
+                    {recentShipments.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
+                        No shipment records yet
+                      </div>
+                    ) : (
+                      <ul className="space-y-2">
+                        {recentShipments.map((s, idx) => (
+                          <li
+                            key={s.id || idx}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white/70 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-slate-900">
+                                {s.route || "—"}
+                              </div>
+                              <div className="mt-0.5 flex items-center gap-2 truncate text-xs text-slate-500">
+                                <span>{formatDate(capDateAtToday(s.date))}</span>
+                                {s.containerTypes && s.containerTypes !== "—" ? (
+                                  <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                                    {s.containerTypes}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                TEU
+                              </div>
+                              <div className="text-sm font-semibold text-cyan-700">
+                                {formatNumber(s.teu, 1)}
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {normalizedShipments.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("shipments")}
+                        className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+                      >
+                        View all shipments <ArrowUpRight className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })()}
+            </aside>
+          </div>
+
+          {/* Phase B.11 — Top Suppliers and Recent Shipments are NO LONGER
+              rendered below the 60/40 grid. They were moved into the
+              left/right columns above. Only a `pb-8` gutter remains so
+              the Overview tab still has breathing room before the next
+              section. */}
+          <div className="pb-8" aria-hidden="true" />
+        </TabsContent>
+
+        {/* Phase B.8 — Shipments tab. Real BOL ledger sourced from the
+            already-computed normalizedShipments memo. No new fetches.
+            Summary cards on top + paginated ledger below. */}
+        <TabsContent value="shipments" className="space-y-4">
+          {(() => {
+            const totalShipments = normalizedShipments.length;
+            const totalTeu = normalizedShipments.reduce(
+              (sum, row) => sum + (Number(row.teu) || 0),
+              0,
+            );
+            const hasTeu = normalizedShipments.some(
+              (row) => Number(row.teu) > 0,
+            );
+            const fclCount = normalizedShipments.filter(
+              (row) => row.loadType === "FCL",
+            ).length;
+            const lclCount = normalizedShipments.filter(
+              (row) => row.loadType === "LCL",
+            ).length;
+
+            // Date range — from valid past-or-current shipments only.
+            const datedShipments = normalizedShipments
+              .filter((row) => row.date && isValidPastOrCurrentDate(row.date))
+              .map((row) => ({
+                ...row,
+                _t: new Date(row.date as string).getTime(),
+              }))
+              .sort((a, b) => a._t - b._t);
+            const oldestDate = datedShipments[0]?.date ?? null;
+            const newestDate =
+              datedShipments[datedShipments.length - 1]?.date ?? null;
+
+            const pageSize = 25;
+            const pageCount = Math.max(1, Math.ceil(totalShipments / pageSize));
+            const safePage = Math.min(shipmentsPage, pageCount - 1);
+            // Sort newest-first for display ledger.
+            const sortedForLedger = [...normalizedShipments].sort((a, b) => {
+              const da = a.date ? new Date(a.date).getTime() : 0;
+              const db = b.date ? new Date(b.date).getTime() : 0;
+              return db - da;
+            });
+            const slice = sortedForLedger.slice(
+              safePage * pageSize,
+              (safePage + 1) * pageSize,
+            );
+
+            if (totalShipments === 0) {
+              return (
+                <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-10 text-center">
+                  <Ship className="mx-auto mb-3 h-8 w-8 text-slate-300" />
+                  <p className="text-sm text-slate-600">
+                    No shipment ledger rows are available for this company snapshot.
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+                {/* Phase B.9 — Shipments tab polish: outer rounded-[2rem]
+                    wrap + executive header (uppercase tracking + h3 +
+                    subtitle), summary cards reuse the floating-bridge KPI
+                    chrome for consistency, table rows breathe with py-3
+                    and `hover:bg-slate-50`. */}
+                <div className="mb-5 flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      SHIPMENT LEDGER
+                    </div>
+                    <h3 className="mt-1 text-base font-bold text-slate-950">
+                      Bill-of-lading history
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Verified bill-of-lading records from this snapshot.
+                    </p>
+                  </div>
+                  <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                    {formatNumber(totalShipments)} {totalShipments === 1 ? "row" : "rows"}
+                  </div>
+                </div>
+
+                {/* Top summary card row — chrome matches floating KPI bridge. */}
+                <div className="mb-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Total Shipments
+                      </div>
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
+                        <Package className="h-4 w-4" />
+                      </div>
+                    </div>
+                    <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+                      {formatNumber(totalShipments)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Total TEU
+                      </div>
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600 ring-1 ring-cyan-100">
+                        <Layers className="h-4 w-4" />
+                      </div>
+                    </div>
+                    <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+                      {hasTeu ? formatNumber(totalTeu, 1) : "—"}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        FCL / LCL Split
+                      </div>
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
+                        <Container className="h-4 w-4" />
+                      </div>
+                    </div>
+                    <div className="mt-2 text-base font-bold tracking-tight text-slate-950">
+                      {fclCount > 0 || lclCount > 0
+                        ? `${formatNumber(fclCount)} FCL / ${formatNumber(lclCount)} LCL`
+                        : "—"}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Date Range
+                      </div>
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 ring-1 ring-blue-100">
+                        <CalendarClock className="h-4 w-4" />
+                      </div>
+                    </div>
+                    <div className="mt-2 text-xs font-semibold text-slate-900">
+                      {oldestDate && newestDate ? (
+                        <>
+                          {formatDate(capDateAtToday(oldestDate))}
+                          <span className="mx-1 text-slate-400">→</span>
+                          {formatDate(capDateAtToday(newestDate))}
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ledger */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+
+                  <div className="overflow-x-auto">
+                    <table
+                      className="w-full text-left text-sm"
+                      style={{ minWidth: 1024 }}
+                    >
+                      <thead>
+                        <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
+                          <th className="px-3 py-2 font-semibold">Date</th>
+                          <th className="px-3 py-2 font-semibold">Origin</th>
+                          <th className="px-3 py-2 font-semibold">Destination</th>
+                          <th className="px-3 py-2 font-semibold">Supplier</th>
+                          <th className="px-3 py-2 font-semibold">Consignee</th>
+                          <th className="px-3 py-2 text-right font-semibold">TEU</th>
+                          <th className="px-3 py-2 font-semibold">Load</th>
+                          <th className="px-3 py-2 font-semibold">BOL</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {slice.map((row, i) => {
+                          const supplier =
+                            row.shipper && row.shipper !== "—"
+                              ? row.shipper
+                              : row.importerName && row.importerName !== "—"
+                              ? row.importerName
+                              : "—";
+                          const consignee =
+                            row.consigneeName && row.consigneeName !== "—"
+                              ? row.consigneeName
+                              : "—";
+                          const bol =
+                            row.masterBol && row.masterBol !== "—"
+                              ? row.masterBol
+                              : row.houseBol && row.houseBol !== "—"
+                              ? row.houseBol
+                              : "—";
+                          const cappedDate = capDateAtToday(row.date ?? null);
+                          return (
+                            <tr
+                              key={row.id || `ship-${i}`}
+                              className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50"
+                            >
+                              <td className="px-3 py-3 text-slate-700">
+                                {cappedDate ? formatDate(cappedDate) : "—"}
+                              </td>
+                              <td className="px-3 py-3 text-slate-700">
+                                <span className="block max-w-[200px] truncate" title={row.origin || undefined}>
+                                  {row.origin && row.origin !== "—" ? row.origin : "—"}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-slate-700">
+                                <span className="block max-w-[200px] truncate" title={row.destination || undefined}>
+                                  {row.destination && row.destination !== "—" ? row.destination : "—"}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-slate-700">
+                                <span className="block max-w-[180px] truncate" title={supplier}>
+                                  {supplier}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-slate-700">
+                                <span className="block max-w-[180px] truncate" title={consignee}>
+                                  {consignee}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-right font-mono text-xs text-slate-700">
+                                {Number(row.teu) > 0 ? formatNumber(row.teu, 1) : "—"}
+                              </td>
+                              <td className="px-3 py-3">
+                                {row.loadType === "FCL" ? (
+                                  <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                                    FCL
+                                  </span>
+                                ) : row.loadType === "LCL" ? (
+                                  <span className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold text-cyan-700">
+                                    LCL
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-3 font-mono text-xs text-slate-600">
+                                <span className="block max-w-[140px] truncate" title={bol}>
+                                  {bol}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {pageCount > 1 ? (
+                    <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+                      <div>
+                        Page {safePage + 1} of {pageCount}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={safePage === 0}
+                          onClick={() => setShipmentsPage((p) => Math.max(0, p - 1))}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          disabled={safePage >= pageCount - 1}
+                          onClick={() =>
+                            setShipmentsPage((p) => Math.min(pageCount - 1, p + 1))
+                          }
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            );
+          })()}
+        </TabsContent>
+
+        {/* Phase B.8 — Trade Lanes tab. Pulled out of Overview so the
+            globe + canonical lane table get the full panel width and the
+            origin/destination flag pills sit ABOVE the lg:grid-cols-2
+            row (no longer nested inside the globe column → no more
+            overflow on 1024-1280 viewports). */}
+        <TabsContent value="trade-lanes" className="space-y-4">
+          {/* Phase B.9 — outer wrap upgraded to `rounded-[2rem]` to match
+              the unified visual language across the executive workspace.
+              Globe LEFT / lane table RIGHT (lg:grid-cols-2) and full-width
+              flag pills above were already correct from Phase B.8. */}
+          <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  TRADE LANE INTELLIGENCE
+                </div>
+                <h3 className="mt-1 text-base font-bold text-slate-950">
+                  Strongest visible lanes
+                </h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Strongest lanes by shipment count, TEU, and estimated spend.
+                </p>
+              </div>
+              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                {canonicalLanes.length} active {canonicalLanes.length === 1 ? "lane" : "lanes"}
               </div>
             </div>
 
-            {contactsLoading ? (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {[0, 1, 2].map((idx) => (
-                  <div key={idx} className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                    <div className="h-4 w-1/3 rounded bg-slate-200" />
-                    <div className="mt-3 h-3 w-1/2 rounded bg-slate-200" />
-                  </div>
-                ))}
-              </div>
-            ) : contactOverviewRows.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-                <p className="text-sm text-slate-500">
-                  {contactMessage || "No supply chain or logistics contacts found yet."}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setContactFetchTrigger((n) => n + 1)}
-                  className="mt-3 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
-                >
-                  Search more contacts
-                </button>
-              </div>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {contactOverviewRows.map((contact: any, index: number) => {
-  const fullName = getContactFullName(contact);
-  const title = getContactTitle(contact);
-  const avatarUrl = getContactAvatarUrl(contact);
-  const initials =
-    fullName
-      .split(" ")
-      .slice(0, 2)
-      .map((part: string) => part[0])
-      .join("")
-      .toUpperCase() || "CT";
+            {(() => {
+              const globeLanes: GlobeLane[] = canonicalLanes
+                .slice(0, 6)
+                .map((l) => ({
+                  id: l.displayLabel,
+                  from: l.fromMeta.canonicalKey,
+                  to: l.toMeta.canonicalKey,
+                  coords: [l.fromMeta.coords, l.toMeta.coords],
+                  fromMeta: l.fromMeta,
+                  toMeta: l.toMeta,
+                  shipments: l.shipments,
+                }));
+              const hasResolvable = globeLanes.length > 0;
 
-  return (
-                    <button
-                      key={`${fullName}-${index}`}
-                      type="button"
-                      onClick={() => { setSlideContact(contact); setContactSlideOpen(true); }}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50/60"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-  <div className="flex min-w-0 items-start gap-3">
-    {avatarUrl ? (
-      <img
-        src={avatarUrl}
-        alt={fullName}
-        className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
-        loading="lazy"
-      />
-    ) : (
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200">
-        {initials}
-      </div>
-    )}
-
-    <div className="min-w-0">
-      <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
-      <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
-    </div>
-  </div>
-
-  <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-    Verified
-  </span>
-</div>
-                      <div className="mt-2 text-xs text-slate-400">Click to view details</div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Contact slide-over panel */}
-          {contactSlideOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-40 bg-black/30"
-                onClick={() => setContactSlideOpen(false)}
-              />
-              <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col bg-white shadow-2xl">
-                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                  <div>
-                    <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">
-                      Contact Intelligence
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {contactPreviewSource ? `Source: ${contactPreviewSource}` : "Source: Lusha"}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setContactSlideOpen(false)}
-                    className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                <div className="border-b border-slate-100 px-5 py-4">
-                  <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-  <div className="flex items-center gap-2">
-    <Search className="h-4 w-4 text-slate-400" />
-    <input
-      value={contactSearchQuery}
-      onChange={(event) => {
-        setContactSearchQuery(event.target.value);
-        setSlideContact(null);
-      }}
-      placeholder="Search by name, title, email, phone, city, country..."
-      className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-    />
-  </div>
-</div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => { setSlideContact(null); setContactFetchTrigger((n) => n + 1); }}
-                      disabled={contactsLoading}
-                      className="rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
-                    >
-                      {contactsLoading ? "Searching…" : "Search more contacts"}
-                    </button>
-                    {slideContact && (
-                      <button
-                        type="button"
-                        onClick={() => setSlideContact(null)}
-                        className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-                      >
-                        Back to all contacts
-                      </button>
-                    )}
-                  </div>
-                  {contactMessage && (
-                    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-                      {contactMessage}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-5">
-                  {contactsLoading ? (
-                    <div className="space-y-3">
-                      {[0, 1, 2].map((idx) => (
-                        <div key={idx} className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                          <div className="h-4 w-1/3 rounded bg-slate-200" />
-                          <div className="mt-3 h-3 w-1/2 rounded bg-slate-200" />
-                        </div>
-                      ))}
-                    </div>
-                  ) : slideContact ? (
-                    (() => {
-                      const fullName = getContactFullName(slideContact);
-const title = getContactTitle(slideContact);
-const email = getContactEmail(slideContact);
-const phone = getContactPhone(slideContact);
-const avatarUrl = getContactAvatarUrl(slideContact);
-const linkedin =
-  slideContact.linkedin || slideContact.linkedinUrl ||
-  slideContact.profileUrl || slideContact.url || "";
-const initials =
-  fullName.split(" ").slice(0, 2).map((p: string) => p[0]).join("").toUpperCase() || "CT";
-const saved = savedContactKeys.has(getContactKey(slideContact));
-                      return (
-                        <div className="space-y-5">
-                          <div className="flex items-center gap-3">
-  {avatarUrl ? (
-    <img
-      src={avatarUrl}
-      alt={fullName}
-      className="h-14 w-14 shrink-0 rounded-2xl object-cover ring-1 ring-slate-200"
-      loading="lazy"
-    />
-  ) : (
-    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-lg font-semibold text-indigo-700 ring-1 ring-indigo-200">
-      {initials}
-    </div>
-  )}
-
-  <div className="min-w-0">
-    <div className="truncate text-lg font-semibold text-slate-950">{fullName}</div>
-    {title && <div className="text-sm text-indigo-600">{title}</div>}
-  </div>
-</div>
-                          <div className="space-y-3">
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Email</div>
-                              <div className="mt-1 text-sm text-slate-900">{email || "Email unavailable"}</div>
-                            </div>
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Phone</div>
-                              <div className="mt-1 text-sm text-slate-900">{phone || "Phone unavailable"}</div>
-                            </div>
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">LinkedIn</div>
-                              <div className="mt-1 truncate text-sm text-slate-900">
-                                {linkedin ? (
-                                  <a href={linkedin} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
-                                    {linkedin}
-                                  </a>
-                                ) : "LinkedIn unavailable"}
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => saveContactToSupabase(slideContact)}
-                            className="w-full rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+              return (
+                <>
+                  {/* Phase B.11 — Origin / Destination flag pills, fixed.
+                      Root cause of the desktop-flags-missing report (with
+                      file refs):
+                        - Container at the previous Phase B.10 line ~4235
+                          used `flex w-full flex-wrap … md:flex-nowrap` with
+                          children sized `flex-1 min-w-[140px] max-w-[260px]`.
+                        - On narrow desktop viewports (1024-1280) the
+                          `flex-1` grow factor competes with `min-w-[140px]`
+                          and `max-w-[260px]`, and on certain Chromium
+                          builds the cards collapsed to their 0-content
+                          width before flex-grow could re-expand them
+                          (the centered ArrowRight (`hidden md:flex`) and
+                          the inner `<span className="truncate">` for the
+                          country name compounded this — `truncate` on a
+                          flex child with min-w-0 produces a 0px width).
+                        - There was NO ancestor with `overflow-hidden`
+                          (verified across the trade-lanes section card
+                          and TabsContent — see grep for "overflow-hidden"
+                          below), so the issue was layout, not clipping.
+                      Fix: drop the flex grow/cap dance entirely. Use a
+                      deterministic 3-column grid at md+ (origin · arrow ·
+                      destination), each card with explicit `min-h` so it
+                      always has visible vertical mass even when content is
+                      sparse. On <md the pills stack vertically.
+                      The block still sits ABOVE the `lg:grid-cols-2`
+                      globe + lane-table grid so it spans the full panel
+                      width with no parent that could clip it. */}
+                  {hasResolvable && ((activeFromMeta && activeFromMeta.flag) || (activeToMeta && activeToMeta.flag)) && (
+                    <div className="mb-4 grid w-full grid-cols-1 items-stretch gap-3 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-4">
+                      {activeFromMeta && activeFromMeta.flag ? (
+                        <div className="relative flex min-h-[160px] flex-col items-center justify-center gap-2 rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-blue-50 p-4 shadow-sm">
+                          <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-indigo-300 to-transparent" />
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-600">
+                            ORIGIN
+                          </span>
+                          <span
+                            role="img"
+                            aria-label={activeFromMeta.countryName || "Origin country flag"}
+                            className="text-4xl leading-none xl:text-5xl"
                           >
-                            {saved ? "Saved ✓" : "Save contact"}
-                          </button>
+                            {activeFromMeta.flag}
+                          </span>
+                          <span className="max-w-full truncate text-base font-semibold text-slate-900" title={activeFromMeta.countryName}>
+                            {activeFromMeta.countryName}
+                          </span>
+                          {activeFromMeta.countryCode ? (
+                            <span className="rounded-full bg-white/80 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-600 ring-1 ring-slate-200">
+                              {activeFromMeta.countryCode}
+                            </span>
+                          ) : null}
                         </div>
-                      );
-                    })()
-                  ) : filteredContacts.length === 0 ? (
-                    <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-                      <p className="text-sm text-slate-500">
-                        {contactMessage || "No contacts found yet. Try Search more contacts."}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {filteredContacts.map((contact: any, index: number) => {
-  const fullName = getContactFullName(contact);
-  const title = getContactTitle(contact);
-  const avatarUrl = getContactAvatarUrl(contact);
-  const saved = savedContactKeys.has(getContactKey(contact));
-  const initials =
-    fullName
-      .split(" ")
-      .slice(0, 2)
-      .map((part: string) => part[0])
-      .join("")
-      .toUpperCase() || "CT";
-
-  return (
-                          <div key={`${fullName}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                            <div className="flex items-start justify-between gap-3">
-                              <button
-  type="button"
-  onClick={() => setSlideContact(contact)}
-  className="flex min-w-0 flex-1 items-center gap-3 text-left"
->
-  {avatarUrl ? (
-    <img
-      src={avatarUrl}
-      alt={fullName}
-      className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
-      loading="lazy"
-    />
-  ) : (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200">
-      {initials}
-    </div>
-  )}
-
-  <div className="min-w-0">
-    <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
-    <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
-  </div>
-</button>
-                              <button
-                                type="button"
-                                onClick={() => saveContactToSupabase(contact)}
-                                className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700 hover:bg-emerald-100"
-                              >
-                                {saved ? "Saved" : "Save"}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
+                      ) : (
+                        <div aria-hidden />
+                      )}
+                      <div className="hidden h-10 w-10 shrink-0 items-center justify-center self-center rounded-full border border-slate-200 bg-white text-base font-semibold text-slate-400 shadow-sm md:flex">
+                        <ArrowRight className="h-5 w-5" aria-hidden />
+                      </div>
+                      {activeToMeta && activeToMeta.flag ? (
+                        <div className="relative flex min-h-[160px] flex-col items-center justify-center gap-2 rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-slate-50 p-4 shadow-sm">
+                          <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-blue-300 to-transparent" />
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600">
+                            DESTINATION
+                          </span>
+                          <span
+                            role="img"
+                            aria-label={activeToMeta.countryName || "Destination country flag"}
+                            className="text-4xl leading-none xl:text-5xl"
+                          >
+                            {activeToMeta.flag}
+                          </span>
+                          <span className="max-w-full truncate text-base font-semibold text-slate-900" title={activeToMeta.countryName}>
+                            {activeToMeta.countryName}
+                          </span>
+                          {activeToMeta.countryCode ? (
+                            <span className="rounded-full bg-white/80 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-600 ring-1 ring-slate-200">
+                              {activeToMeta.countryCode}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div aria-hidden />
+                      )}
                     </div>
                   )}
-                </div>
-              </div>
-            </>
-          )}
+
+                  {/* Selected lane summary strip — sits above the globe +
+                      lane-table grid so it spans the full panel width.
+                      Phase B.10: backdrop-blur slate tint replaces the
+                      flat slate-50 banner. */}
+                  {hasResolvable && activeLaneMeta ? (
+                    <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+                      <span className="font-semibold text-slate-900">
+                        {activeLaneMeta.displayLabel}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-slate-600">
+                        <span>Shipments {formatNumber(activeLaneMeta.shipments)}</span>
+                        <span>TEU {formatNumber(activeLaneMeta.teu, 1)}</span>
+                        <span>
+                          Est. Spend {activeLaneMeta.spend != null ? formatCurrency(activeLaneMeta.spend) : "—"}
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {/* Globe LEFT */}
+                    <div
+                      style={{
+                        background:
+                          "linear-gradient(180deg, #EEF2FF 0%, #F8FAFC 60%, #F1F5F9 100%)",
+                        borderRadius: 24,
+                        border: "1px solid #E2E8F0",
+                        padding: 16,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 10,
+                        minWidth: 0,
+                      }}
+                    >
+                      {hasResolvable ? (
+                        <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+                          <GlobeCanvas
+                            lanes={globeLanes}
+                            selectedLane={activeLane ?? null}
+                            size={globeSize}
+                            theme="dark"
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          className="flex h-full w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-500"
+                          style={{ minHeight: 200 }}
+                        >
+                          <Globe className="mb-2 h-6 w-6 text-slate-300" />
+                          Route map unavailable because this shipment data does not include resolvable origin/destination locations.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Table RIGHT */}
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
+                            <th className="px-3 py-2 font-semibold">#</th>
+                            <th className="px-3 py-2 font-semibold">Lane</th>
+                            <th className="px-3 py-2 text-right font-semibold">Shipments</th>
+                            <th className="px-3 py-2 text-right font-semibold">TEU</th>
+                            <th className="px-3 py-2 text-right font-semibold">Trend</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {combinedLanes.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500">
+                                No trade lane data available yet.
+                              </td>
+                            </tr>
+                          ) : (
+                            combinedLanes.map((lane, i) => {
+                              const isActive =
+                                lane.resolvable && lane.displayLabel === activeLane;
+                              const spendTitle =
+                                lane.spend != null ? `Est. Spend: ${formatCurrency(lane.spend)}` : undefined;
+                              const trendNode =
+                                lane.shipments > 0 && lane.resolvable ? (
+                                  <span className="text-emerald-600">↑</span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                );
+                              return (
+                                <tr
+                                  key={`lane-${i}`}
+                                  onClick={() => {
+                                    if (lane.resolvable) setSelectedLane(lane.displayLabel);
+                                  }}
+                                  title={spendTitle}
+                                  className={`border-b border-slate-50 last:border-b-0 transition-colors ${
+                                    lane.resolvable ? "cursor-pointer" : "cursor-default"
+                                  } ${
+                                    isActive
+                                      ? "bg-indigo-50 border-l-2 border-l-indigo-500 ring-1 ring-inset ring-indigo-200"
+                                      : "hover:bg-slate-50/70"
+                                  }`}
+                                >
+                                  <td className="px-3 py-3 text-xs font-semibold text-slate-400">{i + 1}</td>
+                                  <td className="px-3 py-3">
+                                    <div className="flex items-center gap-2">
+                                      <span
+                                        className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                                        style={{
+                                          backgroundColor: isActive
+                                            ? TEU_BAR_PRIMARY
+                                            : CHART_COLORS[i % CHART_COLORS.length],
+                                        }}
+                                      />
+                                      <span className="max-w-[260px] truncate font-semibold text-slate-900">
+                                        {lane.displayLabel}
+                                      </span>
+                                    </div>
+                                    {lane.aliases.length > 1 ? (
+                                      <div className="mt-0.5 truncate text-xs text-slate-500">
+                                        Includes {lane.aliases.slice(0, 2).join("; ")}
+                                        {lane.aliases.length > 2
+                                          ? `; +${lane.aliases.length - 2} more`
+                                          : ""}
+                                      </div>
+                                    ) : null}
+                                  </td>
+                                  <td className="px-3 py-3 text-right font-semibold text-indigo-600">
+                                    {formatNumber(lane.shipments)}
+                                  </td>
+                                  <td className="px-3 py-3 text-right text-slate-700">
+                                    {formatNumber(lane.teu, 1)}
+                                  </td>
+                                  <td className="px-3 py-3 text-right">{trendNode}</td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </section>
         </TabsContent>
 
         <TabsContent value="equipment" className="space-y-4">
@@ -3686,484 +4793,387 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
             );
           })()}
         </TabsContent>
-
-        <TabsContent value="suppliers" className="space-y-4">
-          <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Supplier Intelligence
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  {suppliersRaw.length > 0
-                    ? `${suppliersRaw.length} verified suppliers across all shipment history`
-                    : "Supplier data sourced from verified bill-of-lading records"}
-                </p>
-              </div>
-              {suppliersPageCount > 1 && (
-                <div className="flex items-center gap-2 text-xs text-slate-500">
-                  <span>
-                    {suppliersPage * supplierPageSize + 1}–
-                    {Math.min((suppliersPage + 1) * supplierPageSize, suppliersRaw.length)} of {suppliersRaw.length}
-                  </span>
-                  <button
-                    disabled={suppliersPage === 0}
-                    onClick={() => setSuppliersPage((p) => Math.max(0, p - 1))}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                  >
-                    Prev
-                  </button>
-                  <button
-                    disabled={suppliersPage >= suppliersPageCount - 1}
-                    onClick={() => setSuppliersPage((p) => Math.min(suppliersPageCount - 1, p + 1))}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {suppliersRaw.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                No supplier data available. Supplier intelligence is populated from verified BOL records.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
-                      <th className="px-3 py-3 font-semibold">Supplier</th>
-                      <th className="px-3 py-3 font-semibold">Country</th>
-                      <th className="px-3 py-3 font-semibold text-right">12m Shpmt</th>
-                      <th className="px-3 py-3 font-semibold text-right">Total TEU</th>
-                      <th className="px-3 py-3 font-semibold">Recent</th>
-                      <th className="px-3 py-3 font-semibold">Tenure</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {suppliersSlice.map((sup: any, idx: number) => (
-                      <tr key={idx} className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/60">
-                        <td className="px-3 py-3 align-top">
-                          <div className="max-w-[220px] truncate text-sm font-semibold text-slate-900">
-                            {sup.supplier_name || "—"}
-                          </div>
-                          {sup.supplier_address && (
-                            <div className="mt-0.5 max-w-[220px] truncate text-xs text-slate-400">
-                              {sup.supplier_address}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 align-top text-sm text-slate-600">
-                          {sup.country || sup.supplier_address_country || "—"}
-                        </td>
-                        <td className="px-3 py-3 align-top text-right text-sm font-semibold text-indigo-600">
-                          {formatNumber(sup.shipments_12m)}
-                        </td>
-                        <td className="px-3 py-3 align-top text-right text-sm text-slate-700">
-                          {formatNumber(sup.total_teus, 1)}
-                        </td>
-                        <td className="px-3 py-3 align-top text-xs text-slate-500">
-                          {sup.most_recent_shipment ? formatDate(sup.most_recent_shipment) : "—"}
-                        </td>
-                        <td className="px-3 py-3 align-top text-xs text-slate-500">
-                          {sup.business_length || "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="shipments" className="space-y-4">
-          {/* Products & HS Codes — folded in from former Products tab. Data
-              and pagination wiring are unchanged; same hsRows / productRows
-              from detail memo. */}
-          <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Products &amp; HS Codes
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Cargo descriptions and HS codes derived from shipment history
-                </p>
-              </div>
-              {totalProducts > 0 ? (
-                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {totalProducts} {totalProducts === 1 ? "HS code" : "HS codes"}
-                </div>
-              ) : null}
-            </div>
-
-            {totalProducts === 0 && detail.productRows.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                No product or HS-code data derived from shipments yet
-              </div>
-            ) : (
-              <>
-                {prodPageCount > 1 && (
-                  <div className="mb-3 flex items-center justify-end gap-2 text-xs text-slate-500">
-                    <span>
-                      {productsPage * productsPageSize + 1}–
-                      {Math.min((productsPage + 1) * productsPageSize, totalProducts)} of {totalProducts}
-                    </span>
-                    <button
-                      disabled={productsPage === 0}
-                      onClick={() => setProductsPage((p) => Math.max(0, p - 1))}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                    >
-                      Prev
-                    </button>
-                    <button
-                      disabled={productsPage >= prodPageCount - 1}
-                      onClick={() => setProductsPage((p) => Math.min(prodPageCount - 1, p + 1))}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <MetricList
-                    title={`Product mix — HS codes (${totalProducts})`}
-                    items={hsSlice.map((row) => ({
-                      label: row.hsCode,
-                      value: formatNumber(row.count),
-                      meta: row.description,
-                    }))}
-                  />
-                  <MetricList
-                    title="Top products"
-                    items={prodSlice.map((row) => ({
-                      label: String(row.product),
-                      value: row.volumeShare,
-                      meta: `HS ${row.hsCode}`,
-                    }))}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            {histPageCount > 1 && (
-              <div className="flex items-center justify-end gap-2 text-xs text-slate-500">
-                <span>
-                  {historyPage * historyPageSize + 1}–
-                  {Math.min((historyPage + 1) * historyPageSize, totalRows)} of {totalRows} shipments
-                </span>
-                <button
-                  disabled={historyPage === 0}
-                  onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                >
-                  Prev
-                </button>
-                <button
-                  disabled={historyPage >= histPageCount - 1}
-                  onClick={() => setHistoryPage((p) => Math.min(histPageCount - 1, p + 1))}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            )}
-
-            <DataTable
-              title={`Verified shipment ledger — ${totalRows} records`}
-              columns={[
-                "Arrival Date",
-                "Master BOL",
-                "House BOL",
-                "Importer ID",
-                "Importer Name",
-                "Consignee Name",
-                "Consignee Address",
-                "Shipper",
-                "Shipper Address",
-                "Carrier Code",
-                "Carrier Name",
-                "Forwarder Code",
-                "Forwarder Name",
-                "Notify Party",
-                "Port Of Unlading ID",
-                "Port Of Unlading",
-                "Port Of Lading ID",
-                "Port Of Lading",
-                "Container Types",
-                "Route",
-                "Vessel",
-                "Voyage Number",
-                "TEU",
-                "Weight (kg)",
-                "Gross Weight",
-                "Volume",
-                "Cargo Description",
-                "Product",
-                "HS Code",
-              ]}
-              rows={histSlice}
-            />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="credit" className="space-y-4">
+        <TabsContent value="contacts" className="space-y-4">
+          {/* Phase B.3 Contact Intel rebuild — search bar, filter chips,
+              honest verification gate, 2-column card grid. The Lusha
+              enrichment fetch is unchanged; this tab just consumes its
+              `phantomContacts` output more honestly. */}
           {(() => {
-            // Honest empty state — no mock scores, no invented ratings.
-            // Public-source deep links use the company's existing name/country
-            // from the profile so the user can verify manually while the
-            // SEC EDGAR / GLEIF / Companies House edge function is being built
-            // (tracked as a separate backend ticket — not shipped in Phase B).
-            const companyName =
-              (rawProfile as any)?.company_name ||
-              (rawProfile as any)?.companyName ||
-              (rawProfile as any)?.name ||
-              (rawProfile as any)?.title ||
-              (record as any)?.company?.name ||
-              (record as any)?.company?.company_name ||
-              "";
-            const countryCode = String(
-              (rawProfile as any)?.country_code ||
-                (rawProfile as any)?.countryCode ||
-                (record as any)?.company?.country_code ||
-                "",
-            )
-              .trim()
-              .toUpperCase();
-            // Accept GB and UK variants (upper or lower-case both map through
-            // the uppercase normalize above) so UK-registered companies always
-            // get the Companies House deep link.
-            const isUkCompany = countryCode === "GB" || countryCode === "UK";
-            const q = encodeURIComponent(companyName.trim());
-            const canSearch = q.length > 0;
-            const edgarUrl = canSearch
-              ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${q}&type=10-K&dateb=&owner=include&count=40`
-              : null;
-            const gleifUrl = canSearch
-              ? `https://search.gleif.org/#/search/simpleSearch=${q}`
-              : null;
-            const companiesHouseUrl =
-              canSearch && isUkCompany
-                ? `https://find-and-update.company-information.service.gov.uk/search?q=${q}`
-                : null;
+            const FILTER_CHIPS: Array<{ id: string; label: string; matcher: (c: any) => boolean }> = [
+              { id: "all", label: "All", matcher: () => true },
+              {
+                id: "operations",
+                label: "Operations",
+                matcher: (c) => /operation|logistic|supply chain|warehouse|fulfillment/i.test(getContactTitle(c)),
+              },
+              {
+                id: "procurement",
+                label: "Procurement",
+                matcher: (c) => /procure|sourcing|buyer|purchas/i.test(getContactTitle(c)),
+              },
+              {
+                id: "vp",
+                label: "VP",
+                matcher: (c) => /\b(vp|vice president)\b/i.test(getContactTitle(c)),
+              },
+              {
+                id: "director",
+                label: "Director",
+                matcher: (c) => /\bdirector\b/i.test(getContactTitle(c)),
+              },
+            ];
+
+            const filtered = phantomContacts.filter((c) => {
+              const matchesChip =
+                FILTER_CHIPS.find((chip) => chip.id === contactDeptFilter)?.matcher(c) ?? true;
+              if (!matchesChip) return false;
+              const q = contactSearchQuery.trim().toLowerCase();
+              if (!q) return true;
+              const text = [
+                getContactFullName(c),
+                getContactTitle(c),
+                getContactEmail(c),
+                getContactLocation(c),
+              ].filter(Boolean).join(" ").toLowerCase();
+              return text.includes(q);
+            });
+
+            const verifiedCount = filtered.filter(isContactVerified).length;
 
             return (
-              <div className="space-y-4">
-                <div className="rounded-[30px] border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50/40 p-5 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                          Credit &amp; Company Health
-                        </div>
-                        <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
-                          Beta
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Public financial and registry signals. No invented scores.
-                      </p>
-                    </div>
-                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
-                      Public sources
-                    </div>
-                  </div>
-
-                  <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
-                    <div className="text-sm font-semibold text-slate-700">Credit data not available</div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      We don&rsquo;t have a public credit or filing match cached for this
-                      company yet. Use the links below to inspect public registries
-                      directly, or wait for the backend integration that will surface
-                      SEC EDGAR filings, GLEIF legal-entity status, and Companies House
-                      data inline here.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <a
-                    href={edgarUrl ?? "#"}
-                    target={edgarUrl ? "_blank" : undefined}
-                    rel={edgarUrl ? "noreferrer" : undefined}
-                    aria-disabled={!edgarUrl}
-                    className={`block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition ${
-                      edgarUrl ? "hover:border-indigo-200 hover:bg-indigo-50/40" : "pointer-events-none opacity-50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-600">
-                      <BarChart3 className="h-3.5 w-3.5" />
-                      SEC EDGAR
-                    </div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">Public filings &amp; financials</div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      US-listed companies: 10-K, 10-Q, revenue, assets from XBRL. Free, no key.
-                    </div>
-                  </a>
-
-                  <a
-                    href={gleifUrl ?? "#"}
-                    target={gleifUrl ? "_blank" : undefined}
-                    rel={gleifUrl ? "noreferrer" : undefined}
-                    aria-disabled={!gleifUrl}
-                    className={`block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition ${
-                      gleifUrl ? "hover:border-cyan-200 hover:bg-cyan-50/40" : "pointer-events-none opacity-50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700">
-                      <Building2 className="h-3.5 w-3.5" />
-                      GLEIF LEI
-                    </div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">Legal-entity status</div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      LEI, entity status, registration authority across jurisdictions. Free, no key.
-                    </div>
-                  </a>
-
-                  <a
-                    href={companiesHouseUrl ?? "#"}
-                    target={companiesHouseUrl ? "_blank" : undefined}
-                    rel={companiesHouseUrl ? "noreferrer" : undefined}
-                    aria-disabled={!companiesHouseUrl}
-                    className={`block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition ${
-                      companiesHouseUrl
-                        ? "hover:border-emerald-200 hover:bg-emerald-50/40"
-                        : "pointer-events-none opacity-50"
-                    }`}
-                    title={
-                      companiesHouseUrl
-                        ? undefined
-                        : "Companies House lookup is only surfaced for UK-registered companies"
+              <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                {/* Phase B.17 — sticky save-result banner. Renders ONLY when
+                    contactMessageTone is set (success / info / warning /
+                    error). Lifted from the buried empty-state line so users
+                    actually see the outcome of `saveContactToSupabase`. */}
+                {contactMessage && contactMessageTone ? (
+                  <div
+                    role={contactMessageTone === "error" ? "alert" : "status"}
+                    aria-live="polite"
+                    className={
+                      "mb-4 flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold " +
+                      (contactMessageTone === "success"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : contactMessageTone === "warning"
+                          ? "border-amber-200 bg-amber-50 text-amber-900"
+                          : contactMessageTone === "error"
+                            ? "border-rose-200 bg-rose-50 text-rose-800"
+                            : "border-slate-200 bg-slate-50 text-slate-700")
                     }
                   >
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                      <Briefcase className="h-3.5 w-3.5" />
-                      Companies House
+                    <span className="flex-1">{contactMessage}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setContactMessage(null);
+                        setContactMessageTone(null);
+                      }}
+                      className="shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold opacity-70 hover:opacity-100"
+                      aria-label="Dismiss"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : null}
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                      Contact Intel
                     </div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">
-                      UK company registry
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {companiesHouseUrl
-                        ? "Filing history, charges, officers. UK only."
-                        : "Only available for UK-registered companies."}
-                    </div>
-                  </a>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Enriched contacts sourced from Lusha. "Verified" labels appear ONLY when the provider explicitly verified the email address.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setContactFetchTrigger((n) => n + 1); }}
+                      disabled={contactsLoading}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
+                    >
+                      {contactsLoading ? "Searching…" : "Enrich Contacts"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setContactFetchTrigger((n) => n + 1); }}
+                      disabled={contactsLoading}
+                      className="text-xs font-semibold text-slate-500 hover:text-slate-700 disabled:opacity-50"
+                    >
+                      Refresh contacts
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })()}
-        </TabsContent>
 
-        <TabsContent value="contacts" className="space-y-4">
-          <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Contact intelligence
+                {/* Search bar */}
+                <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <Search className="h-4 w-4 text-slate-400" />
+                    <input
+                      value={contactSearchQuery}
+                      onChange={(e) => setContactSearchQuery(e.target.value)}
+                      placeholder="Search contacts"
+                      className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                    />
+                  </div>
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Enriched contacts sourced from Lusha. Persistent contact save is the next backend step.
-                </p>
-              </div>
-            </div>
 
-            {contactsLoading ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                Loading contacts…
-              </div>
-            ) : filteredContacts.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                {contactMessage || "No contacts found yet. If Lusha is rate-limited, cached contacts will appear here when available."}
-              </div>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
-                <div className="space-y-2">
-                  {filteredContacts.map((contact: any, index: number) => {
-                    const fullName = getContactFullName(contact);
-                    const title = getContactTitle(contact);
-                    const initials =
-                      fullName
-                        .split(" ")
-                        .slice(0, 2)
-                        .map((part: string) => part[0])
-                        .join("")
-                        .toUpperCase() || "CT";
-                    const isActive = selectedContact === contact;
-
+                {/* Filter chips — single-select. */}
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  {FILTER_CHIPS.map((chip) => {
+                    const active = contactDeptFilter === chip.id;
                     return (
                       <button
-                        key={`${fullName}-${index}`}
-                        onClick={() => setSelectedContact(contact)}
-                        className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-2 text-left ${
-                          isActive ? "border-indigo-300 bg-indigo-50" : "border-slate-200 hover:bg-slate-50"
+                        key={chip.id}
+                        type="button"
+                        onClick={() => setContactDeptFilter(chip.id)}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                          active
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                         }`}
                       >
-                        <div className="rounded-2xl bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                          {initials}
-                        </div>
-                        <div className="flex-1">
-                          <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
-                          {title && <div className="truncate text-xs text-slate-500">{title}</div>}
-                        </div>
+                        {chip.label}
                       </button>
                     );
                   })}
                 </div>
 
-                <div>
-                  {selectedContact ? (
-                    (() => {
-                      const fullName = getContactFullName(selectedContact);
-                      const title = getContactTitle(selectedContact);
-                      const email = selectedContact.email || selectedContact.email_address || "";
-                      const phone = selectedContact.phone || selectedContact.phone_number || "";
+                {/* Count line */}
+                <div className="mb-4 text-xs text-slate-500">
+                  {contactsLoading
+                    ? "Enriching contacts…"
+                    : `${filtered.length} contacts found · ${verifiedCount} verified`}
+                </div>
+
+                {contactsLoading ? (
+                  <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                    Loading contacts…
+                  </div>
+                ) : filtered.length === 0 ? (
+                  contactError ? (
+                    <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6">
+                      <div className="text-sm font-semibold text-amber-900">
+                        Contact enrichment unavailable
+                      </div>
+                      <p className="mt-1 text-xs text-amber-800">
+                        The contact provider did not return contacts for this company. Try again or connect a provider in Admin.
+                      </p>
+                      <details className="mt-3 text-[11px] text-amber-700">
+                        <summary className="cursor-pointer select-none rounded px-1 py-0.5 hover:bg-amber-100">
+                          Details
+                        </summary>
+                        <pre className="mt-2 max-w-full overflow-auto rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-[10px] text-amber-800">
+                          {contactError}
+                        </pre>
+                      </details>
+                    </div>
+                  ) : (
+                    <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                      {contactMessage || "No contacts match this filter."}
+                    </div>
+                  )
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {filtered.map((contact: any, index: number) => {
+                      const fullName = getContactFullName(contact);
+                      const title = getContactTitle(contact);
+                      const email = getContactEmail(contact);
+                      const location = getContactLocation(contact);
+                      const linkedin = getContactLinkedIn(contact);
+                      const avatarUrl = getContactAvatarUrl(contact);
+                      const department =
+                        contact.department ||
+                        contact.dept ||
+                        (FILTER_CHIPS.find((c) => c.id !== "all" && c.matcher(contact))?.label ?? null);
+                      const verified = isContactVerified(contact);
                       const initials =
-                        fullName
-                          .split(" ")
-                          .slice(0, 2)
-                          .map((part: string) => part[0])
-                          .join("")
-                          .toUpperCase() || "CT";
+                        fullName.split(" ").slice(0, 2).map((p: string) => p[0]).join("").toUpperCase() || "CT";
 
                       return (
-                        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                          <div className="mb-3 flex items-start justify-between gap-3">
-                            <div className="rounded-2xl bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
-                              {initials}
+                        <div
+                          key={`${fullName}-${index}`}
+                          className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              {avatarUrl ? (
+                                <img
+                                  src={avatarUrl}
+                                  alt={fullName}
+                                  className="h-11 w-11 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                                  {initials}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="truncate text-sm font-semibold text-slate-950">
+                                    {fullName}
+                                  </span>
+                                  {verified ? (
+                                    <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                                      Verified
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-700"
+                                      title="Provider sourced — email not verified"
+                                    >
+                                      Found
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-0.5 truncate text-xs text-indigo-600">
+                                  {title || "Role unavailable"}
+                                </div>
+                                {location ? (
+                                  <div className="mt-0.5 truncate text-xs text-slate-500">
+                                    {location}
+                                  </div>
+                                ) : null}
+                              </div>
                             </div>
-                            <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                              Verified
-                            </span>
                           </div>
-                          <div className="text-lg font-semibold text-slate-950">{fullName}</div>
-                          {title && <div className="mt-1 text-sm font-medium text-indigo-600">{title}</div>}
-                          <div className="mt-4 space-y-2 text-sm text-slate-600">
-                            <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                              {email || "Email unavailable"}
-                            </div>
-                            <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                              {phone || "Phone unavailable"}
-                            </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            {department ? (
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                                {department}
+                              </span>
+                            ) : null}
+                            {email ? (
+                              <span className="truncate rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-mono text-slate-600">
+                                {email}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+                            <a
+                              href={linkedin || undefined}
+                              target={linkedin ? "_blank" : undefined}
+                              rel={linkedin ? "noreferrer" : undefined}
+                              aria-disabled={!linkedin}
+                              title={linkedin ? "Open LinkedIn profile" : "LinkedIn URL unavailable"}
+                              className={`inline-flex h-8 w-8 items-center justify-center rounded-full border ${
+                                linkedin
+                                  ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                                  : "pointer-events-none border-slate-200 bg-slate-50 text-slate-400"
+                              }`}
+                            >
+                              <Linkedin className="h-4 w-4" />
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => saveContactToSupabase(contact)}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                            >
+                              {savedContactKeys.has(getContactKey(contact)) ? (
+                                <>
+                                  <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+                                </>
+                              ) : (
+                                <>
+                                  <Save className="h-3.5 w-3.5" /> Save contact
+                                </>
+                              )}
+                            </button>
                           </div>
                         </div>
                       );
-                    })()
-                  ) : (
-                    <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                      Select a contact to view details.
-                    </div>
-                  )}
-                </div>
+                    })}
+                  </div>
+                )}
               </div>
-            )}
+            );
+          })()}
+        </TabsContent>
+
+        {/* Phase B.10 — Market Benchmark tab. Embeds Freight Right's
+            public Rate Index dashboard via Domo. The native <iframe>
+            does not fire `onError` for CSP / X-Frame-Options blocks,
+            so we run a 6-second `onLoad` watchdog (in the parent
+            component scope) and flip into a clean honest fallback
+            card if the embed never reports `load`. No app-side CSP
+            was found in `frontend/index.html` or `frontend/vercel.json`,
+            so iframe rendering depends on Domo's runtime
+            X-Frame-Options policy — verify in the browser after
+            deploy. */}
+        {isBenchmarkAdmin ? (
+        <TabsContent value="market-benchmark" className="space-y-4">
+          {/* Phase B.11 — LOCKED · TESTING banner. The Freight Right Rate
+              Index iframe below is not yet validated as a production
+              freight-cost benchmark. Visible to super-admins only (the
+              parent <TabsContent> is gated above) so non-admin users
+              never see the embed. Banner copy is intentionally explicit
+              about the restriction. */}
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <strong>Locked &mdash; internal testing.</strong> This benchmark source is not yet validated for production. Hidden from non-admin users.
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="border-b border-slate-200 px-6 py-4">
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">
+                Market Benchmark
+              </p>
+              <h3 className="mt-2 text-xl font-black text-slate-950">
+                Freight Right Rate Index
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                External market index for freight rate context.
+              </p>
+            </div>
+            <div className="relative h-[720px] w-full overflow-hidden bg-slate-50">
+              {benchmarkIframeStatus === "blocked" ? (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm">
+                    <Globe className="h-5 w-5" aria-hidden />
+                  </div>
+                  <h4 className="text-base font-semibold text-slate-900">
+                    Benchmark embed unavailable
+                  </h4>
+                  <p className="max-w-md text-sm text-slate-500">
+                    Freight Right rate index could not load. This may be due to a CSP frame-src restriction or the embed being unavailable.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setBenchmarkIframeStatus("pending")}
+                    className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <iframe
+                  src="https://embed.domo.com/embed/pages/XroQm"
+                  title="Freight Right Rate Index"
+                  width="100%"
+                  height="1620"
+                  frameBorder="0"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  className="block h-[1620px] w-full border-0"
+                  onLoad={() => setBenchmarkIframeStatus("loaded")}
+                />
+              )}
+            </div>
+            <div className="border-t border-slate-200 px-6 py-3 text-center text-sm text-slate-500">
+              <a
+                href="https://www.freightright.com/freight-right-rate-index"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-blue-600 hover:text-blue-700"
+              >
+                Powered by Freight Right
+              </a>
+            </div>
           </div>
         </TabsContent>
+        ) : null}
       </Tabs>
-    </section>
+      </section>
+    </div>
   );
 }

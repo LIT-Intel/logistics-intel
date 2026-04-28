@@ -41,6 +41,8 @@ import {
   parseImportYetiDate,
   formatUserFriendlyDate,
   getDateBadgeInfo,
+  formatSafeShipmentDate,
+  capFutureDate,
 } from "@/lib/dateUtils";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
@@ -335,13 +337,18 @@ export default function SearchPage() {
     // Fire-and-forget usage event so the Dashboard "Searches Used" KPI
     // reflects real activity. Never awaited, never surfaced to the user —
     // if the insert fails (RLS, network, schema), the search continues.
+    // Phase H P1 fix — payload previously used `event_data` which is not a
+    // column on `lit_activity_events` (schema has `metadata jsonb`). The
+    // REST call was silently rejected and zero rows landed, so the
+    // Searches Used KPI read 0 forever. Renamed to `metadata` to match
+    // the real schema.
     if (user?.id) {
       void supabase
         .from("lit_activity_events")
         .insert({
           user_id: user.id,
           event_type: "search",
-          event_data: { q: query },
+          metadata: { q: query },
         })
         .then(
           () => undefined,
@@ -1192,7 +1199,8 @@ export default function SearchPage() {
                               Last Ship
                             </div>
                             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600, color: '#374151' }}>
-                              {formatUserFriendlyDate(company.last_shipment, { fallback: "—" })}
+                              {/* Phase B.5 — cap future-dated shipment values so a stale row never paints "Dec 26, 2027" on a card. */}
+                              {formatSafeShipmentDate(company.last_shipment, "—")}
                             </div>
                           </div>
                         </div>
@@ -1351,10 +1359,14 @@ export default function SearchPage() {
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-1.5">
                               <div className="text-sm text-slate-900">
-                                {formatUserFriendlyDate(company.last_shipment, { fallback: "—" })}
+                                {/* Phase B.5 — cap future dates and only show recency badges when the date is actually in the past. */}
+                                {formatSafeShipmentDate(company.last_shipment, "—")}
                               </div>
                               {(() => {
-                                const badgeInfo = getDateBadgeInfo(company.last_shipment);
+                                const cappedForBadge = capFutureDate(company.last_shipment);
+                                const badgeInfo = cappedForBadge
+                                  ? getDateBadgeInfo(cappedForBadge)
+                                  : null;
                                 if (!badgeInfo) return null;
                                 return (
                                   <Badge
