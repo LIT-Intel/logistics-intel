@@ -133,9 +133,23 @@ function renderBriefSection(
   `;
 }
 
+function extractDomain(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.hostname.replace(/^www\./i, "");
+  } catch {
+    return url;
+  }
+}
+
 function renderSourcesList(sources: unknown): string {
   if (!Array.isArray(sources) || !sources.length) return "";
+  // Phase B.16 — render up to 5 sources, surfacing domain hint instead
+  // of the full URL in the visible label so we never accidentally expose
+  // internal search-provider URLs to the reader. Click target stays the
+  // real URL.
   const items = sources
+    .slice(0, 5)
     .filter(
       (s) =>
         s &&
@@ -144,9 +158,9 @@ function renderSourcesList(sources: unknown): string {
     )
     .map((s) => {
       const src = s as { title?: string; url: string; snippet?: string };
-      const title = src.title || src.url;
-      const snippet = src.snippet ? `<div class="snippet">${escapeHtml(src.snippet)}</div>` : "";
-      return `<li><a href="${escapeHtml(src.url)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${snippet}</li>`;
+      const title = src.title || extractDomain(src.url);
+      const domainHint = `<span class="meta"> · ${escapeHtml(extractDomain(src.url))}</span>`;
+      return `<li><a href="${escapeHtml(src.url)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${domainHint}</li>`;
     })
     .join("");
   if (!items) return "";
@@ -186,8 +200,10 @@ function renderHtml(
           }
         </header>
         ${renderBriefSection("Executive Summary", brief.executive_summary)}
+        ${renderBriefSection("Company Context", brief.company_context)}
         ${renderBriefSection("Shipment Signal", brief.shipment_signal)}
         ${renderBriefSection("Public Web Context", brief.public_web_context)}
+        ${renderBriefSection("Recent Signals", brief.recent_signals)}
         ${renderBriefSection("Opportunity Angle", brief.opportunity_angle)}
         ${renderBriefSection("Suggested Outreach Angle", brief.suggested_outreach_angle)}
         ${renderBriefSection("Risks / Watchouts", brief.risks_watchouts)}
@@ -383,11 +399,14 @@ Deno.serve(async (req: Request) => {
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
-    return jsonResponse(500, {
+    // Phase B.16 — return 200 so the frontend can read the body's
+    // `code` field instead of seeing a generic non-2xx throw from
+    // supabase.functions.invoke.
+    return jsonResponse(200, {
       ok: false,
       code: "SUPABASE_NOT_CONFIGURED",
       error:
-        "SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY must all be configured.",
+        "Export service is missing core configuration. Contact support.",
     });
   }
 
@@ -426,7 +445,7 @@ Deno.serve(async (req: Request) => {
   try {
     body = await req.json();
   } catch {
-    return jsonResponse(400, {
+    return jsonResponse(200, {
       ok: false,
       code: "INVALID_INPUT",
       error: "Body must be valid JSON.",
@@ -435,7 +454,7 @@ Deno.serve(async (req: Request) => {
 
   const format = body.format === "pdf" ? "pdf" : body.format === "html" ? "html" : null;
   if (!format) {
-    return jsonResponse(400, {
+    return jsonResponse(200, {
       ok: false,
       code: "INVALID_INPUT",
       error: 'format must be "html" or "pdf".',
@@ -447,7 +466,7 @@ Deno.serve(async (req: Request) => {
       ? body.source_company_key.trim()
       : null;
   if (!companyId && !sourceKey) {
-    return jsonResponse(400, {
+    return jsonResponse(200, {
       ok: false,
       code: "INVALID_INPUT",
       error: "Provide company_id (UUID) or source_company_key.",
@@ -468,7 +487,9 @@ Deno.serve(async (req: Request) => {
       : await baseQuery.eq("source_company_key", sourceKey).maybeSingle();
     if (error) {
       console.error("export-company-profile company fetch failed:", error);
-      return jsonResponse(500, {
+      // Phase B.16 — business-state error: return 200 with a code the
+      // frontend can map through EXPORT_ERROR_COPY.
+      return jsonResponse(200, {
         ok: false,
         code: "COMPANY_FETCH_FAILED",
         error: error.message || "Failed to fetch company.",
@@ -477,10 +498,12 @@ Deno.serve(async (req: Request) => {
     companyRow = (data as CompanyRow | null) ?? null;
   }
   if (!companyRow) {
-    return jsonResponse(404, {
+    // Phase B.16 — return 200 so the frontend's invoke handler can read
+    // the body. 404 would surface as a generic non-2xx throw.
+    return jsonResponse(200, {
       ok: false,
       code: "COMPANY_NOT_FOUND",
-      error: "Company not found in lit_companies.",
+      error: "Company not found in our database.",
     });
   }
 
@@ -520,7 +543,9 @@ Deno.serve(async (req: Request) => {
     });
   if (uploadErr) {
     console.error("export-company-profile upload failed:", uploadErr);
-    return jsonResponse(500, {
+    // Phase B.16 — business-state error: 200 + code so frontend can
+    // surface a friendly toast via EXPORT_ERROR_COPY.
+    return jsonResponse(200, {
       ok: false,
       code: "UPLOAD_FAILED",
       error: uploadErr.message || "Failed to upload HTML export.",
@@ -532,7 +557,8 @@ Deno.serve(async (req: Request) => {
     .createSignedUrl(path, SIGNED_URL_EXPIRY_SECONDS);
   if (signErr || !signed?.signedUrl) {
     console.error("export-company-profile sign failed:", signErr);
-    return jsonResponse(500, {
+    // Phase B.16 — business-state error: 200 + code.
+    return jsonResponse(200, {
       ok: false,
       code: "SIGN_FAILED",
       error: signErr?.message || "Failed to sign URL.",

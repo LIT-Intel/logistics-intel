@@ -35,19 +35,21 @@ import { flagFromCode, resolveEndpoint } from "@/lib/laneGlobe";
 import { capFutureDate } from "@/lib/dateUtils";
 import { supabase } from "@/lib/supabase";
 
-// Phase B.14 — friendly copy for pulse-brief / export-company-profile
-// error codes returned by the new Edge Functions. Anything not in this
-// map falls back to the raw `error` string so we never silently swallow
-// an upstream message.
+// Phase B.16 — friendly copy for pulse-brief / export-company-profile
+// error codes returned by the Edge Functions. Anything not in this map
+// falls back to the raw `error` string so we never silently swallow an
+// upstream message. Provider names (Tavily / Gemini / etc.) are NEVER
+// surfaced to the user — only neutral phrases like "AI brief search
+// source" or "web search".
 const PULSE_ERROR_COPY = {
   TAVILY_NOT_CONFIGURED:
-    "Pulse needs the TAVILY_API_KEY secret in Supabase. Ask your admin to add it and try again.",
+    "AI brief search source not configured. Ask your admin to enable it.",
   TAVILY_FAILED:
-    "Tavily search failed. Try again in a moment, or check Tavily's status page.",
+    "Web search failed. Try again in a moment.",
   INVALID_INPUT: "We couldn't read this company's identity to build a brief.",
-  UNAUTHORIZED: "Sign in again to generate a Pulse brief.",
+  UNAUTHORIZED: "Sign in again to generate an AI brief.",
   SUPABASE_NOT_CONFIGURED:
-    "Pulse Edge Function is missing core Supabase secrets. Contact support.",
+    "AI brief service is missing core configuration. Contact support.",
 };
 
 const EXPORT_ERROR_COPY = {
@@ -55,8 +57,16 @@ const EXPORT_ERROR_COPY = {
     "Storage bucket not configured. Page link copied instead.",
   PDF_NOT_AVAILABLE: "PDF render not available — open HTML version?",
   COMPANY_NOT_FOUND: "We couldn't find this company in the database.",
+  COMPANY_FETCH_FAILED:
+    "Couldn't load company details for export. Try again in a moment.",
+  UPLOAD_FAILED:
+    "Couldn't upload the export. Try again in a moment.",
+  SIGN_FAILED:
+    "Couldn't generate a share link. Try again in a moment.",
   INVALID_INPUT: "Export request was malformed.",
   UNAUTHORIZED: "Sign in again to export this profile.",
+  SUPABASE_NOT_CONFIGURED:
+    "Export service is missing core configuration. Contact support.",
 };
 
 function estimateMarketSpend(teu, fclTeu = null, lclTeu = null) {
@@ -228,10 +238,11 @@ export default function Company() {
   const [refreshError, setRefreshError] = useState(null);
   const [snapshotUpdatedAt, setSnapshotUpdatedAt] = useState(null);
   const [manualRefreshing, setManualRefreshing] = useState(false);
-  // Phase B.14 — Pulse brief modal state. The pulse-brief Edge Function
-  // calls Tavily (and optionally Gemini) and returns 7 brief sections.
-  // We cache the response in component state so closing/reopening the
-  // modal does not re-bill Tavily; the function itself also caches into
+  // Phase B.16 — Pulse brief modal state. The pulse-brief Edge Function
+  // assembles a deepened pre-call brief from saved snapshot fields and
+  // public web context (no provider name surfaced to the user). We cache
+  // the response in component state so closing/reopening the modal does
+  // not re-fetch; the function itself also caches into
   // lit_saved_companies.gemini_brief.
   const [pulseModalOpen, setPulseModalOpen] = useState(false);
   const [pulseLoading, setPulseLoading] = useState(false);
@@ -1118,9 +1129,9 @@ export default function Company() {
                 In Command Center
               </button>
 
-              {/* Phase B.14 — Pulse brief CTA wired to pulse-brief Edge
+              {/* Phase B.16 — Pulse brief CTA wired to pulse-brief Edge
                   Function. Opens the modal which then triggers the
-                  Tavily-grounded fetch. */}
+                  web-grounded brief assembly. */}
               <button
                 type="button"
                 onClick={handlePulseClick}
@@ -1241,10 +1252,11 @@ export default function Company() {
           />
         ) : null}
 
-        {/* Phase B.14 — Pulse brief modal. Renders three states:
+        {/* Phase B.16 — Pulse brief modal. Renders three states:
             (1) loading skeleton, (2) error card mapped through
-            PULSE_ERROR_COPY, (3) seven brief sections from the
-            pulse-brief Edge Function (Tavily + optional Gemini). */}
+            PULSE_ERROR_COPY, (3) deepened brief sections from the
+            pulse-brief Edge Function (web search + optional AI synthesis,
+            no provider names surfaced to the user). */}
         {pulseModalOpen ? (
           <div
             role="dialog"
@@ -1291,10 +1303,13 @@ export default function Company() {
                   {companyName}
                 </h3>
                 <p className="relative mt-1 text-sm text-slate-300">
-                  Pre-call intelligence — Tavily-grounded
+                  Pre-call intelligence brief
                   {pulseBrief?.generatedAt
                     ? ` · ${new Date(pulseBrief.generatedAt).toLocaleString()}`
                     : ""}
+                </p>
+                <p className="relative mt-1 text-[11px] text-slate-400">
+                  Based on saved snapshot and public web context
                 </p>
               </div>
               <div className="max-h-[60vh] space-y-4 overflow-y-auto p-6">
@@ -1302,13 +1317,13 @@ export default function Company() {
                   <div className="flex flex-col items-center gap-3 py-12 text-slate-500">
                     <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
                     <p className="text-sm">
-                      Searching the public web and assembling brief…
+                      Searching public web context and assembling brief…
                     </p>
                   </div>
                 ) : pulseError ? (
                   <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-900">
                     <strong className="font-semibold">
-                      Pulse brief unavailable
+                      AI brief unavailable
                     </strong>
                     <p className="mt-1 text-rose-800">{pulseError.message}</p>
                     <p className="mt-2 text-[11px] uppercase tracking-[0.16em] text-rose-700">
@@ -1340,16 +1355,19 @@ export default function Company() {
   );
 }
 
-// Phase B.14 — render the seven Pulse brief sections returned by
+// Phase B.16 — render the deepened Pulse brief sections returned by
 // pulse-brief Edge Function. Sections with empty/null text are hidden
 // rather than rendering "—" prose; sources collapse when the array is
-// empty. No fallback / placeholder copy is rendered.
+// empty. No fallback / placeholder copy is rendered. Provider names are
+// never surfaced.
 function PulseBriefBody({ sections }) {
   if (!sections || typeof sections !== "object") return null;
   const blocks = [
     { key: "executive_summary", label: "Executive Summary" },
+    { key: "company_context", label: "Company Context" },
     { key: "shipment_signal", label: "Shipment Signal" },
     { key: "public_web_context", label: "Public Web Context" },
+    { key: "recent_signals", label: "Recent Signals" },
     { key: "opportunity_angle", label: "Opportunity Angle" },
     { key: "suggested_outreach_angle", label: "Suggested Outreach Angle" },
     { key: "risks_watchouts", label: "Risks / Watchouts" },
@@ -1380,26 +1398,38 @@ function PulseBriefBody({ sections }) {
             Sources
           </h4>
           <ul className="mt-2 space-y-2">
-            {sources.map((src, idx) => (
-              <li
-                key={`${src?.url || idx}-${idx}`}
-                className="text-sm text-slate-700"
-              >
-                <a
-                  href={src?.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-semibold text-indigo-600 hover:underline"
+            {sources.slice(0, 5).map((src, idx) => {
+              // Phase B.16 — show title + domain hint only. We never
+              // render the raw URL string in the visible label so we
+              // never accidentally expose internal search-provider
+              // URLs to the reader. Click target stays the real URL.
+              let domain = "";
+              try {
+                domain = new URL(src?.url).hostname.replace(/^www\./i, "");
+              } catch {
+                domain = "";
+              }
+              return (
+                <li
+                  key={`${src?.url || idx}-${idx}`}
+                  className="text-sm text-slate-700"
                 >
-                  {src?.title || src?.url}
-                </a>
-                {src?.snippet ? (
-                  <div className="mt-0.5 text-xs text-slate-500">
-                    {src.snippet}
-                  </div>
-                ) : null}
-              </li>
-            ))}
+                  <a
+                    href={src?.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-indigo-600 hover:underline"
+                  >
+                    {src?.title || domain || "Source"}
+                  </a>
+                  {domain ? (
+                    <span className="ml-2 text-xs text-slate-400">
+                      · {domain}
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
