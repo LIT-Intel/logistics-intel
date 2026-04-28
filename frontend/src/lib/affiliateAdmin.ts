@@ -239,3 +239,16 @@ export async function resendStripeOnboarding(partnerId: string, sendEmail = true
     send_email: sendEmail,
   });
 }
+
+export interface UpdatePartnerCommissionBody {
+  partner_id: string;
+  commission_pct?: number;
+  commission_months?: number;
+}
+
+export async function updatePartnerCommission(body: UpdatePartnerCommissionBody) {
+  return callFn('affiliate-admin', {
+    action: 'update_partner_commission',
+    ...body,
+  });
+}

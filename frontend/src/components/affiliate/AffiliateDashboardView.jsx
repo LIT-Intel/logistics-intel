@@ -225,7 +225,13 @@ export default function AffiliateDashboardView({
             payouts={payouts}
           />
         )}
-        {tab === 'tools' && <ToolsTab readOnly={readOnly || isInvited} partner={partner} />}
+        {tab === 'tools' && (
+          <ToolsTab
+            readOnly={readOnly || isInvited}
+            partner={partner}
+            referralLink={referralLink}
+          />
+        )}
       </div>
     </div>
   );
@@ -1055,162 +1061,507 @@ function PayoutsTab({ stripeStatus, partner, payouts }) {
 
 /* ── Tools ─────────────────────────────── */
 
-function ToolsTab({ readOnly, partner }) {
-  const templates = [
-    { name: 'Cold intro email',      ch: 'Email',      lines: 3, Icon: Mail },
-    { name: 'Warm intro email',      ch: 'Email',      lines: 3, Icon: Mail },
-    { name: 'LinkedIn message',      ch: 'LinkedIn',   lines: 2, Icon: Linkedin },
-    { name: 'LinkedIn post caption', ch: 'LinkedIn',   lines: 4, Icon: Linkedin },
-    { name: 'Newsletter blurb',      ch: 'Newsletter', lines: 3, Icon: Newspaper },
-  ];
+function buildUtmUrl(baseUrl, source, medium, campaign) {
+  if (!baseUrl) return '';
+  try {
+    const u = new URL(baseUrl);
+    if (source)   u.searchParams.set('utm_source', source);
+    if (medium)   u.searchParams.set('utm_medium', medium);
+    if (campaign) u.searchParams.set('utm_campaign', campaign);
+    return u.toString();
+  } catch {
+    return baseUrl;
+  }
+}
+
+const TEMPLATE_CATALOG = [
+  {
+    id: 'cold-email',
+    name: 'Cold intro email',
+    channel: 'Email',
+    icon: Mail,
+    body: (link) => [
+      `Subject: Live shipment data on the freight teams you already know`,
+      ``,
+      `Hi {first name},`,
+      ``,
+      `If you're working with shippers, brokers, or freight forwarders, you'll appreciate Logistic Intel — they pull live customs and ocean data on 3.2M+ companies, with monthly shipment volumes, lane breakdowns, and verified contacts.`,
+      ``,
+      `It replaces the "I think they import a lot" guesswork with hard numbers, and it's becoming the standard playbook on freight sales teams.`,
+      ``,
+      `Worth a 15-minute look?`,
+      `${link}`,
+      ``,
+      `— {your name}`,
+    ].join('\n'),
+  },
+  {
+    id: 'warm-email',
+    name: 'Warm intro email',
+    channel: 'Email',
+    icon: Mail,
+    body: (link) => [
+      `Subject: Thought of you — Logistic Intel`,
+      ``,
+      `Hi {first name},`,
+      ``,
+      `Quick one. You came to mind when I was using Logistic Intel earlier this week — given how dialed-in you are on {company} and the lanes you cover, I think you'd get a lot out of it.`,
+      ``,
+      `It's freight intelligence: live import shipments, lane volumes, carrier mixes, and verified decision-maker contacts. Shows you exactly which shippers are moving freight, where it's going, and how to reach the right person.`,
+      ``,
+      `If you want to take a look: ${link}`,
+      ``,
+      `Happy to walk through it together if useful.`,
+      ``,
+      `— {your name}`,
+    ].join('\n'),
+  },
+  {
+    id: 'linkedin-dm',
+    name: 'LinkedIn DM',
+    channel: 'LinkedIn',
+    icon: Linkedin,
+    body: (link) => [
+      `Hey {first name} — saw your work on {recent post / lane}.`,
+      ``,
+      `Wanted to flag Logistic Intel. It pulls live import shipments, monthly volumes, lane mix, and verified contacts on shippers — basically replaces the "guess which companies import freight" step. The freight teams I work with use it to source new accounts.`,
+      ``,
+      `If it's useful: ${link}`,
+    ].join('\n'),
+  },
+  {
+    id: 'linkedin-post',
+    name: 'LinkedIn post',
+    channel: 'LinkedIn',
+    icon: Linkedin,
+    body: (link) => [
+      `If you're in freight sales and still building target lists from D&B exports, you're behind.`,
+      ``,
+      `Logistic Intel pulls live import shipments on 3.2M+ companies — monthly volumes, lane breakdown, carrier mix, and verified contacts. You can see exactly who's moving freight, where it's going, and how to reach the right person.`,
+      ``,
+      `It's the difference between "this company might import" and "this company imported 412 TEUs from Shanghai last month." Try it: ${link}`,
+    ].join('\n'),
+  },
+  {
+    id: 'newsletter',
+    name: 'Newsletter blurb',
+    channel: 'Newsletter',
+    icon: Newspaper,
+    body: (link) => [
+      `**Tool of the week: Logistic Intel**`,
+      ``,
+      `If you sell into shippers or brokers, this one's worth a click. Logistic Intel surfaces live customs and ocean shipment data on 3.2M+ companies — monthly volumes, lane mix, carrier breakdown, and verified contacts in one workspace. Replaces the "I think they import a lot" guesswork with hard numbers.`,
+      ``,
+      `Take a look: ${link}`,
+    ].join('\n'),
+  },
+];
+
+function ToolsTab({ readOnly, partner, referralLink }) {
+  const linkActive = Boolean(referralLink);
+  const linkLabel = referralLink || 'Referral link inactive — finish onboarding to activate';
+
+  // Copy state per-template so the UI shows "Copied" briefly.
+  const [copiedId, setCopiedId] = useState(null);
+  const [previewId, setPreviewId] = useState(null);
+
+  // UTM builder state
+  const [utmSource, setUtmSource] = useState('');
+  const [utmMedium, setUtmMedium] = useState('');
+  const [utmCampaign, setUtmCampaign] = useState('');
+  const utmUrl = referralLink
+    ? buildUtmUrl(referralLink, utmSource.trim(), utmMedium.trim(), utmCampaign.trim())
+    : '';
+  const [utmCopied, setUtmCopied] = useState(false);
+
+  async function copyToClipboard(text, key) {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      if (key === 'utm') {
+        setUtmCopied(true);
+        setTimeout(() => setUtmCopied(false), 1500);
+      } else {
+        setCopiedId(key);
+        setTimeout(() => setCopiedId((id) => (id === key ? null : id)), 1500);
+      }
+    } catch {
+      /* ignore — clipboard may be blocked */
+    }
+  }
 
   return (
     <div
       style={{
-        display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 16,
-        maxWidth: 1240, margin: '0 auto',
+        display: 'grid',
+        gridTemplateColumns: '1.1fr 1fr',
+        gap: 16,
+        maxWidth: 1240,
+        margin: '0 auto',
       }}
     >
-      <Card>
-        <SectionHeader
-          icon={Mail}
-          label="Outreach templates"
-          subtitle="Copy-paste. Variables are auto-filled with your link and name."
-        />
-        {templates.map((r, i) => {
-          const RowIcon = r.Icon;
-          return (
-            <div
-              key={r.name}
+      {/* ── Left column ─────────────────────────────────── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Referral link + UTM builder */}
+        <Card>
+          <SectionHeader
+            icon={LinkIcon}
+            label="Referral link"
+            subtitle={
+              linkActive
+                ? 'Share this link in any channel. Attribution is automatic.'
+                : 'Activate by completing onboarding and Stripe Connect.'
+            }
+            right={
+              linkActive ? (
+                <Badge tone="success" dot>active</Badge>
+              ) : (
+                <Badge tone="warn" dot>inactive</Badge>
+              )
+            }
+          />
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 12px',
+              background: T.bgSubtle,
+              border: `1px solid ${T.borderSoft}`,
+              borderRadius: 10,
+            }}
+          >
+            <code
               style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '12px 0',
-                borderBottom: i < templates.length - 1 ? `1px solid ${T.borderSoft}` : 'none',
+                flex: 1,
+                fontFamily: T.ffMono,
+                fontSize: 12.5,
+                color: linkActive ? T.ink : T.inkFaint,
+                wordBreak: 'break-all',
               }}
             >
-              <div
+              {linkLabel}
+            </code>
+            <button
+              type="button"
+              style={{
+                ...Btn.primary,
+                padding: '7px 12px',
+                fontSize: 12,
+                opacity: linkActive && !readOnly ? 1 : 0.55,
+                cursor: linkActive && !readOnly ? 'pointer' : 'not-allowed',
+              }}
+              disabled={!linkActive || readOnly}
+              onClick={() => copyToClipboard(referralLink, 'main-link')}
+            >
+              {copiedId === 'main-link' ? <Check size={12} /> : <Copy size={12} />}
+              {copiedId === 'main-link' ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+
+          {/* UTM builder */}
+          <div
+            style={{
+              marginTop: 16,
+              paddingTop: 16,
+              borderTop: `1px solid ${T.borderSoft}`,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: T.ffDisplay,
+                fontSize: 12.5,
+                fontWeight: 700,
+                color: T.ink,
+                marginBottom: 4,
+              }}
+            >
+              UTM campaign builder
+            </div>
+            <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 12 }}>
+              Tag your link to track which channel converts best.
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: 8,
+              }}
+            >
+              <UtmInput label="Source"   placeholder="newsletter" value={utmSource}   onChange={setUtmSource} />
+              <UtmInput label="Medium"   placeholder="email"      value={utmMedium}   onChange={setUtmMedium} />
+              <UtmInput label="Campaign" placeholder="april-2026" value={utmCampaign} onChange={setUtmCampaign} />
+            </div>
+            <div
+              style={{
+                marginTop: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '9px 12px',
+                background: T.bgSubtle,
+                border: `1px solid ${T.borderSoft}`,
+                borderRadius: 10,
+              }}
+            >
+              <code
                 style={{
-                  width: 32, height: 32, borderRadius: 8,
-                  background: T.brandSoft,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flex: 1,
+                  fontFamily: T.ffMono,
+                  fontSize: 11.5,
+                  color: linkActive ? T.ink : T.inkFaint,
+                  wordBreak: 'break-all',
                 }}
               >
-                <RowIcon size={14} color={T.brand} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div
-                  style={{
-                    fontFamily: T.ffDisplay, fontSize: 13, fontWeight: 600,
-                    color: T.ink,
-                  }}
-                >
-                  {r.name}
-                </div>
-                <div
-                  style={{
-                    fontSize: 11.5, color: T.inkFaint,
-                    fontFamily: T.ffDisplay, letterSpacing: '0.04em',
-                  }}
-                >
-                  {r.ch.toUpperCase()} · {r.lines} variants
-                </div>
-              </div>
+                {utmUrl || 'Activate your referral link first.'}
+              </code>
               <button
                 type="button"
-                style={{ ...Btn.ghost, padding: '6px 10px', fontSize: 12 }}
-                disabled={readOnly}
+                style={{
+                  ...Btn.ghost,
+                  padding: '6px 10px',
+                  fontSize: 11.5,
+                  opacity: utmUrl && !readOnly ? 1 : 0.55,
+                  cursor: utmUrl && !readOnly ? 'pointer' : 'not-allowed',
+                }}
+                disabled={!utmUrl || readOnly}
+                onClick={() => copyToClipboard(utmUrl, 'utm')}
               >
-                <Copy size={12} />
-                Copy
-              </button>
-              <button
-                type="button"
-                style={{ ...Btn.ghost, padding: '6px 10px', fontSize: 12 }}
-                disabled={readOnly}
-              >
-                <Eye size={12} />
-                Preview
+                {utmCopied ? <Check size={11} /> : <Copy size={11} />}
+                {utmCopied ? 'Copied' : 'Copy URL'}
               </button>
             </div>
-          );
-        })}
-      </Card>
+          </div>
+        </Card>
 
+        {/* Outreach templates */}
+        <Card>
+          <SectionHeader
+            icon={Mail}
+            label="Outreach templates"
+            subtitle="Copy ready-to-send messages with your referral link injected."
+          />
+          {TEMPLATE_CATALOG.map((tpl, i) => {
+            const RowIcon = tpl.icon;
+            const body = tpl.body(referralLink || '{your referral link}');
+            const expanded = previewId === tpl.id;
+            return (
+              <div
+                key={tpl.id}
+                style={{
+                  padding: '12px 0',
+                  borderBottom:
+                    i < TEMPLATE_CATALOG.length - 1
+                      ? `1px solid ${T.borderSoft}`
+                      : 'none',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: T.brandSoft,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <RowIcon size={14} color={T.brand} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontFamily: T.ffDisplay,
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: T.ink,
+                      }}
+                    >
+                      {tpl.name}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        color: T.inkFaint,
+                        fontFamily: T.ffDisplay,
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      {tpl.channel.toUpperCase()}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    style={{ ...Btn.ghost, padding: '6px 10px', fontSize: 12 }}
+                    disabled={readOnly}
+                    onClick={() => setPreviewId(expanded ? null : tpl.id)}
+                  >
+                    <Eye size={12} />
+                    {expanded ? 'Hide' : 'Preview'}
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...Btn.ghost, padding: '6px 10px', fontSize: 12 }}
+                    disabled={readOnly}
+                    onClick={() => copyToClipboard(body, tpl.id)}
+                  >
+                    {copiedId === tpl.id ? <Check size={12} /> : <Copy size={12} />}
+                    {copiedId === tpl.id ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                {expanded && (
+                  <pre
+                    style={{
+                      marginTop: 10,
+                      padding: 12,
+                      background: T.bgSubtle,
+                      border: `1px solid ${T.borderSoft}`,
+                      borderRadius: 10,
+                      fontFamily: T.ffMono,
+                      fontSize: 12,
+                      lineHeight: 1.55,
+                      color: T.ink,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                    }}
+                  >
+                    {body}
+                  </pre>
+                )}
+              </div>
+            );
+          })}
+          {!linkActive && (
+            <div
+              style={{
+                marginTop: 14,
+                padding: '10px 12px',
+                background: T.amberBg,
+                border: `1px solid ${T.amberBorder}`,
+                borderRadius: 10,
+                fontSize: 12,
+                color: T.inkMuted,
+                lineHeight: 1.55,
+              }}
+            >
+              Templates show a placeholder where your referral link will go.
+              Activate the link to populate it automatically.
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* ── Right column ─────────────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Brand assets — honest empty state until real files ship */}
         <Card>
           <SectionHeader
             icon={ImageIcon}
             label="Brand assets"
-            subtitle="Logos, banners, product shots. Follow brand guidelines."
+            subtitle="Logos, banners, screenshots, and pitch decks."
+            right={<Badge tone="neutral">Coming soon</Badge>}
           />
           <div
             style={{
-              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
+              padding: '24px 16px',
+              background: T.bgSubtle,
+              border: `1px dashed ${T.border}`,
+              borderRadius: 10,
+              fontSize: 12.5,
+              color: T.inkSoft,
+              lineHeight: 1.55,
+              textAlign: 'center',
             }}
           >
-            {['Logo kit', 'Banners', 'Screenshots', 'Icon set', 'One-pager', 'Pitch deck'].map((a) => (
-              <button
-                key={a}
-                type="button"
-                style={{
-                  ...Btn.ghost,
-                  padding: '18px 10px',
-                  flexDirection: 'column',
-                  gap: 6,
-                  fontSize: 12,
-                }}
-              >
-                <FileDown size={16} />
-                {a}
-              </button>
-            ))}
+            We're polishing the partner asset kit (logos, banners, deck, screenshots).
+            We'll email approved partners the moment downloads are live.
           </div>
         </Card>
+
+        {/* Support card */}
         <Card>
           <SectionHeader icon={LifeBuoy} label="Need a hand?" />
           <div
             style={{
-              fontSize: 12.5, color: T.inkSoft, lineHeight: 1.6, marginBottom: 14,
+              fontSize: 12.5,
+              color: T.inkSoft,
+              lineHeight: 1.6,
+              marginBottom: 14,
             }}
           >
-            {partner?.accountManager ? (
+            {partner?.accountManagerEmail ? (
               <>
                 Your account manager is{' '}
-                <strong style={{ color: T.ink }}>{partner.accountManager}</strong>. Expect replies within one business day.
+                <a
+                  href={`mailto:${partner.accountManagerEmail}`}
+                  style={{ color: T.brand, textDecoration: 'underline' }}
+                >
+                  {partner.accountManagerEmail}
+                </a>
+                . Expect replies within one business day.
               </>
             ) : (
               <>
-                An account manager will be assigned once your partner record is provisioned. In the meantime, email{' '}
+                Email{' '}
                 <a
                   href="mailto:partnerships@logisticintel.com"
                   style={{ color: T.brand, textDecoration: 'underline' }}
                 >
                   partnerships@logisticintel.com
-                </a>
-                .
+                </a>{' '}
+                — every partner gets a reply within one business day.
               </>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              type="button"
-              style={{
-                ...Btn.primary,
-                opacity: partner?.accountManager ? 1 : 0.55,
-                cursor: partner?.accountManager ? 'pointer' : 'not-allowed',
-              }}
-              disabled={!partner?.accountManager}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <a
+              href={`mailto:${partner?.accountManagerEmail || 'partnerships@logisticintel.com'}`}
+              style={{ ...Btn.primary, textDecoration: 'none' }}
             >
-              <Calendar size={13} />
-              Book 1:1
-            </button>
-            <button type="button" style={Btn.ghost}>
               <Mail size={13} />
               Email partnerships
-            </button>
+            </a>
           </div>
         </Card>
       </div>
     </div>
+  );
+}
+
+function UtmInput({ label, placeholder, value, onChange }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: T.inkMuted,
+          fontFamily: T.ffDisplay,
+          letterSpacing: '0.02em',
+        }}
+      >
+        {label}
+      </span>
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: '100%',
+          padding: '7px 10px',
+          fontSize: 12.5,
+          fontFamily: T.ffMono,
+          color: T.ink,
+          background: T.bgCanvas,
+          border: `1px solid ${T.border}`,
+          borderRadius: 8,
+          outline: 'none',
+          boxSizing: 'border-box',
+        }}
+      />
+    </label>
   );
 }

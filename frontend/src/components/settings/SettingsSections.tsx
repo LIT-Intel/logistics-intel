@@ -25,31 +25,30 @@ import {
 } from "lucide-react";
 import { PLAN_LIMITS, normalizePlan as normalizePlanCode } from "@/lib/planLimits";
 
-// User-facing /app/settings is narrowed to four sections. The other
-// Phase F sections (Security & API, Integrations beyond inboxes,
-// Outreach Accounts, Campaign Preferences, RFP & Pipeline, Affiliate
-// Program, Organization, Billing config) are admin-only and remain
-// exported for use by the admin route — only the visible nav is
-// reduced here.
-//
-//   - Access & Roles        → renamed Team (plan-gated invite UI)
-//   - Alerts & Notifications → renamed Preferences
-//   - Integrations          → narrowed to Email Accounts (Gmail/Outlook)
+// User-facing /app/settings exposes six tabs. The legacy admin-only
+// sections (Outreach Accounts, Campaign Preferences, RFP & Pipeline,
+// Affiliate Program, Organization config, Billing config) are still
+// exported for use by the admin route — only the visible nav here is
+// curated.
 export type SettingsSectionId =
   | "Profile"
-  | "Preferences"
-  | "Email Accounts"
-  | "Team";
+  | "Workspace"
+  | "Security"
+  | "Notifications"
+  | "Integrations"
+  | "Preferences";
 
 export const SETTINGS_SECTIONS: Array<{
   id: SettingsSectionId;
   title: string;
   icon: React.ComponentType<any>;
 }> = [
-  { id: "Profile", title: "Profile", icon: User },
-  { id: "Preferences", title: "Preferences", icon: Bell },
-  { id: "Email Accounts", title: "Email Accounts", icon: Mail },
-  { id: "Team", title: "Team", icon: Users },
+  { id: "Profile",       title: "Profile",       icon: User },
+  { id: "Workspace",     title: "Workspace",     icon: Building2 },
+  { id: "Security",      title: "Security",      icon: ShieldCheck },
+  { id: "Notifications", title: "Notifications", icon: Bell },
+  { id: "Integrations",  title: "Integrations",  icon: Plug },
+  { id: "Preferences",   title: "Preferences",   icon: KeyRound },
 ];
 
 function SectionShell({
@@ -2167,6 +2166,359 @@ export function TeamSection(props: {
         onRevokeInvite={props.onRevokeInvite}
         isAdmin={props.isAdmin}
       />
+    </SectionShell>
+  );
+}
+
+// ── Workspace ───────────────────────────────────────────────────────────
+// Org info card + the existing real TeamSection (members / invites / roles).
+export function WorkspaceSection(props: {
+  workspaceName?: string;
+  workspaceRole?: string;
+  joinedLabel?: string;
+  plan?: string | null;
+  members?: any[];
+  invites?: any[];
+  seatLimit?: number;
+  onInvite?: (email: string, role: string) => Promise<{ error?: string } | void>;
+  onRevoke?: (memberId: string) => Promise<{ error?: string } | void>;
+  onUpdateRole?: (memberId: string, role: string) => Promise<{ error?: string } | void>;
+  onRevokeInvite?: (inviteId: string) => Promise<{ error?: string } | void>;
+  isAdmin?: boolean;
+  onUpgrade?: () => void;
+}) {
+  const seatLine = props.seatLimit
+    ? `${props.members?.length ?? 0} of ${props.seatLimit} seats used`
+    : `${props.members?.length ?? 0} active members`;
+
+  return (
+    <SectionShell
+      title="Workspace"
+      description="Your shared organization, role, and team membership."
+    >
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 text-base font-bold text-white shadow-sm">
+            {(props.workspaceName?.[0] || "L").toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-base font-semibold text-slate-900">
+              {props.workspaceName || "Logistic Intel workspace"}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {props.workspaceRole ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                  {props.workspaceRole}
+                </span>
+              ) : null}
+              {props.joinedLabel ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                  Joined {props.joinedLabel}
+                </span>
+              ) : null}
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                {seatLine}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <TeamSection
+        plan={props.plan}
+        members={props.members}
+        invites={props.invites}
+        seatLimit={props.seatLimit}
+        onInvite={props.onInvite}
+        onRevoke={props.onRevoke}
+        onUpdateRole={props.onUpdateRole}
+        onRevokeInvite={props.onRevokeInvite}
+        isAdmin={props.isAdmin}
+        onUpgrade={props.onUpgrade}
+      />
+    </SectionShell>
+  );
+}
+
+// ── Security ────────────────────────────────────────────────────────────
+// Slim, user-facing version: password reset CTA, sign-in method indicator,
+// recent audit events. API-key management stays on the admin route.
+export function SecuritySection(props: {
+  email?: string | null;
+  authProvider?: string | null;
+  auditLog?: Array<{ id: string; action: string; ip_address?: string; created_at: string }>;
+}) {
+  const provider = (props.authProvider || "email").toLowerCase();
+  const providerLabel =
+    provider === "google" ? "Google" :
+    provider === "azure" || provider === "microsoft" ? "Microsoft" :
+    "Email + password";
+
+  return (
+    <SectionShell
+      title="Security"
+      description="Password and recent activity on your Logistic Intel account."
+    >
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Sign-in method
+            </div>
+            <div className="mt-1 text-sm font-medium text-slate-900">
+              {providerLabel}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Email
+            </div>
+            <div className="mt-1 break-all text-sm font-medium text-slate-900">
+              {props.email || "—"}
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <a
+            href="/reset-password"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            <KeyRound size={14} />
+            Change password
+          </a>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-sm font-semibold text-slate-900">
+            Recent activity
+          </div>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Last {Math.min(20, props.auditLog?.length ?? 0)} events
+          </span>
+        </div>
+        {(!props.auditLog || props.auditLog.length === 0) ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+            No recent activity yet. Sign-ins and security events will appear here.
+          </div>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {props.auditLog.map((event) => (
+              <li key={event.id} className="flex items-start justify-between gap-4 py-3 text-sm">
+                <div className="min-w-0">
+                  <div className="font-medium text-slate-900">{event.action}</div>
+                  <div className="font-mono text-[11px] text-slate-400">
+                    {event.ip_address ? `${event.ip_address} · ` : ""}
+                    {new Date(event.created_at).toLocaleString()}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </SectionShell>
+  );
+}
+
+// ── Preferences (timezone + signature; explicit "coming soon" for future) ──
+export function PreferencesSection(props: {
+  timezone?: string;
+  emailSignature?: string;
+  onSaveTimezone?: (tz: string) => Promise<{ error?: string } | void>;
+  onSaveEmailSignature?: (sig: string) => Promise<{ error?: string } | void>;
+}) {
+  const [tz, setTz] = useState(props.timezone || "");
+  const [sig, setSig] = useState(props.emailSignature || "");
+  const [savingTz, setSavingTz] = useState(false);
+  const [savingSig, setSavingSig] = useState(false);
+  const [tzMsg, setTzMsg] = useState<string | null>(null);
+  const [sigMsg, setSigMsg] = useState<string | null>(null);
+
+  useEffect(() => { setTz(props.timezone || ""); }, [props.timezone]);
+  useEffect(() => { setSig(props.emailSignature || ""); }, [props.emailSignature]);
+
+  async function saveTz() {
+    if (!props.onSaveTimezone) return;
+    setSavingTz(true);
+    setTzMsg(null);
+    const r = await props.onSaveTimezone(tz.trim());
+    setSavingTz(false);
+    setTzMsg(r && (r as any).error ? `Could not save: ${(r as any).error}` : "Saved.");
+    setTimeout(() => setTzMsg(null), 2500);
+  }
+
+  async function saveSig() {
+    if (!props.onSaveEmailSignature) return;
+    setSavingSig(true);
+    setSigMsg(null);
+    const r = await props.onSaveEmailSignature(sig);
+    setSavingSig(false);
+    setSigMsg(r && (r as any).error ? `Could not save: ${(r as any).error}` : "Saved.");
+    setTimeout(() => setSigMsg(null), 2500);
+  }
+
+  return (
+    <SectionShell
+      title="Preferences"
+      description="Personal defaults for time, email signature, and search."
+    >
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 text-sm font-semibold text-slate-900">Timezone</div>
+        <Field label="Display dates and reset times in this timezone">
+          <Input
+            type="text"
+            value={tz}
+            onChange={(e) => setTz(e.target.value)}
+            placeholder="America/New_York"
+          />
+        </Field>
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={saveTz}
+            disabled={savingTz}
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
+          >
+            {savingTz ? "Saving…" : "Save timezone"}
+          </button>
+          {tzMsg ? <span className="text-xs text-slate-500">{tzMsg}</span> : null}
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 text-sm font-semibold text-slate-900">Email signature</div>
+        <Field label="Appended to outbound campaign emails">
+          <Textarea
+            rows={4}
+            value={sig}
+            onChange={(e) => setSig(e.target.value)}
+            placeholder={"— Jane Smith\nLogistic Intel\nyour-email@company.com"}
+          />
+        </Field>
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={saveSig}
+            disabled={savingSig}
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
+          >
+            {savingSig ? "Saving…" : "Save signature"}
+          </button>
+          {sigMsg ? <span className="text-xs text-slate-500">{sigMsg}</span> : null}
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500">
+        <div className="mb-1 font-semibold text-slate-900">Default search filters</div>
+        Coming soon — pin lane, mode, or country filters so they apply by default whenever you open Search.
+      </div>
+    </SectionShell>
+  );
+}
+
+// ── Integrations (email + enrichment + affiliate payouts) ─────────────
+// Wraps the existing EmailAccountsSection and surfaces other connected
+// integrations + a partner-aware Stripe Connect link if applicable.
+export function IntegrationsHubSection(props: {
+  integrations?: Array<{
+    id?: string;
+    integration_type?: string;
+    type?: string;
+    status?: string;
+    external_id?: string;
+  }>;
+  onDisconnect?: (id: string) => Promise<void> | void;
+  isPartner?: boolean;
+}) {
+  const wired = Array.isArray(props.integrations) ? props.integrations : [];
+  const enrichmentTypes = new Set(["apollo", "lusha", "hunter"]);
+  const enrichmentRows = wired.filter((r) => {
+    const k = String(r?.integration_type || r?.type || "").toLowerCase();
+    return enrichmentTypes.has(k);
+  });
+
+  return (
+    <SectionShell
+      title="Integrations"
+      description="Outbound mailboxes, enrichment providers, and partner payouts."
+    >
+      <EmailAccountsSection
+        integrations={props.integrations}
+        onDisconnect={props.onDisconnect}
+      />
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-sm font-semibold text-slate-900">Enrichment</div>
+          {enrichmentRows.length === 0 ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+              Not connected
+            </span>
+          ) : null}
+        </div>
+        {enrichmentRows.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Apollo, Lusha, or Hunter aren't connected. Enrichment runs through
+            your workspace admin's API keys today.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {enrichmentRows.map((row) => {
+              const k = String(row?.integration_type || row?.type || "").toLowerCase();
+              const label = k.charAt(0).toUpperCase() + k.slice(1);
+              return (
+                <li key={row.id || k} className="flex items-center justify-between gap-3 py-3 text-sm">
+                  <div>
+                    <div className="font-medium text-slate-900">{label}</div>
+                    <div className="font-mono text-[11px] text-slate-400">
+                      {row.external_id || "Connected"}
+                    </div>
+                  </div>
+                  {row.id ? (
+                    <button
+                      type="button"
+                      onClick={() => props.onDisconnect?.(row.id as string)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                    >
+                      <Trash2 size={12} />
+                      Disconnect
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {props.isPartner ? (
+        <div className="rounded-3xl border border-blue-200 bg-blue-50/40 p-6 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-blue-600 ring-1 ring-blue-200">
+              <Coins size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-slate-900">
+                Stripe Connect — partner payouts
+              </div>
+              <p className="mt-1 text-xs text-slate-600">
+                Manage your partner payout account and view connection status
+                from the Affiliate dashboard.
+              </p>
+            </div>
+            <a
+              href="/app/affiliate"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
+            >
+              Manage payouts
+              <ExternalLink size={12} />
+            </a>
+          </div>
+        </div>
+      ) : null}
     </SectionShell>
   );
 }

@@ -467,7 +467,7 @@ serve(async (req) => {
         token = generateInviteToken();
         expiresAt = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString();
       }
-      const inviteUrl = `${env.appBaseUrl.replace(/\/$/, "")}/app/affiliate/invite?token=${encodeURIComponent(token)}`;
+      const inviteUrl = `${env.appBaseUrl.replace(/\/$/, "")}/affiliate/onboarding?token=${encodeURIComponent(token)}`;
       try {
         await sendInviteEmail({
           resendApiKey: env.resendApiKey,
@@ -681,6 +681,56 @@ serve(async (req) => {
         email_sent: emailSent,
         partner_email: partnerEmail,
       });
+    }
+
+    /* ── update_partner_commission ─────────────────────────────────────── */
+    if (action === "update_partner_commission") {
+      const partnerId = nonEmptyString(body.partner_id);
+      if (!partnerId) return json({ ok: false, error: "partner_id required" }, 400);
+
+      const rawPct = body.commission_pct;
+      const rawMonths = body.commission_months;
+
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+      if (rawPct !== undefined && rawPct !== null) {
+        const pct = typeof rawPct === "string" ? Number(rawPct) : (rawPct as number);
+        if (!Number.isFinite(pct) || pct <= 0 || pct > 100) {
+          return json({
+            ok: false,
+            code: "INVALID_COMMISSION_PCT",
+            error: "commission_pct must be a number between 0 (exclusive) and 100",
+          }, 400);
+        }
+        updates.commission_pct = Math.round(pct * 100) / 100;
+      }
+
+      if (rawMonths !== undefined && rawMonths !== null) {
+        const months = typeof rawMonths === "string" ? Number(rawMonths) : (rawMonths as number);
+        if (!Number.isFinite(months) || months < 1 || months > 120 || !Number.isInteger(months)) {
+          return json({
+            ok: false,
+            code: "INVALID_COMMISSION_MONTHS",
+            error: "commission_months must be an integer between 1 and 120",
+          }, 400);
+        }
+        updates.commission_months = months;
+      }
+
+      if (Object.keys(updates).length === 1) {
+        return json({ ok: false, error: "Nothing to update — provide commission_pct and/or commission_months" }, 400);
+      }
+
+      const { data, error } = await adminClient
+        .from("affiliate_partners")
+        .update(updates)
+        .eq("id", partnerId)
+        .is("deleted_at", null)
+        .select("id, commission_pct, commission_months, status")
+        .maybeSingle();
+      if (error) return json({ ok: false, error: error.message }, 500);
+      if (!data) return json({ ok: false, error: "Partner not found or already deleted" }, 404);
+      return json({ ok: true, partner: data });
     }
 
     return json({ ok: false, error: `Unknown action: ${action}` }, 400);

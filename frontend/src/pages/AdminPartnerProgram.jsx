@@ -45,6 +45,7 @@ import {
   reactivatePartner,
   softDeletePartner,
   resendStripeOnboarding,
+  updatePartnerCommission,
 } from '@/lib/affiliateAdmin';
 import { T, Btn } from '@/components/affiliate/tokens';
 import { Badge, Card, StatCell } from '@/components/affiliate/primitives';
@@ -895,6 +896,142 @@ function PartnerActionsMenu({ partner, busy, onAction }) {
   );
 }
 
+function CommissionCell({ partner, onSaved, onError }) {
+  const [editing, setEditing] = useState(false);
+  const [pct, setPct] = useState(String(partner.commission_pct ?? ''));
+  const [months, setMonths] = useState(String(partner.commission_months ?? ''));
+  const [busy, setBusy] = useState(false);
+
+  function start() {
+    setPct(String(partner.commission_pct ?? ''));
+    setMonths(String(partner.commission_months ?? ''));
+    setEditing(true);
+  }
+  function cancel() {
+    setEditing(false);
+    setPct(String(partner.commission_pct ?? ''));
+    setMonths(String(partner.commission_months ?? ''));
+  }
+  async function save() {
+    const pctNum = Number(pct);
+    const monthsNum = Number(months);
+    if (!Number.isFinite(pctNum) || pctNum <= 0 || pctNum > 100) {
+      onError?.('Commission % must be between 0 and 100.');
+      return;
+    }
+    if (!Number.isInteger(monthsNum) || monthsNum < 1 || monthsNum > 120) {
+      onError?.('Commission months must be a whole number between 1 and 120.');
+      return;
+    }
+    setBusy(true);
+    const result = await updatePartnerCommission({
+      partner_id: partner.id,
+      commission_pct: pctNum,
+      commission_months: monthsNum,
+    });
+    setBusy(false);
+    if (result.ok) {
+      setEditing(false);
+      onSaved?.(result.partner);
+    } else {
+      onError?.(result.error || 'Failed to update commission rate.');
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div>
+        <Badge tone="brand">{partner.tier}</Badge>
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            fontSize: 11.5, color: T.inkFaint, marginTop: 2,
+          }}
+        >
+          <span>{partner.commission_pct}% / {partner.commission_months} mo</span>
+          <button
+            type="button"
+            onClick={start}
+            title="Edit commission rate"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 18, height: 18, padding: 0, borderRadius: 4,
+              border: 'none', background: 'transparent', cursor: 'pointer',
+              color: T.brand,
+            }}
+          >
+            <Pencil size={11} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <Badge tone="brand">{partner.tier}</Badge>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+        <input
+          type="number"
+          min="0.01"
+          max="100"
+          step="0.5"
+          value={pct}
+          onChange={(e) => setPct(e.target.value)}
+          disabled={busy}
+          style={{
+            width: 56, padding: '4px 6px', fontSize: 11.5,
+            fontFamily: T.ffMono, color: T.ink,
+            border: `1px solid ${T.border}`, borderRadius: 6,
+            outline: 'none', background: T.bgCanvas,
+          }}
+          aria-label="Commission percent"
+        />
+        <span style={{ fontSize: 11, color: T.inkSoft }}>% /</span>
+        <input
+          type="number"
+          min="1"
+          max="120"
+          step="1"
+          value={months}
+          onChange={(e) => setMonths(e.target.value)}
+          disabled={busy}
+          style={{
+            width: 44, padding: '4px 6px', fontSize: 11.5,
+            fontFamily: T.ffMono, color: T.ink,
+            border: `1px solid ${T.border}`, borderRadius: 6,
+            outline: 'none', background: T.bgCanvas,
+          }}
+          aria-label="Commission months"
+        />
+        <span style={{ fontSize: 11, color: T.inkSoft }}>mo</span>
+      </div>
+      <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+        <button
+          type="button"
+          onClick={save}
+          disabled={busy}
+          style={{
+            ...Btn.primary,
+            padding: '4px 8px', fontSize: 11,
+            opacity: busy ? 0.5 : 1, cursor: busy ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={cancel}
+          disabled={busy}
+          style={{ ...Btn.ghost, padding: '4px 8px', fontSize: 11 }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AdminPartners() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1039,10 +1176,17 @@ function AdminPartners() {
                       </div>
                     </td>
                     <td style={TD_BASE}>
-                      <Badge tone="brand">{r.tier}</Badge>
-                      <div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>
-                        {r.commission_pct}% / {r.commission_months} mo
-                      </div>
+                      <CommissionCell
+                        partner={r}
+                        onSaved={(updated) => {
+                          setRows((prev) => prev.map((p) => (p.id === r.id ? { ...p, ...updated } : p)));
+                          setNotice({
+                            tone: 'success',
+                            text: `Commission updated to ${updated.commission_pct}% for ${updated.commission_months} months.`,
+                          });
+                        }}
+                        onError={(msg) => setNotice({ tone: 'danger', text: msg })}
+                      />
                     </td>
                     <td style={TD_BASE}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

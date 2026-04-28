@@ -266,7 +266,7 @@ serve(async (req) => {
       expiresAt = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString();
     }
 
-    const inviteUrl = `${env.appBaseUrl.replace(/\/$/, "")}/app/affiliate/invite?token=${encodeURIComponent(token)}`;
+    const inviteUrl = `${env.appBaseUrl.replace(/\/$/, "")}/affiliate/onboarding?token=${encodeURIComponent(token)}`;
 
     let emailResp;
     try {
@@ -367,7 +367,7 @@ serve(async (req) => {
     }, 500);
   }
 
-  const inviteUrl = `${env.appBaseUrl.replace(/\/$/, "")}/app/affiliate/invite?token=${encodeURIComponent(token)}`;
+  const inviteUrl = `${env.appBaseUrl.replace(/\/$/, "")}/affiliate/onboarding?token=${encodeURIComponent(token)}`;
 
   let emailResp;
   try {

@@ -62,6 +62,7 @@ export default function SettingsPage() {
   const [savedCount, setSavedCount] = useState(0);
   const [campaignCount, setCampaignCount] = useState(0);
   const [rfpCount, setRfpCount] = useState(0);
+  const [isPartner, setIsPartner] = useState(false);
 
   const isAdminEmail = isSuperAdmin;
 
@@ -330,6 +331,17 @@ export default function SettingsPage() {
       requireNoError(rfpRes.value.error, "Failed loading RFP count");
       safeSet(() => setRfpCount(rfpRes.value.count ?? 0));
     }
+
+    // Surface affiliate status to drive the Stripe Connect link in Settings →
+    // Integrations. Soft-fail if the table is missing (RLS will already
+    // restrict reads to the user's own row).
+    const { data: partnerRow } = await supabase
+      .from("affiliate_partners")
+      .select("id, status, deleted_at")
+      .eq("user_id", uid)
+      .is("deleted_at", null)
+      .maybeSingle();
+    safeSet(() => setIsPartner(Boolean(partnerRow)));
   }, [user?.id, user?.email, user?.user_metadata, plan, isAdmin, safeSet]);
 
   useEffect(() => {
@@ -772,6 +784,12 @@ export default function SettingsPage() {
           }}
           isAdmin={isAdmin}
           canAccess={canAccess}
+          isPartner={isPartner}
+          authProvider={
+            (user?.app_metadata as Record<string, any> | undefined)?.provider ||
+            (user?.user_metadata as Record<string, any> | undefined)?.provider ||
+            null
+          }
           onSaveProfile={onSaveProfile}
           onUploadAvatar={onUploadAvatar}
           onSaveOrgProfile={onSaveOrgProfile}

@@ -284,6 +284,71 @@ function rowToPayout(p: Record<string, unknown>, currency: string): AffiliatePay
   };
 }
 
+// Lightweight partner-status hook for shared chrome (top nav, settings,
+// upgrade prompts). Returns just the boolean + status + ref_code so we can
+// avoid the heavy referrals/commissions/payouts fetches that
+// `useAffiliateState` performs.
+export interface PartnerStatusLite {
+  loading: boolean;
+  isPartner: boolean;
+  status:
+    | 'invited'
+    | 'active'
+    | 'deactivated'
+    | 'suspended'
+    | 'terminated'
+    | null;
+  refCode: string | null;
+}
+
+export function usePartnerStatus(
+  userId: string | null | undefined,
+): PartnerStatusLite {
+  const [state, setState] = useState<PartnerStatusLite>({
+    loading: true,
+    isPartner: false,
+    status: null,
+    refCode: null,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!supabase || !userId) {
+        if (!cancelled) {
+          setState({ loading: false, isPartner: false, status: null, refCode: null });
+        }
+        return;
+      }
+      const { data, error } = await supabase
+        .from('affiliate_partners')
+        .select('status, ref_code, deleted_at')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        // Soft-fail (table missing in some envs) — treat as non-partner.
+        setState({ loading: false, isPartner: false, status: null, refCode: null });
+        return;
+      }
+      if (!data) {
+        setState({ loading: false, isPartner: false, status: null, refCode: null });
+        return;
+      }
+      setState({
+        loading: false,
+        isPartner: true,
+        status: (data.status as PartnerStatusLite['status']) ?? null,
+        refCode: (data.ref_code as string) ?? null,
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  return state;
+}
+
 export function useAffiliateState(userId: string | null | undefined): AffiliateState {
   const [state, setState] = useState<Omit<AffiliateState, 'refresh'>>(INITIAL);
 

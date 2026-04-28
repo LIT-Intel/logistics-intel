@@ -6,19 +6,22 @@ import {
   type SettingsSectionId,
   ProfileSection,
   AlertsNotificationsSection,
-  EmailAccountsSection,
-  TeamSection,
+  WorkspaceSection,
+  SecuritySection,
+  PreferencesSection,
+  IntegrationsHubSection,
 } from "./SettingsSections";
 
-// Accepts ?tab=team|profile|preferences|email-accounts (case/spacing
-// tolerant) so the sidebar "Team" deep-link lands on the Team tab.
+// Accepts ?tab=… (case/spacing tolerant) so deep links route correctly.
 function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
   if (!value) return null;
   const v = String(value).trim().toLowerCase().replace(/[-_\s]+/g, "");
   if (v === "profile") return "Profile";
-  if (v === "preferences" || v === "alerts" || v === "notifications") return "Preferences";
-  if (v === "emailaccounts" || v === "email" || v === "inbox") return "Email Accounts";
-  if (v === "team" || v === "members" || v === "access" || v === "roles") return "Team";
+  if (v === "workspace" || v === "team" || v === "members" || v === "access" || v === "roles" || v === "organization" || v === "org") return "Workspace";
+  if (v === "security" || v === "auth" || v === "password") return "Security";
+  if (v === "notifications" || v === "alerts") return "Notifications";
+  if (v === "integrations" || v === "emailaccounts" || v === "email" || v === "inbox" || v === "integration") return "Integrations";
+  if (v === "preferences" || v === "prefs" || v === "timezone" || v === "signature") return "Preferences";
   return null;
 }
 
@@ -155,34 +158,41 @@ export type SettingsLayoutProps = {
   onGenerateApiKey?: (keyName: string) => Promise<string | null>;
   onRevokeApiKey?: (keyId: string) => Promise<void>;
   onDisconnectIntegration?: (id: string) => Promise<void>;
+  isPartner?: boolean;
+  authProvider?: string | null;
 };
 
-// User-facing /app/settings is narrowed to four sections. Other
-// admin-only sections (Security & API, Integrations beyond inboxes,
-// Outreach Accounts, Campaign Preferences, RFP & Pipeline, Affiliate,
-// Organization config, Billing config) live on the admin route.
 const SECTION_KICKER: Record<SettingsSectionId, string> = {
-  Profile: "Account · Settings",
-  Preferences: "Account · Settings",
-  "Email Accounts": "Account · Settings",
-  Team: "Workspace · Settings",
+  Profile:       "Account · Settings",
+  Workspace:     "Workspace · Settings",
+  Security:      "Account · Settings",
+  Notifications: "Account · Settings",
+  Integrations:  "Account · Settings",
+  Preferences:   "Account · Settings",
 };
 
 const SECTION_TITLE: Record<SettingsSectionId, string> = {
-  Profile: "Profile",
-  Preferences: "Preferences",
-  "Email Accounts": "Email accounts",
-  Team: "Team",
+  Profile:       "Profile",
+  Workspace:     "Workspace",
+  Security:      "Security",
+  Notifications: "Notifications",
+  Integrations:  "Integrations",
+  Preferences:   "Preferences",
 };
 
 const SECTION_DESCRIPTION: Partial<Record<SettingsSectionId, string>> = {
   Profile:
     "Your personal identity across Logistic Intel. Displayed on your outbound sends, comments, and teammate mentions.",
-  Preferences:
+  Workspace:
+    "Your shared organization, role, and team membership.",
+  Security:
+    "Password and recent activity on your Logistic Intel account.",
+  Notifications:
     "Route the signals you care about to email, in-app, or Slack. Everything else stays quiet.",
-  "Email Accounts":
-    "Connect Gmail or Outlook so the Outbound Engine can send on your behalf.",
-  Team: "Invite teammates and assign roles for shared campaigns and saved companies.",
+  Integrations:
+    "Outbound mailboxes, enrichment providers, and partner payouts.",
+  Preferences:
+    "Personal defaults for time, email signature, and search.",
 };
 
 function WorkspaceChipBlock({ workspace }: { workspace?: WorkspaceChip }) {
@@ -231,25 +241,12 @@ function renderSection(
           isAdmin={props.isAdmin}
         />
       );
-    case "Preferences":
+    case "Workspace":
       return (
-        <AlertsNotificationsSection
-          preferences={props.preferences?.preferences?.alerts_notifications}
-          onSavePreferences={(data: Record<string, unknown>) =>
-            props.onSavePreferences?.("alerts_notifications", data)
-          }
-        />
-      );
-    case "Email Accounts":
-      return (
-        <EmailAccountsSection
-          integrations={props.integrations}
-          onDisconnect={props.onDisconnectIntegration}
-        />
-      );
-    case "Team":
-      return (
-        <TeamSection
+        <WorkspaceSection
+          workspaceName={props.workspace?.name}
+          workspaceRole={props.workspace?.roleLabel}
+          joinedLabel={props.workspace?.joinedLabel}
           plan={props.subscription?.plan_code ?? props.profile?.plan ?? null}
           members={props.members}
           invites={props.invites}
@@ -260,6 +257,44 @@ function renderSection(
           onRevokeInvite={props.onRevokeInvite}
           isAdmin={props.isAdmin}
           onUpgrade={() => navigate("/app/billing")}
+        />
+      );
+    case "Security":
+      return (
+        <SecuritySection
+          email={props.profile?.email}
+          authProvider={props.authProvider}
+          auditLog={props.auditLog}
+        />
+      );
+    case "Notifications":
+      return (
+        <AlertsNotificationsSection
+          preferences={props.preferences?.preferences?.alerts_notifications}
+          onSavePreferences={(data: Record<string, unknown>) =>
+            props.onSavePreferences?.("alerts_notifications", data)
+          }
+        />
+      );
+    case "Integrations":
+      return (
+        <IntegrationsHubSection
+          integrations={props.integrations}
+          onDisconnect={props.onDisconnectIntegration}
+          isPartner={props.isPartner}
+        />
+      );
+    case "Preferences":
+      return (
+        <PreferencesSection
+          timezone={profileTimezone}
+          emailSignature={props.preferences?.email_signature}
+          onSaveTimezone={async (tz) => {
+            if (!props.onSavePreferences) return;
+            const existing = props.preferences?.preferences?.profile_preferences ?? {};
+            return props.onSavePreferences("profile_preferences", { ...existing, timezone: tz });
+          }}
+          onSaveEmailSignature={props.onSaveEmailSignature}
         />
       );
     default:
