@@ -2,13 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
+  BarChart3,
   CalendarClock,
   Download,
   Globe,
   LayoutGrid,
   Loader2,
+  Route,
   Send,
   Share2,
+  ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
@@ -24,7 +27,7 @@ import { getSavedCompanyDetail, buildYearScopedProfile } from "@/lib/api";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import CompanyDetailPanel from "@/components/command-center/CompanyDetailPanel";
-import { flagFromCode } from "@/lib/laneGlobe";
+import { flagFromCode, resolveEndpoint } from "@/lib/laneGlobe";
 import { capFutureDate } from "@/lib/dateUtils";
 
 function estimateMarketSpend(teu, fclTeu = null, lclTeu = null) {
@@ -405,6 +408,43 @@ export default function Company() {
     shellCompany?.country ||
     null;
 
+  // Phase B.13.1 — Snapshot strip pills.
+  // Primary lane: parse headerKpis.topRoute via resolveEndpoint so each side
+  // reads as `{countryCode} {countryName}` (e.g. "CN China → US USA"). If
+  // the lane string has only one resolvable side or is missing, the pill
+  // hides (no fake fallback).
+  const snapshotPillLane = useMemo(() => {
+    const raw = headerKpis?.topRoute || headerKpis?.recentRoute || null;
+    if (!raw || typeof raw !== "string") return null;
+    const parts = raw.split(/→|->|>/).map((s) => s.trim()).filter(Boolean);
+    if (parts.length < 2) return null;
+    const fromMeta = resolveEndpoint(parts[0]);
+    const toMeta = resolveEndpoint(parts[1]);
+    if (!fromMeta && !toMeta) return null;
+    const fromLabel = fromMeta
+      ? `${fromMeta.countryCode} ${fromMeta.countryName}`
+      : parts[0];
+    const toLabel = toMeta
+      ? `${toMeta.countryCode} ${toMeta.countryName}`
+      : parts[1];
+    return `${fromLabel} → ${toLabel}`;
+  }, [headerKpis?.topRoute, headerKpis?.recentRoute]);
+
+  // Volume signal: hide entirely when both shipments and TEU are 0/null.
+  const snapshotPillVolume = useMemo(() => {
+    const ships = Number(headerKpis?.shipments) || 0;
+    const teu = Number(headerKpis?.teu) || 0;
+    if (ships <= 0 && teu <= 0) return null;
+    const fmt = (n) => Math.round(n).toLocaleString();
+    return `${fmt(ships)} shipments / ${fmt(teu)} TEU`;
+  }, [headerKpis?.shipments, headerKpis?.teu]);
+
+  // Intel status: "Snapshot verified" only when activeProfile resolved AND
+  // at least one volume metric is real. Otherwise "Snapshot pending".
+  const snapshotPillVerified = Boolean(
+    activeProfile && ((Number(headerKpis?.shipments) || 0) > 0 || (Number(headerKpis?.teu) || 0) > 0),
+  );
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -596,6 +636,60 @@ export default function Company() {
                       {companyAddress}
                     </div>
                   ) : null}
+                </div>
+              </div>
+
+              {/* Phase B.13.1 — Company Snapshot strip. Three compact glass
+                  fact pills under the address row: primary lane, volume
+                  signal, intel status. Each pill hides individually when
+                  its underlying data is missing (no fake fallback). On
+                  mobile the strip stacks vertically; at sm+ it flows
+                  horizontally with wrap. */}
+              <div className="flex flex-wrap items-stretch gap-2">
+                {snapshotPillLane ? (
+                  <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/8 px-3 py-2 backdrop-blur-md" style={{ backgroundColor: "rgba(255,255,255,0.08)" }}>
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/15 ring-1 ring-indigo-300/20">
+                      <Route className="h-4 w-4 text-indigo-200" />
+                    </span>
+                    <span className="flex flex-col">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Primary lane
+                      </span>
+                      <span className="text-sm font-semibold text-white">
+                        {snapshotPillLane}
+                      </span>
+                    </span>
+                  </div>
+                ) : null}
+
+                {snapshotPillVolume ? (
+                  <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 px-3 py-2 backdrop-blur-md" style={{ backgroundColor: "rgba(255,255,255,0.08)" }}>
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-500/15 ring-1 ring-cyan-300/20">
+                      <BarChart3 className="h-4 w-4 text-cyan-200" />
+                    </span>
+                    <span className="flex flex-col">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Volume signal
+                      </span>
+                      <span className="text-sm font-semibold text-white">
+                        {snapshotPillVolume}
+                      </span>
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 px-3 py-2 backdrop-blur-md" style={{ backgroundColor: "rgba(255,255,255,0.08)" }}>
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 ring-1 ring-emerald-300/20">
+                    <ShieldCheck className="h-4 w-4 text-emerald-200" />
+                  </span>
+                  <span className="flex flex-col">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Intel status
+                    </span>
+                    <span className="text-sm font-semibold text-white">
+                      {snapshotPillVerified ? "Snapshot verified" : "Snapshot pending"}
+                    </span>
+                  </span>
                 </div>
               </div>
 
