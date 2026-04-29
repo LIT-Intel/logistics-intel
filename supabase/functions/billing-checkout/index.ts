@@ -196,7 +196,14 @@ serve(async (req) => {
       stripeCustomerId = customer.id;
     }
 
-    // 4) Create checkout session
+    // 4) Create checkout session.
+    // 2026-04-29 hardening: every plan currently in the catalog is treated
+    // as a flat package price (Starter $125, Growth $387 incl. 3 seats,
+    // Scale $625 incl. 5 seats). The Stripe line-item quantity is always
+    // 1 here — never the seat count. Per-seat add-ons (Scale extras) are
+    // a separate line-item that ships in Commit 4. Frontend seat
+    // validation that errored "requires at least 3 seats" is no longer
+    // authoritative; this function just refuses non-positive values.
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: stripeCustomerId,
@@ -224,40 +231,68 @@ serve(async (req) => {
       },
     });
 
-    // 5) Upsert a pending subscription row so frontend has a billing anchor
-    const upsertPayload = {
-      user_id: userId,
-      plan_code: requestedPlan,
-      stripe_customer_id: stripeCustomerId,
-      status: existingSub?.status || "incomplete",
-      updated_at: new Date().toISOString(),
-    };
-
-    const upsertRes = await fetch(
-      `${supabaseUrl}/rest/v1/subscriptions?on_conflict=user_id`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: authHeader,
-          apikey: supabaseAnonKey,
-          "Content-Type": "application/json",
-          Prefer: "resolution=merge-duplicates,return=representation",
-        },
-        body: JSON.stringify(upsertPayload),
-      },
-    );
-
-    if (!upsertRes.ok) {
-      const text = await upsertRes.text();
-      return json(
+    // 5) Persist ONLY the stripe_customer_id so subsequent checkouts can
+    //    reuse it. NEVER write plan_code or status here — those fields
+    //    must only change in response to a verified Stripe webhook.
+    //    Returning from Stripe without paying must not change the user's
+    //    plan; the previous version of this function violated that
+    //    contract by upserting plan_code = requestedPlan with
+    //    status = "incomplete", which the Billing page then displayed as
+    //    the user's current plan. The webhook now owns plan_code.
+    if (existingSub) {
+      // Row exists; only update the customer id if it changed.
+      if (existingSub.stripe_customer_id !== stripeCustomerId) {
+        const updateRes = await fetch(
+          `${supabaseUrl}/rest/v1/subscriptions?user_id=eq.${userId}`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: authHeader,
+              apikey: supabaseAnonKey,
+              "Content-Type": "application/json",
+              Prefer: "return=minimal",
+            },
+            body: JSON.stringify({
+              stripe_customer_id: stripeCustomerId,
+              updated_at: new Date().toISOString(),
+            }),
+          },
+        );
+        if (!updateRes.ok) {
+          const text = await updateRes.text();
+          console.error("[billing-checkout] customer-id patch failed", text);
+          // Non-fatal: the checkout session was created and the webhook
+          // will reconcile state on payment. Return the URL so the user
+          // can still complete checkout.
+        }
+      }
+    } else {
+      // No row yet for this user. Insert a free_trial baseline anchor so
+      // the customer link survives, but DO NOT use the requested plan.
+      const insertRes = await fetch(
+        `${supabaseUrl}/rest/v1/subscriptions`,
         {
-          error: "Checkout created, but failed to persist subscription anchor",
-          details: text,
-          url: session.url,
-          sessionId: session.id,
+          method: "POST",
+          headers: {
+            Authorization: authHeader,
+            apikey: supabaseAnonKey,
+            "Content-Type": "application/json",
+            Prefer: "return=minimal",
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            plan_code: "free_trial",
+            stripe_customer_id: stripeCustomerId,
+            status: "incomplete",
+            updated_at: new Date().toISOString(),
+          }),
         },
-        500,
       );
+      if (!insertRes.ok) {
+        const text = await insertRes.text();
+        console.error("[billing-checkout] free_trial anchor insert failed", text);
+        // Non-fatal — return the URL. Webhook will reconcile.
+      }
     }
 
     return json({
@@ -265,7 +300,10 @@ serve(async (req) => {
       url: session.url,
       sessionId: session.id,
       stripe_customer_id: stripeCustomerId,
-      plan_code: requestedPlan,
+      // requested_plan_code is informational only — paid access activates
+      // when the webhook delivers a verified subscription event. The
+      // frontend MUST NOT use this value to update local plan state.
+      requested_plan_code: requestedPlan,
       interval,
     });
   } catch (error) {

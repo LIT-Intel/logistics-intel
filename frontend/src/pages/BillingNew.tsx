@@ -78,6 +78,12 @@ export default function Billing() {
   const [realActiveCampaigns, setRealActiveCampaigns] = useState<number>(0);
 
   const checkoutSuccess = searchParams.get('checkout') === 'success';
+  // 2026-04-29: when user clicks Cancel on Stripe Checkout we show an
+  // honest "checkout was not completed" notice. Plan state on the
+  // subscriptions row is webhook-owned, so this banner is the only thing
+  // the cancel return URL changes — paid access is NEVER granted from
+  // the URL.
+  const checkoutCancelled = searchParams.get('checkout') === 'cancelled';
 
   useEffect(() => {
     if (!loading && !user) navigate('/login');
@@ -221,22 +227,18 @@ export default function Billing() {
   }, [subscription, user]);
 
   // ── Derived state ─────────────────────────────────────────────────
-  const rawPlan =
-    subscription?.plan_code ||
-    (user as any)?.plan ||
-    (user as any)?.user_metadata?.plan ||
-    'free_trial';
+  // 2026-04-29 billing-truth fix: plan / status / stripe_customer_id
+  // come EXCLUSIVELY from the subscriptions row. Auth metadata
+  // (user.plan, user.user_metadata.plan, user.subscription_status, etc.)
+  // is no longer trusted for plan access — the previous fallback chain
+  // could surface stale values from past testing or from the broken
+  // pre-payment upsert. Source of truth is now: Stripe webhook ->
+  // subscriptions table -> this read.
+  const rawPlan = subscription?.plan_code || 'free_trial';
   const currentPlanCode = normalizePlanCode(rawPlan);
   const currentPlan = getPlanConfig(currentPlanCode);
-  const subscriptionStatus =
-    subscription?.status ||
-    (user as any)?.subscription_status ||
-    (user as any)?.user_metadata?.subscription_status ||
-    'incomplete';
-  const stripeCustomerId =
-    subscription?.stripe_customer_id ||
-    (user as any)?.stripe_customer_id ||
-    (user as any)?.user_metadata?.stripe_customer_id;
+  const subscriptionStatus = subscription?.status || 'incomplete';
+  const stripeCustomerId = subscription?.stripe_customer_id || null;
   const cancelAtPeriodEnd = Boolean(subscription?.cancel_at_period_end);
 
   const canonicalState = useMemo(
@@ -400,14 +402,35 @@ export default function Billing() {
         {/* Read-only banner (only when canManage === false) */}
         <ReadOnlyBanner canManage={canManage} />
 
-        {/* Toast: checkout success */}
+        {/* Toast: checkout success.
+            Note: this banner only confirms that the checkout flow
+            completed without error. Plan upgrade itself is owned by the
+            Stripe webhook. If the webhook hasn't landed yet, the user
+            still sees their previous plan here — that's correct
+            behavior. */}
         {checkoutSuccess && (
           <div className="mb-5 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
             <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-600" />
             <div>
-              <p className="text-sm font-semibold text-emerald-900">Billing update received</p>
+              <p className="text-sm font-semibold text-emerald-900">Payment processing</p>
               <p className="mt-0.5 text-sm text-emerald-700">
-                Your subscription status is refreshing now.
+                Stripe is confirming your payment. Your plan will update once Stripe confirms the subscription.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Toast: checkout cancelled.
+            User clicked Cancel on Stripe Checkout (or hit the back
+            button). No plan change occurs. Make this explicit so the
+            user doesn't think they were upgraded. */}
+        {checkoutCancelled && (
+          <div className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
+            <div>
+              <p className="text-sm font-semibold text-amber-900">Checkout was not completed</p>
+              <p className="mt-0.5 text-sm text-amber-800">
+                You returned without completing payment, so your plan has not changed. Pick a plan below to try again.
               </p>
             </div>
           </div>
