@@ -1653,16 +1653,12 @@ export default function LITDashboard() {
     );
   }, [realSavedCompanies]);
 
-  // Phase B.21 — globe lane preparation now mirrors the Company Profile
-  // Trade Lanes tab (CompanyDetailPanel.tsx:4421-4432) verbatim. Previous
-  // B.18/B.20 code passed each canonical row's `displayLabel` (which is
-  // flag-prefixed like "🇨🇳 China → 🇺🇸 USA") back through
-  // `laneStringToGlobeLane`, where `resolveEndpoint` can't match the
-  // flag-prefixed string and returns null — that's why the dashboard globe
-  // was empty even though the ranked lane list and `canonicalizeLanes`
-  // both produced real data. Build GlobeLane objects directly from each
-  // canonical row's already-resolved `fromMeta` / `toMeta` / `coords`.
-  const globeLanesB18 = useMemo(() => {
+  // Phase B.22 — full canonical lane rows mirror CompanyDetailPanel's
+  // `canonicalLanes` (used at CompanyDetailPanel.tsx:4421-4432 + the lane
+  // table render). Each row carries `fromMeta` / `toMeta` / `coords` /
+  // `displayLabel` / `aliases` / `shipments` / `teu`, so the same data
+  // drives both the interactive `<GlobeCanvas>` and the ranked lane list.
+  const canonicalLanesDash = useMemo(() => {
     if (topAggregatedLanes.length === 0) return [];
     const { canonical } = canonicalizeLanes(
       topAggregatedLanes.slice(0, 8).map((l) => ({
@@ -1672,16 +1668,38 @@ export default function LITDashboard() {
         spend: null,
       })),
     );
-    return canonical.slice(0, 6).map((l) => ({
-      id: l.displayLabel,
-      from: l.fromMeta.canonicalKey,
-      to: l.toMeta.canonicalKey,
-      coords: [l.fromMeta.coords, l.toMeta.coords],
-      fromMeta: l.fromMeta,
-      toMeta: l.toMeta,
-      shipments: l.shipments,
-    }));
+    return canonical;
   }, [topAggregatedLanes]);
+
+  // Globe arcs derive from the canonical rows (no second
+  // `laneStringToGlobeLane` pass — that was the B.21 root cause).
+  const globeLanesB18 = useMemo(
+    () =>
+      canonicalLanesDash.slice(0, 6).map((l) => ({
+        id: l.displayLabel,
+        from: l.fromMeta.canonicalKey,
+        to: l.toMeta.canonicalKey,
+        coords: [l.fromMeta.coords, l.toMeta.coords],
+        fromMeta: l.fromMeta,
+        toMeta: l.toMeta,
+        shipments: l.shipments,
+      })),
+    [canonicalLanesDash],
+  );
+
+  // Selected-lane state mirrors CompanyDetailPanel
+  // (`activeLane = selectedLane || firstResolvableLane`). Default null;
+  // when the canonical list reshuffles and the previously-selected lane is
+  // gone, clear the stale id so the first canonical row becomes active.
+  const [selectedLaneId, setSelectedLaneId] = useState(null);
+  useEffect(() => {
+    if (!selectedLaneId) return;
+    if (!canonicalLanesDash.some((l) => l.displayLabel === selectedLaneId)) {
+      setSelectedLaneId(null);
+    }
+  }, [canonicalLanesDash, selectedLaneId]);
+  const firstResolvableLaneId = canonicalLanesDash[0]?.displayLabel || null;
+  const activeLaneId = selectedLaneId || firstResolvableLaneId;
 
   // Templated, deterministic insights. Every clause is grounded in real
   // saved-company aggregates — we never invoke an external AI service and
@@ -1894,13 +1912,19 @@ export default function LITDashboard() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-                  {/* Globe LEFT — same GlobeCanvas component used by the
-                      Company Profile Trade Lanes tab. When the canonicalized
-                      lane list resolves to no globe-renderable arcs, render
-                      a subtle helper line rather than a big placeholder. */}
-                  <div className="flex min-h-[260px] items-center justify-center rounded-xl bg-slate-50/60 p-4">
+                  {/* Globe LEFT — same GlobeCanvas + same theme="dark" palette
+                      used by the Company Profile Trade Lanes tab. The
+                      `selectedLane` prop drives the active arc highlight and
+                      auto-rotates the globe to the lane's midpoint via
+                      GlobeCanvas's internal targetRotation animation. */}
+                  <div className="flex min-h-[260px] items-center justify-center rounded-xl bg-slate-950/5 p-4">
                     {globeLanesB18.length > 0 ? (
-                      <GlobeCanvas size={220} lanes={globeLanesB18} />
+                      <GlobeCanvas
+                        size={220}
+                        lanes={globeLanesB18}
+                        selectedLane={activeLaneId}
+                        theme="dark"
+                      />
                     ) : (
                       <div className="text-center">
                         <div className="text-sm font-semibold text-slate-700">
@@ -1913,40 +1937,129 @@ export default function LITDashboard() {
                     )}
                   </div>
 
-                  {/* Ranked lane list RIGHT — max 5 rows. Each row: rank pill,
-                      lane label, account count, shipments + TEU. */}
+                  {/* Ranked lane list RIGHT — max 5 canonical rows. Each row
+                      is clickable and drives the globe's selectedLane. First
+                      canonical lane is selected by default (via activeLaneId
+                      fallback). Selected row gets indigo bg + left accent. */}
                   <div>
                     <ol className="space-y-2">
-                      {topAggregatedLanes.slice(0, 5).map((lane, i) => (
-                        <li
-                          key={lane.label}
-                          className="flex items-center gap-3 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 transition hover:bg-slate-50"
-                        >
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-bold text-indigo-700">
-                            {i + 1}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-semibold text-slate-900" title={lane.label}>
-                              {lane.label}
-                            </div>
-                            <div className="mt-0.5 text-[11px] text-slate-500">
-                              {lane.count} {lane.count === 1 ? "account" : "accounts"}
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-mono text-sm font-bold text-slate-900">
-                              {Number(lane.shipments) > 0 ? Number(lane.shipments).toLocaleString() : "—"}
-                            </div>
-                            <div className="text-[10px] text-slate-500">
-                              {Number(lane.teu) > 0 ? `${Math.round(Number(lane.teu)).toLocaleString()} TEU` : "shipments"}
-                            </div>
-                          </div>
-                        </li>
-                      ))}
+                      {(canonicalLanesDash.length > 0
+                        ? canonicalLanesDash
+                        : topAggregatedLanes.map((l) => ({
+                            displayLabel: l.label,
+                            shipments: l.shipments,
+                            teu: l.teu,
+                            aliases: [],
+                            __raw: true,
+                          }))
+                      )
+                        .slice(0, 5)
+                        .map((lane, i) => {
+                          const id = lane.displayLabel;
+                          const isSelected = !lane.__raw && id === activeLaneId;
+                          const aliasCount = Array.isArray(lane.aliases)
+                            ? lane.aliases.length
+                            : 0;
+                          const aliasHint =
+                            aliasCount > 0 && lane.aliases[0] !== id
+                              ? `Includes ${lane.aliases.slice(0, 2).join("; ")}${aliasCount > 2 ? `; +${aliasCount - 2}` : ""}`
+                              : null;
+                          return (
+                            <li
+                              key={id || `lane-${i}`}
+                              role={lane.__raw ? undefined : "button"}
+                              tabIndex={lane.__raw ? -1 : 0}
+                              onClick={
+                                lane.__raw
+                                  ? undefined
+                                  : () => setSelectedLaneId(id)
+                              }
+                              onKeyDown={
+                                lane.__raw
+                                  ? undefined
+                                  : (e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        setSelectedLaneId(id);
+                                      }
+                                    }
+                              }
+                              className={[
+                                "flex items-center gap-3 rounded-xl border-l-4 px-3 py-2.5 transition",
+                                lane.__raw
+                                  ? "border-l-transparent bg-white"
+                                  : isSelected
+                                  ? "cursor-pointer border-l-indigo-500 bg-indigo-50 ring-1 ring-indigo-200"
+                                  : "cursor-pointer border-l-transparent bg-white hover:bg-slate-50",
+                                "border border-slate-200/70",
+                              ].join(" ")}
+                            >
+                              <span
+                                className={[
+                                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
+                                  isSelected
+                                    ? "bg-indigo-600 text-white"
+                                    : "bg-indigo-100 text-indigo-700",
+                                ].join(" ")}
+                              >
+                                {i + 1}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div
+                                  className={[
+                                    "truncate text-sm",
+                                    isSelected
+                                      ? "font-bold text-slate-950"
+                                      : "font-semibold text-slate-900",
+                                  ].join(" ")}
+                                  title={id}
+                                >
+                                  {id}
+                                </div>
+                                {aliasHint ? (
+                                  <div className="mt-0.5 truncate text-[11px] text-slate-500" title={aliasHint}>
+                                    {aliasHint}
+                                  </div>
+                                ) : (
+                                  <div className="mt-0.5 text-[11px] text-slate-500">
+                                    {Number(lane.shipments) > 0
+                                      ? `${Number(lane.shipments).toLocaleString()} shipments`
+                                      : "Shipments pending refresh"}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <div className="font-mono text-sm font-bold text-slate-900">
+                                  {Number(lane.shipments) > 0
+                                    ? Number(lane.shipments).toLocaleString()
+                                    : "—"}
+                                </div>
+                                <div className="text-[10px] text-slate-500">
+                                  {Number(lane.teu) > 0
+                                    ? `${Math.round(Number(lane.teu)).toLocaleString()} TEU`
+                                    : "shipments"}
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
                     </ol>
-                    {topAggregatedLanes.length > 5 ? (
+                    {(canonicalLanesDash.length > 0
+                      ? canonicalLanesDash.length
+                      : topAggregatedLanes.length) > 5 ? (
                       <div className="mt-3 text-center text-xs text-slate-500">
-                        {topAggregatedLanes.length - 5} more lane{topAggregatedLanes.length - 5 === 1 ? "" : "s"} — open a saved company to drill in
+                        {(canonicalLanesDash.length > 0
+                          ? canonicalLanesDash.length
+                          : topAggregatedLanes.length) - 5}{" "}
+                        more lane
+                        {(canonicalLanesDash.length > 0
+                          ? canonicalLanesDash.length
+                          : topAggregatedLanes.length) -
+                          5 ===
+                        1
+                          ? ""
+                          : "s"}{" "}
+                        — open a saved company to drill in
                       </div>
                     ) : null}
                   </div>
