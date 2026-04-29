@@ -1,7 +1,16 @@
 // Plans grid. Real prices from PLAN_LIMITS (single source of truth in the
-// app). Per-plan CTAs route to existing handlers — never fabricated.
+// app, aligned with the Supabase `plans` table).
+//
+// 2026-04-29 billing-truth rewrite:
+//   - Five tiles: Free Trial, Starter, Growth, Scale, Enterprise.
+//   - Every paid plan is a flat package price — no per-seat math here.
+//   - The Growth/Scale seat counts are display-only ("includes 3 seats" /
+//     "includes 5 seats"); there is no seat selector that can change the
+//     displayed price of any other plan card.
+//   - Demo, regular, and admin users all see the same card prices because
+//     no input to this grid varies by role.
 
-import { CheckCircle2, Crown, Layers3, Rocket, Sparkles } from 'lucide-react';
+import { CheckCircle2, Crown, Layers3, Rocket, Sparkles, Building2 } from 'lucide-react';
 import {
   PLAN_LIMITS,
   getTotalPrice,
@@ -12,7 +21,6 @@ import {
 interface Props {
   currentPlanCode: PlanCode;
   cycle: BillingInterval;
-  growthSeats: number;
   onSelectPlan: (planCode: PlanCode) => void;
   onContactSales: () => void;
   onManageCurrent: () => void;
@@ -35,7 +43,12 @@ const META: Record<PlanCode, {
     border: 'hover:border-violet-300',
     ribbon: null,
     description: 'Explore the product and validate fit before committing.',
-    bullets: ['10 company discoveries', '10 saved accounts', 'Dashboard + Search access'],
+    bullets: [
+      '10 company discoveries',
+      '10 saved accounts',
+      'Dashboard + Search access',
+      'Trial expires when usage is exhausted',
+    ],
   },
   starter: {
     icon: Layers3,
@@ -43,7 +56,12 @@ const META: Record<PlanCode, {
     border: 'hover:border-blue-300',
     ribbon: null,
     description: 'Core intelligence and CRM workflows for solo operators.',
-    bullets: ['250 company discoveries', '100 saved accounts', 'Company Intelligence pages'],
+    bullets: [
+      '1 seat included',
+      '125 company discoveries / month',
+      '75 saved companies',
+      'Company Intelligence pages',
+    ],
   },
   growth: {
     icon: Rocket,
@@ -51,24 +69,50 @@ const META: Record<PlanCode, {
     border: 'hover:border-emerald-300',
     ribbon: 'Most popular',
     description: 'Multi-user prospecting, campaigns, and outreach at scale.',
-    bullets: ['2,000 shared discoveries', '1,000 saved accounts', 'Pulse + Campaign Builder', '3–5 team seats'],
+    bullets: [
+      '3 seats included',
+      '1,000 company discoveries / month',
+      '500 saved companies',
+      '100 Pulse briefs / month',
+      '250 campaign emails / month',
+      '75 enrichment credits / month',
+    ],
+  },
+  scale: {
+    icon: Building2,
+    iconBg: 'bg-indigo-500',
+    border: 'hover:border-indigo-300',
+    ribbon: null,
+    description: 'Larger teams with bigger discovery, outreach, and enrichment volume.',
+    bullets: [
+      '5 seats included',
+      '2,000 company discoveries / month',
+      '1,500 saved companies',
+      '250 Pulse briefs / month',
+      '500 campaign emails / month',
+      '200 enrichment credits / month',
+    ],
   },
   enterprise: {
     icon: Crown,
     iconBg: 'bg-amber-500',
     border: 'hover:border-amber-300',
     ribbon: null,
-    description: 'Admin controls, scale, and commercial flexibility for larger teams.',
-    bullets: ['Everything in Growth', 'Custom usage limits', 'Priority support', '6+ seats'],
+    description: 'Custom seats, limits, onboarding, and commercial terms.',
+    bullets: [
+      '10+ seats',
+      'Custom search & save limits',
+      'Custom enrichment & campaign limits',
+      'Dedicated onboarding & support',
+    ],
   },
 };
 
-const ORDER: PlanCode[] = ['free_trial', 'starter', 'growth', 'enterprise'];
+const ORDER: PlanCode[] = ['free_trial', 'starter', 'growth', 'scale', 'enterprise'];
 
 export function BillingPlans({
   currentPlanCode,
   cycle,
-  growthSeats,
   onSelectPlan,
   onContactSales,
   onManageCurrent,
@@ -88,7 +132,7 @@ export function BillingPlans({
           </span>
           <h2 className="mt-1.5 text-lg font-semibold tracking-tight text-slate-950">Compare plans</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Choose the right access level for your current team stage.
+            Flat package pricing. Every plan price is the same for every user — no per-seat math.
           </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
@@ -99,7 +143,7 @@ export function BillingPlans({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         {ORDER.map((code) => {
           const m = META[code];
           const cfg = PLAN_LIMITS[code];
@@ -108,19 +152,24 @@ export function BillingPlans({
           const targetIdx = ORDER.indexOf(code);
           const isUpgrade = targetIdx > currentIdx;
 
-          const seats = code === 'growth' ? growthSeats : 1;
-          const price = code === 'enterprise' ? null : getTotalPrice(code, cycle, seats);
+          // Flat package price — no seat math, no role math, no per-tile
+          // input that can drift. `getTotalPrice` ignores the seats arg.
+          const price = code === 'enterprise' ? null : getTotalPrice(code, cycle);
           const priceLabel =
             code === 'enterprise' ? 'Custom' : price === null ? 'Custom' : `$${price.toLocaleString()}`;
 
-          // CTA logic per design + existing flow
+          // CTA logic per design + existing flow.
           let ctaLabel: string;
           let ctaHandler: () => void;
           let ctaPrimary = false;
           let ctaDisabled = false;
 
           if (isCurrent) {
-            ctaLabel = canManage ? (hasStripeCustomer ? `You're on ${cfg.label}` : `Current plan`) : `You're on ${cfg.label}`;
+            ctaLabel = canManage
+              ? hasStripeCustomer
+                ? `You're on ${cfg.label}`
+                : `Current plan`
+              : `You're on ${cfg.label}`;
             ctaHandler = canManage && hasStripeCustomer ? onManageCurrent : () => {};
             ctaDisabled = !canManage || !hasStripeCustomer;
           } else if (code === 'enterprise') {

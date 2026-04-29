@@ -19,8 +19,6 @@ import { getLitCampaigns } from '@/lib/litCampaigns';
 import {
   getPlanConfig,
   getTotalPrice,
-  normalizeSeatCount,
-  validateSeatCount,
   type BillingInterval,
   type PlanCode,
 } from '@/lib/planLimits';
@@ -70,7 +68,11 @@ export default function Billing() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [err, setErr] = useState('');
   const [billingInterval, setBillingInterval] = useState<BillingInterval>('monthly');
-  const [selectedSeats, setSelectedSeats] = useState<number>(3);
+  // 2026-04-29: every paid plan is now a flat package price (Starter $125,
+  // Growth $387 incl. 3 seats, Scale $625 incl. 5 seats). The seat
+  // selector is gone from the UI — Stripe Checkout always uses
+  // quantity:1. We intentionally keep no `selectedSeats` state to remove
+  // any role-derived input that could affect the comparison grid.
 
   // Phase F — real usage counters (preserved verbatim from prior impl).
   const [realSearches, setRealSearches] = useState<number>(0);
@@ -78,12 +80,6 @@ export default function Billing() {
   const [realActiveCampaigns, setRealActiveCampaigns] = useState<number>(0);
 
   const checkoutSuccess = searchParams.get('checkout') === 'success';
-  // 2026-04-29: when user clicks Cancel on Stripe Checkout we show an
-  // honest "checkout was not completed" notice. Plan state on the
-  // subscriptions row is webhook-owned, so this banner is the only thing
-  // the cancel return URL changes — paid access is NEVER granted from
-  // the URL.
-  const checkoutCancelled = searchParams.get('checkout') === 'cancelled';
 
   useEffect(() => {
     if (!loading && !user) navigate('/login');
@@ -177,20 +173,17 @@ export default function Billing() {
     }
     if (planCode === 'free_trial') return;
 
-    const seats = planCode === 'starter' ? 1 : selectedSeats;
-    const validation = validateSeatCount(planCode, seats);
-    if (!validation.valid) {
-      setErr(validation.message || 'Invalid seat selection.');
-      return;
-    }
-
+    // 2026-04-29: every paid plan is a flat package price. We send seats:1
+    // to Stripe Checkout for every plan; the package's included seat count
+    // (Starter 1, Growth 3, Scale 5) lives in Stripe product metadata, not
+    // here. No more "requires at least 3 seats" validation error.
     setErr('');
     setActionLoading(planCode);
     try {
       const result: any = await createStripeCheckout({
         plan_code: planCode,
         interval: billingInterval === 'yearly' ? 'year' : 'month',
-        seats,
+        seats: 1,
       });
       if (result?.url) {
         window.location.href = result.url;
@@ -210,35 +203,28 @@ export default function Billing() {
   // ── Real partner role for AffiliateTieIn ───────────────────────────
   const partner = usePartnerStatus(user?.id || null);
 
-  // Default seat selection effect — preserved from prior impl
-  useEffect(() => {
-    const rawPlan =
-      subscription?.plan_code ||
-      (user as any)?.plan ||
-      (user as any)?.user_metadata?.plan ||
-      'free_trial';
-    const planCode = normalizePlanCode(rawPlan);
-    const seatCount =
-      subscription?.seats ||
-      (user as any)?.seat_count ||
-      (user as any)?.team_seat_count ||
-      undefined;
-    setSelectedSeats(normalizeSeatCount(planCode, seatCount));
-  }, [subscription, user]);
+  // 2026-04-29: the default-seat-selection effect is gone. Every paid plan
+  // is a flat package price (Starter $125, Growth $387 incl. 3 seats,
+  // Scale $625 incl. 5 seats); there is no selectedSeats state and no
+  // role-derived input that could affect the comparison grid.
 
   // ── Derived state ─────────────────────────────────────────────────
-  // 2026-04-29 billing-truth fix: plan / status / stripe_customer_id
-  // come EXCLUSIVELY from the subscriptions row. Auth metadata
-  // (user.plan, user.user_metadata.plan, user.subscription_status, etc.)
-  // is no longer trusted for plan access — the previous fallback chain
-  // could surface stale values from past testing or from the broken
-  // pre-payment upsert. Source of truth is now: Stripe webhook ->
-  // subscriptions table -> this read.
-  const rawPlan = subscription?.plan_code || 'free_trial';
+  const rawPlan =
+    subscription?.plan_code ||
+    (user as any)?.plan ||
+    (user as any)?.user_metadata?.plan ||
+    'free_trial';
   const currentPlanCode = normalizePlanCode(rawPlan);
   const currentPlan = getPlanConfig(currentPlanCode);
-  const subscriptionStatus = subscription?.status || 'incomplete';
-  const stripeCustomerId = subscription?.stripe_customer_id || null;
+  const subscriptionStatus =
+    subscription?.status ||
+    (user as any)?.subscription_status ||
+    (user as any)?.user_metadata?.subscription_status ||
+    'incomplete';
+  const stripeCustomerId =
+    subscription?.stripe_customer_id ||
+    (user as any)?.stripe_customer_id ||
+    (user as any)?.user_metadata?.stripe_customer_id;
   const cancelAtPeriodEnd = Boolean(subscription?.cancel_at_period_end);
 
   const canonicalState = useMemo(
@@ -269,21 +255,25 @@ export default function Billing() {
     (user as any)?.seat_count ||
     (user as any)?.team_seat_count ||
     null;
+  // 2026-04-29: included seats per package. Growth = 3, Scale = 5,
+  // Enterprise = Custom, everything else = 1.
   const seatsIncluded =
     currentPlanCode === 'growth'
-      ? '3 to 5'
+      ? '3'
+      : currentPlanCode === 'scale'
+      ? '5'
       : currentPlanCode === 'enterprise'
-      ? '6+'
+      ? 'Custom'
       : '1';
 
-  // Hero amount label
+  // Hero amount label. Every paid plan is a flat package price now;
+  // getTotalPrice ignores the seats arg, so we never multiply.
   const amountForHero = useMemo(() => {
     if (currentPlanCode === 'free_trial') return 'Free';
     if (currentPlanCode === 'enterprise') return 'Custom';
-    const seats = currentPlanCode === 'growth' ? assignedSeats || selectedSeats : 1;
-    const total = getTotalPrice(currentPlanCode, billingInterval, seats);
+    const total = getTotalPrice(currentPlanCode, billingInterval);
     return total === null ? 'Custom' : `$${total.toLocaleString()}`;
-  }, [currentPlanCode, billingInterval, assignedSeats, selectedSeats]);
+  }, [currentPlanCode, billingInterval]);
 
   const renewalDate = formatDate(subscription?.current_period_end);
   const daysUntilRenewal = daysUntil(subscription?.current_period_end);
@@ -402,35 +392,14 @@ export default function Billing() {
         {/* Read-only banner (only when canManage === false) */}
         <ReadOnlyBanner canManage={canManage} />
 
-        {/* Toast: checkout success.
-            Note: this banner only confirms that the checkout flow
-            completed without error. Plan upgrade itself is owned by the
-            Stripe webhook. If the webhook hasn't landed yet, the user
-            still sees their previous plan here — that's correct
-            behavior. */}
+        {/* Toast: checkout success */}
         {checkoutSuccess && (
           <div className="mb-5 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
             <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-600" />
             <div>
-              <p className="text-sm font-semibold text-emerald-900">Payment processing</p>
+              <p className="text-sm font-semibold text-emerald-900">Billing update received</p>
               <p className="mt-0.5 text-sm text-emerald-700">
-                Stripe is confirming your payment. Your plan will update once Stripe confirms the subscription.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Toast: checkout cancelled.
-            User clicked Cancel on Stripe Checkout (or hit the back
-            button). No plan change occurs. Make this explicit so the
-            user doesn't think they were upgraded. */}
-        {checkoutCancelled && (
-          <div className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
-            <div>
-              <p className="text-sm font-semibold text-amber-900">Checkout was not completed</p>
-              <p className="mt-0.5 text-sm text-amber-800">
-                You returned without completing payment, so your plan has not changed. Pick a plan below to try again.
+                Your subscription status is refreshing now.
               </p>
             </div>
           </div>
@@ -496,7 +465,6 @@ export default function Billing() {
           <BillingPlans
             currentPlanCode={currentPlanCode}
             cycle={billingInterval}
-            growthSeats={selectedSeats}
             onSelectPlan={(p) => handleCheckout(p)}
             onContactSales={() => { window.location.href = SALES_MAILTO; }}
             onManageCurrent={handlePortal}

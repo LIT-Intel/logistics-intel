@@ -1,4 +1,23 @@
-export type PlanCode = "free_trial" | "starter" | "growth" | "enterprise";
+// 2026-04-29 billing-truth catalog rewrite.
+//
+// Single frontend source of truth for plan codes, prices, included seats,
+// and rough usage limits. Aligned with the Supabase `plans` table so what
+// a user sees on the Billing page matches what the backend enforces.
+//
+// PRICING MODEL: every paid plan is a flat package price. There is NO
+// per-seat multiplication for Starter, Growth, or Scale. Growth includes
+// 3 seats at $387/mo as a package. Scale includes 5 seats at $625/mo as a
+// package. Additional Scale seats can be added later as a separate Stripe
+// add-on line item; until that ships the seat selector is hidden.
+//
+// PLAN CODES IN DB (verified 2026-04-29):
+//   free_trial  $0
+//   starter     $125/mo, $1,250/yr
+//   growth      $387/mo, $3,870/yr  (3 seats included)
+//   scale       $625/mo, $6,250/yr  (5 seats included)
+//   enterprise  Custom
+
+export type PlanCode = "free_trial" | "starter" | "growth" | "scale" | "enterprise";
 export type BillingInterval = "monthly" | "yearly";
 
 export type FeatureKey =
@@ -29,8 +48,14 @@ export type UsageLimitKey =
   | "pulse_runs_per_month";
 
 export type SeatRules = {
+  /** Minimum seats required to checkout. For package plans this equals the
+   *  included count and the user has no choice. */
   min: number;
+  /** Maximum seats allowed via the Billing UI. `null` = no UI cap (Scale
+   *  add-on flow / Enterprise custom). */
   max: number | null;
+  /** Default seat count to seed the UI with. For package plans this equals
+   *  `min` so the package size is the only visible option. */
   default: number;
 };
 
@@ -38,9 +63,15 @@ export type PlanUsageLimits = Record<UsageLimitKey, number | null>;
 export type PlanFeatures = Record<FeatureKey, boolean>;
 
 export type PlanPricing = {
+  /** Total monthly package price in dollars (NOT per-seat). `null` =
+   *  Custom (Enterprise). */
   monthly: number | null;
+  /** Total yearly package price in dollars. `null` = Custom. */
   yearly: number | null;
-  perSeat: boolean;
+  /** Always `false` for the current catalog. Kept on the type so downstream
+   *  callers can still inspect it; per-seat add-ons are modelled as
+   *  separate Stripe line items, not as `perSeat: true` here. */
+  perSeat: false;
 };
 
 export type PlanConfig = {
@@ -48,6 +79,8 @@ export type PlanConfig = {
   label: string;
   pricing: PlanPricing;
   seatRules: SeatRules;
+  /** Number of seats bundled in the package price. Use this for display. */
+  includedSeats: number | null;
   features: PlanFeatures;
   limits: PlanUsageLimits;
 };
@@ -58,6 +91,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
     label: "Free Trial",
     pricing: { monthly: 0, yearly: 0, perSeat: false },
     seatRules: { min: 1, max: 1, default: 1 },
+    includedSeats: 1,
     features: {
       dashboard: true,
       search: true,
@@ -74,11 +108,9 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       credit_rating_ready: false,
       contact_intel_ready: false,
     },
-    // Note: these values are the FALLBACK only. The DB `plans` table is
-    // the source of truth and the backend enforces against it. The
-    // frontend reads real values from get-entitlements via useEntitlements;
-    // these constants are used only when the snapshot hasn't loaded yet
-    // (initial render) and for static copy.
+    // Trial is exhausted when EITHER searches OR saved companies hits cap.
+    // Backend enforces via check_usage_limit; these constants are the
+    // pre-snapshot fallback the Billing UI uses for initial render.
     limits: {
       searches_per_month: 10,
       company_views_per_month: 10,
@@ -95,8 +127,9 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
   starter: {
     code: "starter",
     label: "Starter",
-    pricing: { monthly: 99, yearly: 950, perSeat: false },
-    seatRules: { min: 1, max: 2, default: 1 },
+    pricing: { monthly: 125, yearly: 1250, perSeat: false },
+    seatRules: { min: 1, max: 1, default: 1 },
+    includedSeats: 1,
     features: {
       dashboard: true,
       search: true,
@@ -113,24 +146,29 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       credit_rating_ready: false,
       contact_intel_ready: false,
     },
+    // DB currently has search=250 / save=50; aligning UI to DB so display
+    // matches enforcement. Spec values (125 / 75 / 0 / 0) are the next
+    // catalog migration to land separately.
     limits: {
       searches_per_month: 250,
       company_views_per_month: 100,
-      command_center_saves_per_month: 100,
-      enrichment_credits_per_month: 25,
+      command_center_saves_per_month: 50,
+      enrichment_credits_per_month: 50,
       campaigns_active: 0,
       rfp_drafts: 0,
-      team_seats: 2,
+      team_seats: 1,
       connected_mailboxes: 1,
-      pulse_runs_per_month: 0,
+      pulse_runs_per_month: 25,
     },
   },
 
   growth: {
     code: "growth",
     label: "Growth",
-    pricing: { monthly: 129, yearly: 1240, perSeat: true },
-    seatRules: { min: 3, max: 5, default: 3 },
+    pricing: { monthly: 387, yearly: 3870, perSeat: false },
+    // 3 included as a package — the seat selector is hidden in the UI.
+    seatRules: { min: 3, max: 3, default: 3 },
+    includedSeats: 3,
     features: {
       dashboard: true,
       search: true,
@@ -147,24 +185,71 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       credit_rating_ready: false,
       contact_intel_ready: true,
     },
+    // DB current values; spec (save=500, enrichment=75, campaign=250) is
+    // a follow-up alignment migration so display matches enforcement
+    // exactly today.
     limits: {
-      searches_per_month: 2000,
+      searches_per_month: 1000,
       company_views_per_month: 500,
-      command_center_saves_per_month: 1000,
-      enrichment_credits_per_month: 250,
+      command_center_saves_per_month: 250,
+      enrichment_credits_per_month: 200,
       campaigns_active: 25,
       rfp_drafts: 50,
-      team_seats: 5,
+      team_seats: 3,
       connected_mailboxes: 3,
       pulse_runs_per_month: 100,
+    },
+  },
+
+  scale: {
+    code: "scale",
+    label: "Scale",
+    pricing: { monthly: 625, yearly: 6250, perSeat: false },
+    // 5 included as a package. Additional seats ($125/user/mo) ship as a
+    // Stripe add-on line item later; until then the selector is hidden.
+    seatRules: { min: 5, max: 5, default: 5 },
+    includedSeats: 5,
+    features: {
+      dashboard: true,
+      search: true,
+      command_center: true,
+      company_page: true,
+      campaign_builder: true,
+      pulse: true,
+      rfp_studio: true,
+      lead_prospecting: true,
+      enrichment: true,
+      billing_admin: true,
+      seat_management: true,
+      widgets: true,
+      credit_rating_ready: true,
+      contact_intel_ready: true,
+    },
+    // Spec values; the same migration that adds these aligns DB exactly
+    // (Scale was provisioned in DB with all-zero limits — see
+    // 20260429000000_scale_plan_limits.sql).
+    limits: {
+      searches_per_month: 2000,
+      company_views_per_month: 1500,
+      command_center_saves_per_month: 1500,
+      enrichment_credits_per_month: 200,
+      campaigns_active: 100,
+      rfp_drafts: 100,
+      team_seats: 5,
+      connected_mailboxes: 5,
+      pulse_runs_per_month: 250,
     },
   },
 
   enterprise: {
     code: "enterprise",
     label: "Enterprise",
-    pricing: { monthly: null, yearly: null, perSeat: true },
+    pricing: { monthly: null, yearly: null, perSeat: false },
+    // Enterprise is sold via sales — the Billing UI never renders a seat
+    // selector for it. Min/default kept for downstream code that still
+    // calls normalizeSeatCount on enterprise plans.
     seatRules: { min: 6, max: null, default: 20 },
+    includedSeats: null,
     features: {
       dashboard: true,
       search: true,
@@ -198,13 +283,19 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
 export const DEFAULT_PLAN: PlanCode = "free_trial";
 export const DEFAULT_BILLING_INTERVAL: BillingInterval = "monthly";
 
-/** Normalize legacy/stale plan strings to canonical PlanCode */
+/**
+ * Normalize legacy/stale plan strings to canonical PlanCode.
+ * Historical aliases ('free', 'standard', 'pro', 'growth_plus', 'unlimited')
+ * map to current codes. Anything unknown falls back to free_trial — the
+ * UI then defers to whatever the subscriptions row actually says.
+ */
 export function normalizePlan(value?: string | null): PlanCode {
   const v = String(value || "").trim().toLowerCase();
   if (v === "free" || v === "free_trial") return "free_trial";
   if (v === "standard" || v === "starter") return "starter";
-  if (v === "pro" || v === "growth") return "growth";
-  if (v === "unlimited" || v === "enterprise") return "enterprise";
+  if (v === "pro" || v === "growth" || v === "growth_plus") return "growth";
+  if (v === "scale") return "scale";
+  if (v === "unlimited" || v.startsWith("enterprise")) return "enterprise";
   return "free_trial";
 }
 
@@ -213,6 +304,7 @@ export function isPlanCode(value?: string | null): value is PlanCode {
     value === "free_trial" ||
     value === "starter" ||
     value === "growth" ||
+    value === "scale" ||
     value === "enterprise"
   );
 }
@@ -249,6 +341,11 @@ export function canAccessFeature(
   return getPlanFeatures(plan)[feature] === true;
 }
 
+/**
+ * Validate seats for a checkout request. With every paid plan now a flat
+ * package, this only really fires for free_trial (which can't checkout) or
+ * for an out-of-range value passed by a stale UI. Kept for safety.
+ */
 export function validateSeatCount(
   plan: string | null | undefined,
   seats: number
@@ -286,17 +383,18 @@ export function getPriceForInterval(
   return getPlanConfig(plan).pricing[interval];
 }
 
+/**
+ * Returns the displayed price for a plan/interval combo. The `seats` arg
+ * is accepted for backward-compatible signature but is **ignored** — every
+ * paid plan in the catalog is a flat package price now. Per-seat add-ons
+ * (e.g., extra Scale users at $125/seat) will be modelled separately.
+ */
 export function getTotalPrice(
   plan: string | null | undefined,
   interval: BillingInterval,
-  seats?: number | null
+  _seats?: number | null,
 ): number | null {
-  const config = getPlanConfig(plan);
-  const basePrice = config.pricing[interval];
-  if (basePrice === null) return null;
-  if (!config.pricing.perSeat) return basePrice;
-  const normalizedSeats = normalizeSeatCount(plan, seats);
-  return basePrice * normalizedSeats;
+  return getPlanConfig(plan).pricing[interval];
 }
 
 export function hasUsageLimit(
