@@ -1701,6 +1701,24 @@ export default function LITDashboard() {
   const firstResolvableLaneId = canonicalLanesDash[0]?.displayLabel || null;
   const activeLaneId = selectedLaneId || firstResolvableLaneId;
 
+  // Phase B.23 — responsive globe size for the dashboard Trade Lane card.
+  // Equivalent to CSS `clamp(260px, 28vw, 420px)` so the globe scales up
+  // on wide viewports (filling ~70-85% of the left panel) but never
+  // overflows on tablet/mobile. The previous fixed `size={220}` was
+  // visually undersized next to the ranked lane list.
+  const [dashboardGlobeSize, setDashboardGlobeSize] = useState(340);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    function update() {
+      const w = window.innerWidth || 1280;
+      const next = Math.max(260, Math.min(420, Math.round(w * 0.28)));
+      setDashboardGlobeSize(next);
+    }
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
   // Templated, deterministic insights. Every clause is grounded in real
   // saved-company aggregates — we never invoke an external AI service and
   // we never invent metrics.
@@ -1917,10 +1935,10 @@ export default function LITDashboard() {
                       `selectedLane` prop drives the active arc highlight and
                       auto-rotates the globe to the lane's midpoint via
                       GlobeCanvas's internal targetRotation animation. */}
-                  <div className="flex min-h-[260px] items-center justify-center rounded-xl bg-slate-950/5 p-4">
+                  <div className="flex min-h-[320px] items-center justify-center overflow-hidden rounded-xl bg-slate-950/5 p-4 lg:min-h-[420px]">
                     {globeLanesB18.length > 0 ? (
                       <GlobeCanvas
-                        size={220}
+                        size={dashboardGlobeSize}
                         lanes={globeLanesB18}
                         selectedLane={activeLaneId}
                         theme="dark"
