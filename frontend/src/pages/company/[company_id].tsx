@@ -5,6 +5,7 @@ import PreCallBriefing from '@/components/company/PreCallBriefing';
 import { searchCompanies, getCompanyShipments, recallCompany, kpiFrom, CompanyItem } from '@/lib/api';
 import { getGatewayBase } from '@/lib/env';
 import { buildPreCallPrompt } from '@/lib/ai';
+import { saveCompany, isLimitExceeded } from '@/lib/saveCompany';
 
 export default function CompanyPage() {
   const id = String((typeof window !== 'undefined' && (window as any).location?.pathname?.split?.('/').pop()) || '');
@@ -85,9 +86,26 @@ export default function CompanyPage() {
         </div>
         <div className='flex gap-2'>
           <button className='rounded border px-3 py-1.5 text-sm' onClick={async () => {
-            const base = getGatewayBase();
-            await fetch(`${base}/crm/saveCompany`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ company_id: id, company_name: data.name, source: 'company' }) });
-            alert('Saved to CRM');
+            const result = await saveCompany({
+              source_company_key: id,
+              company_data: {
+                source: 'company',
+                source_company_key: id,
+                name: data.name,
+                domain: (data as any)?.domain ?? null,
+                website: (data as any)?.website ?? null,
+              },
+              stage: 'prospect',
+            });
+            if (isLimitExceeded(result)) {
+              alert(result.message + '\n\nUpgrade at /app/billing');
+              return;
+            }
+            if (!result.ok) {
+              alert(result.message || 'Save failed');
+              return;
+            }
+            alert('Saved to Command Center');
           }}>Save to CRM</button>
           <button className='rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-md px-3 py-1.5 text-sm' onClick={async () => {
             const base = getGatewayBase();

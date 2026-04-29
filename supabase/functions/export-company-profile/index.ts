@@ -474,6 +474,44 @@ Deno.serve(async (req: Request) => {
   }
   const includeBrief = Boolean(body.include_pulse_brief);
 
+  // ---- Plan-limit gate -----------------------------------------------------
+  // Free trial: export_pdf = 0. Generating an export consumes quota
+  // even when the upstream call ultimately fails — so we only consume on
+  // the success path below. The pre-flight check here blocks free users
+  // before any storage work. Admin overrides return ok:true and admin
+  // actions are still recorded in the ledger for audit.
+  let exportOrgId: string | null = null;
+  try {
+    const { data: orgRow } = await adminClient
+      .from("org_members")
+      .select("org_id")
+      .eq("user_id", user.id)
+      .order("joined_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    exportOrgId = (orgRow as any)?.org_id ?? null;
+  } catch {
+    exportOrgId = null;
+  }
+
+  const { data: gateData, error: gateErr } = await adminClient.rpc(
+    "check_usage_limit",
+    {
+      p_org_id: exportOrgId,
+      p_user_id: user.id,
+      p_feature_key: "export_pdf",
+      p_quantity: 1,
+    },
+  );
+  if (gateErr) {
+    console.error("[export-company-profile] gate rpc failed", gateErr);
+  } else if (gateData && (gateData as any).ok === false) {
+    return new Response(JSON.stringify(gateData), {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   // ---- Resolve company -----------------------------------------------------
   let companyRow: CompanyRow | null = null;
   {
@@ -576,6 +614,21 @@ Deno.serve(async (req: Request) => {
 
   // ---- HTML success path --------------------------------------------------
   if (format === "html") {
+    // Consume export_pdf quota on success only. Failures above already
+    // short-circuited without consuming. Admin overrides are still
+    // recorded for audit.
+    try {
+      await adminClient.rpc("consume_usage", {
+        p_org_id: exportOrgId,
+        p_user_id: user.id,
+        p_feature_key: "export_pdf",
+        p_quantity: 1,
+        p_metadata: { company_id: companyRow.id, format: "html" },
+      });
+    } catch (err) {
+      console.warn("[export-company-profile] consume_usage failed (non-fatal):", err);
+    }
+
     return jsonResponse(200, {
       ok: true,
       ...htmlPayload,

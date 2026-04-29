@@ -1,51 +1,28 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { z } from 'zod';
 import { getPool, audit } from '../db.js';
 
 const r = Router();
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 
-const SaveCompanySchema = z.object({
-  company_id: z.string().min(1),
-  stage: z.string().optional(),
-  provider: z.string().optional(),
-  payload: z.any(),
-  user_id: z.string().optional(),
-});
-
-r.post('/crm/saveCompany', limiter, async (req, res, next) => {
-  try {
-    const body = SaveCompanySchema.parse(req.body ?? {});
-    const p = await getPool();
-
-    const result = await p.query(
-      `INSERT INTO saved_companies(company_id, stage, provider, payload, user_id)
-       VALUES($1, $2, $3, $4, $5)
-       ON CONFLICT (company_id) DO UPDATE
-       SET payload = EXCLUDED.payload, updated_at = now()
-       RETURNING id, company_id, created_at`,
-      [
-        body.company_id,
-        body.stage ?? 'prospect',
-        body.provider ?? 'importyeti',
-        JSON.stringify(body.payload ?? {}),
-        body.user_id ?? null
-      ]
-    );
-
-    const saved = result.rows[0];
-    await audit(body.user_id ?? null, 'save_company', { company_id: body.company_id });
-
-    res.json({
-      ok: true,
-      id: saved.id,
-      company_id: saved.company_id,
-      created_at: saved.created_at
-    });
-  } catch (err) {
-    next(err);
-  }
+// DEPRECATED 2026-04-28. This route used to insert into a separate
+// `saved_companies` Postgres table with NO plan-limit enforcement, which
+// let free-trial users save unlimited companies. The canonical save flow
+// now goes through the gated Supabase Edge Function `save-company` which
+// writes to `lit_saved_companies` after running `check_usage_limit`.
+//
+// The existing `saved_companies` rows are preserved for migration/backfill
+// purposes (the GET routes below still read them) but no new writes are
+// accepted here. Callers should be migrated to the canonical helper at
+// frontend/src/lib/saveCompany.ts -> saveCompany().
+r.post('/crm/saveCompany', limiter, async (_req, res) => {
+  res.status(410).json({
+    ok: false,
+    code: 'ENDPOINT_DEPRECATED',
+    message:
+      'This endpoint is deprecated. Saves now route through the gated Supabase save-company Edge Function. Please update the client to use saveCompany() from @/lib/saveCompany.',
+    migrate_to: 'supabase/functions/save-company',
+  });
 });
 
 r.get('/crm/savedCompanies', limiter, async (req, res, next) => {

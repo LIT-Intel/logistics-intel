@@ -63,6 +63,7 @@ type MetricCardProps = {
   current: number;
   max: number | null;
   accentClass: string;
+  upgradeHref?: string;
 };
 
 function MetricCard({
@@ -71,11 +72,36 @@ function MetricCard({
   current,
   max,
   accentClass,
+  upgradeHref = '/app/billing',
 }: MetricCardProps) {
   const pct = usagePct(current, max);
+  // Three states: ok (under limit), at-limit (used >= limit), over-limit
+  // (used > limit; only happens for users created before enforcement
+  // was wired). Both >= states show the same Upgrade CTA but the over-
+  // limit path uses red and an explicit "Over limit" label.
+  const reached = max !== null && max >= 0 && current >= max;
+  const over = max !== null && current > max;
+
+  const barClass = over
+    ? 'bg-red-500'
+    : reached
+    ? 'bg-amber-500'
+    : accentClass;
+  const countClass = over
+    ? 'text-red-700'
+    : reached
+    ? 'text-amber-700'
+    : 'text-slate-900';
+  const ringClass = over
+    ? 'border-red-200 bg-red-50/40'
+    : reached
+    ? 'border-amber-200 bg-amber-50/40'
+    : 'border-slate-200 bg-white/90';
 
   return (
-    <div className="group rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md">
+    <div
+      className={`group rounded-2xl border ${ringClass} p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md`}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <div
@@ -86,17 +112,31 @@ function MetricCard({
           <span className="truncate text-sm font-medium text-slate-700">{label}</span>
         </div>
 
-        <span className="text-xs font-semibold text-slate-900">
+        <span className={`text-xs font-semibold ${countClass}`}>
           {max === null ? 'Unlimited' : `${current} / ${max}`}
         </span>
       </div>
 
       <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
         <div
-          className={`h-full rounded-full ${accentClass} transition-all duration-300`}
+          className={`h-full rounded-full ${barClass} transition-all duration-300`}
           style={{ width: `${pct}%` }}
         />
       </div>
+
+      {(reached || over) && (
+        <div className="mt-3 flex items-center justify-between gap-2 text-xs">
+          <span className={over ? 'font-semibold text-red-700' : 'font-semibold text-amber-700'}>
+            {over ? 'Over limit' : 'Limit reached'}
+          </span>
+          <a
+            href={upgradeHref}
+            className="rounded-lg bg-slate-900 px-2.5 py-1 font-semibold text-white transition hover:bg-slate-800"
+          >
+            Upgrade
+          </a>
+        </div>
+      )}
     </div>
   );
 }
