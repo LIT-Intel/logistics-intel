@@ -32,6 +32,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { searchPulse } from '@/api/pulse';
 import { supabase } from '@/lib/supabase';
 import AddToCampaignModal from '@/components/command-center/AddToCampaignModal';
+import { saveCompany, isLimitExceeded, LimitExceededError } from '@/lib/saveCompany';
 
 const TYPEWRITER_EXAMPLES = [
   'Find SaaS companies in Atlanta hiring sales leaders',
@@ -1128,34 +1129,43 @@ export default function LeadProspecting() {
     );
   }
 
+  // Routes through the gated save-company Edge Function. Returns the
+  // canonical lit_companies row (with id) so callers chaining contact
+  // saves / campaign add can use companyRow.id. On quota failure throws
+  // a LimitExceededError; on other failures throws Error. NEVER writes
+  // to lit_companies directly from the browser anymore — the Edge
+  // Function does that AFTER it has passed the quota gate.
   async function upsertCompanyFromResult(company) {
-    const payload = {
-      source: 'pulse',
-      source_company_key: company.business_id || company.id || company.domain || company.name,
-      name: company.name || 'Unknown Company',
-      domain: company.domain || null,
-      website: company.website || null,
-      address_line1: null,
-      city: company.city || null,
-      state: company.state || null,
-      country_code: company.country || null,
-      shipments_12m: null,
-      teu_12m: null,
-      fcl_shipments_12m: null,
-      lcl_shipments_12m: null,
-      most_recent_shipment_date: null,
-      top_route_12m: null,
-      recent_route: null,
+    const sourceKey =
+      company.business_id || company.id || company.domain || company.name;
+    const result = await saveCompany({
+      source_company_key: sourceKey,
+      company_data: {
+        source: 'pulse',
+        source_company_key: sourceKey,
+        name: company.name || 'Unknown Company',
+        domain: company.domain || null,
+        website: company.website || null,
+        city: company.city || null,
+        state: company.state || null,
+        country_code: company.country || null,
+      },
+      stage: 'prospect',
+    });
+
+    if (!result.ok) {
+      if (isLimitExceeded(result)) {
+        throw new LimitExceededError(result);
+      }
+      throw new Error(result.message || 'Save failed');
+    }
+
+    const co = result.company;
+    return {
+      id: co?.id,
+      source_company_key: co?.source_company_key,
+      name: co?.name,
     };
-
-    const { data, error } = await supabase
-      .from('lit_companies')
-      .upsert(payload, { onConflict: 'source_company_key' })
-      .select('id, source_company_key, name')
-      .single();
-
-    if (error) throw error;
-    return data;
   }
 
   async function handleSaveCompany(company) {
@@ -1163,7 +1173,11 @@ export default function LeadProspecting() {
       await upsertCompanyFromResult(company);
     } catch (error) {
       console.error('[Pulse] save company failed:', error);
-      setErrorMessage(error?.message || 'Failed to save company.');
+      if (error instanceof LimitExceededError) {
+        setErrorMessage(error.message + ' Upgrade at /app/billing.');
+      } else {
+        setErrorMessage(error?.message || 'Failed to save company.');
+      }
     }
   }
 

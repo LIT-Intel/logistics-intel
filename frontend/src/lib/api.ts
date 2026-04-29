@@ -2533,6 +2533,16 @@ export async function searchShippers(
   );
 
   const data = await res.json().catch(() => null);
+
+  // Surface LIMIT_EXCEEDED so callers can route to the upgrade modal
+  // instead of swallowing it into a generic "Search failed" toast.
+  if (res.status === 403 && data?.code === "LIMIT_EXCEEDED") {
+    const err: any = new Error(data.message || "Search limit reached");
+    err.code = "LIMIT_EXCEEDED";
+    err.limitExceeded = data;
+    throw err;
+  }
+
   const error = !res.ok
     ? { message: data?.error || `HTTP ${res.status}` }
     : null;
@@ -3562,6 +3572,12 @@ export async function saveCompanyToCrm(
 }
 
 
+// Routes the legacy direct-to-Supabase save through the gated save-company
+// Edge Function. The function name is preserved so existing callers
+// (saveIyCompanyToCrm, saveSearchCompany above) keep working, but the
+// actual write goes through the canonical gate. LIMIT_EXCEEDED surfaces
+// as a LimitExceededError so callers can catch it and route to the
+// upgrade modal instead of toasting "Save failed".
 async function saveCompanyDirectToSupabase(opts: {
   shipper: IyShipperHit;
   profile: IyCompanyProfile | null;
@@ -3569,13 +3585,6 @@ async function saveCompanyDirectToSupabase(opts: {
   provider?: string;
   source?: string;
 }) {
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  const user = authData?.user;
-
-  if (authError || !user?.id) {
-    throw new Error("Authentication required to save company");
-  }
-
   const rawId =
     opts.shipper.key ??
     opts.shipper.companyId ??
@@ -3590,14 +3599,10 @@ async function saveCompanyDirectToSupabase(opts: {
 
   const fclShipments = getFclShipments12m(opts.profile);
   const lclShipments = getLclShipments12m(opts.profile);
-  const estSpend =
-    opts.profile?.routeKpis?.estSpendUsd12m ??
-    opts.profile?.estSpendUsd12m ??
-    null;
   const topRoute = opts.profile?.routeKpis?.topRouteLast12m ?? null;
   const recentRoute = opts.profile?.routeKpis?.mostRecentRoute ?? null;
 
-  const companyRow = {
+  const company_data = {
     source: opts.source ?? "importyeti",
     source_company_key: companyKey,
     name: opts.shipper.title || opts.shipper.name || "Unknown",
@@ -3627,78 +3632,14 @@ async function saveCompanyDirectToSupabase(opts: {
     recent_route: recentRoute,
   };
 
-  const { data: upsertedCompany, error: companyError } = await supabase
-    .from("lit_companies")
-    .upsert(companyRow, {
-      onConflict: "source_company_key",
-    })
-    .select("id, source_company_key, name")
-    .single();
-
-  if (companyError || !upsertedCompany?.id) {
-    console.error("saveCompanyDirectToSupabase company upsert error:", companyError);
-    throw new Error(companyError?.message || "Failed to upsert lit_companies");
-  }
-
-  const { data: existingSave, error: existingError } = await supabase
-    .from("lit_saved_companies")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("company_id", upsertedCompany.id)
-    .maybeSingle();
-
-  if (existingError) {
-    console.error("saveCompanyDirectToSupabase existing save lookup error:", existingError);
-    throw new Error(existingError.message || "Failed to inspect saved company state");
-  }
-
-  const savePayload = {
-    user_id: user.id,
-    company_id: upsertedCompany.id,
+  const { saveCompanyOrThrow } = await import("@/lib/saveCompany");
+  const { saved, company } = await saveCompanyOrThrow({
+    source_company_key: companyKey,
+    company_data,
     stage: opts.stage ?? "prospect",
-    status: "active",
-    last_viewed_at: new Date().toISOString(),
-    last_activity_at: new Date().toISOString(),
-  };
+  });
 
-  let savedRow: any = null;
-  if (existingSave?.id) {
-    const { data, error } = await supabase
-      .from("lit_saved_companies")
-      .update({
-        stage: savePayload.stage,
-        status: savePayload.status,
-        last_viewed_at: savePayload.last_viewed_at,
-        last_activity_at: savePayload.last_activity_at,
-      })
-      .eq("id", existingSave.id)
-      .select("id, company_id, stage")
-      .single();
-
-    if (error) {
-      console.error("saveCompanyDirectToSupabase saved update error:", error);
-      throw new Error(error.message || "Failed to update saved company");
-    }
-    savedRow = data;
-  } else {
-    const { data, error } = await supabase
-      .from("lit_saved_companies")
-      .insert(savePayload)
-      .select("id, company_id, stage")
-      .single();
-
-    if (error) {
-      console.error("saveCompanyDirectToSupabase saved insert error:", error);
-      throw new Error(error.message || "Failed to insert saved company");
-    }
-    savedRow = data;
-  }
-
-  return {
-    success: true,
-    company: upsertedCompany,
-    saved: savedRow,
-  };
+  return { success: true, company, saved };
 }
 
 export async function saveIyCompanyToCrm(opts: {

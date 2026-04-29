@@ -4,6 +4,23 @@ import AppLayout from "@/layout/lit/AppLayout.jsx";
 import { getSavedCompanies, getIyCompanyProfile } from "@/lib/api";
 import { getCampaignsFromSupabase, supabase } from "@/lib/supabase";
 import { useAuth } from "@/auth/AuthProvider";
+// Phase B.18 — port of B.16 redesign into the actually-mounted dashboard.
+// Logos reuse the shared CompanyAvatar + getCompanyLogoUrl cascade
+// (logo.dev → Clearbit → Unavatar → gradient initials), the same path
+// used by Search and Command Center. Globe lanes use canonicalizeLanes
+// + laneStringToGlobeLane so duplicate / variant lane strings collapse
+// to a single arc instead of stacking.
+//
+// Refresh strategy (future Edge Function): a scheduled job needs to
+// populate `lit_saved_companies.kpis.activity_30d_current` and
+// `activity_30d_previous` per saved company. Until that lands, the
+// activity column renders "Pending refresh" — never a synthetic +0%.
+// (Backend implementation is intentionally NOT in this phase.)
+import { CompanyAvatar } from "@/components/CompanyAvatar";
+import { getCompanyLogoUrl } from "@/lib/logo";
+import { formatSafeShipmentDate } from "@/lib/dateUtils";
+import GlobeCanvas from "@/components/GlobeCanvas";
+import { canonicalizeLanes, laneStringToGlobeLane } from "@/lib/laneGlobe";
 import {
   ResponsiveContainer,
   BarChart,
@@ -854,6 +871,39 @@ function relativeDate(value) {
   return `${Math.floor(diffDays / 365)}yr ago`;
 }
 
+// Phase B.18 — activity-delta display rule. `current_30d` and
+// `previous_30d` come from `lit_saved_companies.kpis.activity_30d_current`
+// and `activity_30d_previous`. Until a scheduled refresh job populates
+// those columns, render "Pending refresh" — never a synthetic +0%.
+function activitySignal(row) {
+  const cur = row?.company?.kpis?.activity_30d_current;
+  const prev = row?.company?.kpis?.activity_30d_previous;
+  const curN = cur == null ? null : Number(cur);
+  const prevN = prev == null ? null : Number(prev);
+  if (
+    curN == null ||
+    prevN == null ||
+    !Number.isFinite(curN) ||
+    !Number.isFinite(prevN)
+  ) {
+    return <span className="text-slate-500">Pending refresh</span>;
+  }
+  if (prevN === 0 && curN > 0) {
+    return <span className="text-emerald-700 font-semibold">New activity</span>;
+  }
+  if (curN > prevN) {
+    const pct = Math.round(((curN - prevN) / Math.max(1, prevN)) * 100);
+    return (
+      <span className="text-emerald-700 font-semibold">↑ +{pct}%</span>
+    );
+  }
+  if (curN < prevN) {
+    const pct = Math.round(((prevN - curN) / Math.max(1, prevN)) * 100);
+    return <span className="text-rose-600 font-semibold">↓ {pct}%</span>;
+  }
+  return <span className="text-slate-600">Flat</span>;
+}
+
 // Abbreviate country names to ISO 2-letter codes for compact display
 function abbreviateCountryToken(token) {
   if (!token) return token;
@@ -1566,6 +1616,165 @@ export default function LITDashboard() {
   const savedCompaniesCount = normalizedCompanies.length;
   const activeCampaignsCount = campaignsLive.length;
 
+  // Phase B.18 — REAL saved companies only (never the fake `companiesTable`
+  // fallback). Used to power the new Trade Lane row + What Matters Now table.
+  // `savedCompaniesLive` is the raw RLS-scoped output of getSavedCompanies()
+  // / listSavedCompanies(); each row exposes `row.company.{name, domain,
+  // address, country_code, kpis}`.
+  const realSavedCompanies = savedCompaniesLive;
+
+  // Aggregate `kpis.top_route_12m` across saved companies and sum
+  // shipments_12m + teu_12m per lane. Empty array when the user hasn't
+  // saved any companies — never a fabricated lane.
+  const topAggregatedLanes = useMemo(() => {
+    const map = new Map();
+    for (const row of realSavedCompanies) {
+      const kpis = row?.company?.kpis;
+      const lane = kpis?.top_route_12m;
+      if (!lane || typeof lane !== "string") continue;
+      const ships = Number(kpis?.shipments_12m) || 0;
+      const teu = Number(kpis?.teu_12m) || 0;
+      const existing = map.get(lane) || {
+        label: lane,
+        count: 0,
+        shipments: 0,
+        teu: 0,
+      };
+      existing.count += 1;
+      existing.shipments += ships;
+      existing.teu += teu;
+      map.set(lane, existing);
+    }
+    return Array.from(map.values()).sort(
+      (a, b) =>
+        b.shipments - a.shipments ||
+        b.teu - a.teu ||
+        b.count - a.count,
+    );
+  }, [realSavedCompanies]);
+
+  // Phase B.22 — full canonical lane rows mirror CompanyDetailPanel's
+  // `canonicalLanes` (used at CompanyDetailPanel.tsx:4421-4432 + the lane
+  // table render). Each row carries `fromMeta` / `toMeta` / `coords` /
+  // `displayLabel` / `aliases` / `shipments` / `teu`, so the same data
+  // drives both the interactive `<GlobeCanvas>` and the ranked lane list.
+  const canonicalLanesDash = useMemo(() => {
+    if (topAggregatedLanes.length === 0) return [];
+    const { canonical } = canonicalizeLanes(
+      topAggregatedLanes.slice(0, 8).map((l) => ({
+        lane: l.label,
+        shipments: Number(l.shipments) || 0,
+        teu: Number(l.teu) || 0,
+        spend: null,
+      })),
+    );
+    return canonical;
+  }, [topAggregatedLanes]);
+
+  // Globe arcs derive from the canonical rows (no second
+  // `laneStringToGlobeLane` pass — that was the B.21 root cause).
+  const globeLanesB18 = useMemo(
+    () =>
+      canonicalLanesDash.slice(0, 6).map((l) => ({
+        id: l.displayLabel,
+        from: l.fromMeta.canonicalKey,
+        to: l.toMeta.canonicalKey,
+        coords: [l.fromMeta.coords, l.toMeta.coords],
+        fromMeta: l.fromMeta,
+        toMeta: l.toMeta,
+        shipments: l.shipments,
+      })),
+    [canonicalLanesDash],
+  );
+
+  // Selected-lane state mirrors CompanyDetailPanel
+  // (`activeLane = selectedLane || firstResolvableLane`). Default null;
+  // when the canonical list reshuffles and the previously-selected lane is
+  // gone, clear the stale id so the first canonical row becomes active.
+  const [selectedLaneId, setSelectedLaneId] = useState(null);
+  useEffect(() => {
+    if (!selectedLaneId) return;
+    if (!canonicalLanesDash.some((l) => l.displayLabel === selectedLaneId)) {
+      setSelectedLaneId(null);
+    }
+  }, [canonicalLanesDash, selectedLaneId]);
+  const firstResolvableLaneId = canonicalLanesDash[0]?.displayLabel || null;
+  const activeLaneId = selectedLaneId || firstResolvableLaneId;
+
+  // Phase B.23 — responsive globe size for the dashboard Trade Lane card.
+  // Equivalent to CSS `clamp(260px, 28vw, 420px)` so the globe scales up
+  // on wide viewports (filling ~70-85% of the left panel) but never
+  // overflows on tablet/mobile. The previous fixed `size={220}` was
+  // visually undersized next to the ranked lane list.
+  const [dashboardGlobeSize, setDashboardGlobeSize] = useState(340);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    function update() {
+      const w = window.innerWidth || 1280;
+      const next = Math.max(260, Math.min(420, Math.round(w * 0.28)));
+      setDashboardGlobeSize(next);
+    }
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  // Templated, deterministic insights. Every clause is grounded in real
+  // saved-company aggregates — we never invoke an external AI service and
+  // we never invent metrics.
+  const tradeInsights = useMemo(() => {
+    if (realSavedCompanies.length === 0) return [];
+    const list = [];
+    if (topAggregatedLanes.length >= 2) {
+      const [a, b] = topAggregatedLanes;
+      list.push(
+        `Rising activity across ${a.label} and ${b.label} lanes among your saved accounts.`,
+      );
+    } else if (topAggregatedLanes.length === 1) {
+      list.push(
+        `${topAggregatedLanes[0].label} is the dominant lane in your saved set.`,
+      );
+    }
+    const noContacts = realSavedCompanies.filter((r) => {
+      const loaded = Number(r?.company?.kpis?.contacts_loaded || 0);
+      const count = Number(r?.company?.kpis?.contacts_count || 0);
+      return !(loaded > 0) && !(count > 0);
+    }).length;
+    if (noContacts > 0) {
+      list.push(
+        `${noContacts} of your saved ${noContacts === 1 ? "account has" : "accounts have"} no verified contacts yet — outreach pending enrichment.`,
+      );
+    }
+    const recentActivity = realSavedCompanies.filter((r) => {
+      const last = r?.company?.kpis?.last_activity;
+      if (!last) return false;
+      const t = new Date(last).getTime();
+      if (!Number.isFinite(t)) return false;
+      return Date.now() - t <= 30 * 24 * 60 * 60 * 1000;
+    }).length;
+    if (recentActivity > 0) {
+      list.push(
+        `${recentActivity} ${recentActivity === 1 ? "account" : "accounts"} shipped in the last 30 days — prioritize for outreach.`,
+      );
+    }
+    return list;
+  }, [realSavedCompanies, topAggregatedLanes]);
+
+  // Saved companies ranked by latest shipment for the new What Matters Now
+  // table. Pulls directly from realSavedCompanies (NOT displayedCompanies,
+  // which falls back to the legacy `companiesTable` mock during loading).
+  const whatMattersRows = useMemo(() => {
+    return [...realSavedCompanies]
+      .sort((a, b) => {
+        const at =
+          new Date(a?.company?.kpis?.last_activity || 0).getTime() || 0;
+        const bt =
+          new Date(b?.company?.kpis?.last_activity || 0).getTime() || 0;
+        return bt - at;
+      })
+      .slice(0, 8);
+  }, [realSavedCompanies]);
+
   const displayedActivity = activityEvents.length
     ? activityEvents.map((e) => ({
         type: titleCase((e.event_type || 'activity').replace(/_/g, ' ')),
@@ -1606,12 +1815,22 @@ export default function LITDashboard() {
             </div>
           </section>
 
+          {/* Phase B.18 — KPI tiles with honest empty-state copy.
+              When the user has no saved companies / campaigns / contacts,
+              the tile note explains the next action instead of bragging
+              about a synthetic delta. */}
           <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             <StatCard
               title="Saved Companies"
               value={dashboardLoading ? "—" : String(savedCompaniesCount)}
               change=""
-              note="Live CRM count"
+              note={
+                dashboardLoading
+                  ? "Loading…"
+                  : savedCompaniesCount > 0
+                    ? "Live CRM count"
+                    : "Save companies to start populating your dashboard."
+              }
               icon={Building2}
               accent="from-blue-600 to-indigo-600"
               chip="CRM"
@@ -1619,7 +1838,13 @@ export default function LITDashboard() {
             <StatCard
               title="Active Campaigns"
               value={dashboardLoading ? "—" : String(activeCampaignsCount)}
-              note="Live campaign count"
+              note={
+                dashboardLoading
+                  ? "Loading…"
+                  : activeCampaignsCount > 0
+                    ? "Live campaign count"
+                    : "Launch a campaign in Outbound to track engagement here."
+              }
               change=""
               icon={Briefcase}
               accent="from-violet-600 to-indigo-600"
@@ -1628,7 +1853,11 @@ export default function LITDashboard() {
             <StatCard
               title="Saved Contacts"
               value={dashboardLoading || savedContactsCount === null ? "—" : String(savedContactsCount)}
-              note={savedContactsCount ? "Enriched contacts" : "Save contacts from search"}
+              note={
+                savedContactsCount && savedContactsCount > 0
+                  ? "Enriched contacts"
+                  : "Verified contacts unlock once you save companies and run enrichment."
+              }
               change=""
               icon={UserRoundPlus}
               accent="from-cyan-600 to-blue-600"
@@ -1637,7 +1866,11 @@ export default function LITDashboard() {
             <StatCard
               title="Searches Used"
               value={dashboardLoading || searchCount === null ? "—" : String(searchCount)}
-              note="All-time usage"
+              note={
+                searchCount && searchCount > 0
+                  ? "All-time usage"
+                  : "Run your first search to populate this metric."
+              }
               change=""
               icon={TrendingUp}
               accent="from-sky-600 to-blue-500"
@@ -1645,77 +1878,352 @@ export default function LITDashboard() {
             />
           </section>
 
-          <TradeMapPanel regionSummary={regionSummary} />
+          {/* Phase B.20 — single premium Trade Lane Intelligence card +
+              dark AI Trade Insights side card. Mirrors the Company Profile
+              Trade Lanes tab visual language: one card with globe LEFT and
+              ranked lane list RIGHT, no fragmented mini-cards. The previous
+              3-card row (small lanes / "Route map pending" / insights) is
+              gone. AI Trade Insights stays on the right as its own dark
+              card with matching height. All data is real saved-company
+              aggregates — no fake percentages. */}
+          <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {/* LEFT — Trade Lane Intelligence (large premium card, lg:col-span-2). */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+              <div className="mb-5">
+                <div className="font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  Trade Lane Intelligence
+                </div>
+                <h3 className="mt-1 text-lg font-bold text-slate-950">
+                  Top saved-account lanes by shipment activity
+                </h3>
+                {topAggregatedLanes.length > 0 ? (
+                  <div className="mt-1 text-xs text-slate-500">
+                    {topAggregatedLanes.length} active lane{topAggregatedLanes.length === 1 ? "" : "s"} across saved accounts
+                  </div>
+                ) : null}
+              </div>
 
+              {realSavedCompanies.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                  <div className="text-base font-semibold text-slate-900">
+                    Save companies to unlock trade lane intelligence
+                  </div>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Your saved accounts will power lane rankings, shipment signals, and route insights here.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/app/search")}
+                    className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+                  >
+                    Discover Companies
+                  </button>
+                </div>
+              ) : topAggregatedLanes.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                  <div className="text-base font-semibold text-slate-900">
+                    No lane data yet
+                  </div>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Saved-account lanes will appear after the next snapshot refresh.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                  {/* Globe LEFT — same GlobeCanvas + same theme="dark" palette
+                      used by the Company Profile Trade Lanes tab. The
+                      `selectedLane` prop drives the active arc highlight and
+                      auto-rotates the globe to the lane's midpoint via
+                      GlobeCanvas's internal targetRotation animation. */}
+                  <div className="flex min-h-[320px] items-center justify-center overflow-hidden rounded-xl bg-slate-950/5 p-4 lg:min-h-[420px]">
+                    {globeLanesB18.length > 0 ? (
+                      <GlobeCanvas
+                        size={dashboardGlobeSize}
+                        lanes={globeLanesB18}
+                        selectedLane={activeLaneId}
+                        theme="dark"
+                      />
+                    ) : (
+                      <div className="text-center">
+                        <div className="text-sm font-semibold text-slate-700">
+                          Lane data ready
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          Map coordinates pending for some lanes
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Ranked lane list RIGHT — max 5 canonical rows. Each row
+                      is clickable and drives the globe's selectedLane. First
+                      canonical lane is selected by default (via activeLaneId
+                      fallback). Selected row gets indigo bg + left accent. */}
+                  <div>
+                    <ol className="space-y-2">
+                      {(canonicalLanesDash.length > 0
+                        ? canonicalLanesDash
+                        : topAggregatedLanes.map((l) => ({
+                            displayLabel: l.label,
+                            shipments: l.shipments,
+                            teu: l.teu,
+                            aliases: [],
+                            __raw: true,
+                          }))
+                      )
+                        .slice(0, 5)
+                        .map((lane, i) => {
+                          const id = lane.displayLabel;
+                          const isSelected = !lane.__raw && id === activeLaneId;
+                          const aliasCount = Array.isArray(lane.aliases)
+                            ? lane.aliases.length
+                            : 0;
+                          const aliasHint =
+                            aliasCount > 0 && lane.aliases[0] !== id
+                              ? `Includes ${lane.aliases.slice(0, 2).join("; ")}${aliasCount > 2 ? `; +${aliasCount - 2}` : ""}`
+                              : null;
+                          return (
+                            <li
+                              key={id || `lane-${i}`}
+                              role={lane.__raw ? undefined : "button"}
+                              tabIndex={lane.__raw ? -1 : 0}
+                              onClick={
+                                lane.__raw
+                                  ? undefined
+                                  : () => setSelectedLaneId(id)
+                              }
+                              onKeyDown={
+                                lane.__raw
+                                  ? undefined
+                                  : (e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        setSelectedLaneId(id);
+                                      }
+                                    }
+                              }
+                              className={[
+                                "flex items-center gap-3 rounded-xl border-l-4 px-3 py-2.5 transition",
+                                lane.__raw
+                                  ? "border-l-transparent bg-white"
+                                  : isSelected
+                                  ? "cursor-pointer border-l-indigo-500 bg-indigo-50 ring-1 ring-indigo-200"
+                                  : "cursor-pointer border-l-transparent bg-white hover:bg-slate-50",
+                                "border border-slate-200/70",
+                              ].join(" ")}
+                            >
+                              <span
+                                className={[
+                                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
+                                  isSelected
+                                    ? "bg-indigo-600 text-white"
+                                    : "bg-indigo-100 text-indigo-700",
+                                ].join(" ")}
+                              >
+                                {i + 1}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div
+                                  className={[
+                                    "truncate text-sm",
+                                    isSelected
+                                      ? "font-bold text-slate-950"
+                                      : "font-semibold text-slate-900",
+                                  ].join(" ")}
+                                  title={id}
+                                >
+                                  {id}
+                                </div>
+                                {aliasHint ? (
+                                  <div className="mt-0.5 truncate text-[11px] text-slate-500" title={aliasHint}>
+                                    {aliasHint}
+                                  </div>
+                                ) : (
+                                  <div className="mt-0.5 text-[11px] text-slate-500">
+                                    {Number(lane.shipments) > 0
+                                      ? `${Number(lane.shipments).toLocaleString()} shipments`
+                                      : "Shipments pending refresh"}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <div className="font-mono text-sm font-bold text-slate-900">
+                                  {Number(lane.shipments) > 0
+                                    ? Number(lane.shipments).toLocaleString()
+                                    : "—"}
+                                </div>
+                                <div className="text-[10px] text-slate-500">
+                                  {Number(lane.teu) > 0
+                                    ? `${Math.round(Number(lane.teu)).toLocaleString()} TEU`
+                                    : "shipments"}
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
+                    </ol>
+                    {(canonicalLanesDash.length > 0
+                      ? canonicalLanesDash.length
+                      : topAggregatedLanes.length) > 5 ? (
+                      <div className="mt-3 text-center text-xs text-slate-500">
+                        {(canonicalLanesDash.length > 0
+                          ? canonicalLanesDash.length
+                          : topAggregatedLanes.length) - 5}{" "}
+                        more lane
+                        {(canonicalLanesDash.length > 0
+                          ? canonicalLanesDash.length
+                          : topAggregatedLanes.length) -
+                          5 ===
+                        1
+                          ? ""
+                          : "s"}{" "}
+                        — open a saved company to drill in
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT — AI Trade Insights (dark premium card, lg:col-span-1).
+                Bullets are deterministic templates from real saved-company
+                aggregates. No external AI call, no fake percentages. */}
+            <div className="relative overflow-hidden rounded-2xl border border-indigo-300/30 bg-gradient-to-br from-indigo-950 via-slate-950 to-blue-950 p-6 text-white shadow-lg">
+              <div className="pointer-events-none absolute -right-6 -top-6 h-32 w-32 rounded-full bg-indigo-500/20 blur-3xl" />
+              <div className="relative font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-300 mb-3">
+                AI Trade Insights
+              </div>
+              {tradeInsights.length === 0 ? (
+                <div className="relative text-sm text-slate-300">
+                  Save companies to unlock trade insights.
+                </div>
+              ) : (
+                <ul className="relative space-y-3 text-sm text-slate-100">
+                  {tradeInsights.map((insight, i) => (
+                    <li key={i} className="flex items-start gap-2 leading-relaxed">
+                      <span aria-hidden className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400" />
+                      <span>{insight}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+
+          {/* Phase B.18 — What Matters Now: saved companies only, scoped to
+              the logged-in user via getSavedCompanies (Supabase RLS). Logo
+              cascade reuses the shared CompanyAvatar + getCompanyLogoUrl
+              helpers (logo.dev → Clearbit → Unavatar → gradient initials).
+              Activity column renders "Pending refresh" until a backend
+              edge function populates kpis.activity_30d_current/previous. */}
           <section className="rounded-[14px] border border-[#E5E7EB] bg-gradient-to-b from-white to-[#F8FAFC] shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
             <div className="border-b border-[#F1F5F9] px-5 py-4 flex items-start justify-between">
               <div>
                 <div className="font-display text-sm font-bold text-[#0F172A]">What Matters Now</div>
-                <div className="font-body mt-1 text-xs text-[#94A3B8]">Active shipment activity across saved companies</div>
+                <div className="font-body mt-1 text-xs text-[#94A3B8]">Saved accounts ranked by latest shipment activity</div>
               </div>
               <span className="lit-live-pill"><span className="lit-live-dot" />Live</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px]">
+              <table className="w-full min-w-[800px]">
                 <thead>
                   <tr className="border-b border-[#F1F5F9]">
-                    <th className="px-5 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Company</th>
-                    <th className="px-5 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Shipments</th>
-                    <th className="px-5 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Last Shipment</th>
-                    <th className="px-5 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Carrier</th>
-                    <th className="px-5 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Change</th>
+                    <th className="px-4 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Company</th>
+                    <th className="px-4 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Shipments (12M)</th>
+                    <th className="px-4 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Last Shipment</th>
+                    <th className="px-4 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Top Lane</th>
+                    <th className="px-4 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Activity</th>
+                    <th className="px-4 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {displayedCompanies.length === 0 ? (
+                  {whatMattersRows.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-500">
-                        No saved companies yet
+                      <td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-500">
+                        No saved companies yet. Open Search to find your first prospect.
                       </td>
                     </tr>
-                  ) : displayedCompanies.map((row) => {
-                    const avatarColor = companyInitialColor(row.company);
-                    const commandCenterHref = row.commandCenterHref || getCommandCenterHref(row);
+                  ) : whatMattersRows.map((row, idx) => {
+                    const co = row?.company || {};
+                    const kpis = co?.kpis || {};
+                    const name = co?.name || "Unknown";
+                    const domain = co?.domain || co?.website || null;
+                    const companyId = co?.company_id || co?.id || null;
+                    const subtitle =
+                      co?.address ||
+                      co?.country_code ||
+                      domain ||
+                      "—";
+                    const shipments = kpis?.shipments_12m;
+                    const lastShipmentLabel = formatSafeShipmentDate(
+                      kpis?.last_activity ||
+                        co?.most_recent_shipment_date ||
+                        co?.last_shipment_date ||
+                        null,
+                      "—",
+                    );
+                    const topLane =
+                      kpis?.top_route_12m ||
+                      kpis?.recent_route ||
+                      co?.top_route_12m ||
+                      "—";
+                    // Phase B.19 — contextual row action. All three labels
+                    // navigate to the company profile; the label signals the
+                    // most useful next step. No fake state changes.
+                    const rowContactsCount = Number(
+                      kpis?.contacts_count || kpis?.contacts_loaded || 0,
+                    );
+                    const rowActionLabel = !companyId
+                      ? "Open profile"
+                      : rowContactsCount === 0
+                      ? "Enrich contacts"
+                      : "Start outreach";
                     return (
                       <tr
-                        key={`${row.company}-${row.location}`}
-                        className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors cursor-pointer"
-                        onClick={() => navigate(commandCenterHref)}
+                        key={companyId || idx}
+                        className="border-b border-[#F1F5F9] last:border-0 hover:bg-[#F8FAFC] transition-colors"
                       >
-                        <td className="px-5 py-3.5">
+                        <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
-                            <div
-                              style={{ background: avatarColor }}
-                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-[11px] font-bold text-white"
-                            >
-                              {(row.company || '?')[0].toUpperCase()}
+                            <CompanyAvatar
+                              name={name}
+                              logoUrl={getCompanyLogoUrl(domain || undefined) || undefined}
+                              size="sm"
+                              domain={domain || undefined}
+                            />
+                            <div className="min-w-0">
+                              <div className="truncate font-semibold text-slate-900 text-sm">{name}</div>
+                              <div className="truncate text-xs text-slate-500">{subtitle}</div>
                             </div>
-                            <span className="font-display text-sm font-semibold text-[#0F172A]">{row.company}</span>
                           </div>
                         </td>
-                        <td className="px-5 py-3.5">
-                          <span className="font-mono text-sm font-semibold text-[#1d4ed8]">{row.shipments}</span>
+                        <td className="px-4 py-3 text-sm text-slate-700">
+                          {Number.isFinite(Number(shipments)) && Number(shipments) > 0
+                            ? Number(shipments).toLocaleString()
+                            : "—"}
                         </td>
-                        <td className="px-5 py-3.5">
-                          <span className="font-body text-sm text-[#64748b]">{relativeDate(row.lastShipmentRaw)}</span>
+                        <td className="px-4 py-3 text-sm text-slate-700">{lastShipmentLabel}</td>
+                        <td
+                          className="px-4 py-3 text-sm text-slate-700 truncate max-w-[200px]"
+                          title={topLane}
+                        >
+                          {topLane}
                         </td>
-                        <td className="px-5 py-3.5">
-                          <span className="font-body text-sm text-[#64748b]">{row.carrier}</span>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          {row.changePercent !== null ? (
-                            <span
-                              style={{
-                                color: row.changePercent >= 0 ? '#15803d' : '#b91c1c',
-                                background: row.changePercent >= 0 ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-                              }}
-                              className="font-display inline-block rounded-full px-2 py-0.5 text-[11px] font-bold"
-                            >
-                              {row.changePercent >= 0 ? '↑' : '↓'} {Math.abs(row.changePercent)}%
-                            </span>
-                          ) : (
-                            <span className="font-body text-sm text-[#94A3B8]">—</span>
-                          )}
+                        <td className="px-4 py-3 text-sm">{activitySignal(row)}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigate(
+                                companyId
+                                  ? `/app/companies/${encodeURIComponent(String(companyId))}`
+                                  : "/app/companies",
+                              )
+                            }
+                            className="text-indigo-600 hover:text-indigo-700 font-semibold"
+                          >
+                            {rowActionLabel} →
+                          </button>
                         </td>
                       </tr>
                     );

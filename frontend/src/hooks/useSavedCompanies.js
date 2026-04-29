@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { saveCompanyOrThrow } from '@/lib/saveCompany';
+import { supabase } from '@/auth/supabaseAuthClient';
 
 export function useSavedCompanies() {
   const qc = useQueryClient();
@@ -13,14 +15,35 @@ export function useSavedCompanies() {
   const setSaved = useMutation({
     mutationFn: async ({ company_id, save }) => {
       if (save) {
-        return api.post('/crm/saveCompany', { company_id, stage: 'prospect' });
+        // Canonical gated path. saveCompanyOrThrow throws LimitExceededError
+        // on quota; let the caller's onError handle it.
+        return saveCompanyOrThrow({
+          source_company_key: company_id,
+          company_data: { source: 'lit', source_company_key: company_id, name: company_id },
+          stage: 'prospect',
+        });
       }
-      // some gateways use DELETE, others POST to a delete route
-      try {
-        return await api.post('/crm/deleteCompany', { company_id });
-      } catch {
-        return api.post('/crm/saveCompany', { company_id, delete: true });
-      }
+      // Delete: direct supabase call into lit_saved_companies (canonical
+      // table; no quota implications on delete).
+      const { data: auth } = await supabase.auth.getUser();
+      const userId = auth?.user?.id;
+      if (!userId) throw new Error('Not authenticated');
+
+      // Resolve lit_companies.id from the source_company_key the UI passed.
+      const { data: companyRow } = await supabase
+        .from('lit_companies')
+        .select('id')
+        .eq('source_company_key', company_id)
+        .maybeSingle();
+      if (!companyRow?.id) return { ok: true };
+
+      const { error } = await supabase
+        .from('lit_saved_companies')
+        .delete()
+        .eq('user_id', userId)
+        .eq('company_id', companyRow.id);
+      if (error) throw error;
+      return { ok: true };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['crmSavedCompanies'] });
@@ -32,4 +55,3 @@ export function useSavedCompanies() {
 
   return { list, isSaved, setSaved };
 }
-

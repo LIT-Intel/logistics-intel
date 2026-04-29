@@ -48,6 +48,9 @@ import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import { canonicalContainerCode } from "@/lib/containerUtils";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
+import { UpgradeModal } from "@/components/billing/UpgradeModal";
+import type { LimitExceeded } from "@/lib/usage";
+import { LimitExceededError } from "@/lib/saveCompany";
 
 function getCountryFlag(countryCode?: string): string {
   if (!countryCode || countryCode.length !== 2) return "";
@@ -102,6 +105,7 @@ export default function SearchPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<SearchCompany[]>([]);
+  const [upgradeModal, setUpgradeModal] = useState<LimitExceeded | null>(null);
   const [selectedCompany, setSelectedCompany] = useState<SearchCompany | null>(null);
   const [rawData, setRawData] = useState<any>(null);
   const [normalizedProfile, setNormalizedProfile] = useState<IyCompanyProfile | null>(null);
@@ -550,12 +554,20 @@ export default function SearchPage() {
       }
     } catch (error: any) {
       console.error("Search error:", error);
-      toast({
-        title: "Search failed",
-        description: error.message || "Unable to search companies. Please try again.",
-        variant: "destructive",
-      });
-      setResults([]);
+      // LIMIT_EXCEEDED: surface the upgrade modal instead of a "0 results"
+      // toast. The error was tagged in api.ts:searchShippers when the
+      // edge function returned 403 + LIMIT_EXCEEDED.
+      if (error?.code === "LIMIT_EXCEEDED" && error?.limitExceeded) {
+        setUpgradeModal(error.limitExceeded as LimitExceeded);
+        setResults([]);
+      } else {
+        toast({
+          title: "Search failed",
+          description: error.message || "Unable to search companies. Please try again.",
+          variant: "destructive",
+        });
+        setResults([]);
+      }
     } finally {
       setSearching(false);
     }
@@ -644,11 +656,27 @@ export default function SearchPage() {
       setSelectedCompany(null);
     } catch (error: any) {
       console.error("[saveToCommandCenter] Fatal error:", error);
-      toast({
-        title: "Save failed",
-        description: error?.message || "Could not save company. Please try again.",
-        variant: "destructive",
-      });
+      // LimitExceededError thrown from the canonical save path: surface
+      // the upgrade modal instead of a generic "Save failed" toast.
+      if (error instanceof LimitExceededError) {
+        setUpgradeModal({
+          ok: false,
+          code: "LIMIT_EXCEEDED",
+          feature: error.feature as any,
+          used: error.used,
+          limit: error.limit,
+          plan: error.plan,
+          reset_at: null,
+          upgrade_url: error.upgrade_url || "/app/billing",
+          message: error.message,
+        });
+      } else {
+        toast({
+          title: "Save failed",
+          description: error?.message || "Could not save company. Please try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setSaving(false);
     }
@@ -1484,6 +1512,7 @@ export default function SearchPage() {
           />
         )}
       </div>
+      <UpgradeModal limit={upgradeModal} onClose={() => setUpgradeModal(null)} />
     </div>
   );
 }

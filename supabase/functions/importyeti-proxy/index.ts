@@ -1386,9 +1386,16 @@ async function handleSearchAction(
   }
 }
 
-async function handleCompanyProfileAction(supabase: any, companyId: string, requestId: string) {
+async function handleCompanyProfileAction(
+  supabase: any,
+  companyId: string,
+  requestId: string,
+  userId: string | null,
+  orgId: string | null,
+  forceRefresh: boolean,
+) {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("📦 COMPANY PROFILE REQUEST:", { requestId, companyId });
+  console.log("📦 COMPANY PROFILE REQUEST:", { requestId, companyId, forceRefresh });
 
   const env = buildEnvConfig();
   if (!env.isValid) {
@@ -1401,24 +1408,44 @@ async function handleCompanyProfileAction(supabase: any, companyId: string, requ
   const normalizedCompanyKey = normalizeCompanyKey(companyId);
   console.log("  Normalized slug:", normalizedCompanyKey);
 
-  const cached = await getCachedSnapshot(supabase, normalizedCompanyKey);
-  if (cached?.data && cached.ageDays < SNAPSHOT_TTL_DAYS) {
-    console.log("✅ Using cached snapshot", { requestId });
+  // Cached views are free for everyone (no quota burn). Only an explicit
+  // refresh OR a true cache miss triggers the paid upstream call.
+  if (!forceRefresh) {
+    const cached = await getCachedSnapshot(supabase, normalizedCompanyKey);
+    if (cached?.data && cached.ageDays < SNAPSHOT_TTL_DAYS) {
+      console.log("✅ Using cached snapshot", { requestId });
 
-    const cachedProfile = buildCompanyProfileFromSnapshot(
-      cached.data.parsed_summary,
-      cached.data.raw_payload,
-      normalizedCompanyKey,
-    );
+      const cachedProfile = buildCompanyProfileFromSnapshot(
+        cached.data.parsed_summary,
+        cached.data.raw_payload,
+        normalizedCompanyKey,
+      );
 
-    return jsonResponse({
-      ok: true,
-      source: "cache",
-      snapshot: cached.data.parsed_summary,
-      companyProfile: cachedProfile,
-      raw: cached.data.raw_payload,
-      cached_at: cached.data.updated_at,
+      return jsonResponse({
+        ok: true,
+        source: "cache",
+        snapshot: cached.data.parsed_summary,
+        companyProfile: cachedProfile,
+        raw: cached.data.raw_payload,
+        cached_at: cached.data.updated_at,
+      });
+    }
+  }
+
+  // Cache miss OR explicit refresh: gate before upstream. Maps to
+  // `company_profile_view` feature key (free trial: 10/month).
+  if (userId) {
+    const { data: gateData, error: gateErr } = await supabase.rpc("check_usage_limit", {
+      p_org_id: orgId,
+      p_user_id: userId,
+      p_feature_key: "company_profile_view",
+      p_quantity: 1,
     });
+    if (gateErr) {
+      console.error("[importyeti-proxy] profile gate rpc failed", gateErr);
+    } else if (gateData && gateData.ok === false) {
+      return jsonResponse(gateData, 403);
+    }
   }
 
   try {
@@ -1484,6 +1511,23 @@ async function handleCompanyProfileAction(supabase: any, companyId: string, requ
 
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
+    // Consume profile-view quota only on successful upstream fetch.
+    // Cache hits returned earlier without consuming. Failures below
+    // throw and skip this block.
+    if (userId) {
+      try {
+        await supabase.rpc("consume_usage", {
+          p_org_id: orgId,
+          p_user_id: userId,
+          p_feature_key: "company_profile_view",
+          p_quantity: 1,
+          p_metadata: { company_id: normalizedCompanyKey, forced: forceRefresh },
+        });
+      } catch (consumeErr) {
+        console.error("[importyeti-proxy] profile consume_usage failed", consumeErr);
+      }
+    }
+
     return jsonResponse({
       ok: true,
       source: "fresh",
@@ -1531,7 +1575,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const token = authHeader.replace("Bearer ").trim();
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
     if (!token) {
       return jsonResponse(
         { ok: false, error: "Missing authorization", code: "UNAUTHORIZED" },
@@ -1566,9 +1610,14 @@ Deno.serve(async (req: Request) => {
       body = {};
     }
 
-    const { action, company_id, companyKey, q, page, pageSize } = body ?? {};
+    const { action, company_id, companyKey, q, page, pageSize, refresh } = body ?? {};
     const requestedCompanyId = company_id || companyKey;
     const resolvedAction = action ?? (requestedCompanyId ? "companyProfile" : undefined);
+    // Explicit "Refresh Intel" passes refresh:true (or action:"refresh"),
+    // which forces an upstream fetch and consumes company_profile_view
+    // quota. Implicit page-load profile fetches use the cache and never
+    // consume quota.
+    const forceRefresh = Boolean(refresh) || resolvedAction === "refresh";
 
     console.log("➡️ importyeti-proxy request:", {
       requestId,
@@ -1576,24 +1625,24 @@ Deno.serve(async (req: Request) => {
       action: resolvedAction,
       company_id: requestedCompanyId ?? null,
       q: typeof q === "string" ? q : null,
+      refresh: forceRefresh,
     });
 
-    // ── Usage gate (search only) ────────────────────────────────────────
-    // Profile views are not gated in this iteration — cache-aware gating
-    // is a follow-up. Search is the primary credit-bearing action.
+    // Resolve org_id once; used by both search and profile gates below.
     let orgIdForUsage: string | null = null;
-    if (resolvedAction === "search") {
-      try {
-        const { data: orgRow } = await supabase
-          .from("org_members")
-          .select("org_id")
-          .eq("user_id", userId)
-          .order("joined_at", { ascending: true })
-          .limit(1)
-          .maybeSingle();
-        orgIdForUsage = orgRow?.org_id ?? null;
-      } catch { /* ignore */ }
+    try {
+      const { data: orgRow } = await supabase
+        .from("org_members")
+        .select("org_id")
+        .eq("user_id", userId)
+        .order("joined_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      orgIdForUsage = orgRow?.org_id ?? null;
+    } catch { /* ignore */ }
 
+    // ── Usage gate (search) ─────────────────────────────────────────────
+    if (resolvedAction === "search") {
       const { data: gateData, error: gateError } = await supabase.rpc("check_usage_limit", {
         p_org_id: orgIdForUsage,
         p_user_id: userId,
@@ -1640,9 +1689,17 @@ Deno.serve(async (req: Request) => {
     if (
       resolvedAction === "company" ||
       resolvedAction === "companyProfile" ||
-      resolvedAction === "companySnapshot"
+      resolvedAction === "companySnapshot" ||
+      resolvedAction === "refresh"
     ) {
-      return await handleCompanyProfileAction(supabase, requestedCompanyId, requestId);
+      return await handleCompanyProfileAction(
+        supabase,
+        requestedCompanyId,
+        requestId,
+        userId,
+        orgIdForUsage,
+        forceRefresh,
+      );
     }
 
     return jsonResponse(

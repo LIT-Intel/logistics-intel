@@ -556,7 +556,8 @@ Deno.serve(async (req: Request) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!supabaseUrl || !supabaseAnonKey) {
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
     // Phase B.16 — return 200 so the frontend doesn't see a generic
     // "non-2xx" before it can read the body's `code` field.
     return jsonResponse(200, {
@@ -581,6 +582,9 @@ Deno.serve(async (req: Request) => {
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
+  // Service-role client used for the plan-limit RPCs (granted to
+  // service_role only) and for the post-success ledger insert.
+  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
   const { data: userData, error: userErr } = await supabase.auth.getUser(token);
   if (userErr || !userData?.user) {
@@ -659,6 +663,42 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  // ---- Plan-limit gate -----------------------------------------------------
+  // Cached briefs above are free (already paid for at generation time).
+  // Generating a NEW brief consumes pulse_brief quota. Free trial = 0,
+  // so any non-cache hit is blocked until the user upgrades.
+  let pulseOrgId: string | null = null;
+  try {
+    const { data: orgRow } = await supabaseAdmin
+      .from("org_members")
+      .select("org_id")
+      .eq("user_id", user.id)
+      .order("joined_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    pulseOrgId = orgRow?.org_id ?? null;
+  } catch {
+    pulseOrgId = null;
+  }
+
+  const { data: gateData, error: gateErr } = await supabaseAdmin.rpc(
+    "check_usage_limit",
+    {
+      p_org_id: pulseOrgId,
+      p_user_id: user.id,
+      p_feature_key: "pulse_brief",
+      p_quantity: 1,
+    },
+  );
+  if (gateErr) {
+    console.error("[pulse-brief] gate rpc failed", gateErr);
+  } else if (gateData && gateData.ok === false) {
+    return new Response(JSON.stringify(gateData), {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   // ---- Web search key ------------------------------------------------------
   const webSearchKey = Deno.env.get("TAVILY_API_KEY");
   if (!webSearchKey) {
@@ -731,6 +771,22 @@ Deno.serve(async (req: Request) => {
   } else if (companyId && !savedRowId) {
     cacheNote =
       "Brief not cached: company is not in the user's lit_saved_companies. Save the company to enable caching.";
+  }
+
+  // ---- Consume quota (post-success only) ----------------------------------
+  // Failures above already short-circuited (200 + ok:false); reaching here
+  // means the brief was successfully generated and is being returned to the
+  // caller. Admin overrides are still recorded in the ledger for audit.
+  try {
+    await supabaseAdmin.rpc("consume_usage", {
+      p_org_id: pulseOrgId,
+      p_user_id: user.id,
+      p_feature_key: "pulse_brief",
+      p_quantity: 1,
+      p_metadata: { company_id: companyId, company_name: companyName },
+    });
+  } catch (err) {
+    console.warn("[pulse-brief] consume_usage failed (non-fatal):", err);
   }
 
   return jsonResponse(200, {

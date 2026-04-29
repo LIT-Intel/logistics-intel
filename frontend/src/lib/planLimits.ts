@@ -82,7 +82,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
     limits: {
       searches_per_month: 10,
       company_views_per_month: 10,
-      command_center_saves_per_month: 5,
+      command_center_saves_per_month: 10,
       enrichment_credits_per_month: 0,
       campaigns_active: 0,
       rfp_drafts: 0,

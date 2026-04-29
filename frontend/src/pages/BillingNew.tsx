@@ -1,4 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+// Billing page (Phase B.24 — UI rebuild matching the LIT billing design
+// system). The data layer is unchanged: subscription comes from the
+// `subscriptions` table, usage from useEntitlements() (get-entitlements
+// edge fn), and Stripe flows go through the existing billing-checkout /
+// billing-portal edge functions invoked by createStripeCheckout /
+// createStripePortalSession in @/api/functions.
+//
+// All visual rebuild is in components/billing/sections/*. This file is
+// the orchestrator — it owns state, calls the existing handlers, and
+// hands real data to dumb presentational components.
+
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import { createStripeCheckout, createStripePortalSession } from '@/api/functions';
@@ -13,212 +24,44 @@ import {
   type BillingInterval,
   type PlanCode,
 } from '@/lib/planLimits';
-import { useEntitlements } from '@/lib/usage';
-import {
-  CheckCircle2,
-  Zap,
-  Building2,
-  Search,
-  Bookmark,
-  Mail,
-  CreditCard,
-  ExternalLink,
-  AlertCircle,
-  TrendingUp,
-  Users,
-  Shield,
-  Crown,
-  BarChart3,
-  ChevronDown,
-  Sparkles,
-  Layers3,
-  Rocket,
-  ArrowUpRight,
-} from 'lucide-react';
+import { useEntitlements, FEATURE_LABELS, type FeatureKey } from '@/lib/usage';
+import { usePartnerStatus } from '@/lib/affiliate';
+import { CheckCircle2, AlertCircle } from 'lucide-react';
+
+import { BillingHeader, ReadOnlyBanner } from '@/components/billing/sections/BillingHeader';
+import { BillingAlerts } from '@/components/billing/sections/BillingAlerts';
+import { BillingHero } from '@/components/billing/sections/BillingHero';
+import { BillingUsage, type UsageMeter } from '@/components/billing/sections/BillingUsage';
+import { BillingPlans } from '@/components/billing/sections/BillingPlans';
+import { PaymentMethodCard } from '@/components/billing/sections/PaymentMethodCard';
+import { EnterpriseCard } from '@/components/billing/sections/EnterpriseCard';
+import { BillingInvoices } from '@/components/billing/sections/BillingInvoices';
+import { AffiliateTieIn } from '@/components/billing/sections/AffiliateTieIn';
+import { TrustFooter } from '@/components/billing/sections/TrustFooter';
+import { deriveCanonicalState, daysUntil, formatDate } from '@/components/billing/sections/billingState';
+
+const SALES_MAILTO = 'mailto:support@logisticintel.com?subject=Enterprise%20Inquiry';
 
 function normalizePlanCode(plan?: string | null): PlanCode {
   const p = (plan || 'free_trial').toLowerCase();
-
   if (p === 'free' || p === 'free_trial') return 'free_trial';
   if (p === 'starter') return 'starter';
   if (p === 'growth' || p === 'growth_plus') return 'growth';
   if (p.startsWith('enterprise')) return 'enterprise';
-
   return 'free_trial';
 }
 
-function formatCurrency(value: number | null) {
-  if (value === null) return 'Custom';
-  return `$${value.toLocaleString()}`;
+function planLabelFor(planCode: PlanCode): string {
+  return getPlanConfig(planCode).label;
 }
 
-function usagePct(used: number, max: number | null) {
-  if (max === null || max === 0) return 0;
-  return Math.min(Math.round((used / max) * 100), 100);
-}
-
-type MetricCardProps = {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  current: number;
-  max: number | null;
-  accentClass: string;
-};
-
-function MetricCard({
-  icon: Icon,
-  label,
-  current,
-  max,
-  accentClass,
-}: MetricCardProps) {
-  const pct = usagePct(current, max);
-
-  return (
-    <div className="group rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <div
-            className={`flex h-9 w-9 items-center justify-center rounded-xl ${accentClass} text-white shadow-sm transition-transform duration-200 group-hover:scale-105`}
-          >
-            <Icon className="h-4 w-4" />
-          </div>
-          <span className="truncate text-sm font-medium text-slate-700">{label}</span>
-        </div>
-
-        <span className="text-xs font-semibold text-slate-900">
-          {max === null ? 'Unlimited' : `${current} / ${max}`}
-        </span>
-      </div>
-
-      <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
-        <div
-          className={`h-full rounded-full ${accentClass} transition-all duration-300`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-type PlanCardDef = {
-  code: PlanCode;
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  description: string;
-  seatsLabel: string;
-  featureBullets: string[];
-  accentBorder: string;
-  accentIcon: string;
-};
-
-function getPlanCards(): PlanCardDef[] {
-  return [
-    {
-      code: 'free_trial',
-      icon: Sparkles,
-      title: 'Free Trial',
-      description: 'Explore the product and validate fit before committing.',
-      seatsLabel: '1 seat',
-      featureBullets: [
-        '10 company discoveries',
-        '10 saved accounts',
-        'Dashboard + Search access',
-        'No Pulse or Campaign Builder',
-      ],
-      accentBorder: 'hover:border-violet-300',
-      accentIcon: 'bg-violet-500',
-    },
-    {
-      code: 'starter',
-      icon: Layers3,
-      title: 'Starter',
-      description: 'Core intelligence and CRM workflows for solo operators.',
-      seatsLabel: '1 seat',
-      featureBullets: [
-        '250 company discoveries',
-        '250 saved accounts',
-        'Company Intelligence pages',
-        'No Pulse or Campaign Builder',
-      ],
-      accentBorder: 'hover:border-blue-300',
-      accentIcon: 'bg-blue-500',
-    },
-    {
-      code: 'growth',
-      icon: Rocket,
-      title: 'Growth',
-      description: 'Multi-user prospecting, campaigns, and outreach at scale.',
-      seatsLabel: '3 to 7 seats',
-      featureBullets: [
-        '2,000 shared discoveries',
-        '500 saved accounts',
-        'Pulse + Campaign Builder',
-        '100 enrichment credits',
-      ],
-      accentBorder: 'hover:border-emerald-300',
-      accentIcon: 'bg-emerald-500',
-    },
-    {
-      code: 'enterprise',
-      icon: Crown,
-      title: 'Enterprise',
-      description: 'Admin controls, scale, and commercial flexibility for larger teams.',
-      seatsLabel: '6+ seats',
-      featureBullets: [
-        'Everything in Growth',
-        'Custom usage limits',
-        'Priority support',
-        'Contact sales only',
-      ],
-      accentBorder: 'hover:border-amber-300',
-      accentIcon: 'bg-amber-500',
-    },
-  ];
-}
-
-function getPlanNarrative(planCode: PlanCode) {
-  if (planCode === 'free_trial') {
-    return {
-      headline: 'You’re testing the platform with limited access',
-      body:
-        'You can search companies, save a small number of accounts, and get a feel for the product. This tier is designed to validate fit quickly without opening up the full workflow.',
-      upsell:
-        'Upgrade to Starter when you’re ready for real prospecting volume and deeper company intelligence.',
-    };
-  }
-
-  if (planCode === 'starter') {
-    return {
-      headline: 'You have core access for solo prospecting',
-      body:
-        'Starter is built for individual operators who need company discovery, account saving, and company intelligence pages without team-level automation.',
-      upsell:
-        'Move to Growth to unlock Pulse, Campaign Builder, team collaboration, and shared outbound workflows.',
-    };
-  }
-
-  if (planCode === 'growth') {
-    return {
-      headline: 'You’re on the active team growth plan',
-      body:
-        'Growth gives your team shared discovery capacity, saved account workflows, Pulse access, and campaign execution. This is the tier where pipeline generation starts compounding across users.',
-      upsell:
-        'If you need more seats, custom usage controls, or deeper admin oversight, Enterprise is the next move.',
-    };
-  }
-
-  return {
-    headline: 'You’re positioned for scaled deployment',
-    body:
-      'Enterprise is for teams that need broader rollout, stronger governance, and custom commercial flexibility across billing, seats, and usage policies.',
-    upsell:
-      'Work with sales to expand capacity, tailor limits, and structure the right deployment model for your organization.',
-  };
+function scrollToPlans() {
+  const el = document.getElementById('lit-billing-plans');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 export default function Billing() {
-  const { user, loading } = useAuth();
+  const { user, loading, access, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -229,17 +72,12 @@ export default function Billing() {
   const [billingInterval, setBillingInterval] = useState<BillingInterval>('monthly');
   const [selectedSeats, setSelectedSeats] = useState<number>(3);
 
-  // Phase F — real usage counters, scoped to the current billing month.
-  // Only three meters are rendered (Searches Used / Saved Companies /
-  // Active Campaigns) because these are the only counters we have real
-  // writers for today. Pulse runs and enrichment credits are intentionally
-  // removed until their writers exist.
+  // Phase F — real usage counters (preserved verbatim from prior impl).
   const [realSearches, setRealSearches] = useState<number>(0);
   const [realSaves, setRealSaves] = useState<number>(0);
   const [realActiveCampaigns, setRealActiveCampaigns] = useState<number>(0);
 
   const checkoutSuccess = searchParams.get('checkout') === 'success';
-  const planCards = useMemo(() => getPlanCards(), []);
 
   useEffect(() => {
     if (!loading && !user) navigate('/login');
@@ -247,10 +85,8 @@ export default function Billing() {
 
   useEffect(() => {
     if (!user) return;
-
     loadSubscription();
     loadRealUsageCounters();
-
     if (checkoutSuccess) {
       const t = setTimeout(() => {
         loadSubscription();
@@ -260,15 +96,12 @@ export default function Billing() {
     }
   }, [user, checkoutSuccess]);
 
-  // Phase F — load the three real usage counters (Searches Used / Saved
-  // Companies / Active Campaigns). Each promise is independent and any
-  // failure only clears its own counter to 0; the rest still populate.
-  // Silent-fail on every branch — never blocks the Billing page render.
+  // PRESERVED VERBATIM (from prior phase). Reads three real meters and
+  // silently fails per branch — never blocks Billing page render.
   async function loadRealUsageCounters() {
     if (!user?.id) return;
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
-    // Searches this month — same query the Dashboard uses in Phase C.
     supabase
       .from('lit_activity_events')
       .select('id', { count: 'exact', head: true })
@@ -277,82 +110,48 @@ export default function Billing() {
       .gte('created_at', monthStart)
       .then(
         (res: any) => {
-          if (!res?.error && typeof res?.count === 'number') {
-            setRealSearches(res.count);
-          }
+          if (!res?.error && typeof res?.count === 'number') setRealSearches(res.count);
         },
-        () => {
-          /* silent */
-        },
+        () => { /* silent */ },
       );
 
-    // Saved companies — all-time count via getSavedCompanies (no monthly
-    // scoping; plan limits are "in Command Center right now", not "this
-    // month"). Mirrors the Dashboard aggregate.
     getSavedCompanies()
       .then((resp: any) => {
         const rows = Array.isArray(resp?.rows) ? resp.rows : Array.isArray(resp) ? resp : [];
         setRealSaves(rows.length || 0);
       })
-      .catch(() => {
-        /* silent */
-      });
+      .catch(() => { /* silent */ });
 
-    // Active campaigns — filter by status. Mirrors Dashboard filter.
     getLitCampaigns()
       .then((resp: any) => {
         const rows = Array.isArray(resp?.rows) ? resp.rows : Array.isArray(resp) ? resp : [];
-        const active = rows.filter(
-          (c: any) => c?.status === 'active' || c?.status === 'live',
-        ).length;
+        const active = rows.filter((c: any) => c?.status === 'active' || c?.status === 'live').length;
         setRealActiveCampaigns(active);
       })
-      .catch(() => {
-        /* silent */
-      });
+      .catch(() => { /* silent */ });
   }
 
-  useEffect(() => {
-    const rawPlan =
-      subscription?.plan_code ||
-      (user as any)?.plan ||
-      (user as any)?.user_metadata?.plan ||
-      'free_trial';
-
-    const planCode = normalizePlanCode(rawPlan);
-
-    const seatCount =
-      subscription?.seats ||
-      (user as any)?.seat_count ||
-      (user as any)?.team_seat_count ||
-      undefined;
-
-    setSelectedSeats(normalizeSeatCount(planCode, seatCount));
-  }, [subscription, user]);
-
+  // PRESERVED VERBATIM. Reads from `subscriptions` table.
   async function loadSubscription() {
     if (!user) return;
-
     try {
       const { data } = await supabase
         .from('subscriptions')
         .select('*')
         .eq('user_id', (user as any).id)
         .maybeSingle();
-
       if (data) setSubscription(data);
     } catch {
-      // fallback to auth metadata
+      /* fallback to auth metadata */
     }
   }
 
+  // PRESERVED VERBATIM. Calls billing-portal edge function.
   async function handlePortal() {
     setErr('');
     setIsRedirecting(true);
-
     try {
       const result: any = await createStripePortalSession();
-
       if (result?.url) {
         window.location.href = result.url;
       } else {
@@ -364,18 +163,16 @@ export default function Billing() {
     }
   }
 
+  // PRESERVED VERBATIM. Calls billing-checkout edge function.
   async function handleCheckout(planCode: PlanCode) {
     if (planCode === 'enterprise') {
-      window.location.href =
-        'mailto:support@logisticintel.com?subject=Enterprise Inquiry';
+      window.location.href = SALES_MAILTO;
       return;
     }
-
     if (planCode === 'free_trial') return;
 
     const seats = planCode === 'starter' ? 1 : selectedSeats;
     const validation = validateSeatCount(planCode, seats);
-
     if (!validation.valid) {
       setErr(validation.message || 'Invalid seat selection.');
       return;
@@ -383,14 +180,12 @@ export default function Billing() {
 
     setErr('');
     setActionLoading(planCode);
-
     try {
       const result: any = await createStripeCheckout({
         plan_code: planCode,
         interval: billingInterval === 'yearly' ? 'year' : 'month',
         seats,
       });
-
       if (result?.url) {
         window.location.href = result.url;
       } else {
@@ -403,6 +198,191 @@ export default function Billing() {
     }
   }
 
+  // ── Real entitlements (single source of truth) ─────────────────────
+  const { entitlements } = useEntitlements();
+
+  // ── Real partner role for AffiliateTieIn ───────────────────────────
+  const partner = usePartnerStatus(user?.id || null);
+
+  // Default seat selection effect — preserved from prior impl
+  useEffect(() => {
+    const rawPlan =
+      subscription?.plan_code ||
+      (user as any)?.plan ||
+      (user as any)?.user_metadata?.plan ||
+      'free_trial';
+    const planCode = normalizePlanCode(rawPlan);
+    const seatCount =
+      subscription?.seats ||
+      (user as any)?.seat_count ||
+      (user as any)?.team_seat_count ||
+      undefined;
+    setSelectedSeats(normalizeSeatCount(planCode, seatCount));
+  }, [subscription, user]);
+
+  // ── Derived state ─────────────────────────────────────────────────
+  const rawPlan =
+    subscription?.plan_code ||
+    (user as any)?.plan ||
+    (user as any)?.user_metadata?.plan ||
+    'free_trial';
+  const currentPlanCode = normalizePlanCode(rawPlan);
+  const currentPlan = getPlanConfig(currentPlanCode);
+  const subscriptionStatus =
+    subscription?.status ||
+    (user as any)?.subscription_status ||
+    (user as any)?.user_metadata?.subscription_status ||
+    'incomplete';
+  const stripeCustomerId =
+    subscription?.stripe_customer_id ||
+    (user as any)?.stripe_customer_id ||
+    (user as any)?.user_metadata?.stripe_customer_id;
+  const cancelAtPeriodEnd = Boolean(subscription?.cancel_at_period_end);
+
+  const canonicalState = useMemo(
+    () =>
+      deriveCanonicalState({
+        planCode: currentPlanCode,
+        rawStatus: subscriptionStatus,
+        hasStripeCustomer: Boolean(stripeCustomerId),
+        cancelAtPeriodEnd,
+      }),
+    [currentPlanCode, subscriptionStatus, stripeCustomerId, cancelAtPeriodEnd],
+  );
+
+  const canManage = Boolean(access?.canManageBilling);
+
+  // Affiliate role derivation: super admins (platform admin) can access
+  // partner admin; active partners get the affiliate state; everyone else
+  // sees the apply CTA.
+  const affiliateState: 'none' | 'affiliate' | 'admin' = isSuperAdmin
+    ? 'admin'
+    : partner.isPartner && partner.status === 'active'
+    ? 'affiliate'
+    : 'none';
+
+  // Seat config
+  const assignedSeats =
+    subscription?.seats ||
+    (user as any)?.seat_count ||
+    (user as any)?.team_seat_count ||
+    null;
+  const seatsIncluded =
+    currentPlanCode === 'growth'
+      ? '3 to 5'
+      : currentPlanCode === 'enterprise'
+      ? '6+'
+      : '1';
+
+  // Hero amount label
+  const amountForHero = useMemo(() => {
+    if (currentPlanCode === 'free_trial') return 'Free';
+    if (currentPlanCode === 'enterprise') return 'Custom';
+    const seats = currentPlanCode === 'growth' ? assignedSeats || selectedSeats : 1;
+    const total = getTotalPrice(currentPlanCode, billingInterval, seats);
+    return total === null ? 'Custom' : `$${total.toLocaleString()}`;
+  }, [currentPlanCode, billingInterval, assignedSeats, selectedSeats]);
+
+  const renewalDate = formatDate(subscription?.current_period_end);
+  const daysUntilRenewal = daysUntil(subscription?.current_period_end);
+  const billingEmail = (user as any)?.email || null;
+  const paymentMethodLabel = stripeCustomerId ? 'On file in Stripe' : 'Not on file';
+
+  // Hero CTA labels per canonical state
+  const heroCtas = useMemo(() => {
+    switch (canonicalState) {
+      case 'free':
+        return {
+          primary: 'Start subscription',
+          secondary: 'Compare plans',
+          onPrimary: () => handleCheckout('starter'),
+          onSecondary: scrollToPlans,
+        };
+      case 'trial':
+        return {
+          primary: 'Add payment',
+          secondary: 'Compare plans',
+          onPrimary: () => handleCheckout(currentPlanCode === 'free_trial' ? 'starter' : currentPlanCode),
+          onSecondary: scrollToPlans,
+        };
+      case 'pastdue':
+        return {
+          primary: 'Update payment',
+          secondary: 'Manage in Stripe',
+          onPrimary: handlePortal,
+          onSecondary: handlePortal,
+        };
+      case 'canceled':
+        return {
+          primary: 'Reactivate plan',
+          secondary: 'Compare plans',
+          onPrimary: () => handleCheckout(currentPlanCode === 'free_trial' ? 'starter' : currentPlanCode === 'enterprise' ? 'growth' : currentPlanCode),
+          onSecondary: scrollToPlans,
+        };
+      case 'enterprise':
+        return {
+          primary: 'Contact account exec',
+          secondary: 'Manage in Stripe',
+          onPrimary: () => { window.location.href = SALES_MAILTO; },
+          onSecondary: handlePortal,
+        };
+      case 'active':
+      default:
+        return {
+          primary: 'Manage in Stripe',
+          secondary: 'Compare plans',
+          onPrimary: handlePortal,
+          onSecondary: scrollToPlans,
+        };
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canonicalState, currentPlanCode]);
+
+  // Cycle toggle: hide for canceled / enterprise / pastdue (no active
+  // checkout flow that benefits from the toggle in those states). Keep
+  // for free / trial / active.
+  const showCycleToggle = canonicalState === 'free' || canonicalState === 'trial' || canonicalState === 'active';
+
+  // Build real usage meters from useEntitlements snapshot. Falls back to
+  // legacy in-page counters until snapshot loads.
+  const usageMeters: UsageMeter[] = useMemo(() => {
+    if (!entitlements) {
+      return [
+        { key: 'company_search', label: 'Searches', used: realSearches, limit: currentPlan.limits.searches_per_month },
+        { key: 'saved_company', label: 'Saved companies', used: realSaves, limit: currentPlan.limits.command_center_saves_per_month },
+        { key: 'campaign_send', label: 'Active campaigns', used: realActiveCampaigns, limit: currentPlan.limits.campaigns_active },
+      ];
+    }
+    const keys: FeatureKey[] = [
+      'company_search',
+      'saved_company',
+      'company_profile_view',
+      'contact_enrichment',
+      'campaign_send',
+      'pulse_brief',
+      'export_pdf',
+    ];
+    return keys
+      .filter((k) => k in entitlements.limits || k in entitlements.used)
+      .map((k) => ({
+        key: k,
+        label: capitalize(FEATURE_LABELS[k]?.plural || k),
+        used: entitlements.used[k] ?? 0,
+        limit: entitlements.limits[k] ?? null,
+      }));
+  }, [entitlements, realSearches, realSaves, realActiveCampaigns, currentPlan]);
+
+  // Usage warnings for BillingAlerts (≥80% of any limited counter)
+  const usageWarnings = useMemo(() => {
+    return usageMeters
+      .filter((m) => m.limit !== null && m.limit > 0)
+      .map((m) => {
+        const pct = Math.round(((m.used || 0) / (m.limit as number)) * 100);
+        return { label: m.label, used: m.used, limit: m.limit as number, pct };
+      })
+      .filter((w) => w.pct >= 80);
+  }, [usageMeters]);
+
   if (loading || !user) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -411,133 +391,21 @@ export default function Billing() {
     );
   }
 
-  const rawPlan =
-    subscription?.plan_code ||
-    (user as any).plan ||
-    (user as any).user_metadata?.plan ||
-    'free_trial';
-
-  const currentPlanCode = normalizePlanCode(rawPlan);
-  const currentPlan = getPlanConfig(currentPlanCode);
-
-  const subscriptionStatus =
-    subscription?.status ||
-    (user as any).subscription_status ||
-    (user as any).user_metadata?.subscription_status ||
-    'incomplete';
-
-  const stripeCustomerId =
-    subscription?.stripe_customer_id ||
-    (user as any).stripe_customer_id ||
-    (user as any).user_metadata?.stripe_customer_id;
-
-  // Phase G — read real entitlements from get-entitlements (single source
-  // of truth). Falls back to the legacy lit_activity_events / saved-rows
-  // counts so the page never shows nothing while the snapshot loads.
-  const { entitlements } = useEntitlements();
-  const searchesUsed = entitlements?.used?.company_search ?? realSearches;
-  const savesUsed = entitlements?.used?.saved_company ?? realSaves;
-  const activeCampaignsUsed = realActiveCampaigns;
-  // Real plan limits from DB (NULL == unlimited). Falls back to the
-  // hardcoded planLimits.ts values until entitlements load.
-  const limitSearches =
-    entitlements?.limits?.company_search ?? currentPlan.limits.searches_per_month;
-  const limitSaves =
-    entitlements?.limits?.saved_company ?? currentPlan.limits.command_center_saves_per_month;
-
-  const renewalDate = subscription?.current_period_end
-    ? new Date(subscription.current_period_end).toLocaleDateString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-      })
-    : null;
-
-  const assignedSeats =
-    subscription?.seats ||
-    (user as any).seat_count ||
-    (user as any).team_seat_count ||
-    currentPlan.seatRules.default;
-
-  const narrative = getPlanNarrative(currentPlanCode);
-
-  const selectedGrowthTotal = getTotalPrice('growth', billingInterval, selectedSeats);
-  const starterTotal = getTotalPrice('starter', billingInterval, 1);
-
-  const intervalLabel = billingInterval === 'monthly' ? '/mo' : '/yr';
-
   return (
-    <div
-      className="min-h-screen"
-      style={{
-        background:
-          "radial-gradient(circle at 0% 0%, rgba(99,102,241,0.08) 0%, rgba(99,102,241,0) 28%), radial-gradient(circle at 100% 10%, rgba(6,182,212,0.08) 0%, rgba(6,182,212,0) 32%), linear-gradient(180deg, #F8FAFC 0%, #F8FAFC 60%, #FFFFFF 100%)",
-      }}
-    >
-      <div className="mx-auto max-w-7xl p-4 md:p-6 xl:p-8">
-        <div className="mb-5 md:mb-7">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-indigo-500">
-            Account · Billing
-          </span>
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-8 lg:px-8">
+        {/* Sticky header with breadcrumb + role/status */}
+        <BillingHeader state={canonicalState} canManage={canManage} isSuperAdmin={isSuperAdmin} />
 
-          <div className="mt-1.5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h1
-                className="text-xl font-bold tracking-tight text-slate-950 md:text-[26px]"
-                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-              >
-                Billing &amp; Plans
-              </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Manage seats, billing, usage, and plan access across your workspace.
-              </p>
-            </div>
+        {/* Read-only banner (only when canManage === false) */}
+        <ReadOnlyBanner canManage={canManage} />
 
-            <div className="flex flex-wrap gap-2">
-              <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setBillingInterval('monthly')}
-                  className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
-                    billingInterval === 'monthly'
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  Monthly
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBillingInterval('yearly')}
-                  className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
-                    billingInterval === 'yearly'
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  Yearly
-                </button>
-              </div>
-
-              {stripeCustomerId && (
-                <button
-                  onClick={handlePortal}
-                  disabled={isRedirecting}
-                  className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-100 hover:shadow-md disabled:opacity-50"
-                >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  {isRedirecting ? 'Opening…' : 'Manage in Stripe'}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
+        {/* Toast: checkout success */}
         {checkoutSuccess && (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="mb-5 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
             <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-600" />
             <div>
-              <p className="font-medium text-emerald-900">Billing update received</p>
+              <p className="text-sm font-semibold text-emerald-900">Billing update received</p>
               <p className="mt-0.5 text-sm text-emerald-700">
                 Your subscription status is refreshing now.
               </p>
@@ -545,475 +413,121 @@ export default function Billing() {
           </div>
         )}
 
+        {/* Toast: error */}
         {err && (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
+          <div className="mb-5 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
             <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
             <div>
-              <p className="font-medium text-red-900">Billing action failed</p>
+              <p className="text-sm font-semibold text-red-900">Billing action failed</p>
               <p className="mt-0.5 text-sm text-red-700">{err}</p>
             </div>
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-          <div className="xl:col-span-2 rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-6 text-white shadow-sm md:p-7">
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-              <div className="max-w-3xl">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 shadow-inner">
-                    {currentPlanCode === 'enterprise' ? (
-                      <Crown className="h-6 w-6 text-amber-300" />
-                    ) : currentPlanCode === 'growth' ? (
-                      <Rocket className="h-6 w-6 text-emerald-300" />
-                    ) : currentPlanCode === 'starter' ? (
-                      <Layers3 className="h-6 w-6 text-blue-300" />
-                    ) : (
-                      <Sparkles className="h-6 w-6 text-violet-300" />
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-xl font-semibold">{currentPlan.title || currentPlan.label} {currentPlan.label === currentPlan.title ? '' : ''}</h2>
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                          subscriptionStatus === 'active'
-                            ? 'bg-emerald-500/20 text-emerald-300'
-                            : 'bg-white/10 text-white/70'
-                        }`}
-                      >
-                        {subscriptionStatus}
-                      </span>
-                    </div>
-
-                    <p className="mt-1 text-sm text-slate-300">
-                      {currentPlanCode === 'free_trial'
-                        ? 'Free access'
-                        : currentPlanCode === 'enterprise'
-                        ? 'Custom commercial terms'
-                        : `${formatCurrency(
-                            getTotalPrice(
-                              currentPlanCode,
-                              billingInterval,
-                              currentPlanCode === 'growth' ? assignedSeats : 1
-                            )
-                          )}${intervalLabel}`}
-                      {renewalDate ? ` · Renews ${renewalDate}` : ''}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-6">
-                  <p className="text-lg font-semibold text-white">{narrative.headline}</p>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-                    {narrative.body}
-                  </p>
-                  <div className="mt-4 flex items-start gap-2 rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <ArrowUpRight className="mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-300" />
-                    <p className="text-sm leading-6 text-indigo-100">{narrative.upsell}</p>
-                  </div>
-                </div>
-
-                <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <div className="text-[11px] uppercase tracking-wide text-slate-400">
-                      Seat Policy
-                    </div>
-                    <div className="mt-1 text-sm font-medium text-white">
-                      {currentPlanCode === 'growth'
-                        ? '3 to 7 seats'
-                        : currentPlanCode === 'enterprise'
-                        ? '6+ seats'
-                        : '1 seat'}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <div className="text-[11px] uppercase tracking-wide text-slate-400">
-                      Seats Assigned
-                    </div>
-                    <div className="mt-1 text-sm font-medium text-white">{assignedSeats}</div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <div className="text-[11px] uppercase tracking-wide text-slate-400">
-                      Access Level
-                    </div>
-                    <div className="mt-1 text-sm font-medium text-white">
-                      {currentPlanCode === 'enterprise'
-                        ? 'Advanced admin'
-                        : currentPlanCode === 'growth'
-                        ? 'Team collaboration'
-                        : 'Individual'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {!stripeCustomerId && currentPlanCode !== 'enterprise' && (
-                <button
-                  onClick={() =>
-                    handleCheckout(currentPlanCode === 'free_trial' ? 'starter' : 'growth')
-                  }
-                  disabled={!!actionLoading}
-                  className="inline-flex w-full items-center justify-center rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-100 hover:shadow-md disabled:opacity-50 lg:w-auto"
-                >
-                  {actionLoading ? 'Processing…' : 'Upgrade Plan'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur md:p-6">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100">
-                <BarChart3 className="h-5 w-5 text-slate-700" />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-slate-900">Usage Snapshot</div>
-                <div className="text-sm text-slate-500">Current billing period usage</div>
-              </div>
-            </div>
-
-            {/* Phase F — three real meters only. Pulse Runs + Enrichment
-                Credits tiles removed until real writers exist. Active
-                Campaigns has no plan cap today (passed max={null}), so it
-                renders as "N · Unlimited" with no misleading progress bar. */}
-            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              <MetricCard
-                icon={Search}
-                label="Searches Used"
-                current={searchesUsed}
-                max={limitSearches}
-                accentClass="bg-blue-500"
-              />
-              <MetricCard
-                icon={Bookmark}
-                label="Saved Companies"
-                current={savesUsed}
-                max={limitSaves}
-                accentClass="bg-violet-500"
-              />
-              <MetricCard
-                icon={Mail}
-                label="Active Campaigns"
-                current={activeCampaignsUsed}
-                max={null}
-                accentClass="bg-emerald-500"
-              />
-            </div>
-          </div>
+        {/* State-driven alerts */}
+        <div className="mb-5">
+          <BillingAlerts
+            state={canonicalState}
+            trialEndIso={subscription?.current_period_end || null}
+            paymentFailedAt={subscription?.current_period_end || null}
+            canceledAt={subscription?.current_period_end || null}
+            onUpgrade={() => handleCheckout(currentPlanCode === 'free_trial' ? 'starter' : currentPlanCode === 'enterprise' ? 'growth' : currentPlanCode)}
+            onUpdatePayment={handlePortal}
+            onContactSales={() => { window.location.href = SALES_MAILTO; }}
+            onSeePlans={scrollToPlans}
+            usageWarnings={usageWarnings}
+          />
         </div>
 
-        <div className="mt-6 rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur md:p-6">
-          <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-                Plans
-              </span>
-              <h2 className="mt-2 text-lg font-semibold text-slate-950">Compare plans</h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Choose the right access level for your current team stage.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              <span className="font-medium text-slate-900">
-                {billingInterval === 'monthly' ? 'Monthly billing' : 'Yearly billing'}
-              </span>
-              {billingInterval === 'yearly' && (
-                <span className="ml-2 text-emerald-600">best value</span>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
-            {planCards.map((plan) => {
-              const isCurrent = plan.code === currentPlanCode;
-              const currentIndex = planCards.findIndex((p) => p.code === currentPlanCode);
-              const targetIndex = planCards.findIndex((p) => p.code === plan.code);
-              const isUpgrade = targetIndex > currentIndex;
-              const isDowngrade = targetIndex < currentIndex;
-              const isLoadingThis = actionLoading === plan.code;
-
-              const cardPrice =
-                plan.code === 'enterprise'
-                  ? null
-                  : plan.code === 'growth'
-                  ? getTotalPrice(plan.code, billingInterval, selectedSeats)
-                  : getTotalPrice(plan.code, billingInterval, 1);
-
-              return (
-                <div
-                  key={plan.code}
-                  className={`group relative flex h-full flex-col rounded-3xl border bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${plan.accentBorder} ${
-                    isCurrent ? 'border-slate-900 ring-1 ring-slate-900/10' : 'border-slate-200'
-                  }`}
-                >
-                  {isCurrent && (
-                    <div className="absolute right-4 top-0 -translate-y-1/2 rounded-full bg-slate-900 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-white">
-                      Current
-                    </div>
-                  )}
-
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`flex h-10 w-10 items-center justify-center rounded-2xl ${plan.accentIcon} text-white shadow-sm transition-transform duration-200 group-hover:scale-105`}
-                      >
-                        <plan.icon className="h-5 w-5" />
-                      </div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        {plan.title}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex items-end gap-1">
-                      <span className="text-4xl font-bold tracking-tight text-slate-950">
-                        {plan.code === 'enterprise' ? 'Custom' : formatCurrency(cardPrice)}
-                      </span>
-                      <span className="mb-1 text-sm text-slate-500">
-                        {plan.code === 'enterprise' ? '' : intervalLabel}
-                      </span>
-                    </div>
-
-                    {plan.code === 'growth' && (
-                      <p className="mt-2 text-xs font-medium text-slate-500">
-                        From {formatCurrency(getTotalPrice('growth', billingInterval, 3))}
-                        {billingInterval === 'monthly' ? ' monthly' : ' yearly'} for 3 seats
-                      </p>
-                    )}
-
-                    <p className="mt-3 min-h-[52px] text-sm leading-6 text-slate-600">
-                      {plan.description}
-                    </p>
-
-                    <div className="mt-4 rounded-2xl bg-slate-50 p-3">
-                      <div className="text-sm font-medium text-slate-900">{plan.seatsLabel}</div>
-                      <div className="mt-1 text-sm text-slate-600">
-                        {plan.code === 'starter'
-                          ? '250 discoveries • 250 saved accounts'
-                          : plan.code === 'growth'
-                          ? '2,000 shared discoveries • 500 saved accounts'
-                          : plan.code === 'free_trial'
-                          ? '10 discoveries • 10 saved accounts'
-                          : 'Custom usage limits'}
-                      </div>
-                    </div>
-
-                    {plan.code === 'growth' && (
-                      <div className="mt-4">
-                        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Seats
-                        </label>
-                        <div className="relative">
-                          <select
-                            value={selectedSeats}
-                            onChange={(e) => setSelectedSeats(Number(e.target.value))}
-                            className="h-11 w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 pr-10 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-slate-400"
-                          >
-                            {[3, 4, 5].map((seat) => (
-                              <option key={seat} value={seat}>
-                                {seat} seats
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        </div>
-                        <p className="mt-2 text-xs text-slate-500">
-                          Need more than 5 seats? Move to Enterprise.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  <ul className="mt-5 flex-1 space-y-3">
-                    {plan.featureBullets.map((item) => (
-                      <li key={item} className="flex items-start gap-2 text-sm text-slate-700">
-                        <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-500" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <div className="mt-6">
-                    <button
-                      onClick={() => {
-                        if (isCurrent) {
-                          if (stripeCustomerId) {
-                            handlePortal();
-                          }
-                          return;
-                        }
-
-                        if (plan.code === 'enterprise') {
-                          handleCheckout('enterprise');
-                          return;
-                        }
-
-                        if (isDowngrade) {
-                          handlePortal();
-                          return;
-                        }
-
-                        handleCheckout(plan.code);
-                      }}
-                      disabled={isLoadingThis || isRedirecting}
-                      className={`inline-flex w-full items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 ${
-                        isCurrent || isUpgrade
-                          ? 'bg-slate-900 text-white hover:bg-slate-800'
-                          : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                      }`}
-                    >
-                      {isLoadingThis
-                        ? 'Processing…'
-                        : isCurrent
-                        ? stripeCustomerId
-                          ? 'Manage Plan'
-                          : 'Current Plan'
-                        : plan.code === 'enterprise'
-                        ? 'Contact Sales'
-                        : isDowngrade
-                        ? 'Manage Downgrade'
-                        : `Upgrade to ${plan.title}`}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        {/* Hero */}
+        <div className="mb-6">
+          <BillingHero
+            planCode={currentPlanCode}
+            planLabel={planLabelFor(currentPlanCode)}
+            state={canonicalState}
+            amountDisplay={amountForHero}
+            cycle={currentPlanCode === 'free_trial' || currentPlanCode === 'enterprise' ? null : billingInterval}
+            renewalDate={renewalDate}
+            daysUntilRenewal={daysUntilRenewal}
+            paymentMethodLabel={paymentMethodLabel}
+            billingEmail={billingEmail}
+            seats={{ assigned: assignedSeats, included: seatsIncluded }}
+            showCycleToggle={showCycleToggle}
+            onCycleChange={(c) => setBillingInterval(c)}
+            primaryLabel={heroCtas.primary}
+            secondaryLabel={heroCtas.secondary}
+            onPrimary={heroCtas.onPrimary}
+            onSecondary={heroCtas.onSecondary}
+            primaryDisabled={!canManage && (canonicalState !== 'enterprise' && canonicalState !== 'active')}
+            isLoading={isRedirecting || Boolean(actionLoading)}
+          />
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-3">
-          <div className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur md:p-6">
-            <div className="mb-5 flex items-center justify-between gap-3">
-              <div>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-                  Payment
-                </span>
-                <h3 className="mt-2 text-lg font-semibold text-slate-950">Payment Method</h3>
-              </div>
-
-              {stripeCustomerId && (
-                <button
-                  onClick={handlePortal}
-                  disabled={isRedirecting}
-                  className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Update
-                </button>
-              )}
-            </div>
-
-            {stripeCustomerId ? (
-              <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900">
-                  <CreditCard className="h-5 w-5 text-white" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-slate-900">Payment method on file</p>
-                  <p className="text-sm text-slate-500">Manage details in Stripe billing portal</p>
-                </div>
-                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                  Active
-                </span>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
-                No payment method on file yet. Upgrade a paid plan to add one.
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur md:p-6">
-            <div className="mb-5 flex items-center justify-between gap-3">
-              <div>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-                  History
-                </span>
-                <h3 className="mt-2 text-lg font-semibold text-slate-950">Billing History</h3>
-              </div>
-
-              {stripeCustomerId && (
-                <button
-                  onClick={handlePortal}
-                  disabled={isRedirecting}
-                  className="inline-flex items-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Open Portal
-                </button>
-              )}
-            </div>
-
-            {stripeCustomerId ? (
-              <p className="text-sm leading-6 text-slate-600">
-                Full invoice history and downloadable PDFs are available in your Stripe billing
-                portal.
-              </p>
-            ) : (
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center">
-                <TrendingUp className="h-8 w-8 text-slate-300" />
-                <p className="mt-3 text-sm text-slate-500">No billing history available yet.</p>
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur md:p-6">
-            <div className="mb-5">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-                Seats
-              </span>
-              <h3 className="mt-2 text-lg font-semibold text-slate-950">Seat Management</h3>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-start gap-3 rounded-2xl bg-slate-50 p-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white shadow-sm">
-                  {currentPlanCode === 'enterprise' ? (
-                    <Shield className="h-5 w-5 text-slate-700" />
-                  ) : (
-                    <Users className="h-5 w-5 text-slate-700" />
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-900">Current seat policy</p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    {currentPlanCode === 'growth'
-                      ? '3 to 7 seats'
-                      : currentPlanCode === 'enterprise'
-                      ? '6+ seats'
-                      : '1 seat'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-slate-200 p-4">
-                  <div className="text-[11px] uppercase tracking-wide text-slate-400">Included</div>
-                  <div className="mt-1 text-lg font-semibold text-slate-950">
-                    {currentPlanCode === 'growth'
-                      ? '3–7'
-                      : currentPlanCode === 'enterprise'
-                      ? '6+'
-                      : '1'}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 p-4">
-                  <div className="text-[11px] uppercase tracking-wide text-slate-400">Assigned</div>
-                  <div className="mt-1 text-lg font-semibold text-slate-950">{assignedSeats}</div>
-                </div>
-              </div>
-
-              <p className="text-sm leading-6 text-slate-600">
-                Growth supports self-serve seats up to 7. Enterprise begins at 6 seats and is
-                handled through sales for commercial control.
-              </p>
-            </div>
-          </div>
+        {/* Usage */}
+        <div className="mb-6">
+          <BillingUsage meters={usageMeters} resetAt={formatDate(entitlements?.reset_at)} />
         </div>
+
+        {/* Plans */}
+        <div className="mb-6">
+          <BillingPlans
+            currentPlanCode={currentPlanCode}
+            cycle={billingInterval}
+            growthSeats={selectedSeats}
+            onSelectPlan={(p) => handleCheckout(p)}
+            onContactSales={() => { window.location.href = SALES_MAILTO; }}
+            onManageCurrent={handlePortal}
+            actionLoading={actionLoading}
+            canManage={canManage}
+            hasStripeCustomer={Boolean(stripeCustomerId)}
+          />
+        </div>
+
+        {/* Payment method + Enterprise — 2-up grid that stacks <820px */}
+        <div className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <PaymentMethodCard
+            hasStripeCustomer={Boolean(stripeCustomerId)}
+            billingEmail={billingEmail}
+            canManage={canManage}
+            onManagePortal={handlePortal}
+            onAddPayment={() => handleCheckout(currentPlanCode === 'free_trial' ? 'starter' : currentPlanCode)}
+            isLoading={isRedirecting}
+          />
+          <EnterpriseCard
+            onContactSales={() => { window.location.href = SALES_MAILTO; }}
+            onBookDemo={() => { window.location.href = SALES_MAILTO; }}
+          />
+        </div>
+
+        {/* Invoices */}
+        <div className="mb-6">
+          <BillingInvoices
+            invoices={[]}
+            hasStripeCustomer={Boolean(stripeCustomerId)}
+            canManage={canManage}
+            onOpenPortal={handlePortal}
+            isLoading={isRedirecting}
+          />
+        </div>
+
+        {/* Affiliate tie-in */}
+        <div className="mb-6">
+          <AffiliateTieIn
+            state={affiliateState}
+            onApply={() => navigate('/partners/apply')}
+            onOpenDash={() => navigate('/app/affiliate')}
+            onOpenAdmin={() => navigate('/app/admin/partner-program')}
+          />
+        </div>
+
+        {/* Trust footer */}
+        <TrustFooter />
       </div>
     </div>
   );
+}
+
+function capitalize(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }

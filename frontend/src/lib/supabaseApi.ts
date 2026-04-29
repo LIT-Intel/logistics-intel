@@ -154,47 +154,38 @@ export async function getSavedCompanies() {
   return data || [];
 }
 
+// Legacy helper kept for backward-compatible imports. Routes through the
+// canonical gated save-company Edge Function. Previously wrote to a
+// non-canonical `companies` / `saved_companies` pair (wrong tables) and
+// bypassed the plan-limit gate; that path is now dead.
 export async function saveCompany(companyId: string, companyData: any) {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  await supabase
-    .from("companies")
-    .upsert({
-      company_id: companyId,
-      company_key: companyData.key || companyId,
-      company_name: companyData.title || companyData.name || "Unknown",
-      domain: companyData.domain,
-      country_code: companyData.countryCode,
-      address: companyData.address,
-      phone: companyData.phone,
-      website: companyData.website,
-      shipments_12m: companyData.totalShipments || 0,
-      total_shipments: companyData.totalShipments || 0,
-      most_recent_shipment: companyData.mostRecentShipment,
-      top_suppliers: companyData.topSuppliers || [],
-      raw_data: companyData,
+  const { saveCompanyOrThrow } = await import("@/lib/saveCompany");
+  const { saved } = await saveCompanyOrThrow({
+    source_company_key: companyId,
+    company_data: {
       source: "importyeti",
-      last_fetched_at: new Date().toISOString(),
-    }, { onConflict: "company_id" });
-
-  const { data: saved, error } = await supabase
-    .from("saved_companies")
-    .upsert({
-      user_id: user.id,
-      company_id: companyId,
-      stage: "prospect",
-      saved_at: new Date().toISOString(),
-      last_viewed_at: new Date().toISOString(),
-    }, { onConflict: "user_id,company_id" })
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  enrichCompanyWithGemini(companyId).catch(err => {
-    console.warn("Background enrichment failed:", err);
+      source_company_key: companyData?.key || companyId,
+      name: companyData?.title || companyData?.name || "Unknown",
+      domain: companyData?.domain ?? null,
+      country_code: companyData?.countryCode ?? null,
+      address_line1: companyData?.address ?? null,
+      phone: companyData?.phone ?? null,
+      website: companyData?.website ?? null,
+      shipments_12m: companyData?.totalShipments ?? 0,
+      most_recent_shipment_date: companyData?.mostRecentShipment ?? null,
+    },
+    stage: "prospect",
   });
+
+  // Background enrichment is best-effort; the save itself already passed
+  // the quota gate so this is purely supplementary metadata.
+  try {
+    enrichCompanyWithGemini(companyId).catch((err) => {
+      console.warn("Background enrichment failed:", err);
+    });
+  } catch (err) {
+    console.warn("Background enrichment dispatch failed:", err);
+  }
 
   return saved;
 }
