@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=1440"/>
+  <title>Trade Intelligence — Dashboard & Company Profile (Design Reference)</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- D3 + TopoJSON for the globe -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+
+  <!-- React + Babel (pinned) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <style>
+    html,body{margin:0;padding:0;background:#F8FAFC;font-family:'DM Sans',system-ui,sans-serif;color:#0F172A;height:100%;}
+    #root{height:100vh;display:flex;flex-direction:column;}
+    .nav{background:#FFFFFF;border-bottom:1px solid #E5E7EB;padding:10px 20px;display:flex;gap:8px;align-items:center;flex-shrink:0;}
+    .nav button{background:#F8FAFC;border:1px solid #E5E7EB;border-radius:8px;padding:6px 12px;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:12px;color:#475569;cursor:pointer;}
+    .nav button.active{background:linear-gradient(180deg,#3B82F6,#2563EB);color:#fff;border-color:transparent;}
+    .nav .tag{margin-left:auto;font-size:10px;color:#94A3B8;font-family:'JetBrains Mono',monospace;}
+    .stage{flex:1;display:flex;overflow:hidden;}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Component scripts -->
+  <script type="text/babel" src="src/Globe.jsx"></script>
+  <script type="text/babel" src="src/Dashboard.jsx"></script>
+  <script type="text/babel" src="src/cdp/CDPHeader.jsx"></script>
+  <script type="text/babel" src="src/cdp/CDPDetailsPanel.jsx"></script>
+  <script type="text/babel" src="src/cdp/CDPSupplyChain.jsx"></script>
+  <script type="text/babel" src="src/cdp/CDPContacts.jsx"></script>
+  <script type="text/babel" src="src/cdp/CDPResearch.jsx"></script>
+  <script type="text/babel" src="src/cdp/CDPActivity.jsx"></script>
+  <script type="text/babel" src="src/CompanyDetailPage.jsx"></script>
+
+  <script type="text/babel">
+    const MOCK_COMPANY = {
+      company_id:'C-93421',
+      company_name:'Atlas Global Logistics',
+      domain:'atlasglobal.com',
+      shipments_12m: 14200,
+      teu: '62.4K',
+      est_spend:'$4.2M',
+      location:'San Bernardino, CA, US',
+    };
+
+    function Preview() {
+      const [view, setView] = React.useState('dashboard');
+      React.useEffect(()=>{ if(window.lucide) window.lucide.createIcons(); },[view]);
+      return (
+        <>
+          <div className="nav">
+            <button className={view==='dashboard'?'active':''} onClick={()=>setView('dashboard')}>Dashboard</button>
+            <button className={view==='profile'?'active':''} onClick={()=>setView('profile')}>Company Profile</button>
+            <span className="tag">design reference · do not ship as-is</span>
+          </div>
+          <div className="stage">
+            {view==='dashboard'
+              ? <Dashboard/>
+              : <CompanyDetailPage company={MOCK_COMPANY} onBack={()=>setView('dashboard')}/>}
+          </div>
+        </>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<Preview/>);
+  </script>
+</body>
+</html>
