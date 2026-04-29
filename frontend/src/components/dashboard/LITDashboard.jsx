@@ -1653,21 +1653,34 @@ export default function LITDashboard() {
     );
   }, [realSavedCompanies]);
 
-  // Convert the aggregated lane list into globe arcs. canonicalizeLanes
-  // collapses variants (e.g. "China → United States" + "China → USA") so
-  // the globe doesn't double-render the same arc.
+  // Phase B.21 — globe lane preparation now mirrors the Company Profile
+  // Trade Lanes tab (CompanyDetailPanel.tsx:4421-4432) verbatim. Previous
+  // B.18/B.20 code passed each canonical row's `displayLabel` (which is
+  // flag-prefixed like "🇨🇳 China → 🇺🇸 USA") back through
+  // `laneStringToGlobeLane`, where `resolveEndpoint` can't match the
+  // flag-prefixed string and returns null — that's why the dashboard globe
+  // was empty even though the ranked lane list and `canonicalizeLanes`
+  // both produced real data. Build GlobeLane objects directly from each
+  // canonical row's already-resolved `fromMeta` / `toMeta` / `coords`.
   const globeLanesB18 = useMemo(() => {
     if (topAggregatedLanes.length === 0) return [];
-    const raw = topAggregatedLanes.slice(0, 8).map((l) => ({
-      lane: l.label,
-      shipments: l.count,
-      teu: 0,
-      spend: null,
+    const { canonical } = canonicalizeLanes(
+      topAggregatedLanes.slice(0, 8).map((l) => ({
+        lane: l.label,
+        shipments: Number(l.shipments) || 0,
+        teu: Number(l.teu) || 0,
+        spend: null,
+      })),
+    );
+    return canonical.slice(0, 6).map((l) => ({
+      id: l.displayLabel,
+      from: l.fromMeta.canonicalKey,
+      to: l.toMeta.canonicalKey,
+      coords: [l.fromMeta.coords, l.toMeta.coords],
+      fromMeta: l.fromMeta,
+      toMeta: l.toMeta,
+      shipments: l.shipments,
     }));
-    const { canonical } = canonicalizeLanes(raw);
-    return canonical
-      .map((c, i) => laneStringToGlobeLane(c.displayLabel, i))
-      .filter(Boolean);
   }, [topAggregatedLanes]);
 
   // Templated, deterministic insights. Every clause is grounded in real
