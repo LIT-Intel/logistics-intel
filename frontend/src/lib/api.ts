@@ -3774,33 +3774,46 @@ export async function recallCompany(payload: {
   return res.json();
 }
 
+async function resolveCompanyUuid(company_id_or_slug: string): Promise<{ id: string; name?: string | null; domain?: string | null; website?: string | null }> {
+  if (company_id_or_slug.startsWith("company/")) {
+    const { data: company } = await supabase
+      .from("lit_companies")
+      .select("id, name, website, domain")
+      .eq("source_company_key", company_id_or_slug)
+      .maybeSingle();
+    if (!company?.id) {
+      throw new Error(`Company not found for slug: ${company_id_or_slug}`);
+    }
+    return company;
+  }
+  const { data: company } = await supabase
+    .from("lit_companies")
+    .select("id, name, website, domain")
+    .eq("id", company_id_or_slug)
+    .maybeSingle();
+  return company ?? { id: company_id_or_slug };
+}
+
 export async function enrichContacts(
-  company_id: string,
+  company_id_or_slug: string,
   opts?: { companyName?: string; companyDomain?: string; filters?: any },
 ) {
-  let companyName = opts?.companyName;
-  let companyDomain = opts?.companyDomain;
-  if (!companyName || !companyDomain) {
-    const { data: c } = await supabase
-      .from("lit_companies")
-      .select("name, website, domain")
-      .eq("id", company_id)
-      .maybeSingle();
-    companyName = companyName ?? c?.name;
-    companyDomain = companyDomain ?? c?.domain ?? c?.website;
-  }
+  const company = await resolveCompanyUuid(company_id_or_slug);
+  const companyName = opts?.companyName ?? company.name ?? undefined;
+  const companyDomain = opts?.companyDomain ?? company.domain ?? company.website ?? undefined;
   const { data, error } = await supabase.functions.invoke("enrich-contacts", {
-    body: { company_id, companyName, companyDomain, filters: opts?.filters },
+    body: { company_id: company.id, companyName, companyDomain, filters: opts?.filters },
   });
   if (error) throw new Error(`contacts.enrich: ${error.message}`);
   return data;
 }
 
-export async function listContacts(company_id: string, dept?: string) {
+export async function listContacts(company_id_or_slug: string, dept?: string) {
+  const company = await resolveCompanyUuid(company_id_or_slug);
   let q = supabase
     .from("lit_contacts")
     .select("*")
-    .eq("company_id", company_id)
+    .eq("company_id", company.id)
     .order("full_name", { ascending: true });
   if (dept) q = q.eq("department", dept);
   const { data, error } = await q;
