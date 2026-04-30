@@ -115,7 +115,15 @@ export default function CDPContacts({ companyId, onRequestEnrich }: CDPContactsP
     listContacts(companyId)
       .then((rows: any) => {
         if (cancelled) return;
-        setContacts(Array.isArray(rows) ? rows : Array.isArray(rows?.rows) ? rows.rows : []);
+        setContacts(
+          Array.isArray(rows)
+            ? rows
+            : Array.isArray(rows?.contacts)
+              ? rows.contacts
+              : Array.isArray(rows?.rows)
+                ? rows.rows
+                : [],
+        );
       })
       .catch((err) => {
         if (cancelled) return;
@@ -167,9 +175,11 @@ export default function CDPContacts({ companyId, onRequestEnrich }: CDPContactsP
       const rows: any = await listContacts(companyId);
       const next = Array.isArray(rows)
         ? rows
-        : Array.isArray(rows?.rows)
-          ? rows.rows
-          : [];
+        : Array.isArray(rows?.contacts)
+          ? rows.contacts
+          : Array.isArray(rows?.rows)
+            ? rows.rows
+            : [];
       setContacts(next);
       setEnrichToast(`Enriched — ${next.length} contacts on file`);
     } catch (err: any) {

@@ -1528,9 +1528,9 @@ export interface CompanySnapshot {
   country?: string;
   city?: string;
   website?: string;
-  total_shipments: number;
+  total_shipments: number | null;
   total_teu: number;
-  est_spend: number;
+  est_spend: number | null;
   fcl_count: number;
   lcl_count: number;
   last_shipment_date: string | null;
@@ -3774,33 +3774,38 @@ export async function recallCompany(payload: {
   return res.json();
 }
 
-export async function enrichContacts(company_id: string) {
-  const res = await fetch(`${GW}/crm/contacts.enrich`, {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ company_id }),
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`contacts.enrich ${res.status} ${t}`);
+export async function enrichContacts(
+  company_id: string,
+  opts?: { companyName?: string; companyDomain?: string; filters?: any },
+) {
+  let companyName = opts?.companyName;
+  let companyDomain = opts?.companyDomain;
+  if (!companyName || !companyDomain) {
+    const { data: c } = await supabase
+      .from("lit_companies")
+      .select("name, website, domain")
+      .eq("id", company_id)
+      .maybeSingle();
+    companyName = companyName ?? c?.name;
+    companyDomain = companyDomain ?? c?.domain ?? c?.website;
   }
-  return res.json();
+  const { data, error } = await supabase.functions.invoke("enrich-contacts", {
+    body: { company_id, companyName, companyDomain, filters: opts?.filters },
+  });
+  if (error) throw new Error(`contacts.enrich: ${error.message}`);
+  return data;
 }
 
 export async function listContacts(company_id: string, dept?: string) {
-  // Phase 6 fix — `new URL("/api/lit/...")` without a base argument throws
-  // `Failed to construct 'URL': Invalid URL` in non-page contexts (and was
-  // crashing the Contacts tab). Build the query string manually so the
-  // request works whether GW is absolute or relative.
-  const params = new URLSearchParams();
-  params.set("company_id", company_id);
-  if (dept) params.set("dept", dept);
-  const url = `${GW}/crm/contacts.list?${params.toString()}`;
-  const res = await fetch(url, {
-    headers: { accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`contacts.list ${res.status}`);
-  return res.json();
+  let q = supabase
+    .from("lit_contacts")
+    .select("*")
+    .eq("company_id", company_id)
+    .order("full_name", { ascending: true });
+  if (dept) q = q.eq("department", dept);
+  const { data, error } = await q;
+  if (error) throw new Error(`contacts.list ${error.code}: ${error.message}`);
+  return { contacts: data ?? [] };
 }
 
 export async function getEmailThreads(company_id: string) {
