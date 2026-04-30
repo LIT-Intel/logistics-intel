@@ -399,7 +399,7 @@ function MonthlyCadenceCard({ cadence }: { cadence: CadencePoint[] }) {
     );
   }
   const max = Math.max(...cadence.map((c) => c.fcl + c.lcl), 1);
-  const chartHeight = 96;
+  const chartHeight = 48;
   const totalFcl = cadence.reduce((s, c) => s + c.fcl, 0);
   const totalLcl = cadence.reduce((s, c) => s + c.lcl, 0);
   const totalShip = totalFcl + totalLcl;
@@ -1628,7 +1628,7 @@ function deriveCadence(profile: any): CadencePoint[] {
       return { label, fcl, lcl, total };
     })
     .filter((p: CadencePoint) => p.label);
-  return points;
+  return points.slice(-12);
 }
 
 function deriveModes(profile: any): ModeSlice[] {

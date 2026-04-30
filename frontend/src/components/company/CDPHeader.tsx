@@ -37,13 +37,17 @@ type CompanyShape = {
 
 type HeaderKpis = {
   shipments?: number | null;
+  shipmentsAllTime?: number | null;
   teu?: number | null;
   spend?: number | null;
+  spendAllTime?: number | null;
   tradeLanes?: number | null;
   contacts?: number | null;
   contactsVerified?: number | null;
   lastShipment?: string | null;
   topRoute?: string | null;
+  fclCount?: number | null;
+  lclCount?: number | null;
 };
 
 type CDPHeaderProps = {
@@ -95,24 +99,32 @@ export default function CDPHeader({
 
   const kpiCells = [
     {
-      label: "SHIPMENTS 12M",
+      label: "SHIPMENTS (12M)",
       value:
         kpis.shipments != null && kpis.shipments > 0
           ? Number(kpis.shipments).toLocaleString()
           : "—",
     },
     {
-      label: "TEU 12M",
+      label: "TEU (12M)",
       value:
         kpis.teu != null && Number(kpis.teu) > 0
           ? formatTeu(Number(kpis.teu))
           : "—",
     },
     {
-      label: "EST. SPEND",
+      label: "EST. SPEND (ALL-TIME)",
       value:
         kpis.spend != null && Number(kpis.spend) > 0
           ? formatSpend(Number(kpis.spend))
+          : "—",
+      trend: "12M calculation pending",
+    },
+    {
+      label: "TOTAL SHIPMENTS",
+      value:
+        kpis.shipmentsAllTime != null && kpis.shipmentsAllTime > 0
+          ? Number(kpis.shipmentsAllTime).toLocaleString()
           : "—",
     },
     {
@@ -121,15 +133,6 @@ export default function CDPHeader({
         kpis.tradeLanes != null && kpis.tradeLanes > 0
           ? String(kpis.tradeLanes)
           : "—",
-    },
-    {
-      label: "CONTACTS",
-      value:
-        kpis.contacts != null && kpis.contacts > 0 ? String(kpis.contacts) : "—",
-      trend:
-        kpis.contactsVerified != null && kpis.contactsVerified > 0
-          ? `${kpis.contactsVerified} verified`
-          : null,
     },
     {
       label: "LAST SHIPMENT",
