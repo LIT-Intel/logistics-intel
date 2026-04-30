@@ -19,8 +19,6 @@ import { getLitCampaigns } from '@/lib/litCampaigns';
 import {
   getPlanConfig,
   getTotalPrice,
-  normalizeSeatCount,
-  validateSeatCount,
   type BillingInterval,
   type PlanCode,
 } from '@/lib/planLimits';
@@ -70,7 +68,11 @@ export default function Billing() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [err, setErr] = useState('');
   const [billingInterval, setBillingInterval] = useState<BillingInterval>('monthly');
-  const [selectedSeats, setSelectedSeats] = useState<number>(3);
+  // 2026-04-29: every paid plan is now a flat package price (Starter $125,
+  // Growth $387 incl. 3 seats, Scale $625 incl. 5 seats). The seat
+  // selector is gone from the UI — Stripe Checkout always uses
+  // quantity:1. We intentionally keep no `selectedSeats` state to remove
+  // any role-derived input that could affect the comparison grid.
 
   // Phase F — real usage counters (preserved verbatim from prior impl).
   const [realSearches, setRealSearches] = useState<number>(0);
@@ -171,20 +173,17 @@ export default function Billing() {
     }
     if (planCode === 'free_trial') return;
 
-    const seats = planCode === 'starter' ? 1 : selectedSeats;
-    const validation = validateSeatCount(planCode, seats);
-    if (!validation.valid) {
-      setErr(validation.message || 'Invalid seat selection.');
-      return;
-    }
-
+    // 2026-04-29: every paid plan is a flat package price. We send seats:1
+    // to Stripe Checkout for every plan; the package's included seat count
+    // (Starter 1, Growth 3, Scale 5) lives in Stripe product metadata, not
+    // here. No more "requires at least 3 seats" validation error.
     setErr('');
     setActionLoading(planCode);
     try {
       const result: any = await createStripeCheckout({
         plan_code: planCode,
         interval: billingInterval === 'yearly' ? 'year' : 'month',
-        seats,
+        seats: 1,
       });
       if (result?.url) {
         window.location.href = result.url;
@@ -204,21 +203,10 @@ export default function Billing() {
   // ── Real partner role for AffiliateTieIn ───────────────────────────
   const partner = usePartnerStatus(user?.id || null);
 
-  // Default seat selection effect — preserved from prior impl
-  useEffect(() => {
-    const rawPlan =
-      subscription?.plan_code ||
-      (user as any)?.plan ||
-      (user as any)?.user_metadata?.plan ||
-      'free_trial';
-    const planCode = normalizePlanCode(rawPlan);
-    const seatCount =
-      subscription?.seats ||
-      (user as any)?.seat_count ||
-      (user as any)?.team_seat_count ||
-      undefined;
-    setSelectedSeats(normalizeSeatCount(planCode, seatCount));
-  }, [subscription, user]);
+  // 2026-04-29: the default-seat-selection effect is gone. Every paid plan
+  // is a flat package price (Starter $125, Growth $387 incl. 3 seats,
+  // Scale $625 incl. 5 seats); there is no selectedSeats state and no
+  // role-derived input that could affect the comparison grid.
 
   // ── Derived state ─────────────────────────────────────────────────
   const rawPlan =
@@ -267,21 +255,25 @@ export default function Billing() {
     (user as any)?.seat_count ||
     (user as any)?.team_seat_count ||
     null;
+  // 2026-04-29: included seats per package. Growth = 3, Scale = 5,
+  // Enterprise = Custom, everything else = 1.
   const seatsIncluded =
     currentPlanCode === 'growth'
-      ? '3 to 5'
+      ? '3'
+      : currentPlanCode === 'scale'
+      ? '5'
       : currentPlanCode === 'enterprise'
-      ? '6+'
+      ? 'Custom'
       : '1';
 
-  // Hero amount label
+  // Hero amount label. Every paid plan is a flat package price now;
+  // getTotalPrice ignores the seats arg, so we never multiply.
   const amountForHero = useMemo(() => {
     if (currentPlanCode === 'free_trial') return 'Free';
     if (currentPlanCode === 'enterprise') return 'Custom';
-    const seats = currentPlanCode === 'growth' ? assignedSeats || selectedSeats : 1;
-    const total = getTotalPrice(currentPlanCode, billingInterval, seats);
+    const total = getTotalPrice(currentPlanCode, billingInterval);
     return total === null ? 'Custom' : `$${total.toLocaleString()}`;
-  }, [currentPlanCode, billingInterval, assignedSeats, selectedSeats]);
+  }, [currentPlanCode, billingInterval]);
 
   const renewalDate = formatDate(subscription?.current_period_end);
   const daysUntilRenewal = daysUntil(subscription?.current_period_end);
@@ -473,7 +465,6 @@ export default function Billing() {
           <BillingPlans
             currentPlanCode={currentPlanCode}
             cycle={billingInterval}
-            growthSeats={selectedSeats}
             onSelectPlan={(p) => handleCheckout(p)}
             onContactSales={() => { window.location.href = SALES_MAILTO; }}
             onManageCurrent={handlePortal}

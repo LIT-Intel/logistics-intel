@@ -104,6 +104,14 @@ serve(async (req) => {
     const returnUrl = body.return_url || `${fallbackBase}/app/settings?tab=billing`;
 
     // --- If no customer exists yet, create one in Stripe ---
+    // 2026-04-29 hardening: when seeding a fresh subscriptions row we
+    // anchor it as free_trial. We never assume any other plan from the
+    // portal flow — paid access only ever activates from a verified
+    // Stripe webhook. The previous upsert was harmless (plan_code:
+    // free_trial) but used merge-duplicates which would silently
+    // overwrite an existing paid plan_code if a row had already been
+    // updated by the webhook. Switch to insert-only-on-conflict so we
+    // never clobber webhook-owned fields.
     if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
         email: userEmail,
@@ -111,16 +119,19 @@ serve(async (req) => {
       });
       stripeCustomerId = customer.id;
 
-      // Persist it so the next portal open is immediate
+      // Insert ONLY if no row exists. Postgres RLS will reject this if
+      // the user has no permission to insert; that's fine — the customer
+      // id is at least set in Stripe and the webhook will create the row
+      // on payment confirmation.
       await fetch(
-        `${supabaseUrl}/rest/v1/subscriptions?on_conflict=user_id`,
+        `${supabaseUrl}/rest/v1/subscriptions?on_conflict=user_id&ignore_duplicates=true`,
         {
           method: "POST",
           headers: {
             Authorization: authHeader,
             apikey: supabaseAnonKey,
             "Content-Type": "application/json",
-            Prefer: "resolution=merge-duplicates,return=minimal",
+            Prefer: "resolution=ignore-duplicates,return=minimal",
           },
           body: JSON.stringify({
             user_id: userId,
