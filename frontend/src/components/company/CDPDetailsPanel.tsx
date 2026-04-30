@@ -138,8 +138,10 @@ export default function CDPDetailsPanel({
   const topCarrier = useMemo(() => {
     const list =
       profile?.topCarriers || profile?.carrier_mix || profile?.carriers;
-    if (Array.isArray(list) && list.length > 0 && list[0]?.name) {
-      return list[0].name;
+    if (Array.isArray(list) && list.length > 0) {
+      const head = list[0] as any;
+      const name = head?.carrierName || head?.name || head?.carrier;
+      if (name) return name;
     }
     // Fall back to most-frequent carrier across recent BOLs.
     const counts = new Map<string, number>();
@@ -158,8 +160,10 @@ export default function CDPDetailsPanel({
       profile?.forwarder_mix ||
       profile?.forwarders ||
       profile?.serviceProviders;
-    if (Array.isArray(list) && list.length > 0 && list[0]?.name) {
-      return list[0].name;
+    if (Array.isArray(list) && list.length > 0) {
+      const head = list[0] as any;
+      const name = head?.providerName || head?.name || head?.forwarder;
+      if (name) return name;
     }
     // Fall back to most-frequent supplier/shipper/notify-party across
     // recentBols.
@@ -212,11 +216,30 @@ export default function CDPDetailsPanel({
   }, [profile?.containers, profile?.fcl_shipments_all_time, profile?.lcl_shipments_all_time]);
 
   const topHs = useMemo(() => {
+    // v200: hs_profile is an object with topChapters[] + topHsChapter
+    const hsObj =
+      (profile?.hsProfile && typeof profile.hsProfile === "object" && !Array.isArray(profile.hsProfile))
+        ? profile.hsProfile
+        : (profile?.hs_profile && typeof profile.hs_profile === "object" && !Array.isArray(profile.hs_profile))
+          ? profile.hs_profile
+          : null;
+    if (hsObj) {
+      const head = hsObj.topHsChapter || (Array.isArray(hsObj.topChapters) ? hsObj.topChapters[0] : null);
+      if (head) {
+        const label = head?.description || head?.label || head?.name || head?.commodity;
+        if (label) {
+          return {
+            label: String(label),
+            hsCode: head?.hsCode || head?.hs_code || head?.code || null,
+          };
+        }
+      }
+    }
     const list =
       profile?.topProducts ||
       profile?.hs_categories ||
-      profile?.hs_profile ||
-      profile?.hsProfile;
+      (Array.isArray(profile?.hs_profile) ? profile?.hs_profile : null) ||
+      (Array.isArray(profile?.hsProfile) ? profile?.hsProfile : null);
     if (Array.isArray(list) && list.length > 0) {
       const head = list[0] as any;
       const label = head?.label || head?.name || head?.description || head?.commodity;

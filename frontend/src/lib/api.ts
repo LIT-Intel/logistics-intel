@@ -2294,6 +2294,27 @@ function normalizeCompanyProfile(
     recentBols,
     containers,
     topSuppliers,
+    // v200 passthrough for CDPDetailsPanel + CDPSupplyChain rich panels
+    topCarriers: Array.isArray((profileData as any).carrier_mix?.carriers)
+      ? (profileData as any).carrier_mix.carriers
+      : (Array.isArray((profileData as any).top_carriers) ? (profileData as any).top_carriers : null),
+    topForwarders: Array.isArray((profileData as any).service_provider_mix?.forwarders)
+      ? (profileData as any).service_provider_mix.forwarders
+      : (Array.isArray((profileData as any).top_forwarders) ? (profileData as any).top_forwarders : null),
+    topModes: (() => {
+      const cp = (profileData as any).container_profile;
+      if (!cp) return null;
+      const fcl = cp.fcl?.shipmentShare ?? null;
+      const lcl = cp.lcl?.shipmentShare ?? null;
+      const out: Array<{ mode: string; count?: number }> = [];
+      if (fcl != null) out.push({ mode: `FCL ${Math.round(fcl)}%`, count: cp.fcl?.shipments ?? undefined });
+      if (lcl != null) out.push({ mode: `LCL ${Math.round(lcl)}%`, count: cp.lcl?.shipments ?? undefined });
+      return out.length ? out : null;
+    })(),
+    hsProfile: (profileData as any).hs_profile ?? null,
+    containerProfile: (profileData as any).container_profile ?? null,
+    serviceProviderMix: (profileData as any).service_provider_mix ?? null,
+    carrierMix: (profileData as any).carrier_mix ?? null,
     monthly_shipments: Array.isArray(profileData.monthly_shipments) ? profileData.monthly_shipments : undefined,
     time_series: profileData.time_series,
     monthly_volumes: profileData.monthly_volumes,

@@ -399,7 +399,8 @@ function MonthlyCadenceCard({ cadence }: { cadence: CadencePoint[] }) {
     );
   }
   const max = Math.max(...cadence.map((c) => c.fcl + c.lcl), 1);
-  const chartHeight = 48;
+  const chartHeight = 96;
+  const barWidth = 14; // narrower bars per Sony spec
   const totalFcl = cadence.reduce((s, c) => s + c.fcl, 0);
   const totalLcl = cadence.reduce((s, c) => s + c.lcl, 0);
   const totalShip = totalFcl + totalLcl;
@@ -427,7 +428,7 @@ function MonthlyCadenceCard({ cadence }: { cadence: CadencePoint[] }) {
         </div>
       }
     >
-      <div className="flex items-end gap-1.5" style={{ height: chartHeight + 22 }}>
+      <div className="flex items-end justify-start gap-3" style={{ height: chartHeight + 22 }}>
         {cadence.map((p, i) => {
           const total = p.fcl + p.lcl;
           const fclH = total > 0 ? (p.fcl / max) * chartHeight : 0;
@@ -436,8 +437,8 @@ function MonthlyCadenceCard({ cadence }: { cadence: CadencePoint[] }) {
           return (
             <div
               key={`${p.label}-${i}`}
-              className="flex flex-1 flex-col items-center justify-end"
-              style={{ height: "100%" }}
+              className="flex flex-col items-center justify-end"
+              style={{ height: "100%", width: barWidth }}
             >
               <div
                 className="relative flex w-full flex-col items-stretch justify-end"
@@ -1855,8 +1856,24 @@ function deriveForwarders(profile: any, recentBols: any[]): ForwarderRow[] {
 }
 
 function deriveSuppliers(profile: any, recentBols: any[] = []): SupplierRow[] {
+  // Phase 5.1 — prefer service_provider_mix.suppliers (v200 parser, has counts)
+  // over the flat string-only top_suppliers list.
+  const structured =
+    profile?.serviceProviderMix?.suppliers ||
+    profile?.service_provider_mix?.suppliers ||
+    null;
   const list =
-    profile?.topSuppliers || profile?.suppliers || profile?.suppliers_sample || [];
+    (Array.isArray(structured) && structured.length > 0
+      ? structured.map((s: any) => ({
+          name: s?.providerName ?? s?.name ?? null,
+          shipments: Number(s?.shipments) || 0,
+          country: s?.countryCode ?? s?.country_code ?? s?.country ?? "",
+        }))
+      : null) ||
+    profile?.topSuppliers ||
+    profile?.suppliers ||
+    profile?.suppliers_sample ||
+    [];
   // Phase 6 — when the explicit list has counts, use it; when it's a
   // bare string array, aggregate counts from recentBols using
   // getBolSupplier so the UI doesn't render "0% · 0 ship". Falls back to
