@@ -31,10 +31,31 @@ type Contact = {
   country_code?: string | null;
   is_verified?: boolean | null;
   verified?: boolean | null;
+  /** Phase 5 — only an explicit provider-side verification flag promotes
+   *  the contact to a "Verified" badge. `is_verified` alone (which can
+   *  be set by inferred enrichment) is no longer sufficient. */
+  email_verified?: boolean | null;
+  email_verification_status?: string | null;
+  verified_by_provider?: boolean | null;
   source?: string | null;
   source_provider?: string | null;
   linkedin_url?: string | null;
 };
+
+/**
+ * Phase 5 — strict verified gate. We only show a "Verified" pill when
+ * the upstream enrichment provider explicitly confirms the email — never
+ * for inferred / pattern-matched contacts.
+ */
+function isProviderVerified(contact: Contact): boolean {
+  if (contact.verified_by_provider === true) return true;
+  if (contact.email_verified === true) return true;
+  const status = String(contact.email_verification_status || "").toLowerCase();
+  if (status === "verified" || status === "valid" || status === "deliverable") {
+    return true;
+  }
+  return false;
+}
 
 type CDPContactsProps = {
   companyId?: string | null;
@@ -120,14 +141,14 @@ export default function CDPContacts({ companyId, onRequestEnrich }: CDPContactsP
         filter === "all"
           ? true
           : filter === "verified"
-            ? Boolean(c.is_verified ?? c.verified)
+            ? isProviderVerified(c)
             : dept === filter;
       return matchesQuery && matchesFilter;
     });
   }, [contacts, query, filter]);
 
   const verifiedCount = useMemo(
-    () => contacts.filter((c) => Boolean(c.is_verified ?? c.verified)).length,
+    () => contacts.filter((c) => isProviderVerified(c)).length,
     [contacts],
   );
 
@@ -321,7 +342,7 @@ export default function CDPContacts({ companyId, onRequestEnrich }: CDPContactsP
 
 function ContactRow({ contact }: { contact: Contact }) {
   const name = contact.full_name || contact.name || "Unnamed contact";
-  const verified = Boolean(contact.is_verified ?? contact.verified);
+  const verified = isProviderVerified(contact);
   const dept = contact.department || contact.dept;
   const source = contact.source || contact.source_provider;
   return (
@@ -376,7 +397,7 @@ function ContactRow({ contact }: { contact: Contact }) {
 
 function ContactCard({ contact }: { contact: Contact }) {
   const name = contact.full_name || contact.name || "Unnamed contact";
-  const verified = Boolean(contact.is_verified ?? contact.verified);
+  const verified = isProviderVerified(contact);
   const dept = contact.department || contact.dept;
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3.5 transition-shadow hover:shadow-sm">

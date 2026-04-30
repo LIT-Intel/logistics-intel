@@ -2,13 +2,15 @@
 // docs/design-specs/. Replaces the prior 1,588-line dark-hero layout
 // (Phases B.9–B.17) with the design's 4-tab structure:
 //
-//   Tab bar:   Supply Chain · Contacts · AI Research · Activity
+//   Tab bar:   Supply Chain · Contacts · Pulse AI · Activity
 //   Body:      <tab content>     |  <CDPDetailsPanel right rail>
 //   Header:    <CDPHeader light, with breadcrumb + identity + KPI strip>
 //
 // Market Benchmark (Phase B.11 super-admin gate) is dropped per direction.
-// AI Research now renders the Pulse brief inline (replaces the modal).
-// Mobile bottom-sheet (B.17) removed because CDPHeader has its own More menu.
+// Pulse AI (Phase 5; was "AI Research") renders the inline brief returned
+// by the `pulse-ai-enrich` Supabase Edge Function (replaces the legacy
+// `pulse-brief` modal flow). Mobile bottom-sheet (B.17) removed because
+// CDPHeader has its own More menu.
 //
 // All data fetching, plan-gating, error-copy maps, and edge-fn handlers
 // are preserved verbatim from the prior implementation:
@@ -39,19 +41,27 @@ import CDPContacts from "@/components/company/CDPContacts";
 import CDPResearch from "@/components/company/CDPResearch";
 import CDPActivity from "@/components/company/CDPActivity";
 
-// Phase B.16 — friendly copy for pulse-brief / export-company-profile
-// error codes. Provider names (Tavily / Gemini / etc.) are NEVER
-// surfaced to the user — only neutral phrases like "AI brief search
-// source" or "web search". Anything not in this map falls back to the
-// raw `error` string so we never silently swallow an upstream message.
+// Phase 5 — friendly copy for `pulse-ai-enrich` / `export-company-profile`
+// error codes. Provider names (Tavily / Gemini / OpenAI / etc.) are NEVER
+// surfaced to the user — only neutral phrases like "AI search source" or
+// "web search". Anything not in this map falls back to the raw `error`
+// string so we never silently swallow an upstream message.
 const PULSE_ERROR_COPY = {
+  // pulse-ai-enrich
+  LIMIT_EXCEEDED:
+    "You've reached your Pulse AI report limit for this billing period.",
+  MISSING_COMPANY_IDENTIFIER:
+    "We couldn't identify this company to generate a Pulse AI report.",
+  COMPANY_NOT_FOUND: "We couldn't find this company in the database.",
+  PULSE_AI_FAILED: "Pulse AI generation failed. Try again in a moment.",
+  // legacy pulse-brief codes (kept for any in-flight cached briefs)
   TAVILY_NOT_CONFIGURED:
-    "AI brief search source not configured. Ask your admin to enable it.",
+    "AI search source not configured. Ask your admin to enable it.",
   TAVILY_FAILED: "Web search failed. Try again in a moment.",
-  INVALID_INPUT: "We couldn't read this company's identity to build a brief.",
-  UNAUTHORIZED: "Sign in again to generate an AI brief.",
+  INVALID_INPUT: "We couldn't read this company's identity to build a report.",
+  UNAUTHORIZED: "Sign in again to generate a Pulse AI report.",
   SUPABASE_NOT_CONFIGURED:
-    "AI brief service is missing core configuration. Contact support.",
+    "Pulse AI service is missing core configuration. Contact support.",
 };
 
 const EXPORT_ERROR_COPY = {
@@ -196,7 +206,7 @@ function buildShellCompany(companyId, stored) {
 const TABS = [
   { id: "supply", label: "Supply Chain", Icon: Workflow },
   { id: "contacts", label: "Contacts", Icon: Users },
-  { id: "research", label: "AI Research", Icon: Sparkles },
+  { id: "research", label: "Pulse AI", Icon: Sparkles },
   { id: "activity", label: "Activity", Icon: Activity },
 ];
 
@@ -233,13 +243,16 @@ export default function Company() {
   const [snapshotUpdatedAt, setSnapshotUpdatedAt] = useState(null);
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
-  // Pulse brief lives inline in the AI Research tab (replaces the prior
-  // modal). Component state caches the last result so tab switching
-  // doesn't re-fetch; the pulse-brief Edge Function also caches into
-  // lit_saved_companies.gemini_brief.
+  // Pulse AI inline brief (Phase 5 — was "AI Research"). Component state
+  // caches the last `pulse-ai-enrich` response so tab switching doesn't
+  // re-invoke the function; the function itself also persists the report
+  // server-side. `pulseUsage` carries the backend's `plan` + `limit`
+  // values so the tab can render an upgrade state without bypassing the
+  // server-side cap.
   const [pulseLoading, setPulseLoading] = useState(false);
   const [pulseBrief, setPulseBrief] = useState(null);
   const [pulseError, setPulseError] = useState(null);
+  const [pulseUsage, setPulseUsage] = useState(null);
 
   const [shareLoading, setShareLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
@@ -471,55 +484,74 @@ export default function Company() {
     return false;
   }
 
-  async function handlePulseClick() {
+  // Phase 5 — Pulse AI handler. Calls `pulse-ai-enrich` with the logged-in
+  // user's session (no service-role key, no OpenAI key in the browser).
+  // The function returns either a cached or freshly generated report; we
+  // only force a refresh when the user explicitly asks to. LIMIT_EXCEEDED
+  // is surfaced via state so the tab can render an upgrade message — the
+  // cap itself is enforced server-side and cannot be bypassed from here.
+  async function handlePulseClick(options = {}) {
     if (pulseLoading) return;
-    // Switch to AI Research tab so user sees the rendering brief.
-    setTab("research");
+    const forceRefresh = Boolean(options?.forceRefresh);
+    if (!forceRefresh) {
+      setTab("research");
+    }
     setPulseLoading(true);
     setPulseError(null);
     try {
       const { data, error: invokeError } = await supabase.functions.invoke(
-        "pulse-brief",
+        "pulse-ai-enrich",
         {
           body: {
             company_id: companyId,
             source_company_key:
               storedSelectedCompany?.source_company_key || null,
-            company_name: companyName,
-            domain: companyDomain,
-            snapshot_summary: {
-              shipments_12m: headerKpis?.shipments ?? null,
-              teu_12m: headerKpis?.teu ?? null,
-              est_spend_12m: headerKpis?.spend ?? null,
-              top_lane: headerKpis?.topRoute ?? null,
-              last_shipment_date: headerKpis?.lastShipment ?? null,
-            },
+            mode: "company_profile",
+            force_refresh: forceRefresh,
           },
         },
       );
       if (invokeError) throw invokeError;
       if (!data?.ok) {
-        const code = data?.code || "UNKNOWN";
+        const code = data?.code || "PULSE_AI_FAILED";
         const friendly =
-          PULSE_ERROR_COPY[code] || data?.error || "Pulse brief failed.";
+          PULSE_ERROR_COPY[code] || data?.error || "Pulse AI failed.";
         setPulseError({ code, message: friendly });
+        if (data?.plan != null || data?.limit != null) {
+          setPulseUsage({ plan: data.plan ?? null, limit: data.limit ?? null });
+        }
       } else {
+        const report = data.report || {};
+        const reportRow = data.report_row || {};
         setPulseBrief({
-          generatedAt: data.generated_at,
+          generatedAt: reportRow.generated_at || report.generated_at || null,
           cached: Boolean(data.cached),
-          sections: data.sections || {},
-          confidence: data.confidence ?? null,
-          sources_count: data.sources_count ?? null,
+          report,
+          reportRow,
+          confidence:
+            report.confidence_score ??
+            report.confidence ??
+            reportRow.confidence ??
+            null,
+          model: reportRow.model || report.model || null,
+        });
+        setPulseUsage({
+          plan: data.plan ?? null,
+          limit: data.limit ?? null,
         });
       }
     } catch (err) {
       setPulseError({
         code: "NETWORK",
-        message: err?.message || "Pulse network error.",
+        message: err?.message || "Pulse AI network error.",
       });
     } finally {
       setPulseLoading(false);
     }
+  }
+
+  function handlePulseRefresh() {
+    return handlePulseClick({ forceRefresh: true });
   }
 
   async function handleManualRefreshClick() {
@@ -748,11 +780,14 @@ export default function Company() {
               pulseBrief={pulseBrief}
               pulseLoading={pulseLoading}
               pulseError={pulseError}
+              pulseUsage={pulseUsage}
               onPulse={handlePulseClick}
+              onRefresh={handlePulseRefresh}
               onShareHtml={handleShareHtmlClick}
               onExportPdf={handleExportPdfClick}
               shareLoading={shareLoading}
               exportLoading={exportLoading}
+              navigate={navigate}
             />
           )}
           {tab === "activity" && (

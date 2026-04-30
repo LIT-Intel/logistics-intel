@@ -25,6 +25,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { motion } from "framer-motion";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
@@ -102,8 +103,13 @@ type SearchCompany = {
 export default function SearchPage() {
   const { user, authReady } = useAuth();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
 
-  const [searchQuery, setSearchQuery] = useState("");
+  // Phase 5 — initialize `searchQuery` from the `?q=` URL parameter on
+  // mount so deep links like /app/search?q=Rivian land with the input
+  // pre-populated and the search auto-runs (effect below).
+  const initialQ = searchParams.get("q") || "";
+  const [searchQuery, setSearchQuery] = useState(initialQ);
   const [results, setResults] = useState<SearchCompany[]>([]);
   const [upgradeModal, setUpgradeModal] = useState<LimitExceeded | null>(null);
   const [selectedCompany, setSelectedCompany] = useState<SearchCompany | null>(null);
@@ -312,10 +318,14 @@ export default function SearchPage() {
       ?? r?.last_shipment_date ?? r?.most_recent_shipment ?? null;
   }
 
-  const handleSearch = async (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent, overrideQuery?: string) => {
     e.preventDefault();
 
-    const query = searchQuery.trim();
+    // Phase 5 — accept an optional `overrideQuery` so the URL-param
+    // auto-run path (?q=…) can fire the search before the controlled
+    // input state has flushed through React's render cycle. The form
+    // submit path keeps the existing behavior (reads `searchQuery`).
+    const query = (overrideQuery ?? searchQuery).trim();
 
     if (!query || query.length < 2) {
       toast({
@@ -572,6 +582,26 @@ export default function SearchPage() {
       setSearching(false);
     }
   };
+
+  // Phase 5 — auto-run a search when the URL carries `?q=…` and auth is
+  // ready. Single-shot guard via a ref so editing the input or routing
+  // back doesn't re-trigger. The Pulse AI tab's "Similar Companies"
+  // links route here with q=<encoded company name> to deep-link a fresh
+  // search.
+  const autoRanRef = React.useRef(false);
+  useEffect(() => {
+    if (autoRanRef.current) return;
+    if (!authReady) return;
+    const q = (searchParams.get("q") || "").trim();
+    if (q.length < 2) return;
+    autoRanRef.current = true;
+    setSearchQuery(q);
+    const fakeEvent = {
+      preventDefault: () => {},
+    } as unknown as React.FormEvent;
+    void handleSearch(fakeEvent, q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, searchParams]);
 
   const handleClear = () => {
     setSearchQuery("");
