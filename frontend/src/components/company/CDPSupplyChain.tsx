@@ -73,8 +73,14 @@ export default function CDPSupplyChain({
   const carriers = useMemo(() => deriveCarriers(profile, recentBols), [profile, recentBols]);
   const forwarders = useMemo(() => deriveForwarders(profile, recentBols), [profile, recentBols]);
   const modes = useMemo(() => deriveModes(profile), [profile]);
-  const suppliers = useMemo(() => deriveSuppliers(profile), [profile]);
-  const products = useMemo(() => deriveProducts(profile), [profile]);
+  const suppliers = useMemo(
+    () => deriveSuppliers(profile, recentBols),
+    [profile, recentBols],
+  );
+  const products = useMemo(
+    () => deriveProducts(profile, recentBols),
+    [profile, recentBols],
+  );
   const containerProfile = useMemo(() => deriveContainerProfile(profile), [profile]);
   const cadence = useMemo(() => deriveCadence(profile), [profile]);
 
@@ -1131,14 +1137,19 @@ function BolPreviewTable({ recentBols }: { recentBols: any[] }) {
 }
 
 function BolPreviewRow({ bol, isLast }: { bol: any; isLast: boolean }) {
-  const date = getBolDate(bol);
-  const carrier = readCarrier(bol);
-  const supplier =
-    bol?.supplier ||
-    bol?.supplier_name ||
-    bol?.shipper_name ||
-    bol?.raw?.shipper_name ||
-    null;
+  // Phase 6 — broad BOL helpers; the row never renders "Invalid Date" /
+  // empty lane / blank carrier when ANY of the multi-name fields are
+  // present in the raw row.
+  const dateLabel = formatBolDate(bol);
+  const carrierMeta = readCarrier(bol);
+  const carrierName = carrierMeta?.name || (() => {
+    const s = getBolCarrierString(bol);
+    return s === "—" ? null : s;
+  })();
+  const supplier = (() => {
+    const s = getBolSupplier(bol);
+    return s === "—" ? null : s;
+  })();
   const teu = Number(bol?.teu) || Number(bol?.containers_teu) || null;
   const isLcl = Boolean(bol?.lcl) || /lcl/i.test(String(bol?.mode || ""));
   const fclLcl = isLcl ? "LCL" : "FCL";
@@ -1149,20 +1160,18 @@ function BolPreviewRow({ bol, isLast }: { bol: any; isLast: boolean }) {
     bol?.containerType ||
     bol?.raw?.container_group ||
     null;
-  const hs = bol?.hs_code || bol?.raw?.hs_code || bol?.commodity_code || null;
-  const origin =
-    bol?.origin_name ||
-    bol?.origin ||
-    bol?.from_port ||
-    bol?.raw?.foreign_port ||
-    null;
-  const destination =
-    bol?.destination_name ||
-    bol?.destination ||
-    bol?.to_port ||
-    bol?.us_port_of_unlading ||
-    bol?.raw?.us_port ||
-    null;
+  const hs = (() => {
+    const s = getBolHs(bol);
+    return s === "—" ? null : s;
+  })();
+  const origin = (() => {
+    const s = getBolOrigin(bol);
+    return s === "—" ? null : s;
+  })();
+  const destination = (() => {
+    const s = getBolDestination(bol);
+    return s === "—" ? null : s;
+  })();
   return (
     <tr
       className={[
@@ -1171,27 +1180,22 @@ function BolPreviewRow({ bol, isLast }: { bol: any; isLast: boolean }) {
       ].join(" ")}
     >
       <td className="font-mono whitespace-nowrap px-3 py-2 text-[10px] text-slate-600">
-        {date
-          ? new Date(date).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })
-          : "—"}
+        {dateLabel}
       </td>
       <td className="px-3 py-2">
         <span className="font-display whitespace-nowrap text-[11px] text-slate-700">
-          {origin || "—"} <span className="text-slate-300">→</span>{" "}
-          {destination || "—"}
+          {origin || <span className="text-slate-300">—</span>}{" "}
+          <span className="text-slate-300">→</span>{" "}
+          {destination || <span className="text-slate-300">—</span>}
         </span>
       </td>
       <td className="px-3 py-2">
-        {carrier ? (
+        {carrierName ? (
           <span className="inline-flex items-center gap-1">
             <span className="font-display text-[11px] font-semibold text-slate-900">
-              {carrier.name}
+              {carrierName}
             </span>
-            {carrier.inferred && (
+            {carrierMeta?.inferred && (
               <span title="Inferred from Master Bill prefix">
                 <LitPill tone="amber" icon={<Info className="h-2 w-2" />}>
                   MBL
@@ -1228,15 +1232,25 @@ function BolPreviewRow({ bol, isLast }: { bol: any; isLast: boolean }) {
 }
 
 function ShipmentRow({ bol, isLast }: { bol: any; isLast: boolean }) {
-  const date = getBolDate(bol);
+  // Phase 6 — broad helpers + safe formatBolDate so the row never says
+  // "Invalid Date" / "— → —" when the raw row uses non-standard field
+  // names (foreign_port, us_port_of_unlading, place_of_receipt, etc.).
+  const dateLabel = (() => {
+    const value = getBolDate(bol);
+    if (!value) return "—";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  })();
   const carrier = readCarrier(bol);
-  const origin = bol?.origin_name || bol?.origin || bol?.from_port || null;
-  const destination =
-    bol?.destination_name ||
-    bol?.destination ||
-    bol?.to_port ||
-    bol?.us_port_of_unlading ||
-    null;
+  const origin = (() => {
+    const s = getBolOrigin(bol);
+    return s === "—" ? null : s;
+  })();
+  const destination = (() => {
+    const s = getBolDestination(bol);
+    return s === "—" ? null : s;
+  })();
   const teu = Number(bol?.teu) || Number(bol?.containers_teu) || null;
   const isLcl = Boolean(bol?.lcl) || /lcl/i.test(String(bol?.mode || ""));
   return (
@@ -1248,12 +1262,7 @@ function ShipmentRow({ bol, isLast }: { bol: any; isLast: boolean }) {
       style={{ gridTemplateColumns: "84px 1fr 56px 56px" }}
     >
       <span className="font-mono whitespace-nowrap text-[10px] text-slate-500">
-        {date
-          ? new Date(date).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            })
-          : "—"}
+        {dateLabel}
       </span>
       <div className="min-w-0">
         {origin || destination ? (
@@ -1298,7 +1307,12 @@ function TopSuppliersCard({ suppliers }: { suppliers: SupplierRow[] }) {
         <EmptyMessage text="No supplier data on file." />
       ) : (
         <div className="flex flex-col gap-2">
-          {suppliers.slice(0, 6).map((s, i) => (
+          {suppliers.slice(0, 6).map((s, i) => {
+            // Phase 6 — `-1` is a sentinel meaning "no count available"
+            // (string-only sample list with no recentBols match). Render
+            // the supplier name without the `0% · 0 ship` lie.
+            const hasStats = s.shipments > 0 && s.share >= 0;
+            return (
             <div key={s.name + i} className="flex items-center gap-2.5">
               <div className="font-mono flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[9px] font-bold text-slate-500">
                 {(s.country || "").slice(0, 2).toUpperCase() || "—"}
@@ -1307,20 +1321,28 @@ function TopSuppliersCard({ suppliers }: { suppliers: SupplierRow[] }) {
                 <div className="font-display truncate text-[12px] font-semibold text-slate-900">
                   {s.name}
                 </div>
-                <div className="mt-1 flex items-center gap-1.5">
-                  <div className="h-0.5 flex-1 overflow-hidden rounded bg-slate-100">
-                    <div
-                      className="h-full rounded bg-blue-500"
-                      style={{ width: `${s.share}%` }}
-                    />
+                {hasStats ? (
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <div className="h-0.5 flex-1 overflow-hidden rounded bg-slate-100">
+                      <div
+                        className="h-full rounded bg-blue-500"
+                        style={{ width: `${s.share}%` }}
+                      />
+                    </div>
+                    <span className="font-mono whitespace-nowrap text-[10px] text-slate-500">
+                      {s.share > 0 ? `${s.share}% · ` : ""}
+                      {s.shipments.toLocaleString()} ship
+                    </span>
                   </div>
-                  <span className="font-mono whitespace-nowrap text-[10px] text-slate-500">
-                    {s.share}% · {s.shipments.toLocaleString()} ship
-                  </span>
-                </div>
+                ) : (
+                  <div className="font-body mt-0.5 text-[10px] text-slate-400">
+                    Counterparty on file · count pending
+                  </div>
+                )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </LitSectionCard>
@@ -1832,56 +1854,173 @@ function deriveForwarders(profile: any, recentBols: any[]): ForwarderRow[] {
     .slice(0, 6);
 }
 
-function deriveSuppliers(profile: any): SupplierRow[] {
+function deriveSuppliers(profile: any, recentBols: any[] = []): SupplierRow[] {
   const list =
     profile?.topSuppliers || profile?.suppliers || profile?.suppliers_sample || [];
-  if (!Array.isArray(list)) return [];
-  const totalShip = list.reduce(
-    (s: number, e: any) => s + (Number(e?.shipments || e?.count) || 0),
-    0,
-  );
-  return list
-    .map((e: any) => {
-      const isString = typeof e === "string";
-      const name = isString ? e : String(e?.name || e?.label || "");
-      if (!name) return null;
-      const ship = isString ? 0 : Number(e?.shipments || e?.count) || 0;
-      const country = isString
-        ? ""
-        : String(e?.countryCode || e?.country_code || e?.country || "");
-      return {
-        name,
-        country,
-        shipments: ship,
-        share: totalShip > 0 ? Math.round((ship / totalShip) * 100) : 0,
+  // Phase 6 — when the explicit list has counts, use it; when it's a
+  // bare string array, aggregate counts from recentBols using
+  // getBolSupplier so the UI doesn't render "0% · 0 ship". Falls back to
+  // BOL-only aggregation when no explicit list is present at all.
+  if (Array.isArray(list) && list.length > 0) {
+    const hasCounts = list.some(
+      (e: any) =>
+        typeof e !== "string" &&
+        (Number(e?.shipments) > 0 || Number(e?.count) > 0),
+    );
+    if (hasCounts) {
+      const totalShip = list.reduce(
+        (s: number, e: any) =>
+          s + (typeof e === "string" ? 0 : Number(e?.shipments || e?.count) || 0),
+        0,
+      );
+      return list
+        .map((e: any) => {
+          const isString = typeof e === "string";
+          const name = isString ? e : String(e?.name || e?.label || "");
+          if (!name) return null;
+          const ship = isString ? 0 : Number(e?.shipments || e?.count) || 0;
+          const country = isString
+            ? ""
+            : String(e?.countryCode || e?.country_code || e?.country || "");
+          return {
+            name,
+            country,
+            shipments: ship,
+            share: totalShip > 0 ? Math.round((ship / totalShip) * 100) : 0,
+          };
+        })
+        .filter(Boolean) as SupplierRow[];
+    }
+    // String-only list: aggregate counts from recentBols where supplier
+    // matches one of these names; if no recentBols provided, return
+    // names with no count (caller renders without 0% · 0 ship).
+    const nameSet = new Set(
+      list
+        .map((e: any) => (typeof e === "string" ? e : String(e?.name || e?.label || "")))
+        .filter(Boolean)
+        .map((n: string) => n.toLowerCase()),
+    );
+    const counts = new Map<string, { ship: number; country: string }>();
+    for (const bol of recentBols) {
+      const supplier = getBolSupplier(bol);
+      if (!supplier || supplier === "—") continue;
+      if (!nameSet.has(supplier.toLowerCase())) continue;
+      const cur = counts.get(supplier) || {
+        ship: 0,
+        country: bol?.supplier_country || bol?.origin_country || "",
       };
-    })
-    .filter(Boolean) as SupplierRow[];
+      cur.ship += 1;
+      counts.set(supplier, cur);
+    }
+    const totalShip = Array.from(counts.values()).reduce(
+      (s, v) => s + v.ship,
+      0,
+    );
+    if (totalShip > 0) {
+      return Array.from(counts.entries())
+        .map(([name, v]) => ({
+          name,
+          country: v.country,
+          shipments: v.ship,
+          share: totalShip > 0 ? Math.round((v.ship / totalShip) * 100) : 0,
+        }))
+        .sort((a, b) => b.shipments - a.shipments);
+    }
+    // Truly no counts available — surface names with `shipments: -1`
+    // sentinel; the supplier card reads it as "no stat to show".
+    return list
+      .map((e: any) => {
+        const isString = typeof e === "string";
+        const name = isString ? e : String(e?.name || e?.label || "");
+        if (!name) return null;
+        return {
+          name,
+          country: isString
+            ? ""
+            : String(e?.countryCode || e?.country_code || e?.country || ""),
+          shipments: -1,
+          share: -1,
+        };
+      })
+      .filter(Boolean) as SupplierRow[];
+  }
+  // No explicit list — aggregate purely from recentBols.
+  if (!Array.isArray(recentBols) || recentBols.length === 0) return [];
+  const counts = new Map<string, { ship: number; country: string }>();
+  for (const bol of recentBols) {
+    const supplier = getBolSupplier(bol);
+    if (!supplier || supplier === "—") continue;
+    const cur = counts.get(supplier) || {
+      ship: 0,
+      country: bol?.supplier_country || bol?.origin_country || "",
+    };
+    cur.ship += 1;
+    counts.set(supplier, cur);
+  }
+  const total = Array.from(counts.values()).reduce((s, v) => s + v.ship, 0);
+  return Array.from(counts.entries())
+    .map(([name, v]) => ({
+      name,
+      country: v.country,
+      shipments: v.ship,
+      share: total > 0 ? Math.round((v.ship / total) * 100) : 0,
+    }))
+    .sort((a, b) => b.shipments - a.shipments)
+    .slice(0, 6);
 }
 
-function deriveProducts(profile: any): ProductRow[] {
+function deriveProducts(profile: any, recentBols: any[] = []): ProductRow[] {
   const list =
     profile?.topProducts ||
     profile?.products ||
     profile?.commodities ||
     profile?.hs_categories ||
+    profile?.hs_profile ||
+    profile?.hsProfile ||
+    profile?.productBreakdown ||
     [];
-  if (!Array.isArray(list)) return [];
-  return list
-    .map((e: any) => {
-      const label = String(
-        e?.label || e?.name || e?.description || e?.commodity || "",
-      ).trim();
-      if (!label) return null;
-      return {
-        label,
-        count: Number(e?.count || e?.shipments) || 0,
-        hsCode: e?.hs_code || e?.code || null,
-      };
-    })
-    .filter(Boolean)
-    .sort((a: any, b: any) => b.count - a.count)
-    .slice(0, 8) as ProductRow[];
+  if (Array.isArray(list) && list.length > 0) {
+    return list
+      .map((e: any) => {
+        const label = String(
+          e?.label ||
+            e?.name ||
+            e?.description ||
+            e?.commodity ||
+            e?.product ||
+            "",
+        ).trim();
+        if (!label) return null;
+        return {
+          label,
+          count: Number(e?.count || e?.shipments) || 0,
+          hsCode: e?.hs_code || e?.hsCode || e?.code || null,
+        };
+      })
+      .filter(Boolean)
+      .sort((a: any, b: any) => b.count - a.count)
+      .slice(0, 8) as ProductRow[];
+  }
+  // Phase 6 — aggregate from recentBols descriptions/HS when the
+  // backend hasn't surfaced topProducts yet.
+  if (!Array.isArray(recentBols) || recentBols.length === 0) return [];
+  const counts = new Map<string, { count: number; hs?: string }>();
+  for (const bol of recentBols) {
+    const desc = getBolDescription(bol);
+    const hs = getBolHs(bol);
+    const safeHs = hs && hs !== "—" ? hs : undefined;
+    const label = String(desc || "").trim();
+    if (!label) continue;
+    const trimmed = label.length > 80 ? label.slice(0, 80) + "…" : label;
+    const cur = counts.get(trimmed) || { count: 0, hs: safeHs };
+    cur.count += 1;
+    if (!cur.hs && safeHs) cur.hs = safeHs;
+    counts.set(trimmed, cur);
+  }
+  return Array.from(counts.entries())
+    .map(([label, v]) => ({ label, count: v.count, hsCode: v.hs ?? null }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
 }
 
 function readCarrier(
@@ -1930,15 +2069,161 @@ function bolMatchesLane(bol: any, lane: any): boolean {
   return matchFrom || matchTo;
 }
 
+// Phase 6 — broad BOL field helpers per QA brief. All accept the row OR
+// the row.raw object and return a string fallback "—" / null when the
+// field is genuinely missing. Never throw, never return "Invalid Date".
 function getBolDate(bol: any): string | null {
   if (!bol) return null;
   return (
     bol?.bill_of_lading_date ||
     bol?.bill_of_lading_date_formatted ||
     bol?.shipment_date ||
+    bol?.shipmentDate ||
     bol?.arrival_date ||
+    bol?.arrivalDate ||
+    bol?.entry_date ||
+    bol?.entryDate ||
+    bol?.bol_date ||
+    bol?.bolDate ||
+    bol?.bill_date ||
+    bol?.billDate ||
+    bol?.created_at ||
+    bol?.last_shipment_date ||
+    bol?.lastShipmentDate ||
     bol?.date ||
+    bol?.raw?.bill_of_lading_date ||
+    bol?.raw?.shipment_date ||
+    bol?.raw?.arrival_date ||
     null
+  );
+}
+
+function formatBolDate(bol: any): string {
+  const value = getBolDate(bol);
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function getBolOrigin(bol: any): string {
+  return (
+    bol?.origin_name ||
+    bol?.origin ||
+    bol?.origin_country ||
+    bol?.originCountry ||
+    bol?.foreign_port ||
+    bol?.foreignPort ||
+    bol?.from_port ||
+    bol?.fromPort ||
+    bol?.port_of_lading ||
+    bol?.portOfLading ||
+    bol?.place_of_receipt ||
+    bol?.placeOfReceipt ||
+    bol?.shipper_country ||
+    bol?.supplier_country ||
+    bol?.raw?.foreign_port ||
+    bol?.raw?.country ||
+    bol?.raw?.origin ||
+    "—"
+  );
+}
+
+function getBolDestination(bol: any): string {
+  return (
+    bol?.destination_name ||
+    bol?.destination ||
+    bol?.destination_country ||
+    bol?.destinationCountry ||
+    bol?.us_port ||
+    bol?.usPort ||
+    bol?.us_port_of_unlading ||
+    bol?.usPortOfUnlading ||
+    bol?.to_port ||
+    bol?.toPort ||
+    bol?.port_of_unlading ||
+    bol?.portOfUnlading ||
+    bol?.place_of_delivery ||
+    bol?.placeOfDelivery ||
+    bol?.consignee_country ||
+    bol?.raw?.us_port ||
+    bol?.raw?.destination ||
+    "—"
+  );
+}
+
+function getBolCarrierString(bol: any): string {
+  return (
+    bol?.carrier ||
+    bol?.carrier_name ||
+    bol?.carrierName ||
+    bol?.normalized_carrier ||
+    bol?.inferred_carrier ||
+    bol?.steamship_line ||
+    bol?.steamshipLine ||
+    bol?.shipping_line ||
+    bol?.shippingLine ||
+    bol?.scac ||
+    bol?.master_bill_prefix ||
+    bol?.mbl_prefix ||
+    bol?.raw?.carrier_name ||
+    bol?.raw?.shipping_line ||
+    bol?.raw?.scac ||
+    "—"
+  );
+}
+
+function getBolSupplier(bol: any): string {
+  return (
+    bol?.supplier ||
+    bol?.supplier_name ||
+    bol?.supplierName ||
+    bol?.shipper ||
+    bol?.shipper_name ||
+    bol?.shipperName ||
+    bol?.notify_party ||
+    bol?.notifyParty ||
+    bol?.notify_party_name ||
+    bol?.raw?.shipper_name ||
+    bol?.raw?.supplier_name ||
+    bol?.raw?.notify_party_name ||
+    "—"
+  );
+}
+
+function getBolHs(bol: any): string {
+  return (
+    bol?.hs_code ||
+    bol?.hsCode ||
+    bol?.hts_code ||
+    bol?.htsCode ||
+    bol?.commodity_code ||
+    bol?.commodityCode ||
+    bol?.raw?.hs_code ||
+    bol?.raw?.hts_code ||
+    "—"
+  );
+}
+
+function getBolDescription(bol: any): string {
+  return (
+    bol?.description ||
+    bol?.product_description ||
+    bol?.productDescription ||
+    bol?.commodity ||
+    bol?.commodity_description ||
+    bol?.commodityDescription ||
+    bol?.goods_description ||
+    bol?.goodsDescription ||
+    bol?.cargo_description ||
+    bol?.cargoDescription ||
+    bol?.raw?.product_description ||
+    bol?.raw?.commodity_description ||
+    ""
   );
 }
 

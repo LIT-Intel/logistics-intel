@@ -3788,10 +3788,15 @@ export async function enrichContacts(company_id: string) {
 }
 
 export async function listContacts(company_id: string, dept?: string) {
-  const u = new URL(`${GW}/crm/contacts.list`);
-  u.searchParams.set("company_id", company_id);
-  if (dept) u.searchParams.set("dept", dept);
-  const res = await fetch(u.toString(), {
+  // Phase 6 fix — `new URL("/api/lit/...")` without a base argument throws
+  // `Failed to construct 'URL': Invalid URL` in non-page contexts (and was
+  // crashing the Contacts tab). Build the query string manually so the
+  // request works whether GW is absolute or relative.
+  const params = new URLSearchParams();
+  params.set("company_id", company_id);
+  if (dept) params.set("dept", dept);
+  const url = `${GW}/crm/contacts.list?${params.toString()}`;
+  const res = await fetch(url, {
     headers: { accept: "application/json" },
   });
   if (!res.ok) throw new Error(`contacts.list ${res.status}`);

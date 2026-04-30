@@ -121,18 +121,72 @@ export default function CDPDetailsPanel({
   const toggle = (k: keyof typeof open) =>
     setOpen((s) => ({ ...s, [k]: !s[k] }));
 
+  // Phase 6 — right-rail trade-intel rows now fall back through profile
+  // shapes AND recentBols when the explicit list isn't surfaced. Order
+  // mirrors CDPSupplyChain's `derive*` helpers so the right rail and the
+  // tab bodies can never disagree on what data is available.
+  const recentBols: any[] = useMemo(
+    () =>
+      profile?.recentBols ||
+      profile?.recent_bols ||
+      profile?.bols ||
+      profile?.shipments ||
+      [],
+    [profile],
+  );
+
   const topCarrier = useMemo(() => {
-    const list = profile?.topCarriers;
-    if (!Array.isArray(list) || list.length === 0) return null;
-    return list[0]?.name || null;
-  }, [profile?.topCarriers]);
+    const list =
+      profile?.topCarriers || profile?.carrier_mix || profile?.carriers;
+    if (Array.isArray(list) && list.length > 0 && list[0]?.name) {
+      return list[0].name;
+    }
+    // Fall back to most-frequent carrier across recent BOLs.
+    const counts = new Map<string, number>();
+    for (const bol of recentBols) {
+      const name = readBolCarrier(bol);
+      if (!name) continue;
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    if (counts.size === 0) return null;
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
+  }, [profile?.topCarriers, profile?.carrier_mix, profile?.carriers, recentBols]);
 
   const topForwarder = useMemo(() => {
     const list =
-      profile?.topForwarders || profile?.forwarders || profile?.serviceProviders;
-    if (!Array.isArray(list) || list.length === 0) return null;
-    return list[0]?.name || null;
-  }, [profile?.topForwarders, profile?.forwarders, profile?.serviceProviders]);
+      profile?.topForwarders ||
+      profile?.forwarder_mix ||
+      profile?.forwarders ||
+      profile?.serviceProviders;
+    if (Array.isArray(list) && list.length > 0 && list[0]?.name) {
+      return list[0].name;
+    }
+    // Fall back to most-frequent supplier/shipper/notify-party across
+    // recentBols.
+    const counts = new Map<string, number>();
+    for (const bol of recentBols) {
+      const name =
+        bol?.shipper_name ||
+        bol?.supplier ||
+        bol?.supplier_name ||
+        bol?.notify_party ||
+        bol?.raw?.shipper_name ||
+        bol?.raw?.supplier_name ||
+        null;
+      if (!name) continue;
+      const s = String(name).trim();
+      if (!s) continue;
+      counts.set(s, (counts.get(s) || 0) + 1);
+    }
+    if (counts.size === 0) return null;
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
+  }, [
+    profile?.topForwarders,
+    profile?.forwarder_mix,
+    profile?.forwarders,
+    profile?.serviceProviders,
+    recentBols,
+  ]);
 
   const topMode = useMemo(() => {
     const list = profile?.topModes;
@@ -158,31 +212,83 @@ export default function CDPDetailsPanel({
   }, [profile?.containers, profile?.fcl_shipments_all_time, profile?.lcl_shipments_all_time]);
 
   const topHs = useMemo(() => {
-    const list = profile?.topProducts || profile?.hs_categories;
-    if (!Array.isArray(list) || list.length === 0) return null;
-    const head = list[0] as any;
-    if (!head) return null;
-    const label = head.label || head.name || head.description || head.commodity;
-    if (!label) return null;
-    return {
-      label: String(label),
-      hsCode: head.hs_code || head.code || null,
-    };
-  }, [profile?.topProducts, profile?.hs_categories]);
+    const list =
+      profile?.topProducts ||
+      profile?.hs_categories ||
+      profile?.hs_profile ||
+      profile?.hsProfile;
+    if (Array.isArray(list) && list.length > 0) {
+      const head = list[0] as any;
+      const label = head?.label || head?.name || head?.description || head?.commodity;
+      if (label) {
+        return {
+          label: String(label),
+          hsCode: head?.hs_code || head?.hsCode || head?.code || null,
+        };
+      }
+    }
+    // Fall back to most-frequent HS / description across recent BOLs.
+    const counts = new Map<string, { count: number; hs: string | null }>();
+    for (const bol of recentBols) {
+      const hs =
+        bol?.hs_code ||
+        bol?.hsCode ||
+        bol?.hts_code ||
+        bol?.commodity_code ||
+        bol?.raw?.hs_code ||
+        null;
+      const desc =
+        bol?.description ||
+        bol?.product_description ||
+        bol?.commodity ||
+        bol?.commodity_description ||
+        bol?.cargo_description ||
+        bol?.raw?.product_description ||
+        null;
+      const key = String(hs || desc || "").trim();
+      if (!key) continue;
+      const cur = counts.get(key) || { count: 0, hs: hs ? String(hs) : null };
+      cur.count += 1;
+      counts.set(key, cur);
+    }
+    if (counts.size === 0) return null;
+    const head = Array.from(counts.entries()).sort(
+      (a, b) => b[1].count - a[1].count,
+    )[0];
+    return { label: head[0], hsCode: head[1].hs };
+  }, [
+    profile?.topProducts,
+    profile?.hs_categories,
+    profile?.hs_profile,
+    profile?.hsProfile,
+    recentBols,
+  ]);
 
   const topSupplierCountry = useMemo(() => {
     const list = profile?.topSuppliers;
-    if (!Array.isArray(list) || list.length === 0) return null;
-    const head = list[0];
-    if (!head) return null;
-    if (typeof head === "string") return null;
-    return (
-      head.country ||
-      head.countryCode ||
-      head.country_code ||
-      null
-    );
-  }, [profile?.topSuppliers]);
+    if (Array.isArray(list) && list.length > 0) {
+      const head = list[0];
+      if (head && typeof head !== "string") {
+        const c = head.country || head.countryCode || head.country_code;
+        if (c) return c;
+      }
+    }
+    // Fall back to most-frequent supplier_country across recent BOLs.
+    const counts = new Map<string, number>();
+    for (const bol of recentBols) {
+      const c =
+        bol?.supplier_country ||
+        bol?.origin_country ||
+        bol?.shipper_country ||
+        null;
+      if (!c) continue;
+      const s = String(c).trim();
+      if (!s) continue;
+      counts.set(s, (counts.get(s) || 0) + 1);
+    }
+    if (counts.size === 0) return null;
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
+  }, [profile?.topSuppliers, recentBols]);
 
   const primaryLane = useMemo(
     () => derivePrimaryLane(kpis.topRoute || kpis.recentRoute),
@@ -551,6 +657,38 @@ function formatRevenue(value: number | string) {
     return `$${Math.round(n).toLocaleString()}`;
   }
   return String(value);
+}
+
+// Phase 6 — local mirror of CDPSupplyChain's carrier read so the right
+// rail can fall back to BOL-derived carriers without importing the whole
+// supply-chain helper module. Surfaces direct carrier names first; falls
+// back to the verbatim Master Bill prefix (no client-side carrier-name
+// normalization, per Phase 5 directive).
+function readBolCarrier(bol: any): string | null {
+  const direct =
+    bol?.carrier_name ||
+    bol?.carrier ||
+    bol?.shipping_line ||
+    bol?.steamship_line ||
+    bol?.normalized_carrier ||
+    bol?.inferred_carrier ||
+    bol?.scac ||
+    bol?.raw?.carrier_name ||
+    bol?.raw?.shipping_line ||
+    null;
+  if (direct) return String(direct);
+  const mbl =
+    bol?.master_bill_of_lading_number ||
+    bol?.mbl ||
+    bol?.master_bill_prefix ||
+    bol?.mbl_prefix ||
+    bol?.raw?.master_bill_of_lading_number ||
+    null;
+  if (mbl) {
+    const prefix = String(mbl).slice(0, 4).toUpperCase();
+    if (/^[A-Z]{4}$/.test(prefix)) return prefix;
+  }
+  return null;
 }
 
 function stripScheme(url: string) {
