@@ -502,6 +502,10 @@ export default function Company() {
       lastShipment: profileLatest || shellLatest,
       topRoute:
         activeRouteKpis?.topRouteLast12m ||
+        activeProfile?.topRoutes?.[0]?.route ||
+        activeProfile?.top_routes?.[0]?.route ||
+        activeProfile?.tradeLaneIntelligence?.[0]?.route ||
+        activeProfile?.trade_lane_intelligence?.[0]?.route ||
         shellCompany?.kpis?.topRoute ||
         null,
       recentRoute:

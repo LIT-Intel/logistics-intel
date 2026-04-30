@@ -128,6 +128,10 @@ export default function CDPHeader({
           : "—",
     },
     {
+      label: "PRIMARY TRADE LANE",
+      value: primaryLane || "—",
+    },
+    {
       label: "TRADE LANES",
       value:
         kpis.tradeLanes != null && kpis.tradeLanes > 0

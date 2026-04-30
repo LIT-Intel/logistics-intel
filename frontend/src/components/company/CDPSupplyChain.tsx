@@ -399,8 +399,10 @@ function MonthlyCadenceCard({ cadence }: { cadence: CadencePoint[] }) {
     );
   }
   const max = Math.max(...cadence.map((c) => c.fcl + c.lcl), 1);
-  const chartHeight = 96;
-  const barWidth = 14; // narrower bars per Sony spec
+  const chartHeight = 156;
+  const barWidth = 22;
+  const barGap = 12;
+  const [hoveredPoint, setHoveredPoint] = useState<CadencePoint | null>(null);
   const totalFcl = cadence.reduce((s, c) => s + c.fcl, 0);
   const totalLcl = cadence.reduce((s, c) => s + c.lcl, 0);
   const totalShip = totalFcl + totalLcl;
@@ -428,22 +430,41 @@ function MonthlyCadenceCard({ cadence }: { cadence: CadencePoint[] }) {
         </div>
       }
     >
-      <div className="flex items-end justify-start gap-3" style={{ height: chartHeight + 22 }}>
+      <div
+        className="relative flex items-end justify-center overflow-visible"
+        style={{ height: chartHeight + 36, gap: barGap }}
+      >
         {cadence.map((p, i) => {
           const total = p.fcl + p.lcl;
           const fclH = total > 0 ? (p.fcl / max) * chartHeight : 0;
           const lclH = total > 0 ? (p.lcl / max) * chartHeight : 0;
           const isLast = i === cadence.length - 1;
+          const isHovered = hoveredPoint?.label === p.label;
           return (
             <div
               key={`${p.label}-${i}`}
-              className="flex flex-col items-center justify-end"
+              className="relative flex flex-col items-center justify-end"
               style={{ height: "100%", width: barWidth }}
+              onMouseEnter={() => setHoveredPoint(p)}
+              onMouseLeave={() => setHoveredPoint(null)}
             >
+              {isHovered && (
+                <div
+                  className="font-display pointer-events-none absolute z-20 min-w-[150px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] leading-tight text-white shadow-lg"
+                  style={{ bottom: chartHeight + 8, left: "50%", transform: "translateX(-50%)" }}
+                >
+                  <div className="font-semibold">{p.label}</div>
+                  <div className="opacity-90">Total: {(p.fcl + p.lcl).toLocaleString()} shipments</div>
+                  <div className="opacity-90">FCL: {p.fcl.toLocaleString()}</div>
+                  <div className="opacity-90">LCL: {p.lcl.toLocaleString()}</div>
+                  {p.teu != null && Number(p.teu) > 0 && (
+                    <div className="opacity-90">TEU: {Number(p.teu).toLocaleString()}</div>
+                  )}
+                </div>
+              )}
               <div
                 className="relative flex w-full flex-col items-stretch justify-end"
                 style={{ height: chartHeight }}
-                title={`${p.label}: ${p.fcl.toLocaleString()} FCL · ${p.lcl.toLocaleString()} LCL`}
               >
                 {p.lcl > 0 && (
                   <div
@@ -1152,10 +1173,15 @@ function BolPreviewRow({ bol, isLast }: { bol: any; isLast: boolean }) {
     return s === "—" ? null : s;
   })();
   const teu = Number(bol?.teu) || Number(bol?.containers_teu) || null;
-  const isLcl = Boolean(bol?.lcl) || /lcl/i.test(String(bol?.mode || ""));
+  const isLcl =
+    Boolean(bol?.lcl) ||
+    /lcl/i.test(String(bol?.mode || bol?.fcl_lcl || bol?.loadType || ""));
   const fclLcl = isLcl ? "LCL" : "FCL";
   const containerCount =
-    Number(bol?.containers_count) || Number(bol?.containersCount) || null;
+    Number(bol?.containers_count) ||
+    Number(bol?.containersCount) ||
+    Number(bol?.container_count) ||
+    null;
   const containerType =
     bol?.container_type ||
     bol?.containerType ||
@@ -1244,6 +1270,15 @@ function ShipmentRow({ bol, isLast }: { bol: any; isLast: boolean }) {
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   })();
   const carrier = readCarrier(bol);
+  const carrierFallback = (() => {
+    const s = getBolCarrierString(bol);
+    return s === "—" ? null : s;
+  })();
+  const carrierLabel = carrier?.name || carrierFallback;
+  const supplier = (() => {
+    const s = getBolSupplier(bol);
+    return s === "—" ? null : s;
+  })();
   const origin = (() => {
     const s = getBolOrigin(bol);
     return s === "—" ? null : s;
@@ -1253,7 +1288,9 @@ function ShipmentRow({ bol, isLast }: { bol: any; isLast: boolean }) {
     return s === "—" ? null : s;
   })();
   const teu = Number(bol?.teu) || Number(bol?.containers_teu) || null;
-  const isLcl = Boolean(bol?.lcl) || /lcl/i.test(String(bol?.mode || ""));
+  const isLcl =
+    Boolean(bol?.lcl) ||
+    /lcl/i.test(String(bol?.mode || bol?.fcl_lcl || bol?.loadType || ""));
   return (
     <div
       className={[
@@ -1274,10 +1311,16 @@ function ShipmentRow({ bol, isLast }: { bol: any; isLast: boolean }) {
         ) : (
           <div className="font-body text-[11px] text-slate-300">—</div>
         )}
-        {carrier && (
-          <div className="font-body mt-0.5 truncate text-[10px] text-slate-400">
-            {carrier.name}
-            {carrier.inferred ? " · MBL" : ""}
+        {(carrierLabel || supplier) && (
+          <div className="font-body mt-0.5 flex items-center gap-1.5 truncate text-[10px] text-slate-400">
+            {carrierLabel && (
+              <span className="truncate">
+                {carrierLabel}
+                {carrier?.inferred ? " · MBL" : ""}
+              </span>
+            )}
+            {carrierLabel && supplier && <span className="text-slate-300">·</span>}
+            {supplier && <span className="truncate">{supplier}</span>}
           </div>
         )}
       </div>
@@ -1529,7 +1572,7 @@ function EmptyMessage({ text }: { text: string }) {
 
 /* ── Data normalizers ─────────────────────────────────────────────────── */
 
-type CadencePoint = { label: string; fcl: number; lcl: number; total: number };
+type CadencePoint = { label: string; fcl: number; lcl: number; total: number; teu?: number | null };
 type ModeSlice = { mode: string; count: number; pct: number; color: string };
 type ContainerLength = { label: string; count: number; teu?: number; yoy?: string | null };
 type ContainerIso = { code: string; group?: string; count: number };
@@ -1626,7 +1669,8 @@ function deriveCadence(profile: any): CadencePoint[] {
       const lcl = Number(p?.lclShipments) || 0;
       let total = fcl + lcl;
       if (total === 0) total = Number(p?.shipments) || 0;
-      return { label, fcl, lcl, total };
+      const teu = Number(p?.teu) || null;
+      return { label, fcl, lcl, total, teu };
     })
     .filter((p: CadencePoint) => p.label);
   return points.slice(-12);
@@ -1667,32 +1711,37 @@ function deriveModes(profile: any): ModeSlice[] {
 }
 
 function deriveContainerProfile(profile: any): ContainerProfile {
+  // v200 shape: profile.containerProfile.{fcl,lcl,byLength,containerTypes,dominantContainer}
+  const cp = profile?.containerProfile || profile?.container_profile || null;
   const fcl =
+    Number(cp?.fcl?.shipments) ||
     Number(profile?.containers?.fclShipments12m) ||
     Number(profile?.fcl_shipments_all_time) ||
     0;
   const lcl =
+    Number(cp?.lcl?.shipments) ||
     Number(profile?.containers?.lclShipments12m) ||
     Number(profile?.lcl_shipments_all_time) ||
     0;
   const totalShipments = Number(profile?.totalShipments) || fcl + lcl;
   const lengths: ContainerLength[] = [];
-  const breakdown =
+  const lengthSource =
+    cp?.byLength ||
     profile?.container_lengths_breakdown ||
     profile?.containers_load ||
     [];
-  if (Array.isArray(breakdown)) {
-    for (const entry of breakdown) {
+  if (Array.isArray(lengthSource)) {
+    for (const entry of lengthSource) {
       const label = String(
-        entry?.label || entry?.length || entry?.containerLength || entry?.code || "",
+        entry?.length || entry?.label || entry?.containerLength || entry?.code || "",
       ).trim();
-      const count = Number(entry?.count) || Number(entry?.shipments) || 0;
+      const count = Number(entry?.shipments) || Number(entry?.count) || Number(entry?.teu) || 0;
       if (!label || count <= 0) continue;
       lengths.push({
         label,
         count,
         teu: Number(entry?.teu) || undefined,
-        yoy: entry?.yoy ? String(entry.yoy) : null,
+        yoy: entry?.yoy != null ? String(entry.yoy) : null,
       });
     }
   }
@@ -1704,23 +1753,33 @@ function deriveContainerProfile(profile: any): ContainerProfile {
     });
   }
   const isoCodes: ContainerIso[] = [];
-  const isoSource = profile?.container_iso_codes || profile?.iso_codes;
+  const isoSource =
+    cp?.containerTypes ||
+    profile?.container_iso_codes ||
+    profile?.iso_codes ||
+    null;
   if (Array.isArray(isoSource)) {
     for (const entry of isoSource) {
-      const code = String(entry?.code || entry?.iso || "").trim();
+      const code = String(entry?.isoCode || entry?.type || entry?.code || entry?.iso || "").trim();
       if (!code) continue;
       isoCodes.push({
         code,
-        group: entry?.group ? String(entry.group) : undefined,
-        count: Number(entry?.count) || Number(entry?.shipments) || 0,
+        group: entry?.group ? String(entry.group) : (entry?.length ? String(entry.length) : undefined),
+        count: Number(entry?.shipments) || Number(entry?.count) || Number(entry?.teu) || 0,
       });
     }
   }
+  const dominant =
+    cp?.dominantContainer?.length ||
+    cp?.dominantContainer?.type ||
+    cp?.dominantContainer?.isoCode ||
+    profile?.topContainerLength ||
+    (lengths[0]?.label ?? null);
   return {
     fcl,
     lcl,
     totalShipments,
-    topContainerLabel: profile?.topContainerLength || null,
+    topContainerLabel: dominant || null,
     lengths,
     isoCodes,
   };
@@ -1987,31 +2046,47 @@ function deriveSuppliers(profile: any, recentBols: any[] = []): SupplierRow[] {
 }
 
 function deriveProducts(profile: any, recentBols: any[] = []): ProductRow[] {
+  // v200 hsProfile is an object with topChapters[] + topHsChapter; expand to flat list
+  const hsObj =
+    (profile?.hsProfile && typeof profile.hsProfile === "object" && !Array.isArray(profile.hsProfile))
+      ? profile.hsProfile
+      : (profile?.hs_profile && typeof profile.hs_profile === "object" && !Array.isArray(profile.hs_profile))
+        ? profile.hs_profile
+        : null;
   const list =
     profile?.topProducts ||
     profile?.products ||
     profile?.commodities ||
     profile?.hs_categories ||
-    profile?.hs_profile ||
-    profile?.hsProfile ||
+    profile?.productProfile?.topProducts ||
+    profile?.product_profile?.topProducts ||
+    (hsObj?.topChapters && Array.isArray(hsObj.topChapters) ? hsObj.topChapters : null) ||
+    (Array.isArray(profile?.hs_profile) ? profile.hs_profile : null) ||
+    (Array.isArray(profile?.hsProfile) ? profile.hsProfile : null) ||
     profile?.productBreakdown ||
     [];
   if (Array.isArray(list) && list.length > 0) {
     return list
       .map((e: any) => {
         const label = String(
-          e?.label ||
+          e?.description ||
+            e?.label ||
             e?.name ||
-            e?.description ||
             e?.commodity ||
             e?.product ||
+            e?.hsCode ||
+            e?.hs_code ||
             "",
         ).trim();
         if (!label) return null;
         return {
           label,
-          count: Number(e?.count || e?.shipments) || 0,
-          hsCode: e?.hs_code || e?.hsCode || e?.code || null,
+          count:
+            Number(e?.shipments12m) ||
+            Number(e?.shipments) ||
+            Number(e?.count) ||
+            0,
+          hsCode: e?.hsCode || e?.hs_code || e?.code || null,
         };
       })
       .filter(Boolean)
@@ -2128,11 +2203,18 @@ function formatBolDate(bol: any): string {
 }
 
 function getBolOrigin(bol: any): string {
+  // v200: route="A → B"; if present, take left side
+  if (typeof bol?.route === "string" && bol.route.includes("→")) {
+    const left = bol.route.split("→")[0]?.trim();
+    if (left) return left;
+  }
   return (
     bol?.origin_name ||
     bol?.origin ||
     bol?.origin_country ||
     bol?.originCountry ||
+    bol?.originCountryCode ||
+    bol?.Country ||
     bol?.foreign_port ||
     bol?.foreignPort ||
     bol?.from_port ||
@@ -2141,6 +2223,7 @@ function getBolOrigin(bol: any): string {
     bol?.portOfLading ||
     bol?.place_of_receipt ||
     bol?.placeOfReceipt ||
+    bol?.supplier_address_country ||
     bol?.shipper_country ||
     bol?.supplier_country ||
     bol?.raw?.foreign_port ||
@@ -2151,11 +2234,17 @@ function getBolOrigin(bol: any): string {
 }
 
 function getBolDestination(bol: any): string {
+  // v200: route="A → B"; if present, take right side
+  if (typeof bol?.route === "string" && bol.route.includes("→")) {
+    const right = bol.route.split("→")[1]?.trim();
+    if (right) return right;
+  }
   return (
     bol?.destination_name ||
     bol?.destination ||
     bol?.destination_country ||
     bol?.destinationCountry ||
+    bol?.destinationCountryCode ||
     bol?.us_port ||
     bol?.usPort ||
     bol?.us_port_of_unlading ||
@@ -2166,6 +2255,7 @@ function getBolDestination(bol: any): string {
     bol?.portOfUnlading ||
     bol?.place_of_delivery ||
     bol?.placeOfDelivery ||
+    bol?.company_address_country ||
     bol?.consignee_country ||
     bol?.raw?.us_port ||
     bol?.raw?.destination ||
@@ -2175,15 +2265,18 @@ function getBolDestination(bol: any): string {
 
 function getBolCarrierString(bol: any): string {
   return (
-    bol?.carrier ||
-    bol?.carrier_name ||
     bol?.carrierName ||
+    bol?.carrier?.carrierName ||
+    (typeof bol?.carrier === "string" ? bol.carrier : null) ||
+    bol?.carrier_name ||
     bol?.normalized_carrier ||
     bol?.inferred_carrier ||
     bol?.steamship_line ||
     bol?.steamshipLine ||
     bol?.shipping_line ||
     bol?.shippingLine ||
+    bol?.carrierCode ||
+    bol?.carrier?.carrierCode ||
     bol?.scac ||
     bol?.master_bill_prefix ||
     bol?.mbl_prefix ||
@@ -2196,15 +2289,19 @@ function getBolCarrierString(bol: any): string {
 
 function getBolSupplier(bol: any): string {
   return (
-    bol?.supplier ||
-    bol?.supplier_name ||
     bol?.supplierName ||
-    bol?.shipper ||
+    bol?.supplier_name ||
+    bol?.Shipper_Name ||
     bol?.shipper_name ||
     bol?.shipperName ||
+    bol?.shipper_basename ||
+    bol?.topServiceProvider ||
+    (typeof bol?.supplier === "string" ? bol.supplier : null) ||
+    (typeof bol?.shipper === "string" ? bol.shipper : null) ||
     bol?.notify_party ||
     bol?.notifyParty ||
     bol?.notify_party_name ||
+    bol?.Notify_Party_Name ||
     bol?.raw?.shipper_name ||
     bol?.raw?.supplier_name ||
     bol?.raw?.notify_party_name ||
@@ -2214,10 +2311,12 @@ function getBolSupplier(bol: any): string {
 
 function getBolHs(bol: any): string {
   return (
-    bol?.hs_code ||
     bol?.hsCode ||
+    bol?.hs_code ||
+    bol?.HS_Code ||
     bol?.hts_code ||
     bol?.htsCode ||
+    bol?.HTS_Code ||
     bol?.commodity_code ||
     bol?.commodityCode ||
     bol?.raw?.hs_code ||
