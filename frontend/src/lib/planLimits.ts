@@ -108,9 +108,10 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       credit_rating_ready: false,
       contact_intel_ready: false,
     },
-    // Trial is exhausted when EITHER searches OR saved companies hits cap.
-    // Backend enforces via check_usage_limit; these constants are the
-    // pre-snapshot fallback the Billing UI uses for initial render.
+    // 2026-04-29 plan limits v3 — Pulse for free trial bumped from 0 to a
+    // small allowance (3) so trial users can preview Pulse once or twice.
+    // Treat the per-month value as effective total — the trial expires
+    // when the search/save caps are exhausted.
     limits: {
       searches_per_month: 10,
       company_views_per_month: 10,
@@ -120,7 +121,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       rfp_drafts: 0,
       team_seats: 1,
       connected_mailboxes: 0,
-      pulse_runs_per_month: 0,
+      pulse_runs_per_month: 3,
     },
   },
 
@@ -146,19 +147,19 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       credit_rating_ready: false,
       contact_intel_ready: false,
     },
-    // DB currently has search=250 / save=50; aligning UI to DB so display
-    // matches enforcement. Spec values (125 / 75 / 0 / 0) are the next
-    // catalog migration to land separately.
+    // 2026-04-29 plan limits v3 (P&L review). Search tightened 250 -> 100
+    // (high variable cost). Pulse 25 -> 10. Campaign now included
+    // (0 -> 250). Enrichment dropped to 0 — Starter is search/save only.
     limits: {
-      searches_per_month: 250,
+      searches_per_month: 100,
       company_views_per_month: 100,
       command_center_saves_per_month: 50,
-      enrichment_credits_per_month: 50,
-      campaigns_active: 0,
+      enrichment_credits_per_month: 0,
+      campaigns_active: 250,
       rfp_drafts: 0,
       team_seats: 1,
       connected_mailboxes: 1,
-      pulse_runs_per_month: 25,
+      pulse_runs_per_month: 10,
     },
   },
 
@@ -185,19 +186,19 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       credit_rating_ready: false,
       contact_intel_ready: true,
     },
-    // DB current values; spec (save=500, enrichment=75, campaign=250) is
-    // a follow-up alignment migration so display matches enforcement
-    // exactly today.
+    // 2026-04-29 plan limits v3 (P&L review). Search 1000 -> 750 to
+    // tighten variable API cost exposure. Pulse 100 -> 35. Enrichment
+    // 200 -> 75. Campaign volume kept (1000); cheap to send.
     limits: {
-      searches_per_month: 1000,
+      searches_per_month: 750,
       company_views_per_month: 500,
       command_center_saves_per_month: 250,
-      enrichment_credits_per_month: 200,
-      campaigns_active: 25,
+      enrichment_credits_per_month: 75,
+      campaigns_active: 1000,
       rfp_drafts: 50,
       team_seats: 3,
       connected_mailboxes: 3,
-      pulse_runs_per_month: 100,
+      pulse_runs_per_month: 35,
     },
   },
 
@@ -225,19 +226,19 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       credit_rating_ready: true,
       contact_intel_ready: true,
     },
-    // Spec values; the same migration that adds these aligns DB exactly
-    // (Scale was provisioned in DB with all-zero limits — see
-    // 20260429000000_scale_plan_limits.sql).
+    // 2026-04-29 plan limits v3. Search stays at 2000. Pulse 250 -> 80.
+    // Campaign 500 -> 2500 (cheap volume that drives conversion).
+    // Enrichment 200 kept.
     limits: {
       searches_per_month: 2000,
       company_views_per_month: 1500,
       command_center_saves_per_month: 1500,
       enrichment_credits_per_month: 200,
-      campaigns_active: 100,
+      campaigns_active: 2500,
       rfp_drafts: 100,
       team_seats: 5,
       connected_mailboxes: 5,
-      pulse_runs_per_month: 250,
+      pulse_runs_per_month: 80,
     },
   },
 
