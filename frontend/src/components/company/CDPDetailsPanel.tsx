@@ -7,8 +7,10 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Container,
   DollarSign,
   Globe,
+  Hash,
   Loader2,
   MapPin,
   Package,
@@ -68,8 +70,20 @@ type Profile = {
   estimatedRevenue?: number | string | null;
   yearFounded?: number | string | null;
   topCarriers?: Array<{ name: string; count?: number }> | null;
+  topForwarders?: Array<{ name: string; count?: number }> | null;
+  forwarders?: Array<{ name: string; count?: number }> | null;
+  serviceProviders?: Array<{ name: string; count?: number }> | null;
   topModes?: Array<{ mode: string; count?: number }> | null;
   recentBols?: any[] | null;
+  topProducts?: Array<{ label?: string; name?: string; hs_code?: string; count?: number }> | null;
+  hs_categories?: Array<{ label?: string; name?: string; hs_code?: string; count?: number }> | null;
+  topSuppliers?:
+    | Array<string | { name?: string; country?: string; countryCode?: string; country_code?: string; shipments?: number }>
+    | null;
+  topContainerLength?: string | null;
+  containers?: { fclShipments12m?: number | null; lclShipments12m?: number | null } | null;
+  fcl_shipments_all_time?: number | null;
+  lcl_shipments_all_time?: number | null;
 };
 
 type CDPDetailsPanelProps = {
@@ -82,6 +96,8 @@ type CDPDetailsPanelProps = {
   campaigns?: Array<{ id: string | number; name: string }> | null;
   onRefresh: () => void;
   refreshing?: boolean;
+  /** ISO timestamp of the most recent enrichment write (Phase B.15 cache row). */
+  snapshotUpdatedAt?: string | null;
 };
 
 export default function CDPDetailsPanel({
@@ -94,6 +110,7 @@ export default function CDPDetailsPanel({
   campaigns,
   onRefresh,
   refreshing,
+  snapshotUpdatedAt,
 }: CDPDetailsPanelProps) {
   const [open, setOpen] = useState({
     account: true,
@@ -110,11 +127,62 @@ export default function CDPDetailsPanel({
     return list[0]?.name || null;
   }, [profile?.topCarriers]);
 
+  const topForwarder = useMemo(() => {
+    const list =
+      profile?.topForwarders || profile?.forwarders || profile?.serviceProviders;
+    if (!Array.isArray(list) || list.length === 0) return null;
+    return list[0]?.name || null;
+  }, [profile?.topForwarders, profile?.forwarders, profile?.serviceProviders]);
+
   const topMode = useMemo(() => {
     const list = profile?.topModes;
     if (!Array.isArray(list) || list.length === 0) return null;
     return list[0]?.mode || null;
   }, [profile?.topModes]);
+
+  const fclLclSplit = useMemo(() => {
+    const fcl =
+      Number(profile?.containers?.fclShipments12m) ||
+      Number(profile?.fcl_shipments_all_time) ||
+      0;
+    const lcl =
+      Number(profile?.containers?.lclShipments12m) ||
+      Number(profile?.lcl_shipments_all_time) ||
+      0;
+    if (fcl + lcl === 0) return null;
+    const total = fcl + lcl;
+    return {
+      fclPct: Math.round((fcl / total) * 100),
+      lclPct: Math.round((lcl / total) * 100),
+    };
+  }, [profile?.containers, profile?.fcl_shipments_all_time, profile?.lcl_shipments_all_time]);
+
+  const topHs = useMemo(() => {
+    const list = profile?.topProducts || profile?.hs_categories;
+    if (!Array.isArray(list) || list.length === 0) return null;
+    const head = list[0] as any;
+    if (!head) return null;
+    const label = head.label || head.name || head.description || head.commodity;
+    if (!label) return null;
+    return {
+      label: String(label),
+      hsCode: head.hs_code || head.code || null,
+    };
+  }, [profile?.topProducts, profile?.hs_categories]);
+
+  const topSupplierCountry = useMemo(() => {
+    const list = profile?.topSuppliers;
+    if (!Array.isArray(list) || list.length === 0) return null;
+    const head = list[0];
+    if (!head) return null;
+    if (typeof head === "string") return null;
+    return (
+      head.country ||
+      head.countryCode ||
+      head.country_code ||
+      null
+    );
+  }, [profile?.topSuppliers]);
 
   const primaryLane = useMemo(
     () => derivePrimaryLane(kpis.topRoute || kpis.recentRoute),
@@ -267,11 +335,51 @@ export default function CDPDetailsPanel({
           <Row icon={<Ship />} label="Top carrier">
             {topCarrier || "—"}
           </Row>
+          <Row icon={<Truck />} label="Top forwarder">
+            {topForwarder || "—"}
+          </Row>
           <Row icon={<Package />} label="Top mode">
             {topMode || "—"}
           </Row>
-          <Row icon={<Truck />} label="Last shipment" mono>
+          <Row icon={<Container />} label="Dominant container">
+            {profile?.topContainerLength || "—"}
+          </Row>
+          <Row icon={<BarChart2 />} label="FCL / LCL">
+            {fclLclSplit ? (
+              <span className="inline-flex items-center gap-1">
+                <LitPill tone="blue">FCL {fclLclSplit.fclPct}%</LitPill>
+                <LitPill tone="purple">LCL {fclLclSplit.lclPct}%</LitPill>
+              </span>
+            ) : (
+              "—"
+            )}
+          </Row>
+          <Row icon={<Hash />} label="Top HS">
+            {topHs ? (
+              <span className="inline-flex items-center gap-1">
+                {topHs.hsCode && (
+                  <span className="font-mono text-[10px] text-slate-500">
+                    {topHs.hsCode}
+                  </span>
+                )}
+                <span className="truncate">{topHs.label}</span>
+              </span>
+            ) : (
+              "—"
+            )}
+          </Row>
+          <Row icon={<MapPin />} label="Top supplier">
+            {topSupplierCountry ? (
+              <LitPill tone="slate">{topSupplierCountry}</LitPill>
+            ) : (
+              "—"
+            )}
+          </Row>
+          <Row icon={<Clock />} label="Last shipment" mono>
             {formatRelative(kpis.lastShipment) || "—"}
+          </Row>
+          <Row icon={<Clock />} label="Data freshness">
+            {snapshotUpdatedAt ? formatRelative(snapshotUpdatedAt) : "—"}
           </Row>
           <Row icon={<BarChart2 />} label="Volume">
             {kpis.shipments != null && kpis.shipments > 0 ? (

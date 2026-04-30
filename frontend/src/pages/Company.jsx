@@ -777,6 +777,7 @@ export default function Company() {
             campaigns={null}
             onRefresh={handleManualRefreshClick}
             refreshing={manualRefreshing}
+            snapshotUpdatedAt={snapshotUpdatedAt}
           />
         )}
       </div>

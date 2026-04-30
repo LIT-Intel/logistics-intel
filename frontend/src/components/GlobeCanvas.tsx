@@ -403,14 +403,37 @@ export default function GlobeCanvas({
           ctx.lineWidth = 0.4;
           ctx.stroke();
         });
-        // Highlight origin/destination countries
+        // Highlight origin/destination countries.
+        // Phase 4 fix — the previous matching used `lane.from`/`lane.to`
+        // which are the canonical KEYS (`vn`, `kr`, `us`, …). Substring
+        // matching against the world-atlas `properties.name` ("Viet Nam",
+        // "South Korea") silently failed for any code where the ISO-2 was
+        // not literally a substring of the country name (e.g. "vn" not in
+        // "viet nam"). We now prefer `fromMeta.countryName` /
+        // `toMeta.countryName` (already resolved upstream by
+        // canonicalizeLanes), falling back to the raw lane.from/to only
+        // when the meta object is absent.
         if (hlLane) {
+          const fromName = (hlLane.fromMeta?.countryName || hlLane.from || "").toLowerCase().trim();
+          const toName = (hlLane.toMeta?.countryName || hlLane.to || "").toLowerCase().trim();
           features.forEach((f: any) => {
             const name = (f.properties?.name || "").toLowerCase();
-            const fromMatch = hlLane.from.toLowerCase();
-            const toMatch = hlLane.to.toLowerCase();
-            if (name.includes(fromMatch) || name.includes(toMatch) ||
-                fromMatch.includes(name) || toMatch.includes(name)) {
+            // Exact name match wins; otherwise tolerate the world-atlas
+            // variant ("Viet Nam" vs "Vietnam", "United States of America"
+            // vs "United States") via mutual substring check on the
+            // RESOLVED country name (which is always the longer / more
+            // canonical form than an ISO-2 code).
+            const matchesFrom =
+              fromName.length > 0 &&
+              (name === fromName ||
+                name.includes(fromName) ||
+                fromName.includes(name));
+            const matchesTo =
+              toName.length > 0 &&
+              (name === toName ||
+                name.includes(toName) ||
+                toName.includes(name));
+            if (matchesFrom || matchesTo) {
               ctx.beginPath();
               pathGen(f);
               ctx.fillStyle = palette.highlightFill;
