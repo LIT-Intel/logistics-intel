@@ -232,6 +232,8 @@ export default function Company() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [canonicalDomain, setCanonicalDomain] = useState(null);
+  const [companyEnrichment, setCompanyEnrichment] = useState(null);
 
   const [tab, setTab] = useState("supply");
   const [starred, setStarred] = useState(false);
@@ -345,6 +347,50 @@ export default function Company() {
     };
   }, [companyId]);
 
+  // Phase 5.1 v52 — load canonical domain (override → ai → raw) for clean website display
+  useEffect(() => {
+    if (!companyId) {
+      setCanonicalDomain(null);
+      setCompanyEnrichment(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: company } = await supabase
+          .from("lit_companies")
+          .select("source_company_key, enrichment_params, industry, revenue, headcount, website, domain")
+          .eq("id", companyId)
+          .maybeSingle();
+        if (cancelled || !company) return;
+        let canonical = null;
+        const sck = company.source_company_key;
+        if (sck) {
+          const { data: override } = await supabase
+            .from("lit_company_domain_overrides")
+            .select("canonical_domain")
+            .eq("source_company_key", sck)
+            .maybeSingle();
+          if (override?.canonical_domain) canonical = override.canonical_domain;
+        }
+        if (!canonical && company.enrichment_params?.canonicalDomain) {
+          canonical = company.enrichment_params.canonicalDomain;
+        }
+        if (cancelled) return;
+        setCanonicalDomain(canonical || null);
+        setCompanyEnrichment({
+          enrichment_params: company.enrichment_params ?? null,
+          industry: company.industry ?? null,
+          revenue: company.revenue ?? null,
+          headcount: company.headcount ?? null,
+        });
+      } catch (e) {
+        console.warn("Company.jsx: canonical domain lookup failed", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [companyId]);
+
   // ── Derived data ───────────────────────────────────────────────────────
   const yearScopedProfile = useMemo(() => {
     if (!profile) return null;
@@ -366,10 +412,16 @@ export default function Company() {
     "Company";
 
   const companyDomain =
-    activeProfile?.domain || shellCompany?.domain || null;
+    canonicalDomain ||
+    activeProfile?.domain ||
+    shellCompany?.domain ||
+    null;
 
   const companyWebsite =
-    activeProfile?.website || shellCompany?.website || null;
+    canonicalDomain ||
+    activeProfile?.website ||
+    shellCompany?.website ||
+    null;
 
   const companyAddress =
     activeProfile?.address || shellCompany?.address || null;
@@ -413,10 +465,20 @@ export default function Company() {
       shellCompany?.kpis?.spend ??
       null;
 
+    const allTimeSpend =
+      activeProfile?.estSpendAllTime ??
+      activeProfile?.estSpendUsd ??
+      null;
+
+    // Phase 5.1 v52 — prefer real numbers over TEU-derived guesses.
+    // 12M spend is null until parser computes it; surface all-time as the
+    // primary signal and let the UI label it "All-Time".
     const spend =
       explicitSpend != null && Number(explicitSpend) > 0
         ? Number(explicitSpend)
-        : estimateMarketSpend(teu);
+        : (allTimeSpend != null && Number(allTimeSpend) > 0
+            ? Number(allTimeSpend)
+            : null);
 
     const profileLatest = getLatestShipmentFromProfile(activeProfile);
     const shellLatest = capDateAtToday(
@@ -429,8 +491,14 @@ export default function Company() {
         activeProfile?.totalShipments ??
         shellCompany?.kpis?.shipments ??
         null,
+      shipmentsAllTime:
+        activeProfile?.totalShipmentsAllTime ?? null,
       teu,
       spend,
+      spendAllTime:
+        activeProfile?.estSpendAllTime ??
+        activeProfile?.estSpendUsd ??
+        null,
       lastShipment: profileLatest || shellLatest,
       topRoute:
         activeRouteKpis?.topRouteLast12m ||
@@ -444,6 +512,14 @@ export default function Company() {
         Array.isArray(activeProfile?.topRoutes)
           ? activeProfile.topRoutes.length
           : null,
+      fclCount:
+        activeProfile?.fcl_shipments_all_time ??
+        activeProfile?.fcl_count ??
+        null,
+      lclCount:
+        activeProfile?.lcl_shipments_all_time ??
+        activeProfile?.lcl_count ??
+        null,
       contacts: null,
       contactsVerified: null,
     };

@@ -1628,7 +1628,7 @@ function deriveCadence(profile: any): CadencePoint[] {
       return { label, fcl, lcl, total };
     })
     .filter((p: CadencePoint) => p.label);
-  return points.slice(-12);
+  return points;
 }
 
 function deriveModes(profile: any): ModeSlice[] {

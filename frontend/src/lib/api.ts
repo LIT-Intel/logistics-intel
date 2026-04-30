@@ -2262,11 +2262,13 @@ function normalizeCompanyProfile(
     estSpendCoveragePct: spendCoveragePct,
     estSpendUsd:
       coerceNumber(
-        profileData.total_shipping_cost_all_time ??
+        profileData.est_spend_all_time ??
+          profileData.total_shipping_cost_all_time ??
           profileData.est_spend_usd ??
           profileData.est_spend ??
           profileData.totalShippingCost,
       ) ?? null,
+    estSpendAllTime: coerceNumber(profileData.est_spend_all_time) ?? null,
     totalShipments:
       coerceNumber(profileData.shipments_last_12m ?? profileData.shipments_12m ?? profileData.total_shipments) ?? null,
     totalShipmentsAllTime:
