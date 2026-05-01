@@ -38,14 +38,17 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
     const clientId = Deno.env.get("GMAIL_CLIENT_ID");
-    const redirectUri = Deno.env.get("GMAIL_REDIRECT_URL");
+    // Tolerate either secret name; GMAIL_REDIRECT_URI is the canonical name,
+    // GMAIL_REDIRECT_URL kept as fallback for environments still using that.
+    const redirectUri =
+      Deno.env.get("GMAIL_REDIRECT_URI") ?? Deno.env.get("GMAIL_REDIRECT_URL");
     const stateSecret = Deno.env.get("OAUTH_STATE_SECRET");
 
     if (!supabaseUrl || !supabaseAnonKey) {
       return json({ error: "Missing Supabase environment variables" }, 500);
     }
     if (!clientId || !redirectUri) {
-      return json({ error: "Missing GMAIL_CLIENT_ID / GMAIL_REDIRECT_URL" }, 500);
+      return json({ error: "Missing Gmail redirect URI. Set GMAIL_REDIRECT_URI or GMAIL_REDIRECT_URL." }, 500);
     }
     if (!stateSecret) return json({ error: "Missing OAUTH_STATE_SECRET" }, 500);
 

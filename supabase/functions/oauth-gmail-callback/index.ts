@@ -36,7 +36,10 @@ serve(async (req) => {
   const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const clientId = Deno.env.get("GMAIL_CLIENT_ID");
   const clientSecret = Deno.env.get("GMAIL_CLIENT_SECRET");
-  const redirectUri = Deno.env.get("GMAIL_REDIRECT_URL");
+  // GMAIL_REDIRECT_URI is canonical; fall back to GMAIL_REDIRECT_URL so
+  // either secret name works while operators normalize their secrets.
+  const redirectUri =
+    Deno.env.get("GMAIL_REDIRECT_URI") ?? Deno.env.get("GMAIL_REDIRECT_URL");
   const stateSecret = Deno.env.get("OAUTH_STATE_SECRET");
 
   if (!appUrl) return new Response("Missing APP_URL env", { status: 500 });
