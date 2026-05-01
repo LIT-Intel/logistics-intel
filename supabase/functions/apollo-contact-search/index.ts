@@ -13,6 +13,12 @@ const APOLLO_API_KEY = Deno.env.get("APOLLO_API_KEY") || "";
 // API keys now require the `api_search` path. Request/response shape
 // is unchanged. See https://docs.apollo.io/reference/people-search
 const APOLLO_SEARCH_URL = "https://api.apollo.io/api/v1/mixed_people/api_search";
+// Two-step scope: resolve a domain → Apollo organization_id first, then
+// pass `organization_ids[]` into people search. Without this, Apollo
+// often returns unrelated companies even when q_organization_domains_list
+// is set (e.g. gap.com → Wells Fargo, NatWest, etc.).
+const APOLLO_ORG_SEARCH_URL =
+  "https://api.apollo.io/api/v1/mixed_companies/search";
 
 interface ApolloSearchRequest {
   company_id?: string;
@@ -147,16 +153,120 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Strip protocol/path/www. from any domain we ended up with — Apollo
+    // requires bare domain like "gap.com", not "https://www.gap.com/".
+    if (domain) {
+      domain = String(domain)
+        .trim()
+        .toLowerCase()
+        .replace(/^https?:\/\//, "")
+        .replace(/^www\./, "")
+        .split("/")[0];
+    }
+
+    // Hard scope: refuse broad people search when no domain. Without
+    // a domain Apollo returns essentially-random current-company hits
+    // (gap.com → Wells Fargo / NatWest etc.) so the right behaviour is
+    // to surface a setup-required state to the UI.
+    if (!domain) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          code: "DOMAIN_REQUIRED",
+          message:
+            "Company domain is required before searching Apollo contacts. Add a domain on the company profile and retry.",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // Step 1 — resolve the Apollo organization_id from the company's
+    // domain. This is dramatically more accurate than relying on
+    // q_organization_domains_list inside people-search alone.
+    let apolloOrgId: string | null = null;
+    let apolloOrgMatch: Record<string, any> | null = null;
+    try {
+      const orgRes = await fetch(APOLLO_ORG_SEARCH_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache",
+          "X-Api-Key": APOLLO_API_KEY,
+        },
+        body: JSON.stringify({
+          q_organization_domains_list: [domain],
+          page: 1,
+          per_page: 5,
+        }),
+      });
+      if (orgRes.ok) {
+        const orgData = await orgRes.json();
+        const orgs: any[] = Array.isArray(orgData?.organizations)
+          ? orgData.organizations
+          : Array.isArray(orgData?.accounts)
+            ? orgData.accounts
+            : [];
+        // Prefer an exact primary_domain match, fall back to first hit.
+        const exact = orgs.find(
+          (o) =>
+            String(o?.primary_domain || "").toLowerCase() === domain ||
+            String(o?.website_url || "")
+              .toLowerCase()
+              .replace(/^https?:\/\//, "")
+              .replace(/^www\./, "")
+              .split("/")[0] === domain,
+        );
+        const pick = exact || orgs[0] || null;
+        if (pick?.id) {
+          apolloOrgId = String(pick.id);
+          apolloOrgMatch = {
+            id: pick.id,
+            name: pick.name || null,
+            primary_domain: pick.primary_domain || null,
+          };
+        }
+      } else {
+        console.warn(
+          JSON.stringify({
+            fn: "apollo-contact-search",
+            stage: "org_resolve",
+            apolloStatus: orgRes.status,
+          }),
+        );
+      }
+    } catch (err: any) {
+      console.warn(
+        JSON.stringify({
+          fn: "apollo-contact-search",
+          stage: "org_resolve_error",
+          error: err?.message || String(err),
+        }),
+      );
+    }
+
+    // Step 2 — people search. If we resolved an organization_id, scope
+    // by `organization_ids[]` (most precise). Otherwise fall back to
+    // `q_organization_domains_list[]`. Always disable include_similar_titles
+    // so titles aren't aggressively expanded.
     const apolloBody: Record<string, unknown> = {
       page: Math.max(1, Number(page) || 1),
       per_page: Math.min(100, Math.max(1, Number(per_page) || 10)),
+      include_similar_titles: false,
     };
-    if (domain) apolloBody.q_organization_domains_list = [domain];
-    if (!domain && companyName) apolloBody.q_organization_name = companyName;
+    if (apolloOrgId) {
+      apolloBody.organization_ids = [apolloOrgId];
+    } else {
+      apolloBody.q_organization_domains_list = [domain];
+    }
     if (Array.isArray(titles) && titles.length) apolloBody.person_titles = titles;
     if (Array.isArray(seniorities) && seniorities.length) apolloBody.person_seniorities = seniorities;
     if (Array.isArray(departments) && departments.length) apolloBody.person_departments = departments;
-    if (Array.isArray(locations) && locations.length) apolloBody.person_locations = locations;
+    // Locations: prefer organization_locations[] (the company's HQ /
+    // office locations) over person_locations[] so we don't accidentally
+    // narrow by where each contact lives.
+    if (Array.isArray(locations) && locations.length) {
+      apolloBody.organization_locations = locations;
+    }
 
     const apolloRes = await fetch(APOLLO_SEARCH_URL, {
       method: "POST",
@@ -190,6 +300,9 @@ Deno.serve(async (req: Request) => {
         count: contacts.length,
         page: apolloBody.page,
         per_page: apolloBody.per_page,
+        scoped_by: apolloOrgId ? "organization_id" : "domain",
+        apollo_organization_id: apolloOrgId,
+        apollo_organization_match: apolloOrgMatch,
         filters: { domain, companyName, titles, seniorities, departments, locations },
       },
     });
@@ -200,6 +313,8 @@ Deno.serve(async (req: Request) => {
         provider: "apollo",
         contacts,
         count: contacts.length,
+        scoped_by: apolloOrgId ? "organization_id" : "domain",
+        apollo_organization: apolloOrgMatch,
         pagination: apolloData?.pagination || null,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },

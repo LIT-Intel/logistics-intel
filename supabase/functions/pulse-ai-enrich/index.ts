@@ -376,13 +376,16 @@ async function resolveUserAndOrg(
  * Super-admin / platform-admin bypass. Returns true when the
  * authenticated user should bypass plan-based usage limits.
  *
- * Three sources, all checked server-side:
+ * Sources, all checked server-side with the service-role client:
  *   1. `public.platform_admins` table (canonical — same pattern the
  *      affiliate-admin function uses).
  *   2. `SUPER_ADMIN_EMAILS` env var (comma-separated allowlist).
  *   3. `app_metadata.is_super_admin` / `app_metadata.role` set on the
  *      auth user. (`app_metadata` is editable only by service role —
  *      never trust `user_metadata` for privilege escalation.)
+ *   4. `org_members.role` IN ('owner','admin','super_admin') for the
+ *      user's primary org. Workspace owners/admins should not be capped
+ *      by their own plan-tier limits when generating intel reports.
  */
 async function isSuperAdmin(
   adminClient: any,
@@ -417,6 +420,52 @@ async function isSuperAdmin(
   if (appMeta.is_super_admin === true) return true;
   const appRole = String(appMeta.role || "").toLowerCase();
   if (appRole === "super_admin" || appRole === "platform_admin") return true;
+
+  // 4. org workspace owner / admin — check across the three known
+  //    membership tables so this works regardless of which one the
+  //    deployment uses.
+  try {
+    const { data: m1 } = await adminClient
+      .from("org_members")
+      .select("role")
+      .eq("user_id", user.id);
+    if (Array.isArray(m1)) {
+      for (const row of m1) {
+        const r = String(row?.role || "").toLowerCase();
+        if (r === "owner" || r === "admin" || r === "super_admin") return true;
+      }
+    }
+  } catch (_) {
+    // table may not exist
+  }
+  try {
+    const { data: m2 } = await adminClient
+      .from("org_memberships")
+      .select("role")
+      .eq("user_id", user.id);
+    if (Array.isArray(m2)) {
+      for (const row of m2) {
+        const r = String(row?.role || "").toLowerCase();
+        if (r === "owner" || r === "admin" || r === "super_admin") return true;
+      }
+    }
+  } catch (_) {
+    // table may not exist
+  }
+  try {
+    const { data: m3 } = await adminClient
+      .from("organization_memberships")
+      .select("org_role")
+      .eq("user_id", user.id);
+    if (Array.isArray(m3)) {
+      for (const row of m3) {
+        const r = String(row?.org_role || "").toLowerCase();
+        if (r === "owner" || r === "admin" || r === "super_admin") return true;
+      }
+    }
+  } catch (_) {
+    // table may not exist
+  }
 
   return false;
 }

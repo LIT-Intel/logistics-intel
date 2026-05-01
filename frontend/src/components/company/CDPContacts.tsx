@@ -276,6 +276,19 @@ export default function CDPContacts({
     setApolloSetupRequired(false);
     setApolloSearched(false);
     setApolloSelected(new Set());
+    // Hard-scope guard: refuse the search if we have no company domain.
+    // Without a domain Apollo returns essentially-random results
+    // (e.g. gap.com → Wells Fargo / NatWest). Surface a clear
+    // setup-required message and short-circuit before billing a call.
+    if (!companyDomain || !String(companyDomain).trim()) {
+      setApolloLoading(false);
+      setApolloSearched(true);
+      setApolloError(
+        "Company domain is required before searching Apollo contacts. Add a domain on this company profile and retry.",
+      );
+      setApolloSetupRequired(true);
+      return;
+    }
     try {
       const result = await searchApolloContacts({
         companyId: companyId ?? null,

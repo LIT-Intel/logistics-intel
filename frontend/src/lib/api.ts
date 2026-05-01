@@ -3959,8 +3959,11 @@ export async function searchApolloContacts(
     return {
       ok: false,
       contacts: [],
-      error: data.error || "Apollo search failed.",
-      setupRequired: data.code === "NOT_CONFIGURED",
+      error: data.message || data.error || "Apollo search failed.",
+      setupRequired:
+        data.code === "NOT_CONFIGURED" ||
+        data.code === "APOLLO_NOT_CONFIGURED" ||
+        data.code === "DOMAIN_REQUIRED",
     };
   }
   const rawList: any[] = Array.isArray(data?.contacts)
