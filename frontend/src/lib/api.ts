@@ -3903,12 +3903,35 @@ export type ApolloSearchPayload = {
   companyId?: string | null;
   companyName?: string | null;
   companyDomain?: string | null;
+  /** Legacy single-string location (kept for back-compat). */
   location?: string | null;
+  /** Preferred: structured city/state/country. The edge function builds
+   *  Apollo-friendly location strings from these. */
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  /** When true scope by where the contact LIVES (person_locations[])
+   *  instead of the employer's HQ. Default false. */
+  usePersonLocations?: boolean;
   titles?: string[];
   seniorities?: string[];
+  departments?: string[];
+  emailStatuses?: string[];
   page?: number;
   perPage?: number;
 };
+
+export type ApolloMatchMode =
+  | "organization_id"
+  | "domain"
+  | "name_location_fallback"
+  | "none";
+
+export type ApolloOrganizationMatch = {
+  id: string | null;
+  name: string | null;
+  primary_domain: string | null;
+} | null;
 
 export type ApolloContactPreview = {
   apollo_person_id?: string | null;
@@ -3939,19 +3962,27 @@ export async function searchApolloContacts(
 ): Promise<{
   ok: boolean;
   contacts: ApolloContactPreview[];
+  matchMode?: ApolloMatchMode;
+  organization?: ApolloOrganizationMatch;
+  plan?: string | null;
+  planCap?: number | null;
+  message?: string | null;
   error?: string;
   setupRequired?: boolean;
 }> {
-  // The edge function reads snake_case fields (`company_id`, `domain`,
-  // `company_name`, `per_page`) — map our camelCase payload to that
-  // shape. Without this mapping the frontend's companyDomain never
-  // reached Apollo and the search was unscoped.
+  // The edge function reads snake_case. Build the request envelope.
   const requestBody = {
     company_id: payload.companyId ?? null,
     domain: payload.companyDomain ?? null,
     company_name: payload.companyName ?? null,
+    city: payload.city ?? null,
+    state: payload.state ?? null,
+    country: payload.country ?? null,
+    use_person_locations: Boolean(payload.usePersonLocations),
     titles: payload.titles ?? [],
     seniorities: payload.seniorities ?? [],
+    departments: payload.departments ?? [],
+    email_statuses: payload.emailStatuses ?? [],
     locations: payload.location ? [payload.location] : [],
     page: payload.page ?? 1,
     per_page: payload.perPage ?? 25,
@@ -3962,26 +3993,46 @@ export async function searchApolloContacts(
   );
   if (error) {
     const msg = String(error.message || "");
+    // Try to read structured error body — supabase-js wraps non-2xx in a
+    // FunctionsHttpError whose `.context` is the underlying Response.
+    try {
+      const ctx: any = (error as any).context;
+      const cloned = ctx?.clone?.();
+      const parsed = await cloned?.json?.();
+      if (parsed && typeof parsed === "object") {
+        return {
+          ok: false,
+          contacts: [],
+          error: parsed.message || parsed.error || msg,
+          setupRequired:
+            parsed.code === "NOT_CONFIGURED" ||
+            parsed.code === "APOLLO_NOT_CONFIGURED" ||
+            parsed.code === "DOMAIN_REQUIRED" ||
+            parsed.code === "COMPANY_NOT_VERIFIED",
+        };
+      }
+    } catch {}
     // Edge function not deployed yet — surface a friendly setup message.
     if (/not\s+found|404|FunctionsHttpError|FunctionsRelay/i.test(msg)) {
       return {
         ok: false,
         contacts: [],
-        error: "Apollo enrichment is not configured yet.",
+        error: "Contact search is not configured yet.",
         setupRequired: true,
       };
     }
-    throw new Error(`apollo.search: ${msg}`);
+    throw new Error(`contacts.search: ${msg}`);
   }
   if (data && data.ok === false) {
     return {
       ok: false,
       contacts: [],
-      error: data.message || data.error || "Apollo search failed.",
+      error: data.message || data.error || "Contact search failed.",
       setupRequired:
         data.code === "NOT_CONFIGURED" ||
         data.code === "APOLLO_NOT_CONFIGURED" ||
-        data.code === "DOMAIN_REQUIRED",
+        data.code === "DOMAIN_REQUIRED" ||
+        data.code === "COMPANY_NOT_VERIFIED",
     };
   }
   const rawList: any[] = Array.isArray(data?.contacts)
@@ -4022,7 +4073,15 @@ export async function searchApolloContacts(
       enrichment_status: "preview",
     };
   });
-  return { ok: true, contacts };
+  return {
+    ok: true,
+    contacts,
+    matchMode: (data?.match_mode as ApolloMatchMode) ?? undefined,
+    organization: (data?.apollo_organization as ApolloOrganizationMatch) ?? null,
+    plan: data?.plan ?? null,
+    planCap: typeof data?.plan_cap === "number" ? data.plan_cap : null,
+    message: data?.message ?? null,
+  };
 }
 
 export async function enrichApolloContacts(payload: {

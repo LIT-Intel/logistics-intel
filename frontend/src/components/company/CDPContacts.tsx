@@ -162,14 +162,44 @@ export default function CDPContacts({
   const [apolloEnriching, setApolloEnriching] = useState(false);
   const [apolloEnrichError, setApolloEnrichError] = useState<string | null>(null);
 
-  // Apollo filter state — scoped to the current company. The edge
-  // function enforces the actual scoping; titles/seniorities are
-  // simply hints we pass through. Defaults match the LIT outbound
-  // playbook personas.
+  // Filter state — scoped to the current company. The edge function
+  // enforces actual scoping; titles/seniorities are simply hints we
+  // pass through. Defaults match the LIT outbound playbook personas.
   const [apolloTitles, setApolloTitles] = useState<string[]>(APOLLO_DEFAULT_TITLES);
   const [apolloSeniorities, setApolloSeniorities] = useState<string[]>(APOLLO_DEFAULT_SENIORITIES);
   const [apolloDepartments, setApolloDepartments] = useState<string[]>([]);
-  const [apolloLocationOverride, setApolloLocationOverride] = useState<string>("");
+  // Editable company name + domain (locked-by-default, but user can
+  // override before re-running). Default to the company props.
+  const [searchCompanyName, setSearchCompanyName] = useState<string>(
+    companyName ?? "",
+  );
+  const [searchCompanyDomain, setSearchCompanyDomain] = useState<string>(
+    companyDomain ?? "",
+  );
+  const [searchCity, setSearchCity] = useState<string>("");
+  const [searchState, setSearchState] = useState<string>("");
+  const [searchCountry, setSearchCountry] = useState<string>("");
+  // Default OFF: scope by employer HQ (organization_locations[]).
+  // ON: scope by where the contact lives (person_locations[]).
+  const [usePersonLocations, setUsePersonLocations] = useState<boolean>(false);
+
+  // Match-mode response from the edge function (which strategy hit).
+  const [searchMatchMode, setSearchMatchMode] = useState<
+    "organization_id" | "domain" | "name_location_fallback" | "none" | null
+  >(null);
+  const [searchOrgMatch, setSearchOrgMatch] = useState<{
+    id: string | null;
+    name: string | null;
+    primary_domain: string | null;
+  } | null>(null);
+
+  // Re-sync editable copies when the underlying company changes.
+  useEffect(() => {
+    setSearchCompanyName(companyName ?? "");
+  }, [companyName]);
+  useEffect(() => {
+    setSearchCompanyDomain(companyDomain ?? "");
+  }, [companyDomain]);
 
   // Add-contact modal state
   const [addOpen, setAddOpen] = useState(false);
@@ -276,15 +306,19 @@ export default function CDPContacts({
     setApolloSetupRequired(false);
     setApolloSearched(false);
     setApolloSelected(new Set());
-    // Hard-scope guard: refuse the search if we have no company domain.
-    // Without a domain the upstream provider returns essentially-random
-    // results (e.g. gap.com → Wells Fargo / NatWest). Surface a clear
-    // setup-required message and short-circuit before billing a call.
-    if (!companyDomain || !String(companyDomain).trim()) {
+    setSearchMatchMode(null);
+    setSearchOrgMatch(null);
+
+    // We can search if we have EITHER a domain OR a company name. The
+    // edge function will resolve via Apollo Organization Search using
+    // whichever signal is available, then fall back as needed.
+    const effectiveDomain = (searchCompanyDomain || "").trim();
+    const effectiveName = (searchCompanyName || "").trim();
+    if (!effectiveDomain && !effectiveName) {
       setApolloLoading(false);
       setApolloSearched(true);
       setApolloError(
-        "Company domain is required before searching contacts. Add a domain on this company profile and retry.",
+        "Add either a company domain, name, or location before searching contacts.",
       );
       setApolloSetupRequired(true);
       return;
@@ -292,25 +326,33 @@ export default function CDPContacts({
     try {
       const result = await searchApolloContacts({
         companyId: companyId ?? null,
-        companyName: companyName ?? null,
-        companyDomain: companyDomain ?? null,
-        // Filters: prefer any user-entered location, fall back to the
-        // company's HQ city/country from the profile so search is
-        // scoped to the current company by default.
-        location: apolloLocationOverride.trim() || companyLocation || null,
+        companyName: effectiveName || null,
+        companyDomain: effectiveDomain || null,
+        city: searchCity.trim() || null,
+        state: searchState.trim() || null,
+        country: searchCountry.trim() || null,
+        usePersonLocations,
         titles: apolloTitles.length ? apolloTitles : APOLLO_DEFAULT_TITLES,
         seniorities: apolloSeniorities.length
           ? apolloSeniorities
           : APOLLO_DEFAULT_SENIORITIES,
-        perPage: 25,
+        departments: apolloDepartments,
+        perPage: 50,
       });
       setApolloSearched(true);
+      setSearchMatchMode(result.matchMode ?? null);
+      setSearchOrgMatch(result.organization ?? null);
       if (!result.ok) {
         setApolloResults([]);
         setApolloError(result.error || "Contact search failed.");
         setApolloSetupRequired(Boolean(result.setupRequired));
       } else {
         setApolloResults(result.contacts);
+        if (result.contacts.length === 0 && result.message) {
+          // Honest empty state — surface the precise message.
+          setApolloError(result.message);
+          setApolloSetupRequired(false);
+        }
       }
     } catch (err: any) {
       setApolloSearched(true);
@@ -563,17 +605,27 @@ export default function CDPContacts({
           selected={apolloSelected}
           enriching={apolloEnriching}
           enrichError={apolloEnrichError}
-          companyName={companyName ?? null}
-          companyDomain={companyDomain ?? null}
+          companyName={searchCompanyName}
+          companyDomain={searchCompanyDomain}
           companyLocation={companyLocation ?? null}
+          city={searchCity}
+          stateField={searchState}
+          country={searchCountry}
+          usePersonLocations={usePersonLocations}
+          matchMode={searchMatchMode}
+          orgMatch={searchOrgMatch}
           titles={apolloTitles}
           seniorities={apolloSeniorities}
           departments={apolloDepartments}
-          locationOverride={apolloLocationOverride}
+          onCompanyNameChange={setSearchCompanyName}
+          onCompanyDomainChange={setSearchCompanyDomain}
+          onCityChange={setSearchCity}
+          onStateChange={setSearchState}
+          onCountryChange={setSearchCountry}
+          onUsePersonLocationsChange={setUsePersonLocations}
           onTitlesChange={setApolloTitles}
           onSenioritiesChange={setApolloSeniorities}
           onDepartmentsChange={setApolloDepartments}
-          onLocationChange={setApolloLocationOverride}
           onClose={() => {
             setApolloOpen(false);
             setApolloEnrichError(null);
@@ -937,17 +989,27 @@ type ApolloResultsPanelProps = {
   selected: Set<string>;
   enriching: boolean;
   enrichError: string | null;
-  companyName: string | null;
-  companyDomain: string | null;
+  companyName: string;
+  companyDomain: string;
   companyLocation: string | null;
+  city: string;
+  stateField: string;
+  country: string;
+  usePersonLocations: boolean;
+  matchMode: "organization_id" | "domain" | "name_location_fallback" | "none" | null;
+  orgMatch: { id: string | null; name: string | null; primary_domain: string | null } | null;
   titles: string[];
   seniorities: string[];
   departments: string[];
-  locationOverride: string;
+  onCompanyNameChange: (next: string) => void;
+  onCompanyDomainChange: (next: string) => void;
+  onCityChange: (next: string) => void;
+  onStateChange: (next: string) => void;
+  onCountryChange: (next: string) => void;
+  onUsePersonLocationsChange: (next: boolean) => void;
   onTitlesChange: (next: string[]) => void;
   onSenioritiesChange: (next: string[]) => void;
   onDepartmentsChange: (next: string[]) => void;
-  onLocationChange: (next: string) => void;
   onClose: () => void;
   onRetry: () => void;
   onToggle: (key: string) => void;
@@ -978,14 +1040,24 @@ function ApolloResultsPanel({
   companyName,
   companyDomain,
   companyLocation,
+  city,
+  stateField,
+  country,
+  usePersonLocations,
+  matchMode,
+  orgMatch,
   titles,
   seniorities,
   departments,
-  locationOverride,
+  onCompanyNameChange,
+  onCompanyDomainChange,
+  onCityChange,
+  onStateChange,
+  onCountryChange,
+  onUsePersonLocationsChange,
   onTitlesChange,
   onSenioritiesChange,
   onDepartmentsChange,
-  onLocationChange,
   onClose,
   onRetry,
   onToggle,
@@ -1053,12 +1125,46 @@ function ApolloResultsPanel({
 
       {/* Filters — scoped to current company */}
       <div className="border-b border-violet-100 bg-white px-3.5 py-3">
-        <div className="font-body mb-2 text-[10.5px] text-slate-500">
-          <Sparkles className="mr-1 inline h-2.5 w-2.5 text-violet-500" />
-          Scoped to <strong className="text-slate-900">{scopeLabel}</strong>
+        <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[10.5px]">
+          <Sparkles className="inline h-2.5 w-2.5 text-violet-500" />
+          <span className="font-body text-slate-500">Scoped to</span>
+          <strong className="font-mono text-slate-900">{scopeLabel}</strong>
+          {orgMatch?.name && (
+            <span className="font-mono text-slate-500">
+              · matched <strong>{orgMatch.name}</strong>
+            </span>
+          )}
+          {searched && matchMode && <SearchModeBadge mode={matchMode} />}
           {companyLocation ? (
-            <span className="text-slate-400"> · HQ {companyLocation}</span>
+            <span className="font-body text-slate-400"> · HQ {companyLocation}</span>
           ) : null}
+        </div>
+        {/* Editable company name + domain (locked-by-default look) */}
+        <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="flex flex-col gap-0.5">
+            <span className="font-display text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">
+              Company name
+            </span>
+            <input
+              type="text"
+              value={companyName}
+              onChange={(e) => onCompanyNameChange(e.target.value)}
+              placeholder="Company name"
+              className="font-body w-full rounded-md border-[1.5px] border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/10"
+            />
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="font-display text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">
+              Company domain
+            </span>
+            <input
+              type="text"
+              value={companyDomain}
+              onChange={(e) => onCompanyDomainChange(e.target.value)}
+              placeholder="example.com"
+              className="font-body w-full rounded-md border-[1.5px] border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/10"
+            />
+          </label>
         </div>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <div>
@@ -1136,15 +1242,42 @@ function ApolloResultsPanel({
           </div>
           <div>
             <div className="font-display mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-              Location override
+              Location
             </div>
-            <input
-              type="text"
-              value={locationOverride}
-              onChange={(e) => onLocationChange(e.target.value)}
-              placeholder={companyLocation || "City, country, or region"}
-              className="font-body w-full rounded-md border-[1.5px] border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/10"
-            />
+            <div className="grid grid-cols-3 gap-1.5">
+              <input
+                type="text"
+                value={city}
+                onChange={(e) => onCityChange(e.target.value)}
+                placeholder="City"
+                className="font-body w-full rounded-md border-[1.5px] border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/10"
+              />
+              <input
+                type="text"
+                value={stateField}
+                onChange={(e) => onStateChange(e.target.value)}
+                placeholder="State"
+                className="font-body w-full rounded-md border-[1.5px] border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/10"
+              />
+              <input
+                type="text"
+                value={country}
+                onChange={(e) => onCountryChange(e.target.value)}
+                placeholder="Country"
+                className="font-body w-full rounded-md border-[1.5px] border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/10"
+              />
+            </div>
+            <label className="mt-2 flex items-center gap-1.5 text-[10.5px] text-slate-600">
+              <input
+                type="checkbox"
+                checked={usePersonLocations}
+                onChange={(e) => onUsePersonLocationsChange(e.target.checked)}
+                className="h-3 w-3 rounded border-slate-300 text-violet-600 focus:ring-violet-400"
+              />
+              <span>
+                Filter by where the contact lives, not the company HQ
+              </span>
+            </label>
             <button
               type="button"
               onClick={onRetry}
@@ -1214,11 +1347,10 @@ function ApolloResultsPanel({
       ) : results.length === 0 && searched ? (
         <div className="px-6 py-8 text-center">
           <p className="font-display text-[12px] font-semibold text-slate-700">
-            Contact search returned no matching results.
+            No matching contacts found for this company and filter set.
           </p>
           <p className="font-body mt-1 text-[11px] text-slate-500">
-            Try widening the title list or confirming the company domain on
-            the right-rail before retrying.
+            Try editing the company name, website, city, or state before retrying.
           </p>
         </div>
       ) : (
@@ -1368,6 +1500,42 @@ function ApolloResultsPanel({
         </>
       )}
     </div>
+  );
+}
+
+function SearchModeBadge({
+  mode,
+}: {
+  mode: "organization_id" | "domain" | "name_location_fallback" | "none";
+}) {
+  const map: Record<typeof mode, { label: string; tone: string }> = {
+    organization_id: {
+      label: "Apollo company match",
+      tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    },
+    domain: {
+      label: "Domain match",
+      tone: "border-blue-200 bg-blue-50 text-blue-700",
+    },
+    name_location_fallback: {
+      label: "Name + location fallback",
+      tone: "border-amber-200 bg-amber-50 text-amber-700",
+    },
+    none: {
+      label: "No verified company match",
+      tone: "border-rose-200 bg-rose-50 text-rose-700",
+    },
+  };
+  const m = map[mode];
+  return (
+    <span
+      className={[
+        "font-display inline-flex items-center rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em]",
+        m.tone,
+      ].join(" ")}
+    >
+      {m.label}
+    </span>
   );
 }
 
