@@ -3938,9 +3938,23 @@ export async function searchApolloContacts(
   error?: string;
   setupRequired?: boolean;
 }> {
+  // The edge function reads snake_case fields (`company_id`, `domain`,
+  // `company_name`, `per_page`) — map our camelCase payload to that
+  // shape. Without this mapping the frontend's companyDomain never
+  // reached Apollo and the search was unscoped.
+  const requestBody = {
+    company_id: payload.companyId ?? null,
+    domain: payload.companyDomain ?? null,
+    company_name: payload.companyName ?? null,
+    titles: payload.titles ?? [],
+    seniorities: payload.seniorities ?? [],
+    locations: payload.location ? [payload.location] : [],
+    page: payload.page ?? 1,
+    per_page: payload.perPage ?? 25,
+  };
   const { data, error } = await supabase.functions.invoke(
     "apollo-contact-search",
-    { body: payload },
+    { body: requestBody },
   );
   if (error) {
     const msg = String(error.message || "");
@@ -4009,9 +4023,18 @@ export async function enrichApolloContacts(payload: {
   error?: string;
   setupRequired?: boolean;
 }> {
+  // Map camelCase frontend payload to the snake_case shape the edge
+  // function expects. Per-target snake_case fields stay as-is since
+  // the contacts[] entries are already in the right shape.
+  const requestBody = {
+    company_id: payload.companyId ?? null,
+    company_name: payload.companyName ?? null,
+    domain: payload.companyDomain ?? null,
+    contacts: payload.contacts,
+  };
   const { data, error } = await supabase.functions.invoke(
     "apollo-contact-enrich",
-    { body: payload },
+    { body: requestBody },
   );
   if (error) {
     const msg = String(error.message || "");
