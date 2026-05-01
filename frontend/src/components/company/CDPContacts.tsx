@@ -2633,13 +2633,31 @@ function OutreachContactModal({
         setSetupRequired(true);
         return;
       }
-      await addCompanyToCampaign({
-        campaign_id: Number(selectedCampaignId),
+      const res = await addCompanyToCampaign({
+        campaign_id: String(selectedCampaignId),
         company_id: String(companyId),
         contact_ids: [contactId],
       });
-      setDone(true);
-      setTimeout(() => onClose(), 1300);
+      if (res.contacts_added > 0) {
+        setDone(true);
+        setTimeout(() => onClose(), 1300);
+      } else if (res.errors.length > 0) {
+        setError(res.errors.join(" · "));
+        // contact_id might be a temporary in-memory id (e.g.
+        // "apollo-...") rather than a saved lit_contacts UUID. Tell
+        // the user clearly.
+        if (res.errors.some((e) => /uuid|invalid input syntax/i.test(e))) {
+          setSetupRequired(true);
+          setError(
+            "This contact hasn't been saved yet — re-enrich it so it gets a real id, then retry.",
+          );
+        }
+      } else {
+        // Company added but no contacts — likely missing contact id.
+        setError(
+          "Couldn't link the contact. Re-enrich the contact, then retry.",
+        );
+      }
     } catch (err: any) {
       const msg = String(err?.message || err || "");
       // The CRM gateway may not yet support contact-level membership;

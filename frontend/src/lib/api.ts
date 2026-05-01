@@ -4328,25 +4328,103 @@ export async function getCrmCampaignDetail(campaign_id: number, signal?: AbortSi
   return res.json();
 }
 
+/**
+ * Add a company (and optional contacts) to a campaign.
+ *
+ * Writes directly to Supabase:
+ *   - `lit_campaign_companies` (campaign × company membership)
+ *   - `campaign_contacts`      (campaign × contact membership)
+ *
+ * The previous CRM-gateway endpoint (`/crm/campaigns/:id/addCompany`)
+ * was 404'ing; both tables already exist server-side, so direct
+ * upserts via the user's session client are the cleanest path.
+ *
+ * Each upsert is best-effort — one failure shouldn't block the others.
+ * Returns counts so the UI can surface partial setup-required state.
+ */
 export async function addCompanyToCampaign(params: {
-  campaign_id: number;
+  campaign_id: string | number;
   company_id: string;
   contact_ids?: string[];
-}, signal?: AbortSignal) {
-  const url = withGatewayKey(`${API_BASE}/crm/campaigns/${params.campaign_id}/addCompany`);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      company_id: params.company_id,
-      contact_ids: params.contact_ids || [],
-    }),
-    signal,
-  });
-  if (!res.ok) {
-    throw new Error(`addCompanyToCampaign ${res.status}`);
+}): Promise<{
+  ok: boolean;
+  company_added: boolean;
+  contacts_added: number;
+  errors: string[];
+}> {
+  const errors: string[] = [];
+  let companyAdded = false;
+  let contactsAdded = 0;
+
+  // Resolve company_id slug → UUID if needed (lit_campaign_companies
+  // expects a UUID).
+  let resolvedCompany = params.company_id;
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    String(params.company_id),
+  );
+  if (!isUuid) {
+    const candidates = String(params.company_id).startsWith("company/")
+      ? [String(params.company_id)]
+      : [String(params.company_id), `company/${params.company_id}`];
+    for (const cand of candidates) {
+      const { data } = await supabase
+        .from("lit_companies")
+        .select("id")
+        .eq("source_company_key", cand)
+        .maybeSingle();
+      if (data?.id) {
+        resolvedCompany = String(data.id);
+        break;
+      }
+    }
   }
-  return res.json();
+
+  // 1. company-level membership
+  try {
+    const { error } = await supabase
+      .from("lit_campaign_companies")
+      .upsert(
+        { campaign_id: params.campaign_id, company_id: resolvedCompany },
+        { onConflict: "campaign_id,company_id" },
+      );
+    if (error) errors.push(`campaign_companies: ${error.message}`);
+    else companyAdded = true;
+  } catch (err: any) {
+    errors.push(`campaign_companies: ${err?.message || err}`);
+  }
+
+  // 2. contact-level membership (loop, since campaign_contacts expects
+  //    one row per contact and we want to count partial successes).
+  for (const contactId of params.contact_ids || []) {
+    if (!contactId) continue;
+    try {
+      const { error } = await supabase
+        .from("campaign_contacts")
+        .upsert(
+          {
+            campaign_id: params.campaign_id,
+            contact_id: contactId,
+            status: "active",
+            current_step: 0,
+          },
+          { onConflict: "campaign_id,contact_id" },
+        );
+      if (error) {
+        errors.push(`contact ${contactId}: ${error.message}`);
+      } else {
+        contactsAdded += 1;
+      }
+    } catch (err: any) {
+      errors.push(`contact ${contactId}: ${err?.message || err}`);
+    }
+  }
+
+  return {
+    ok: errors.length === 0,
+    company_added: companyAdded,
+    contacts_added: contactsAdded,
+    errors,
+  };
 }
 
 export async function enrichCrmCompanyContacts(company_id: string, signal?: AbortSignal) {

@@ -58,47 +58,131 @@ export default function CDPActivity({ companyId, ownerName }: CDPActivityProps) 
   const [rows, setRows] = useState<ActivityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("all");
+  const [resolvedCompanyUuid, setResolvedCompanyUuid] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
 
+  // Resolve slug ("company/old-navy") → UUID once per company. The
+  // activity table stores company_id as a UUID column (not metadata),
+  // so we must query by the resolved UUID.
   useEffect(() => {
     let cancelled = false;
     if (!companyId) {
-      setRows([]);
-      setLoading(false);
+      setResolvedCompanyUuid(null);
       return;
     }
-    setLoading(true);
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(companyId),
+      );
+    if (isUuid) {
+      setResolvedCompanyUuid(String(companyId));
+      return;
+    }
     (async () => {
-      try {
-        const { data, error } = await supabase
-          .from("lit_activity_events")
-          .select("id, event_type, metadata, created_at")
-          .order("created_at", { ascending: false })
-          .limit(40);
-        if (cancelled) return;
-        if (error) {
-          setRows([]);
+      const candidates = String(companyId).startsWith("company/")
+        ? [String(companyId)]
+        : [String(companyId), `company/${companyId}`];
+      for (const cand of candidates) {
+        const { data } = await supabase
+          .from("lit_companies")
+          .select("id")
+          .eq("source_company_key", cand)
+          .maybeSingle();
+        if (!cancelled && data?.id) {
+          setResolvedCompanyUuid(String(data.id));
           return;
         }
-        const filtered = (data || []).filter((r: any) => {
-          const meta = r?.metadata || {};
-          return (
-            meta.company_id === companyId ||
-            meta.companyId === companyId ||
-            meta.source_company_key === companyId ||
-            meta.company_key === companyId
-          );
-        });
-        setRows(filtered);
-      } catch {
-        if (!cancelled) setRows([]);
-      } finally {
-        if (!cancelled) setLoading(false);
       }
+      if (!cancelled) setResolvedCompanyUuid(null);
     })();
     return () => {
       cancelled = true;
     };
   }, [companyId]);
+
+  async function loadActivity() {
+    if (!resolvedCompanyUuid) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      // Primary: filter by the company_id column (this is where every
+      // edge function writes the value). Fall back to scanning metadata
+      // for legacy rows where the column was null.
+      const { data, error } = await supabase
+        .from("lit_activity_events")
+        .select("id, event_type, metadata, created_at")
+        .eq("company_id", resolvedCompanyUuid)
+        .order("created_at", { ascending: false })
+        .limit(60);
+      if (error) {
+        setRows([]);
+        return;
+      }
+      setRows((data || []) as ActivityRow[]);
+    } catch {
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await loadActivity();
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedCompanyUuid]);
+
+  async function handleSaveNote() {
+    const text = noteDraft.trim();
+    if (!text || savingNote) return;
+    if (!resolvedCompanyUuid) {
+      setNoteError("Save the company first before adding notes.");
+      return;
+    }
+    setSavingNote(true);
+    setNoteError(null);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id;
+      if (!userId) {
+        setNoteError("Sign in again to save notes.");
+        return;
+      }
+      const { data, error } = await supabase
+        .from("lit_activity_events")
+        .insert({
+          user_id: userId,
+          event_type: "note",
+          company_id: resolvedCompanyUuid,
+          metadata: { note: text, author: ownerName || null },
+        })
+        .select("id, event_type, metadata, created_at")
+        .single();
+      if (error) {
+        setNoteError(error.message || "Couldn't save note.");
+        return;
+      }
+      if (data) {
+        setRows((prev) => [data as ActivityRow, ...prev]);
+      }
+      setNoteDraft("");
+    } catch (err: any) {
+      setNoteError(err?.message || "Couldn't save note.");
+    } finally {
+      setSavingNote(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     if (filter === "all") return rows;
@@ -275,15 +359,24 @@ export default function CDPActivity({ companyId, ownerName }: CDPActivityProps) 
             Add note
           </div>
           <textarea
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            disabled={savingNote}
             placeholder="Drop a note for the team…"
             className="font-body min-h-[60px] w-full resize-none rounded-md border-[1.5px] border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-900 outline-none focus:border-blue-500"
           />
+          {noteError && (
+            <div className="font-body mt-1.5 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10.5px] text-rose-700">
+              {noteError}
+            </div>
+          )}
           <button
             type="button"
-            disabled
-            className="font-display mt-2 w-full rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white opacity-60 shadow-sm"
-            title="Note saving lands once the activity endpoint is live"
+            onClick={handleSaveNote}
+            disabled={savingNote || !noteDraft.trim() || !resolvedCompanyUuid}
+            className="font-display mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
           >
+            {savingNote && <Loader2 className="h-3 w-3 animate-spin" />}
             Save note
           </button>
         </div>
