@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from "react";
-import { Layers, Search, X } from "lucide-react";
+import { Layers, Plus, Search, X } from "lucide-react";
 import { fontDisplay, fontBody } from "../tokens";
 import type { OutreachTemplate } from "../types";
 import type { TemplatesState } from "../hooks/useTemplates";
+import { isStarterTemplate } from "../hooks/useTemplates";
 import type { StarterTemplate } from "../data/templates";
 
 interface Props {
@@ -10,6 +11,7 @@ interface Props {
   state: TemplatesState | null;
   onClose: () => void;
   onApply: (template: OutreachTemplate) => void;
+  onCreate: () => void;
 }
 
 const INDUSTRY_LABEL: Record<string, string> = {
@@ -32,39 +34,44 @@ const INTENT_LABEL: Record<string, string> = {
   breakup: "Breakup",
 };
 
-function isStarter(t: OutreachTemplate): t is OutreachTemplate & StarterTemplate {
-  return Object.prototype.hasOwnProperty.call(t, "industry");
-}
-
-export function TemplatesDrawer({ open, state, onClose, onApply }: Props) {
+export function TemplatesDrawer({ open, state, onClose, onApply, onCreate }: Props) {
+  // Hooks MUST run unconditionally on every render — moving them after the
+  // early return caused React error #310 (rendered more hooks than during
+  // the previous render). Keep all hook calls here.
   const [query, setQuery] = useState("");
   const [industryFilter, setIndustryFilter] = useState<string>("all");
-  if (!open) return null;
 
-  const rows = state?.result.state === "ok" ? state.result.rows : [];
+  const starterRows = state?.starterRows ?? [];
+  const workspaceRows = state?.workspaceRows ?? [];
 
   const industries = useMemo(() => {
     const set = new Set<string>();
-    for (const t of rows) {
-      if (isStarter(t)) set.add(t.industry);
+    for (const t of starterRows) {
+      if (isStarterTemplate(t)) set.add((t as StarterTemplate).industry);
     }
     return ["all", ...Array.from(set)];
-  }, [rows]);
+  }, [starterRows]);
 
-  const filtered = rows.filter((t) => {
-    if (
-      industryFilter !== "all" &&
-      isStarter(t) &&
-      t.industry !== industryFilter
-    ) {
-      return false;
-    }
+  const matchesQuery = (t: OutreachTemplate) => {
     if (!query.trim()) return true;
     const q = query.trim().toLowerCase();
     return `${t.name} ${t.subject ?? ""} ${t.body ?? ""}`
       .toLowerCase()
       .includes(q);
-  });
+  };
+
+  const matchesIndustry = (t: OutreachTemplate) => {
+    if (industryFilter === "all") return true;
+    if (!isStarterTemplate(t)) return industryFilter === "workspace";
+    return (t as StarterTemplate).industry === industryFilter;
+  };
+
+  const filteredWorkspace = workspaceRows.filter(matchesQuery);
+  const filteredStarters = starterRows
+    .filter(matchesIndustry)
+    .filter(matchesQuery);
+
+  if (!open) return null;
 
   return (
     <>
@@ -87,32 +94,27 @@ export function TemplatesDrawer({ open, state, onClose, onApply }: Props) {
               className="text-[11px] text-slate-500"
               style={{ fontFamily: fontBody }}
             >
-              {state?.source === "db"
-                ? "From your workspace"
-                : "Curated starter templates"}
-              {filtered.length > 0
-                ? ` · ${filtered.length} of ${rows.length}`
-                : ""}
+              {workspaceRows.length} workspace · {starterRows.length} standard
             </div>
           </div>
           <button
             type="button"
+            onClick={onCreate}
+            className="ml-auto inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-2.5 py-1 text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(59,130,246,0.3)]"
+            style={{ fontFamily: fontDisplay }}
+          >
+            <Plus className="h-2.5 w-2.5" />
+            New
+          </button>
+          <button
+            type="button"
             onClick={onClose}
-            className="ml-auto flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
             aria-label="Close"
           >
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
-
-        {state?.blockedReason ? (
-          <div
-            className="border-b border-amber-200 bg-amber-50/60 px-4 py-2 text-[11px] text-[#B45309]"
-            style={{ fontFamily: fontBody }}
-          >
-            {state.blockedReason}
-          </div>
-        ) : null}
 
         <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 px-4 py-2">
           <div className="relative flex-1">
@@ -152,87 +154,164 @@ export function TemplatesDrawer({ open, state, onClose, onApply }: Props) {
         ) : null}
 
         <div className="flex-1 overflow-y-auto px-3 py-2">
-          {!state ? (
-            <div className="flex flex-col gap-1.5">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-12 animate-pulse rounded-md bg-slate-100"
-                />
-              ))}
-            </div>
-          ) : filtered.length === 0 ? (
+          {/* Workspace section */}
+          <SectionLabel
+            title="Your workspace templates"
+            count={filteredWorkspace.length}
+            tone="blue"
+          />
+          {state?.blocked ? (
             <div
-              className="rounded-md border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center text-[12px] text-slate-500"
+              className="mb-3 rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-[11px] text-[#B45309]"
               style={{ fontFamily: fontBody }}
             >
-              No templates match.
+              {state.blockedReason ??
+                "Workspace templates require an RLS policy on lit_outreach_templates."}
+            </div>
+          ) : filteredWorkspace.length === 0 ? (
+            <div
+              className="mb-3 rounded-md border border-dashed border-slate-200 bg-slate-50/60 px-3 py-3 text-center text-[11px] text-slate-500"
+              style={{ fontFamily: fontBody }}
+            >
+              No workspace templates yet. Click <strong>New</strong> to save one — it'll be visible only to your org.
             </div>
           ) : (
-            filtered.map((tpl) => {
-              const starter = isStarter(tpl) ? (tpl as StarterTemplate) : null;
-              return (
-                <button
-                  key={tpl.id}
-                  type="button"
-                  onClick={() => onApply(tpl)}
-                  className="mb-1.5 flex w-full flex-col gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-left transition hover:border-[#3B82F6] hover:bg-[#F0F9FF]"
-                >
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span
-                      className="text-[12.5px] font-bold text-[#0F172A]"
-                      style={{ fontFamily: fontDisplay }}
-                    >
-                      {tpl.name}
-                    </span>
-                    {starter ? (
-                      <>
-                        <Tag tone="slate">
-                          {INDUSTRY_LABEL[starter.industry] ?? starter.industry}
-                        </Tag>
-                        <Tag
-                          tone={
-                            starter.intent === "opener"
-                              ? "blue"
-                              : starter.intent === "bump"
-                              ? "violet"
-                              : "amber"
-                          }
-                        >
-                          {INTENT_LABEL[starter.intent] ?? starter.intent}
-                        </Tag>
-                      </>
-                    ) : null}
-                    <span
-                      className="ml-auto rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-2.5 py-0.5 text-[10px] font-semibold text-white"
-                      style={{ fontFamily: fontDisplay }}
-                    >
-                      Use
-                    </span>
-                  </div>
-                  {tpl.subject ? (
-                    <div
-                      className="truncate text-[11px] text-slate-700"
-                      style={{ fontFamily: fontBody }}
-                    >
-                      {tpl.subject}
-                    </div>
-                  ) : null}
-                  {starter?.hook ? (
-                    <div
-                      className="text-[11px] leading-relaxed text-slate-500"
-                      style={{ fontFamily: fontBody }}
-                    >
-                      {starter.hook}
-                    </div>
-                  ) : null}
-                </button>
-              );
-            })
+            filteredWorkspace.map((tpl) => (
+              <TemplateRow
+                key={tpl.id}
+                tpl={tpl}
+                source="workspace"
+                onApply={() => onApply(tpl)}
+              />
+            ))
+          )}
+
+          {/* Standard / starter section */}
+          <SectionLabel
+            title="Standard library"
+            count={filteredStarters.length}
+            tone="slate"
+          />
+          {filteredStarters.length === 0 ? (
+            <div
+              className="rounded-md border border-dashed border-slate-200 bg-slate-50/60 px-3 py-3 text-center text-[11px] text-slate-500"
+              style={{ fontFamily: fontBody }}
+            >
+              No standard templates match.
+            </div>
+          ) : (
+            filteredStarters.map((tpl) => (
+              <TemplateRow
+                key={tpl.id}
+                tpl={tpl}
+                source="standard"
+                onApply={() => onApply(tpl)}
+              />
+            ))
           )}
         </div>
       </div>
     </>
+  );
+}
+
+function SectionLabel({
+  title,
+  count,
+  tone,
+}: {
+  title: string;
+  count: number;
+  tone: "blue" | "slate";
+}) {
+  const color = tone === "blue" ? "#1d4ed8" : "#475569";
+  return (
+    <div
+      className="mb-1.5 mt-1 flex items-center gap-2 px-1"
+      style={{ fontFamily: fontDisplay }}
+    >
+      <span
+        className="text-[10px] font-bold uppercase tracking-[0.08em]"
+        style={{ color }}
+      >
+        {title}
+      </span>
+      <span className="text-[10px] text-slate-400">· {count}</span>
+      <div className="ml-1 flex-1 border-t border-slate-100" />
+    </div>
+  );
+}
+
+function TemplateRow({
+  tpl,
+  source,
+  onApply,
+}: {
+  tpl: OutreachTemplate;
+  source: "workspace" | "standard";
+  onApply: () => void;
+}) {
+  const starter = isStarterTemplate(tpl) ? (tpl as StarterTemplate) : null;
+  return (
+    <button
+      type="button"
+      onClick={onApply}
+      className="mb-1.5 flex w-full flex-col gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-left transition hover:border-[#3B82F6] hover:bg-[#F0F9FF]"
+    >
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span
+          className="text-[12.5px] font-bold text-[#0F172A]"
+          style={{ fontFamily: fontDisplay }}
+        >
+          {tpl.name}
+        </span>
+        {source === "workspace" ? (
+          <Tag tone="blue">Workspace</Tag>
+        ) : (
+          <Tag tone="slate">Standard</Tag>
+        )}
+        {starter ? (
+          <>
+            <Tag tone="slate">
+              {INDUSTRY_LABEL[starter.industry] ?? starter.industry}
+            </Tag>
+            <Tag
+              tone={
+                starter.intent === "opener"
+                  ? "blue"
+                  : starter.intent === "bump"
+                  ? "violet"
+                  : "amber"
+              }
+            >
+              {INTENT_LABEL[starter.intent] ?? starter.intent}
+            </Tag>
+          </>
+        ) : null}
+        <span
+          className="ml-auto rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-2.5 py-0.5 text-[10px] font-semibold text-white"
+          style={{ fontFamily: fontDisplay }}
+        >
+          Use
+        </span>
+      </div>
+      {tpl.subject ? (
+        <div
+          className="truncate text-[11px] text-slate-700"
+          style={{ fontFamily: fontBody }}
+        >
+          {tpl.subject}
+        </div>
+      ) : null}
+      {starter?.hook ? (
+        <div
+          className="text-[11px] leading-relaxed text-slate-500"
+          style={{ fontFamily: fontBody }}
+        >
+          {starter.hook}
+        </div>
+      ) : null}
+    </button>
   );
 }
 

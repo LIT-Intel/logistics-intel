@@ -19,6 +19,7 @@ interface Props {
   onApplyTemplate: (template: OutreachTemplate) => void;
   onPreview: () => void;
   onTestSend: () => void;
+  onSaveAsTemplate?: () => void;
 }
 
 export function StepInspector({
@@ -30,6 +31,7 @@ export function StepInspector({
   onApplyTemplate,
   onPreview,
   onTestSend,
+  onSaveAsTemplate,
 }: Props) {
   if (!step) {
     return (
@@ -282,7 +284,7 @@ export function StepInspector({
 
       {/* Footer actions */}
       {!isWait ? (
-        <div className="flex shrink-0 items-center gap-2 border-t border-slate-100 px-4 py-3">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
           <button
             type="button"
             onClick={onPreview}
@@ -291,12 +293,28 @@ export function StepInspector({
           >
             Preview as contact
           </button>
+          {onSaveAsTemplate ? (
+            <button
+              type="button"
+              onClick={onSaveAsTemplate}
+              disabled={
+                isEmail
+                  ? !step.subject?.trim() && !step.body?.trim()
+                  : !step.title?.trim() && !step.description?.trim()
+              }
+              title="Save this step's content as a reusable workspace template"
+              className="rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-1.5 text-[11px] font-semibold text-[#1d4ed8] transition hover:bg-[#DBEAFE] disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ fontFamily: fontDisplay }}
+            >
+              Save as template
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onTestSend}
             disabled
             title="Test send ships with the dispatcher in a follow-up phase."
-            className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-400"
+            className="ml-auto rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-400"
             style={{ fontFamily: fontDisplay }}
           >
             Test send · setup required

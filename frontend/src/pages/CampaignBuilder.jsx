@@ -7,6 +7,7 @@ import {
   FlaskConical,
   Play,
   Rocket,
+  Save,
 } from "lucide-react";
 import {
   createCampaignDraft,
@@ -17,6 +18,7 @@ import {
 import { useSavedCompanies } from "@/features/outbound/hooks/useSavedCompanies";
 import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
 import { useTemplates, usePersonas } from "@/features/outbound/hooks/useTemplates";
+import { useCampaign } from "@/features/outbound/hooks/useCampaign";
 
 import { ForecastStrip } from "@/features/outbound/components/ForecastStrip";
 import { PersonaPanel } from "@/features/outbound/components/PersonaPanel";
@@ -25,27 +27,26 @@ import { StepInspector } from "@/features/outbound/components/StepInspector";
 import { TemplatesDrawer } from "@/features/outbound/components/TemplatesDrawer";
 import { AudiencePickerDrawer } from "@/features/outbound/components/AudiencePickerDrawer";
 import { PreviewModal } from "@/features/outbound/components/PreviewModal";
+import { CreateTemplateModal } from "@/features/outbound/components/CreateTemplateModal";
 import { findPlay } from "@/features/outbound/data/plays";
 import { fontDisplay, fontBody } from "@/features/outbound/tokens";
+import {
+  updateCampaignBasics,
+  setCampaignCompanies,
+  deleteCampaignStepsFrom,
+} from "@/features/outbound/api/campaignActions";
 
-// /app/campaigns/new — Outbound Engine v2 composer.
+// /app/campaigns/new — create flow
+// /app/campaigns/new?edit=:id — edit flow (loads existing campaign)
 //
-// Save flow (unchanged from Phase C):
-//   createCampaignDraft({ name, channel, description, metrics }) → lit_campaigns
-//   attachCompaniesToCampaign(id, companyIds[])                  → lit_campaign_companies
-//   upsertCampaignStep({ campaign_id, step_order, channel,
-//                        step_type, subject, body, delay_days }) → lit_campaign_steps
+// Save flow:
+//   CREATE: createCampaignDraft → attachCompaniesToCampaign → upsertCampaignStep×N
+//   EDIT:   updateCampaignBasics → setCampaignCompanies (diff) →
+//           upsertCampaignStep×N → deleteCampaignStepsFrom(N+1) (cleanup)
 //
-// Step-kind → schema mapping uses the existing channel + step_type columns:
-//   email             → channel=email,    step_type=email
-//   linkedin_invite   → channel=linkedin, step_type=linkedin_invite
-//   linkedin_message  → channel=linkedin, step_type=linkedin_message
-//   call              → channel=call,     step_type=call
-//   wait              → channel=wait,     step_type=wait, delay_days=waitDays
-//
-// LinkedIn / call steps are saved as planned manual tasks. No automation,
-// no Gmail/PhantomBuster/LinkedIn API. Test send + Launch are honestly
-// disabled until the dispatcher ships.
+// All paths use existing channel + step_type columns on lit_campaign_steps.
+// LinkedIn / call / wait persist as planned manual tasks. Test send and
+// Launch remain disabled until the dispatcher ships.
 
 function uid() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -85,6 +86,48 @@ function seedStepsFromPlay(play) {
     out.push(step);
   }
   return out;
+}
+
+// Hydrate a BuilderStep from a stored lit_campaign_steps row.
+function dbStepToBuilder(row) {
+  const stepType = String(row.step_type || row.channel || "email").toLowerCase();
+  const channel = String(row.channel || "email").toLowerCase();
+  let kind = "email";
+  if (stepType === "wait" || channel === "wait") kind = "wait";
+  else if (stepType === "linkedin_invite" || stepType === "linkedin")
+    kind = "linkedin_invite";
+  else if (stepType === "linkedin_message") kind = "linkedin_message";
+  else if (stepType === "call") kind = "call";
+  else kind = "email";
+
+  const base = {
+    localId: row.id || uid(),
+    kind,
+    subject: "",
+    body: "",
+    title: "",
+    description: "",
+    waitDays: 2,
+    delayDays: 0,
+    expanded: false,
+  };
+  if (kind === "wait") {
+    return { ...base, waitDays: Math.max(0, Number(row.delay_days) || 0) };
+  }
+  if (kind === "email") {
+    return {
+      ...base,
+      subject: row.subject || "",
+      body: row.body || "",
+      delayDays: Math.max(0, Number(row.delay_days) || 0),
+    };
+  }
+  return {
+    ...base,
+    title: row.subject || "",
+    description: row.body || "",
+    delayDays: Math.max(0, Number(row.delay_days) || 0),
+  };
 }
 
 function isStepFilled(s) {
@@ -144,31 +187,60 @@ export default function CampaignBuilder() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const playId = searchParams.get("play");
+  const editId = searchParams.get("edit");
+  const isEditMode = Boolean(editId);
   const seedPlay = useMemo(() => findPlay(playId), [playId]);
 
+  // Load existing campaign when in edit mode.
+  const { details, loading: campaignLoading, error: campaignError } =
+    useCampaign(editId);
+
+  // Initial state seeds depend on whether we're editing or creating.
   const [name, setName] = useState(() =>
     seedPlay ? `${seedPlay.name} — draft` : "Untitled campaign",
   );
-
-  const { companies, loading: companiesLoading } = useSavedCompanies();
-  const { primaryEmail, known: inboxKnown } = useInboxStatus();
-  const { state: templatesState } = useTemplates();
-  const { result: personasResult } = usePersonas();
-
-  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [steps, setSteps] = useState(() => seedStepsFromPlay(seedPlay));
   const [selectedStepId, setSelectedStepId] = useState(
     () => steps[0]?.localId ?? null,
   );
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [selectedPersonaId, setSelectedPersonaId] = useState(null);
+  const [hydratedFromEdit, setHydratedFromEdit] = useState(false);
+
+  const { companies, loading: companiesLoading } = useSavedCompanies();
+  const { primaryEmail, known: inboxKnown } = useInboxStatus();
+  const { state: templatesState, refresh: refreshTemplates } = useTemplates();
+  const { result: personasResult } = usePersonas();
 
   const [audienceOpen, setAudienceOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [createTemplateOpen, setCreateTemplateOpen] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  // When edit-mode details land, hydrate state.
+  useEffect(() => {
+    if (!isEditMode || !details || hydratedFromEdit) return;
+    setName(details.name);
+    const builderSteps =
+      details.steps.length > 0
+        ? details.steps.map(dbStepToBuilder)
+        : [emptyStep("email")];
+    // Expand the first step so the inspector has something to show.
+    if (builderSteps[0]) builderSteps[0].expanded = true;
+    setSteps(builderSteps);
+    setSelectedStepId(builderSteps[0]?.localId ?? null);
+    setSelectedIds(new Set(details.companyIds));
+    const metricsPersona = details.metrics?.persona_id;
+    if (typeof metricsPersona === "string" && metricsPersona) {
+      setSelectedPersonaId(metricsPersona);
+    }
+    setHydratedFromEdit(true);
+  }, [isEditMode, details, hydratedFromEdit]);
 
   const selectedStep = useMemo(
     () => steps.find((s) => s.localId === selectedStepId) ?? null,
@@ -185,17 +257,18 @@ export default function CampaignBuilder() {
   const hasFilledStep = steps.some(
     (s) => s.kind !== "wait" && isStepFilled(s),
   );
-  const canSaveDraft = hasName && hasFilledStep && !saving;
+  const canSave = hasName && hasFilledStep && !saving && (!isEditMode || hydratedFromEdit);
   const canLaunch = false;
 
-  // Save guidance — surfaced inline so users know why Save Draft is disabled.
   const saveGuidance = useMemo(() => {
+    if (isEditMode && !hydratedFromEdit && campaignLoading) return null;
     if (!hasName) return "Add a campaign name to save.";
     if (!hasFilledStep)
       return "Add a subject or body to at least one step to save.";
     return null;
-  }, [hasName, hasFilledStep]);
+  }, [hasName, hasFilledStep, isEditMode, hydratedFromEdit, campaignLoading]);
 
+  // ---- Step handlers ----
   const handleAddStep = useCallback((afterId, kind) => {
     const next = emptyStep(kind);
     setSteps((prev) => {
@@ -262,6 +335,7 @@ export default function CampaignBuilder() {
     [selectedStepId],
   );
 
+  // ---- Audience handlers ----
   const handleToggleCompany = useCallback((id) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -279,8 +353,9 @@ export default function CampaignBuilder() {
     setSelectedIds(new Set());
   }, []);
 
-  const handleSaveDraft = useCallback(async () => {
-    if (!canSaveDraft) return;
+  // ---- Save flow (create + edit) ----
+  const handleSave = useCallback(async () => {
+    if (!canSave) return;
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -289,38 +364,70 @@ export default function CampaignBuilder() {
       const metricsExtras = {};
       if (selectedPersonaId) metricsExtras.persona_id = selectedPersonaId;
       if (playId) metricsExtras.play_id = playId;
+      // Preserve any pre-existing metrics keys (description, etc.) when editing.
+      const mergedMetrics = isEditMode
+        ? { ...(details?.metrics ?? {}), ...metricsExtras }
+        : metricsExtras;
 
-      const campaign = await createCampaignDraft({
-        name: trimmedName,
-        channel: baseChannel,
-        description: null,
-        metrics: metricsExtras,
-      });
-
-      const companyIds = Array.from(selectedIds);
-      if (companyIds.length > 0) {
-        await attachCompaniesToCampaign(campaign.id, companyIds);
+      let campaignId;
+      if (isEditMode && details) {
+        await updateCampaignBasics(details.id, {
+          name: trimmedName,
+          channel: baseChannel,
+          metrics: mergedMetrics,
+        });
+        campaignId = details.id;
+      } else {
+        const created = await createCampaignDraft({
+          name: trimmedName,
+          channel: baseChannel,
+          description: null,
+          metrics: mergedMetrics,
+        });
+        campaignId = created.id;
       }
 
+      // Companies — full set diff in edit mode, additive in create mode.
+      const companyIds = Array.from(selectedIds);
+      if (isEditMode) {
+        await setCampaignCompanies(campaignId, companyIds);
+      } else if (companyIds.length > 0) {
+        await attachCompaniesToCampaign(campaignId, companyIds);
+      }
+
+      // Steps — upsert by step_order; in edit mode also delete any leftover
+      // steps that the user removed from the sequence.
       const persistable = steps.filter(
         (s) => s.kind === "wait" || isStepFilled(s),
       );
       let order = 1;
       for (const s of persistable) {
-        await upsertCampaignStep(persistPayloadFor(s, order, campaign.id));
+        await upsertCampaignStep(persistPayloadFor(s, order, campaignId));
         order += 1;
       }
+      if (isEditMode) {
+        await deleteCampaignStepsFrom(campaignId, order);
+      }
 
-      setSuccess(`Saved "${campaign.name}" as draft. Returning to Outbound…`);
-      window.setTimeout(() => navigate("/app/campaigns"), 700);
+      setSuccess(
+        isEditMode
+          ? `Saved changes to "${trimmedName}".`
+          : `Saved "${trimmedName}" as draft. Returning to Outbound…`,
+      );
+      window.setTimeout(
+        () => navigate("/app/campaigns"),
+        isEditMode ? 900 : 700,
+      );
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Failed to save campaign draft";
+      const message = e instanceof Error ? e.message : "Failed to save campaign.";
       setError(message);
     } finally {
       setSaving(false);
     }
   }, [
-    canSaveDraft,
+    canSave,
+    details,
+    isEditMode,
     navigate,
     playId,
     selectedIds,
@@ -329,16 +436,38 @@ export default function CampaignBuilder() {
     trimmedName,
   ]);
 
+  // ---- Misc keyboard handler ----
   useEffect(() => {
     const handler = (e) => {
       if (e.key !== "Escape") return;
-      if (previewOpen) setPreviewOpen(false);
+      if (createTemplateOpen) setCreateTemplateOpen(false);
+      else if (previewOpen) setPreviewOpen(false);
       else if (audienceOpen) setAudienceOpen(false);
       else if (templatesOpen) setTemplatesOpen(false);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [audienceOpen, templatesOpen, previewOpen]);
+  }, [audienceOpen, templatesOpen, previewOpen, createTemplateOpen]);
+
+  // ---- Save-as-template seed values from current step ----
+  const templateSeed = useMemo(() => {
+    const s = selectedStep;
+    if (!s) return { title: "", subject: "", body: "", channel: "email" };
+    if (s.kind === "email") {
+      return {
+        title: s.subject?.trim() ? s.subject.trim().slice(0, 80) : "",
+        subject: s.subject || "",
+        body: s.body || "",
+        channel: "email",
+      };
+    }
+    return {
+      title: s.title?.trim() ? s.title.trim().slice(0, 80) : "",
+      subject: s.title || "",
+      body: s.description || "",
+      channel: channelFor(s.kind),
+    };
+  }, [selectedStep]);
 
   return (
     <div className="flex h-[calc(100vh-72px)] min-h-[640px] flex-col overflow-hidden bg-[#F8FAFC]">
@@ -360,19 +489,31 @@ export default function CampaignBuilder() {
               className="min-w-0 flex-1 border-none bg-transparent text-[15px] font-bold leading-tight tracking-tight text-[#0F172A] outline-none"
               style={{ fontFamily: fontDisplay }}
               maxLength={120}
+              disabled={isEditMode && !hydratedFromEdit}
             />
             <span
-              className="rounded-full border border-[#BAE6FD] bg-[#E0F2FE] px-1.5 py-0 text-[9px] font-bold uppercase tracking-[0.04em] text-[#0369A1]"
-              style={{ fontFamily: fontDisplay }}
+              className="rounded-full border px-1.5 py-0 text-[9px] font-bold uppercase tracking-[0.04em]"
+              style={{
+                fontFamily: fontDisplay,
+                background: isEditMode ? "#F0FDF4" : "#E0F2FE",
+                color: isEditMode ? "#15803d" : "#0369A1",
+                borderColor: isEditMode ? "#BBF7D0" : "#BAE6FD",
+              }}
             >
-              Draft
+              {isEditMode ? (details?.status || "Editing") : "Draft"}
             </span>
           </div>
           <div
             className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500"
             style={{ fontFamily: fontBody }}
           >
-            {seedPlay ? (
+            {isEditMode ? (
+              campaignLoading ? (
+                <span>Loading campaign…</span>
+              ) : (
+                <span>Editing existing campaign</span>
+              )
+            ) : seedPlay ? (
               <span>
                 Seeded from <strong className="text-[#0F172A]">{seedPlay.name}</strong>
               </span>
@@ -407,7 +548,6 @@ export default function CampaignBuilder() {
             disabled={steps.filter((s) => s.kind !== "wait").length === 0}
             className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
             style={{ fontFamily: fontDisplay }}
-            title="Preview the sequence as a sample contact would receive it"
           >
             <Play className="h-2.5 w-2.5" />
             Preview as contact
@@ -424,13 +564,14 @@ export default function CampaignBuilder() {
           </button>
           <button
             type="button"
-            onClick={handleSaveDraft}
-            disabled={!canSaveDraft || saving}
+            onClick={handleSave}
+            disabled={!canSave || saving}
             title={saveGuidance ?? ""}
             className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             style={{ fontFamily: fontDisplay }}
           >
-            {saving ? "Saving…" : "Save draft"}
+            <Save className="h-2.5 w-2.5" />
+            {saving ? "Saving…" : isEditMode ? "Save changes" : "Save draft"}
           </button>
           <button
             type="button"
@@ -451,13 +592,13 @@ export default function CampaignBuilder() {
 
       <ForecastStrip audienceCount={selectedIds.size} />
 
-      {error ? (
+      {error || campaignError ? (
         <div
           className="flex shrink-0 items-center gap-2 border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-700"
           style={{ fontFamily: fontBody }}
         >
           <AlertCircle className="h-3 w-3 shrink-0" />
-          {error}
+          {error || campaignError}
         </div>
       ) : null}
 
@@ -504,6 +645,7 @@ export default function CampaignBuilder() {
           onApplyTemplate={handleApplyTemplate}
           onPreview={() => setPreviewOpen(true)}
           onTestSend={() => {}}
+          onSaveAsTemplate={() => setCreateTemplateOpen(true)}
         />
       </div>
 
@@ -524,6 +666,7 @@ export default function CampaignBuilder() {
         state={templatesState}
         onClose={() => setTemplatesOpen(false)}
         onApply={handleApplyTemplate}
+        onCreate={() => setCreateTemplateOpen(true)}
       />
 
       <PreviewModal
@@ -531,6 +674,36 @@ export default function CampaignBuilder() {
         steps={steps}
         onClose={() => setPreviewOpen(false)}
       />
+
+      <CreateTemplateModal
+        open={createTemplateOpen}
+        initialTitle={templateSeed.title}
+        initialSubject={templateSeed.subject}
+        initialBody={templateSeed.body}
+        initialChannel={templateSeed.channel}
+        onClose={() => setCreateTemplateOpen(false)}
+        onCreated={async () => {
+          setCreateTemplateOpen(false);
+          setToast({ message: "Template saved to your workspace.", tone: "success" });
+          window.setTimeout(() => setToast(null), 2200);
+          await refreshTemplates();
+        }}
+      />
+
+      {toast ? (
+        <div
+          className="fixed bottom-5 right-5 z-50 rounded-md px-3.5 py-2 text-[12px] font-semibold text-white shadow-[0_8px_24px_rgba(15,23,42,0.3)]"
+          style={{
+            fontFamily: fontDisplay,
+            background:
+              toast.tone === "danger"
+                ? "linear-gradient(180deg,#EF4444,#DC2626)"
+                : "linear-gradient(180deg,#10B981,#059669)",
+          }}
+        >
+          {toast.message}
+        </div>
+      ) : null}
     </div>
   );
 }

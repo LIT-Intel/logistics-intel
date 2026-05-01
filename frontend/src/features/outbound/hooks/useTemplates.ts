@@ -6,30 +6,61 @@ import type {
   TemplatesResult,
   PersonasResult,
 } from "../types";
-import { STARTER_TEMPLATES } from "../data/templates";
+import { STARTER_TEMPLATES, type StarterTemplate } from "../data/templates";
 
-// lit_outreach_templates / lit_personas have RLS enabled. Direct browser
-// reads will succeed only if a SELECT policy exists for the current
-// workspace. If the read fails or the table simply doesn't exist yet, we
-// fall back to a curated static catalog (STARTER_TEMPLATES) so users always
-// have something useful to apply. The result also surfaces the source
-// (db | starters) so the UI can label appropriately.
+// lit_outreach_templates schema (verified via Supabase introspection):
+//   id uuid · org_id uuid · persona_id uuid · mode text · channel text
+//   stage text · title text · subject_template text · body_template text
+//   is_active boolean · created_at · updated_at
+//
+// RLS is enabled but currently has zero policies — until migration
+// 20260501_outbound_templates_rls is applied, all browser reads/writes
+// return blocked / empty. Until then, the curated starter catalog acts as
+// the "Standard library". When policies do get applied, workspace rows
+// will surface in a separate Workspace section above the standards.
 
-export type TemplatesSource = "db" | "starters";
+export type TemplatesSource = "db" | "starters" | "mixed";
 
 export interface TemplatesState {
-  result: TemplatesResult;
+  result: TemplatesResult; // unified rows for the existing apply path
+  workspaceRows: OutreachTemplate[]; // empty when DB is blocked / no rows
+  starterRows: OutreachTemplate[]; // always non-empty
   source: TemplatesSource;
-  /** True when the DB read either failed or returned 0 rows. */
-  fellBack: boolean;
-  /** Reason copy when the DB was blocked (RLS / missing table). */
+  /** True when the DB is RLS-blocked or the table doesn't yet exist. */
+  blocked: boolean;
+  /** Reason copy for the workspace section when DB is unreadable. */
   blockedReason: string | null;
 }
 
+interface DbTemplateRow {
+  id: string;
+  org_id: string | null;
+  persona_id: string | null;
+  channel: string;
+  stage: string | null;
+  mode: string | null;
+  title: string;
+  subject_template: string | null;
+  body_template: string | null;
+  is_active: boolean | null;
+}
+
 const BLOCKED_REASON =
-  "Templates from your workspace require a secure read endpoint or SELECT policy on lit_outreach_templates. Showing curated starter templates below.";
-const BLOCKED_REASON_PERSONAS =
-  "Personas from your workspace require a secure read endpoint or SELECT policy on lit_personas.";
+  "Workspace templates require an RLS policy on lit_outreach_templates. Apply migration 20260501_outbound_templates_rls (provided in supabase/migrations/) to enable workspace + user template reads and writes.";
+
+const PERSONAS_BLOCKED =
+  "Personas from your workspace require a SELECT policy on lit_personas.";
+
+function dbRowToTemplate(row: DbTemplateRow): OutreachTemplate {
+  return {
+    id: row.id,
+    name: row.title || "Untitled template",
+    channel: row.channel || null,
+    subject: row.subject_template,
+    body: row.body_template,
+    persona_id: row.persona_id,
+  };
+}
 
 export function useTemplates(): {
   state: TemplatesState | null;
@@ -41,44 +72,49 @@ export function useTemplates(): {
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    const starterRows = STARTER_TEMPLATES as OutreachTemplate[];
     try {
       const { data, error } = await supabase
         .from("lit_outreach_templates")
-        .select("id, name, channel, subject, body, persona_id")
+        .select(
+          "id, org_id, persona_id, channel, stage, mode, title, subject_template, body_template, is_active",
+        )
+        .eq("is_active", true)
         .order("updated_at", { ascending: false })
-        .limit(50);
+        .limit(200);
 
       if (error) {
-        // Fall back to curated starters with a clear "blocked" notice.
+        // RLS block / missing table / etc. — fall back to starters only.
         setState({
-          result: { state: "ok", rows: STARTER_TEMPLATES as OutreachTemplate[] },
+          result: { state: "ok", rows: starterRows },
+          workspaceRows: [],
+          starterRows,
           source: "starters",
-          fellBack: true,
+          blocked: true,
           blockedReason: BLOCKED_REASON,
         });
         return;
       }
-      const rows = (data ?? []) as OutreachTemplate[];
-      if (rows.length === 0) {
-        setState({
-          result: { state: "ok", rows: STARTER_TEMPLATES as OutreachTemplate[] },
-          source: "starters",
-          fellBack: true,
-          blockedReason: null,
-        });
-      } else {
-        setState({
-          result: { state: "ok", rows },
-          source: "db",
-          fellBack: false,
-          blockedReason: null,
-        });
-      }
+
+      const workspaceRows = ((data ?? []) as DbTemplateRow[]).map(
+        dbRowToTemplate,
+      );
+      const merged = [...workspaceRows, ...starterRows];
+      setState({
+        result: { state: "ok", rows: merged },
+        workspaceRows,
+        starterRows,
+        source: workspaceRows.length > 0 ? "mixed" : "starters",
+        blocked: false,
+        blockedReason: null,
+      });
     } catch {
       setState({
-        result: { state: "ok", rows: STARTER_TEMPLATES as OutreachTemplate[] },
+        result: { state: "ok", rows: starterRows },
+        workspaceRows: [],
+        starterRows,
         source: "starters",
-        fellBack: true,
+        blocked: true,
         blockedReason: BLOCKED_REASON,
       });
     } finally {
@@ -106,17 +142,17 @@ export function usePersonas(): {
     try {
       const { data, error } = await supabase
         .from("lit_personas")
-        .select("id, name, description")
+        .select("id, name")
         .order("name", { ascending: true })
         .limit(50);
       if (error) {
-        setResult({ state: "blocked", reason: BLOCKED_REASON_PERSONAS });
+        setResult({ state: "blocked", reason: PERSONAS_BLOCKED });
         return;
       }
       const rows = (data ?? []) as Persona[];
       setResult(rows.length === 0 ? { state: "empty" } : { state: "ok", rows });
     } catch {
-      setResult({ state: "blocked", reason: BLOCKED_REASON_PERSONAS });
+      setResult({ state: "blocked", reason: PERSONAS_BLOCKED });
     } finally {
       setLoading(false);
     }
@@ -127,4 +163,10 @@ export function usePersonas(): {
   }, [refresh]);
 
   return { result, loading, refresh };
+}
+
+export function isStarterTemplate(
+  t: OutreachTemplate,
+): t is OutreachTemplate & StarterTemplate {
+  return Object.prototype.hasOwnProperty.call(t, "industry");
 }

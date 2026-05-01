@@ -50,8 +50,25 @@ export function CampaignRowMenu({
   const isActive = campaign.status === "active";
   const isPaused = campaign.status === "paused";
 
+  const fire = (action: CampaignRowAction) => (e: React.MouseEvent) => {
+    // Critical: stop the row's onClick from also firing — otherwise clicking
+    // Delete or Archive bubbles up and navigates to the builder.
+    e.stopPropagation();
+    e.preventDefault();
+    setOpen(false);
+    onAction(action, campaign);
+  };
+
   return (
-    <div ref={ref} className="relative">
+    <div
+      ref={ref}
+      className="relative"
+      onClick={(e) => {
+        // Belt-and-suspenders: prevent ALL clicks inside the menu wrapper
+        // from reaching the parent row.
+        e.stopPropagation();
+      }}
+    >
       <button
         type="button"
         onClick={(e) => {
@@ -73,48 +90,33 @@ export function CampaignRowMenu({
           <Item
             icon={<Edit3 className="h-3 w-3" />}
             label="Edit"
-            onClick={() => {
-              setOpen(false);
-              onAction("edit", campaign);
-            }}
+            onClick={fire("edit")}
           />
           {isActive ? (
             <Item
               icon={<PauseCircle className="h-3 w-3 text-amber-600" />}
               label="Pause"
-              onClick={() => {
-                setOpen(false);
-                onAction("pause", campaign);
-              }}
+              onClick={fire("pause")}
             />
           ) : null}
           {isPaused ? (
             <Item
               icon={<PlayCircle className="h-3 w-3 text-emerald-600" />}
               label="Resume"
-              onClick={() => {
-                setOpen(false);
-                onAction("resume", campaign);
-              }}
+              onClick={fire("resume")}
             />
           ) : null}
           {!isArchived ? (
             <Item
               icon={<Archive className="h-3 w-3 text-slate-500" />}
               label="Archive"
-              onClick={() => {
-                setOpen(false);
-                onAction("archive", campaign);
-              }}
+              onClick={fire("archive")}
             />
           ) : (
             <Item
               icon={<RotateCcw className="h-3 w-3 text-slate-500" />}
               label="Restore to draft"
-              onClick={() => {
-                setOpen(false);
-                onAction("unarchive", campaign);
-              }}
+              onClick={fire("unarchive")}
             />
           )}
           <div className="border-t border-slate-100" />
@@ -122,10 +124,7 @@ export function CampaignRowMenu({
             icon={<Trash2 className="h-3 w-3 text-rose-600" />}
             label="Delete"
             destructive
-            onClick={() => {
-              setOpen(false);
-              onAction("delete", campaign);
-            }}
+            onClick={fire("delete")}
           />
         </div>
       ) : null}
@@ -141,7 +140,7 @@ function Item({
 }: {
   icon: React.ReactNode;
   label: string;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   destructive?: boolean;
 }) {
   return (

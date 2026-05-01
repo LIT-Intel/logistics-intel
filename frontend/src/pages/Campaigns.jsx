@@ -243,9 +243,18 @@ export default function CampaignsPage() {
     navigate("/app/diagnostic");
   }, [navigate]);
 
-  const handleOpenCampaign = useCallback(() => {
-    navigate(`/app/campaigns/new`);
-  }, [navigate]);
+  const handleOpenCampaign = useCallback(
+    (campaign) => {
+      // Row-click + Edit menu both route here. If we have a campaign id,
+      // open the builder in edit mode so the existing data hydrates.
+      const id = campaign?.id;
+      const url = id
+        ? `/app/campaigns/new?edit=${encodeURIComponent(id)}`
+        : "/app/campaigns/new";
+      navigate(url);
+    },
+    [navigate],
+  );
 
   const flashToast = useCallback((message, tone = "success") => {
     setToast({ message, tone });
@@ -287,7 +296,7 @@ export default function CampaignsPage() {
   const handleRowAction = useCallback(
     (action, campaign) => {
       if (action === "edit") {
-        handleOpenCampaign();
+        handleOpenCampaign(campaign);
         return;
       }
       // Destructive actions go through a confirm dialog.
