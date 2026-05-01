@@ -150,6 +150,7 @@ export default function CDPSupplyChain({
           containerProfile={containerProfile}
           recentBols={recentBols}
           suppliers={suppliers}
+          canonicalLanes={canonicalLanes}
         />
       )}
       {sub === "lanes" && (
@@ -258,18 +259,20 @@ function SummaryView({
   containerProfile,
   recentBols,
   suppliers,
+  canonicalLanes,
 }: {
   cadence: CadencePoint[];
   modes: ModeSlice[];
   containerProfile: ContainerProfile;
   recentBols: any[];
   suppliers: SupplierRow[];
+  canonicalLanes: any[];
 }) {
   return (
     <>
       <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1.3fr_1fr]">
-        <MonthlyCadenceCard cadence={cadence} />
-        <ImportsByModeCard modes={modes} />
+        <TopLanesCard canonicalLanes={canonicalLanes} />
+        <ImportsByModeCard modes={modes} cadence={cadence} />
       </div>
 
       <ContainerProfileCard profile={containerProfile} />
@@ -500,46 +503,146 @@ function MonthlyCadenceCard({ cadence }: { cadence: CadencePoint[] }) {
   );
 }
 
-function ImportsByModeCard({ modes }: { modes: ModeSlice[] }) {
-  if (modes.length === 0) {
-    return (
-      <LitSectionCard title="Imports by mode" sub="Modal split">
-        <EmptyMessage text="Modal split unavailable." />
-      </LitSectionCard>
-    );
-  }
+function ImportsByModeCard({
+  modes,
+  cadence,
+}: {
+  modes: ModeSlice[];
+  cadence?: CadencePoint[];
+}) {
+  const noModes = modes.length === 0;
   return (
-    <LitSectionCard title="Imports by mode" sub="Modal split · trailing 12m">
-      <div className="flex flex-col gap-2.5">
-        {modes.map((m) => (
-          <div key={m.mode} className="flex items-center gap-2.5">
-            <div
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-bold"
-              style={{ background: m.color + "18", color: m.color }}
-            >
-              {m.mode.charAt(0)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 flex items-baseline justify-between">
-                <span className="font-display text-[12px] font-semibold text-slate-900">
-                  {m.mode}
-                </span>
-                <span className="font-mono text-[11px] text-slate-700">
-                  {m.count.toLocaleString()}{" "}
-                  <span className="text-slate-400">· {m.pct}%</span>
-                </span>
+    <LitSectionCard
+      title="Imports by mode"
+      sub="Modal split · trailing 12m"
+    >
+      {noModes ? (
+        <EmptyMessage text="Modal split unavailable." />
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {modes.map((m) => (
+            <div key={m.mode} className="flex items-center gap-2.5">
+              <div
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-bold"
+                style={{ background: m.color + "18", color: m.color }}
+              >
+                {m.mode.charAt(0)}
               </div>
-              <div className="h-1 overflow-hidden rounded bg-slate-100">
-                <div
-                  className="h-full rounded"
-                  style={{ width: `${m.pct}%`, background: m.color }}
-                />
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-baseline justify-between">
+                  <span className="font-display text-[12px] font-semibold text-slate-900">
+                    {m.mode}
+                  </span>
+                  <span className="font-mono text-[11px] text-slate-700">
+                    {m.count.toLocaleString()}{" "}
+                    <span className="text-slate-400">· {m.pct}%</span>
+                  </span>
+                </div>
+                <div className="h-1 overflow-hidden rounded bg-slate-100">
+                  <div
+                    className="h-full rounded"
+                    style={{ width: `${m.pct}%`, background: m.color }}
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
+      {cadence && cadence.length > 0 && (
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <InlineCadenceChart cadence={cadence} />
+        </div>
+      )}
     </LitSectionCard>
+  );
+}
+
+function InlineCadenceChart({ cadence }: { cadence: CadencePoint[] }) {
+  const max = Math.max(...cadence.map((c) => c.fcl + c.lcl), 1);
+  const chartHeight = 72;
+  const [hovered, setHovered] = useState<CadencePoint | null>(null);
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+          Monthly cadence · trailing 12m
+        </span>
+        <div className="flex gap-2">
+          <span className="font-display inline-flex items-center gap-1 text-[9px] text-slate-500">
+            <span className="h-1.5 w-1.5 rounded-sm bg-blue-500" />
+            FCL
+          </span>
+          <span className="font-display inline-flex items-center gap-1 text-[9px] text-slate-500">
+            <span className="h-1.5 w-1.5 rounded-sm bg-cyan-300" />
+            LCL
+          </span>
+        </div>
+      </div>
+      <div
+        className="relative flex items-end gap-1 overflow-visible"
+        style={{ height: chartHeight + 18 }}
+      >
+        {cadence.map((p, i) => {
+          const total = p.fcl + p.lcl;
+          const fclH = total > 0 ? (p.fcl / max) * chartHeight : 0;
+          const lclH = total > 0 ? (p.lcl / max) * chartHeight : 0;
+          const isLast = i === cadence.length - 1;
+          const isHovered = hovered?.label === p.label;
+          return (
+            <div
+              key={`${p.label}-${i}`}
+              className="relative flex flex-1 flex-col items-center justify-end"
+              style={{ height: "100%" }}
+              onMouseEnter={() => setHovered(p)}
+              onMouseLeave={() => setHovered(null)}
+            >
+              {isHovered && (
+                <div
+                  className="font-display pointer-events-none absolute z-20 min-w-[140px] rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[10px] leading-tight text-white shadow-lg"
+                  style={{ bottom: chartHeight + 8, left: "50%", transform: "translateX(-50%)" }}
+                >
+                  <div className="font-semibold">{p.label}</div>
+                  <div className="opacity-90">Total: {(p.fcl + p.lcl).toLocaleString()}</div>
+                  <div className="opacity-90">FCL: {p.fcl.toLocaleString()}</div>
+                  <div className="opacity-90">LCL: {p.lcl.toLocaleString()}</div>
+                </div>
+              )}
+              <div
+                className="relative flex w-full flex-col items-stretch justify-end"
+                style={{ height: chartHeight }}
+              >
+                {p.lcl > 0 && (
+                  <div
+                    className={["rounded-t-sm", isLast ? "bg-cyan-400" : "bg-cyan-300"].join(" ")}
+                    style={{ height: lclH }}
+                  />
+                )}
+                {p.fcl > 0 && (
+                  <div
+                    className={[
+                      "min-h-[2px]",
+                      p.lcl > 0 ? "" : "rounded-t-sm",
+                      isLast ? "bg-blue-600" : "bg-blue-500",
+                    ].join(" ")}
+                    style={{ height: fclH }}
+                  />
+                )}
+                {total === 0 && <div className="mt-auto h-px w-full bg-slate-100" />}
+              </div>
+              <span
+                className={[
+                  "font-display mt-0.5 text-[8px]",
+                  isLast ? "font-bold text-slate-700" : "text-slate-400",
+                ].join(" ")}
+              >
+                {p.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
