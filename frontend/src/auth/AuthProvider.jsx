@@ -11,6 +11,7 @@ import {
 
 const SUPER_ADMIN_EMAILS = new Set([
   'vraymond@sparkfusiondigital.com',
+  'vraymond83@gmail.com',
   'support@logisticintel.com',
 ]);
 
