@@ -210,7 +210,9 @@ function callApolloMixedPeople(
 ): Promise<ApolloCallResult> {
   return callApolloEndpoint(
     config,
-    '/api/v1/mixed_people/search',
+    // Apollo deprecated `/mixed_people/search` for API-key callers in
+    // favor of `/mixed_people/api_search` (same shape).
+    '/api/v1/mixed_people/api_search',
     { q_keywords: query, page, per_page: pageSize },
     requestId,
   );
@@ -459,7 +461,7 @@ async function searchPeopleWithFallback(
       if (fb.status === 403) {
         return {
           error:
-            'Provider permission issue: Apollo /api/v1/mixed_people/search and /api/v1/contacts/search both returned 403. Apollo endpoint forbidden — check API key scopes/plan.',
+            'Provider permission issue: Apollo /api/v1/mixed_people/api_search and /api/v1/contacts/search both returned 403. Apollo endpoint forbidden — check API key scopes/plan.',
         };
       }
       return { error: fb.error };
@@ -491,7 +493,7 @@ async function searchPeopleWithFallback(
       resolved: {
         upstream: data,
         items: people,
-        endpointUsed: '/api/v1/mixed_people/search',
+        endpointUsed: '/api/v1/mixed_people/api_search',
         fallbackUsed: false,
       },
     };
@@ -499,7 +501,7 @@ async function searchPeopleWithFallback(
 
   if (primary.status === 403) {
     warnings.push(
-      'Apollo /api/v1/mixed_people/search returned 403 (forbidden). Falling back to /api/v1/contacts/search (Apollo CRM only).',
+      'Apollo /api/v1/mixed_people/api_search returned 403 (forbidden). Falling back to /api/v1/contacts/search (Apollo CRM only).',
     );
     return tryContactsFallback();
   }

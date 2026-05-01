@@ -194,7 +194,7 @@ async function apolloPeopleSearch(args: {
 
   let res: Response;
   try {
-    res = await fetch(`${APOLLO_API_BASE}/v1/mixed_people/search`, {
+    res = await fetch(`${APOLLO_API_BASE}/api/v1/mixed_people/api_search`, {
       method: "POST",
       headers: {
         "Cache-Control": "no-cache",
