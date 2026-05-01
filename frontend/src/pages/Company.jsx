@@ -681,11 +681,22 @@ export default function Company() {
     if (!companyId || shareLoading) return;
     setShareLoading(true);
     try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(companyId),
+      );
+      const sourceKey = isUuid
+        ? activeProfile?.source_company_key ||
+          activeProfile?.sourceCompanyKey ||
+          null
+        : String(companyId).startsWith("company/")
+          ? companyId
+          : `company/${companyId}`;
       const { data, error: invokeError } = await supabase.functions.invoke(
         "export-company-profile",
         {
           body: {
-            company_id: companyId,
+            ...(isUuid ? { company_id: companyId } : {}),
+            ...(sourceKey ? { source_company_key: sourceKey } : {}),
             format: "html",
             include_pulse_brief: Boolean(pulseBrief),
           },
@@ -723,11 +734,22 @@ export default function Company() {
     if (!companyId || exportLoading) return;
     setExportLoading(true);
     try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(companyId),
+      );
+      const sourceKey = isUuid
+        ? activeProfile?.source_company_key ||
+          activeProfile?.sourceCompanyKey ||
+          null
+        : String(companyId).startsWith("company/")
+          ? companyId
+          : `company/${companyId}`;
       const { data, error: invokeError } = await supabase.functions.invoke(
         "export-company-profile",
         {
           body: {
-            company_id: companyId,
+            ...(isUuid ? { company_id: companyId } : {}),
+            ...(sourceKey ? { source_company_key: sourceKey } : {}),
             format: "pdf",
             include_pulse_brief: Boolean(pulseBrief),
           },
@@ -863,8 +885,8 @@ export default function Company() {
       )}
 
       {/* Body */}
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
+      <div className="flex flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+        <div className="min-w-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
           {tab === "supply" && (
             <CDPSupplyChain
               profile={activeProfile}
