@@ -3,10 +3,12 @@ import { Target } from "lucide-react";
 import { fontDisplay, fontBody, fontMono } from "../tokens";
 import type { OutboundCampaign } from "../types";
 
-// PulseBar surfaces top-of-page outbound KPIs. There is no aggregation
-// endpoint over lit_outreach_history yet, so every metric here renders as
-// an honest "—" placeholder with an "awaiting data" sub-label. Counts
-// derived purely from the loaded campaign list (totals, drafts) are real.
+// Compact KPI strip — mirrors the LitKpiStrip density used on the company
+// profile page (px-3 py-2, text-[9px] uppercase labels, text-base values,
+// thin slate-100 separators, no shadows). PulseBar metrics that don't yet
+// have a live aggregator render as honest "—" placeholders with a "pending"
+// dot. Counts derived from the loaded campaign list (totals, drafts,
+// active) are real.
 
 interface KPI {
   label: string;
@@ -20,30 +22,10 @@ function buildKpis(campaigns: OutboundCampaign[]): KPI[] {
   const active = campaigns.filter((c) => c.status === "active").length;
   const draft = campaigns.filter((c) => c.status === "draft").length;
   return [
-    {
-      label: "Sent",
-      value: "—",
-      sub: "awaiting outreach data",
-      pending: true,
-    },
-    {
-      label: "Opens",
-      value: "—",
-      sub: "awaiting outreach data",
-      pending: true,
-    },
-    {
-      label: "Replies",
-      value: "—",
-      sub: "awaiting outreach data",
-      pending: true,
-    },
-    {
-      label: "Meetings",
-      value: "—",
-      sub: "awaiting outreach data",
-      pending: true,
-    },
+    { label: "Sent", value: "—", sub: "awaiting outreach data", pending: true },
+    { label: "Opens", value: "—", sub: "awaiting outreach data", pending: true },
+    { label: "Replies", value: "—", sub: "awaiting outreach data", pending: true },
+    { label: "Meetings", value: "—", sub: "awaiting outreach data", pending: true },
     {
       label: "Campaigns",
       value: total.toLocaleString(),
@@ -53,84 +35,91 @@ function buildKpis(campaigns: OutboundCampaign[]): KPI[] {
   ];
 }
 
-export function PulseBar({
-  campaigns,
-}: {
-  campaigns: OutboundCampaign[];
-}) {
+export function PulseBar({ campaigns }: { campaigns: OutboundCampaign[] }) {
   const tiles = buildKpis(campaigns);
   return (
-    <div className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-[repeat(5,1fr)_auto]">
-      {tiles.map((t) => (
-        <div key={t.label} className="bg-white p-4">
-          <div className="flex items-center justify-between">
-            <div
-              className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400"
-              style={{ fontFamily: fontDisplay }}
-            >
-              {t.label}
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-[#FAFBFC]">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-[repeat(5,1fr)_auto]">
+        {tiles.map((t, i) => (
+          <div
+            key={t.label}
+            className="px-3 py-2"
+            style={{
+              borderRight:
+                i < tiles.length - 1 ? "1px solid #F1F5F9" : "none",
+              borderBottom: "1px solid #F1F5F9",
+            }}
+          >
+            <div className="flex items-center justify-between gap-1">
+              <div
+                className="truncate text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400"
+                style={{ fontFamily: fontDisplay }}
+              >
+                {t.label}
+              </div>
+              {t.pending ? (
+                <span
+                  className="rounded-full bg-slate-200/60 px-1.5 py-0 text-[8px] font-semibold text-slate-500"
+                  style={{ fontFamily: fontDisplay }}
+                >
+                  pending
+                </span>
+              ) : null}
             </div>
-            {t.pending ? (
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-                pending
+            <div className="mt-0.5 flex items-baseline gap-1">
+              <span
+                className="text-[15px] font-bold leading-tight tracking-tight text-[#0F172A]"
+                style={{ fontFamily: fontMono }}
+              >
+                {t.value}
               </span>
-            ) : null}
-          </div>
-          <div className="mt-1.5 flex items-baseline gap-2">
+            </div>
             <div
-              className="text-2xl font-bold tracking-tight text-[#0F172A]"
-              style={{ fontFamily: fontDisplay }}
+              className="mt-0.5 truncate text-[10px] text-slate-400"
+              style={{ fontFamily: fontBody }}
             >
-              {t.value}
+              {t.sub}
             </div>
           </div>
-          <div
-            className="mt-1 text-[11px] text-slate-400"
-            style={{ fontFamily: fontBody }}
-          >
-            {t.sub}
+        ))}
+        {/* Goal strip */}
+        <div className="bg-gradient-to-b from-[#F0F9FF] to-white px-3 py-2 lg:min-w-[170px]">
+          <div className="flex items-center justify-between gap-1">
+            <div
+              className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.08em] text-[#0369A1]"
+              style={{ fontFamily: fontDisplay }}
+            >
+              <Target className="h-2.5 w-2.5" />
+              Goal
+            </div>
+            <span
+              className="text-[9px] font-bold text-[#0369A1]"
+              style={{ fontFamily: fontMono }}
+            >
+              —
+            </span>
           </div>
-        </div>
-      ))}
-      {/* Goal strip — placeholder until quarterly goal is configured */}
-      <div className="flex flex-col justify-center bg-gradient-to-b from-[#F0F9FF] to-white p-4 lg:min-w-[200px]">
-        <div className="flex items-center justify-between">
           <div
-            className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#0369A1]"
-            style={{ fontFamily: fontDisplay }}
-          >
-            <Target className="h-3 w-3" />
-            Goal
-          </div>
-          <span
-            className="text-[10px] font-bold text-[#0369A1]"
-            style={{ fontFamily: fontMono }}
-          >
-            —
-          </span>
-        </div>
-        <div className="mt-1 flex items-baseline gap-1.5">
-          <span
-            className="text-sm font-bold text-[#0F172A]"
+            className="mt-0.5 text-[12px] font-bold leading-tight text-[#0F172A]"
             style={{ fontFamily: fontDisplay }}
           >
             Set a target
-          </span>
-        </div>
-        <div className="mt-1.5 h-1 overflow-hidden rounded bg-[#E0F2FE]">
+          </div>
+          <div className="mt-1 h-0.5 overflow-hidden rounded bg-[#E0F2FE]">
+            <div
+              className="h-full rounded"
+              style={{
+                width: "0%",
+                background: "linear-gradient(90deg,#3B82F6,#0369A1)",
+              }}
+            />
+          </div>
           <div
-            className="h-full rounded"
-            style={{
-              width: "0%",
-              background: "linear-gradient(90deg,#3B82F6,#0369A1)",
-            }}
-          />
-        </div>
-        <div
-          className="mt-1 text-[10px] font-medium text-[#0369A1]"
-          style={{ fontFamily: fontBody }}
-        >
-          Quarterly meeting goal — coming soon
+            className="mt-0.5 truncate text-[10px] font-medium text-[#0369A1]"
+            style={{ fontFamily: fontBody }}
+          >
+            Quarterly goal — coming soon
+          </div>
         </div>
       </div>
     </div>

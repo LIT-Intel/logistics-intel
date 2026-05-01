@@ -24,28 +24,28 @@ import { TimelineCanvas } from "@/features/outbound/components/TimelineCanvas";
 import { StepInspector } from "@/features/outbound/components/StepInspector";
 import { TemplatesDrawer } from "@/features/outbound/components/TemplatesDrawer";
 import { AudiencePickerDrawer } from "@/features/outbound/components/AudiencePickerDrawer";
+import { PreviewModal } from "@/features/outbound/components/PreviewModal";
 import { findPlay } from "@/features/outbound/data/plays";
 import { fontDisplay, fontBody } from "@/features/outbound/tokens";
 
 // /app/campaigns/new — Outbound Engine v2 composer.
 //
-// The save flow is unchanged from the original Phase C builder:
-//   createCampaignDraft({ name, channel, description })   → lit_campaigns
-//   attachCompaniesToCampaign(id, companyIds)             → lit_campaign_companies
-//   upsertCampaignStep({ campaign_id, step_order, ... })  → lit_campaign_steps
+// Save flow (unchanged from Phase C):
+//   createCampaignDraft({ name, channel, description, metrics }) → lit_campaigns
+//   attachCompaniesToCampaign(id, companyIds[])                  → lit_campaign_companies
+//   upsertCampaignStep({ campaign_id, step_order, channel,
+//                        step_type, subject, body, delay_days }) → lit_campaign_steps
 //
-// Step kinds beyond email (linkedin_invite/linkedin_message/call/wait) are
-// persisted via the same upsertCampaignStep helper using the existing
-// `channel` + `step_type` columns:
+// Step-kind → schema mapping uses the existing channel + step_type columns:
 //   email             → channel=email,    step_type=email
 //   linkedin_invite   → channel=linkedin, step_type=linkedin_invite
 //   linkedin_message  → channel=linkedin, step_type=linkedin_message
 //   call              → channel=call,     step_type=call
 //   wait              → channel=wait,     step_type=wait, delay_days=waitDays
 //
-// LinkedIn / call steps are stored as planned manual tasks. No automation,
-// no Gmail/PhantomBuster/LinkedIn API call runs from this page. Launch and
-// Test send are honestly disabled until the dispatcher ships.
+// LinkedIn / call steps are saved as planned manual tasks. No automation,
+// no Gmail/PhantomBuster/LinkedIn API. Test send + Launch are honestly
+// disabled until the dispatcher ships.
 
 function uid() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -66,16 +66,11 @@ function emptyStep(kind = "email") {
     delayDays: 0,
     expanded: true,
   };
-  if (kind === "email") {
-    return { ...base, delayDays: 0 };
-  }
-  if (kind === "wait") {
-    return { ...base, waitDays: 2 };
-  }
+  if (kind === "email") return { ...base, delayDays: 0 };
+  if (kind === "wait") return { ...base, waitDays: 2 };
   return { ...base, delayDays: 2 };
 }
 
-// Seed steps from a starter play, mapped onto BuilderStep shape.
 function seedStepsFromPlay(play) {
   if (!play) return [emptyStep("email")];
   const out = [];
@@ -108,11 +103,6 @@ function channelFor(kind) {
   return "email";
 }
 
-function stepTypeFor(kind) {
-  return kind; // kind already matches lit_campaign_steps.step_type values we want
-}
-
-// Map a builder step into the upsertCampaignStep payload.
 function persistPayloadFor(step, order, campaignId) {
   if (step.kind === "wait") {
     return {
@@ -138,12 +128,11 @@ function persistPayloadFor(step, order, campaignId) {
       delay_hours: 0,
     };
   }
-  // linkedin / call — title → subject, description → body
   return {
     campaign_id: campaignId,
     step_order: order,
     channel: channelFor(step.kind),
-    step_type: stepTypeFor(step.kind),
+    step_type: step.kind,
     subject: step.title?.trim() || null,
     body: step.description?.trim() || null,
     delay_days: Math.max(0, Number(step.delayDays) || 0),
@@ -160,11 +149,10 @@ export default function CampaignBuilder() {
   const [name, setName] = useState(() =>
     seedPlay ? `${seedPlay.name} — draft` : "Untitled campaign",
   );
-  const [description] = useState(""); // hidden field for now; could surface later
 
   const { companies, loading: companiesLoading } = useSavedCompanies();
   const { primaryEmail, known: inboxKnown } = useInboxStatus();
-  const { result: templatesResult } = useTemplates();
+  const { state: templatesState } = useTemplates();
   const { result: personasResult } = usePersonas();
 
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -176,6 +164,7 @@ export default function CampaignBuilder() {
 
   const [audienceOpen, setAudienceOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -191,28 +180,31 @@ export default function CampaignBuilder() {
     [companies, selectedIds],
   );
 
-  // Validation
   const trimmedName = name.trim();
   const hasName = trimmedName.length > 0;
   const hasFilledStep = steps.some(
     (s) => s.kind !== "wait" && isStepFilled(s),
   );
   const canSaveDraft = hasName && hasFilledStep && !saving;
-  const canLaunch = false; // honest disable — no dispatcher
+  const canLaunch = false;
 
-  // Step handlers
-  const handleAddStep = useCallback(
-    (afterId, kind) => {
-      const next = emptyStep(kind);
-      setSteps((prev) => {
-        const idx = prev.findIndex((s) => s.localId === afterId);
-        if (idx < 0) return [...prev, next];
-        return [...prev.slice(0, idx + 1), next, ...prev.slice(idx + 1)];
-      });
-      setSelectedStepId(next.localId);
-    },
-    [],
-  );
+  // Save guidance — surfaced inline so users know why Save Draft is disabled.
+  const saveGuidance = useMemo(() => {
+    if (!hasName) return "Add a campaign name to save.";
+    if (!hasFilledStep)
+      return "Add a subject or body to at least one step to save.";
+    return null;
+  }, [hasName, hasFilledStep]);
+
+  const handleAddStep = useCallback((afterId, kind) => {
+    const next = emptyStep(kind);
+    setSteps((prev) => {
+      const idx = prev.findIndex((s) => s.localId === afterId);
+      if (idx < 0) return [...prev, next];
+      return [...prev.slice(0, idx + 1), next, ...prev.slice(idx + 1)];
+    });
+    setSelectedStepId(next.localId);
+  }, []);
 
   const handleAddFirst = useCallback((kind) => {
     const next = emptyStep(kind);
@@ -270,7 +262,6 @@ export default function CampaignBuilder() {
     [selectedStepId],
   );
 
-  // Audience
   const handleToggleCompany = useCallback((id) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -288,15 +279,13 @@ export default function CampaignBuilder() {
     setSelectedIds(new Set());
   }, []);
 
-  // Save flow — preserves existing API contract.
   const handleSaveDraft = useCallback(async () => {
     if (!canSaveDraft) return;
     setSaving(true);
     setError(null);
     setSuccess(null);
     try {
-      const baseChannel =
-        steps.find((s) => s.kind !== "wait")?.kind === "email" ? "email" : "email";
+      const baseChannel = "email";
       const metricsExtras = {};
       if (selectedPersonaId) metricsExtras.persona_id = selectedPersonaId;
       if (playId) metricsExtras.play_id = playId;
@@ -304,7 +293,7 @@ export default function CampaignBuilder() {
       const campaign = await createCampaignDraft({
         name: trimmedName,
         channel: baseChannel,
-        description: description.trim() || null,
+        description: null,
         metrics: metricsExtras,
       });
 
@@ -313,7 +302,6 @@ export default function CampaignBuilder() {
         await attachCompaniesToCampaign(campaign.id, companyIds);
       }
 
-      // Persist every filled or wait step in order.
       const persistable = steps.filter(
         (s) => s.kind === "wait" || isStepFilled(s),
       );
@@ -333,7 +321,6 @@ export default function CampaignBuilder() {
     }
   }, [
     canSaveDraft,
-    description,
     navigate,
     playId,
     selectedIds,
@@ -342,52 +329,52 @@ export default function CampaignBuilder() {
     trimmedName,
   ]);
 
-  // ESC closes drawers
   useEffect(() => {
     const handler = (e) => {
       if (e.key !== "Escape") return;
-      if (audienceOpen) setAudienceOpen(false);
+      if (previewOpen) setPreviewOpen(false);
+      else if (audienceOpen) setAudienceOpen(false);
       else if (templatesOpen) setTemplatesOpen(false);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [audienceOpen, templatesOpen]);
+  }, [audienceOpen, templatesOpen, previewOpen]);
 
   return (
-    <div className="flex h-[calc(100vh-72px)] flex-col overflow-hidden bg-[#F8FAFC]">
+    <div className="flex h-[calc(100vh-72px)] min-h-[640px] flex-col overflow-hidden bg-[#F8FAFC]">
       {/* Top bar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 lg:flex-nowrap">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 lg:flex-nowrap">
         <button
           type="button"
           onClick={() => navigate("/app/campaigns")}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
           aria-label="Back to Outbound"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
+          <ArrowLeft className="h-3 w-3" />
         </button>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="min-w-0 flex-1 border-none bg-transparent text-[18px] font-bold tracking-tight text-[#0F172A] outline-none"
+              className="min-w-0 flex-1 border-none bg-transparent text-[15px] font-bold leading-tight tracking-tight text-[#0F172A] outline-none"
               style={{ fontFamily: fontDisplay }}
               maxLength={120}
             />
             <span
-              className="rounded-full border border-[#BAE6FD] bg-[#E0F2FE] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#0369A1]"
+              className="rounded-full border border-[#BAE6FD] bg-[#E0F2FE] px-1.5 py-0 text-[9px] font-bold uppercase tracking-[0.04em] text-[#0369A1]"
               style={{ fontFamily: fontDisplay }}
             >
               Draft
             </span>
           </div>
           <div
-            className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500"
+            className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500"
             style={{ fontFamily: fontBody }}
           >
             {seedPlay ? (
-              <span className="inline-flex items-center gap-1">
-                Seeded from <strong className="text-[#0F172A]">{seedPlay.name}</strong> play
+              <span>
+                Seeded from <strong className="text-[#0F172A]">{seedPlay.name}</strong>
               </span>
             ) : (
               <span>Build a sequence and save as draft.</span>
@@ -396,43 +383,51 @@ export default function CampaignBuilder() {
             <span>{selectedIds.size} recipient{selectedIds.size === 1 ? "" : "s"}</span>
             <span className="text-[#CBD5E1]">·</span>
             <span>{steps.length} step{steps.length === 1 ? "" : "s"}</span>
+            {saveGuidance ? (
+              <>
+                <span className="text-[#CBD5E1]">·</span>
+                <span className="text-[#B45309]">{saveGuidance}</span>
+              </>
+            ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1">
           {success ? (
             <span
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#BBF7D0] bg-[#F0FDF4] px-2.5 py-1 text-[11px] font-medium text-[#15803d]"
+              className="inline-flex items-center gap-1 rounded-full border border-[#BBF7D0] bg-[#F0FDF4] px-2 py-0.5 text-[10px] font-medium text-[#15803d]"
               style={{ fontFamily: fontBody }}
             >
-              <CheckCircle2 className="h-3 w-3" />
+              <CheckCircle2 className="h-2.5 w-2.5" />
               {success}
             </span>
           ) : null}
           <button
             type="button"
-            disabled
-            title="Preview ships once subject/body merge tags resolve."
-            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-400"
+            onClick={() => setPreviewOpen(true)}
+            disabled={steps.filter((s) => s.kind !== "wait").length === 0}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
             style={{ fontFamily: fontDisplay }}
+            title="Preview the sequence as a sample contact would receive it"
           >
-            <Play className="h-3 w-3" />
+            <Play className="h-2.5 w-2.5" />
             Preview as contact
           </button>
           <button
             type="button"
             disabled
             title="Test send requires the dispatcher edge function. Available once Gmail OAuth ships."
-            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-400"
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-400"
             style={{ fontFamily: fontDisplay }}
           >
-            <FlaskConical className="h-3 w-3" />
+            <FlaskConical className="h-2.5 w-2.5" />
             Test send
           </button>
           <button
             type="button"
             onClick={handleSaveDraft}
             disabled={!canSaveDraft || saving}
-            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            title={saveGuidance ?? ""}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             style={{ fontFamily: fontDisplay }}
           >
             {saving ? "Saving…" : "Save draft"}
@@ -445,33 +440,30 @@ export default function CampaignBuilder() {
                 ? ""
                 : "Launch becomes available once Gmail is connected and the dispatcher ships."
             }
-            className="inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-[#10B981] to-[#059669] px-3.5 py-1.5 text-xs font-semibold text-white shadow-[0_1px_4px_rgba(16,185,129,0.3)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-[#10B981] to-[#059669] px-3 py-1 text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(16,185,129,0.3)] disabled:cursor-not-allowed disabled:opacity-60"
             style={{ fontFamily: fontDisplay }}
           >
-            <Rocket className="h-3 w-3" />
-            Launch campaign
+            <Rocket className="h-2.5 w-2.5" />
+            Launch
           </button>
         </div>
       </div>
 
-      {/* Forecast strip */}
       <ForecastStrip audienceCount={selectedIds.size} />
 
-      {/* Error banner */}
       {error ? (
         <div
-          className="flex shrink-0 items-center gap-2 border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700"
+          className="flex shrink-0 items-center gap-2 border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-700"
           style={{ fontFamily: fontBody }}
         >
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <AlertCircle className="h-3 w-3 shrink-0" />
           {error}
         </div>
       ) : null}
 
-      {/* Inbox status hint */}
       {!primaryEmail ? (
         <div
-          className="flex shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50/60 px-4 py-2 text-xs text-[#B45309]"
+          className="flex shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50/60 px-3 py-1.5 text-[11px] text-[#B45309]"
           style={{ fontFamily: fontBody }}
         >
           <span className="font-semibold">Heads up:</span>
@@ -481,8 +473,8 @@ export default function CampaignBuilder() {
         </div>
       ) : null}
 
-      {/* 3-column body */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[288px_1fr_360px]">
+      {/* 3-column body — collapses to single column on small screens */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[260px_1fr_340px]">
         <PersonaPanel
           audienceCount={selectedIds.size}
           totalSavedCompanies={companies.length}
@@ -506,11 +498,11 @@ export default function CampaignBuilder() {
           primaryInboxEmail={primaryEmail}
           inboxKnown={inboxKnown}
           templates={
-            templatesResult?.state === "ok" ? templatesResult.rows : []
+            templatesState?.result.state === "ok" ? templatesState.result.rows : []
           }
           onUpdate={handleUpdateStep}
           onApplyTemplate={handleApplyTemplate}
-          onPreview={() => {}}
+          onPreview={() => setPreviewOpen(true)}
           onTestSend={() => {}}
         />
       </div>
@@ -529,9 +521,15 @@ export default function CampaignBuilder() {
 
       <TemplatesDrawer
         open={templatesOpen}
-        result={templatesResult}
+        state={templatesState}
         onClose={() => setTemplatesOpen(false)}
         onApply={handleApplyTemplate}
+      />
+
+      <PreviewModal
+        open={previewOpen}
+        steps={steps}
+        onClose={() => setPreviewOpen(false)}
       />
     </div>
   );

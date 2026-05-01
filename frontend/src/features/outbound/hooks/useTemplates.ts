@@ -6,24 +6,37 @@ import type {
   TemplatesResult,
   PersonasResult,
 } from "../types";
+import { STARTER_TEMPLATES } from "../data/templates";
 
 // lit_outreach_templates / lit_personas have RLS enabled. Direct browser
 // reads will succeed only if a SELECT policy exists for the current
 // workspace. If the read fails or the table simply doesn't exist yet, we
-// degrade gracefully — the UI shows a "configured but require a secure
-// read endpoint" message rather than crashing.
+// fall back to a curated static catalog (STARTER_TEMPLATES) so users always
+// have something useful to apply. The result also surfaces the source
+// (db | starters) so the UI can label appropriately.
+
+export type TemplatesSource = "db" | "starters";
+
+export interface TemplatesState {
+  result: TemplatesResult;
+  source: TemplatesSource;
+  /** True when the DB read either failed or returned 0 rows. */
+  fellBack: boolean;
+  /** Reason copy when the DB was blocked (RLS / missing table). */
+  blockedReason: string | null;
+}
 
 const BLOCKED_REASON =
-  "Templates are configured, but require a secure read endpoint.";
+  "Templates from your workspace require a secure read endpoint or SELECT policy on lit_outreach_templates. Showing curated starter templates below.";
 const BLOCKED_REASON_PERSONAS =
-  "Personas are configured, but require a secure read endpoint.";
+  "Personas from your workspace require a secure read endpoint or SELECT policy on lit_personas.";
 
 export function useTemplates(): {
-  result: TemplatesResult | null;
+  state: TemplatesState | null;
   loading: boolean;
   refresh: () => Promise<void>;
 } {
-  const [result, setResult] = useState<TemplatesResult | null>(null);
+  const [state, setState] = useState<TemplatesState | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -34,14 +47,40 @@ export function useTemplates(): {
         .select("id, name, channel, subject, body, persona_id")
         .order("updated_at", { ascending: false })
         .limit(50);
+
       if (error) {
-        setResult({ state: "blocked", reason: BLOCKED_REASON });
+        // Fall back to curated starters with a clear "blocked" notice.
+        setState({
+          result: { state: "ok", rows: STARTER_TEMPLATES as OutreachTemplate[] },
+          source: "starters",
+          fellBack: true,
+          blockedReason: BLOCKED_REASON,
+        });
         return;
       }
       const rows = (data ?? []) as OutreachTemplate[];
-      setResult(rows.length === 0 ? { state: "empty" } : { state: "ok", rows });
+      if (rows.length === 0) {
+        setState({
+          result: { state: "ok", rows: STARTER_TEMPLATES as OutreachTemplate[] },
+          source: "starters",
+          fellBack: true,
+          blockedReason: null,
+        });
+      } else {
+        setState({
+          result: { state: "ok", rows },
+          source: "db",
+          fellBack: false,
+          blockedReason: null,
+        });
+      }
     } catch {
-      setResult({ state: "blocked", reason: BLOCKED_REASON });
+      setState({
+        result: { state: "ok", rows: STARTER_TEMPLATES as OutreachTemplate[] },
+        source: "starters",
+        fellBack: true,
+        blockedReason: BLOCKED_REASON,
+      });
     } finally {
       setLoading(false);
     }
@@ -51,7 +90,7 @@ export function useTemplates(): {
     void refresh();
   }, [refresh]);
 
-  return { result, loading, refresh };
+  return { state, loading, refresh };
 }
 
 export function usePersonas(): {
