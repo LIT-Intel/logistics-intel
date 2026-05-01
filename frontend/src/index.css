@@ -331,3 +331,27 @@
     opacity: 0.72;
   }
 }
+
+/* LIT Settings page — responsive collapse */
+@media (max-width: 1100px) {
+  .lit-settings-nav { width: 100% !important; min-width: 0 !important; border-right: none !important; border-bottom: 1px solid #E5E7EB !important; }
+  .lit-settings-nav nav { padding: 8px 10px !important; display: flex !important; flex-direction: row !important; gap: 6px !important; overflow-x: auto !important; overflow-y: hidden !important; }
+  .lit-settings-nav nav > div { margin-bottom: 0 !important; display: flex !important; gap: 4px !important; align-items: center; flex-shrink: 0; }
+  .lit-settings-nav nav > div > div:first-child { display: none !important; }
+  .lit-settings-nav nav > div > div:last-child { flex-direction: row !important; gap: 4px !important; }
+  .lit-settings-nav nav button { white-space: nowrap; flex-shrink: 0; padding: 7px 12px !important; font-size: 12.5px !important; }
+  .lit-settings-nav > div:first-child { padding: 12px 14px 10px !important; }
+  .lit-settings-nav > div:last-child { display: none !important; }
+  .lit-settings-main > div:nth-child(2) { flex-direction: column !important; }
+  .lit-settings-body { padding: 20px 22px 28px !important; }
+}
+@media (max-width: 720px) {
+  .lit-settings-header { padding: 14px 16px 12px !important; }
+  .lit-settings-body { padding: 16px 14px 24px !important; }
+  .lit-grid-2 { grid-template-columns: 1fr !important; }
+  .lit-grid-3 { grid-template-columns: 1fr !important; }
+  .lit-grid-4 { grid-template-columns: repeat(2,1fr) !important; }
+}
+@media (max-width: 480px) {
+  .lit-grid-4 { grid-template-columns: 1fr !important; }
+}

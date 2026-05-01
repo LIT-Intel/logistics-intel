@@ -1,3 +1,6 @@
+// SettingsLayout.tsx — Shell lifted from design/Settings.html
+// Inline style={{ }} approach. SettingsHeader + SettingsNav (left rail) with
+// lucide-react icons. No second sidebar — LITPage already provides the app sidebar.
 import React from "react";
 import {
   User,
@@ -21,7 +24,7 @@ import {
   PreferencesSection,
   IntegrationsHubSection,
 } from "./SettingsSections";
-import { Pill } from "./SettingsPrimitives";
+import { SBadge, sBtnPrimary } from "./SettingsPrimitives";
 
 // Accepts ?tab=… (case/spacing tolerant) so deep links route correctly.
 function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
@@ -173,61 +176,224 @@ export type SettingsLayoutProps = {
   authProvider?: string | null;
 };
 
-// ── Nav group structure ───────────────────────────────────────────────────────
-type NavGroup = {
-  label: string;
-  items: SettingsSectionId[];
-};
-
-const NAV_GROUPS: NavGroup[] = [
-  { label: "Account",   items: ["Profile", "Security", "Notifications"] },
-  { label: "Workspace", items: ["Workspace"] },
-  { label: "Outreach",  items: ["Integrations"] },
-  { label: "Personal",  items: ["Preferences"] },
+// ── Nav groups (matches the design's NAV array, curated for 6 sections) ───────
+const NAV_GROUPS: Array<{
+  group: string;
+  items: Array<{ id: SettingsSectionId; label: string; Icon: React.ComponentType<{ size?: number; color?: string }> }>;
+}> = [
+  {
+    group: "Account",
+    items: [
+      { id: "Profile",       label: "Profile",       Icon: User },
+      { id: "Security",      label: "Security",      Icon: ShieldCheck },
+      { id: "Notifications", label: "Notifications", Icon: Bell },
+    ],
+  },
+  {
+    group: "Workspace",
+    items: [
+      { id: "Workspace", label: "Workspace", Icon: Building2 },
+    ],
+  },
+  {
+    group: "Outreach",
+    items: [
+      { id: "Integrations", label: "Integrations", Icon: Plug },
+    ],
+  },
+  {
+    group: "Preferences",
+    items: [
+      { id: "Preferences", label: "Preferences", Icon: KeyRound },
+    ],
+  },
 ];
 
-const SECTION_ICON: Record<SettingsSectionId, React.ComponentType<{ className?: string; size?: number }>> = {
-  Profile:       User,
-  Workspace:     Building2,
-  Security:      ShieldCheck,
-  Notifications: Bell,
-  Integrations:  Plug,
-  Preferences:   KeyRound,
-};
+// ── SettingsHeader ─────────────────────────────────────────────────────────────
+function SettingsHeader({ plan, role }: { plan: string; role: string }) {
+  const roleLabel = ({ admin: "Admin", manager: "Manager", member: "Member", viewer: "Viewer" } as Record<string, string>)[role] || role || "Member";
+  const planLabel = ({ free: "Free", growth: "Growth", scale: "Scale", enterprise: "Enterprise", free_trial: "Free Trial", starter: "Starter" } as Record<string, string>)[plan] || plan || "Free Trial";
+  const planTone = plan === "enterprise" ? "violet" : plan === "free" || plan === "free_trial" || plan === "starter" ? "slate" : "cyan";
 
-const SECTION_TITLE: Record<SettingsSectionId, string> = {
-  Profile:       "Profile",
-  Workspace:     "Workspace",
-  Security:      "Security",
-  Notifications: "Notifications",
-  Integrations:  "Integrations",
-  Preferences:   "Preferences",
-};
+  return (
+    <div
+      className="lit-settings-header"
+      style={{
+        padding: "20px 32px 18px",
+        borderBottom: "1px solid #E5E7EB",
+        background: "#FFFFFF",
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 16,
+        flexWrap: "wrap",
+      }}
+    >
+      <div>
+        <div style={{
+          fontFamily: "Space Grotesk,sans-serif",
+          fontSize: 22,
+          fontWeight: 700,
+          color: "#0F172A",
+          letterSpacing: "-0.02em",
+        }}>Settings</div>
+        <div style={{
+          fontFamily: "DM Sans,sans-serif",
+          fontSize: 13,
+          color: "#64748b",
+          marginTop: 3,
+        }}>Control center for your profile, workspace, integrations, and outreach.</div>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <SBadge tone="blue" icon={<UserCog size={11} />}>{roleLabel}</SBadge>
+        <SBadge tone={planTone} dot>{planLabel} plan</SBadge>
+      </div>
+    </div>
+  );
+}
 
-const SECTION_DESCRIPTION: Partial<Record<SettingsSectionId, string>> = {
-  Profile:
-    "Your personal identity across Logistic Intel. Displayed on your outbound sends, comments, and teammate mentions.",
-  Workspace:
-    "Your shared organization, role, and team membership.",
-  Security:
-    "Password and recent activity on your Logistic Intel account.",
-  Notifications:
-    "Route the signals you care about to email, in-app, or Slack. Everything else stays quiet.",
-  Integrations:
-    "Connect your inboxes and data sources. Inbox connections power the Outbound Engine.",
-  Preferences:
-    "Personal defaults for time, email signature, and search.",
-};
+// ── SettingsNav ─────────────────────────────────────────────────────────────────
+function SettingsNav({
+  active,
+  onNav,
+  search,
+  onSearch,
+}: {
+  active: SettingsSectionId;
+  onNav: (id: SettingsSectionId) => void;
+  search: string;
+  onSearch: (q: string) => void;
+}) {
+  const query = search.trim().toLowerCase();
 
-const SECTION_KICKER: Record<SettingsSectionId, string> = {
-  Profile:       "ACCOUNT · SETTINGS",
-  Workspace:     "WORKSPACE · SETTINGS",
-  Security:      "ACCOUNT · SETTINGS",
-  Notifications: "WORKSPACE · SETTINGS",
-  Integrations:  "OUTREACH · SETTINGS",
-  Preferences:   "ACCOUNT · SETTINGS",
-};
+  const visibleGroups = NAV_GROUPS.map((g) => ({
+    ...g,
+    items: query
+      ? g.items.filter((it) => it.label.toLowerCase().includes(query))
+      : g.items,
+  })).filter((g) => g.items.length > 0);
 
+  return (
+    <aside
+      className="lit-settings-nav"
+      style={{
+        width: 252,
+        minWidth: 252,
+        borderRight: "1px solid #E5E7EB",
+        background: "#FAFBFC",
+        display: "flex",
+        flexDirection: "column",
+        flexShrink: 0,
+        overflow: "hidden",
+      }}
+    >
+      {/* Search box */}
+      <div style={{ padding: "18px 18px 12px", borderBottom: "1px solid #F1F5F9" }}>
+        <div style={{ position: "relative" }}>
+          <Search
+            size={13}
+            color="#94a3b8"
+            style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
+          />
+          <input
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder="Search settings…"
+            style={{
+              width: "100%",
+              background: "#fff",
+              border: "1px solid #E5E7EB",
+              borderRadius: 8,
+              padding: "7px 12px 7px 30px",
+              fontSize: 12.5,
+              fontFamily: "DM Sans,sans-serif",
+              color: "#0F172A",
+              outline: "none",
+            }}
+            onFocus={(e) => { e.target.style.borderColor = "#3b82f6"; e.target.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.1)"; }}
+            onBlur={(e) => { e.target.style.borderColor = "#E5E7EB"; e.target.style.boxShadow = "none"; }}
+          />
+        </div>
+      </div>
+
+      {/* Nav groups */}
+      <nav style={{ flex: 1, overflowY: "auto", padding: "10px 10px" }}>
+        {visibleGroups.map((g) => (
+          <div key={g.group} style={{ marginBottom: 14 }}>
+            <div style={{
+              fontFamily: "Space Grotesk,sans-serif",
+              fontSize: 10,
+              fontWeight: 600,
+              color: "#94a3b8",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              padding: "6px 10px 4px",
+            }}>{g.group}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              {g.items.map((it) => {
+                const isActive = active === it.id;
+                return (
+                  <button
+                    key={it.id}
+                    type="button"
+                    onClick={() => onNav(it.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "8px 10px",
+                      borderRadius: 7,
+                      fontSize: 13,
+                      fontWeight: isActive ? 600 : 500,
+                      fontFamily: "Space Grotesk,sans-serif",
+                      background: isActive ? "#EFF6FF" : "transparent",
+                      color: isActive ? "#1d4ed8" : "#334155",
+                      border: "none",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      width: "100%",
+                      transition: "all 140ms",
+                    }}
+                  >
+                    <it.Icon size={14} color={isActive ? "#3b82f6" : "#64748b"} />
+                    <span>{it.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
+
+      {/* Help footer */}
+      <div style={{
+        padding: "14px 16px",
+        borderTop: "1px solid #F1F5F9",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+      }}>
+        <LifeBuoy size={14} color="#64748b" />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: "Space Grotesk,sans-serif", fontSize: 12, fontWeight: 600, color: "#0F172A" }}>
+            Need help?
+          </div>
+          <a
+            href="https://docs.logisticintel.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11.5, color: "#3b82f6", textDecoration: "none" }}
+          >
+            docs.logisticintel.com
+          </a>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ── renderSection ──────────────────────────────────────────────────────────────
 function renderSection(
   section: SettingsSectionId,
   props: SettingsLayoutProps,
@@ -276,6 +442,10 @@ function renderSection(
           email={props.profile?.email}
           authProvider={props.authProvider}
           auditLog={props.auditLog}
+          plan={props.subscription?.plan_code ?? props.profile?.plan ?? null}
+          apiKeys={props.apiKeys}
+          onGenerateKey={props.onGenerateApiKey}
+          onRevokeKey={props.onRevokeApiKey}
         />
       );
     case "Notifications":
@@ -325,164 +495,15 @@ function renderSection(
   }
 }
 
-// ── Left-rail nav ─────────────────────────────────────────────────────────────
-function SettingsNav({
-  activeSection,
-  onSelect,
-  searchQuery,
-}: {
-  activeSection: SettingsSectionId;
-  onSelect: (id: SettingsSectionId) => void;
-  searchQuery: string;
-}) {
-  const query = searchQuery.trim().toLowerCase();
-
-  return (
-    <nav className="flex flex-col gap-0">
-      {NAV_GROUPS.map((group) => {
-        // Filter items by search
-        const visibleItems = query
-          ? group.items.filter((id) =>
-              SECTION_TITLE[id].toLowerCase().includes(query) ||
-              (SECTION_DESCRIPTION[id] || "").toLowerCase().includes(query),
-            )
-          : group.items;
-
-        if (visibleItems.length === 0) return null;
-
-        return (
-          <div key={group.label}>
-            <p className="font-display text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 px-3 pb-1 pt-3">
-              {group.label}
-            </p>
-            <div className="flex flex-col gap-0.5">
-              {visibleItems.map((id) => {
-                const Icon = SECTION_ICON[id];
-                const isActive = id === activeSection;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => onSelect(id)}
-                    className={[
-                      "flex w-full items-center gap-2.5 rounded-md py-2 text-left font-display text-[13px] transition",
-                      isActive
-                        ? "bg-blue-50 text-blue-700 pl-[calc(0.625rem-2px)] pr-2.5 border-l-2 border-blue-500"
-                        : "text-slate-700 hover:bg-slate-50 px-2.5",
-                    ].join(" ")}
-                  >
-                    <Icon
-                      size={14}
-                      className={isActive ? "text-blue-500 shrink-0" : "text-slate-500 shrink-0"}
-                    />
-                    {SECTION_TITLE[id]}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </nav>
-  );
-}
-
-// ── Full left rail (search + nav + help) ──────────────────────────────────────
-function LeftRail({
-  activeSection,
-  onSelect,
-}: {
-  activeSection: SettingsSectionId;
-  onSelect: (id: SettingsSectionId) => void;
-}) {
-  const [query, setQuery] = React.useState("");
-
-  return (
-    <aside className="flex w-[252px] shrink-0 flex-col bg-[#FAFBFC] border-r border-slate-200 min-h-full">
-      {/* Search box */}
-      <div className="px-3 pt-3 pb-2">
-        <div className="relative">
-          <Search
-            size={13}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
-          />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search settings…"
-            className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 font-body text-[12.5px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-          />
-        </div>
-      </div>
-
-      {/* Nav groups */}
-      <div className="flex-1 overflow-y-auto px-2 pb-2">
-        <SettingsNav
-          activeSection={activeSection}
-          onSelect={onSelect}
-          searchQuery={query}
-        />
-      </div>
-
-      {/* Help footer */}
-      <div className="border-t border-slate-100 px-4 py-3.5 flex items-center gap-2.5 shrink-0">
-        <LifeBuoy size={14} className="text-slate-500 shrink-0" />
-        <div className="min-w-0">
-          <div className="font-display text-[12px] font-semibold text-slate-700">Need help?</div>
-          <a
-            href="https://docs.logisticintel.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-body text-[11.5px] text-blue-500 hover:underline"
-          >
-            docs.logisticintel.com
-          </a>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-// ── Horizontal strip nav (≤1100px) ───────────────────────────────────────────
-function HorizontalStrip({
-  activeSection,
-  onSelect,
-}: {
-  activeSection: SettingsSectionId;
-  onSelect: (id: SettingsSectionId) => void;
-}) {
-  return (
-    <div className="flex overflow-x-auto border-b border-slate-200 bg-white">
-      {SETTINGS_SECTIONS.map((section) => {
-        const isActive = section.id === activeSection;
-        return (
-          <button
-            key={section.id}
-            type="button"
-            onClick={() => onSelect(section.id)}
-            className={[
-              "whitespace-nowrap border-b-2 px-4 py-3 font-display text-[13px] font-semibold transition shrink-0",
-              isActive
-                ? "border-blue-600 text-blue-700"
-                : "border-transparent text-slate-500 hover:text-slate-700",
-            ].join(" ")}
-          >
-            {section.title}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
+// ── SettingsLayout (default export) ───────────────────────────────────────────
 export default function SettingsLayout(props: SettingsLayoutProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = tabParamToSectionId(searchParams.get("tab")) ?? "Profile";
   const [activeSection, setActiveSection] = React.useState<SettingsSectionId>(initialTab);
+  const [search, setSearch] = React.useState("");
 
-  // Keep state in sync if the URL changes (e.g. sidebar nav while page is mounted).
+  // Keep state in sync if the URL changes.
   React.useEffect(() => {
     const fromUrl = tabParamToSectionId(searchParams.get("tab"));
     if (fromUrl && fromUrl !== activeSection) {
@@ -505,56 +526,43 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
     [searchParams, setSearchParams],
   );
 
-  const roleLabel = props.workspace?.roleLabel || (props.isAdmin ? "Admin" : "Member");
-  const planLabel = props.workspace?.planLabel || props.subscription?.plan_code || props.profile?.planName || "Free Trial";
+  const roleLabel = props.workspace?.roleLabel || (props.isAdmin ? "admin" : "member");
+  const planLabel =
+    props.subscription?.plan_code ||
+    props.profile?.plan ||
+    props.workspace?.planLabel ||
+    "free_trial";
 
   return (
-    <div className="flex w-full flex-col">
-      {/* ── Full-width page header ───────────────────────────────────────── */}
-      <header className="border-b border-slate-200 bg-white px-8 py-5 flex items-center justify-between gap-4 shrink-0">
-        <div>
-          <h1 className="font-display text-[22px] font-bold text-slate-900 tracking-[-0.02em]">
-            Settings
-          </h1>
-          <p className="font-body text-[13px] text-slate-500 mt-1">
-            Control center for your profile, workspace, integrations, and outreach.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Pill tone="blue" icon={<UserCog size={11} />}>
-            {roleLabel}
-          </Pill>
-          <Pill tone="cyan" dot>
-            {planLabel}
-          </Pill>
-        </div>
-      </header>
-
-      {/* ── Horizontal strip (≤1100px / lg breakpoint) ──────────────────── */}
-      <div className="xl:hidden">
-        <HorizontalStrip
-          activeSection={activeSection}
-          onSelect={handleSelectSection}
-        />
-      </div>
-
-      {/* ── Two-pane layout ──────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-h-0">
-        {/* Left rail — hidden below xl */}
-        <div className="hidden xl:flex">
-          <LeftRail
-            activeSection={activeSection}
-            onSelect={handleSelectSection}
+    <div style={{ display: "flex", minHeight: "100%", background: "#020617" }}>
+      <main
+        className="lit-settings-main"
+        style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC", minWidth: 0 }}
+      >
+        <SettingsHeader plan={planLabel} role={roleLabel} />
+        <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
+          <SettingsNav
+            active={activeSection}
+            onNav={handleSelectSection}
+            search={search}
+            onSearch={setSearch}
           />
-        </div>
-
-        {/* Scroll body */}
-        <main className="flex-1 min-w-0 overflow-y-auto">
-          <div className="max-w-[1100px] mx-auto py-7 px-8 flex flex-col gap-5">
-            {renderSection(activeSection, props, navigate)}
+          <div
+            className="lit-settings-body"
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              padding: "28px 32px 40px",
+              position: "relative",
+              minWidth: 0,
+            }}
+          >
+            <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+              {renderSection(activeSection, props, navigate)}
+            </div>
           </div>
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }
