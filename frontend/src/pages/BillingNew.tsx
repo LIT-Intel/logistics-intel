@@ -384,8 +384,8 @@ export default function Billing() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-8 lg:px-8">
+    <div className="min-h-screen bg-[#F4F6FB]">
+      <div className="mx-auto max-w-[1180px] px-4 py-6 md:px-6 md:py-8 lg:px-8">
         {/* Sticky header with breadcrumb + role/status */}
         <BillingHeader state={canonicalState} canManage={canManage} isSuperAdmin={isSuperAdmin} />
 

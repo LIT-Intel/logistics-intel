@@ -1,15 +1,16 @@
 // Affiliate tie-in. Three states based on REAL affiliate role from
 // usePartnerStatus(). Routes use the existing affiliate routes mounted
-// in App.jsx.
+// in App.jsx. Premium amber/orange gradient styling matches the LIT
+// billing design package.
 
-import { ArrowUpRight, Sparkles, ShieldCheck, Handshake } from 'lucide-react';
+import { Sparkles, ShieldCheck, BarChart3, Gift } from 'lucide-react';
 
 export type AffiliateState = 'none' | 'affiliate' | 'admin';
 
 interface Props {
   state: AffiliateState;
-  onApply: () => void;     // routes to /partners/apply
-  onOpenDash: () => void;  // routes to /app/affiliate
+  onApply: () => void; // routes to /partners/apply
+  onOpenDash: () => void; // routes to /app/affiliate
   onOpenAdmin: () => void; // routes to /app/admin/partner-program
 }
 
@@ -17,11 +18,9 @@ export function AffiliateTieIn({ state, onApply, onOpenDash, onOpenAdmin }: Prop
   if (state === 'admin') {
     return (
       <Card
-        icon={ShieldCheck}
-        iconBg="bg-amber-100 text-amber-700"
-        eyebrow="Partner admin"
+        ctaIcon={ShieldCheck}
         title="Affiliate program admin"
-        body="You manage the LIT Partners program. Approve applications, review payouts, and tune commission tiers."
+        body="Review partner applications, approve payouts, and manage commission rules across the program."
         ctaLabel="Open partner admin"
         onCta={onOpenAdmin}
       />
@@ -31,11 +30,9 @@ export function AffiliateTieIn({ state, onApply, onOpenDash, onOpenAdmin }: Prop
   if (state === 'affiliate') {
     return (
       <Card
-        icon={Handshake}
-        iconBg="bg-emerald-100 text-emerald-700"
-        eyebrow="LIT Partners"
+        ctaIcon={BarChart3}
         title="You're a LIT affiliate"
-        body="Track referrals, view commissions, and manage payouts in your affiliate dashboard."
+        body="Track referrals, payouts, and conversion rate. Share your link and earn recurring revenue on every paid workspace you send."
         ctaLabel="Open affiliate dashboard"
         onCta={onOpenDash}
       />
@@ -44,56 +41,45 @@ export function AffiliateTieIn({ state, onApply, onOpenDash, onOpenAdmin }: Prop
 
   return (
     <Card
-      icon={Sparkles}
-      iconBg="bg-indigo-100 text-indigo-700"
-      eyebrow="LIT Partners"
+      ctaIcon={Sparkles}
       title="Earn credits and commission with LIT Partners"
-      body="Refer customers and earn recurring revenue. Apply to join the partner program — review takes 1–3 business days."
-      ctaLabel="Apply"
+      body="Refer freight teams you already know. Get recurring commission for 12 months — paid monthly via Stripe Connect."
+      ctaLabel="Apply to become an affiliate"
       onCta={onApply}
     />
   );
 }
 
 function Card({
-  icon: Icon,
-  iconBg,
-  eyebrow,
   title,
   body,
   ctaLabel,
+  ctaIcon: CtaIcon,
   onCta,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
-  iconBg: string;
-  eyebrow: string;
   title: string;
   body: string;
   ctaLabel: string;
+  ctaIcon: React.ComponentType<{ className?: string }>;
   onCta: () => void;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
-          <span className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl ${iconBg}`}>
-            <Icon className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-              {eyebrow}
-            </span>
-            <h3 className="mt-1 text-lg font-semibold tracking-tight text-slate-950">{title}</h3>
-            <p className="mt-1 text-sm text-slate-600">{body}</p>
-          </div>
+    <div className="overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_14px_rgba(15,23,42,0.03)]">
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-4 bg-gradient-to-r from-white via-[#FFF7ED] to-[#FEF3C7] px-6 py-5 sm:gap-[18px] max-[820px]:grid-cols-[auto_1fr] [&>button]:max-[820px]:col-span-2">
+        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-[12px] bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-[0_4px_12px_rgba(245,158,11,0.3)]">
+          <Gift className="h-5 w-5" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-[15px] font-bold tracking-[-0.01em] text-slate-950">{title}</div>
+          <p className="mt-1 max-w-[560px] text-[12.5px] leading-[1.5] text-amber-900/85">{body}</p>
         </div>
         <button
           type="button"
           onClick={onCta}
-          className="inline-flex flex-shrink-0 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+          className="inline-flex flex-shrink-0 items-center justify-center gap-1.5 rounded-[10px] bg-gradient-to-b from-amber-500 to-amber-600 px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_2px_8px_rgba(245,158,11,0.3),inset_0_1px_0_rgba(255,255,255,0.15)] transition-all duration-150 hover:from-amber-600 hover:to-amber-700"
         >
+          <CtaIcon className="h-3.5 w-3.5" />
           {ctaLabel}
-          <ArrowUpRight className="h-4 w-4" />
         </button>
       </div>
     </div>
