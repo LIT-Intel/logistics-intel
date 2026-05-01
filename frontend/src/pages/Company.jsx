@@ -857,6 +857,55 @@ export default function Company() {
           {tab === "research" && (
             <CDPResearch
               companyName={companyName}
+              companyMeta={{
+                ticker: companyEnrichment?.enrichment_params?.ticker ?? null,
+                hq:
+                  companyAddress ||
+                  companyEnrichment?.enrichment_params?.hqLocation?.city ||
+                  null,
+                teuYr:
+                  activeRouteKpis?.teuLast12m ??
+                  activeProfile?.totalTeuAllTime ??
+                  null,
+                vertical:
+                  companyEnrichment?.industry ||
+                  companyEnrichment?.enrichment_params?.firmographics?.industry ||
+                  null,
+              }}
+              tradeKpis={{
+                shipments12m:
+                  activeRouteKpis?.shipmentsLast12m ??
+                  activeProfile?.totalShipments ??
+                  null,
+                teu12m:
+                  activeRouteKpis?.teuLast12m ??
+                  activeProfile?.totalTeuAllTime ??
+                  null,
+                activeLanes: Array.isArray(activeProfile?.topRoutes)
+                  ? activeProfile.topRoutes.length
+                  : Array.isArray(activeProfile?.top_routes)
+                    ? activeProfile.top_routes.length
+                    : null,
+                topLaneLabel:
+                  activeRouteKpis?.topRouteLast12m ||
+                  activeProfile?.topRoutes?.[0]?.route ||
+                  activeProfile?.top_routes?.[0]?.route ||
+                  null,
+                topLaneShare: (() => {
+                  const top =
+                    activeProfile?.topRoutes?.[0] ||
+                    activeProfile?.top_routes?.[0] ||
+                    null;
+                  const total = Number(
+                    activeRouteKpis?.shipmentsLast12m ??
+                      activeProfile?.totalShipments,
+                  );
+                  const topShip = Number(top?.shipments);
+                  if (!total || !topShip || total <= 0) return null;
+                  return topShip / total;
+                })(),
+                yoyPct: null,
+              }}
               pulseBrief={pulseBrief}
               pulseLoading={pulseLoading}
               pulseError={pulseError}

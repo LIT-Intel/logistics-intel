@@ -1,24 +1,30 @@
+import { useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
   Box,
   Building2,
+  Clock,
   Container,
   Copy,
   Download,
   ExternalLink,
+  FileText,
   Globe2,
   Linkedin,
   Loader2,
   Mail,
+  Maximize2,
   MapPin,
   Megaphone,
+  MessageSquare,
   Newspaper,
   RefreshCw,
   Send,
   Share2,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   Target,
   ThumbsDown,
@@ -26,6 +32,7 @@ import {
   TrendingUp,
   Truck,
   Users,
+  X,
   Zap,
 } from "lucide-react";
 import LitPill from "@/components/ui/LitPill";
@@ -120,8 +127,24 @@ type PulseError = { code: string; message: string } | null;
 
 type PulseUsage = { plan?: string | null; limit?: number | null } | null;
 
+type TradeKpis = {
+  shipments12m?: number | null;
+  teu12m?: number | null;
+  activeLanes?: number | null;
+  topLaneLabel?: string | null;
+  topLaneShare?: number | null;
+  yoyPct?: number | null;
+};
+
 type CDPResearchProps = {
   companyName: string;
+  companyMeta?: {
+    ticker?: string | null;
+    hq?: string | null;
+    teuYr?: number | null;
+    vertical?: string | null;
+  };
+  tradeKpis?: TradeKpis;
   pulseBrief: PulseBrief;
   pulseLoading: boolean;
   pulseError: PulseError;
@@ -137,6 +160,8 @@ type CDPResearchProps = {
 
 export default function CDPResearch({
   companyName,
+  companyMeta,
+  tradeKpis,
   pulseBrief,
   pulseLoading,
   pulseError,
@@ -152,51 +177,91 @@ export default function CDPResearch({
   const report = pulseBrief?.report || null;
   const hasReport = Boolean(report && Object.keys(report).length > 0);
   const limitExceeded = pulseError?.code === "LIMIT_EXCEEDED";
+  const [expanded, setExpanded] = useState(false);
+
+  const onShareEmail = () => {
+    if (typeof window === "undefined") return;
+    const subject = `Pulse AI brief — ${companyName}`;
+    const body = reportToMarkdown(companyName, pulseBrief);
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const briefBody = (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <BriefHeader
+        companyName={companyName}
+        companyMeta={companyMeta}
+        pulseBrief={pulseBrief}
+        pulseLoading={pulseLoading}
+        hasReport={hasReport}
+        onPulse={onPulse}
+        onRefresh={onRefresh}
+        onShareHtml={onShareHtml}
+        onExportPdf={onExportPdf}
+        onShareEmail={onShareEmail}
+        onExpand={() => setExpanded(true)}
+        expanded={expanded}
+        shareLoading={shareLoading}
+        exportLoading={exportLoading}
+      />
+
+      {limitExceeded ? (
+        <LimitExceededState message={pulseError!.message} usage={pulseUsage} />
+      ) : pulseError ? (
+        <ErrorState message={pulseError.message} onRetry={onPulse} />
+      ) : pulseLoading ? (
+        <LoadingState />
+      ) : !hasReport ? (
+        <EmptyState onPulse={onPulse} usage={pulseUsage} />
+      ) : (
+        <ReportBody
+          report={report!}
+          companyName={companyName}
+          tradeKpis={tradeKpis}
+          navigate={navigate}
+        />
+      )}
+    </div>
+  );
 
   return (
-    <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <BriefHeader
-          companyName={companyName}
+    <>
+      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
+        {briefBody}
+        <PulseSidebar
           pulseBrief={pulseBrief}
-          pulseLoading={pulseLoading}
-          hasReport={hasReport}
-          onPulse={onPulse}
-          onRefresh={onRefresh}
-          onShareHtml={onShareHtml}
-          onExportPdf={onExportPdf}
-          shareLoading={shareLoading}
-          exportLoading={exportLoading}
+          pulseUsage={pulseUsage}
+          report={report}
         />
-
-        {limitExceeded ? (
-          <LimitExceededState message={pulseError!.message} usage={pulseUsage} />
-        ) : pulseError ? (
-          <ErrorState message={pulseError.message} onRetry={onPulse} />
-        ) : pulseLoading ? (
-          <LoadingState />
-        ) : !hasReport ? (
-          <EmptyState onPulse={onPulse} usage={pulseUsage} />
-        ) : (
-          <ReportBody
-            report={report!}
-            companyName={companyName}
-            navigate={navigate}
-          />
-        )}
       </div>
-
-      <PulseSidebar
-        pulseBrief={pulseBrief}
-        pulseUsage={pulseUsage}
-        report={report}
-      />
-    </div>
+      {expanded && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-sm"
+          onClick={() => setExpanded(false)}
+        >
+          <div
+            className="relative my-6 w-full max-w-5xl px-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="absolute right-6 top-2 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-600 shadow-md hover:bg-slate-50"
+              aria-label="Close expanded brief"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            {briefBody}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
 function BriefHeader({
   companyName,
+  companyMeta,
   pulseBrief,
   pulseLoading,
   hasReport,
@@ -204,10 +269,14 @@ function BriefHeader({
   onRefresh,
   onShareHtml,
   onExportPdf,
+  onShareEmail,
+  onExpand,
+  expanded,
   shareLoading,
   exportLoading,
 }: {
   companyName: string;
+  companyMeta?: CDPResearchProps["companyMeta"];
   pulseBrief: PulseBrief;
   pulseLoading: boolean;
   hasReport: boolean;
@@ -215,9 +284,18 @@ function BriefHeader({
   onRefresh: () => void;
   onShareHtml: () => void;
   onExportPdf: () => void;
+  onShareEmail: () => void;
+  onExpand: () => void;
+  expanded?: boolean;
   shareLoading?: boolean;
   exportLoading?: boolean;
 }) {
+  const subtitleBits: string[] = [];
+  if (companyMeta?.ticker) subtitleBits.push(companyMeta.ticker);
+  if (companyMeta?.hq) subtitleBits.push(companyMeta.hq);
+  if (companyMeta?.teuYr != null) subtitleBits.push(`~${Number(companyMeta.teuYr).toLocaleString()} TEU/yr`);
+  if (companyMeta?.vertical) subtitleBits.push(companyMeta.vertical);
+  const subtitle = subtitleBits.join(" · ");
   return (
     <div
       className="relative overflow-hidden p-5"
@@ -262,29 +340,25 @@ function BriefHeader({
       </div>
       <h2
         className="font-display relative m-0 text-[22px] font-bold leading-tight tracking-tight"
-        style={{ color: "#F8FAFC" }}
+        style={{ color: "#F8FAFC", letterSpacing: "-0.02em" }}
       >
         {companyName}
       </h2>
+      {subtitle && (
+        <div
+          className="font-body relative mt-1 text-[13px]"
+          style={{ color: "#CBD5E1" }}
+        >
+          {subtitle}
+        </div>
+      )}
 
       <div className="relative mt-3 flex flex-wrap gap-2">
         <BriefActionButton
           icon={pulseLoading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : hasReport ? <RefreshCw className="h-2.5 w-2.5" /> : <Sparkles className="h-2.5 w-2.5" />}
-          label={pulseLoading ? "Generating…" : hasReport ? "Refresh Pulse AI" : "Generate Pulse AI"}
+          label={pulseLoading ? "Generating…" : hasReport ? "Refresh" : "Generate Pulse AI"}
           onClick={hasReport ? onRefresh : onPulse}
           disabled={pulseLoading}
-        />
-        <BriefActionButton
-          icon={shareLoading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Share2 className="h-2.5 w-2.5" />}
-          label="Share"
-          onClick={onShareHtml}
-          disabled={shareLoading || !hasReport}
-        />
-        <BriefActionButton
-          icon={exportLoading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Download className="h-2.5 w-2.5" />}
-          label="Export PDF"
-          onClick={onExportPdf}
-          disabled={exportLoading || !hasReport}
         />
         <BriefActionButton
           icon={<Copy className="h-2.5 w-2.5" />}
@@ -292,6 +366,32 @@ function BriefHeader({
           onClick={() => copyReportToClipboard(pulseBrief?.report ?? null)}
           disabled={!hasReport}
         />
+        <BriefActionButton
+          icon={shareLoading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Share2 className="h-2.5 w-2.5" />}
+          label="Share link"
+          onClick={onShareHtml}
+          disabled={shareLoading || !hasReport}
+        />
+        <BriefActionButton
+          icon={<Mail className="h-2.5 w-2.5" />}
+          label="Email"
+          onClick={onShareEmail}
+          disabled={!hasReport}
+        />
+        <BriefActionButton
+          icon={exportLoading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Download className="h-2.5 w-2.5" />}
+          label="Export PDF"
+          onClick={onExportPdf}
+          disabled={exportLoading || !hasReport}
+        />
+        {!expanded && (
+          <BriefActionButton
+            icon={<Maximize2 className="h-2.5 w-2.5" />}
+            label="Expand"
+            onClick={onExpand}
+            disabled={!hasReport}
+          />
+        )}
       </div>
     </div>
   );
@@ -415,99 +515,131 @@ function LimitExceededState({
 function ReportBody({
   report,
   companyName,
+  tradeKpis,
   navigate,
 }: {
   report: PulseReport;
   companyName: string;
+  tradeKpis?: TradeKpis;
   navigate?: (path: string) => void;
 }) {
+  const exec = mergeText(report.company_summary, report.why_now);
+  const angle = sectionText(report.sales_angle);
+  const opportunityBlocks = buildOpportunityBlocks(report);
+  const riskBullets = sectionAllBullets(report.risk_flags);
+  const hookCopy =
+    Array.isArray(report.email_openers) && report.email_openers.length
+      ? report.email_openers[0]
+      : sectionText(report.next_best_actions);
+
   return (
     <div className="flex flex-col">
-      <div className="grid grid-cols-1 gap-3 border-b border-slate-100 px-5 py-4 lg:grid-cols-3">
-        <SummaryTile
-          icon={<Building2 className="h-3 w-3" />}
-          eyebrow="Company Summary"
-          section={report.company_summary}
-        />
-        <SummaryTile
-          icon={<TrendingUp className="h-3 w-3" />}
-          eyebrow="Why Now"
-          accent
-          section={report.why_now}
-        />
-        <SummaryTile
-          icon={<Target className="h-3 w-3" />}
-          eyebrow="Sales Angle"
-          accent
-          section={report.sales_angle}
-        />
-      </div>
+      {/* 01 Executive */}
+      <BriefSection idx="01" title="Executive Account Summary" icon={<FileText className="h-3.5 w-3.5" />}>
+        {exec ? (
+          <p
+            className="font-body m-0 text-[13px] leading-[1.65]"
+            style={{ color: "#374151" }}
+            dangerouslySetInnerHTML={{ __html: emphasizeNumbers(exec) }}
+          />
+        ) : (
+          <EmptyLine text="Summary not yet generated." />
+        )}
+        {angle && (
+          <p
+            className="font-body mt-2 text-[12px] leading-[1.55] italic"
+            style={{ color: "#475569" }}
+          >
+            {angle}
+          </p>
+        )}
+      </BriefSection>
 
-      <div className="grid grid-cols-1 gap-3 border-b border-slate-100 px-5 py-4 lg:grid-cols-2">
-        <SourcedSection
-          tone="lit"
-          icon={<BarChart3 className="h-3.5 w-3.5" />}
-          title="LIT Verified Trade Data"
-          subtitle="Shipments, lanes, carriers, containers, suppliers"
-          section={report.lit_verified_trade_data}
-        />
-        <SourcedSection
-          tone="web"
-          icon={<Newspaper className="h-3.5 w-3.5" />}
-          title="External Web Signals"
-          subtitle="Public news, announcements, leadership, regulatory"
-          section={report.external_web_signals}
-        />
-      </div>
+      {/* 02 Trade Activity Snapshot */}
+      <BriefSection idx="02" title="Trade Activity Snapshot" icon={<BarChart3 className="h-3.5 w-3.5" />}>
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <SnapshotTile
+            label="12m Volume (TEU)"
+            value={tradeKpis?.teu12m != null ? Math.round(tradeKpis.teu12m).toLocaleString() : "—"}
+            sub={tradeKpis?.yoyPct != null ? `${tradeKpis.yoyPct >= 0 ? "↑ +" : "↓ "}${Math.abs(tradeKpis.yoyPct)}% YoY` : null}
+            up={tradeKpis?.yoyPct != null ? tradeKpis.yoyPct >= 0 : null}
+          />
+          <SnapshotTile
+            label="Shipments (12m)"
+            value={tradeKpis?.shipments12m != null ? Number(tradeKpis.shipments12m).toLocaleString() : "—"}
+            sub="BOL records"
+          />
+          <SnapshotTile
+            label="Active Lanes"
+            value={tradeKpis?.activeLanes != null ? String(tradeKpis.activeLanes) : "—"}
+            sub={null}
+          />
+          <SnapshotTile
+            label="Top Lane"
+            value={tradeKpis?.topLaneShare != null ? `${Math.round(tradeKpis.topLaneShare * 100)}%` : "—"}
+            sub={tradeKpis?.topLaneLabel || null}
+            up={true}
+          />
+        </div>
+      </BriefSection>
 
-      <div className="grid grid-cols-1 gap-3 border-b border-slate-100 px-5 py-4 lg:grid-cols-2">
-        <Section
-          icon={<TrendingUp className="h-3.5 w-3.5" />}
-          title="Buying Signals"
-          section={report.buying_signals}
-          tone="positive"
-        />
-        <Section
-          icon={<AlertTriangle className="h-3.5 w-3.5" />}
-          title="Risk Flags"
-          section={report.risk_flags}
-          tone="warning"
-        />
-      </div>
+      {/* 03 Top Lanes */}
+      <BriefSection idx="03" title="Top Lanes & Lane Movement" icon={<TrendingUp className="h-3.5 w-3.5" />}>
+        {hasContent(report.lane_insights) ? (
+          <BulletProse section={report.lane_insights} />
+        ) : (
+          <EmptyLine text="Lane intelligence will appear once trade lane data is on file." />
+        )}
+      </BriefSection>
 
-      <div className="grid grid-cols-1 gap-3 border-b border-slate-100 px-5 py-4 lg:grid-cols-2">
-        <Section
-          icon={<Container className="h-3.5 w-3.5" />}
-          title="Carrier Opportunities"
-          section={report.carrier_opportunities}
-        />
-        <Section
-          icon={<Truck className="h-3.5 w-3.5" />}
-          title="Forwarder Displacement"
-          section={report.forwarder_displacement_opportunities}
-        />
-        <Section
-          icon={<Box className="h-3.5 w-3.5" />}
-          title="Container & Mode Insights"
-          section={report.container_and_mode_insights}
-        />
-        <Section
-          icon={<Globe2 className="h-3.5 w-3.5" />}
-          title="Lane Insights"
-          section={report.lane_insights}
-        />
-        <Section
-          icon={<MapPin className="h-3.5 w-3.5" />}
-          title="Supplier Insights"
-          section={report.supplier_insights}
-        />
-        <Section
-          icon={<Users className="h-3.5 w-3.5" />}
-          title="Recommended Personas"
-          section={report.recommended_personas}
-        />
-      </div>
+      {/* 04 Opportunity Signals (accent) */}
+      <BriefSection
+        idx="04"
+        title="Opportunity Signals"
+        icon={<Target className="h-3.5 w-3.5" />}
+        accent
+      >
+        {opportunityBlocks.length > 0 ? (
+          <div className="flex flex-col gap-2.5">
+            {opportunityBlocks.map((b) => (
+              <OpportunityCard key={b.label} block={b} />
+            ))}
+          </div>
+        ) : (
+          <EmptyLine text="No opportunity signals surfaced yet." />
+        )}
+      </BriefSection>
 
+      {/* 05 Risk & Problem Lanes */}
+      <BriefSection idx="05" title="Risk & Problem Lanes" icon={<AlertTriangle className="h-3.5 w-3.5" />}>
+        {riskBullets.length > 0 ? (
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {riskBullets.map((bullet, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className="mt-[7px] inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "#EF4444" }} />
+                <span
+                  className="font-body text-[12px] leading-[1.55]"
+                  style={{ color: "#374151" }}
+                  dangerouslySetInnerHTML={{ __html: bulletToHtml(bullet) }}
+                />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyLine text="No risk flags on file." />
+        )}
+      </BriefSection>
+
+      {/* 06 Suggested Outreach Hook (accent + gradient) */}
+      <BriefSection idx="06" title="Suggested Outreach Hook" icon={<Send className="h-3.5 w-3.5" />} accent>
+        {hookCopy ? (
+          <HookCard copy={hookCopy} />
+        ) : (
+          <EmptyLine text="Hook will appear once outreach openers are generated." />
+        )}
+      </BriefSection>
+
+      {/* Continuation: secondary sections (kept after numbered six) */}
       {Array.isArray(report.recommended_contacts) &&
         report.recommended_contacts.length > 0 && (
           <div className="border-b border-slate-100 px-5 py-4">
@@ -523,31 +655,22 @@ function ReportBody({
           </div>
         )}
 
-      <div className="grid grid-cols-1 gap-3 border-b border-slate-100 px-5 py-4 lg:grid-cols-3">
-        <Section
-          icon={<Megaphone className="h-3.5 w-3.5" />}
-          title="Campaign Recommendations"
-          section={report.campaign_recommendations}
-        />
-        <OpenersCard
-          icon={<Mail className="h-3.5 w-3.5" />}
-          title="Email Openers"
-          openers={report.email_openers}
-        />
-        <OpenersCard
-          icon={<Linkedin className="h-3.5 w-3.5" />}
-          title="LinkedIn Openers"
-          openers={report.linkedin_openers}
-        />
-      </div>
-
-      {hasContent(report.next_best_actions) && (
-        <div className="border-b border-slate-100 px-5 py-4">
+      {(hasContent(report.email_openers) || hasContent(report.linkedin_openers) || hasContent(report.campaign_recommendations)) && (
+        <div className="grid grid-cols-1 gap-3 border-b border-slate-100 px-5 py-4 lg:grid-cols-3">
           <Section
-            icon={<Send className="h-3.5 w-3.5" />}
-            title="Next Best Actions"
-            accent
-            section={report.next_best_actions}
+            icon={<Megaphone className="h-3.5 w-3.5" />}
+            title="Campaign Recommendations"
+            section={report.campaign_recommendations}
+          />
+          <OpenersCard
+            icon={<Mail className="h-3.5 w-3.5" />}
+            title="Email Openers"
+            openers={report.email_openers}
+          />
+          <OpenersCard
+            icon={<Linkedin className="h-3.5 w-3.5" />}
+            title="LinkedIn Openers"
+            openers={report.linkedin_openers}
           />
         </div>
       )}
@@ -580,6 +703,262 @@ function ReportBody({
       <FooterRow report={report} />
     </div>
   );
+}
+
+function BriefSection({
+  idx,
+  title,
+  icon,
+  accent,
+  children,
+}: {
+  idx: string;
+  title: string;
+  icon?: React.ReactNode;
+  accent?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="relative border-b border-[#F1F5F9] px-5 py-[18px] last:border-b-0">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span
+          className="font-mono inline-flex h-5 w-5 items-center justify-center rounded-[5px] text-[10px] font-bold"
+          style={{
+            background: accent ? "#0F172A" : "#F1F5F9",
+            color: accent ? "#00F0FF" : "#64748B",
+          }}
+        >
+          {idx}
+        </span>
+        {icon && (
+          <span style={{ color: accent ? "#1d4ed8" : "#64748B" }}>{icon}</span>
+        )}
+        <h3
+          className="font-display m-0 text-[14px] font-bold"
+          style={{ color: "#0F172A", letterSpacing: "-0.01em" }}
+        >
+          {title}
+        </h3>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function SnapshotTile({
+  label,
+  value,
+  sub,
+  up,
+}: {
+  label: string;
+  value: string;
+  sub?: string | null;
+  up?: boolean | null;
+}) {
+  return (
+    <div
+      className="rounded-lg px-3 py-2.5"
+      style={{ background: "#FAFBFC", border: "1px solid #F1F5F9" }}
+    >
+      <div
+        className="font-display text-[9px] font-bold uppercase"
+        style={{ color: "#94A3B8", letterSpacing: "0.08em" }}
+      >
+        {label}
+      </div>
+      <div
+        className="font-mono mt-0.5 text-[16px] font-bold"
+        style={{ color: "#0F172A" }}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div
+          className="font-body text-[10px]"
+          style={{ color: up === true ? "#15803D" : up === false ? "#B91C1C" : "#64748B" }}
+        >
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OpportunityCard({ block }: { block: OpportunityBlock }) {
+  const palette = OPPORTUNITY_PALETTE[block.tone];
+  return (
+    <div
+      className="rounded-lg px-3 py-2.5"
+      style={{ background: palette.bg, border: `1px solid ${palette.bd}` }}
+    >
+      <div className="mb-1 flex items-center gap-1.5">
+        <span
+          className="font-display text-[10px] font-bold uppercase"
+          style={{ color: palette.fg, letterSpacing: "0.06em" }}
+        >
+          {block.label}
+        </span>
+      </div>
+      <p
+        className="font-body m-0 text-[12px] leading-[1.55]"
+        style={{ color: "#374151" }}
+        dangerouslySetInnerHTML={{ __html: emphasizeNumbers(block.body) }}
+      />
+    </div>
+  );
+}
+
+function HookCard({ copy }: { copy: string }) {
+  return (
+    <div
+      className="rounded-lg px-3.5 py-3"
+      style={{
+        background: "linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 100%)",
+        border: "1px solid #BFDBFE",
+      }}
+    >
+      <div
+        className="font-display mb-1.5 text-[10px] font-bold uppercase"
+        style={{ color: "#1d4ed8", letterSpacing: "0.08em" }}
+      >
+        Opening angle
+      </div>
+      <p
+        className="font-body m-0 text-[13px] italic leading-[1.6]"
+        style={{ color: "#1E293B" }}
+      >
+        {copy.startsWith('"') ? copy : `"${copy.replace(/^["']|["']$/g, "")}"`}
+      </p>
+    </div>
+  );
+}
+
+function BulletProse({ section }: { section?: SectionShape }) {
+  const text = sectionText(section);
+  const bullets = sectionAllBullets(section);
+  if (!text && bullets.length === 0) return <EmptyLine text="No data on file." />;
+  return (
+    <>
+      {text && (
+        <p
+          className="font-body m-0 mb-2 text-[12px] leading-[1.55]"
+          style={{ color: "#374151" }}
+          dangerouslySetInnerHTML={{ __html: emphasizeNumbers(text) }}
+        />
+      )}
+      {bullets.length > 0 && (
+        <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+          {bullets.map((b, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <span className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full" style={{ background: "#94A3B8" }} />
+              <span
+                className="font-body text-[12px] leading-[1.55]"
+                style={{ color: "#374151" }}
+                dangerouslySetInnerHTML={{ __html: bulletToHtml(b) }}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+function EmptyLine({ text }: { text: string }) {
+  return (
+    <p
+      className="font-body m-0 text-[11px]"
+      style={{ color: "#94A3B8" }}
+    >
+      {text}
+    </p>
+  );
+}
+
+type OpportunityBlock = { label: string; tone: "green" | "blue" | "purple"; body: string };
+const OPPORTUNITY_PALETTE: Record<OpportunityBlock["tone"], { fg: string; bg: string; bd: string }> = {
+  green:  { fg: "#15803D", bg: "#F0FDF4", bd: "#BBF7D0" },
+  blue:   { fg: "#1d4ed8", bg: "#EFF6FF", bd: "#BFDBFE" },
+  purple: { fg: "#6D28D9", bg: "#F5F3FF", bd: "#DDD6FE" },
+};
+
+function buildOpportunityBlocks(report: PulseReport): OpportunityBlock[] {
+  const out: OpportunityBlock[] = [];
+  const buying = sectionText(report.buying_signals) || sectionAllBullets(report.buying_signals).map(bulletToText).join(" ");
+  const carrier = sectionText(report.carrier_opportunities) || sectionAllBullets(report.carrier_opportunities).map(bulletToText).join(" ");
+  const forwarder = sectionText(report.forwarder_displacement_opportunities) || sectionAllBullets(report.forwarder_displacement_opportunities).map(bulletToText).join(" ");
+  const lane = sectionText(report.lane_insights) || sectionAllBullets(report.lane_insights).map(bulletToText).join(" ");
+  const supplier = sectionText(report.supplier_insights) || sectionAllBullets(report.supplier_insights).map(bulletToText).join(" ");
+  if (buying) out.push({ label: "Buying signals", tone: "green", body: buying });
+  if (forwarder) out.push({ label: "Forwarder displacement", tone: "green", body: forwarder });
+  if (carrier) out.push({ label: "Carrier opportunity", tone: "blue", body: carrier });
+  if (supplier) out.push({ label: "Supplier signal", tone: "purple", body: supplier });
+  if (lane && out.length < 4) out.push({ label: "Lane consolidation", tone: "purple", body: lane });
+  return out.slice(0, 4);
+}
+
+function sectionAllBullets(section: SectionShape | undefined): Bullet[] {
+  if (!section) return [];
+  if (typeof section === "string") return [];
+  if (Array.isArray(section)) return section as Bullet[];
+  if (Array.isArray(section.bullets)) return section.bullets as Bullet[];
+  if (Array.isArray(section.items)) return section.items as Bullet[];
+  return [];
+}
+
+function bulletToText(bullet: Bullet): string {
+  if (typeof bullet === "string") return bullet;
+  return bullet?.body || bullet?.label || "";
+}
+
+function bulletToHtml(bullet: Bullet): string {
+  const t = bulletToText(bullet);
+  return emphasizeNumbers(t);
+}
+
+function emphasizeNumbers(text: string): string {
+  if (!text) return "";
+  // Bold key numeric tokens (percentages, +/-, numbers with commas, $ amounts).
+  return text.replace(
+    /(\$[\d,]+(?:\.\d+)?[KMB]?|\b[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b[+-]?\d+(?:\.\d+)?%|\b\d+\s*(?:TEU|BOL|shipments?|lanes?)\b)/gi,
+    '<strong style="color:#0F172A">$1</strong>',
+  );
+}
+
+function mergeText(a: SectionShape | undefined, b: SectionShape | undefined): string {
+  const at = sectionText(a);
+  const bt = sectionText(b);
+  if (at && bt) return `${at} ${bt}`;
+  return at || bt || "";
+}
+
+function reportToMarkdown(name: string, brief: PulseBrief): string {
+  const r = brief?.report;
+  if (!r) return `Pulse AI brief for ${name}\n\n(brief not yet generated)`;
+  const lines: string[] = [`Pulse AI Brief — ${name}`, ""];
+  const push = (label: string, body: string) => {
+    if (!body) return;
+    lines.push(`## ${label}`);
+    lines.push(body);
+    lines.push("");
+  };
+  push("Executive summary", mergeText(r.company_summary, r.why_now));
+  push("Sales angle", sectionText(r.sales_angle));
+  push("LIT verified trade data", sectionText(r.lit_verified_trade_data));
+  push("External web signals", sectionText(r.external_web_signals));
+  push("Buying signals", sectionText(r.buying_signals));
+  push("Risk flags", sectionAllBullets(r.risk_flags).map((b) => `• ${bulletToText(b)}`).join("\n"));
+  push("Carrier opportunities", sectionText(r.carrier_opportunities));
+  push("Forwarder displacement", sectionText(r.forwarder_displacement_opportunities));
+  push("Lane insights", sectionText(r.lane_insights));
+  push("Supplier insights", sectionText(r.supplier_insights));
+  if (Array.isArray(r.email_openers) && r.email_openers.length) {
+    lines.push("## Email opener");
+    lines.push(r.email_openers[0]);
+    lines.push("");
+  }
+  return lines.join("\n");
 }
 
 function SummaryTile({
@@ -1049,19 +1428,23 @@ function PulseSidebar({
   pulseUsage: PulseUsage;
   report: PulseReport | null;
 }) {
-  const sectionsPresent = report
-    ? SECTION_OUTLINE.filter((s) => Boolean(report[s.key])).length
-    : 0;
+  const confidence = clampConfidence(
+    pulseBrief?.confidence ?? report?.confidence_score ?? null,
+  );
+  const supporting = computeSupportingCounts(report, pulseBrief);
 
   return (
     <aside className="flex flex-col gap-2.5 lg:sticky lg:top-2">
-      <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-        <div className="font-display mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+      <div className="rounded-xl border border-slate-200 bg-white p-3 px-3.5">
+        <div
+          className="font-display mb-2 text-[10px] font-bold uppercase"
+          style={{ color: "#94A3B8", letterSpacing: "0.08em" }}
+        >
           Brief Outline
         </div>
         <ol className="m-0 flex list-none flex-col gap-1.5 p-0">
-          {SECTION_OUTLINE.map((s, i) => {
-            const present = Boolean(report?.[s.key]);
+          {BRIEF_OUTLINE_6.map((s, i) => {
+            const present = isOutlinePresent(s.key, report);
             return (
               <li
                 key={s.key}
@@ -1071,12 +1454,11 @@ function PulseSidebar({
                 ].join(" ")}
               >
                 <span
-                  className={[
-                    "font-mono inline-flex h-[18px] w-[18px] items-center justify-center rounded text-[9px] font-bold",
-                    present
-                      ? "bg-slate-100 text-slate-500"
-                      : "bg-slate-50 text-slate-300",
-                  ].join(" ")}
+                  className="font-mono inline-flex h-[18px] w-[18px] items-center justify-center rounded text-[9px] font-bold"
+                  style={{
+                    background: present ? "#F1F5F9" : "#F8FAFC",
+                    color: present ? "#94A3B8" : "#CBD5E1",
+                  }}
                 >
                   {String(i + 1).padStart(2, "0")}
                 </span>
@@ -1087,11 +1469,63 @@ function PulseSidebar({
         </ol>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-        <div className="font-display mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
-          Pulse AI usage
+      <div className="rounded-xl border border-slate-200 bg-white p-3 px-3.5">
+        <div
+          className="font-display mb-2 text-[10px] font-bold uppercase"
+          style={{ color: "#94A3B8", letterSpacing: "0.08em" }}
+        >
+          Supporting Data
         </div>
-        {pulseUsage?.plan || pulseUsage?.limit != null ? (
+        <div className="flex flex-col">
+          <SupportingRow icon={<FileText className="h-2.5 w-2.5" />} label="BOL records" value={supporting.bol} />
+          <SupportingRow icon={<Newspaper className="h-2.5 w-2.5" />} label="Web sources" value={supporting.webSources} />
+          <SupportingRow icon={<ShieldCheck className="h-2.5 w-2.5" />} label="Verified contacts" value={supporting.contacts} />
+          <SupportingRow icon={<Clock className="h-2.5 w-2.5" />} label="Last update" value={supporting.lastUpdate} last />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-3 px-3.5">
+        <div
+          className="font-display mb-2 text-[10px] font-bold uppercase"
+          style={{ color: "#94A3B8", letterSpacing: "0.08em" }}
+        >
+          Confidence
+        </div>
+        <div className="mb-2 flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded" style={{ background: "#F1F5F9" }}>
+            <div
+              className="h-full rounded"
+              style={{
+                width: `${confidence != null ? confidence : 0}%`,
+                background: "linear-gradient(90deg, #10B981, #22C55E)",
+              }}
+            />
+          </div>
+          <span
+            className="font-mono text-[12px] font-bold"
+            style={{ color: confidence != null ? "#15803D" : "#94A3B8" }}
+          >
+            {confidence != null ? `${confidence}%` : "—"}
+          </span>
+        </div>
+        <p
+          className="font-body m-0 text-[10px] leading-[1.5]"
+          style={{ color: "#64748B" }}
+        >
+          {confidence != null
+            ? "Based on verified shipment data, public web signals, and contact coverage."
+            : "Confidence appears once a brief is generated."}
+        </p>
+      </div>
+
+      {(pulseUsage?.plan || pulseUsage?.limit != null) && (
+        <div className="rounded-xl border border-slate-200 bg-white p-3 px-3.5">
+          <div
+            className="font-display mb-2 text-[10px] font-bold uppercase"
+            style={{ color: "#94A3B8", letterSpacing: "0.08em" }}
+          >
+            Pulse AI usage
+          </div>
           <div className="flex flex-col gap-1.5 text-[11px] text-slate-600">
             <span>
               Plan:{" "}
@@ -1104,7 +1538,7 @@ function PulseSidebar({
               <strong className="font-mono text-slate-900">
                 {pulseUsage?.limit ?? "—"}
               </strong>{" "}
-              reports / billing period
+              reports / period
             </span>
             {pulseBrief?.cached != null && (
               <span>
@@ -1114,59 +1548,107 @@ function PulseSidebar({
                 </LitPill>
               </span>
             )}
-            {pulseBrief?.generatedAt && (
-              <span className="font-mono text-[10px] text-slate-400">
-                Generated {formatAbsolute(pulseBrief.generatedAt)}
-              </span>
-            )}
           </div>
-        ) : (
-          <p className="font-body text-[11px] text-slate-400">
-            Plan info appears after the first generation.
-          </p>
-        )}
-      </div>
-
-      <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-        <div className="font-display mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
-          Generation
         </div>
-        <div className="flex flex-col gap-1.5 text-[11px] text-slate-600">
-          <span>
-            Sections rendered:{" "}
-            <strong className="font-mono text-slate-900">
-              {sectionsPresent}
-            </strong>
-            <span className="text-slate-400"> / {SECTION_OUTLINE.length}</span>
-          </span>
-        </div>
-      </div>
+      )}
     </aside>
   );
 }
 
-const SECTION_OUTLINE: Array<{ key: keyof PulseReport; label: string }> = [
-  { key: "company_summary", label: "Company Summary" },
-  { key: "why_now", label: "Why Now" },
-  { key: "sales_angle", label: "Sales Angle" },
-  { key: "lit_verified_trade_data", label: "LIT Verified Trade Data" },
-  { key: "external_web_signals", label: "External Web Signals" },
-  { key: "buying_signals", label: "Buying Signals" },
-  { key: "risk_flags", label: "Risk Flags" },
-  { key: "carrier_opportunities", label: "Carrier Opportunities" },
-  { key: "forwarder_displacement_opportunities", label: "Forwarder Displacement" },
-  { key: "container_and_mode_insights", label: "Container & Mode Insights" },
-  { key: "lane_insights", label: "Lane Insights" },
-  { key: "supplier_insights", label: "Supplier Insights" },
-  { key: "recommended_personas", label: "Recommended Personas" },
-  { key: "recommended_contacts", label: "Recommended Contacts" },
-  { key: "campaign_recommendations", label: "Campaign Recommendations" },
-  { key: "email_openers", label: "Email Openers" },
-  { key: "linkedin_openers", label: "LinkedIn Openers" },
-  { key: "next_best_actions", label: "Next Best Actions" },
-  { key: "similar_companies", label: "Similar Companies" },
-  { key: "web_sources", label: "Web Sources" },
+function SupportingRow({
+  icon,
+  label,
+  value,
+  last,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  last?: boolean;
+}) {
+  return (
+    <div
+      className="flex items-center justify-between py-1"
+      style={{ borderBottom: last ? "none" : "1px solid #F1F5F9" }}
+    >
+      <span
+        className="font-body inline-flex items-center gap-1.5 text-[11px]"
+        style={{ color: "#475569" }}
+      >
+        <span style={{ color: "#94A3B8" }}>{icon}</span>
+        {label}
+      </span>
+      <span
+        className="font-mono text-[11px] font-semibold"
+        style={{ color: "#0F172A" }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+type OutlineKey =
+  | "executive"
+  | "snapshot"
+  | "lanes"
+  | "opportunity"
+  | "risk"
+  | "hook";
+
+const BRIEF_OUTLINE_6: Array<{ key: OutlineKey; label: string }> = [
+  { key: "executive", label: "Executive Summary" },
+  { key: "snapshot", label: "Trade Snapshot" },
+  { key: "lanes", label: "Lane Movement" },
+  { key: "opportunity", label: "Opportunity Signals" },
+  { key: "risk", label: "Risk Lanes" },
+  { key: "hook", label: "Outreach Hook" },
 ];
+
+function isOutlinePresent(key: OutlineKey, report: PulseReport | null): boolean {
+  if (!report) return false;
+  switch (key) {
+    case "executive":
+      return Boolean(sectionText(report.company_summary) || sectionText(report.why_now));
+    case "snapshot":
+      return true; // tiles render even if KPIs unknown
+    case "lanes":
+      return hasContent(report.lane_insights);
+    case "opportunity":
+      return (
+        hasContent(report.buying_signals) ||
+        hasContent(report.carrier_opportunities) ||
+        hasContent(report.forwarder_displacement_opportunities) ||
+        hasContent(report.supplier_insights)
+      );
+    case "risk":
+      return hasContent(report.risk_flags);
+    case "hook":
+      return Array.isArray(report.email_openers) && report.email_openers.length > 0;
+    default:
+      return false;
+  }
+}
+
+function clampConfidence(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  // Confidence may be 0-1 or 0-100. Normalize to 0-100.
+  const pct = n <= 1 ? n * 100 : n;
+  return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+function computeSupportingCounts(report: PulseReport | null, brief: PulseBrief) {
+  const webSources = Array.isArray(report?.web_sources) ? report!.web_sources!.length : 0;
+  const contacts = Array.isArray(report?.recommended_contacts) ? report!.recommended_contacts!.length : 0;
+  return {
+    bol: "—",
+    webSources: webSources > 0 ? String(webSources) : "—",
+    contacts: contacts > 0 ? String(contacts) : "—",
+    lastUpdate: brief?.generatedAt ? formatRelativeShort(brief.generatedAt) : "—",
+  };
+}
 
 function BriefActionButton({
   icon,
@@ -1231,11 +1713,26 @@ function normalizeStringList(value: unknown): string[] {
   return [];
 }
 
+const COPY_OUTLINE: Array<{ key: keyof PulseReport; label: string }> = [
+  { key: "company_summary", label: "Company Summary" },
+  { key: "why_now", label: "Why Now" },
+  { key: "sales_angle", label: "Sales Angle" },
+  { key: "lit_verified_trade_data", label: "LIT Verified Trade Data" },
+  { key: "external_web_signals", label: "External Web Signals" },
+  { key: "buying_signals", label: "Buying Signals" },
+  { key: "risk_flags", label: "Risk Flags" },
+  { key: "carrier_opportunities", label: "Carrier Opportunities" },
+  { key: "forwarder_displacement_opportunities", label: "Forwarder Displacement" },
+  { key: "lane_insights", label: "Lane Insights" },
+  { key: "supplier_insights", label: "Supplier Insights" },
+  { key: "next_best_actions", label: "Next Best Actions" },
+];
+
 async function copyReportToClipboard(report: PulseReport | null) {
   if (!report) return;
   try {
     const lines: string[] = [];
-    for (const { key, label } of SECTION_OUTLINE) {
+    for (const { key, label } of COPY_OUTLINE) {
       const val = report[key];
       if (!val) continue;
       lines.push(`## ${label}`);
