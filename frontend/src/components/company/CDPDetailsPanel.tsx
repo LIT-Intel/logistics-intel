@@ -98,6 +98,22 @@ type CDPDetailsPanelProps = {
   refreshing?: boolean;
   /** ISO timestamp of the most recent enrichment write (Phase B.15 cache row). */
   snapshotUpdatedAt?: string | null;
+  /** Saved contacts pushed up from CDPContacts. Used to render the
+   *  Verified Contacts summary block in the right rail. */
+  contacts?: Array<{
+    id?: string | number;
+    full_name?: string | null;
+    name?: string | null;
+    title?: string | null;
+    email?: string | null;
+    enriched_at?: string | null;
+    enrichment_status?: string | null;
+    verified_by_provider?: boolean | null;
+    email_verification_status?: string | null;
+  }> | null;
+  /** Switches the parent's active tab to Contacts when the user clicks
+   *  the "View contacts" button in the Verified Contacts block. */
+  onOpenContactsTab?: () => void;
 };
 
 export default function CDPDetailsPanel({
@@ -111,12 +127,15 @@ export default function CDPDetailsPanel({
   onRefresh,
   refreshing,
   snapshotUpdatedAt,
+  contacts,
+  onOpenContactsTab,
 }: CDPDetailsPanelProps) {
   const [open, setOpen] = useState({
     account: true,
     lists: true,
     firm: true,
     intel: true,
+    verified: true,
   });
   const toggle = (k: keyof typeof open) =>
     setOpen((s) => ({ ...s, [k]: !s[k] }));
@@ -400,6 +419,14 @@ export default function CDPDetailsPanel({
             </div>
           </div>
         </Section>
+
+        {/* Verified Contacts — saved-contact summary block */}
+        <VerifiedContactsBlock
+          contacts={contacts || []}
+          open={open.verified}
+          onToggle={() => toggle("verified")}
+          onOpenContactsTab={onOpenContactsTab}
+        />
 
         {/* Firmographics */}
         <Section
@@ -716,4 +743,144 @@ function readBolCarrier(bol: any): string | null {
 
 function stripScheme(url: string) {
   return url.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+}
+
+/* ── Verified Contacts block ──────────────────────────────────────── */
+
+function VerifiedContactsBlock({
+  contacts,
+  open,
+  onToggle,
+  onOpenContactsTab,
+}: {
+  contacts: NonNullable<CDPDetailsPanelProps["contacts"]>;
+  open: boolean;
+  onToggle: () => void;
+  onOpenContactsTab?: () => void;
+}) {
+  const total = contacts.length;
+  const verified = contacts.filter((c) => {
+    const status = String(c.email_verification_status || "").toLowerCase();
+    return (
+      c.verified_by_provider === true ||
+      status === "verified" ||
+      status === "valid" ||
+      status === "deliverable"
+    );
+  }).length;
+  const enriched = contacts.filter(
+    (c) => String(c.enrichment_status || "").toLowerCase() === "enriched",
+  ).length;
+  const lastEnrichedIso = contacts
+    .map((c) => c.enriched_at)
+    .filter((v): v is string => Boolean(v))
+    .sort()
+    .pop();
+  const lastEnriched = lastEnrichedIso
+    ? formatRelativeShort(lastEnrichedIso)
+    : null;
+
+  // Most-frequent title across saved contacts.
+  const titleCounts = new Map<string, number>();
+  for (const c of contacts) {
+    if (!c.title) continue;
+    const t = String(c.title).trim();
+    titleCounts.set(t, (titleCounts.get(t) || 0) + 1);
+  }
+  const topTitle =
+    Array.from(titleCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+    null;
+
+  return (
+    <Section
+      id="verified"
+      title="Verified Contacts"
+      open={open}
+      onToggle={onToggle}
+    >
+      {total === 0 ? (
+        <div className="font-body px-3 py-2 text-[11px] text-slate-500">
+          No saved contacts yet. Use{" "}
+          <button
+            type="button"
+            onClick={onOpenContactsTab}
+            className="font-display font-semibold text-blue-600 hover:text-blue-800"
+          >
+            Find contacts with LIT
+          </button>{" "}
+          to discover and enrich the buying committee.
+        </div>
+      ) : (
+        <>
+          <Row icon={<Users />} label="Saved">
+            <span className="font-mono text-[12px] font-semibold text-slate-900">
+              {total}
+            </span>
+          </Row>
+          <Row icon={<User />} label="Verified email">
+            <span
+              className={[
+                "font-mono text-[12px] font-semibold",
+                verified > 0 ? "text-emerald-700" : "text-slate-400",
+              ].join(" ")}
+            >
+              {verified}
+            </span>
+          </Row>
+          <Row icon={<Briefcase />} label="LIT Enriched">
+            <span
+              className={[
+                "font-mono text-[12px] font-semibold",
+                enriched > 0 ? "text-violet-700" : "text-slate-400",
+              ].join(" ")}
+            >
+              {enriched}
+            </span>
+          </Row>
+          {topTitle && (
+            <Row icon={<Target />} label="Primary persona">
+              <span className="font-display truncate text-[12px] font-semibold text-slate-900">
+                {topTitle}
+              </span>
+            </Row>
+          )}
+          <Row icon={<Clock />} label="Last enriched">
+            <span className="font-mono text-[11px] text-slate-600">
+              {lastEnriched || "—"}
+            </span>
+          </Row>
+        </>
+      )}
+      <div className="mt-2 flex flex-col gap-1.5 px-1">
+        <button
+          type="button"
+          onClick={onOpenContactsTab}
+          className="font-display inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          View contacts
+        </button>
+        <button
+          type="button"
+          onClick={onOpenContactsTab}
+          className="font-display inline-flex items-center justify-center gap-1.5 rounded-md bg-gradient-to-b from-violet-500 to-violet-600 px-2 py-1 text-[11px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700"
+        >
+          Find contacts with LIT
+        </button>
+      </div>
+    </Section>
+  );
+}
+
+function formatRelativeShort(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
+  const diffMs = Date.now() - d.getTime();
+  const minutes = Math.round(diffMs / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 14) return `${days}d ago`;
+  return d.toLocaleDateString();
 }

@@ -289,6 +289,11 @@ export default function Company() {
   const [pulseError, setPulseError] = useState(null);
   const [pulseUsage, setPulseUsage] = useState(null);
 
+  // Saved contacts list — pushed up from CDPContacts via
+  // onContactsChanged so the right-rail Verified Contacts block can
+  // summarize without owning the data.
+  const [savedContacts, setSavedContacts] = useState([]);
+
   const [shareLoading, setShareLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [shareToast, setShareToast] = useState(null);
@@ -1000,6 +1005,7 @@ export default function Company() {
               companyName={companyName}
               companyDomain={companyDomain}
               companyLocation={companyAddress}
+              onContactsChanged={setSavedContacts}
             />
           )}
           {tab === "research" && (
@@ -1090,6 +1096,8 @@ export default function Company() {
             onRefresh={handleManualRefreshClick}
             refreshing={manualRefreshing}
             snapshotUpdatedAt={snapshotUpdatedAt}
+            contacts={savedContacts}
+            onOpenContactsTab={() => setTab("contacts")}
           />
         )}
       </div>

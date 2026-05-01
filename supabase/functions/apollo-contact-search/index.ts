@@ -41,6 +41,7 @@ interface ApolloSearchRequest {
   // When true, scope by where the contact LIVES (person_locations[])
   // instead of the employer's HQ. Default false.
   use_person_locations?: boolean;
+  include_similar_titles?: boolean;
   titles?: string[];
   seniorities?: string[];
   departments?: string[];
@@ -509,7 +510,8 @@ Deno.serve(async (req: Request) => {
       const b: Record<string, unknown> = {
         page: Math.max(1, Number(body.page) || 1),
         per_page: perPage,
-        include_similar_titles: false,
+        // Default false (strict). User can opt into broader matching.
+        include_similar_titles: body.include_similar_titles === true,
         ...scopeFields,
       };
       if (titles.length) b.person_titles = titles;

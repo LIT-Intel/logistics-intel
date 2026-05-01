@@ -24,9 +24,16 @@ import {
   enrichContacts as enrichContactsApi,
   searchApolloContacts,
   enrichApolloContacts,
+  addCompanyToCampaign,
+  getCrmCampaigns,
   type ApolloContactPreview,
   type ApolloContactRecord,
 } from "@/lib/api";
+import {
+  computeContactScore,
+  tierTone,
+  type ContactScoreResult,
+} from "@/lib/contactScore";
 
 type Contact = {
   id?: string | number;
@@ -211,6 +218,20 @@ export default function CDPContacts({
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
+  // Detail drawer state — opened by clicking a contact row name.
+  const [detailContact, setDetailContact] = useState<Contact | null>(null);
+
+  // Outreach modal state — opened by the row's Send button.
+  const [outreachContact, setOutreachContact] = useState<Contact | null>(null);
+
+  // Per-row "More" dropdown state — keyed by row id.
+  const [openMenuId, setOpenMenuId] = useState<string | number | null>(null);
+
+  // Include-similar-titles search filter (default OFF). When ON the
+  // edge function relaxes its title strictness; we forward this hint
+  // to Apollo people-search.
+  const [includeSimilarTitles, setIncludeSimilarTitles] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     if (!companyId) {
@@ -337,6 +358,7 @@ export default function CDPContacts({
         state: searchState.trim() || null,
         country: searchCountry.trim() || null,
         usePersonLocations,
+        includeSimilarTitles,
         titles: apolloTitles.length ? apolloTitles : APOLLO_DEFAULT_TITLES,
         seniorities: apolloSeniorities.length
           ? apolloSeniorities
@@ -554,6 +576,113 @@ export default function CDPContacts({
     }
   }
 
+  // ── Row-level action handlers ────────────────────────────────────
+
+  /** Re-enrich a single saved contact via /people/match. Skipped if
+   *  already enriched to avoid burning a credit. */
+  async function handleRowEnrich(c: Contact) {
+    if (String(c.enrichment_status || "").toLowerCase() === "enriched") {
+      setEnrichToast("Already enriched");
+      setTimeout(() => setEnrichToast(null), 2000);
+      return;
+    }
+    if (!c.apollo_person_id && !c.linkedin_url && !c.full_name) {
+      setEnrichToast(
+        "Need a name + LinkedIn or domain before enriching this contact.",
+      );
+      setTimeout(() => setEnrichToast(null), 3000);
+      return;
+    }
+    try {
+      const result = await enrichApolloContacts({
+        companyId: companyId ?? null,
+        companyName: companyName ?? null,
+        companyDomain: companyDomain ?? null,
+        contacts: [
+          {
+            apollo_person_id: c.apollo_person_id ?? null,
+            id: c.apollo_person_id ?? null,
+            first_name: c.first_name ?? null,
+            last_name: c.last_name ?? null,
+            full_name: c.full_name ?? c.name ?? null,
+            name: c.full_name ?? c.name ?? null,
+            email: c.email ?? null,
+            linkedin_url: c.linkedin_url ?? null,
+            domain: companyDomain ?? null,
+            organization_name: companyName ?? null,
+            title: c.title ?? null,
+          },
+        ],
+      });
+      if (!result.ok || result.enriched.length === 0) {
+        setEnrichToast(result.error || "Enrichment returned no match.");
+        setTimeout(() => setEnrichToast(null), 3000);
+        return;
+      }
+      const r = result.enriched[0];
+      setContacts((prev) =>
+        prev.map((x) =>
+          String(x.id) === String(c.id)
+            ? ({
+                ...x,
+                full_name: r.full_name ?? x.full_name ?? null,
+                first_name: (r as any).first_name ?? x.first_name ?? null,
+                last_name: (r as any).last_name ?? x.last_name ?? null,
+                title: r.title ?? x.title ?? null,
+                email: r.email ?? x.email ?? null,
+                phone: r.phone ?? x.phone ?? null,
+                linkedin_url: r.linkedin_url ?? x.linkedin_url ?? null,
+                apollo_person_id: r.apollo_person_id ?? x.apollo_person_id ?? null,
+                enrichment_status: "enriched",
+                enriched_at: r.enriched_at ?? new Date().toISOString(),
+                email_verification_status:
+                  r.email_verification_status ?? x.email_verification_status ?? null,
+                verified_by_provider:
+                  r.verified_by_provider ?? x.verified_by_provider ?? null,
+              } as Contact)
+            : x,
+        ),
+      );
+      setEnrichToast("Contact enriched");
+      setTimeout(() => setEnrichToast(null), 2500);
+    } catch (err: any) {
+      setEnrichToast(err?.message || "Enrichment failed.");
+      setTimeout(() => setEnrichToast(null), 3000);
+    }
+  }
+
+  function handleRowCopyEmail(c: Contact) {
+    if (!c.email) {
+      setEnrichToast("No email to copy.");
+      setTimeout(() => setEnrichToast(null), 1800);
+      return;
+    }
+    navigator.clipboard?.writeText(String(c.email)).catch(() => {});
+    setEnrichToast("Email copied");
+    setTimeout(() => setEnrichToast(null), 1500);
+  }
+
+  function handleRowCopyLinkedin(c: Contact) {
+    if (!c.linkedin_url) {
+      setEnrichToast("No LinkedIn URL on this contact.");
+      setTimeout(() => setEnrichToast(null), 1800);
+      return;
+    }
+    navigator.clipboard?.writeText(String(c.linkedin_url)).catch(() => {});
+    setEnrichToast("LinkedIn URL copied");
+    setTimeout(() => setEnrichToast(null), 1500);
+  }
+
+  function handleRowRemove(c: Contact) {
+    setContacts((prev) => {
+      const next = prev.filter((x) => String(x.id) !== String(c.id));
+      onContactsChanged?.(next);
+      return next;
+    });
+    setEnrichToast("Contact removed from view");
+    setTimeout(() => setEnrichToast(null), 2000);
+  }
+
   return (
     <div className="flex flex-col gap-3.5">
       {/* Toolbar */}
@@ -649,6 +778,7 @@ export default function CDPContacts({
           stateField={searchState}
           country={searchCountry}
           usePersonLocations={usePersonLocations}
+          includeSimilarTitles={includeSimilarTitles}
           matchMode={searchMatchMode}
           orgMatch={searchOrgMatch}
           titles={apolloTitles}
@@ -660,6 +790,7 @@ export default function CDPContacts({
           onStateChange={setSearchState}
           onCountryChange={setSearchCountry}
           onUsePersonLocationsChange={setUsePersonLocations}
+          onIncludeSimilarTitlesChange={setIncludeSimilarTitles}
           onTitlesChange={setApolloTitles}
           onSenioritiesChange={setApolloSeniorities}
           onDepartmentsChange={setApolloDepartments}
@@ -779,6 +910,7 @@ export default function CDPContacts({
                   "Department",
                   "Email",
                   "Phone",
+                  "Fit",
                   "Source",
                   "Actions",
                 ].map((h) => (
@@ -793,7 +925,20 @@ export default function CDPContacts({
             </thead>
             <tbody>
               {filtered.map((c) => (
-                <ContactRow key={c.id || c.email || c.full_name} contact={c} />
+                <ContactRow
+                  key={c.id || c.email || c.full_name}
+                  contact={c}
+                  handlers={{
+                    onOpenDetail: setDetailContact,
+                    onOutreach: setOutreachContact,
+                    onEnrich: handleRowEnrich,
+                    onCopyEmail: handleRowCopyEmail,
+                    onCopyLinkedin: handleRowCopyLinkedin,
+                    onRemove: handleRowRemove,
+                    menuOpenId: openMenuId,
+                    onMenuToggle: setOpenMenuId,
+                  }}
+                />
               ))}
             </tbody>
           </table>
@@ -801,17 +946,64 @@ export default function CDPContacts({
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((c) => (
-            <ContactCard key={c.id || c.email || c.full_name} contact={c} />
+            <ContactCard
+              key={c.id || c.email || c.full_name}
+              contact={c}
+              onOpenDetail={setDetailContact}
+              onOutreach={setOutreachContact}
+              onEnrich={handleRowEnrich}
+            />
           ))}
         </div>
+      )}
+      {detailContact && (
+        <ContactDetailDrawer
+          contact={detailContact}
+          companyName={companyName ?? null}
+          companyDomain={companyDomain ?? null}
+          onClose={() => setDetailContact(null)}
+          onCopyEmail={handleRowCopyEmail}
+          onCopyLinkedin={handleRowCopyLinkedin}
+          onOutreach={(c) => {
+            setDetailContact(null);
+            setOutreachContact(c);
+          }}
+          onEnrich={(c) => {
+            setDetailContact(null);
+            handleRowEnrich(c);
+          }}
+        />
+      )}
+      {outreachContact && (
+        <OutreachContactModal
+          contact={outreachContact}
+          companyId={companyId ?? null}
+          companyName={companyName ?? null}
+          onClose={() => setOutreachContact(null)}
+        />
       )}
     </div>
   );
 }
 
-function ContactRow({ contact }: { contact: Contact }) {
-  // Canonical name fallback — never render "Unnamed contact" if any
-  // first / last / full piece is on the row.
+type RowHandlers = {
+  onOpenDetail: (c: Contact) => void;
+  onOutreach: (c: Contact) => void;
+  onEnrich: (c: Contact) => void;
+  onCopyEmail: (c: Contact) => void;
+  onCopyLinkedin: (c: Contact) => void;
+  onRemove: (c: Contact) => void;
+  menuOpenId: string | number | null;
+  onMenuToggle: (id: string | number | null) => void;
+};
+
+function ContactRow({
+  contact,
+  handlers,
+}: {
+  contact: Contact;
+  handlers: RowHandlers;
+}) {
   const name =
     contact.full_name ||
     contact.name ||
@@ -822,6 +1014,21 @@ function ContactRow({ contact }: { contact: Contact }) {
   const verified = isProviderVerified(contact);
   const dept = contact.department || contact.dept;
   const source = contact.source || contact.source_provider;
+  const enriched =
+    String(contact.enrichment_status || "").toLowerCase() === "enriched";
+  const fit = computeContactScore({
+    title: contact.title,
+    seniority: (contact as any).seniority,
+    department: dept,
+    email: contact.email,
+    email_status: contact.email_verification_status,
+    email_verification_status: contact.email_verification_status,
+    verified_by_provider: contact.verified_by_provider,
+    linkedin_url: contact.linkedin_url,
+    enrichment_status: contact.enrichment_status,
+  });
+  const rowId = String(contact.id ?? contact.email ?? name);
+  const menuOpen = handlers.menuOpenId === contact.id;
   return (
     <tr className="border-b border-slate-100 transition-colors last:border-b-0 hover:bg-slate-50/60">
       <td className="px-3.5 py-2.5">
@@ -829,9 +1036,13 @@ function ContactRow({ contact }: { contact: Contact }) {
           <Avatar name={name} />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="font-display text-[12px] font-semibold text-slate-900">
+              <button
+                type="button"
+                onClick={() => handlers.onOpenDetail(contact)}
+                className="font-display truncate text-left text-[12px] font-semibold text-slate-900 hover:text-blue-700"
+              >
                 {name}
-              </span>
+              </button>
               <VerifiedBadge verified={verified} />
             </div>
             {(contact.location || contact.city) && (
@@ -846,13 +1057,20 @@ function ContactRow({ contact }: { contact: Contact }) {
         {contact.title || "—"}
       </td>
       <td className="px-3.5 py-2.5">
-        {dept ? <LitPill tone="slate">{dept}</LitPill> : <span className="text-slate-300">—</span>}
+        {dept ? (
+          <LitPill tone="slate">{dept}</LitPill>
+        ) : (
+          <span className="text-slate-300">—</span>
+        )}
       </td>
       <td className="font-mono px-3.5 py-2.5 text-[10px] text-slate-600">
         {contact.email || <span className="text-slate-300">—</span>}
       </td>
       <td className="font-mono px-3.5 py-2.5 text-[10px] text-slate-600">
         {contact.phone || <span className="text-slate-300">—</span>}
+      </td>
+      <td className="px-3.5 py-2.5">
+        <FitBadge fit={fit} />
       </td>
       <td className="font-display px-3.5 py-2.5 text-[10px] font-semibold text-slate-500">
         {source ? (
@@ -869,23 +1087,144 @@ function ContactRow({ contact }: { contact: Contact }) {
         )}
       </td>
       <td className="px-3.5 py-2.5">
-        <div className="flex gap-1">
-          <ActionButton icon={<Send className="h-3 w-3" />} label="Outreach" primary />
-          <ActionButton icon={<Zap className="h-3 w-3" />} label="Enrich" />
-          <ActionButton icon={<Bookmark className="h-3 w-3" />} label="Save" />
+        <div className="relative flex gap-1">
+          <ActionButton
+            icon={<Send className="h-3 w-3" />}
+            label="Outreach"
+            primary
+            onClick={() => handlers.onOutreach(contact)}
+          />
+          <ActionButton
+            icon={<Zap className="h-3 w-3" />}
+            label={enriched ? "Already enriched" : "Enrich"}
+            disabled={enriched}
+            onClick={() => handlers.onEnrich(contact)}
+          />
+          <ActionButton
+            icon={<Bookmark className="h-3 w-3" />}
+            label="Save"
+            onClick={() => handlers.onOpenDetail(contact)}
+          />
           <ActionButton
             icon={<MoreHorizontal className="h-3 w-3" />}
             label="More"
+            onClick={() =>
+              handlers.onMenuToggle(menuOpen ? null : (contact.id ?? rowId))
+            }
           />
+          {menuOpen && (
+            <RowMoreMenu
+              contact={contact}
+              onClose={() => handlers.onMenuToggle(null)}
+              onOpenDetail={handlers.onOpenDetail}
+              onOutreach={handlers.onOutreach}
+              onCopyEmail={handlers.onCopyEmail}
+              onCopyLinkedin={handlers.onCopyLinkedin}
+              onRemove={handlers.onRemove}
+            />
+          )}
         </div>
       </td>
     </tr>
   );
 }
 
-function ContactCard({ contact }: { contact: Contact }) {
-  // Canonical name fallback — never render "Unnamed contact" if any
-  // first / last / full piece is on the row.
+function FitBadge({ fit }: { fit: ContactScoreResult }) {
+  return (
+    <span
+      title={`LIT fit ${fit.score}/100`}
+      className={[
+        "font-display inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em]",
+        tierTone(fit.tier),
+      ].join(" ")}
+    >
+      <span className="font-mono">{fit.score}</span>
+      {fit.label}
+    </span>
+  );
+}
+
+function RowMoreMenu({
+  contact,
+  onClose,
+  onOpenDetail,
+  onOutreach,
+  onCopyEmail,
+  onCopyLinkedin,
+  onRemove,
+}: {
+  contact: Contact;
+  onClose: () => void;
+  onOpenDetail: (c: Contact) => void;
+  onOutreach: (c: Contact) => void;
+  onCopyEmail: (c: Contact) => void;
+  onCopyLinkedin: (c: Contact) => void;
+  onRemove: (c: Contact) => void;
+}) {
+  return (
+    <div
+      role="menu"
+      onMouseLeave={onClose}
+      className="font-display absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-md border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 shadow-lg"
+    >
+      <MenuItem onClick={() => { onOpenDetail(contact); onClose(); }}>
+        View details
+      </MenuItem>
+      <MenuItem onClick={() => { onOutreach(contact); onClose(); }}>
+        Add to campaign
+      </MenuItem>
+      <MenuItem onClick={() => { onCopyEmail(contact); onClose(); }}>
+        Copy email
+      </MenuItem>
+      <MenuItem onClick={() => { onCopyLinkedin(contact); onClose(); }}>
+        Copy LinkedIn URL
+      </MenuItem>
+      <MenuItem
+        tone="danger"
+        onClick={() => { onRemove(contact); onClose(); }}
+      >
+        Remove from view
+      </MenuItem>
+    </div>
+  );
+}
+
+function MenuItem({
+  onClick,
+  children,
+  tone,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+  tone?: "danger";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "flex w-full items-center px-3 py-1.5 text-left",
+        tone === "danger"
+          ? "text-rose-700 hover:bg-rose-50"
+          : "hover:bg-slate-50",
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ContactCard({
+  contact,
+  onOpenDetail,
+  onOutreach,
+  onEnrich,
+}: {
+  contact: Contact;
+  onOpenDetail: (c: Contact) => void;
+  onOutreach: (c: Contact) => void;
+  onEnrich: (c: Contact) => void;
+}) {
   const name =
     contact.full_name ||
     contact.name ||
@@ -895,15 +1234,32 @@ function ContactCard({ contact }: { contact: Contact }) {
     "Unnamed contact";
   const verified = isProviderVerified(contact);
   const dept = contact.department || contact.dept;
+  const enriched =
+    String(contact.enrichment_status || "").toLowerCase() === "enriched";
+  const fit = computeContactScore({
+    title: contact.title,
+    seniority: (contact as any).seniority,
+    department: dept,
+    email: contact.email,
+    email_status: contact.email_verification_status,
+    email_verification_status: contact.email_verification_status,
+    verified_by_provider: contact.verified_by_provider,
+    linkedin_url: contact.linkedin_url,
+    enrichment_status: contact.enrichment_status,
+  });
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3.5 transition-shadow hover:shadow-sm">
       <div className="mb-2.5 flex items-start gap-2.5">
         <Avatar name={name} size={36} />
         <div className="min-w-0 flex-1">
           <div className="mb-0.5 flex items-center gap-1.5">
-            <span className="font-display text-[13px] font-bold text-slate-900">
+            <button
+              type="button"
+              onClick={() => onOpenDetail(contact)}
+              className="font-display truncate text-left text-[13px] font-bold text-slate-900 hover:text-blue-700"
+            >
               {name}
-            </span>
+            </button>
             <VerifiedBadge verified={verified} />
           </div>
           <div className="font-body mb-1 text-[11px] leading-snug text-slate-600">
@@ -917,6 +1273,7 @@ function ContactCard({ contact }: { contact: Contact }) {
                 {contact.location || contact.city}
               </span>
             )}
+            <FitBadge fit={fit} />
           </div>
         </div>
       </div>
@@ -943,22 +1300,26 @@ function ContactCard({ contact }: { contact: Contact }) {
       <div className="mt-2.5 flex gap-1.5">
         <button
           type="button"
-          className="font-display inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-2 py-1.5 text-[11px] font-semibold text-white shadow-sm"
+          onClick={() => onOutreach(contact)}
+          className="font-display inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-2 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:from-blue-600 hover:to-blue-700"
         >
           <Send className="h-2.5 w-2.5" />
           Outreach
         </button>
         <button
           type="button"
-          className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-semibold text-slate-600"
+          onClick={() => onEnrich(contact)}
+          disabled={enriched}
+          className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-semibold text-slate-600 disabled:opacity-50"
         >
           <Zap className="h-2.5 w-2.5" />
-          Enrich
+          {enriched ? "Enriched" : "Enrich"}
         </button>
         <button
           type="button"
-          aria-label="Save contact"
-          className="rounded-md border border-slate-200 bg-slate-50 px-1.5 text-slate-600"
+          aria-label="View details"
+          onClick={() => onOpenDetail(contact)}
+          className="rounded-md border border-slate-200 bg-slate-50 px-1.5 text-slate-600 hover:text-slate-900"
         >
           <Bookmark className="h-2.5 w-2.5" />
         </button>
@@ -971,21 +1332,29 @@ function ActionButton({
   icon,
   label,
   primary,
+  disabled,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   primary?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <button
       type="button"
       title={label}
       aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
       className={[
         "flex h-6 w-6 items-center justify-center rounded border",
-        primary
-          ? "border-blue-200 bg-blue-50 text-blue-700"
-          : "border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-700",
+        disabled
+          ? "border-slate-200 bg-slate-100 text-slate-300"
+          : primary
+            ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+            : "border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-700",
       ].join(" ")}
     >
       {icon}
@@ -1049,6 +1418,7 @@ type ApolloResultsPanelProps = {
   stateField: string;
   country: string;
   usePersonLocations: boolean;
+  includeSimilarTitles: boolean;
   matchMode: "organization_id" | "domain" | "name_location_fallback" | "none" | null;
   orgMatch: { id: string | null; name: string | null; primary_domain: string | null } | null;
   titles: string[];
@@ -1060,6 +1430,7 @@ type ApolloResultsPanelProps = {
   onStateChange: (next: string) => void;
   onCountryChange: (next: string) => void;
   onUsePersonLocationsChange: (next: boolean) => void;
+  onIncludeSimilarTitlesChange: (next: boolean) => void;
   onTitlesChange: (next: string[]) => void;
   onSenioritiesChange: (next: string[]) => void;
   onDepartmentsChange: (next: string[]) => void;
@@ -1097,6 +1468,7 @@ function ApolloResultsPanel({
   stateField,
   country,
   usePersonLocations,
+  includeSimilarTitles,
   matchMode,
   orgMatch,
   titles,
@@ -1108,6 +1480,7 @@ function ApolloResultsPanel({
   onStateChange,
   onCountryChange,
   onUsePersonLocationsChange,
+  onIncludeSimilarTitlesChange,
   onTitlesChange,
   onSenioritiesChange,
   onDepartmentsChange,
@@ -1329,6 +1702,17 @@ function ApolloResultsPanel({
               />
               <span>
                 Filter by where the contact lives, not the company HQ
+              </span>
+            </label>
+            <label className="mt-1 flex items-center gap-1.5 text-[10.5px] text-slate-600">
+              <input
+                type="checkbox"
+                checked={includeSimilarTitles}
+                onChange={(e) => onIncludeSimilarTitlesChange(e.target.checked)}
+                className="h-3 w-3 rounded border-slate-300 text-violet-600 focus:ring-violet-400"
+              />
+              <span>
+                Include similar titles (broader match)
               </span>
             </label>
             <button
@@ -1812,3 +2196,578 @@ function ContactField({
     </label>
   );
 }
+
+/* ── Contact Detail Drawer ─────────────────────────────────────────── */
+
+function ContactDetailDrawer({
+  contact,
+  companyName,
+  companyDomain,
+  onClose,
+  onCopyEmail,
+  onCopyLinkedin,
+  onOutreach,
+  onEnrich,
+}: {
+  contact: Contact;
+  companyName: string | null;
+  companyDomain: string | null;
+  onClose: () => void;
+  onCopyEmail: (c: Contact) => void;
+  onCopyLinkedin: (c: Contact) => void;
+  onOutreach: (c: Contact) => void;
+  onEnrich: (c: Contact) => void;
+}) {
+  const name =
+    contact.full_name ||
+    contact.name ||
+    [contact.first_name, contact.last_name].filter(Boolean).join(" ").trim() ||
+    contact.first_name ||
+    "Unnamed contact";
+  const dept = contact.department || contact.dept || null;
+  const enriched =
+    String(contact.enrichment_status || "").toLowerCase() === "enriched";
+  const fit = computeContactScore({
+    title: contact.title,
+    seniority: (contact as any).seniority,
+    department: dept,
+    email: contact.email,
+    email_verification_status: contact.email_verification_status,
+    verified_by_provider: contact.verified_by_provider,
+    linkedin_url: contact.linkedin_url,
+    enrichment_status: contact.enrichment_status,
+  });
+  const persona = derivePersonaSuggestion(contact);
+  const angle = deriveOutreachAngle(contact, companyName);
+  const emailOpener = deriveEmailOpener(contact, companyName);
+  const linkedinOpener = deriveLinkedinOpener(contact);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative h-full w-full max-w-md overflow-y-auto bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-5 py-3.5 backdrop-blur">
+          <div className="flex items-center gap-2.5">
+            <Avatar name={name} size={36} />
+            <div className="min-w-0">
+              <div className="font-display flex items-center gap-1.5 text-[14px] font-bold text-slate-900">
+                {name}
+                {enriched && (
+                  <span className="font-display inline-flex items-center gap-0.5 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-emerald-700">
+                    <Sparkles className="h-2.5 w-2.5" />
+                    LIT Enriched
+                  </span>
+                )}
+              </div>
+              <div className="font-body mt-0.5 text-[11px] text-slate-500">
+                {contact.title || "Title not available"}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close detail drawer"
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Score */}
+        <div className="border-b border-slate-100 px-5 py-3.5">
+          <div className="font-display mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+            LIT Contact Fit
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div
+              className={[
+                "font-mono flex h-12 w-12 shrink-0 items-center justify-center rounded-md border text-[18px] font-bold",
+                tierTone(fit.tier),
+              ].join(" ")}
+            >
+              {fit.score}
+            </div>
+            <div className="min-w-0">
+              <div className="font-display text-[12px] font-bold text-slate-900">
+                {fit.label}
+              </div>
+              <div className="font-body mt-0.5 text-[10px] leading-tight text-slate-500">
+                Title fit · Seniority · Department · Email verified · LinkedIn
+                signal
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Fields */}
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-b border-slate-100 px-5 py-3.5">
+          <DetailField label="Department" value={dept} />
+          <DetailField
+            label="Seniority"
+            value={(contact as any).seniority || null}
+          />
+          <DetailField label="Company" value={companyName} />
+          <DetailField label="Domain" value={companyDomain} />
+          <DetailField
+            label="Location"
+            value={contact.location || contact.city || null}
+          />
+          <DetailField
+            label="Source"
+            value={contact.source || contact.source_provider ? "LIT" : null}
+          />
+          <DetailField
+            label="Last enriched"
+            value={
+              contact.enriched_at
+                ? new Date(contact.enriched_at).toLocaleString()
+                : null
+            }
+          />
+          <DetailField
+            label="Email verified"
+            value={
+              contact.verified_by_provider === true
+                ? "Yes"
+                : contact.email_verification_status || null
+            }
+          />
+        </div>
+
+        {/* Contact methods */}
+        <div className="border-b border-slate-100 px-5 py-3.5">
+          <div className="font-display mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+            Contact methods
+          </div>
+          <div className="flex flex-col gap-2">
+            <ContactMethodRow
+              icon={<Mail className="h-3 w-3 text-slate-400" />}
+              label="Email"
+              value={contact.email || null}
+              actionLabel="Copy"
+              onAction={contact.email ? () => onCopyEmail(contact) : null}
+            />
+            <ContactMethodRow
+              icon={<Phone className="h-3 w-3 text-slate-400" />}
+              label="Phone"
+              value={contact.phone || null}
+              actionLabel={null}
+              onAction={null}
+            />
+            <ContactMethodRow
+              icon={<Linkedin className="h-3 w-3 text-slate-400" />}
+              label="LinkedIn"
+              value={contact.linkedin_url || null}
+              actionLabel="Copy"
+              onAction={
+                contact.linkedin_url ? () => onCopyLinkedin(contact) : null
+              }
+              externalHref={contact.linkedin_url || null}
+            />
+          </div>
+        </div>
+
+        {/* Recommendations */}
+        <div className="border-b border-slate-100 px-5 py-3.5">
+          <div className="font-display mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+            Recommendations
+          </div>
+          <div className="flex flex-col gap-2">
+            <RecommendationRow label="Persona" value={persona} />
+            <RecommendationRow label="Outreach angle" value={angle} />
+            <RecommendationRow label="Email opener" value={emailOpener} />
+            <RecommendationRow
+              label="LinkedIn opener"
+              value={linkedinOpener}
+            />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 px-5 py-4">
+          <button
+            type="button"
+            onClick={() => onOutreach(contact)}
+            className="font-display inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:from-blue-600 hover:to-blue-700"
+          >
+            <Send className="h-3 w-3" />
+            Add to campaign
+          </button>
+          <button
+            type="button"
+            onClick={() => onEnrich(contact)}
+            disabled={enriched}
+            className="font-display inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+          >
+            <Zap className="h-3 w-3" />
+            {enriched ? "Enriched" : "Enrich"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailField({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="font-display text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">
+        {label}
+      </div>
+      <div className="font-body mt-0.5 truncate text-[11px] text-slate-700">
+        {value || (
+          <span className="text-slate-300">Not available</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ContactMethodRow({
+  icon,
+  label,
+  value,
+  actionLabel,
+  onAction,
+  externalHref,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | null;
+  actionLabel: string | null;
+  onAction: (() => void) | null;
+  externalHref?: string | null;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-md border border-slate-100 bg-slate-50/60 px-2.5 py-1.5">
+      <div className="flex min-w-0 items-center gap-2 text-[11px]">
+        {icon}
+        <span className="font-display font-semibold text-slate-500">
+          {label}
+        </span>
+        <span className="font-mono truncate text-slate-700">
+          {value ? (
+            externalHref ? (
+              <a
+                href={externalHref}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-blue-600 hover:text-blue-800"
+              >
+                {value}
+              </a>
+            ) : (
+              value
+            )
+          ) : (
+            <span className="font-body text-slate-300">Not available</span>
+          )}
+        </span>
+      </div>
+      {actionLabel && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="font-display rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:text-slate-900"
+        >
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function RecommendationRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null;
+}) {
+  return (
+    <div className="rounded-md border border-slate-100 bg-slate-50/60 px-2.5 py-1.5">
+      <div className="font-display text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">
+        {label}
+      </div>
+      <div className="font-body mt-0.5 text-[11px] leading-snug text-slate-700">
+        {value || (
+          <span className="text-slate-300">Not available</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function derivePersonaSuggestion(c: Contact): string | null {
+  const t = String(c.title || "").toLowerCase();
+  if (!t) return null;
+  if (/(logistics|transportation|freight)/.test(t)) return "Logistics decision maker";
+  if (/(supply chain|operations)/.test(t)) return "Supply chain operator";
+  if (/(procurement|sourcing|buyer|purchasing)/.test(t)) return "Procurement / sourcing buyer";
+  if (/(import|customs|trade)/.test(t)) return "Trade / customs operator";
+  if (/(vp|director|head|chief)/.test(t)) return "Senior decision maker";
+  return c.title;
+}
+
+function deriveOutreachAngle(c: Contact, companyName: string | null): string | null {
+  if (!c.title) return null;
+  const co = companyName ? ` at ${companyName}` : "";
+  const lower = c.title.toLowerCase();
+  if (/(logistics|transportation|freight)/.test(lower)) {
+    return `Lead with carrier mix benchmark${co} — ask about lane coverage and FCL/LCL split.`;
+  }
+  if (/(supply chain|operations)/.test(lower)) {
+    return `Lead with supply chain visibility / forwarder concentration risk${co}.`;
+  }
+  if (/(procurement|sourcing)/.test(lower)) {
+    return `Lead with supplier diversification + landed cost angle${co}.`;
+  }
+  return `Anchor on ${companyName || "this account"}'s active trade lanes and shipment cadence.`;
+}
+
+function deriveEmailOpener(c: Contact, companyName: string | null): string | null {
+  if (!c.title) return null;
+  const first = c.first_name || (c.full_name || "").split(" ")[0] || "there";
+  return `${first} — quick read on ${companyName || "your"} trade lanes from the LIT side; one question on carrier mix when you have a moment.`;
+}
+
+function deriveLinkedinOpener(c: Contact): string | null {
+  if (!c.title) return null;
+  return `Saw you lead ${c.title}. Working with logistics leaders on inbound carrier benchmarks — open to comparing notes?`;
+}
+
+/* ── Outreach Contact Modal ────────────────────────────────────────── */
+
+type OutreachCampaignOption = { id: number | string; name: string };
+
+function OutreachContactModal({
+  contact,
+  companyId,
+  companyName,
+  onClose,
+}: {
+  contact: Contact;
+  companyId: string | null;
+  companyName: string | null;
+  onClose: () => void;
+}) {
+  const [campaigns, setCampaigns] = useState<OutreachCampaignOption[] | null>(
+    null,
+  );
+  const [loadingCampaigns, setLoadingCampaigns] = useState(true);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<
+    string | number | null
+  >(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);
+
+  const name =
+    contact.full_name ||
+    contact.name ||
+    [contact.first_name, contact.last_name].filter(Boolean).join(" ").trim() ||
+    "Unnamed contact";
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res: any = await getCrmCampaigns();
+        if (cancelled) return;
+        const rows = Array.isArray(res?.rows)
+          ? res.rows
+          : Array.isArray(res)
+            ? res
+            : [];
+        const opts: OutreachCampaignOption[] = rows
+          .filter((r: any) => r && (r.id || r.name))
+          .map((r: any) => ({ id: r.id, name: r.name || "Untitled campaign" }));
+        setCampaigns(opts);
+        if (opts.length > 0) setSelectedCampaignId(opts[0].id);
+      } catch (err: any) {
+        if (cancelled) return;
+        setCampaigns([]);
+        setError(err?.message || "Couldn't load campaigns.");
+      } finally {
+        if (!cancelled) setLoadingCampaigns(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleSubmit() {
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (!companyId) {
+        setError(
+          "Company hasn't been saved to CRM yet. Save the company first, then add this contact.",
+        );
+        setSetupRequired(true);
+        return;
+      }
+      if (selectedCampaignId == null) {
+        setError("Pick a campaign.");
+        return;
+      }
+      const contactId = String(contact.id ?? "");
+      if (!contactId) {
+        setError("Contact has no id yet — enrich or save it first.");
+        setSetupRequired(true);
+        return;
+      }
+      await addCompanyToCampaign({
+        campaign_id: Number(selectedCampaignId),
+        company_id: String(companyId),
+        contact_ids: [contactId],
+      });
+      setDone(true);
+      setTimeout(() => onClose(), 1300);
+    } catch (err: any) {
+      const msg = String(err?.message || err || "");
+      // The CRM gateway may not yet support contact-level membership;
+      // surface it as setup-required rather than failing silently.
+      if (/404|not\s+found|contact_ids/i.test(msg)) {
+        setSetupRequired(true);
+        setError("Contact-level campaign audience setup required.");
+      } else {
+        setError(msg || "Couldn't add contact to campaign.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative my-8 w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <Send className="h-4 w-4 text-blue-600" />
+            <span className="font-display text-[14px] font-bold text-slate-900">
+              Add to campaign
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-2 text-[11px] text-slate-600">
+          <strong className="font-display text-slate-900">{name}</strong>
+          {contact.title && (
+            <span className="font-body"> · {contact.title}</span>
+          )}
+          {companyName && (
+            <span className="font-body"> · {companyName}</span>
+          )}
+        </div>
+
+        <div className="px-5 py-4">
+          <div className="font-display mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+            Campaign
+          </div>
+          {loadingCampaigns ? (
+            <div className="font-body text-[12px] text-slate-500">
+              <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+              Loading campaigns…
+            </div>
+          ) : campaigns && campaigns.length > 0 ? (
+            <select
+              value={String(selectedCampaignId ?? "")}
+              onChange={(e) => setSelectedCampaignId(e.target.value)}
+              className="font-body w-full rounded-md border-[1.5px] border-slate-200 bg-white px-2 py-1.5 text-[12px] text-slate-900"
+            >
+              {campaigns.map((c) => (
+                <option key={c.id} value={String(c.id)}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="font-body rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+              No campaigns yet —{" "}
+              <a href="/app/campaigns" className="underline">
+                create one in Campaigns
+              </a>
+              .
+            </div>
+          )}
+        </div>
+
+        {(error || done) && (
+          <div
+            className={[
+              "mx-5 mb-3 rounded-md border px-3 py-2 text-[11px]",
+              done
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : setupRequired
+                  ? "border-amber-200 bg-amber-50 text-amber-700"
+                  : "border-rose-200 bg-rose-50 text-rose-700",
+            ].join(" ")}
+          >
+            {done ? "Contact added to campaign." : error}
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="font-display rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={
+              submitting ||
+              done ||
+              loadingCampaigns ||
+              !campaigns ||
+              campaigns.length === 0 ||
+              !companyId
+            }
+            className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Send className="h-3 w-3" />
+            )}
+            {done ? "Added" : "Add"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+

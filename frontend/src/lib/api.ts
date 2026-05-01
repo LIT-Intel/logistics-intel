@@ -3913,6 +3913,10 @@ export type ApolloSearchPayload = {
   /** When true scope by where the contact LIVES (person_locations[])
    *  instead of the employer's HQ. Default false. */
   usePersonLocations?: boolean;
+  /** When true, the upstream provider may broaden title matches (e.g.
+   *  "Logistics Manager" → "Director, Logistics Operations"). Default
+   *  false; the edge function only forwards this hint when explicit. */
+  includeSimilarTitles?: boolean;
   titles?: string[];
   seniorities?: string[];
   departments?: string[];
@@ -3979,6 +3983,7 @@ export async function searchApolloContacts(
     state: payload.state ?? null,
     country: payload.country ?? null,
     use_person_locations: Boolean(payload.usePersonLocations),
+    include_similar_titles: Boolean(payload.includeSimilarTitles),
     titles: payload.titles ?? [],
     seniorities: payload.seniorities ?? [],
     departments: payload.departments ?? [],
