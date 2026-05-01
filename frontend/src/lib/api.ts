@@ -4088,11 +4088,23 @@ export async function enrichApolloContacts(payload: {
   companyId?: string | null;
   companyName?: string | null;
   companyDomain?: string | null;
+  /** Pass as much identifying data per contact as you have. The edge
+   *  function refuses too-weak identifiers (first-name only, title-only)
+   *  before consuming a credit. Apollo enrichment works best when given
+   *  full name + company domain or LinkedIn URL or a real Apollo
+   *  person id. */
   contacts: Array<{
     apollo_person_id?: string | null;
+    id?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
     full_name?: string | null;
-    title?: string | null;
+    name?: string | null;
+    email?: string | null;
     linkedin_url?: string | null;
+    title?: string | null;
+    domain?: string | null;
+    organization_name?: string | null;
   }>;
 }): Promise<{
   ok: boolean;

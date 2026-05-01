@@ -32,6 +32,8 @@ type Contact = {
   id?: string | number;
   full_name?: string | null;
   name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   title?: string | null;
   department?: string | null;
   dept?: string | null;
@@ -51,6 +53,9 @@ type Contact = {
   source?: string | null;
   source_provider?: string | null;
   linkedin_url?: string | null;
+  apollo_person_id?: string | null;
+  enriched_at?: string | null;
+  enrichment_status?: string | null;
 };
 
 /**
@@ -399,11 +404,26 @@ export default function CDPContacts({
         companyId: companyId ?? null,
         companyName: companyName ?? null,
         companyDomain: companyDomain ?? null,
+        // Pass every identifier we have so Apollo enrichment has the
+        // best chance of matching. The edge function refuses
+        // too-weak identifiers before billing a credit.
         contacts: picked.map((p) => ({
           apollo_person_id: p.apollo_person_id ?? null,
-          full_name: p.full_name ?? null,
+          id: p.apollo_person_id ?? null,
+          first_name: p.first_name ?? null,
+          last_name: p.last_name ?? null,
+          full_name:
+            p.full_name ||
+            [p.first_name, p.last_name].filter(Boolean).join(" ").trim() ||
+            null,
+          name:
+            p.full_name ||
+            [p.first_name, p.last_name].filter(Boolean).join(" ").trim() ||
+            null,
           title: p.title ?? null,
           linkedin_url: p.linkedin_url ?? null,
+          domain: companyDomain ?? null,
+          organization_name: p.company ?? companyName ?? null,
         })),
       });
       if (!result.ok) {
@@ -450,19 +470,36 @@ export default function CDPContacts({
       // 2. Upsert enriched contacts into the saved-contacts list
       //    immediately (no clobber, no waiting on the round-trip). Match
       //    by apollo_person_id so re-enrich just merges fields.
-      const upsertedRows: Contact[] = result.enriched.map((r) => ({
-        id: r.apollo_person_id || `apollo-${Date.now()}-${Math.random()}`,
-        full_name: r.full_name ?? null,
-        title: r.title ?? null,
-        email: r.email ?? null,
-        phone: r.phone ?? null,
-        location: r.location ?? null,
-        linkedin_url: r.linkedin_url ?? null,
-        source: "lit",
-        source_provider: "lit",
-        email_verification_status: r.email_verification_status ?? null,
-        verified_by_provider: r.verified_by_provider ?? null,
-      }));
+      //    Compute display name with the canonical fallback: never
+      //    leave a saved contact as "Unnamed contact" if first_name
+      //    exists.
+      const upsertedRows: Contact[] = result.enriched.map((r) => {
+        const fullName =
+          r.full_name ||
+          [r.first_name, r.last_name].filter(Boolean).join(" ").trim() ||
+          r.first_name ||
+          null;
+        return {
+          id: r.apollo_person_id || `apollo-${Date.now()}-${Math.random()}`,
+          full_name: fullName,
+          first_name: (r as any).first_name ?? null,
+          last_name: (r as any).last_name ?? null,
+          name: fullName,
+          title: r.title ?? null,
+          department: (r as any).department ?? null,
+          email: r.email ?? null,
+          phone: r.phone ?? null,
+          location: r.location ?? null,
+          linkedin_url: r.linkedin_url ?? null,
+          source: "lit",
+          source_provider: "lit",
+          apollo_person_id: r.apollo_person_id ?? null,
+          enriched_at: r.enriched_at ?? new Date().toISOString(),
+          enrichment_status: "enriched",
+          email_verification_status: r.email_verification_status ?? null,
+          verified_by_provider: r.verified_by_provider ?? null,
+        } as any;
+      });
       const upsertedById = new Map(
         upsertedRows.map((row) => [String(row.id), row]),
       );
@@ -773,7 +810,15 @@ export default function CDPContacts({
 }
 
 function ContactRow({ contact }: { contact: Contact }) {
-  const name = contact.full_name || contact.name || "Unnamed contact";
+  // Canonical name fallback — never render "Unnamed contact" if any
+  // first / last / full piece is on the row.
+  const name =
+    contact.full_name ||
+    contact.name ||
+    [contact.first_name, contact.last_name].filter(Boolean).join(" ").trim() ||
+    (contact as any).firstName ||
+    contact.first_name ||
+    "Unnamed contact";
   const verified = isProviderVerified(contact);
   const dept = contact.department || contact.dept;
   const source = contact.source || contact.source_provider;
@@ -839,7 +884,15 @@ function ContactRow({ contact }: { contact: Contact }) {
 }
 
 function ContactCard({ contact }: { contact: Contact }) {
-  const name = contact.full_name || contact.name || "Unnamed contact";
+  // Canonical name fallback — never render "Unnamed contact" if any
+  // first / last / full piece is on the row.
+  const name =
+    contact.full_name ||
+    contact.name ||
+    [contact.first_name, contact.last_name].filter(Boolean).join(" ").trim() ||
+    (contact as any).firstName ||
+    contact.first_name ||
+    "Unnamed contact";
   const verified = isProviderVerified(contact);
   const dept = contact.department || contact.dept;
   return (
@@ -1510,7 +1563,7 @@ function SearchModeBadge({
 }) {
   const map: Record<typeof mode, { label: string; tone: string }> = {
     organization_id: {
-      label: "Apollo company match",
+      label: "LIT company match",
       tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
     },
     domain: {
