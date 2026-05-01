@@ -1,5 +1,15 @@
 import React from "react";
-import { ChevronRight } from "lucide-react";
+import {
+  User,
+  Building2,
+  ShieldCheck,
+  Bell,
+  Plug,
+  KeyRound,
+  Search,
+  LifeBuoy,
+  UserCog,
+} from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   SETTINGS_SECTIONS,
@@ -11,6 +21,7 @@ import {
   PreferencesSection,
   IntegrationsHubSection,
 } from "./SettingsSections";
+import { Pill } from "./SettingsPrimitives";
 
 // Accepts ?tab=… (case/spacing tolerant) so deep links route correctly.
 function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
@@ -162,13 +173,26 @@ export type SettingsLayoutProps = {
   authProvider?: string | null;
 };
 
-const SECTION_KICKER: Record<SettingsSectionId, string> = {
-  Profile:       "Account · Settings",
-  Workspace:     "Workspace · Settings",
-  Security:      "Account · Settings",
-  Notifications: "Account · Settings",
-  Integrations:  "Account · Settings",
-  Preferences:   "Account · Settings",
+// ── Nav group structure ───────────────────────────────────────────────────────
+type NavGroup = {
+  label: string;
+  items: SettingsSectionId[];
+};
+
+const NAV_GROUPS: NavGroup[] = [
+  { label: "Account",   items: ["Profile", "Security", "Notifications"] },
+  { label: "Workspace", items: ["Workspace"] },
+  { label: "Outreach",  items: ["Integrations"] },
+  { label: "Personal",  items: ["Preferences"] },
+];
+
+const SECTION_ICON: Record<SettingsSectionId, React.ComponentType<{ className?: string; size?: number }>> = {
+  Profile:       User,
+  Workspace:     Building2,
+  Security:      ShieldCheck,
+  Notifications: Bell,
+  Integrations:  Plug,
+  Preferences:   KeyRound,
 };
 
 const SECTION_TITLE: Record<SettingsSectionId, string> = {
@@ -190,32 +214,19 @@ const SECTION_DESCRIPTION: Partial<Record<SettingsSectionId, string>> = {
   Notifications:
     "Route the signals you care about to email, in-app, or Slack. Everything else stays quiet.",
   Integrations:
-    "Outbound mailboxes, enrichment providers, and partner payouts.",
+    "Connect your inboxes and data sources. Inbox connections power the Outbound Engine.",
   Preferences:
     "Personal defaults for time, email signature, and search.",
 };
 
-function WorkspaceChipBlock({ workspace }: { workspace?: WorkspaceChip }) {
-  const name = workspace?.name || "LIT · Logistics Intelligence";
-  const meta = [workspace?.planLabel, workspace?.roleLabel, workspace?.joinedLabel]
-    .filter(Boolean)
-    .join(" · ");
-  return (
-    <div className="flex min-w-0 items-center gap-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 text-xs font-bold text-white shadow-sm">
-        L
-      </div>
-      <div className="min-w-0 md:text-right">
-        <p className="truncate text-sm font-semibold text-slate-900">{name}</p>
-        {meta ? (
-          <p className="truncate font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">
-            {meta}
-          </p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
+const SECTION_KICKER: Record<SettingsSectionId, string> = {
+  Profile:       "ACCOUNT · SETTINGS",
+  Workspace:     "WORKSPACE · SETTINGS",
+  Security:      "ACCOUNT · SETTINGS",
+  Notifications: "WORKSPACE · SETTINGS",
+  Integrations:  "OUTREACH · SETTINGS",
+  Preferences:   "ACCOUNT · SETTINGS",
+};
 
 function renderSection(
   section: SettingsSectionId,
@@ -314,6 +325,157 @@ function renderSection(
   }
 }
 
+// ── Left-rail nav ─────────────────────────────────────────────────────────────
+function SettingsNav({
+  activeSection,
+  onSelect,
+  searchQuery,
+}: {
+  activeSection: SettingsSectionId;
+  onSelect: (id: SettingsSectionId) => void;
+  searchQuery: string;
+}) {
+  const query = searchQuery.trim().toLowerCase();
+
+  return (
+    <nav className="flex flex-col gap-0">
+      {NAV_GROUPS.map((group) => {
+        // Filter items by search
+        const visibleItems = query
+          ? group.items.filter((id) =>
+              SECTION_TITLE[id].toLowerCase().includes(query) ||
+              (SECTION_DESCRIPTION[id] || "").toLowerCase().includes(query),
+            )
+          : group.items;
+
+        if (visibleItems.length === 0) return null;
+
+        return (
+          <div key={group.label}>
+            <p className="font-display text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 px-3 pb-1 pt-3">
+              {group.label}
+            </p>
+            <div className="flex flex-col gap-0.5">
+              {visibleItems.map((id) => {
+                const Icon = SECTION_ICON[id];
+                const isActive = id === activeSection;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => onSelect(id)}
+                    className={[
+                      "flex w-full items-center gap-2.5 rounded-md py-2 text-left font-display text-[13px] transition",
+                      isActive
+                        ? "bg-blue-50 text-blue-700 pl-[calc(0.625rem-2px)] pr-2.5 border-l-2 border-blue-500"
+                        : "text-slate-700 hover:bg-slate-50 px-2.5",
+                    ].join(" ")}
+                  >
+                    <Icon
+                      size={14}
+                      className={isActive ? "text-blue-500 shrink-0" : "text-slate-500 shrink-0"}
+                    />
+                    {SECTION_TITLE[id]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
+// ── Full left rail (search + nav + help) ──────────────────────────────────────
+function LeftRail({
+  activeSection,
+  onSelect,
+}: {
+  activeSection: SettingsSectionId;
+  onSelect: (id: SettingsSectionId) => void;
+}) {
+  const [query, setQuery] = React.useState("");
+
+  return (
+    <aside className="flex w-[252px] shrink-0 flex-col bg-[#FAFBFC] border-r border-slate-200 min-h-full">
+      {/* Search box */}
+      <div className="px-3 pt-3 pb-2">
+        <div className="relative">
+          <Search
+            size={13}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search settings…"
+            className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 font-body text-[12.5px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+          />
+        </div>
+      </div>
+
+      {/* Nav groups */}
+      <div className="flex-1 overflow-y-auto px-2 pb-2">
+        <SettingsNav
+          activeSection={activeSection}
+          onSelect={onSelect}
+          searchQuery={query}
+        />
+      </div>
+
+      {/* Help footer */}
+      <div className="border-t border-slate-100 px-4 py-3.5 flex items-center gap-2.5 shrink-0">
+        <LifeBuoy size={14} className="text-slate-500 shrink-0" />
+        <div className="min-w-0">
+          <div className="font-display text-[12px] font-semibold text-slate-700">Need help?</div>
+          <a
+            href="https://docs.logisticintel.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-body text-[11.5px] text-blue-500 hover:underline"
+          >
+            docs.logisticintel.com
+          </a>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ── Horizontal strip nav (≤1100px) ───────────────────────────────────────────
+function HorizontalStrip({
+  activeSection,
+  onSelect,
+}: {
+  activeSection: SettingsSectionId;
+  onSelect: (id: SettingsSectionId) => void;
+}) {
+  return (
+    <div className="flex overflow-x-auto border-b border-slate-200 bg-white">
+      {SETTINGS_SECTIONS.map((section) => {
+        const isActive = section.id === activeSection;
+        return (
+          <button
+            key={section.id}
+            type="button"
+            onClick={() => onSelect(section.id)}
+            className={[
+              "whitespace-nowrap border-b-2 px-4 py-3 font-display text-[13px] font-semibold transition shrink-0",
+              isActive
+                ? "border-blue-600 text-blue-700"
+                : "border-transparent text-slate-500 hover:text-slate-700",
+            ].join(" ")}
+          >
+            {section.title}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function SettingsLayout(props: SettingsLayoutProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -343,66 +505,56 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
     [searchParams, setSearchParams],
   );
 
-  const kicker = SECTION_KICKER[activeSection] || "Account · Settings";
-  const title = SECTION_TITLE[activeSection] || activeSection;
-  const description = SECTION_DESCRIPTION[activeSection];
+  const roleLabel = props.workspace?.roleLabel || (props.isAdmin ? "Admin" : "Member");
+  const planLabel = props.workspace?.planLabel || props.subscription?.plan_code || props.profile?.planName || "Free Trial";
 
   return (
     <div className="flex w-full flex-col">
-      {/* Page header: kicker + title on left, workspace chip on right */}
-      <header className="mb-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      {/* ── Full-width page header ───────────────────────────────────────── */}
+      <header className="border-b border-slate-200 bg-white px-8 py-5 flex items-center justify-between gap-4 shrink-0">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-indigo-600">
-            {kicker}
-          </p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
-            {title}
+          <h1 className="font-display text-[22px] font-bold text-slate-900 tracking-[-0.02em]">
+            Settings
           </h1>
+          <p className="font-body text-[13px] text-slate-500 mt-1">
+            Control center for your profile, workspace, integrations, and outreach.
+          </p>
         </div>
-        <WorkspaceChipBlock workspace={props.workspace} />
+        <div className="flex items-center gap-2 shrink-0">
+          <Pill tone="blue" icon={<UserCog size={11} />}>
+            {roleLabel}
+          </Pill>
+          <Pill tone="cyan" dot>
+            {planLabel}
+          </Pill>
+        </div>
       </header>
 
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 px-1 pb-3 text-sm">
-        <span className="text-slate-400">Settings</span>
-        <ChevronRight className="h-3 w-3 text-slate-300" />
-        <span className="font-medium text-slate-900">{title}</span>
-      </nav>
-
-      {/* Horizontal tab bar */}
-      <div className="sticky top-0 z-10 -mx-4 border-b border-slate-200 bg-white/95 px-4 backdrop-blur md:-mx-6 md:px-6 xl:-mx-8 xl:px-8">
-        <div className="-mb-px flex gap-0 overflow-x-auto">
-          {SETTINGS_SECTIONS.map((section) => {
-            const isActive = section.id === activeSection;
-            return (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => handleSelectSection(section.id)}
-                className={
-                  "whitespace-nowrap border-b-2 px-4 py-3.5 text-sm transition " +
-                  (isActive
-                    ? "border-slate-900 font-medium text-slate-900"
-                    : "border-transparent text-slate-500 hover:text-slate-700")
-                }
-              >
-                {section.title}
-              </button>
-            );
-          })}
-        </div>
+      {/* ── Horizontal strip (≤1100px / lg breakpoint) ──────────────────── */}
+      <div className="xl:hidden">
+        <HorizontalStrip
+          activeSection={activeSection}
+          onSelect={handleSelectSection}
+        />
       </div>
 
-      {/* Section header: sentence-case H2 + description */}
-      <main className="mx-auto w-full max-w-5xl pt-6">
-        <div className="mb-5">
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h2>
-          {description ? (
-            <p className="mt-1 text-sm text-slate-500">{description}</p>
-          ) : null}
+      {/* ── Two-pane layout ──────────────────────────────────────────────── */}
+      <div className="flex flex-1 min-h-0">
+        {/* Left rail — hidden below xl */}
+        <div className="hidden xl:flex">
+          <LeftRail
+            activeSection={activeSection}
+            onSelect={handleSelectSection}
+          />
         </div>
-        {renderSection(activeSection, props, navigate)}
-      </main>
+
+        {/* Scroll body */}
+        <main className="flex-1 min-w-0 overflow-y-auto">
+          <div className="max-w-[1100px] mx-auto py-7 px-8 flex flex-col gap-5">
+            {renderSection(activeSection, props, navigate)}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

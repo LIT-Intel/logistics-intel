@@ -22,8 +22,32 @@ import {
   Gift,
   ExternalLink,
   Lock,
+  RefreshCw,
+  WifiOff,
+  Link as LinkIcon,
+  AlertTriangle,
 } from "lucide-react";
 import { PLAN_LIMITS, normalizePlan as normalizePlanCode } from "@/lib/planLimits";
+import { listEmailAccounts, startGmailOAuth } from "@/lib/api";
+import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
+import type { LitEmailAccountRow } from "@/types/lit-outbound";
+import {
+  SCard,
+  SectionHeader,
+  Pill,
+  SToggle,
+  RawToggle,
+  BtnPrimary,
+  BtnGhost,
+  BtnDanger,
+  BtnDark,
+  SInput,
+  STextarea,
+  SSelect,
+  SField,
+  StatusMsg,
+} from "./SettingsPrimitives";
+import { ob } from "@/features/outbound/tokens";
 
 // User-facing /app/settings exposes six tabs. The legacy admin-only
 // sections (Outreach Accounts, Campaign Preferences, RFP & Pipeline,
@@ -51,78 +75,56 @@ export const SETTINGS_SECTIONS: Array<{
   { id: "Preferences",   title: "Preferences",   icon: KeyRound },
 ];
 
+// Local section wrapper — uses SectionHeader + consistent gap
 function SectionShell({
   title,
   description,
+  kicker,
   children,
+  right,
 }: {
   title: string;
   description?: string;
+  kicker?: string;
   children: React.ReactNode;
+  right?: React.ReactNode;
 }) {
   return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
-      </div>
-      <div className="space-y-5">{children}</div>
+    <div className="space-y-4">
+      <SectionHeader
+        kicker={kicker || "SETTINGS"}
+        title={title}
+        description={description}
+        right={right}
+      />
+      <div className="space-y-4">{children}</div>
     </div>
   );
 }
 
+// Thin adapters so old callers keep working while using new primitives
 function Field({
   label,
   children,
+  required,
 }: {
   label: string;
   children: React.ReactNode;
+  required?: boolean;
 }) {
-  return (
-    <label className="block space-y-2">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      {children}
-    </label>
-  );
+  return <SField label={label} required={required}>{children}</SField>;
 }
 
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      className={[
-        "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition",
-        "focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
-        props.className || "",
-      ].join(" ")}
-    />
-  );
+  return <SInput {...props} />;
 }
 
 function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return (
-    <textarea
-      {...props}
-      className={[
-        "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition",
-        "focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
-        props.className || "",
-      ].join(" ")}
-    />
-  );
+  return <STextarea {...props} />;
 }
 
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
-      {...props}
-      className={[
-        "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition",
-        "focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
-        props.className || "",
-      ].join(" ")}
-    />
-  );
+  return <SSelect {...props} />;
 }
 
 function ActionButton({
@@ -130,44 +132,13 @@ function ActionButton({
   variant = "primary",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" }) {
-  const variants = {
-    primary:
-      "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm hover:from-blue-700 hover:to-indigo-700",
-    secondary:
-      "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-    danger:
-      "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100",
-  };
-  return (
-    <button
-      {...props}
-      className={[
-        "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60",
-        variants[variant],
-        props.className || "",
-      ].join(" ")}
-    >
-      {children}
-    </button>
-  );
+  if (variant === "danger") return <BtnDanger {...props}>{children}</BtnDanger>;
+  if (variant === "secondary") return <BtnGhost {...props}>{children}</BtnGhost>;
+  return <BtnPrimary {...props}>{children}</BtnPrimary>;
 }
 
 function StatusMessage({ error, success }: { error?: string | null; success?: string | null }) {
-  if (!error && !success) return null;
-  if (error) {
-    return (
-      <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-        <AlertCircle size={16} />
-        {error}
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-      <CheckCircle2 size={16} />
-      {success}
-    </div>
-  );
+  return <StatusMsg error={error} success={success} />;
 }
 
 type MessagingKey = "mentions" | "weekly_digest" | "direct_messages" | "assignments";
@@ -215,23 +186,7 @@ const TIMEZONE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "Australia/Sydney", label: "Australia/Sydney" },
 ];
 
-function ToggleSwitch({ on }: { on: boolean }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`relative block h-5 w-9 shrink-0 rounded-full transition ${
-        on ? "bg-indigo-600" : "bg-slate-300"
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 inline-block h-4 w-4 rounded-full bg-white shadow transition-all ${
-          on ? "left-4" : "left-0.5"
-        }`}
-      />
-    </span>
-  );
-}
-
+// MessagingTile now delegates to SToggle from SettingsPrimitives
 function MessagingTile({
   label,
   description,
@@ -246,21 +201,13 @@ function MessagingTile({
   disabled?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
+    <SToggle
+      title={label}
+      description={description}
+      on={on}
+      onToggle={onToggle}
       disabled={disabled}
-      onClick={onToggle}
-      className={`flex w-full items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 px-4 py-3 text-left transition hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-wait disabled:opacity-60`}
-    >
-      <span className="min-w-0">
-        <span className="block text-sm font-semibold text-slate-900">{label}</span>
-        <span className="mt-0.5 block text-xs text-slate-500">{description}</span>
-      </span>
-      <ToggleSwitch on={on} />
-    </button>
+    />
   );
 }
 
@@ -426,116 +373,86 @@ export function ProfileSection({
       .slice(0, 2) || "U";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <StatusMessage error={error || msgError} success={success} />
 
       {/* Identity card */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-black/[0.02]">
-        <div className="mb-6">
-          <h3 className="text-base font-semibold text-slate-900">Identity</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            Public profile details visible to your workspace and in outbound signatures.
-          </p>
-        </div>
-
-        <div className="grid gap-6 md:grid-cols-[160px_minmax(0,1fr)]">
-          <div className="flex flex-col items-center">
+      <SCard
+        title="Identity"
+        subtitle="Public profile details visible to your workspace and in outbound signatures."
+      >
+        <div className="grid gap-6 md:grid-cols-[140px_minmax(0,1fr)]">
+          <div className="flex flex-col items-center gap-3">
             <div
               aria-label={avatarUrl ? "Profile image" : `Initials avatar ${initials}`}
-              className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-3xl font-bold text-white shadow"
+              className="flex h-[104px] w-[104px] items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-blue-700 shadow"
             >
               {avatarUrl ? (
                 <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
               ) : (
-                <span>{initials}</span>
+                <span className="font-display text-3xl font-bold text-white">{initials}</span>
               )}
             </div>
-            {/* No file storage backend wired yet — surface an honest
-                disabled affordance rather than a button that throws when
-                clicked. Re-enable once UploadFile is wired. */}
             <button
               type="button"
               disabled
               title="Photo upload ships with the storage integration"
-              className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-400"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 font-display text-[11px] font-semibold text-slate-400"
             >
               <Upload className="h-3 w-3" />
               Change photo · soon
             </button>
           </div>
 
-          <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
-                  Full name <span className="text-rose-500">*</span>
-                </label>
-                <input
+          <div className="space-y-3.5">
+            <div className="grid gap-3 md:grid-cols-2">
+              <SField label="Full name" required>
+                <SInput
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
                 />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
-                  Job title
-                </label>
-                <input
+              </SField>
+              <SField label="Job title">
+                <SInput
                   type="text"
                   value={form.title}
                   onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
                 />
-              </div>
+              </SField>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
-                  Email
-                </label>
-                <input
+            <div className="grid gap-3 md:grid-cols-2">
+              <SField label="Email">
+                <SInput
                   type="email"
                   value={initialData?.email || ""}
                   readOnly
-                  className="w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500"
+                  className="cursor-not-allowed opacity-60"
                 />
-                <p className="mt-1 text-xs text-emerald-600">Primary login email — verified</p>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
-                  Phone
-                </label>
-                <input
+                <p className="font-body text-[11.5px]" style={{ color: ob.successFg }}>Primary login email — verified</p>
+              </SField>
+              <SField label="Phone">
+                <SInput
                   type="tel"
                   value={form.phone}
                   onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
                 />
-              </div>
+              </SField>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
-                  Location
-                </label>
-                <input
+            <div className="grid gap-3 md:grid-cols-2">
+              <SField label="Location">
+                <SInput
                   type="text"
                   value={form.location}
                   onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
                 />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
-                  Timezone
-                </label>
-                <select
+              </SField>
+              <SField label="Timezone">
+                <SSelect
                   value={form.timezone}
                   onChange={(e) => setForm((p) => ({ ...p, timezone: e.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
                 >
                   <option value="">Select timezone…</option>
                   {TIMEZONE_OPTIONS.map((tz) => (
@@ -543,56 +460,47 @@ export function ProfileSection({
                       {tz.label}
                     </option>
                   ))}
-                </select>
-              </div>
+                </SSelect>
+              </SField>
             </div>
 
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-500">
-                Short bio
-              </label>
-              <textarea
+            <SField label="Short bio">
+              <STextarea
                 rows={3}
                 maxLength={BIO_MAX_CHARS}
                 value={form.bio}
                 onChange={(e) => setForm((p) => ({ ...p, bio: e.target.value }))}
-                className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
               />
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="font-body text-[11.5px] text-slate-400">
                 {BIO_MAX_CHARS} chars max. Shown on your outbound signature and teammate cards.
               </p>
-            </div>
+            </SField>
           </div>
         </div>
 
-        <div className="mt-6 flex items-center justify-end gap-2 border-t border-slate-100 pt-5">
-          <button
+        <div className="mt-5 flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
+          <BtnGhost
             type="button"
             onClick={handleCancel}
             disabled={saving || !dirty}
-            className="rounded-full border border-slate-200 px-5 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Cancel
-          </button>
-          <button
+          </BtnGhost>
+          <BtnDark
             type="button"
             onClick={handleSave}
             disabled={saving || !dirty}
-            className="rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving ? "Saving…" : "Save changes"}
-          </button>
+          </BtnDark>
         </div>
-      </div>
+      </SCard>
 
       {/* Messaging preferences */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-black/[0.02]">
-        <div className="mb-5">
-          <h3 className="text-base font-semibold text-slate-900">Messaging preferences</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            How teammates and automated systems contact you inside the app.
-          </p>
-        </div>
+      <SCard
+        title="Messaging preferences"
+        subtitle="How teammates and automated systems contact you inside the app."
+      >
         <div className="grid gap-3 md:grid-cols-2">
           {MESSAGING_ROWS.map((row) => (
             <MessagingTile
@@ -605,17 +513,16 @@ export function ProfileSection({
             />
           ))}
         </div>
-      </div>
+      </SCard>
 
       {/* Account handoff */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-black/[0.02]">
-        <h3 className="text-base font-semibold text-slate-900">Account</h3>
-        <p className="mt-1 text-sm text-slate-500">
+      <SCard title="Account">
+        <p className="font-body text-[13px] text-slate-500 leading-relaxed">
           Session, password reset, and two-factor security are managed
           through your account email — sign-in flow handles all of those
           today.
         </p>
-      </div>
+      </SCard>
     </div>
   );
 }
@@ -971,33 +878,26 @@ export function AccessRolesSection({
   const [err, setErr] = useState<string | null>(null);
 
   return (
-    <SectionShell title="Access & Roles" description="Manage workspace access, roles, and pending invites.">
+    <div className="space-y-4">
       <StatusMessage error={err} success={msg} />
-      <div className="rounded-3xl border border-slate-200 bg-white p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <div className="font-semibold text-slate-900">Workspace members</div>
-            <div className="text-sm text-slate-500">
-              {members.length} active {seatLimit ? `of ${seatLimit} seats` : "members"}
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-3">
+      <SCard
+        title="Workspace members"
+        subtitle={`${members.length} active ${seatLimit ? `of ${seatLimit} seats` : "members"}`}
+      >
+        <div className="space-y-2">
           {members.length ? (
             members.map((m: any) => {
               const isOwner = m.role === "owner";
-
               return (
                 <div
                   key={m.id}
-                  className="grid gap-3 rounded-2xl border border-slate-200 p-4 md:grid-cols-[minmax(0,1fr)_180px_140px] md:items-center"
+                  className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3.5 md:grid-cols-[minmax(0,1fr)_180px_120px] md:items-center"
                 >
                   <div className="min-w-0">
-                    <div className="font-medium text-slate-900">{m.full_name || m.email || "User"}</div>
-                    <div className="truncate text-sm text-slate-500">{m.email || m.user_id}</div>
+                    <div className="font-display text-[13px] font-semibold text-slate-900">{m.full_name || m.email || "User"}</div>
+                    <div className="truncate font-body text-[12px] text-slate-500">{m.email || m.user_id}</div>
                   </div>
-                  <Select
+                  <SSelect
                     value={m.role}
                     disabled={!isAdmin || isOwner}
                     onChange={async (e) => {
@@ -1011,9 +911,8 @@ export function AccessRolesSection({
                     {isOwner ? <option value="owner">Owner</option> : null}
                     <option value="admin">Admin</option>
                     <option value="member">Member</option>
-                  </Select>
-                  <ActionButton
-                    variant="danger"
+                  </SSelect>
+                  <BtnDanger
                     disabled={!isAdmin || isOwner}
                     onClick={async () => {
                       setErr(null);
@@ -1023,29 +922,28 @@ export function AccessRolesSection({
                       else setMsg("Member removed");
                     }}
                   >
-                    <Trash2 size={16} />
+                    <Trash2 size={13} />
                     Remove
-                  </ActionButton>
+                  </BtnDanger>
                 </div>
               );
             })
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+            <div className="rounded-lg border border-dashed border-slate-200 p-4 font-body text-[13px] text-slate-500">
               No members found.
             </div>
           )}
         </div>
-      </div>
+      </SCard>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-5">
-        <div className="mb-4 font-semibold text-slate-900">Invite user</div>
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px_auto]">
-          <Input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="user@company.com" />
-          <Select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+      <SCard title="Invite user">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_auto]">
+          <SInput value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="user@company.com" />
+          <SSelect value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
             <option value="member">Member</option>
             <option value="admin">Admin</option>
-          </Select>
-          <ActionButton
+          </SSelect>
+          <BtnPrimary
             disabled={!isAdmin}
             onClick={async () => {
               setErr(null);
@@ -1060,21 +958,20 @@ export function AccessRolesSection({
               }
             }}
           >
-            <Plus size={16} />
+            <Plus size={14} />
             Invite
-          </ActionButton>
+          </BtnPrimary>
         </div>
 
-        <div className="mt-5 space-y-3">
+        <div className="mt-4 space-y-2">
           {invites.length ? (
             invites.map((invite: any) => (
-              <div key={invite.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+              <div key={invite.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
                 <div>
-                  <div className="font-medium text-slate-900">{invite.email}</div>
-                  <div className="text-sm text-slate-500">{invite.role} • pending</div>
+                  <div className="font-display text-[13px] font-semibold text-slate-900">{invite.email}</div>
+                  <div className="font-body text-[12px] text-slate-500">{invite.role} · pending</div>
                 </div>
-                <ActionButton
-                  variant="danger"
+                <BtnDanger
                   disabled={!isAdmin}
                   onClick={async () => {
                     setErr(null);
@@ -1085,17 +982,17 @@ export function AccessRolesSection({
                   }}
                 >
                   Revoke
-                </ActionButton>
+                </BtnDanger>
               </div>
             ))
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+            <div className="rounded-lg border border-dashed border-slate-200 p-3.5 font-body text-[13px] text-slate-500">
               No pending invites.
             </div>
           )}
         </div>
-      </div>
-    </SectionShell>
+      </SCard>
+    </div>
   );
 }
 
@@ -1408,8 +1305,9 @@ export function AlertsNotificationsSection({ preferences, onSavePreferences }: a
       title="Alerts & Notifications"
       description="Route the signals you care about to email, in-app, or Slack. Everything else stays quiet."
     >
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="hidden grid-cols-[minmax(0,1fr)_repeat(3,80px)] gap-2 border-b border-slate-100 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 md:grid">
+      <SCard>
+        {/* Header row */}
+        <div className="hidden grid-cols-[minmax(0,1fr)_repeat(3,80px)] gap-2 border-b border-slate-100 pb-3 mb-1 font-display text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-400 md:grid">
           <span>Event</span>
           {channelMeta.map((c) => (
             <span key={c.id} className="text-center">
@@ -1422,31 +1320,22 @@ export function AlertsNotificationsSection({ preferences, onSavePreferences }: a
           {NOTIFICATION_EVENTS.map((ev) => (
             <div
               key={ev.id}
-              className="grid grid-cols-[minmax(0,1fr)_repeat(3,56px)] items-center gap-2 px-5 py-3 md:grid-cols-[minmax(0,1fr)_repeat(3,80px)]"
+              className="grid grid-cols-[minmax(0,1fr)_repeat(3,56px)] items-center gap-2 py-3 md:grid-cols-[minmax(0,1fr)_repeat(3,80px)]"
             >
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-slate-900">{ev.label}</div>
-                <div className="mt-0.5 truncate text-xs text-slate-500">{ev.description}</div>
+                <div className="font-display text-[13px] font-semibold text-slate-900">{ev.label}</div>
+                <div className="mt-0.5 truncate font-body text-[12px] text-slate-500">{ev.description}</div>
               </div>
               {channelMeta.map((c) => {
                 const on = matrix[ev.id]?.[c.id] ?? false;
                 return (
                   <div key={c.id} className="flex items-center justify-center">
-                    <button
-                      type="button"
-                      onClick={() => toggle(ev.id, c.id)}
-                      aria-pressed={on}
-                      aria-label={`${ev.label} — ${c.label}`}
-                      className={`relative h-5 w-9 rounded-full transition ${
-                        on ? "bg-indigo-600" : "bg-slate-200"
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 inline-block h-4 w-4 rounded-full bg-white shadow transition-all ${
-                          on ? "left-4" : "left-0.5"
-                        }`}
-                      />
-                    </button>
+                    <RawToggle
+                      on={on}
+                      onToggle={() => toggle(ev.id, c.id)}
+                      label={`${ev.label} — ${c.label}`}
+                      small
+                    />
                   </div>
                 );
               })}
@@ -1454,28 +1343,19 @@ export function AlertsNotificationsSection({ preferences, onSavePreferences }: a
           ))}
         </div>
 
-        <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-4">
+        <div className="flex items-center justify-end gap-3 border-t border-slate-100 pt-4 mt-1">
           {status ? (
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold ${
-                status.kind === "ok"
-                  ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border border-rose-200 bg-rose-50 text-rose-700"
-              }`}
-            >
-              {status.kind === "ok" ? (
-                <CheckCircle2 className="h-3 w-3" />
-              ) : (
-                <AlertCircle className="h-3 w-3" />
-              )}
+            <Pill tone={status.kind === "ok" ? "green" : "red"} icon={
+              status.kind === "ok" ? <CheckCircle2 size={11} /> : <AlertCircle size={11} />
+            }>
               {status.message}
-            </span>
+            </Pill>
           ) : null}
-          <ActionButton onClick={handleSave} disabled={saving}>
+          <BtnPrimary onClick={handleSave} disabled={saving}>
             {saving ? "Saving…" : "Save notification settings"}
-          </ActionButton>
+          </BtnPrimary>
         </div>
-      </div>
+      </SCard>
     </SectionShell>
   );
 }
@@ -1903,25 +1783,394 @@ export function AffiliateProgramSection() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Email Accounts — user-facing inbox connection surface. Narrowed
-// version of IntegrationsSection: only Gmail + Outlook tiles. The rest
-// of the integrations catalog (PhantomBuster / Apollo / ImportYeti /
-// logo.dev) is admin-only and stays in IntegrationsSection for the
-// admin route. No fake connect flow — the OAuth handshake ships in a
-// future phase, so unconnected tiles say so honestly.
+// Email Accounts — user-facing inbox connection surface.
+// Gmail: real OAuth via oauth-gmail-start edge function.
+// Outlook: setup-required (no backend deployed).
+// Reads from lit_email_accounts (no tokens ever in browser).
 // ─────────────────────────────────────────────────────────────────────────────
-const EMAIL_ACCOUNT_CATALOG = [
-  {
-    id: "gmail",
-    name: "Gmail",
-    description: "Send outbound directly from your Gmail account.",
-  },
-  {
-    id: "outlook",
-    name: "Outlook",
-    description: "Send outbound directly from Microsoft 365 / Outlook.",
-  },
-] as const;
+
+type GmailCardState =
+  | "loading"
+  | "connected"
+  | "not_connected"
+  | "setup_required"
+  | "error";
+
+function StatusBadge({
+  state,
+}: {
+  state: "connected" | "not_connected" | "setup_required" | "error" | "loading";
+}) {
+  if (state === "connected") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        Connected
+      </span>
+    );
+  }
+  if (state === "setup_required") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+        Setup required
+      </span>
+    );
+  }
+  if (state === "error") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+        Error
+      </span>
+    );
+  }
+  if (state === "loading") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-400">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-300" />
+        Checking…
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+      <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+      Not connected
+    </span>
+  );
+}
+
+function GmailCard({
+  accounts,
+  loadingAccounts,
+  onRefresh,
+}: {
+  accounts: LitEmailAccountRow[];
+  loadingAccounts: boolean;
+  onRefresh: () => void;
+}) {
+  const [connecting, setConnecting] = useState(false);
+  const [localSetupRequired, setLocalSetupRequired] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  const gmailAccount = accounts.find(
+    (a) => a.provider === "gmail" && a.status === "connected",
+  );
+
+  let cardState: GmailCardState = "not_connected";
+  if (loadingAccounts) cardState = "loading";
+  else if (localSetupRequired) cardState = "setup_required";
+  else if (gmailAccount) cardState = "connected";
+
+  async function handleConnect() {
+    setConnecting(true);
+    setConnectError(null);
+    setLocalSetupRequired(false);
+    const result = await startGmailOAuth();
+    setConnecting(false);
+    if ("url" in result) {
+      window.location.href = result.url;
+      return;
+    }
+    if ("setupRequired" in result) {
+      setLocalSetupRequired(true);
+      return;
+    }
+    if ("configError" in result) {
+      setConnectError("Integration service unavailable. Check Supabase configuration.");
+      return;
+    }
+    setConnectError(result.error);
+  }
+
+  const lastUpdated = gmailAccount?.updated_at
+    ? new Date(gmailAccount.updated_at).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
+
+  const connected = cardState === "connected";
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-[18px] flex flex-col gap-3.5 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+      {/* Header row */}
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+          <Mail className="w-[18px] h-[18px] text-slate-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="font-display text-[14px] font-bold text-slate-900">Gmail</div>
+            <Pill tone="blue">Required for sending</Pill>
+          </div>
+          <div className="font-body text-[11px] uppercase tracking-[0.05em] font-semibold text-slate-400 mt-0.5">Inbox / Sending</div>
+        </div>
+        <Pill tone={connected ? "green" : cardState === "loading" ? "slate" : "slate"} dot>
+          {connected ? "Connected" : cardState === "loading" ? "Checking…" : "Not connected"}
+        </Pill>
+      </div>
+
+      {/* Description */}
+      <p className="font-body text-[12.5px] text-slate-600 leading-[1.55]">
+        Connect Gmail to send campaign emails from your own inbox. LIT will
+        never expose OAuth tokens in the browser.
+      </p>
+
+      {/* Connected account chip */}
+      {connected && gmailAccount ? (
+        <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 flex items-center gap-2.5">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+          <div className="font-mono text-[12px] font-semibold text-slate-900 truncate flex-1">
+            {gmailAccount.email}
+          </div>
+          {lastUpdated ? (
+            <span className="font-body text-[11px] text-slate-400 shrink-0">Updated {lastUpdated}</span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Setup required notice */}
+      {cardState === "setup_required" ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 font-body text-[12px] text-amber-800">
+          Gmail connection function is not deployed yet.
+        </div>
+      ) : null}
+
+      {/* Error notice */}
+      {connectError ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 font-body text-[12px] text-rose-700">
+          {connectError}
+        </div>
+      ) : null}
+
+      {/* Actions */}
+      <div className="flex gap-2 mt-auto">
+        {connected ? (
+          <>
+            <BtnGhost
+              type="button"
+              className="flex-1 justify-center"
+              onClick={handleConnect}
+              disabled={connecting || loadingAccounts}
+            >
+              {connecting ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" />Reconnecting…</> : "Reconnect"}
+            </BtnGhost>
+            <BtnDanger type="button" className="flex-1 justify-center" disabled>
+              Disconnect · setup required
+            </BtnDanger>
+          </>
+        ) : cardState !== "setup_required" ? (
+          <BtnPrimary
+            type="button"
+            className="flex-1 justify-center"
+            onClick={handleConnect}
+            disabled={connecting || loadingAccounts}
+          >
+            {connecting ? (
+              <><RefreshCw className="h-3.5 w-3.5 animate-spin" />Connecting…</>
+            ) : (
+              <><Mail className="h-3.5 w-3.5" />Connect Gmail</>
+            )}
+          </BtnPrimary>
+        ) : (
+          <BtnGhost type="button" className="flex-1 justify-center" onClick={onRefresh}>
+            <RefreshCw className="h-3.5 w-3.5 text-slate-400" />
+            Refresh status
+          </BtnGhost>
+        )}
+        {!connected && cardState !== "setup_required" ? (
+          <BtnGhost type="button" onClick={onRefresh}>
+            <RefreshCw className="h-3.5 w-3.5 text-slate-400" />
+          </BtnGhost>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function OutlookCard() {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-[18px] flex flex-col gap-3.5 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+      {/* Header row */}
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+          <Mail className="w-[18px] h-[18px] text-slate-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-display text-[14px] font-bold text-slate-900">Microsoft / Outlook</div>
+          <div className="font-body text-[11px] uppercase tracking-[0.05em] font-semibold text-slate-400 mt-0.5">Inbox / Sending</div>
+        </div>
+        <Pill tone="slate" dot>Not connected</Pill>
+      </div>
+
+      {/* Description */}
+      <p className="font-body text-[12.5px] text-slate-600 leading-[1.55]">
+        Connect Microsoft 365 Outlook to send campaign emails from your
+        company mailbox. Recommended for freight forwarders and enterprise teams.
+      </p>
+
+      {/* Setup required notice */}
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 font-body text-[12px] text-amber-800">
+        Outlook backend connection function is not deployed yet.
+      </div>
+
+      {/* Action */}
+      <div className="flex gap-2 mt-auto">
+        <button
+          type="button"
+          disabled
+          title="Outlook backend connection function is not deployed yet."
+          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 font-display text-[13px] font-semibold text-slate-400 cursor-not-allowed opacity-60"
+        >
+          <Lock className="h-3.5 w-3.5" />
+          Connect Outlook · setup required
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EmailReadinessPanel({
+  accounts,
+  loading,
+  known,
+  primaryEmail,
+}: {
+  accounts: LitEmailAccountRow[];
+  loading: boolean;
+  known: boolean;
+  primaryEmail: string | null;
+}) {
+  if (!known && !loading) {
+    return (
+      <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+        <WifiOff className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+        <p className="font-body text-[13px] text-slate-500">
+          We can&rsquo;t read your mailbox status right now. Try refreshing the
+          page or contact support if this persists.
+        </p>
+      </div>
+    );
+  }
+
+  const hasMailbox = accounts.length > 0;
+  const hasPrimary = Boolean(primaryEmail);
+  const connectedAccount = accounts.find((a) => a.status === "connected");
+
+  const rows: Array<{ label: string; value: string; ok: boolean | null }> = [
+    {
+      label: "Mailbox in lit_email_accounts",
+      value: loading ? "Checking…" : hasMailbox ? "Yes" : "No",
+      ok: loading ? null : hasMailbox,
+    },
+    {
+      label: "Primary mailbox set",
+      value: loading ? "Checking…" : hasPrimary ? "Yes" : "No",
+      ok: loading ? null : hasPrimary,
+    },
+    {
+      label: "Test send available",
+      value: "Setup required",
+      ok: false,
+    },
+    {
+      label: "Campaign dispatch available",
+      value: hasPrimary ? "Ready" : "Setup required",
+      ok: loading ? null : hasPrimary,
+    },
+  ];
+
+  return (
+    <SCard
+      title="Email sending readiness"
+      subtitle="Derived from your connected mailboxes and workspace settings."
+    >
+      <ul className="divide-y divide-slate-100">
+        {rows.map((row) => (
+          <li
+            key={row.label}
+            className="flex items-center justify-between gap-3 py-3"
+          >
+            <div className="flex items-center gap-2">
+              <span className={[
+                "w-2 h-2 rounded-full shrink-0",
+                row.ok === true
+                  ? "bg-emerald-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]"
+                  : row.ok === false
+                  ? "bg-slate-300"
+                  : "bg-slate-200",
+              ].join(" ")} />
+              <span className="font-display text-[11.5px] font-semibold text-slate-700">{row.label}</span>
+            </div>
+            <Pill
+              tone={row.ok === true ? "green" : row.ok === false ? "amber" : "slate"}
+              icon={row.ok === true ? <CheckCircle2 size={10} /> : row.ok === false ? <AlertCircle size={10} /> : undefined}
+            >
+              {row.value}
+            </Pill>
+          </li>
+        ))}
+      </ul>
+      {connectedAccount ? (
+        <div className="border-t border-slate-100 pt-4 mt-2">
+          <div className="font-display text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400 mb-3">
+            Campaign sending settings
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <div className="font-display text-[12px] font-semibold text-slate-700">
+                Default sending account
+              </div>
+              <div className="mt-0.5 font-body text-[12px] text-slate-500">
+                {primaryEmail ?? connectedAccount.email}
+                {!primaryEmail && (
+                  <span className="ml-1 text-amber-600">(Setup required)</span>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="font-display text-[12px] font-semibold text-slate-700">
+                Daily send limit
+              </div>
+              <div className="mt-0.5 font-body text-[12px] text-slate-500">
+                {(connectedAccount as any).daily_send_limit
+                  ? String((connectedAccount as any).daily_send_limit)
+                  : "Defaults apply"}
+              </div>
+            </div>
+            <div>
+              <div className="font-display text-[12px] font-semibold text-slate-700">
+                Signature
+              </div>
+              <div className="mt-0.5 font-body text-[12px] text-slate-500">
+                <a
+                  href="/app/settings?tab=preferences"
+                  className="text-blue-600 hover:underline"
+                >
+                  Edit in Preferences
+                </a>
+              </div>
+            </div>
+            <div>
+              <div className="font-display text-[12px] font-semibold text-slate-700">
+                Reply tracking
+              </div>
+              <div className="mt-0.5 font-body text-[12px] text-slate-500">Not configured</div>
+            </div>
+          </div>
+          <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 font-body text-[11px] text-slate-500">
+            <span className="font-display font-semibold text-slate-700">Test send</span> ·
+            Setup required — <code className="font-mono">send-test-email</code>{" "}
+            function is not deployed yet.
+          </div>
+        </div>
+      ) : null}
+    </SCard>
+  );
+}
 
 export function EmailAccountsSection({
   integrations,
@@ -1936,13 +2185,30 @@ export function EmailAccountsSection({
   }>;
   onDisconnect?: (id: string) => Promise<void> | void;
 }) {
-  const wired = Array.isArray(integrations) ? integrations : [];
-  const connectedByType = new Map<string, { id?: string; external_id?: string }>();
-  for (const row of wired) {
-    const key = String(row?.integration_type || row?.type || "").toLowerCase();
-    if (!key) continue;
-    connectedByType.set(key, { id: row?.id, external_id: row?.external_id });
-  }
+  const [accounts, setAccounts] = useState<LitEmailAccountRow[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const { primaryEmail, known, loading: inboxLoading, refresh: refreshInbox } = useInboxStatus();
+
+  const refreshAccounts = async () => {
+    setLoadingAccounts(true);
+    try {
+      const list = await listEmailAccounts();
+      setAccounts(list);
+    } catch {
+      // RLS block or table missing — show honest empty state
+      setAccounts([]);
+    } finally {
+      setLoadingAccounts(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshAccounts();
+  }, []);
+
+  const handleRefresh = async () => {
+    await Promise.all([refreshAccounts(), refreshInbox()]);
+  };
 
   return (
     <SectionShell
@@ -1950,64 +2216,20 @@ export function EmailAccountsSection({
       description="Connect Gmail or Outlook so the Outbound Engine can send on your behalf."
     >
       <div className="grid gap-4 md:grid-cols-2">
-        {EMAIL_ACCOUNT_CATALOG.map((entry) => {
-          const connection = connectedByType.get(entry.id);
-          const isConnected = Boolean(connection);
-          return (
-            <div
-              key={entry.id}
-              className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200">
-                    <Mail className="h-4 w-4 text-slate-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900">{entry.name}</div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Inbox / Sending
-                    </div>
-                  </div>
-                </div>
-                {isConnected ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    Connected
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
-                    <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
-                    Not connected
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500">{entry.description}</p>
-              {isConnected ? (
-                <div className="flex items-center justify-between gap-3">
-                  <div className="truncate text-xs text-slate-600">
-                    {connection?.external_id || "Active"}
-                  </div>
-                  {onDisconnect && connection?.id ? (
-                    <button
-                      type="button"
-                      onClick={() => onDisconnect(connection.id as string)}
-                      className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-white px-3 py-1 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      Disconnect
-                    </button>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="text-[11px] text-slate-400">
-                  OAuth connect ships with the Outbound Engine launch flow.
-                </div>
-              )}
-            </div>
-          );
-        })}
+        <GmailCard
+          accounts={accounts}
+          loadingAccounts={loadingAccounts}
+          onRefresh={handleRefresh}
+        />
+        <OutlookCard />
       </div>
+
+      <EmailReadinessPanel
+        accounts={accounts}
+        loading={loadingAccounts || inboxLoading}
+        known={known}
+        primaryEmail={primaryEmail}
+      />
     </SectionShell>
   );
 }
@@ -2041,30 +2263,30 @@ function TeamUpgradeCard({
   onUpgrade?: () => void;
 }) {
   return (
-    <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6 shadow-sm">
+    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-5 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 ring-1 ring-amber-200">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 ring-1 ring-amber-200">
           <Lock className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-amber-700">
+          <p className="font-display text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-700">
             Upgrade required
           </p>
-          <h3 className="mt-1 text-base font-semibold text-slate-900">
+          <h3 className="mt-1 font-display text-[15px] font-bold text-slate-900">
             Team invites are on Growth and above
           </h3>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-1 font-body text-[13px] text-slate-600 leading-relaxed">
             Your current plan is <span className="font-semibold text-slate-900">{planLabel(plan)}</span>.
             Upgrade to Growth or Enterprise to invite teammates, manage
             roles, and share saved companies and campaigns.
           </p>
-          <button
+          <BtnPrimary
             type="button"
             onClick={onUpgrade}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700"
+            className="mt-4"
           >
             View plans
-          </button>
+          </BtnPrimary>
         </div>
       </div>
     </div>
@@ -2196,33 +2418,27 @@ export function WorkspaceSection(props: {
       title="Workspace"
       description="Your shared organization, role, and team membership."
     >
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <SCard>
         <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 text-base font-bold text-white shadow-sm">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 font-display text-[18px] font-bold text-white shadow-sm">
             {(props.workspaceName?.[0] || "L").toUpperCase()}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-base font-semibold text-slate-900">
+            <div className="font-display text-[15px] font-bold text-slate-900">
               {props.workspaceName || "Logistic Intel workspace"}
             </div>
-            <div className="mt-1 flex flex-wrap gap-2">
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
               {props.workspaceRole ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-                  {props.workspaceRole}
-                </span>
+                <Pill tone="blue">{props.workspaceRole}</Pill>
               ) : null}
               {props.joinedLabel ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                  Joined {props.joinedLabel}
-                </span>
+                <Pill tone="slate">Joined {props.joinedLabel}</Pill>
               ) : null}
-              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                {seatLine}
-              </span>
+              <Pill tone="slate">{seatLine}</Pill>
             </div>
           </div>
         </div>
-      </div>
+      </SCard>
 
       <TeamSection
         plan={props.plan}
@@ -2259,55 +2475,54 @@ export function SecuritySection(props: {
       title="Security"
       description="Password and recent activity on your Logistic Intel account."
     >
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-2">
+      <SCard title="Sign-in method">
+        <div className="grid gap-4 md:grid-cols-2 mb-4">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Sign-in method
+            <div className="font-display text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+              Provider
             </div>
-            <div className="mt-1 text-sm font-medium text-slate-900">
+            <div className="mt-1 font-display text-[13px] font-semibold text-slate-900">
               {providerLabel}
             </div>
           </div>
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            <div className="font-display text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
               Email
             </div>
-            <div className="mt-1 break-all text-sm font-medium text-slate-900">
+            <div className="mt-1 break-all font-body text-[13px] text-slate-900">
               {props.email || "—"}
             </div>
           </div>
         </div>
-        <div className="mt-5 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           <a
             href="/reset-password"
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 font-display text-[13px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
           >
-            <KeyRound size={14} />
+            <KeyRound size={13} />
             Change password
           </a>
         </div>
-      </div>
+      </SCard>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-sm font-semibold text-slate-900">
-            Recent activity
-          </div>
-          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+      <SCard
+        title="Recent activity"
+        right={
+          <span className="font-display text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-400">
             Last {Math.min(20, props.auditLog?.length ?? 0)} events
           </span>
-        </div>
+        }
+      >
         {(!props.auditLog || props.auditLog.length === 0) ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+          <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center font-body text-[13px] text-slate-500">
             No recent activity yet. Sign-ins and security events will appear here.
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">
             {props.auditLog.map((event) => (
-              <li key={event.id} className="flex items-start justify-between gap-4 py-3 text-sm">
+              <li key={event.id} className="flex items-start justify-between gap-4 py-3">
                 <div className="min-w-0">
-                  <div className="font-medium text-slate-900">{event.action}</div>
+                  <div className="font-display text-[13px] font-semibold text-slate-900">{event.action}</div>
                   <div className="font-mono text-[11px] text-slate-400">
                     {event.ip_address ? `${event.ip_address} · ` : ""}
                     {new Date(event.created_at).toLocaleString()}
@@ -2317,7 +2532,7 @@ export function SecuritySection(props: {
             ))}
           </ul>
         )}
-      </div>
+      </SCard>
     </SectionShell>
   );
 }
@@ -2364,63 +2579,64 @@ export function PreferencesSection(props: {
       title="Preferences"
       description="Personal defaults for time, email signature, and search."
     >
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 text-sm font-semibold text-slate-900">Timezone</div>
-        <Field label="Display dates and reset times in this timezone">
-          <Input
-            type="text"
-            value={tz}
-            onChange={(e) => setTz(e.target.value)}
-            placeholder="America/New_York"
-          />
-        </Field>
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={saveTz}
-            disabled={savingTz}
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
-          >
-            {savingTz ? "Saving…" : "Save timezone"}
-          </button>
-          {tzMsg ? <span className="text-xs text-slate-500">{tzMsg}</span> : null}
+      <SCard title="Timezone" subtitle="Display dates and reset times in this timezone.">
+        <div className="space-y-3">
+          <SField label="IANA timezone identifier">
+            <SInput
+              type="text"
+              value={tz}
+              onChange={(e) => setTz(e.target.value)}
+              placeholder="America/New_York"
+            />
+          </SField>
+          <div className="flex items-center gap-3">
+            <BtnPrimary
+              type="button"
+              onClick={saveTz}
+              disabled={savingTz}
+            >
+              {savingTz ? "Saving…" : "Save timezone"}
+            </BtnPrimary>
+            {tzMsg ? <span className="font-body text-[12px] text-slate-500">{tzMsg}</span> : null}
+          </div>
         </div>
-      </div>
+      </SCard>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 text-sm font-semibold text-slate-900">Email signature</div>
-        <Field label="Appended to outbound campaign emails">
-          <Textarea
+      <SCard title="Email signature" subtitle="Appended to every outbound campaign email.">
+        <div className="space-y-3">
+          <STextarea
             rows={4}
             value={sig}
             onChange={(e) => setSig(e.target.value)}
             placeholder={"— Jane Smith\nLogistic Intel\nyour-email@company.com"}
           />
-        </Field>
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={saveSig}
-            disabled={savingSig}
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
-          >
-            {savingSig ? "Saving…" : "Save signature"}
-          </button>
-          {sigMsg ? <span className="text-xs text-slate-500">{sigMsg}</span> : null}
+          <div className="flex items-center gap-3">
+            <BtnPrimary
+              type="button"
+              onClick={saveSig}
+              disabled={savingSig}
+            >
+              {savingSig ? "Saving…" : "Save signature"}
+            </BtnPrimary>
+            {sigMsg ? <span className="font-body text-[12px] text-slate-500">{sigMsg}</span> : null}
+          </div>
         </div>
-      </div>
+      </SCard>
 
-      <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500">
-        <div className="mb-1 font-semibold text-slate-900">Default search filters</div>
-        Coming soon — pin lane, mode, or country filters so they apply by default whenever you open Search.
+      <div className="rounded-xl border border-dashed border-slate-200 bg-white p-5">
+        <div className="font-display text-[13px] font-bold text-slate-900 mb-1">Default search filters</div>
+        <p className="font-body text-[12.5px] text-slate-500">
+          Coming soon — pin lane, mode, or country filters so they apply by default whenever you open Search.
+        </p>
       </div>
     </SectionShell>
   );
 }
 
 // ── Integrations (email + enrichment + affiliate payouts) ─────────────
-// Wraps the existing EmailAccountsSection and surfaces other connected
-// integrations + a partner-aware Stripe Connect link if applicable.
+// Wraps EmailAccountsSection (real Gmail OAuth + Outlook setup-required)
+// and surfaces enrichment connections + a partner-aware Stripe Connect
+// link if applicable.
 export function IntegrationsHubSection(props: {
   integrations?: Array<{
     id?: string;
@@ -2440,29 +2656,27 @@ export function IntegrationsHubSection(props: {
   });
 
   return (
-    <SectionShell
-      title="Integrations"
-      description="Outbound mailboxes, enrichment providers, and partner payouts."
-    >
+    <div className="space-y-6">
+      {/* Gmail / Outlook cards + readiness panel */}
       <EmailAccountsSection
         integrations={props.integrations}
         onDisconnect={props.onDisconnect}
       />
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-sm font-semibold text-slate-900">Enrichment</div>
-          {enrichmentRows.length === 0 ? (
-            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
-              <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
-              Not connected
-            </span>
-          ) : null}
-        </div>
+      {/* Enrichment card */}
+      <SCard
+        title="Enrichment"
+        subtitle="Apollo, Lusha, or Hunter contact enrichment providers."
+        right={
+          <Pill tone={enrichmentRows.length > 0 ? "green" : "slate"} dot>
+            {enrichmentRows.length > 0 ? `${enrichmentRows.length} connected` : "Not connected"}
+          </Pill>
+        }
+      >
         {enrichmentRows.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            Apollo, Lusha, or Hunter aren't connected. Enrichment runs through
-            your workspace admin's API keys today.
+          <p className="font-body text-[12.5px] text-slate-500">
+            Enrichment runs through your workspace admin&rsquo;s API keys today.
+            User-level enrichment provider connections ship in a future release.
           </p>
         ) : (
           <ul className="divide-y divide-slate-100">
@@ -2470,55 +2684,58 @@ export function IntegrationsHubSection(props: {
               const k = String(row?.integration_type || row?.type || "").toLowerCase();
               const label = k.charAt(0).toUpperCase() + k.slice(1);
               return (
-                <li key={row.id || k} className="flex items-center justify-between gap-3 py-3 text-sm">
+                <li
+                  key={row.id || k}
+                  className="flex items-center justify-between gap-3 py-3"
+                >
                   <div>
-                    <div className="font-medium text-slate-900">{label}</div>
+                    <div className="font-display text-[13px] font-semibold text-slate-900">{label}</div>
                     <div className="font-mono text-[11px] text-slate-400">
                       {row.external_id || "Connected"}
                     </div>
                   </div>
                   {row.id ? (
-                    <button
+                    <BtnGhost
                       type="button"
                       onClick={() => props.onDisconnect?.(row.id as string)}
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
                     >
                       <Trash2 size={12} />
                       Disconnect
-                    </button>
+                    </BtnGhost>
                   ) : null}
                 </li>
               );
             })}
           </ul>
         )}
-      </div>
+      </SCard>
 
+      {/* Stripe Connect partner card — only if affiliate partner */}
       {props.isPartner ? (
-        <div className="rounded-3xl border border-blue-200 bg-blue-50/40 p-6 shadow-sm">
+        <SCard>
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-blue-600 ring-1 ring-blue-200">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 ring-1 ring-blue-200">
               <Coins size={16} />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold text-slate-900">
+              <div className="font-display text-[14px] font-bold text-slate-900">
                 Stripe Connect — partner payouts
               </div>
-              <p className="mt-1 text-xs text-slate-600">
+              <p className="mt-1 font-body text-[12.5px] text-slate-600">
                 Manage your partner payout account and view connection status
                 from the Affiliate dashboard.
               </p>
             </div>
             <a
               href="/app/affiliate"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-blue-500 to-blue-600 px-3.5 py-2 font-display text-[13px] font-semibold text-white shadow-sm transition hover:from-blue-600 hover:to-blue-700"
             >
               Manage payouts
               <ExternalLink size={12} />
             </a>
           </div>
-        </div>
+        </SCard>
       ) : null}
-    </SectionShell>
+    </div>
   );
 }

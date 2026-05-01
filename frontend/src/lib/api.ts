@@ -5084,3 +5084,77 @@ export async function enrichCampaignContacts(
 
   return payload;
 }
+
+// ---------------- Gmail OAuth start (Settings → Integrations) ----------------
+
+/**
+ * Kick off the Gmail OAuth flow from Settings > Integrations.
+ *
+ * Returns one of:
+ *   { url: string }           — redirect the browser here to start consent
+ *   { setupRequired: true }   — edge function not deployed (404 / NOT_FOUND)
+ *   { configError: true }     — Supabase client not available (env vars missing)
+ *   { error: string }         — any other failure
+ *
+ * Distinguishes "function not deployed" from real errors so the UI can
+ * show an honest "setup required" card instead of a generic error.
+ * Never exposes OAuth credentials — only invokes the edge function which
+ * returns a signed consent URL.
+ */
+export async function startGmailOAuth(): Promise<
+  { url: string } | { setupRequired: true } | { configError: true } | { error: string }
+> {
+  // Guard: if Supabase is not configured the mock client returns a generic
+  // error — short-circuit before we even hit it so the UI shows a clear
+  // "check Supabase configuration" message instead of the raw error string.
+  try {
+    const { isSupabaseAvailable } = await import("@/lib/supabase");
+    if (!isSupabaseAvailable()) {
+      return { configError: true };
+    }
+  } catch {
+    // import failed — treat as unavailable
+    return { configError: true };
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke("oauth-gmail-start", {
+      body: {},
+    });
+
+    if (error) {
+      // FunctionsRelayError with status 404 means the function isn't deployed.
+      const msg = String((error as any)?.message || "");
+      const status = (error as any)?.status ?? (error as any)?.context?.status;
+      const isNotFound =
+        status === 404 ||
+        msg.includes("NOT_FOUND") ||
+        msg.toLowerCase().includes("not found") ||
+        msg.toLowerCase().includes("404");
+      if (isNotFound) {
+        return { setupRequired: true };
+      }
+      // Defensive: if somehow the mock error leaks through, map it to configError.
+      if (msg.toLowerCase().includes("supabase not available")) {
+        return { configError: true };
+      }
+      return { error: msg || "Failed to start Gmail connection" };
+    }
+
+    if (data && typeof (data as any).url === "string") {
+      return { url: (data as any).url as string };
+    }
+
+    if (data && typeof (data as any).error === "string") {
+      return { error: (data as any).error as string };
+    }
+
+    return { error: "Unexpected response from oauth-gmail-start" };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.toLowerCase().includes("supabase not available")) {
+      return { configError: true };
+    }
+    return { error: msg || "Failed to start Gmail connection" };
+  }
+}
