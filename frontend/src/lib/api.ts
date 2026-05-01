@@ -3844,6 +3844,186 @@ export async function listContacts(company_id_or_slug: string, dept?: string) {
   return { contacts: data ?? [] };
 }
 
+/**
+ * Apollo contact discovery (people-search). Returns preview contacts —
+ * does NOT include emails or phones. Costs no enrichment credits.
+ *
+ * Backend: supabase Edge Function `apollo-contact-search`. Apollo
+ * keys are NEVER exposed to the browser.
+ */
+export type ApolloSearchPayload = {
+  companyId?: string | null;
+  companyName?: string | null;
+  companyDomain?: string | null;
+  location?: string | null;
+  titles?: string[];
+  seniorities?: string[];
+  page?: number;
+  perPage?: number;
+};
+
+export type ApolloContactPreview = {
+  apollo_person_id?: string | null;
+  full_name?: string | null;
+  title?: string | null;
+  company?: string | null;
+  location?: string | null;
+  linkedin_url?: string | null;
+  email_status?: string | null;
+  source?: "apollo";
+  enrichment_status?: "preview" | "enriched" | "failed";
+};
+
+export type ApolloContactRecord = ApolloContactPreview & {
+  email?: string | null;
+  phone?: string | null;
+  enriched_at?: string | null;
+  email_verification_status?: string | null;
+  verified_by_provider?: boolean | null;
+};
+
+export async function searchApolloContacts(
+  payload: ApolloSearchPayload,
+): Promise<{
+  ok: boolean;
+  contacts: ApolloContactPreview[];
+  error?: string;
+  setupRequired?: boolean;
+}> {
+  const { data, error } = await supabase.functions.invoke(
+    "apollo-contact-search",
+    { body: payload },
+  );
+  if (error) {
+    const msg = String(error.message || "");
+    // Edge function not deployed yet — surface a friendly setup message.
+    if (/not\s+found|404|FunctionsHttpError|FunctionsRelay/i.test(msg)) {
+      return {
+        ok: false,
+        contacts: [],
+        error: "Apollo enrichment is not configured yet.",
+        setupRequired: true,
+      };
+    }
+    throw new Error(`apollo.search: ${msg}`);
+  }
+  if (data && data.ok === false) {
+    return {
+      ok: false,
+      contacts: [],
+      error: data.error || "Apollo search failed.",
+      setupRequired: data.code === "NOT_CONFIGURED",
+    };
+  }
+  const rawList: any[] = Array.isArray(data?.contacts)
+    ? data.contacts
+    : Array.isArray(data?.people)
+      ? data.people
+      : Array.isArray(data)
+        ? data
+        : [];
+  const contacts: ApolloContactPreview[] = rawList.map((p) => ({
+    apollo_person_id: p.apollo_person_id ?? p.source_contact_key ?? p.id ?? null,
+    full_name:
+      p.full_name ??
+      p.name ??
+      ([p.first_name, p.last_name].filter(Boolean).join(" ").trim() || null),
+    title: p.title ?? p.headline ?? null,
+    company: p.company ?? p.organization?.name ?? p.organization_name ?? null,
+    location:
+      p.location ??
+      p.city ??
+      ([p.city, p.state, p.country].filter(Boolean).join(", ") || null),
+    linkedin_url: p.linkedin_url ?? p.linkedin ?? null,
+    email_status: p.email_status ?? null,
+    source: "apollo",
+    enrichment_status: "preview",
+  }));
+  return { ok: true, contacts };
+}
+
+export async function enrichApolloContacts(payload: {
+  companyId?: string | null;
+  companyName?: string | null;
+  companyDomain?: string | null;
+  contacts: Array<{
+    apollo_person_id?: string | null;
+    full_name?: string | null;
+    title?: string | null;
+    linkedin_url?: string | null;
+  }>;
+}): Promise<{
+  ok: boolean;
+  enriched: ApolloContactRecord[];
+  error?: string;
+  setupRequired?: boolean;
+}> {
+  const { data, error } = await supabase.functions.invoke(
+    "apollo-contact-enrich",
+    { body: payload },
+  );
+  if (error) {
+    const msg = String(error.message || "");
+    if (/not\s+found|404|FunctionsHttpError|FunctionsRelay/i.test(msg)) {
+      return {
+        ok: false,
+        enriched: [],
+        error: "Apollo enrichment is not configured yet.",
+        setupRequired: true,
+      };
+    }
+    throw new Error(`apollo.enrich: ${msg}`);
+  }
+  if (data && data.ok === false) {
+    return {
+      ok: false,
+      enriched: [],
+      error: data.error || "Apollo enrichment failed.",
+      setupRequired: data.code === "NOT_CONFIGURED",
+    };
+  }
+  const rawList: any[] = Array.isArray(data?.enriched)
+    ? data.enriched
+    : Array.isArray(data?.contacts)
+      ? data.contacts
+      : Array.isArray(data?.people)
+        ? data.people
+        : Array.isArray(data)
+          ? data
+          : [];
+  const enriched: ApolloContactRecord[] = rawList.map((p) => {
+    const emailStatusLower =
+      typeof p.email_status === "string" ? p.email_status.toLowerCase() : "";
+    const inferredVerified =
+      emailStatusLower === "verified" ||
+      emailStatusLower === "valid" ||
+      emailStatusLower === "deliverable";
+    return {
+      apollo_person_id: p.apollo_person_id ?? p.source_contact_key ?? p.id ?? null,
+      full_name:
+        p.full_name ??
+        p.name ??
+        ([p.first_name, p.last_name].filter(Boolean).join(" ").trim() || null),
+      title: p.title ?? p.headline ?? null,
+      company: p.company ?? p.organization?.name ?? p.organization_name ?? null,
+      location:
+        p.location ??
+        p.city ??
+        ([p.city, p.state, p.country].filter(Boolean).join(", ") || null),
+      linkedin_url: p.linkedin_url ?? p.linkedin ?? null,
+      email: p.email ?? null,
+      phone: p.phone ?? p.phone_number ?? p.mobile ?? null,
+      email_status: p.email_status ?? null,
+      email_verification_status: p.email_verification_status ?? p.email_status ?? null,
+      verified_by_provider: p.verified_by_provider ?? (inferredVerified || null),
+      enriched_at: p.enriched_at ?? new Date().toISOString(),
+      source: "apollo" as const,
+      enrichment_status: "enriched" as const,
+    };
+  });
+  return { ok: true, enriched };
+}
+
 export async function getEmailThreads(company_id: string) {
   const url = `${GW}/crm/email.threads?company_id=${encodeURIComponent(company_id)}`;
   const res = await fetch(url, { headers: { accept: "application/json" } });
@@ -5156,5 +5336,127 @@ export async function startGmailOAuth(): Promise<
       return { configError: true };
     }
     return { error: msg || "Failed to start Gmail connection" };
+  }
+}
+
+/**
+ * startOutlookOAuth — invoke the oauth-outlook-start Edge Function.
+ * Returns { url } on success; the caller navigates the browser there.
+ * Mirrors startGmailOAuth exactly, just targeting a different function.
+ */
+export async function startOutlookOAuth(): Promise<
+  { url: string } | { setupRequired: true } | { configError: true } | { error: string }
+> {
+  try {
+    const { isSupabaseAvailable } = await import("@/lib/supabase");
+    if (!isSupabaseAvailable()) {
+      return { configError: true };
+    }
+  } catch {
+    return { configError: true };
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke("oauth-outlook-start", {
+      body: {},
+    });
+
+    if (error) {
+      const msg = String((error as any)?.message || "");
+      const status = (error as any)?.status ?? (error as any)?.context?.status;
+      const isNotFound =
+        status === 404 ||
+        msg.includes("NOT_FOUND") ||
+        msg.toLowerCase().includes("not found") ||
+        msg.toLowerCase().includes("404");
+      if (isNotFound) {
+        return { setupRequired: true };
+      }
+      if (msg.toLowerCase().includes("supabase not available")) {
+        return { configError: true };
+      }
+      return { error: msg || "Failed to start Outlook connection" };
+    }
+
+    if (data && typeof (data as any).url === "string") {
+      return { url: (data as any).url as string };
+    }
+
+    if (data && typeof (data as any).error === "string") {
+      return { error: (data as any).error as string };
+    }
+
+    return { error: "Unexpected response from oauth-outlook-start" };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.toLowerCase().includes("supabase not available")) {
+      return { configError: true };
+    }
+    return { error: msg || "Failed to start Outlook connection" };
+  }
+}
+
+/**
+ * sendTestEmail — invoke the send-test-email Edge Function.
+ * Sends a test email from the user's primary connected mailbox.
+ */
+export async function sendTestEmail(toEmail: string): Promise<
+  | { ok: true; messageId: string | null; provider: string; from: string; to: string }
+  | { setupRequired: true }
+  | { configError: true }
+  | { error: string }
+> {
+  try {
+    const { isSupabaseAvailable } = await import("@/lib/supabase");
+    if (!isSupabaseAvailable()) {
+      return { configError: true };
+    }
+  } catch {
+    return { configError: true };
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke("send-test-email", {
+      body: { toEmail },
+    });
+
+    if (error) {
+      const msg = String((error as any)?.message || "");
+      const status = (error as any)?.status ?? (error as any)?.context?.status;
+      const isNotFound =
+        status === 404 ||
+        msg.includes("NOT_FOUND") ||
+        msg.toLowerCase().includes("not found") ||
+        msg.toLowerCase().includes("404");
+      if (isNotFound) {
+        return { setupRequired: true };
+      }
+      if (msg.toLowerCase().includes("supabase not available")) {
+        return { configError: true };
+      }
+      return { error: msg || "Failed to send test email" };
+    }
+
+    if (data && (data as any).ok === true) {
+      return {
+        ok: true,
+        messageId: (data as any).message_id ?? null,
+        provider: String((data as any).provider || ""),
+        from: String((data as any).from || ""),
+        to: String((data as any).to || toEmail),
+      };
+    }
+
+    if (data && typeof (data as any).error === "string") {
+      return { error: (data as any).error as string };
+    }
+
+    return { error: "Unexpected response from send-test-email" };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.toLowerCase().includes("supabase not available")) {
+      return { configError: true };
+    }
+    return { error: msg || "Failed to send test email" };
   }
 }
