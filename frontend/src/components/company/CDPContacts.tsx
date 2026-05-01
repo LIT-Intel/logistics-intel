@@ -277,14 +277,14 @@ export default function CDPContacts({
     setApolloSearched(false);
     setApolloSelected(new Set());
     // Hard-scope guard: refuse the search if we have no company domain.
-    // Without a domain Apollo returns essentially-random results
-    // (e.g. gap.com → Wells Fargo / NatWest). Surface a clear
+    // Without a domain the upstream provider returns essentially-random
+    // results (e.g. gap.com → Wells Fargo / NatWest). Surface a clear
     // setup-required message and short-circuit before billing a call.
     if (!companyDomain || !String(companyDomain).trim()) {
       setApolloLoading(false);
       setApolloSearched(true);
       setApolloError(
-        "Company domain is required before searching Apollo contacts. Add a domain on this company profile and retry.",
+        "Company domain is required before searching contacts. Add a domain on this company profile and retry.",
       );
       setApolloSetupRequired(true);
       return;
@@ -307,7 +307,7 @@ export default function CDPContacts({
       setApolloSearched(true);
       if (!result.ok) {
         setApolloResults([]);
-        setApolloError(result.error || "Apollo search failed.");
+        setApolloError(result.error || "Contact search failed.");
         setApolloSetupRequired(Boolean(result.setupRequired));
       } else {
         setApolloResults(result.contacts);
@@ -315,7 +315,7 @@ export default function CDPContacts({
     } catch (err: any) {
       setApolloSearched(true);
       setApolloResults([]);
-      setApolloError(err?.message || "Apollo search failed.");
+      setApolloError(err?.message || "Contact search failed.");
     } finally {
       setApolloLoading(false);
     }
@@ -344,6 +344,9 @@ export default function CDPContacts({
       setApolloEnrichError("Select contacts before enriching.");
       return;
     }
+    // Build a map of apollo_person_id → preview index so we can update
+    // the right rows in-place after enrichment returns.
+    const pickedKeys = Array.from(apolloSelected);
     const picked = apolloResults.filter((p, i) =>
       apolloSelected.has(apolloKey(p, i)),
     );
@@ -362,59 +365,111 @@ export default function CDPContacts({
         })),
       });
       if (!result.ok) {
-        setApolloEnrichError(result.error || "Apollo enrichment failed.");
+        setApolloEnrichError(result.error || "Contact enrichment failed.");
         return;
       }
-      // Try to refresh saved contacts (the edge function is expected
-      // to persist into lit_contacts). If listing succeeds and grew,
-      // use that — otherwise merge enriched results in-memory so the
-      // user still sees them on this tab.
-      let merged: Contact[] = contacts;
-      if (companyId) {
-        try {
-          const rows: any = await listContacts(companyId);
-          const next = Array.isArray(rows)
-            ? rows
-            : Array.isArray(rows?.contacts)
-              ? rows.contacts
-              : Array.isArray(rows?.rows)
-                ? rows.rows
-                : [];
-          if (Array.isArray(next) && next.length >= merged.length) {
-            merged = next as Contact[];
+
+      // Index the enriched results by apollo_person_id for in-place updates.
+      // The upstream provider may return a slightly different person count
+      // than we requested (no_match), so positional matching is unreliable.
+      const enrichedById = new Map<string, ApolloContactRecord>();
+      result.enriched.forEach((r) => {
+        const key = r.apollo_person_id || "";
+        if (key) enrichedById.set(key, r);
+      });
+
+      // 1. Update searchResults in place — DO NOT clear apolloResults.
+      //    Selected rows that came back enriched flip their status to
+      //    "enriched" and merge in email/phone/etc. Unselected rows stay
+      //    untouched. Selected rows with no match keep their preview row
+      //    so the user can see exactly which selections didn't enrich.
+      setApolloResults((prev) =>
+        prev.map((p, i) => {
+          const k = apolloKey(p, i);
+          if (!apolloSelected.has(k)) return p;
+          const match =
+            (p.apollo_person_id && enrichedById.get(p.apollo_person_id)) || null;
+          if (!match) {
+            return { ...p, enrichment_status: "failed" as const };
           }
-        } catch {
-          // Persistence helper missing — fall through to in-memory merge.
+          return {
+            ...p,
+            ...match,
+            // Preserve the preview's full_name / first / last when the
+            // enriched payload doesn't echo them back.
+            full_name: match.full_name ?? p.full_name ?? null,
+            first_name: match.first_name ?? p.first_name ?? null,
+            last_name: match.last_name ?? p.last_name ?? null,
+            enrichment_status: "enriched" as const,
+          };
+        }),
+      );
+
+      // 2. Upsert enriched contacts into the saved-contacts list
+      //    immediately (no clobber, no waiting on the round-trip). Match
+      //    by apollo_person_id so re-enrich just merges fields.
+      const upsertedRows: Contact[] = result.enriched.map((r) => ({
+        id: r.apollo_person_id || `apollo-${Date.now()}-${Math.random()}`,
+        full_name: r.full_name ?? null,
+        title: r.title ?? null,
+        email: r.email ?? null,
+        phone: r.phone ?? null,
+        location: r.location ?? null,
+        linkedin_url: r.linkedin_url ?? null,
+        source: "lit",
+        source_provider: "lit",
+        email_verification_status: r.email_verification_status ?? null,
+        verified_by_provider: r.verified_by_provider ?? null,
+      }));
+      const upsertedById = new Map(
+        upsertedRows.map((row) => [String(row.id), row]),
+      );
+      setContacts((prev) => {
+        const next = prev.map((c) => {
+          const k = String(c.id ?? "");
+          const fresh = upsertedById.get(k);
+          return fresh ? { ...c, ...fresh } : c;
+        });
+        const existingIds = new Set(next.map((c) => String(c.id ?? "")));
+        for (const row of upsertedRows) {
+          if (!existingIds.has(String(row.id))) next.unshift(row);
         }
+        onContactsChanged?.(next);
+        return next;
+      });
+
+      // 3. Refetch saved contacts in the background so RLS-persisted
+      //    rows take precedence — but never clear searchResults, never
+      //    close the panel.
+      if (companyId) {
+        listContacts(companyId)
+          .then((rows: any) => {
+            const next = Array.isArray(rows)
+              ? rows
+              : Array.isArray(rows?.contacts)
+                ? rows.contacts
+                : Array.isArray(rows?.rows)
+                  ? rows.rows
+                  : [];
+            if (Array.isArray(next) && next.length > 0) {
+              setContacts(next as Contact[]);
+              onContactsChanged?.(next);
+            }
+          })
+          .catch(() => {
+            // persistence helper may be missing; in-memory upsert is enough.
+          });
       }
-      // If persistence didn't add anything new, merge enriched rows in-memory
-      // so the user still sees them. We never fabricate — if Apollo returned
-      // null email/phone, we keep them null.
-      if (merged.length === contacts.length && result.enriched.length > 0) {
-        const apolloAsContacts: Contact[] = result.enriched.map((r, i) => ({
-          id: r.apollo_person_id || `apollo-${i}-${Date.now()}`,
-          full_name: r.full_name ?? null,
-          title: r.title ?? null,
-          email: r.email ?? null,
-          phone: r.phone ?? null,
-          location: r.location ?? null,
-          linkedin_url: r.linkedin_url ?? null,
-          source: "apollo",
-          source_provider: "apollo",
-          email_verification_status: r.email_verification_status ?? null,
-          verified_by_provider: r.verified_by_provider ?? null,
-        }));
-        merged = [...apolloAsContacts, ...merged];
-      }
-      setContacts(merged);
-      onContactsChanged?.(merged);
-      setEnrichToast(`Enriched ${result.enriched.length} contact(s) from Apollo`);
-      setApolloOpen(false);
-      setApolloResults([]);
+
+      setEnrichToast(
+        `Enriched ${result.enriched.length} contact${result.enriched.length === 1 ? "" : "s"}`,
+      );
+      // Clear selection (the rows are now Enriched), but keep the panel
+      // open and the search results visible.
       setApolloSelected(new Set());
       setTimeout(() => setEnrichToast(null), 3500);
     } catch (err: any) {
-      setApolloEnrichError(err?.message || "Apollo enrichment failed.");
+      setApolloEnrichError(err?.message || "Contact enrichment failed.");
     } finally {
       setApolloEnriching(false);
     }
@@ -493,8 +548,8 @@ export default function CDPContacts({
             <Sparkles className="h-3 w-3" />
           )}
           {contacts.length === 0
-            ? "Find contacts with Apollo"
-            : "Find more with Apollo"}
+            ? "Find contacts with LIT"
+            : "Find more with LIT"}
         </button>
       </div>
 
@@ -704,10 +759,10 @@ function ContactRow({ contact }: { contact: Contact }) {
       </td>
       <td className="font-display px-3.5 py-2.5 text-[10px] font-semibold text-slate-500">
         {source ? (
-          /apollo/i.test(String(source)) ? (
+          /apollo|lit/i.test(String(source)) ? (
             <span className="inline-flex items-center gap-1 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-violet-700">
               <Sparkles className="h-2.5 w-2.5" />
-              Apollo
+              LIT
             </span>
           ) : (
             String(source)
@@ -952,7 +1007,7 @@ function ApolloResultsPanel({
         <div className="flex items-center gap-2">
           <Sparkles className="h-3.5 w-3.5 text-violet-600" />
           <div className="font-display text-[12px] font-bold text-violet-900">
-            Apollo prospect search
+            LIT contact search
           </div>
           {!loading && !error && results.length > 0 && (
             <span className="font-mono text-[11px] text-slate-500">
@@ -988,7 +1043,7 @@ function ApolloResultsPanel({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close Apollo panel"
+            aria-label="Close contact search panel"
             className="rounded-md border border-slate-200 bg-white p-1 text-slate-500 hover:text-slate-900"
           >
             <X className="h-3 w-3" />
@@ -1108,13 +1163,19 @@ function ApolloResultsPanel({
         {!loading && !error && results.length > 0 && (
           <div className="font-body mt-3 rounded-md bg-amber-50 px-2.5 py-1.5 text-[10.5px] text-amber-700">
             <Zap className="mr-1 inline h-2.5 w-2.5" />
-            Enriching{" "}
-            <strong>{selected.size || results.length}</strong> contact
-            {(selected.size || results.length) === 1 ? "" : "s"} will use up to{" "}
-            <strong>{selected.size || results.length}</strong> contact
-            enrichment credit
-            {(selected.size || results.length) === 1 ? "" : "s"} from your plan
-            allowance.
+            {selected.size > 0 ? (
+              <>
+                Enriching <strong>{selected.size}</strong> contact
+                {selected.size === 1 ? "" : "s"} will use up to{" "}
+                <strong>{selected.size}</strong> contact enrichment credit
+                {selected.size === 1 ? "" : "s"} from your plan allowance.
+              </>
+            ) : (
+              <>
+                Select contacts to enrich. Each enrichment uses 1 credit from
+                your plan allowance.
+              </>
+            )}
           </div>
         )}
       </div>
@@ -1124,7 +1185,7 @@ function ApolloResultsPanel({
         <div className="px-6 py-8 text-center">
           <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin text-violet-500" />
           <p className="font-body text-[12px] text-slate-500">
-            Searching Apollo for matching prospects…
+            Searching for matching contacts…
           </p>
           <p className="font-body mt-0.5 text-[11px] text-slate-400">
             Email/phone details are only revealed after enrichment.
@@ -1137,9 +1198,8 @@ function ApolloResultsPanel({
           </p>
           {setupRequired ? (
             <p className="font-body max-w-md text-[11px] text-slate-500">
-              The <code className="font-mono">apollo-contact-search</code> Edge
-              Function isn't deployed yet. Once configured, this panel will
-              return live prospects.
+              Contact search isn't fully configured yet. Once set up, this
+              panel will return live contacts for the current company.
             </p>
           ) : (
             <button
@@ -1154,7 +1214,7 @@ function ApolloResultsPanel({
       ) : results.length === 0 && searched ? (
         <div className="px-6 py-8 text-center">
           <p className="font-display text-[12px] font-semibold text-slate-700">
-            Apollo search returned no matching contacts.
+            Contact search returned no matching results.
           </p>
           <p className="font-body mt-1 text-[11px] text-slate-500">
             Try widening the title list or confirming the company domain on
@@ -1189,13 +1249,25 @@ function ApolloResultsPanel({
                 {results.map((p, i) => {
                   const k = keyOf(p, i);
                   const checked = selected.has(k);
-                  const name = p.full_name || "Unnamed prospect";
+                  // Always render the full name. The api.ts normalizer
+                  // computes full_name = name ?? first+last, so this
+                  // already accounts for first-name-only payloads.
+                  const name =
+                    p.full_name ||
+                    [p.first_name, p.last_name].filter(Boolean).join(" ").trim() ||
+                    "Unnamed contact";
+                  const isEnriched = p.enrichment_status === "enriched";
+                  const isFailed = p.enrichment_status === "failed";
                   return (
                     <tr
                       key={k}
                       className={[
                         "border-b border-slate-100 last:border-b-0",
-                        checked ? "bg-violet-50/40" : "hover:bg-slate-50/60",
+                        isEnriched
+                          ? "bg-emerald-50/40"
+                          : checked
+                            ? "bg-violet-50/40"
+                            : "hover:bg-slate-50/60",
                       ].join(" ")}
                     >
                       <td className="px-3 py-2">
@@ -1204,7 +1276,8 @@ function ApolloResultsPanel({
                           checked={checked}
                           onChange={() => onToggle(k)}
                           aria-label={`Select ${name}`}
-                          className="h-3.5 w-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-400"
+                          disabled={isEnriched}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-400 disabled:opacity-40"
                         />
                       </td>
                       <td className="px-3 py-2">
@@ -1213,13 +1286,20 @@ function ApolloResultsPanel({
                           <div className="min-w-0">
                             <div className="font-display flex items-center gap-1.5 text-[12px] font-semibold text-slate-900">
                               {name}
-                              <span className="font-display inline-flex items-center gap-0.5 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-violet-700">
-                                <Sparkles className="h-2.5 w-2.5" />
-                                Apollo
-                              </span>
-                              <span className="font-display inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.04em] text-slate-500">
-                                Preview
-                              </span>
+                              {isEnriched ? (
+                                <span className="font-display inline-flex items-center gap-0.5 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-emerald-700">
+                                  <Sparkles className="h-2.5 w-2.5" />
+                                  LIT Enriched
+                                </span>
+                              ) : isFailed ? (
+                                <span className="font-display inline-flex items-center rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.04em] text-rose-700">
+                                  No match
+                                </span>
+                              ) : (
+                                <span className="font-display inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+                                  Preview
+                                </span>
+                              )}
                             </div>
                             {p.company && (
                               <div className="font-body mt-0.5 text-[10px] text-slate-400">
@@ -1243,7 +1323,17 @@ function ApolloResultsPanel({
                         )}
                       </td>
                       <td className="px-3 py-2">
-                        <ApolloEmailStatusBadge status={p.email_status} />
+                        {isEnriched && (p as any).email ? (
+                          <span className="font-mono text-[10px] text-slate-700">
+                            {(p as any).email}
+                          </span>
+                        ) : isEnriched ? (
+                          <span className="font-body text-[10px] text-slate-400">
+                            Not available
+                          </span>
+                        ) : (
+                          <ApolloEmailStatusBadge status={p.email_status} />
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         {p.linkedin_url ? (

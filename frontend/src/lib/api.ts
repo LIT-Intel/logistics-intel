@@ -3913,7 +3913,11 @@ export type ApolloSearchPayload = {
 export type ApolloContactPreview = {
   apollo_person_id?: string | null;
   full_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   title?: string | null;
+  department?: string | null;
+  seniority?: string | null;
   company?: string | null;
   location?: string | null;
   linkedin_url?: string | null;
@@ -3987,23 +3991,37 @@ export async function searchApolloContacts(
       : Array.isArray(data)
         ? data
         : [];
-  const contacts: ApolloContactPreview[] = rawList.map((p) => ({
-    apollo_person_id: p.apollo_person_id ?? p.source_contact_key ?? p.id ?? null,
-    full_name:
-      p.full_name ??
-      p.name ??
-      ([p.first_name, p.last_name].filter(Boolean).join(" ").trim() || null),
-    title: p.title ?? p.headline ?? null,
-    company: p.company ?? p.organization?.name ?? p.organization_name ?? null,
-    location:
-      p.location ??
-      p.city ??
-      ([p.city, p.state, p.country].filter(Boolean).join(", ") || null),
-    linkedin_url: p.linkedin_url ?? p.linkedin ?? null,
-    email_status: p.email_status ?? null,
-    source: "apollo",
-    enrichment_status: "preview",
-  }));
+  const contacts: ApolloContactPreview[] = rawList.map((p) => {
+    const firstName = p.first_name ?? null;
+    const lastName = p.last_name ?? null;
+    return {
+      apollo_person_id: p.apollo_person_id ?? p.source_contact_key ?? p.id ?? null,
+      // Always compute a non-null display name: prefer the upstream
+      // `name` / `full_name`, fall back to first+last. Never drop
+      // first_name / last_name even if name was provided — downstream
+      // (campaigns, salutations) needs both halves.
+      full_name:
+        p.name ??
+        p.full_name ??
+        ([firstName, lastName].filter(Boolean).join(" ").trim() || null),
+      first_name: firstName,
+      last_name: lastName,
+      title: p.title ?? p.headline ?? null,
+      department: Array.isArray(p.departments)
+        ? p.departments[0] ?? null
+        : p.department ?? null,
+      seniority: p.seniority ?? null,
+      company: p.company ?? p.organization?.name ?? p.organization_name ?? null,
+      location:
+        p.location ??
+        p.city ??
+        ([p.city, p.state, p.country].filter(Boolean).join(", ") || null),
+      linkedin_url: p.linkedin_url ?? p.linkedin ?? null,
+      email_status: p.email_status ?? null,
+      source: "apollo",
+      enrichment_status: "preview",
+    };
+  });
   return { ok: true, contacts };
 }
 
@@ -4072,13 +4090,21 @@ export async function enrichApolloContacts(payload: {
       emailStatusLower === "verified" ||
       emailStatusLower === "valid" ||
       emailStatusLower === "deliverable";
+    const firstName = p.first_name ?? null;
+    const lastName = p.last_name ?? null;
     return {
       apollo_person_id: p.apollo_person_id ?? p.source_contact_key ?? p.id ?? null,
       full_name:
-        p.full_name ??
         p.name ??
-        ([p.first_name, p.last_name].filter(Boolean).join(" ").trim() || null),
+        p.full_name ??
+        ([firstName, lastName].filter(Boolean).join(" ").trim() || null),
+      first_name: firstName,
+      last_name: lastName,
       title: p.title ?? p.headline ?? null,
+      department: Array.isArray(p.departments)
+        ? p.departments[0] ?? null
+        : p.department ?? null,
+      seniority: p.seniority ?? null,
       company: p.company ?? p.organization?.name ?? p.organization_name ?? null,
       location:
         p.location ??
