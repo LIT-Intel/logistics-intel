@@ -926,7 +926,12 @@ export default function Company() {
             />
           )}
           {tab === "contacts" && (
-            <CDPContacts companyId={companyId} />
+            <CDPContacts
+              companyId={companyId}
+              companyName={companyName}
+              companyDomain={companyDomain}
+              companyLocation={companyAddress}
+            />
           )}
           {tab === "research" && (
             <CDPResearch

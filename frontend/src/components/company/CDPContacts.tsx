@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Bookmark,
+  CheckCircle2,
   Download,
   LayoutGrid,
+  Linkedin,
   List,
   Loader2,
   Mail,
@@ -11,11 +13,20 @@ import {
   Phone,
   Search,
   Send,
+  Sparkles,
   UserPlus,
+  X,
   Zap,
 } from "lucide-react";
 import LitPill from "@/components/ui/LitPill";
-import { listContacts, enrichContacts as enrichContactsApi } from "@/lib/api";
+import {
+  listContacts,
+  enrichContacts as enrichContactsApi,
+  searchApolloContacts,
+  enrichApolloContacts,
+  type ApolloContactPreview,
+  type ApolloContactRecord,
+} from "@/lib/api";
 
 type Contact = {
   id?: string | number;
@@ -59,7 +70,11 @@ function isProviderVerified(contact: Contact): boolean {
 
 type CDPContactsProps = {
   companyId?: string | null;
+  companyName?: string | null;
+  companyDomain?: string | null;
+  companyLocation?: string | null;
   onRequestEnrich?: () => void;
+  onContactsChanged?: (contacts: any[]) => void;
 };
 
 const DEPT_FILTERS = [
@@ -68,6 +83,32 @@ const DEPT_FILTERS = [
   { id: "operations", label: "Operations" },
   { id: "procurement", label: "Procurement" },
   { id: "legal", label: "Legal" },
+];
+
+/**
+ * Default target titles for Apollo people-search on a logistics
+ * customer profile. These map to the personas the LIT outbound
+ * playbook prioritizes.
+ */
+const APOLLO_DEFAULT_TITLES = [
+  "Logistics Manager",
+  "Transportation Manager",
+  "Supply Chain Manager",
+  "Import Manager",
+  "Customs Manager",
+  "Procurement Director",
+  "Sourcing Director",
+  "VP Supply Chain",
+  "Director of Logistics",
+  "Operations Manager",
+];
+
+const APOLLO_DEFAULT_SENIORITIES = [
+  "manager",
+  "director",
+  "vp",
+  "head",
+  "owner",
 ];
 
 const AVATAR_PALETTE = [
@@ -93,7 +134,14 @@ const AVATAR_PALETTE = [
  * Honest empty / loading states. Verified count derives from real
  * `is_verified` flag — no fabrication.
  */
-export default function CDPContacts({ companyId, onRequestEnrich }: CDPContactsProps) {
+export default function CDPContacts({
+  companyId,
+  companyName,
+  companyDomain,
+  companyLocation,
+  onRequestEnrich,
+  onContactsChanged,
+}: CDPContactsProps) {
   const [view, setView] = useState<"list" | "card">("list");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<string>("all");
@@ -102,6 +150,17 @@ export default function CDPContacts({ companyId, onRequestEnrich }: CDPContactsP
   const [error, setError] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [enrichToast, setEnrichToast] = useState<string | null>(null);
+
+  // Apollo people-search & enrichment state
+  const [apolloOpen, setApolloOpen] = useState(false);
+  const [apolloLoading, setApolloLoading] = useState(false);
+  const [apolloError, setApolloError] = useState<string | null>(null);
+  const [apolloSetupRequired, setApolloSetupRequired] = useState(false);
+  const [apolloResults, setApolloResults] = useState<ApolloContactPreview[]>([]);
+  const [apolloSearched, setApolloSearched] = useState(false);
+  const [apolloSelected, setApolloSelected] = useState<Set<string>>(new Set());
+  const [apolloEnriching, setApolloEnriching] = useState(false);
+  const [apolloEnrichError, setApolloEnrichError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,12 +240,151 @@ export default function CDPContacts({ companyId, onRequestEnrich }: CDPContactsP
             ? rows.rows
             : [];
       setContacts(next);
+      onContactsChanged?.(next);
       setEnrichToast(`Enriched — ${next.length} contacts on file`);
     } catch (err: any) {
       setEnrichToast(err?.message || "Enrichment failed");
     } finally {
       setEnriching(false);
       setTimeout(() => setEnrichToast(null), 3500);
+    }
+  }
+
+  function apolloKey(p: ApolloContactPreview, i: number): string {
+    return p.apollo_person_id || `${p.full_name || "_"}|${p.title || ""}|${i}`;
+  }
+
+  async function handleApolloSearch() {
+    if (apolloLoading) return;
+    setApolloOpen(true);
+    setApolloLoading(true);
+    setApolloError(null);
+    setApolloSetupRequired(false);
+    setApolloSearched(false);
+    setApolloSelected(new Set());
+    try {
+      const result = await searchApolloContacts({
+        companyId: companyId ?? null,
+        companyName: companyName ?? null,
+        companyDomain: companyDomain ?? null,
+        location: companyLocation ?? null,
+        titles: APOLLO_DEFAULT_TITLES,
+        seniorities: APOLLO_DEFAULT_SENIORITIES,
+        perPage: 25,
+      });
+      setApolloSearched(true);
+      if (!result.ok) {
+        setApolloResults([]);
+        setApolloError(result.error || "Apollo search failed.");
+        setApolloSetupRequired(Boolean(result.setupRequired));
+      } else {
+        setApolloResults(result.contacts);
+      }
+    } catch (err: any) {
+      setApolloSearched(true);
+      setApolloResults([]);
+      setApolloError(err?.message || "Apollo search failed.");
+    } finally {
+      setApolloLoading(false);
+    }
+  }
+
+  function toggleApolloSelected(key: string) {
+    setApolloSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function selectAllApollo() {
+    setApolloSelected(new Set(apolloResults.map((p, i) => apolloKey(p, i))));
+  }
+
+  function clearApolloSelection() {
+    setApolloSelected(new Set());
+  }
+
+  async function handleApolloEnrichSelected() {
+    if (apolloEnriching) return;
+    if (apolloSelected.size === 0) {
+      setApolloEnrichError("Select contacts before enriching.");
+      return;
+    }
+    const picked = apolloResults.filter((p, i) =>
+      apolloSelected.has(apolloKey(p, i)),
+    );
+    setApolloEnriching(true);
+    setApolloEnrichError(null);
+    try {
+      const result = await enrichApolloContacts({
+        companyId: companyId ?? null,
+        companyName: companyName ?? null,
+        companyDomain: companyDomain ?? null,
+        contacts: picked.map((p) => ({
+          apollo_person_id: p.apollo_person_id ?? null,
+          full_name: p.full_name ?? null,
+          title: p.title ?? null,
+          linkedin_url: p.linkedin_url ?? null,
+        })),
+      });
+      if (!result.ok) {
+        setApolloEnrichError(result.error || "Apollo enrichment failed.");
+        return;
+      }
+      // Try to refresh saved contacts (the edge function is expected
+      // to persist into lit_contacts). If listing succeeds and grew,
+      // use that — otherwise merge enriched results in-memory so the
+      // user still sees them on this tab.
+      let merged: Contact[] = contacts;
+      if (companyId) {
+        try {
+          const rows: any = await listContacts(companyId);
+          const next = Array.isArray(rows)
+            ? rows
+            : Array.isArray(rows?.contacts)
+              ? rows.contacts
+              : Array.isArray(rows?.rows)
+                ? rows.rows
+                : [];
+          if (Array.isArray(next) && next.length >= merged.length) {
+            merged = next as Contact[];
+          }
+        } catch {
+          // Persistence helper missing — fall through to in-memory merge.
+        }
+      }
+      // If persistence didn't add anything new, merge enriched rows in-memory
+      // so the user still sees them. We never fabricate — if Apollo returned
+      // null email/phone, we keep them null.
+      if (merged.length === contacts.length && result.enriched.length > 0) {
+        const apolloAsContacts: Contact[] = result.enriched.map((r, i) => ({
+          id: r.apollo_person_id || `apollo-${i}-${Date.now()}`,
+          full_name: r.full_name ?? null,
+          title: r.title ?? null,
+          email: r.email ?? null,
+          phone: r.phone ?? null,
+          location: r.location ?? null,
+          linkedin_url: r.linkedin_url ?? null,
+          source: "apollo",
+          source_provider: "apollo",
+          email_verification_status: r.email_verification_status ?? null,
+          verified_by_provider: r.verified_by_provider ?? null,
+        }));
+        merged = [...apolloAsContacts, ...merged];
+      }
+      setContacts(merged);
+      onContactsChanged?.(merged);
+      setEnrichToast(`Enriched ${result.enriched.length} contact(s) from Apollo`);
+      setApolloOpen(false);
+      setApolloResults([]);
+      setApolloSelected(new Set());
+      setTimeout(() => setEnrichToast(null), 3500);
+    } catch (err: any) {
+      setApolloEnrichError(err?.message || "Apollo enrichment failed.");
+    } finally {
+      setApolloEnriching(false);
     }
   }
 
@@ -245,6 +443,19 @@ export default function CDPContacts({ companyId, onRequestEnrich }: CDPContactsP
         </div>
         <button
           type="button"
+          onClick={handleApolloSearch}
+          disabled={apolloLoading}
+          className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {apolloLoading ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Sparkles className="h-3 w-3" />
+          )}
+          Find with Apollo
+        </button>
+        <button
+          type="button"
           onClick={handleEnrichAll}
           disabled={!companyId || enriching || loading}
           className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
@@ -253,6 +464,29 @@ export default function CDPContacts({ companyId, onRequestEnrich }: CDPContactsP
           Enrich All
         </button>
       </div>
+
+      {apolloOpen && (
+        <ApolloResultsPanel
+          loading={apolloLoading}
+          searched={apolloSearched}
+          error={apolloError}
+          setupRequired={apolloSetupRequired}
+          results={apolloResults}
+          selected={apolloSelected}
+          enriching={apolloEnriching}
+          enrichError={apolloEnrichError}
+          onClose={() => {
+            setApolloOpen(false);
+            setApolloEnrichError(null);
+          }}
+          onRetry={handleApolloSearch}
+          onToggle={toggleApolloSelected}
+          onSelectAll={selectAllApollo}
+          onClearSelection={clearApolloSelection}
+          onEnrichSelected={handleApolloEnrichSelected}
+          keyOf={apolloKey}
+        />
+      )}
 
       {/* Result counter */}
       <div className="flex items-center justify-between gap-2 px-1">
@@ -388,7 +622,18 @@ function ContactRow({ contact }: { contact: Contact }) {
         {contact.phone || <span className="text-slate-300">—</span>}
       </td>
       <td className="font-display px-3.5 py-2.5 text-[10px] font-semibold text-slate-500">
-        {source || "—"}
+        {source ? (
+          /apollo/i.test(String(source)) ? (
+            <span className="inline-flex items-center gap-1 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-violet-700">
+              <Sparkles className="h-2.5 w-2.5" />
+              Apollo
+            </span>
+          ) : (
+            String(source)
+          )
+        ) : (
+          "—"
+        )}
       </td>
       <td className="px-3.5 py-2.5">
         <div className="flex gap-1">
@@ -543,6 +788,278 @@ function VerifiedBadge({ verified }: { verified: boolean }) {
   return (
     <span className="font-display inline-flex items-center rounded-sm border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.04em] text-slate-400">
       Inferred
+    </span>
+  );
+}
+
+type ApolloResultsPanelProps = {
+  loading: boolean;
+  searched: boolean;
+  error: string | null;
+  setupRequired: boolean;
+  results: ApolloContactPreview[];
+  selected: Set<string>;
+  enriching: boolean;
+  enrichError: string | null;
+  onClose: () => void;
+  onRetry: () => void;
+  onToggle: (key: string) => void;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
+  onEnrichSelected: () => void;
+  keyOf: (p: ApolloContactPreview, i: number) => string;
+};
+
+function ApolloResultsPanel({
+  loading,
+  searched,
+  error,
+  setupRequired,
+  results,
+  selected,
+  enriching,
+  enrichError,
+  onClose,
+  onRetry,
+  onToggle,
+  onSelectAll,
+  onClearSelection,
+  onEnrichSelected,
+  keyOf,
+}: ApolloResultsPanelProps) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-violet-200 bg-white shadow-sm">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-violet-100 bg-gradient-to-r from-violet-50 to-white px-3.5 py-2.5">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-3.5 w-3.5 text-violet-600" />
+          <div className="font-display text-[12px] font-bold text-violet-900">
+            Apollo prospect search
+          </div>
+          {!loading && !error && results.length > 0 && (
+            <span className="font-mono text-[11px] text-slate-500">
+              · {results.length} preview{results.length === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {!loading && !error && results.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={selected.size === results.length ? onClearSelection : onSelectAll}
+                className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900"
+              >
+                {selected.size === results.length ? "Clear all" : "Select all"}
+              </button>
+              <button
+                type="button"
+                onClick={onEnrichSelected}
+                disabled={enriching || selected.size === 0}
+                className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-violet-500 to-violet-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {enriching ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Zap className="h-3 w-3" />
+                )}
+                Enrich selected{selected.size > 0 ? ` (${selected.size})` : ""}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close Apollo panel"
+            className="rounded-md border border-slate-200 bg-white p-1 text-slate-500 hover:text-slate-900"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* Body */}
+      {loading ? (
+        <div className="px-6 py-8 text-center">
+          <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin text-violet-500" />
+          <p className="font-body text-[12px] text-slate-500">
+            Searching Apollo for matching prospects…
+          </p>
+          <p className="font-body mt-0.5 text-[11px] text-slate-400">
+            Email/phone details are only revealed after enrichment.
+          </p>
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center gap-2 px-6 py-8 text-center">
+          <p className="font-display text-[12px] font-semibold text-rose-700">
+            {error}
+          </p>
+          {setupRequired ? (
+            <p className="font-body max-w-md text-[11px] text-slate-500">
+              The <code className="font-mono">apollo-contact-search</code> Edge
+              Function isn't deployed yet. Once configured, this panel will
+              return live prospects.
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="font-display rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Retry search
+            </button>
+          )}
+        </div>
+      ) : results.length === 0 && searched ? (
+        <div className="px-6 py-8 text-center">
+          <p className="font-display text-[12px] font-semibold text-slate-700">
+            Apollo search returned no matching contacts.
+          </p>
+          <p className="font-body mt-1 text-[11px] text-slate-500">
+            Try widening the title list or confirming the company domain on
+            the right-rail before retrying.
+          </p>
+        </div>
+      ) : (
+        <>
+          {enrichError && (
+            <div className="font-body border-b border-rose-100 bg-rose-50 px-3.5 py-1.5 text-[11px] text-rose-700">
+              {enrichError}
+            </div>
+          )}
+          <div className="max-h-[420px] overflow-y-auto">
+            <table className="w-full border-collapse">
+              <thead className="sticky top-0 z-[1] bg-[#FAFBFC]">
+                <tr className="border-b border-slate-200">
+                  <th className="w-8 px-3 py-2" />
+                  {["Contact", "Title", "Location", "Email status", "LinkedIn"].map(
+                    (h) => (
+                      <th
+                        key={h}
+                        className="font-display whitespace-nowrap px-3 py-2 text-left text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400"
+                      >
+                        {h}
+                      </th>
+                    ),
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((p, i) => {
+                  const k = keyOf(p, i);
+                  const checked = selected.has(k);
+                  const name = p.full_name || "Unnamed prospect";
+                  return (
+                    <tr
+                      key={k}
+                      className={[
+                        "border-b border-slate-100 last:border-b-0",
+                        checked ? "bg-violet-50/40" : "hover:bg-slate-50/60",
+                      ].join(" ")}
+                    >
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => onToggle(k)}
+                          aria-label={`Select ${name}`}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-400"
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <Avatar name={name} />
+                          <div className="min-w-0">
+                            <div className="font-display flex items-center gap-1.5 text-[12px] font-semibold text-slate-900">
+                              {name}
+                              <span className="font-display inline-flex items-center gap-0.5 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-violet-700">
+                                <Sparkles className="h-2.5 w-2.5" />
+                                Apollo
+                              </span>
+                              <span className="font-display inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+                                Preview
+                              </span>
+                            </div>
+                            {p.company && (
+                              <div className="font-body mt-0.5 text-[10px] text-slate-400">
+                                {p.company}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="font-body px-3 py-2 text-[11px] text-slate-600">
+                        {p.title || "—"}
+                      </td>
+                      <td className="font-body px-3 py-2 text-[11px] text-slate-500">
+                        {p.location ? (
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="h-2.5 w-2.5 text-slate-400" />
+                            {p.location}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <ApolloEmailStatusBadge status={p.email_status} />
+                      </td>
+                      <td className="px-3 py-2">
+                        {p.linkedin_url ? (
+                          <a
+                            href={p.linkedin_url}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800"
+                          >
+                            <Linkedin className="h-3 w-3" />
+                            View
+                          </a>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-[#FAFBFC] px-3.5 py-2">
+            <div className="font-body text-[11px] text-slate-500">
+              <CheckCircle2 className="mr-1 inline h-3 w-3 text-violet-500" />
+              Email/phone details are only revealed after enrichment.
+            </div>
+            <div className="font-mono text-[11px] text-slate-500">
+              {selected.size} selected
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ApolloEmailStatusBadge({ status }: { status?: string | null }) {
+  if (!status) {
+    return (
+      <span className="font-display inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.04em] text-slate-400">
+        Hidden
+      </span>
+    );
+  }
+  const s = status.toLowerCase();
+  const tone =
+    s === "verified" || s === "valid" || s === "deliverable"
+      ? "border-green-200 bg-green-50 text-green-700"
+      : s === "guessed" || s === "likely"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-slate-200 bg-slate-100 text-slate-500";
+  return (
+    <span
+      className={`font-display inline-flex items-center rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] ${tone}`}
+    >
+      {status}
     </span>
   );
 }
