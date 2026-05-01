@@ -393,11 +393,15 @@ Deno.serve(async (req: Request) => {
 
     const fallbackDomain = normalizeDomain(body.domain ?? null);
     const fallbackOrgName = body.company_name?.trim() || null;
-    // Default ON so Apollo returns email + phone whenever it has them.
-    // The user explicitly clicked Enrich; they expect contact details.
+    // reveal_personal_emails = true: cheap unlock, returns email inline.
+    // reveal_phone_number = ASYNC on Apollo's side — the response no
+    // longer contains the person record directly, just a request_id
+    // that has to be polled. Default OFF so the immediate response
+    // still parses; phone numbers Apollo already has on file come
+    // through `phone_numbers[]` regardless of this flag.
     const sharedReveal = {
       reveal_personal_emails: body.reveal_personal_emails !== false,
-      reveal_phone_number: body.reveal_phone_number !== false,
+      reveal_phone_number: body.reveal_phone_number === true,
     };
 
     // Resolve company_id slug ("company/old-navy") to a real lit_companies
@@ -500,12 +504,24 @@ Deno.serve(async (req: Request) => {
     const persistErrors: Array<{ apollo_person_id: string | null; error: string }> = [];
     const persisted: NormalizedContact[] = [];
     for (const c of results) {
-      const row = {
+      // lit_contacts.full_name is NOT NULL. Compute a real fallback
+      // so partial enrichment (Apollo returns no name) doesn't blow
+      // up the insert silently.
+      const safeFullName =
+        c.full_name ||
+        [c.first_name, c.last_name].filter(Boolean).join(" ").trim() ||
+        c.first_name ||
+        c.last_name ||
+        "Unknown contact";
+      // Stick to columns that actually exist on lit_contacts. Past
+      // versions tried to insert source_provider / enriched_at which
+      // don't exist — every upsert silently failed in the catch and
+      // the contact disappeared on reload.
+      const row: Record<string, unknown> = {
         company_id: resolvedCompanyId,
         source: c.source,
-        source_provider: "apollo",
         source_contact_key: c.source_contact_key,
-        full_name: c.full_name,
+        full_name: safeFullName,
         first_name: c.first_name,
         last_name: c.last_name,
         title: c.title,
@@ -518,23 +534,36 @@ Deno.serve(async (req: Request) => {
         state: c.state,
         country_code: c.country_code,
         email_verification_status: c.email_status,
+        email_verified:
+          typeof c.email_status === "string" &&
+          ["verified", "valid", "deliverable"].includes(c.email_status.toLowerCase()),
         verified_by_provider:
           typeof c.email_status === "string" &&
           ["verified", "valid", "deliverable"].includes(c.email_status.toLowerCase()),
-        enriched_at: c.enriched_at,
         raw_payload: c.raw_payload,
       };
       try {
-        const { data: saved } = await supabase
+        const { data: saved, error: upsertError } = await supabase
           .from("lit_contacts")
           .upsert(row, { onConflict: "source,source_contact_key" })
           .select()
           .single();
-        persisted.push({ ...c, ...(saved ? { id: (saved as any).id } : {}) } as NormalizedContact);
+        if (upsertError) {
+          persistErrors.push({
+            apollo_person_id: c.apollo_person_id,
+            error: upsertError.message || String(upsertError),
+          });
+          persisted.push({ ...c, full_name: safeFullName });
+        } else {
+          persisted.push({
+            ...c,
+            full_name: safeFullName,
+            ...(saved ? { id: (saved as any).id } : {}),
+          } as NormalizedContact);
+        }
       } catch (err: any) {
-        // RLS / schema mismatch — surface but don't fail the request.
         persistErrors.push({ apollo_person_id: c.apollo_person_id, error: err?.message || String(err) });
-        persisted.push(c);
+        persisted.push({ ...c, full_name: safeFullName });
       }
 
       // Log credit consumption per-contact (lit_usage_ledger).
