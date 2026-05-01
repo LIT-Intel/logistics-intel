@@ -4120,10 +4120,15 @@ export async function enrichApolloContacts(payload: {
   // Map camelCase frontend payload to the snake_case shape the edge
   // function expects. Per-target snake_case fields stay as-is since
   // the contacts[] entries are already in the right shape.
+  // reveal_personal_emails / reveal_phone_number default to true so
+  // enrichment actually returns email + phone (Apollo only reveals
+  // those fields when the request asks).
   const requestBody = {
     company_id: payload.companyId ?? null,
     company_name: payload.companyName ?? null,
     domain: payload.companyDomain ?? null,
+    reveal_personal_emails: true,
+    reveal_phone_number: true,
     contacts: payload.contacts,
   };
   const { data, error } = await supabase.functions.invoke(

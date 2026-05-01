@@ -292,11 +292,55 @@ async function bulkMatch(
 
 async function singleMatch(
   identifier: Record<string, unknown>,
+  shared: { reveal_personal_emails?: boolean; reveal_phone_number?: boolean },
 ): Promise<{ ok: boolean; status: number; person: any | null; raw: string }> {
-  const r = await apolloPost(APOLLO_MATCH_URL, identifier);
+  const body: Record<string, unknown> = { ...identifier };
+  // Default ON: ask Apollo to reveal email + phone when available.
+  // These can consume credits, but the user explicitly clicked Enrich.
+  if (shared.reveal_personal_emails !== false) {
+    body.reveal_personal_emails = true;
+  }
+  if (shared.reveal_phone_number !== false) {
+    body.reveal_phone_number = true;
+  }
+  const r = await apolloPost(APOLLO_MATCH_URL, body);
   if (!r.ok) return { ok: false, status: r.status, person: null, raw: r.raw };
   const person = r.data?.person || r.data?.match || null;
   return { ok: true, status: r.status, person, raw: r.raw };
+}
+
+/**
+ * Resolve a `company_id` payload into a real `lit_companies.id` UUID.
+ * Accepts either a UUID directly or a `source_company_key` slug like
+ * "company/old-navy". Returns null when neither matches a row, so the
+ * caller can decide whether to insert with a null company_id (still
+ * valid) or short-circuit.
+ */
+async function resolveCompanyUuid(
+  adminClient: any,
+  raw: string | null | undefined,
+): Promise<string | null> {
+  if (!raw) return null;
+  const value = String(raw).trim();
+  if (!value) return null;
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  if (isUuid) return value;
+  // Treat anything non-UUID as a source_company_key slug. Add the
+  // legacy "company/" prefix when the caller forgot it.
+  const candidates = [value];
+  if (!value.startsWith("company/")) candidates.push(`company/${value}`);
+  for (const cand of candidates) {
+    try {
+      const { data } = await adminClient
+        .from("lit_companies")
+        .select("id")
+        .eq("source_company_key", cand)
+        .maybeSingle();
+      if (data?.id) return String(data.id);
+    } catch (_) {}
+  }
+  return null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -349,10 +393,17 @@ Deno.serve(async (req: Request) => {
 
     const fallbackDomain = normalizeDomain(body.domain ?? null);
     const fallbackOrgName = body.company_name?.trim() || null;
+    // Default ON so Apollo returns email + phone whenever it has them.
+    // The user explicitly clicked Enrich; they expect contact details.
     const sharedReveal = {
-      reveal_personal_emails: body.reveal_personal_emails === true,
-      reveal_phone_number: body.reveal_phone_number === true,
+      reveal_personal_emails: body.reveal_personal_emails !== false,
+      reveal_phone_number: body.reveal_phone_number !== false,
     };
+
+    // Resolve company_id slug ("company/old-navy") to a real lit_companies
+    // UUID before we insert. Without this, the row gets stored with a
+    // string that listContacts() can never find on reload.
+    const resolvedCompanyId = await resolveCompanyUuid(supabase, body.company_id ?? null);
 
     // Plan + super-admin bypass for monthly enrichment cap.
     const bypassLimits = await isSuperAdmin(supabase, user);
@@ -414,7 +465,7 @@ Deno.serve(async (req: Request) => {
       const chunk = ids.slice(i, i + BULK_MAX);
       if (chunk.length === 1) {
         // Single-target → /people/match (cheaper, simpler payload).
-        const r = await singleMatch(chunk[0].block);
+        const r = await singleMatch(chunk[0].block, sharedReveal);
         if (!r.ok) {
           errors.push({ index: chunk[0].idx, error: r.raw.slice(0, 200) || "match_failed", status: r.status });
           continue;
@@ -449,9 +500,8 @@ Deno.serve(async (req: Request) => {
     const persistErrors: Array<{ apollo_person_id: string | null; error: string }> = [];
     const persisted: NormalizedContact[] = [];
     for (const c of results) {
-      const companyId = body.company_id || null;
       const row = {
-        company_id: companyId,
+        company_id: resolvedCompanyId,
         source: c.source,
         source_provider: "apollo",
         source_contact_key: c.source_contact_key,
@@ -510,7 +560,7 @@ Deno.serve(async (req: Request) => {
     await supabase.from("lit_activity_events").insert({
       user_id: user.id,
       event_type: "apollo_contact_enrich",
-      company_id: body.company_id || null,
+      company_id: resolvedCompanyId,
       metadata: {
         provider: "apollo",
         endpoint: targets.length === 1 ? "people/match" : "people/bulk_match",
