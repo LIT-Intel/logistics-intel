@@ -588,13 +588,31 @@ export default function Company() {
     setPulseLoading(true);
     setPulseError(null);
     try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(companyId),
+      );
+      const sourceKey = isUuid
+        ? activeProfile?.source_company_key ||
+          activeProfile?.sourceCompanyKey ||
+          storedSelectedCompany?.source_company_key ||
+          null
+        : String(companyId).startsWith("company/")
+          ? companyId
+          : `company/${companyId}`;
+      if (!isUuid && !sourceKey) {
+        setPulseError({
+          code: "MISSING_COMPANY_IDENTIFIER",
+          message: "Could not identify company.",
+        });
+        setPulseLoading(false);
+        return;
+      }
       const { data, error: invokeError } = await supabase.functions.invoke(
         "pulse-ai-enrich",
         {
           body: {
-            company_id: companyId,
-            source_company_key:
-              storedSelectedCompany?.source_company_key || null,
+            ...(isUuid ? { company_id: companyId } : {}),
+            ...(sourceKey ? { source_company_key: sourceKey } : {}),
             mode: "company_profile",
             force_refresh: forceRefresh,
           },
@@ -647,15 +665,26 @@ export default function Company() {
   // users see their previously-generated report without re-clicking Generate.
   // pulse-ai-enrich's findCachedReport returns the most recent completed
   // report when force_refresh=false, so this is a cache hit (no usage cost).
+  // Guarded: only fires once activeProfile has hydrated so we can resolve a
+  // source_company_key when companyId is a UUID.
   useEffect(() => {
     if (tab !== "research") return;
     if (pulseLoading) return;
     if (pulseBrief?.report) return;
     if (pulseError) return;
     if (!companyId) return;
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(companyId),
+      );
+    // For UUID routes we need source_company_key from the loaded profile to
+    // query the snapshot. Wait for hydration.
+    if (isUuid && !activeProfile && !storedSelectedCompany?.source_company_key) {
+      return;
+    }
     handlePulseClick({ forceRefresh: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, companyId]);
+  }, [tab, companyId, activeProfile]);
 
   async function handleManualRefreshClick() {
     if (!companyId || manualRefreshing) return;
