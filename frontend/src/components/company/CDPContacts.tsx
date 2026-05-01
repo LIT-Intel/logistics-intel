@@ -162,6 +162,20 @@ export default function CDPContacts({
   const [apolloEnriching, setApolloEnriching] = useState(false);
   const [apolloEnrichError, setApolloEnrichError] = useState<string | null>(null);
 
+  // Apollo filter state — scoped to the current company. The edge
+  // function enforces the actual scoping; titles/seniorities are
+  // simply hints we pass through. Defaults match the LIT outbound
+  // playbook personas.
+  const [apolloTitles, setApolloTitles] = useState<string[]>(APOLLO_DEFAULT_TITLES);
+  const [apolloSeniorities, setApolloSeniorities] = useState<string[]>(APOLLO_DEFAULT_SENIORITIES);
+  const [apolloDepartments, setApolloDepartments] = useState<string[]>([]);
+  const [apolloLocationOverride, setApolloLocationOverride] = useState<string>("");
+
+  // Add-contact modal state
+  const [addOpen, setAddOpen] = useState(false);
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     if (!companyId) {
@@ -267,9 +281,14 @@ export default function CDPContacts({
         companyId: companyId ?? null,
         companyName: companyName ?? null,
         companyDomain: companyDomain ?? null,
-        location: companyLocation ?? null,
-        titles: APOLLO_DEFAULT_TITLES,
-        seniorities: APOLLO_DEFAULT_SENIORITIES,
+        // Filters: prefer any user-entered location, fall back to the
+        // company's HQ city/country from the profile so search is
+        // scoped to the current company by default.
+        location: apolloLocationOverride.trim() || companyLocation || null,
+        titles: apolloTitles.length ? apolloTitles : APOLLO_DEFAULT_TITLES,
+        seniorities: apolloSeniorities.length
+          ? apolloSeniorities
+          : APOLLO_DEFAULT_SENIORITIES,
         perPage: 25,
       });
       setApolloSearched(true);
@@ -443,25 +462,26 @@ export default function CDPContacts({
         </div>
         <button
           type="button"
+          onClick={() => setAddOpen(true)}
+          className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          <UserPlus className="h-3 w-3" />
+          Add contact
+        </button>
+        <button
+          type="button"
           onClick={handleApolloSearch}
           disabled={apolloLoading}
-          className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-violet-200 bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
+          className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-gradient-to-b from-violet-500 to-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {apolloLoading ? (
             <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
             <Sparkles className="h-3 w-3" />
           )}
-          Find with Apollo
-        </button>
-        <button
-          type="button"
-          onClick={handleEnrichAll}
-          disabled={!companyId || enriching || loading}
-          className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {enriching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
-          Enrich All
+          {contacts.length === 0
+            ? "Find contacts with Apollo"
+            : "Find more with Apollo"}
         </button>
       </div>
 
@@ -475,6 +495,17 @@ export default function CDPContacts({
           selected={apolloSelected}
           enriching={apolloEnriching}
           enrichError={apolloEnrichError}
+          companyName={companyName ?? null}
+          companyDomain={companyDomain ?? null}
+          companyLocation={companyLocation ?? null}
+          titles={apolloTitles}
+          seniorities={apolloSeniorities}
+          departments={apolloDepartments}
+          locationOverride={apolloLocationOverride}
+          onTitlesChange={setApolloTitles}
+          onSenioritiesChange={setApolloSeniorities}
+          onDepartmentsChange={setApolloDepartments}
+          onLocationChange={setApolloLocationOverride}
           onClose={() => {
             setApolloOpen(false);
             setApolloEnrichError(null);
@@ -485,6 +516,42 @@ export default function CDPContacts({
           onClearSelection={clearApolloSelection}
           onEnrichSelected={handleApolloEnrichSelected}
           keyOf={apolloKey}
+        />
+      )}
+      {addOpen && (
+        <AddContactModal
+          companyId={companyId ?? null}
+          saving={addSaving}
+          error={addError}
+          onClose={() => {
+            setAddOpen(false);
+            setAddError(null);
+          }}
+          onSave={async (form) => {
+            if (!companyId) {
+              setAddError("Save a company first before adding contacts.");
+              return;
+            }
+            setAddSaving(true);
+            setAddError(null);
+            try {
+              const { saveContact } = await import("@/lib/api");
+              const saved = await saveContact(companyId, form);
+              const next = [saved, ...contacts];
+              setContacts(next);
+              onContactsChanged?.(next);
+              setAddOpen(false);
+              setEnrichToast("Contact saved");
+              setTimeout(() => setEnrichToast(null), 2500);
+            } catch (err: any) {
+              setAddError(
+                err?.message ||
+                  "Couldn't save contact — storage helper missing. Check lib/api.saveContact and the lit_contacts table.",
+              );
+            } finally {
+              setAddSaving(false);
+            }
+          }}
         />
       )}
 
@@ -499,6 +566,7 @@ export default function CDPContacts({
         <div className="flex gap-2.5">
           <button
             type="button"
+            onClick={() => setAddOpen(true)}
             className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-500 hover:text-blue-700"
           >
             <UserPlus className="h-3 w-3" />
@@ -801,6 +869,17 @@ type ApolloResultsPanelProps = {
   selected: Set<string>;
   enriching: boolean;
   enrichError: string | null;
+  companyName: string | null;
+  companyDomain: string | null;
+  companyLocation: string | null;
+  titles: string[];
+  seniorities: string[];
+  departments: string[];
+  locationOverride: string;
+  onTitlesChange: (next: string[]) => void;
+  onSenioritiesChange: (next: string[]) => void;
+  onDepartmentsChange: (next: string[]) => void;
+  onLocationChange: (next: string) => void;
   onClose: () => void;
   onRetry: () => void;
   onToggle: (key: string) => void;
@@ -809,6 +888,15 @@ type ApolloResultsPanelProps = {
   onEnrichSelected: () => void;
   keyOf: (p: ApolloContactPreview, i: number) => string;
 };
+
+const APOLLO_DEPARTMENT_OPTIONS = [
+  "Operations",
+  "Procurement",
+  "Supply Chain",
+  "Logistics",
+  "Customs",
+  "Legal",
+];
 
 function ApolloResultsPanel({
   loading,
@@ -819,6 +907,17 @@ function ApolloResultsPanel({
   selected,
   enriching,
   enrichError,
+  companyName,
+  companyDomain,
+  companyLocation,
+  titles,
+  seniorities,
+  departments,
+  locationOverride,
+  onTitlesChange,
+  onSenioritiesChange,
+  onDepartmentsChange,
+  onLocationChange,
   onClose,
   onRetry,
   onToggle,
@@ -827,6 +926,12 @@ function ApolloResultsPanel({
   onEnrichSelected,
   keyOf,
 }: ApolloResultsPanelProps) {
+  function toggle(list: string[], value: string, setter: (n: string[]) => void) {
+    setter(list.includes(value) ? list.filter((x) => x !== value) : [...list, value]);
+  }
+  const scopeLabel = companyDomain
+    ? companyDomain
+    : companyName || "current company";
   return (
     <div className="overflow-hidden rounded-xl border border-violet-200 bg-white shadow-sm">
       {/* Header */}
@@ -876,6 +981,129 @@ function ApolloResultsPanel({
             <X className="h-3 w-3" />
           </button>
         </div>
+      </div>
+
+      {/* Filters — scoped to current company */}
+      <div className="border-b border-violet-100 bg-white px-3.5 py-3">
+        <div className="font-body mb-2 text-[10.5px] text-slate-500">
+          <Sparkles className="mr-1 inline h-2.5 w-2.5 text-violet-500" />
+          Scoped to <strong className="text-slate-900">{scopeLabel}</strong>
+          {companyLocation ? (
+            <span className="text-slate-400"> · HQ {companyLocation}</span>
+          ) : null}
+        </div>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <div>
+            <div className="font-display mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+              Titles
+            </div>
+            <div className="flex max-h-[120px] flex-wrap gap-1 overflow-y-auto">
+              {APOLLO_DEFAULT_TITLES.map((t) => {
+                const on = titles.includes(t);
+                return (
+                  <button
+                    type="button"
+                    key={t}
+                    onClick={() => toggle(titles, t, onTitlesChange)}
+                    className={[
+                      "font-display rounded-md border px-2 py-0.5 text-[10px] font-semibold",
+                      on
+                        ? "border-violet-300 bg-violet-50 text-violet-700"
+                        : "border-slate-200 bg-white text-slate-500 hover:text-slate-700",
+                    ].join(" ")}
+                  >
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <div className="font-display mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+              Seniority
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {APOLLO_DEFAULT_SENIORITIES.map((s) => {
+                const on = seniorities.includes(s);
+                return (
+                  <button
+                    type="button"
+                    key={s}
+                    onClick={() => toggle(seniorities, s, onSenioritiesChange)}
+                    className={[
+                      "font-display rounded-md border px-2 py-0.5 text-[10px] font-semibold capitalize",
+                      on
+                        ? "border-violet-300 bg-violet-50 text-violet-700"
+                        : "border-slate-200 bg-white text-slate-500 hover:text-slate-700",
+                    ].join(" ")}
+                  >
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="font-display mb-1 mt-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+              Department
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {APOLLO_DEPARTMENT_OPTIONS.map((d) => {
+                const on = departments.includes(d);
+                return (
+                  <button
+                    type="button"
+                    key={d}
+                    onClick={() => toggle(departments, d, onDepartmentsChange)}
+                    className={[
+                      "font-display rounded-md border px-2 py-0.5 text-[10px] font-semibold",
+                      on
+                        ? "border-violet-300 bg-violet-50 text-violet-700"
+                        : "border-slate-200 bg-white text-slate-500 hover:text-slate-700",
+                    ].join(" ")}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <div className="font-display mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+              Location override
+            </div>
+            <input
+              type="text"
+              value={locationOverride}
+              onChange={(e) => onLocationChange(e.target.value)}
+              placeholder={companyLocation || "City, country, or region"}
+              className="font-body w-full rounded-md border-[1.5px] border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/10"
+            />
+            <button
+              type="button"
+              onClick={onRetry}
+              disabled={loading}
+              className="font-display mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Search className="h-3 w-3" />
+              )}
+              {searched ? "Re-run search" : "Run search"}
+            </button>
+          </div>
+        </div>
+        {!loading && !error && results.length > 0 && (
+          <div className="font-body mt-3 rounded-md bg-amber-50 px-2.5 py-1.5 text-[10.5px] text-amber-700">
+            <Zap className="mr-1 inline h-2.5 w-2.5" />
+            Enriching{" "}
+            <strong>{selected.size || results.length}</strong> contact
+            {(selected.size || results.length) === 1 ? "" : "s"} will use up to{" "}
+            <strong>{selected.size || results.length}</strong> contact
+            enrichment credit
+            {(selected.size || results.length) === 1 ? "" : "s"} from your plan
+            allowance.
+          </div>
+        )}
       </div>
 
       {/* Body */}
@@ -1061,5 +1289,202 @@ function ApolloEmailStatusBadge({ status }: { status?: string | null }) {
     >
       {status}
     </span>
+  );
+}
+
+/* ── Add Contact modal ────────────────────────────────────────────────── */
+
+type AddContactForm = {
+  first_name: string;
+  last_name: string;
+  title: string;
+  email: string;
+  phone: string;
+  linkedin_url: string;
+  department: string;
+  notes: string;
+};
+
+function AddContactModal({
+  companyId,
+  saving,
+  error,
+  onClose,
+  onSave,
+}: {
+  companyId: string | null;
+  saving: boolean;
+  error: string | null;
+  onClose: () => void;
+  onSave: (form: AddContactForm) => void;
+}) {
+  const [form, setForm] = useState<AddContactForm>({
+    first_name: "",
+    last_name: "",
+    title: "",
+    email: "",
+    phone: "",
+    linkedin_url: "",
+    department: "",
+    notes: "",
+  });
+  const set = (k: keyof AddContactForm) => (e: any) =>
+    setForm((p) => ({ ...p, [k]: e.target.value }));
+  const valid = form.first_name.trim() && form.last_name.trim();
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative my-8 w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <UserPlus className="h-4 w-4 text-blue-600" />
+            <span className="font-display text-[14px] font-bold text-slate-900">
+              Add contact
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {!companyId && (
+          <div className="border-b border-amber-100 bg-amber-50 px-5 py-2 text-[11px] text-amber-700">
+            Save a company first before adding contacts.
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-3 px-5 py-4 lg:grid-cols-2">
+          <ContactField label="First name" required>
+            <input
+              value={form.first_name}
+              onChange={set("first_name")}
+              className="contact-input"
+            />
+          </ContactField>
+          <ContactField label="Last name" required>
+            <input
+              value={form.last_name}
+              onChange={set("last_name")}
+              className="contact-input"
+            />
+          </ContactField>
+          <ContactField label="Title">
+            <input value={form.title} onChange={set("title")} className="contact-input" />
+          </ContactField>
+          <ContactField label="Department">
+            <input
+              value={form.department}
+              onChange={set("department")}
+              className="contact-input"
+            />
+          </ContactField>
+          <ContactField label="Email">
+            <input
+              type="email"
+              value={form.email}
+              onChange={set("email")}
+              className="contact-input"
+            />
+          </ContactField>
+          <ContactField label="Phone">
+            <input value={form.phone} onChange={set("phone")} className="contact-input" />
+          </ContactField>
+          <ContactField label="LinkedIn URL" className="lg:col-span-2">
+            <input
+              value={form.linkedin_url}
+              onChange={set("linkedin_url")}
+              placeholder="https://www.linkedin.com/in/…"
+              className="contact-input"
+            />
+          </ContactField>
+          <ContactField label="Notes" className="lg:col-span-2">
+            <textarea
+              value={form.notes}
+              onChange={set("notes")}
+              rows={3}
+              className="contact-input resize-none"
+            />
+          </ContactField>
+        </div>
+
+        {error && (
+          <div className="mx-5 mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-700">
+            {error}
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="font-display rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => valid && onSave(form)}
+            disabled={!valid || saving || !companyId}
+            className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <UserPlus className="h-3 w-3" />
+            )}
+            Save contact
+          </button>
+        </div>
+      </div>
+      <style>{`
+        .contact-input {
+          width: 100%;
+          border-radius: 6px;
+          border: 1.5px solid #e2e8f0;
+          background: #fff;
+          padding: 6px 10px;
+          font-size: 12px;
+          color: #0f172a;
+          outline: none;
+        }
+        .contact-input:focus {
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 3px rgba(59,130,246,.1);
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function ContactField({
+  label,
+  required,
+  className,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className={["flex flex-col gap-1", className || ""].join(" ")}>
+      <span className="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+        {label}
+        {required && <span className="ml-0.5 text-rose-500">*</span>}
+      </span>
+      {children}
+    </label>
   );
 }

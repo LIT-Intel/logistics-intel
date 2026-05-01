@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import {
   AlertTriangle,
   ArrowRight,
@@ -123,7 +124,14 @@ type PulseBrief = {
   model?: string | null;
 } | null;
 
-type PulseError = { code: string; message: string } | null;
+type PulseError = {
+  code: string;
+  message: string;
+  used?: number | null;
+  limit?: number | null;
+  plan?: string | null;
+  feature?: string | null;
+} | null;
 
 type PulseUsage = { plan?: string | null; limit?: number | null } | null;
 
@@ -179,12 +187,8 @@ export default function CDPResearch({
   const limitExceeded = pulseError?.code === "LIMIT_EXCEEDED";
   const [expanded, setExpanded] = useState(false);
 
-  const onShareEmail = () => {
-    if (typeof window === "undefined") return;
-    const subject = `Pulse AI brief — ${companyName}`;
-    const body = reportToMarkdown(companyName, pulseBrief);
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  };
+  const [shareEmailOpen, setShareEmailOpen] = useState(false);
+  const onShareEmail = () => setShareEmailOpen(true);
 
   const briefBody = (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -206,7 +210,11 @@ export default function CDPResearch({
       />
 
       {limitExceeded ? (
-        <LimitExceededState message={pulseError!.message} usage={pulseUsage} />
+        <LimitExceededState
+          message={pulseError!.message}
+          usage={pulseUsage}
+          error={pulseError}
+        />
       ) : pulseError ? (
         <ErrorState message={pulseError.message} onRetry={onPulse} />
       ) : pulseLoading ? (
@@ -254,6 +262,13 @@ export default function CDPResearch({
             {briefBody}
           </div>
         </div>
+      )}
+      {shareEmailOpen && (
+        <ShareBriefEmailModal
+          companyName={companyName}
+          pulseBrief={pulseBrief}
+          onClose={() => setShareEmailOpen(false)}
+        />
       )}
     </>
   );
@@ -479,10 +494,17 @@ function ErrorState({
 function LimitExceededState({
   message,
   usage,
+  error,
 }: {
   message: string;
   usage: PulseUsage;
+  error?: PulseError;
 }) {
+  // Prefer the most specific values: structured error JSON > pulseUsage fallback.
+  const plan = error?.plan ?? usage?.plan ?? null;
+  const limit = error?.limit ?? usage?.limit ?? null;
+  const used = error?.used ?? null;
+  const feature = error?.feature ?? null;
   return (
     <div className="border-t border-slate-100 px-5 py-8">
       <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-5">
@@ -493,11 +515,19 @@ function LimitExceededState({
           </span>
         </div>
         <p className="font-body mb-3 text-[12px] text-amber-800">{message}</p>
-        {usage?.limit != null && (
+        {(plan || limit != null || used != null) && (
           <p className="font-body mb-3 text-[11px] text-amber-700">
-            {usage.plan ? `${capitalize(usage.plan)} plan` : "Current plan"}
-            {" · "}
-            {usage.limit} reports / billing period.
+            {plan ? `${capitalize(plan)} plan` : "Current plan"}
+            {limit != null && (
+              <>
+                {" · "}
+                {used != null ? `${used} of ${limit}` : `${limit}`}{" "}
+                {feature === "pulse_ai_report" || !feature
+                  ? "reports"
+                  : feature.replace(/_/g, " ")}{" "}
+                / billing period
+              </>
+            )}
           </p>
         )}
         <a
@@ -1790,4 +1820,298 @@ function hostname(url: string) {
 
 function capitalize(str: string) {
   return str ? str.charAt(0).toUpperCase() + str.slice(1) : str;
+}
+
+/* ── Share by Email modal ──────────────────────────────────────────────── */
+
+type EmailAccount = {
+  id: string;
+  provider: string | null;
+  email: string | null;
+  is_primary?: boolean | null;
+  status?: string | null;
+};
+
+type SendStatus = "ready" | "sending" | "sent" | "failed";
+
+function ShareBriefEmailModal({
+  companyName,
+  pulseBrief,
+  onClose,
+}: {
+  companyName: string;
+  pulseBrief: PulseBrief;
+  onClose: () => void;
+}) {
+  const [to, setTo] = useState("");
+  const [cc, setCc] = useState("");
+  const [subject, setSubject] = useState(`Pulse AI brief — ${companyName}`);
+  const [accounts, setAccounts] = useState<EmailAccount[] | null>(null);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [status, setStatus] = useState<SendStatus>("ready");
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [setupRequired, setSetupRequired] = useState(false);
+
+  const previewMd = reportToMarkdown(companyName, pulseBrief);
+
+  // Fetch the user's connected mailboxes from `lit_email_accounts`. We
+  // never use mailto / Outlook desktop — sending must go through the
+  // user's own connected Gmail/Outlook mailbox via a backend function.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("lit_email_accounts")
+          .select("id, provider, email, is_primary, status")
+          .order("is_primary", { ascending: false });
+        if (cancelled) return;
+        if (error) {
+          setAccountsError(error.message || "Couldn't load connected mailboxes.");
+          setAccounts([]);
+        } else {
+          setAccounts((data || []) as EmailAccount[]);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setAccountsError(err?.message || "Couldn't load connected mailboxes.");
+          setAccounts([]);
+        }
+      } finally {
+        if (!cancelled) setAccountsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const primary =
+    accounts?.find((a) => a.is_primary && a.email) ||
+    accounts?.find((a) => a.email) ||
+    null;
+  const noMailbox = !accountsLoading && !primary;
+  const recipientValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim());
+  const sendDisabled =
+    accountsLoading ||
+    noMailbox ||
+    !recipientValid ||
+    status === "sending" ||
+    status === "sent";
+
+  async function handleSend() {
+    if (sendDisabled) return;
+    setStatus("sending");
+    setSendError(null);
+    setSetupRequired(false);
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "send-pulse-brief-email",
+        {
+          body: {
+            to: to.trim(),
+            cc: cc.trim() ? cc.trim() : null,
+            subject,
+            company_name: companyName,
+            body_markdown: previewMd,
+            from_account_id: primary?.id ?? null,
+          },
+        },
+      );
+      if (error) {
+        const msg = String(error.message || "");
+        if (/not\s+found|404|FunctionsHttpError|FunctionsRelay/i.test(msg)) {
+          setSetupRequired(true);
+          setSendError("Email sending setup required.");
+          setStatus("failed");
+          return;
+        }
+        // Try to parse structured JSON
+        try {
+          const ctx: any = (error as any).context;
+          const cloned = ctx?.clone?.();
+          const parsed = await cloned?.json?.();
+          if (parsed && typeof parsed === "object") {
+            setSendError(parsed.message || parsed.error || msg);
+            if (parsed.code === "NOT_CONFIGURED") setSetupRequired(true);
+          } else {
+            setSendError(msg);
+          }
+        } catch {
+          setSendError(msg);
+        }
+        setStatus("failed");
+        return;
+      }
+      if (data && data.ok === false) {
+        setSendError(data.message || data.error || "Email send failed.");
+        if (data.code === "NOT_CONFIGURED") setSetupRequired(true);
+        setStatus("failed");
+        return;
+      }
+      setStatus("sent");
+      setTimeout(() => onClose(), 1500);
+    } catch (err: any) {
+      setSendError(err?.message || "Email send failed.");
+      setStatus("failed");
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative my-8 w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <Mail className="h-4 w-4 text-blue-600" />
+            <span className="font-display text-[14px] font-bold text-slate-900">
+              Share Pulse brief by email
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Sender state banner */}
+        <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-2.5 text-[11px]">
+          {accountsLoading ? (
+            <span className="font-body inline-flex items-center gap-1.5 text-slate-500">
+              <Loader2 className="h-3 w-3 animate-spin" /> Checking connected mailbox…
+            </span>
+          ) : noMailbox ? (
+            <span className="font-body text-amber-700">
+              <ShieldAlert className="mr-1 inline h-3 w-3" />
+              Connect Gmail or Outlook in <a href="/app/settings" className="underline">Settings</a>{" "}
+              to share this brief by email.
+            </span>
+          ) : (
+            <span className="font-body text-slate-600">
+              Sending from{" "}
+              <strong className="font-mono text-slate-900">
+                {primary!.email}
+              </strong>
+              {primary!.provider ? (
+                <span className="ml-1 rounded border border-slate-200 bg-white px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                  {primary!.provider}
+                </span>
+              ) : null}
+            </span>
+          )}
+          {accountsError && (
+            <span className="ml-2 text-rose-600">{accountsError}</span>
+          )}
+        </div>
+
+        {/* Form */}
+        <div className="flex flex-col gap-3 px-5 py-4">
+          <Field label="To" required>
+            <input
+              type="email"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              placeholder="recipient@company.com"
+              className="font-body w-full rounded-md border-[1.5px] border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+            />
+          </Field>
+          <Field label="CC">
+            <input
+              type="text"
+              value={cc}
+              onChange={(e) => setCc(e.target.value)}
+              placeholder="Optional, comma-separated"
+              className="font-body w-full rounded-md border-[1.5px] border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+            />
+          </Field>
+          <Field label="Subject">
+            <input
+              type="text"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="font-body w-full rounded-md border-[1.5px] border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+            />
+          </Field>
+          <Field label="Preview">
+            <div className="max-h-[260px] overflow-y-auto rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <pre className="font-mono whitespace-pre-wrap break-words text-[10.5px] leading-snug text-slate-700">
+                {previewMd}
+              </pre>
+            </div>
+          </Field>
+        </div>
+
+        {/* Status / actions */}
+        {(sendError || status === "sent") && (
+          <div
+            className={[
+              "mx-5 mb-3 rounded-md border px-3 py-2 text-[11px]",
+              status === "sent"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : setupRequired
+                  ? "border-amber-200 bg-amber-50 text-amber-700"
+                  : "border-rose-200 bg-rose-50 text-rose-700",
+            ].join(" ")}
+          >
+            {status === "sent"
+              ? "Brief sent."
+              : sendError || "Email send failed."}
+          </div>
+        )}
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="font-display rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={sendDisabled}
+            className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {status === "sending" ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Send className="h-3 w-3" />
+            )}
+            {status === "sent" ? "Sent" : "Send"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+        {label}
+        {required && <span className="ml-0.5 text-rose-500">*</span>}
+      </span>
+      {children}
+    </label>
+  );
 }

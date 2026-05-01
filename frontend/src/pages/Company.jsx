@@ -79,6 +79,39 @@ const EXPORT_ERROR_COPY = {
     "Export service is missing core configuration. Contact support.",
 };
 
+/**
+ * Pull a structured `{ ok:false, code, message, used, limit, plan, feature, error }`
+ * payload out of a supabase-js `FunctionsHttpError`. supabase-js does not
+ * parse the response body when status is non-2xx — it just returns
+ * "Edge Function returned a non-2xx status code". The actual JSON lives on
+ * `error.context` (a `Response`). Returns `null` when no JSON body exists
+ * so callers can fall back to a generic message.
+ */
+async function parseEdgeFunctionError(invokeError) {
+  if (!invokeError) return null;
+  const ctx = invokeError.context;
+  if (!ctx) return null;
+  try {
+    if (typeof ctx.clone === "function" && typeof ctx.json === "function") {
+      const cloned = ctx.clone();
+      const body = await cloned.json();
+      if (body && typeof body === "object") return body;
+    } else if (typeof ctx.json === "function") {
+      const body = await ctx.json();
+      if (body && typeof body === "object") return body;
+    } else if (typeof ctx.text === "function") {
+      const text = await ctx.text();
+      try {
+        const body = JSON.parse(text);
+        if (body && typeof body === "object") return body;
+      } catch {}
+    }
+  } catch {
+    // Either the body wasn't JSON, or context wasn't a Response — ignore.
+  }
+  return null;
+}
+
 // Phase B.5 — clamp future-dated values to today + 1 day so the page
 // never claims a shipment from next month.
 function capDateAtToday(value) {
@@ -618,14 +651,38 @@ export default function Company() {
           },
         },
       );
-      if (invokeError) throw invokeError;
-      if (!data?.ok) {
-        const code = data?.code || "PULSE_AI_FAILED";
+      // Phase B — when the edge function responds non-2xx, supabase-js
+      // surfaces a generic FunctionsHttpError. Pull the structured JSON
+      // out of error.context so the user sees the real LIMIT_EXCEEDED
+      // / NO_ORG_MEMBERSHIP / etc. message, not the opaque relay text.
+      const parsedErr = invokeError
+        ? await parseEdgeFunctionError(invokeError)
+        : null;
+      const effective = parsedErr || data;
+      if (invokeError && !parsedErr) {
+        // No structured body to render — surface the relay error verbatim.
+        throw invokeError;
+      }
+      if (!effective?.ok) {
+        const code = effective?.code || "PULSE_AI_FAILED";
         const friendly =
-          PULSE_ERROR_COPY[code] || data?.error || "Pulse AI failed.";
-        setPulseError({ code, message: friendly });
-        if (data?.plan != null || data?.limit != null) {
-          setPulseUsage({ plan: data.plan ?? null, limit: data.limit ?? null });
+          effective?.message ||
+          PULSE_ERROR_COPY[code] ||
+          effective?.error ||
+          "Pulse AI failed.";
+        setPulseError({
+          code,
+          message: friendly,
+          used: effective?.used ?? null,
+          limit: effective?.limit ?? null,
+          plan: effective?.plan ?? null,
+          feature: effective?.feature ?? null,
+        });
+        if (effective?.plan != null || effective?.limit != null) {
+          setPulseUsage({
+            plan: effective.plan ?? null,
+            limit: effective.limit ?? null,
+          });
         }
       } else {
         const report = data.report || {};
@@ -731,24 +788,29 @@ export default function Company() {
           },
         },
       );
-      if (invokeError) throw invokeError;
-      if (data?.ok && data.url) {
-        const ok = await copyToClipboardSafe(data.url);
+      const parsedErr = invokeError
+        ? await parseEdgeFunctionError(invokeError)
+        : null;
+      const effective = parsedErr || data;
+      if (invokeError && !parsedErr) throw invokeError;
+      if (effective?.ok && effective.url) {
+        const ok = await copyToClipboardSafe(effective.url);
         showShareToast(
           ok
             ? "Branded share link copied"
             : "Branded share link generated (copy failed — open console)",
           "success",
         );
-        if (!ok) console.info("export-company-profile signed URL:", data.url);
-      } else if (data?.code === "STORAGE_NOT_PROVISIONED") {
+        if (!ok) console.info("export-company-profile signed URL:", effective.url);
+      } else if (effective?.code === "STORAGE_NOT_PROVISIONED") {
         const url = typeof window !== "undefined" ? window.location.href : "";
         await copyToClipboardSafe(url);
         showShareToast(EXPORT_ERROR_COPY.STORAGE_NOT_PROVISIONED, "warning");
       } else {
         const friendly =
-          EXPORT_ERROR_COPY[data?.code] ||
-          data?.error ||
+          effective?.message ||
+          EXPORT_ERROR_COPY[effective?.code] ||
+          effective?.error ||
           "Share export failed.";
         showShareToast(friendly, "error");
       }
@@ -784,24 +846,31 @@ export default function Company() {
           },
         },
       );
-      if (invokeError) throw invokeError;
-      if (data?.ok && data.url) {
-        if (typeof window !== "undefined") window.open(data.url, "_blank");
-      } else if (data?.code === "PDF_NOT_AVAILABLE" && data?.fallback?.url) {
+      const parsedErr = invokeError
+        ? await parseEdgeFunctionError(invokeError)
+        : null;
+      const effective = parsedErr || data;
+      if (invokeError && !parsedErr) throw invokeError;
+      if (effective?.ok && effective.url) {
+        if (typeof window !== "undefined") window.open(effective.url, "_blank");
+      } else if (effective?.code === "PDF_NOT_AVAILABLE" && effective?.fallback?.url) {
         const open =
           typeof window !== "undefined" &&
           window.confirm(
             "PDF render not available — open the branded HTML version instead?",
           );
-        if (open) window.open(data.fallback.url, "_blank");
+        if (open) window.open(effective.fallback.url, "_blank");
         else showShareToast("PDF export not available yet", "warning");
-      } else if (data?.code === "STORAGE_NOT_PROVISIONED") {
+      } else if (effective?.code === "STORAGE_NOT_PROVISIONED") {
         const url = typeof window !== "undefined" ? window.location.href : "";
         await copyToClipboardSafe(url);
         showShareToast(EXPORT_ERROR_COPY.STORAGE_NOT_PROVISIONED, "warning");
       } else {
         const friendly =
-          EXPORT_ERROR_COPY[data?.code] || data?.error || "PDF export failed.";
+          effective?.message ||
+          EXPORT_ERROR_COPY[effective?.code] ||
+          effective?.error ||
+          "PDF export failed.";
         showShareToast(friendly, "error");
       }
     } catch (err) {

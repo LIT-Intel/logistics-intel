@@ -6,12 +6,11 @@ import LitPill from "@/components/ui/LitPill";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import { canonicalizeLanes } from "@/lib/laneGlobe";
 
-type SubTabId = "summary" | "lanes" | "providers" | "shipments" | "products";
+type SubTabId = "summary" | "lanes" | "shipments" | "products";
 
 const SUB_TABS: { id: SubTabId; label: string }[] = [
   { id: "summary", label: "Summary" },
   { id: "lanes", label: "Trade Lanes" },
-  { id: "providers", label: "Service Providers" },
   { id: "shipments", label: "Shipments" },
   { id: "products", label: "Products" },
 ];
@@ -162,9 +161,6 @@ export default function CDPSupplyChain({
           recentBols={recentBols}
         />
       )}
-      {sub === "providers" && (
-        <ProvidersView carriers={carriers} forwarders={forwarders} />
-      )}
       {sub === "shipments" && (
         <ShipmentsView recentBols={recentBols} />
       )}
@@ -300,34 +296,17 @@ function LanesView({
   containerProfile: ContainerProfile;
   recentBols: any[];
 }) {
+  // Trade Lanes tab — globe is owned by Summary. Here we render the
+  // complete list of lanes (no slice cap) plus the combined intelligence
+  // table with per-lane carrier/forwarder/last-activity bindings.
   return (
-    <>
-      <TopLanesCard canonicalLanes={canonicalLanes} />
-      <CombinedLaneIntelligenceTable
-        canonicalLanes={canonicalLanes}
-        carriers={carriers}
-        forwarders={forwarders}
-        containerProfile={containerProfile}
-        recentBols={recentBols}
-      />
-    </>
-  );
-}
-
-/* ── Service Providers view ───────────────────────────────────────────── */
-
-function ProvidersView({
-  carriers,
-  forwarders,
-}: {
-  carriers: CarrierRow[];
-  forwarders: ForwarderRow[];
-}) {
-  return (
-    <>
-      <CarrierMixCard carriers={carriers} />
-      <ForwarderMixCard forwarders={forwarders} />
-    </>
+    <CombinedLaneIntelligenceTable
+      canonicalLanes={canonicalLanes}
+      carriers={carriers}
+      forwarders={forwarders}
+      containerProfile={containerProfile}
+      recentBols={recentBols}
+    />
   );
 }
 
@@ -647,108 +626,104 @@ function InlineCadenceChart({ cadence }: { cadence: CadencePoint[] }) {
 }
 
 function ContainerProfileCard({ profile }: { profile: ContainerProfile }) {
-  const hasData =
-    profile.fcl + profile.lcl > 0 ||
-    profile.lengths.length > 0 ||
-    profile.isoCodes.length > 0;
+  const hasFcl = profile.fcl + profile.lcl > 0;
+  const hasLengths = profile.lengths.length > 0;
+  const hasIso = profile.isoCodes.length > 0;
+  const totalShipments = profile.totalShipments;
+  const shipLabel =
+    totalShipments > 0 ? `${totalShipments.toLocaleString()} ship` : null;
   return (
-    <LitSectionCard
-      title="Container profile"
-      sub="FCL / LCL split · top container lengths · ISO codes"
-      action={
-        <span className="font-display inline-flex items-center gap-1 text-[10px] text-slate-400">
-          <Container className="h-2.5 w-2.5" />
-          {profile.totalShipments > 0
-            ? `${profile.totalShipments.toLocaleString()} shipments`
-            : "—"}
-        </span>
-      }
-    >
-      {!hasData ? (
-        <EmptyMessage text="Container details (FCL/LCL split, container lengths, ISO codes) appear once enrichment completes." />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr_1fr]">
-          {/* FCL/LCL split */}
-          <div>
-            <div className="font-display mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
-              FCL / LCL split
-            </div>
-            <div className="space-y-1.5">
-              <SplitBar
-                label="FCL"
-                value={profile.fcl}
-                total={profile.fcl + profile.lcl}
-                color="#3B82F6"
-              />
-              <SplitBar
-                label="LCL"
-                value={profile.lcl}
-                total={profile.fcl + profile.lcl}
-                color="#67E8F9"
-              />
-            </div>
+    <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-3">
+      {/* Block 1 — FCL / LCL split */}
+      <LitSectionCard
+        title="FCL / LCL split"
+        sub="Container vs. consolidated"
+        action={
+          shipLabel ? (
+            <span className="font-display inline-flex items-center gap-1 text-[10px] text-slate-400">
+              <Container className="h-2.5 w-2.5" />
+              {shipLabel}
+            </span>
+          ) : null
+        }
+      >
+        {!hasFcl ? (
+          <EmptyMessage text="FCL / LCL split appears once shipments are tagged." />
+        ) : (
+          <div className="space-y-1.5">
+            <SplitBar
+              label="FCL"
+              value={profile.fcl}
+              total={profile.fcl + profile.lcl}
+              color="#3B82F6"
+            />
+            <SplitBar
+              label="LCL"
+              value={profile.lcl}
+              total={profile.fcl + profile.lcl}
+              color="#67E8F9"
+            />
           </div>
+        )}
+      </LitSectionCard>
 
-          {/* Top container lengths */}
-          <div>
-            <div className="font-display mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
-              Top container lengths
-            </div>
-            {profile.lengths.length === 0 ? (
-              <p className="font-body text-[11px] text-slate-400">
-                Not specified on file.
-              </p>
-            ) : (
-              <div className="space-y-1.5">
-                {(() => {
-                  const lengthTotal = profile.lengths.reduce((s, x) => s + x.count, 0);
-                  return profile.lengths.slice(0, 4).map((l) => (
-                    <SplitBar
-                      key={l.label}
-                      label={l.label}
-                      value={l.count}
-                      total={lengthTotal}
-                      color="#06B6D4"
-                      badge={l.yoy ? <YoyPill value={l.yoy} /> : null}
-                      extraLabel={l.teu != null ? "TEU" : undefined}
-                      extraValue={l.teu ?? null}
-                    />
-                  ));
-                })()}
-              </div>
-            )}
+      {/* Block 2 — Top container lengths */}
+      <LitSectionCard
+        title="Top container lengths"
+        sub="20', 40', 40HC and reefer mix"
+      >
+        {!hasLengths ? (
+          <EmptyMessage text="Container length mix appears once data is on file." />
+        ) : (
+          <div className="space-y-1.5">
+            {(() => {
+              const lengthTotal = profile.lengths.reduce(
+                (s, x) => s + x.count,
+                0,
+              );
+              return profile.lengths.slice(0, 4).map((l) => (
+                <SplitBar
+                  key={l.label}
+                  label={l.label}
+                  value={l.count}
+                  total={lengthTotal}
+                  color="#06B6D4"
+                  badge={l.yoy ? <YoyPill value={l.yoy} /> : null}
+                  extraLabel={l.teu != null ? "TEU" : undefined}
+                  extraValue={l.teu ?? null}
+                />
+              ));
+            })()}
           </div>
+        )}
+      </LitSectionCard>
 
-          {/* Top ISO codes */}
-          <div>
-            <div className="font-display mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
-              Top ISO container codes
-            </div>
-            {profile.isoCodes.length === 0 ? (
-              <p className="font-body text-[11px] text-slate-400">
-                ISO codes not surfaced on this account yet.
-              </p>
-            ) : (
-              <div className="space-y-1.5">
-                {(() => {
-                  const isoTotal = profile.isoCodes.reduce((s, x) => s + x.count, 0);
-                  return profile.isoCodes.slice(0, 5).map((c) => (
-                    <SplitBar
-                      key={c.code}
-                      label={c.code}
-                      value={c.count}
-                      total={isoTotal}
-                      color="#8B5CF6"
-                      sublabel={c.group || null}
-                    />
-                  ));
-                })()}
-              </div>
-            )}
+      {/* Block 3 — Top ISO container codes */}
+      <LitSectionCard
+        title="Top ISO container codes"
+        sub="ISO 6346 type codes"
+      >
+        {!hasIso ? (
+          <EmptyMessage text="ISO codes not surfaced on this account yet." />
+        ) : (
+          <div className="space-y-1.5">
+            {(() => {
+              const isoTotal = profile.isoCodes.reduce((s, x) => s + x.count, 0);
+              return profile.isoCodes.slice(0, 5).map((c) => (
+                <SplitBar
+                  key={c.code}
+                  label={c.code}
+                  value={c.count}
+                  total={isoTotal}
+                  color="#8B5CF6"
+                  sublabel={c.group || null}
+                />
+              ));
+            })()}
           </div>
-        </div>
-      )}
-    </LitSectionCard>
+        )}
+      </LitSectionCard>
+    </div>
   );
 }
 
@@ -828,25 +803,40 @@ function CombinedLaneIntelligenceTable({
   recentBols: any[];
 }) {
   if (canonicalLanes.length === 0) {
-    return null;
+    return (
+      <LitSectionCard
+        title="All trade lanes"
+        sub="Every origin → destination pair on file"
+      >
+        <EmptyMessage text="No lane data yet — refresh enrichment when ImportYeti has indexed this company." />
+      </LitSectionCard>
+    );
   }
-  const dominantContainer =
-    containerProfile.lengths[0]?.label || containerProfile.topContainerLabel || "—";
-  const fclLclLabel =
+  const globalDominantContainer =
+    containerProfile.lengths[0]?.label || containerProfile.topContainerLabel || null;
+  const globalFclLcl =
     containerProfile.fcl + containerProfile.lcl > 0
       ? containerProfile.fcl >= containerProfile.lcl
         ? "FCL"
         : "LCL"
-      : "—";
+      : null;
+  const fallbackTopCarrier = carriers[0]?.name || null;
+  const fallbackTopForwarder = forwarders[0]?.name || null;
+
   return (
     <LitSectionCard
-      title="Combined trade lane intelligence"
+      title="All trade lanes"
       sub="Lane × carrier × forwarder × container × FCL/LCL"
+      action={
+        <span className="font-mono text-[10px] font-semibold text-slate-500">
+          {canonicalLanes.length} lane{canonicalLanes.length === 1 ? "" : "s"}
+        </span>
+      }
       padded={false}
     >
-      <div className="overflow-x-auto">
+      <div className="max-h-[560px] overflow-x-auto overflow-y-auto">
         <table className="w-full border-collapse">
-          <thead>
+          <thead className="sticky top-0 z-[1]">
             <tr className="bg-[#FAFBFC]">
               {[
                 "Lane",
@@ -869,10 +859,16 @@ function CombinedLaneIntelligenceTable({
             </tr>
           </thead>
           <tbody>
-            {canonicalLanes.slice(0, 8).map((lane: any, i: number, arr: any[]) => {
-              const lastBol = recentBols.find((b) => bolMatchesLane(b, lane));
-              const trend = lane.trend || lane.yoy || null;
+            {canonicalLanes.map((lane: any, i: number, arr: any[]) => {
+              const laneStats = deriveLaneStats(lane, recentBols);
+              const trend = lane.trend || lane.yoy || laneStats.trend || null;
               const trendUp = trendIsPositive(trend);
+              const topCarrier = laneStats.topCarrier || fallbackTopCarrier;
+              const topForwarder = laneStats.topForwarder || fallbackTopForwarder;
+              const container =
+                laneStats.dominantContainer || globalDominantContainer || "—";
+              const fclLcl = laneStats.fclLcl || globalFclLcl || "—";
+              const lastDate = laneStats.lastDate;
               return (
                 <tr
                   key={lane.displayLabel}
@@ -914,30 +910,38 @@ function CombinedLaneIntelligenceTable({
                       : "—"}
                   </td>
                   <td className="px-3 py-2.5">
-                    {carriers[0]?.name ? (
+                    {topCarrier ? (
                       <span className="font-display text-[11px] font-semibold text-slate-900">
-                        {carriers[0].name}
+                        {topCarrier}
                       </span>
                     ) : (
                       <span className="font-body text-[11px] text-slate-300">—</span>
                     )}
                   </td>
                   <td className="px-3 py-2.5">
-                    {forwarders[0]?.name ? (
+                    {topForwarder ? (
                       <span className="font-display truncate text-[11px] font-semibold text-slate-900">
-                        {forwarders[0].name}
+                        {topForwarder}
                       </span>
                     ) : (
                       <span className="font-body text-[11px] text-slate-300">—</span>
                     )}
                   </td>
                   <td className="px-3 py-2.5">
-                    <LitPill tone="slate">{dominantContainer}</LitPill>
+                    {container && container !== "—" ? (
+                      <LitPill tone="slate">{container}</LitPill>
+                    ) : (
+                      <span className="font-body text-[11px] text-slate-300">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5">
-                    <LitPill tone={fclLclLabel === "FCL" ? "blue" : "purple"}>
-                      {fclLclLabel}
-                    </LitPill>
+                    {fclLcl && fclLcl !== "—" ? (
+                      <LitPill tone={fclLcl === "FCL" ? "blue" : "purple"}>
+                        {fclLcl}
+                      </LitPill>
+                    ) : (
+                      <span className="font-body text-[11px] text-slate-300">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5">
                     {trend ? (
@@ -959,7 +963,7 @@ function CombinedLaneIntelligenceTable({
                     )}
                   </td>
                   <td className="font-mono px-3 py-2.5 text-[10px] text-slate-500">
-                    {formatRelativeShort(getBolDate(lastBol))}
+                    {lastDate ? formatRelativeShort(lastDate) : "—"}
                   </td>
                 </tr>
               );
@@ -969,6 +973,122 @@ function CombinedLaneIntelligenceTable({
       </div>
     </LitSectionCard>
   );
+}
+
+/**
+ * Per-lane top carrier/forwarder, dominant container, FCL/LCL bias and
+ * latest BOL date — derived from the recent BOLs that match the lane's
+ * origin and destination countries. Returns nulls (never "—") so the
+ * caller can decide between per-lane vs. global fallbacks.
+ */
+function deriveLaneStats(
+  lane: any,
+  recentBols: any[],
+): {
+  topCarrier: string | null;
+  topForwarder: string | null;
+  dominantContainer: string | null;
+  fclLcl: "FCL" | "LCL" | null;
+  lastDate: string | null;
+  trend: string | null;
+} {
+  const matched = recentBols.filter((b) => bolMatchesLane(b, lane));
+  if (matched.length === 0) {
+    return {
+      topCarrier: null,
+      topForwarder: null,
+      dominantContainer: null,
+      fclLcl: null,
+      lastDate: null,
+      trend: null,
+    };
+  }
+  // top carrier on lane
+  const carrierCounts = new Map<string, number>();
+  for (const b of matched) {
+    const c = readCarrier(b);
+    if (!c) continue;
+    carrierCounts.set(c.name, (carrierCounts.get(c.name) || 0) + 1);
+  }
+  const topCarrier =
+    Array.from(carrierCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+    null;
+  // top forwarder/provider on lane (shipper / supplier / notify_party)
+  const fwdCounts = new Map<string, number>();
+  for (const b of matched) {
+    const candidate = [
+      b?.providerName,
+      b?.forwarder,
+      b?.forwarder_name,
+      b?.shipper_name,
+      b?.shipperName,
+      b?.Shipper_Name,
+      b?.supplier_name,
+      b?.supplierName,
+      b?.notify_party,
+      b?.notifyParty,
+      b?.notify_party_name,
+      b?.raw?.shipper_name,
+      b?.raw?.notify_party_name,
+    ].find((v) => typeof v === "string" && v.trim());
+    if (candidate) {
+      const k = String(candidate).trim();
+      fwdCounts.set(k, (fwdCounts.get(k) || 0) + 1);
+    }
+  }
+  const topForwarder =
+    Array.from(fwdCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  // dominant container length / type on lane
+  const containerCounts = new Map<string, number>();
+  for (const b of matched) {
+    const cand =
+      b?.container_type ||
+      b?.containerType ||
+      b?.dominant_container ||
+      b?.dominantContainer ||
+      b?.raw?.container_group ||
+      null;
+    if (cand) {
+      const k = String(cand).trim();
+      containerCounts.set(k, (containerCounts.get(k) || 0) + 1);
+    }
+  }
+  const dominantContainer =
+    Array.from(containerCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+    null;
+  // FCL/LCL bias
+  let fcl = 0;
+  let lcl = 0;
+  for (const b of matched) {
+    const isLcl =
+      Boolean(b?.lcl) ||
+      /lcl/i.test(String(b?.mode || b?.fcl_lcl || b?.loadType || ""));
+    if (isLcl) lcl += 1;
+    else fcl += 1;
+  }
+  const fclLcl: "FCL" | "LCL" | null =
+    fcl + lcl === 0 ? null : fcl >= lcl ? "FCL" : "LCL";
+  // last activity — pick max date across matched BOLs
+  let lastDate: string | null = null;
+  let lastEpoch = -Infinity;
+  for (const b of matched) {
+    const d = parseBolDate(getBolDate(b));
+    if (d) {
+      const t = d.getTime();
+      if (t > lastEpoch) {
+        lastEpoch = t;
+        lastDate = getBolDate(b);
+      }
+    }
+  }
+  return {
+    topCarrier,
+    topForwarder,
+    dominantContainer,
+    fclLcl,
+    lastDate,
+    trend: null,
+  };
 }
 
 function CarrierMixCard({ carriers }: { carriers: CarrierRow[] }) {
@@ -2292,19 +2412,33 @@ function deriveProducts(profile: any, recentBols: any[] = []): ProductRow[] {
 function readCarrier(
   bol: any,
 ): { name: string; inferred: boolean } | null {
-  const direct =
+  // v200 emits camelCase carrierName / nested carrier.carrierName as well
+  // as the legacy snake_case carrier_name. Prefer string fields, fall
+  // through to nested objects, then to inferred MBL prefix.
+  const directCandidate =
+    bol?.carrierName ||
     bol?.carrier_name ||
-    bol?.carrier ||
+    bol?.normalized_carrier ||
+    (typeof bol?.carrier === "string" ? bol.carrier : null) ||
+    bol?.carrier?.carrierName ||
+    bol?.carrier?.name ||
+    bol?.shippingLine ||
     bol?.shipping_line ||
+    bol?.steamshipLine ||
+    bol?.steamship_line ||
+    bol?.raw?.carrierName ||
     bol?.raw?.carrier_name ||
     bol?.raw?.shipping_line ||
     null;
-  if (direct) return { name: String(direct), inferred: false };
+  if (directCandidate && String(directCandidate).trim()) {
+    return { name: String(directCandidate).trim(), inferred: false };
+  }
   // No code-side normalization of MBL prefixes per design directive — we
   // surface the prefix verbatim so a future enrichment pass can map it to
   // a canonical carrier name.
   const mbl =
     bol?.master_bill_of_lading_number ||
+    bol?.masterBillOfLadingNumber ||
     bol?.mbl ||
     bol?.raw?.master_bill_of_lading_number ||
     null;
@@ -2411,6 +2545,10 @@ function getBolOrigin(bol: any): string {
     if (left) return left;
   }
   return (
+    // v200 raw BOL emits origin_port / destination_port directly.
+    bol?.origin_port ||
+    bol?.originPort ||
+    bol?.Origin_Port ||
     bol?.origin_name ||
     bol?.origin ||
     bol?.origin_country ||
@@ -2428,6 +2566,7 @@ function getBolOrigin(bol: any): string {
     bol?.supplier_address_country ||
     bol?.shipper_country ||
     bol?.supplier_country ||
+    bol?.raw?.origin_port ||
     bol?.raw?.foreign_port ||
     bol?.raw?.country ||
     bol?.raw?.origin ||
@@ -2442,6 +2581,10 @@ function getBolDestination(bol: any): string {
     if (right) return right;
   }
   return (
+    // v200 raw BOL emits origin_port / destination_port directly.
+    bol?.destination_port ||
+    bol?.destinationPort ||
+    bol?.Destination_Port ||
     bol?.destination_name ||
     bol?.destination ||
     bol?.destination_country ||
@@ -2459,6 +2602,7 @@ function getBolDestination(bol: any): string {
     bol?.placeOfDelivery ||
     bol?.company_address_country ||
     bol?.consignee_country ||
+    bol?.raw?.destination_port ||
     bol?.raw?.us_port ||
     bol?.raw?.destination ||
     "—"

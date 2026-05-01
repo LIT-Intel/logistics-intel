@@ -3831,6 +3831,54 @@ export async function enrichContacts(
   return data;
 }
 
+/**
+ * Manually add a contact to the current company. Inserts into
+ * `lit_contacts` (the same table `enrichContacts` writes to). Owner is
+ * scoped server-side via RLS — the row links to the company by uuid.
+ */
+export async function saveContact(
+  company_id_or_slug: string,
+  form: {
+    first_name?: string;
+    last_name?: string;
+    title?: string;
+    email?: string;
+    phone?: string;
+    linkedin_url?: string;
+    department?: string;
+    notes?: string;
+  },
+) {
+  const company = await resolveCompanyUuid(company_id_or_slug);
+  const fullName = [form.first_name, form.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const row = {
+    company_id: company.id,
+    full_name: fullName || null,
+    first_name: form.first_name || null,
+    last_name: form.last_name || null,
+    title: form.title || null,
+    email: form.email || null,
+    phone: form.phone || null,
+    linkedin_url: form.linkedin_url || null,
+    department: form.department || null,
+    notes: form.notes || null,
+    source: "manual",
+    source_provider: "manual",
+  };
+  const { data, error } = await supabase
+    .from("lit_contacts")
+    .insert(row)
+    .select("*")
+    .single();
+  if (error) {
+    throw new Error(`contacts.save ${error.code || ""}: ${error.message}`);
+  }
+  return data;
+}
+
 export async function listContacts(company_id_or_slug: string, dept?: string) {
   const company = await resolveCompanyUuid(company_id_or_slug);
   let q = supabase
