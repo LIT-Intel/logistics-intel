@@ -512,10 +512,19 @@ export default function Company() {
         activeRouteKpis?.mostRecentRoute ||
         shellCompany?.kpis?.recentRoute ||
         null,
-      tradeLanes:
-        Array.isArray(activeProfile?.topRoutes)
-          ? activeProfile.topRoutes.length
-          : null,
+      tradeLanes: (() => {
+        const candidates = [
+          activeProfile?.topRoutes,
+          activeProfile?.top_routes,
+          activeRouteKpis?.topRoutesLast12m,
+          activeProfile?.tradeLaneIntelligence,
+          activeProfile?.trade_lane_intelligence,
+        ];
+        for (const c of candidates) {
+          if (Array.isArray(c) && c.length > 0) return c.length;
+        }
+        return null;
+      })(),
       fclCount:
         activeProfile?.fcl_shipments_all_time ??
         activeProfile?.fcl_count ??
@@ -633,6 +642,20 @@ export default function Company() {
   function handlePulseRefresh() {
     return handlePulseClick({ forceRefresh: true });
   }
+
+  // Auto-load cached Pulse AI brief on first visit to the Pulse AI tab so
+  // users see their previously-generated report without re-clicking Generate.
+  // pulse-ai-enrich's findCachedReport returns the most recent completed
+  // report when force_refresh=false, so this is a cache hit (no usage cost).
+  useEffect(() => {
+    if (tab !== "research") return;
+    if (pulseLoading) return;
+    if (pulseBrief?.report) return;
+    if (pulseError) return;
+    if (!companyId) return;
+    handlePulseClick({ forceRefresh: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, companyId]);
 
   async function handleManualRefreshClick() {
     if (!companyId || manualRefreshing) return;

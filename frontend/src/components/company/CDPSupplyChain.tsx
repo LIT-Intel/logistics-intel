@@ -1262,10 +1262,8 @@ function ShipmentRow({ bol, isLast }: { bol: any; isLast: boolean }) {
   // "Invalid Date" / "— → —" when the raw row uses non-standard field
   // names (foreign_port, us_port_of_unlading, place_of_receipt, etc.).
   const dateLabel = (() => {
-    const value = getBolDate(bol);
-    if (!value) return "—";
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return "—";
+    const d = parseBolDate(getBolDate(bol));
+    if (!d) return "—";
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   })();
   const carrier = readCarrier(bol);
@@ -2240,18 +2238,24 @@ function bolMatchesLane(bol: any, lane: any): boolean {
 function getBolDate(bol: any): string | null {
   if (!bol) return null;
   return (
+    bol?.shipmentDate ||
+    bol?.shipment_date ||
+    bol?.date_formatted ||
+    bol?.dateFormatted ||
+    bol?.Date ||
     bol?.bill_of_lading_date ||
     bol?.bill_of_lading_date_formatted ||
-    bol?.shipment_date ||
-    bol?.shipmentDate ||
     bol?.arrival_date ||
     bol?.arrivalDate ||
+    bol?.Arrival_Date ||
     bol?.entry_date ||
     bol?.entryDate ||
     bol?.bol_date ||
     bol?.bolDate ||
     bol?.bill_date ||
     bol?.billDate ||
+    bol?.shipped_on ||
+    bol?.shippedOn ||
     bol?.created_at ||
     bol?.last_shipment_date ||
     bol?.lastShipmentDate ||
@@ -2263,11 +2267,33 @@ function getBolDate(bol: any): string | null {
   );
 }
 
+function parseBolDate(value: string | null): Date | null {
+  if (!value) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  // v200 emits DD/MM/YYYY (e.g. "13/04/2026"). Try that first, then native Date.
+  const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slash) {
+    const a = Number(slash[1]);
+    const b = Number(slash[2]);
+    const y = Number(slash[3]);
+    if (a >= 1 && a <= 31 && b >= 1 && b <= 12) {
+      const d = new Date(Date.UTC(y, b - 1, a));
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+    if (a >= 1 && a <= 12 && b >= 1 && b <= 31) {
+      const d = new Date(Date.UTC(y, a - 1, b));
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+  }
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function formatBolDate(bol: any): string {
   const value = getBolDate(bol);
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
+  const d = parseBolDate(value);
+  if (!d) return "—";
   return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",

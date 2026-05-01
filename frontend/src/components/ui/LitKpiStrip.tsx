@@ -45,6 +45,11 @@ export default function LitKpiStrip({
   topBorder = true,
   className,
 }: LitKpiStripProps) {
+  // Responsive grid: stays readable down to ~360px. auto-fit collapses cells
+  // onto multiple rows on narrow viewports.
+  const gridStyle: React.CSSProperties = {
+    gridTemplateColumns: `repeat(auto-fit, minmax(140px, 1fr))`,
+  };
   return (
     <div
       className={cn(
@@ -53,7 +58,7 @@ export default function LitKpiStrip({
         topBorder && "border-t border-slate-100",
         className,
       )}
-      style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))` }}
+      style={gridStyle}
     >
       {cells.map((cell, i) => {
         const dir: "up" | "down" | "flat" =
@@ -62,7 +67,9 @@ export default function LitKpiStrip({
         const trendColor = TREND_COLOR[dir];
         const isLast = i === cells.length - 1;
         const wrapperClass = cn(
-          "px-4 py-2.5",
+          "px-4 py-2.5 border-b border-slate-100",
+          // remove right border on last cell of every row by relying on auto-fit;
+          // simpler to keep right border on all but last index too — visually fine
           !isLast && "border-r border-slate-100",
         );
         const inner = (
