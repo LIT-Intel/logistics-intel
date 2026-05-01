@@ -354,31 +354,22 @@ function ProductsView({ products }: { products: ProductRow[] }) {
       </LitSectionCard>
     );
   }
+  const productTotal = products.reduce((s, p) => s + p.count, 0);
   return (
     <LitSectionCard
       title="Products / Commodities"
       sub={`Top ${products.length}`}
     >
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2.5">
         {products.map((p) => (
-          <div
+          <SplitBar
             key={p.label}
-            className="flex items-center justify-between gap-2 border-b border-slate-100 py-1.5 last:border-b-0"
-          >
-            <div className="min-w-0 flex-1">
-              <div className="font-body truncate text-[12px] text-slate-700">
-                {p.label}
-              </div>
-              {p.hsCode && (
-                <div className="font-mono text-[10px] text-slate-400">
-                  HS {p.hsCode}
-                </div>
-              )}
-            </div>
-            <span className="font-mono shrink-0 text-[11px] text-slate-500">
-              {p.count.toLocaleString()} shipments
-            </span>
-          </div>
+            label={p.label}
+            value={p.count}
+            total={productTotal}
+            color="#F59E0B"
+            sublabel={p.hsCode ? `HS ${p.hsCode}` : null}
+          />
         ))}
       </div>
     </LitSectionCard>
@@ -400,8 +391,6 @@ function MonthlyCadenceCard({ cadence }: { cadence: CadencePoint[] }) {
   }
   const max = Math.max(...cadence.map((c) => c.fcl + c.lcl), 1);
   const chartHeight = 156;
-  const barWidth = 22;
-  const barGap = 12;
   const [hoveredPoint, setHoveredPoint] = useState<CadencePoint | null>(null);
   const totalFcl = cadence.reduce((s, c) => s + c.fcl, 0);
   const totalLcl = cadence.reduce((s, c) => s + c.lcl, 0);
@@ -431,8 +420,8 @@ function MonthlyCadenceCard({ cadence }: { cadence: CadencePoint[] }) {
       }
     >
       <div
-        className="relative flex items-end justify-center overflow-visible"
-        style={{ height: chartHeight + 36, gap: barGap }}
+        className="relative flex items-end gap-1.5 overflow-visible"
+        style={{ height: chartHeight + 36 }}
       >
         {cadence.map((p, i) => {
           const total = p.fcl + p.lcl;
@@ -443,8 +432,8 @@ function MonthlyCadenceCard({ cadence }: { cadence: CadencePoint[] }) {
           return (
             <div
               key={`${p.label}-${i}`}
-              className="relative flex flex-col items-center justify-end"
-              style={{ height: "100%", width: barWidth }}
+              className="relative flex flex-1 flex-col items-center justify-end"
+              style={{ height: "100%" }}
               onMouseEnter={() => setHoveredPoint(p)}
               onMouseLeave={() => setHoveredPoint(null)}
             >
@@ -608,16 +597,21 @@ function ContainerProfileCard({ profile }: { profile: ContainerProfile }) {
               </p>
             ) : (
               <div className="space-y-1.5">
-                {profile.lengths.slice(0, 4).map((l) => (
-                  <SplitBar
-                    key={l.label}
-                    label={l.label}
-                    value={l.count}
-                    total={profile.lengths.reduce((s, x) => s + x.count, 0)}
-                    color="#6366F1"
-                    badge={l.yoy ? <YoyPill value={l.yoy} /> : null}
-                  />
-                ))}
+                {(() => {
+                  const lengthTotal = profile.lengths.reduce((s, x) => s + x.count, 0);
+                  return profile.lengths.slice(0, 4).map((l) => (
+                    <SplitBar
+                      key={l.label}
+                      label={l.label}
+                      value={l.count}
+                      total={lengthTotal}
+                      color="#06B6D4"
+                      badge={l.yoy ? <YoyPill value={l.yoy} /> : null}
+                      extraLabel={l.teu != null ? "TEU" : undefined}
+                      extraValue={l.teu ?? null}
+                    />
+                  ));
+                })()}
               </div>
             )}
           </div>
@@ -632,23 +626,21 @@ function ContainerProfileCard({ profile }: { profile: ContainerProfile }) {
                 ISO codes not surfaced on this account yet.
               </p>
             ) : (
-              <table className="w-full">
-                <tbody>
-                  {profile.isoCodes.slice(0, 5).map((c) => (
-                    <tr key={c.code} className="border-b border-slate-100 last:border-b-0">
-                      <td className="font-mono py-1 pr-2 text-[11px] font-semibold text-slate-900">
-                        {c.code}
-                      </td>
-                      <td className="font-body py-1 pr-2 text-[10px] text-slate-500">
-                        {c.group || "—"}
-                      </td>
-                      <td className="font-mono py-1 text-right text-[10px] text-slate-500">
-                        {c.count.toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="space-y-1.5">
+                {(() => {
+                  const isoTotal = profile.isoCodes.reduce((s, x) => s + x.count, 0);
+                  return profile.isoCodes.slice(0, 5).map((c) => (
+                    <SplitBar
+                      key={c.code}
+                      label={c.code}
+                      value={c.count}
+                      total={isoTotal}
+                      color="#8B5CF6"
+                      sublabel={c.group || null}
+                    />
+                  ));
+                })()}
+              </div>
             )}
           </div>
         </div>
@@ -964,6 +956,8 @@ function CarrierMixCard({ carriers }: { carriers: CarrierRow[] }) {
                     share={shipShare}
                     color={PROVIDER_COLORS[i % PROVIDER_COLORS.length]}
                     label={c.shipments.toLocaleString()}
+                    tooltipTitle={c.name}
+                    tooltipExtra={c.teu != null ? `TEU: ${Math.round(c.teu).toLocaleString()}` : undefined}
                   />
                 </td>
                 <td className="w-44 px-4 py-2.5">
@@ -972,6 +966,8 @@ function CarrierMixCard({ carriers }: { carriers: CarrierRow[] }) {
                       share={teuShare}
                       color="#0EA5E9"
                       label={Math.round(c.teu).toLocaleString()}
+                      tooltipTitle={c.name}
+                      tooltipExtra={`Shipments: ${c.shipments.toLocaleString()}`}
                     />
                   ) : (
                     <span className="font-body text-[11px] text-slate-300">—</span>
@@ -1087,6 +1083,9 @@ function ForwarderMixCard({ forwarders }: { forwarders: ForwarderRow[] }) {
                 share={total > 0 ? f.shipments / total : 0}
                 color={PROVIDER_COLORS[i % PROVIDER_COLORS.length]}
                 hideLabel
+                tooltipTitle={f.name}
+                label={f.shipments.toLocaleString()}
+                tooltipExtra={f.teu != null ? `TEU: ${Math.round(Number(f.teu)).toLocaleString()}` : undefined}
               />
             </div>
           </div>
@@ -1341,6 +1340,61 @@ function ShipmentRow({ bol, isLast }: { bol: any; isLast: boolean }) {
   );
 }
 
+function SupplierRowInteractive({
+  supplier: s,
+  hasStats,
+}: {
+  supplier: SupplierRow;
+  hasStats: boolean;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      className="relative flex items-center gap-2.5 rounded transition-colors hover:bg-emerald-50/50"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {hover && hasStats && (
+        <div
+          className="font-display pointer-events-none absolute left-8 z-20 min-w-[180px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] leading-tight text-white shadow-lg"
+          style={{ bottom: "100%", marginBottom: 6 }}
+        >
+          <div className="font-semibold">{s.name}</div>
+          {s.country && <div className="text-[10px] opacity-75">{s.country}</div>}
+          <div className="opacity-90">Shipments: {s.shipments.toLocaleString()}</div>
+          {s.share > 0 && <div className="opacity-90">Share: {s.share}%</div>}
+        </div>
+      )}
+      <div className="font-mono flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[9px] font-bold text-slate-500">
+        {(s.country || "").slice(0, 2).toUpperCase() || "—"}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="font-display truncate text-[12px] font-semibold text-slate-900">
+          {s.name}
+        </div>
+        {hasStats ? (
+          <div className="mt-1 flex items-center gap-1.5">
+            <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100">
+              <div
+                className="h-full rounded bg-emerald-500 transition-all"
+                style={{ width: `${s.share}%`, opacity: hover ? 1 : 0.85 }}
+              />
+            </div>
+            <span className="font-mono whitespace-nowrap text-[10px] text-slate-500">
+              {s.share > 0 ? `${s.share}% · ` : ""}
+              {s.shipments.toLocaleString()} ship
+            </span>
+          </div>
+        ) : (
+          <div className="font-body mt-0.5 text-[10px] text-slate-400">
+            Counterparty on file · count pending
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TopSuppliersCard({ suppliers }: { suppliers: SupplierRow[] }) {
   return (
     <LitSectionCard
@@ -1352,39 +1406,9 @@ function TopSuppliersCard({ suppliers }: { suppliers: SupplierRow[] }) {
       ) : (
         <div className="flex flex-col gap-2">
           {suppliers.slice(0, 6).map((s, i) => {
-            // Phase 6 — `-1` is a sentinel meaning "no count available"
-            // (string-only sample list with no recentBols match). Render
-            // the supplier name without the `0% · 0 ship` lie.
             const hasStats = s.shipments > 0 && s.share >= 0;
             return (
-            <div key={s.name + i} className="flex items-center gap-2.5">
-              <div className="font-mono flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[9px] font-bold text-slate-500">
-                {(s.country || "").slice(0, 2).toUpperCase() || "—"}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="font-display truncate text-[12px] font-semibold text-slate-900">
-                  {s.name}
-                </div>
-                {hasStats ? (
-                  <div className="mt-1 flex items-center gap-1.5">
-                    <div className="h-0.5 flex-1 overflow-hidden rounded bg-slate-100">
-                      <div
-                        className="h-full rounded bg-blue-500"
-                        style={{ width: `${s.share}%` }}
-                      />
-                    </div>
-                    <span className="font-mono whitespace-nowrap text-[10px] text-slate-500">
-                      {s.share > 0 ? `${s.share}% · ` : ""}
-                      {s.shipments.toLocaleString()} ship
-                    </span>
-                  </div>
-                ) : (
-                  <div className="font-body mt-0.5 text-[10px] text-slate-400">
-                    Counterparty on file · count pending
-                  </div>
-                )}
-              </div>
-            </div>
+              <SupplierRowInteractive key={s.name + i} supplier={s} hasStats={hasStats} />
             );
           })}
         </div>
@@ -1492,16 +1516,43 @@ function SplitBar({
   total,
   color,
   badge,
+  extraLabel,
+  extraValue,
+  sublabel,
 }: {
   label: string;
   value: number;
   total: number;
   color: string;
   badge?: React.ReactNode;
+  extraLabel?: string;
+  extraValue?: number | string | null;
+  sublabel?: string | null;
 }) {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  const [hover, setHover] = useState(false);
   return (
-    <div>
+    <div
+      className="relative"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {hover && (
+        <div
+          className="font-display pointer-events-none absolute left-0 z-20 min-w-[180px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] leading-tight text-white shadow-lg"
+          style={{ bottom: "100%", marginBottom: 6 }}
+        >
+          <div className="font-semibold">{label}</div>
+          {sublabel && <div className="text-[10px] opacity-75">{sublabel}</div>}
+          <div className="opacity-90">Count: {Number(value).toLocaleString()}</div>
+          {total > 0 && <div className="opacity-90">Share: {pct}%</div>}
+          {extraLabel && extraValue != null && extraValue !== "" && (
+            <div className="opacity-90">
+              {extraLabel}: {typeof extraValue === "number" ? extraValue.toLocaleString() : extraValue}
+            </div>
+          )}
+        </div>
+      )}
       <div className="mb-1 flex items-baseline justify-between">
         <span className="font-display inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-900">
           {label}
@@ -1511,10 +1562,10 @@ function SplitBar({
           {value.toLocaleString()} <span className="text-slate-400">· {pct}%</span>
         </span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded bg-slate-100">
+      <div className="h-1.5 overflow-hidden rounded bg-slate-100 transition-all hover:h-2.5">
         <div
-          className="h-full rounded"
-          style={{ width: `${pct}%`, background: color }}
+          className="h-full rounded transition-opacity"
+          style={{ width: `${pct}%`, background: color, opacity: hover ? 1 : 0.9 }}
         />
       </div>
     </div>
@@ -1526,26 +1577,48 @@ function ShareBar({
   color,
   label,
   hideLabel,
+  tooltipTitle,
+  tooltipExtra,
 }: {
   share: number;
   color: string;
   label?: string;
   hideLabel?: boolean;
+  tooltipTitle?: string;
+  tooltipExtra?: string;
 }) {
+  const [hover, setHover] = useState(false);
+  const pct = Math.round(share * 100);
   return (
-    <div className="flex items-center gap-2">
-      <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100">
+    <div
+      className="relative flex items-center gap-2"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {hover && (tooltipTitle || tooltipExtra) && (
         <div
-          className="h-full rounded"
+          className="font-display pointer-events-none absolute left-0 z-20 min-w-[160px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] leading-tight text-white shadow-lg"
+          style={{ bottom: "100%", marginBottom: 6 }}
+        >
+          {tooltipTitle && <div className="font-semibold">{tooltipTitle}</div>}
+          <div className="opacity-90">Share: {pct}%</div>
+          {label && <div className="opacity-90">Count: {label}</div>}
+          {tooltipExtra && <div className="opacity-90">{tooltipExtra}</div>}
+        </div>
+      )}
+      <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100 transition-all hover:h-1.5">
+        <div
+          className="h-full rounded transition-opacity"
           style={{
             width: `${Math.max(0, Math.min(100, share * 100))}%`,
             background: color,
+            opacity: hover ? 1 : 0.9,
           }}
         />
       </div>
       {!hideLabel && (
         <span className="font-mono w-12 shrink-0 text-right text-[10px] text-slate-500">
-          {label ?? `${Math.round(share * 100)}%`}
+          {label ?? `${pct}%`}
         </span>
       )}
     </div>
