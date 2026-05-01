@@ -5281,119 +5281,105 @@ export async function enrichCampaignContacts(
  * Never exposes OAuth credentials — only invokes the edge function which
  * returns a signed consent URL.
  */
-export async function startGmailOAuth(): Promise<
+// Shared classifier: bucket a supabase.functions.invoke error into the
+// UI's three buckets (configError / setupRequired / error). Handles
+// FunctionsFetchError ("Failed to send a request to the Edge Function"),
+// 404 / NOT_FOUND, the mock-client "Supabase not available" leak, and
+// generic provider errors.
+function classifyFunctionError(
+  err: unknown,
+):
+  | { configError: true }
+  | { setupRequired: true }
+  | { error: string } {
+  const msg = String((err as any)?.message || (err as any) || "");
+  const lower = msg.toLowerCase();
+  const status = (err as any)?.status ?? (err as any)?.context?.status;
+  if (lower.includes("supabase not available") || lower.includes("supabase credentials")) {
+    return { configError: true };
+  }
+  if (
+    status === 404 ||
+    lower.includes("not_found") ||
+    lower.includes("not found") ||
+    lower.includes("404") ||
+    // FunctionsFetchError — emitted when the function isn't reachable.
+    // Most often this means it's not deployed yet on the project, or the
+    // deployed slug doesn't match. Surface as setup-required.
+    lower.includes("failed to send a request to the edge function") ||
+    (err as any)?.name === "FunctionsFetchError"
+  ) {
+    return { setupRequired: true };
+  }
+  return { error: msg || "Edge Function call failed" };
+}
+
+/**
+ * startEmailOAuth — invoke the deployed `email-oauth-start` Edge Function.
+ *
+ * Backend contract:
+ *   request:  { provider: 'gmail'|'outlook', org_id: string }
+ *   success:  { ok: true, provider, auth_url }
+ *   error:    { ok: false, error }
+ *
+ * Returns { url } on success — the caller navigates `window.location.href = url`.
+ */
+export async function startEmailOAuth(
+  provider: "gmail" | "outlook",
+  orgId: string | null | undefined,
+): Promise<
   { url: string } | { setupRequired: true } | { configError: true } | { error: string }
 > {
-  // Guard: if Supabase is not configured the mock client returns a generic
-  // error — short-circuit before we even hit it so the UI shows a clear
-  // "check Supabase configuration" message instead of the raw error string.
+  if (!orgId) {
+    return { error: "No workspace selected. Sign out and back in, then retry." };
+  }
   try {
     const { isSupabaseAvailable } = await import("@/lib/supabase");
     if (!isSupabaseAvailable()) {
       return { configError: true };
     }
   } catch {
-    // import failed — treat as unavailable
     return { configError: true };
   }
 
   try {
-    const { data, error } = await supabase.functions.invoke("oauth-gmail-start", {
-      body: {},
+    const { data, error } = await supabase.functions.invoke("email-oauth-start", {
+      body: { provider, org_id: orgId },
     });
 
     if (error) {
-      // FunctionsRelayError with status 404 means the function isn't deployed.
-      const msg = String((error as any)?.message || "");
-      const status = (error as any)?.status ?? (error as any)?.context?.status;
-      const isNotFound =
-        status === 404 ||
-        msg.includes("NOT_FOUND") ||
-        msg.toLowerCase().includes("not found") ||
-        msg.toLowerCase().includes("404");
-      if (isNotFound) {
-        return { setupRequired: true };
-      }
-      // Defensive: if somehow the mock error leaks through, map it to configError.
-      if (msg.toLowerCase().includes("supabase not available")) {
-        return { configError: true };
-      }
-      return { error: msg || "Failed to start Gmail connection" };
+      return classifyFunctionError(error);
     }
-
-    if (data && typeof (data as any).url === "string") {
-      return { url: (data as any).url as string };
+    if (data && (data as any).ok === true && typeof (data as any).auth_url === "string") {
+      return { url: (data as any).auth_url as string };
     }
-
     if (data && typeof (data as any).error === "string") {
       return { error: (data as any).error as string };
     }
-
-    return { error: "Unexpected response from oauth-gmail-start" };
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg.toLowerCase().includes("supabase not available")) {
-      return { configError: true };
-    }
-    return { error: msg || "Failed to start Gmail connection" };
+    return { error: "Unexpected response from email-oauth-start" };
+  } catch (e) {
+    return classifyFunctionError(e);
   }
 }
 
 /**
- * startOutlookOAuth — invoke the oauth-outlook-start Edge Function.
- * Returns { url } on success; the caller navigates the browser there.
- * Mirrors startGmailOAuth exactly, just targeting a different function.
+ * Back-compat wrappers — keep the old names so existing call sites work.
+ * Both delegate to `startEmailOAuth(provider, orgId)`.
  */
-export async function startOutlookOAuth(): Promise<
+export async function startGmailOAuth(
+  orgId: string | null | undefined,
+): Promise<
   { url: string } | { setupRequired: true } | { configError: true } | { error: string }
 > {
-  try {
-    const { isSupabaseAvailable } = await import("@/lib/supabase");
-    if (!isSupabaseAvailable()) {
-      return { configError: true };
-    }
-  } catch {
-    return { configError: true };
-  }
+  return startEmailOAuth("gmail", orgId);
+}
 
-  try {
-    const { data, error } = await supabase.functions.invoke("oauth-outlook-start", {
-      body: {},
-    });
-
-    if (error) {
-      const msg = String((error as any)?.message || "");
-      const status = (error as any)?.status ?? (error as any)?.context?.status;
-      const isNotFound =
-        status === 404 ||
-        msg.includes("NOT_FOUND") ||
-        msg.toLowerCase().includes("not found") ||
-        msg.toLowerCase().includes("404");
-      if (isNotFound) {
-        return { setupRequired: true };
-      }
-      if (msg.toLowerCase().includes("supabase not available")) {
-        return { configError: true };
-      }
-      return { error: msg || "Failed to start Outlook connection" };
-    }
-
-    if (data && typeof (data as any).url === "string") {
-      return { url: (data as any).url as string };
-    }
-
-    if (data && typeof (data as any).error === "string") {
-      return { error: (data as any).error as string };
-    }
-
-    return { error: "Unexpected response from oauth-outlook-start" };
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg.toLowerCase().includes("supabase not available")) {
-      return { configError: true };
-    }
-    return { error: msg || "Failed to start Outlook connection" };
-  }
+export async function startOutlookOAuth(
+  orgId: string | null | undefined,
+): Promise<
+  { url: string } | { setupRequired: true } | { configError: true } | { error: string }
+> {
+  return startEmailOAuth("outlook", orgId);
 }
 
 /**
@@ -5421,20 +5407,7 @@ export async function sendTestEmail(toEmail: string): Promise<
     });
 
     if (error) {
-      const msg = String((error as any)?.message || "");
-      const status = (error as any)?.status ?? (error as any)?.context?.status;
-      const isNotFound =
-        status === 404 ||
-        msg.includes("NOT_FOUND") ||
-        msg.toLowerCase().includes("not found") ||
-        msg.toLowerCase().includes("404");
-      if (isNotFound) {
-        return { setupRequired: true };
-      }
-      if (msg.toLowerCase().includes("supabase not available")) {
-        return { configError: true };
-      }
-      return { error: msg || "Failed to send test email" };
+      return classifyFunctionError(error);
     }
 
     if (data && (data as any).ok === true) {
@@ -5452,11 +5425,7 @@ export async function sendTestEmail(toEmail: string): Promise<
     }
 
     return { error: "Unexpected response from send-test-email" };
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg.toLowerCase().includes("supabase not available")) {
-      return { configError: true };
-    }
-    return { error: msg || "Failed to send test email" };
+  } catch (e) {
+    return classifyFunctionError(e);
   }
 }

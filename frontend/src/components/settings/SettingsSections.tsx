@@ -33,6 +33,7 @@ import { PLAN_LIMITS, normalizePlan as normalizePlanCode } from "@/lib/planLimit
 import { listEmailAccounts, startGmailOAuth, startOutlookOAuth, sendTestEmail } from "@/lib/api";
 import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
 import type { LitEmailAccountRow } from "@/types/lit-outbound";
+import { useAuth } from "@/auth/AuthProvider";
 import {
   SCard,
   SectionHeader,
@@ -1016,6 +1017,7 @@ function GmailCard({
   loadingAccounts: boolean;
   onRefresh: () => void;
 }) {
+  const { orgId } = useAuth();
   const [connecting, setConnecting] = useState(false);
   const [localSetupRequired, setLocalSetupRequired] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -1029,7 +1031,7 @@ function GmailCard({
 
   async function handleConnect() {
     setConnecting(true); setConnectError(null); setLocalSetupRequired(false);
-    const result = await startGmailOAuth();
+    const result = await startGmailOAuth(orgId);
     setConnecting(false);
     if ("url" in result) { window.location.href = result.url; return; }
     if ("setupRequired" in result) { setLocalSetupRequired(true); return; }
@@ -1063,6 +1065,7 @@ function OutlookCard({
   loadingAccounts: boolean;
   onRefresh: () => void;
 }) {
+  const { orgId } = useAuth();
   const [connecting, setConnecting] = useState(false);
   const [localSetupRequired, setLocalSetupRequired] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -1073,7 +1076,7 @@ function OutlookCard({
 
   async function handleConnect() {
     setConnecting(true); setConnectError(null); setLocalSetupRequired(false);
-    const result = await startOutlookOAuth();
+    const result = await startOutlookOAuth(orgId);
     setConnecting(false);
     if ("url" in result) { window.location.href = result.url; return; }
     if ("setupRequired" in result) { setLocalSetupRequired(true); return; }
