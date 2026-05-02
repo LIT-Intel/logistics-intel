@@ -772,7 +772,14 @@ export default function Company() {
     setManualRefreshing(true);
     setRefreshError(null);
     try {
-      const fresh = await getSavedCompanyDetail(companyId);
+      // forceRefresh:true tells importyeti-proxy to bypass its 30-day
+      // snapshot cache and pull fresh upstream data. Without this the
+      // edge function returns the cached snapshot every time and the
+      // KPI cards / right-rail drawer / recent-shipments table never
+      // visibly update. Burns one company_profile_view quota credit.
+      const fresh = await getSavedCompanyDetail(companyId, undefined, {
+        forceRefresh: true,
+      });
       if (fresh) {
         setProfile(fresh.profile || null);
         setRouteKpis(fresh.routeKpis || null);

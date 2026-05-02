@@ -2444,10 +2444,21 @@ export async function getIyCompanyProfile({
   companyKey,
   query,
   userGoal,
+  forceRefresh,
 }: {
   companyKey: string;
   query?: string;
   userGoal?: string;
+  /**
+   * When true, asks the importyeti-proxy edge function to bypass the
+   * 30-day snapshot cache and fetch a fresh upstream profile. Required
+   * for the "Refresh Intel" button — without it the function returns
+   * the cached snapshot every time and the visible KPI / right-rail /
+   * recent-shipments cards never actually refresh. Burns one
+   * `company_profile_view` quota credit per call. Defaults to false so
+   * background loads stay cheap.
+   */
+  forceRefresh?: boolean;
 }): Promise<{ companyProfile: IyCompanyProfile; enrichment: any | null }> {
   const normalizedSlug = normalizeCompanyIdToSlug(companyKey);
   if (!normalizedSlug) {
@@ -2465,8 +2476,9 @@ export async function getIyCompanyProfile({
     "importyeti-proxy",
     {
       body: {
-        action: "companyProfile",
+        action: forceRefresh ? "refresh" : "companyProfile",
         company_id: normalizedSlug,
+        refresh: forceRefresh ? true : undefined,
       },
     }
   );
@@ -2481,6 +2493,7 @@ export async function getIyCompanyProfile({
         body: {
           action: "company",
           company_id: normalizedSlug,
+          refresh: forceRefresh ? true : undefined,
         },
       }
     );
@@ -3010,6 +3023,7 @@ export async function resolveLitCompanyUuid(input: {
 export async function getSavedCompanyDetail(
   companyKey: string,
   signal?: AbortSignal,
+  options?: { forceRefresh?: boolean },
 ): Promise<{ profile: IyCompanyProfile; routeKpis: IyRouteKpis | null }> {
   const normalizedKey = ensureCompanyKey(companyKey);
   if (!normalizedKey) {
@@ -3017,7 +3031,10 @@ export async function getSavedCompanyDetail(
   }
 
   const [profileResult, routeKpis] = await Promise.all([
-    getIyCompanyProfile({ companyKey: normalizedKey }),
+    getIyCompanyProfile({
+      companyKey: normalizedKey,
+      forceRefresh: options?.forceRefresh,
+    }),
     getIyRouteKpisForCompany({ companyKey: normalizedKey }, signal),
   ]);
 
