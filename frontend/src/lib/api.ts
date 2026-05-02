@@ -2502,7 +2502,38 @@ export async function getIyCompanyProfile({
 
   if (error) {
     console.error("ImportYeti companyProfile error:", error);
-    throw new Error(`getIyCompanyProfile failed: ${error.message || "Unknown error"}`);
+    // Try to parse the structured error body the edge function returns
+    // for both 403 LIMIT_EXCEEDED and 500 COMPANY_PROFILE_FAILED. The
+    // generic supabase-js error message ("Edge Function returned a
+    // non-2xx status code") doesn't carry our `code` so we either pull
+    // it from `data` (when supabase-js puts the body there) or from
+    // `error.context.response`. Attaching `code` to the thrown error
+    // lets the UI route to the right toast (limit vs upstream issue).
+    let code: string | null = null;
+    let bodyMsg: string | null = null;
+    try {
+      if (data && typeof data === "object") {
+        code = (data as any)?.code || null;
+        bodyMsg = (data as any)?.message || (data as any)?.error || null;
+      }
+      if (!code && (error as any)?.context?.response) {
+        const cloned = (error as any).context.response.clone?.();
+        if (cloned) {
+          const body = await cloned.json().catch(() => null);
+          if (body && typeof body === "object") {
+            code = body?.code || code;
+            bodyMsg = body?.message || body?.error || bodyMsg;
+          }
+        }
+      }
+    } catch {
+      /* swallow — fall back to error.message */
+    }
+    const thrown: any = new Error(
+      `getIyCompanyProfile failed: ${bodyMsg || error.message || "Unknown error"}`,
+    );
+    thrown.code = code;
+    throw thrown;
   }
 
   if (!data || !(data.companyProfile || data.company)) {

@@ -29,6 +29,7 @@ import {
   getSavedCompanyDetail,
   getSavedCompanyShellOnly,
   buildYearScopedProfile,
+  saveCompanyToCommandCenter,
 } from "@/lib/api";
 import { useAuth } from "@/auth/AuthProvider";
 import { capFutureDate } from "@/lib/dateUtils";
@@ -755,9 +756,9 @@ export default function Company() {
       // forceRefresh:true tells importyeti-proxy to bypass its 30-day
       // snapshot cache and pull fresh upstream data so the KPI cards,
       // top container, recent shipments, and right rail all visibly
-      // update. Burns one company_profile_view quota credit (admins
-      // bypass server-side via platform_admins / SUPER_ADMIN_EMAILS /
-      // app_metadata.role / org_members owner role).
+      // update. Burns one company_profile_view quota credit (platform
+      // admins bypass server-side via the platform_admins table — note
+      // org-owner role does NOT bypass per check_usage_limit).
       const fresh = await getSavedCompanyDetail(companyId, undefined, {
         forceRefresh: true,
       });
@@ -765,21 +766,76 @@ export default function Company() {
         setProfile(fresh.profile || null);
         setRouteKpis(fresh.routeKpis || null);
         setSnapshotUpdatedAt(new Date().toISOString());
+
+        // Write the fresh profile back into lit_companies so the
+        // Command Center saved-list, dashboard "What Matters Now",
+        // and Pulse Coach lane aggregations see the updated KPIs
+        // without needing another refresh. saveCompanyToCommandCenter
+        // is an upsert against the existing saved row — it does NOT
+        // create a duplicate or burn a saved_company quota credit
+        // because the (user_id, company_id) row already exists.
+        try {
+          const fp = fresh.profile;
+          if (fp) {
+            const slug = String(fp.key || `company/${companyId}`).replace(
+              /^company\//,
+              "",
+            );
+            await saveCompanyToCommandCenter({
+              shipper: {
+                key: `company/${slug}`,
+                companyId: `company/${slug}`,
+                title: fp.title || fp.name || "",
+                name: fp.title || fp.name || "",
+                domain: fp.domain || undefined,
+                website: fp.website || undefined,
+                address: fp.address || undefined,
+                countryCode: fp.countryCode || undefined,
+                totalShipments: fp.routeKpis?.shipmentsLast12m,
+                teusLast12m: fp.routeKpis?.teuLast12m,
+                mostRecentShipment: fp.lastShipmentDate,
+                lastShipmentDate: fp.lastShipmentDate,
+                primaryRoute: fp.routeKpis?.topRouteLast12m,
+                topSuppliers: Array.isArray(fp.topSuppliers)
+                  ? fp.topSuppliers
+                  : [],
+              },
+              profile: fp,
+              stage: "prospect",
+              source: "importyeti",
+            });
+          }
+        } catch (writebackErr) {
+          // Non-fatal — page still shows the fresh snapshot, the
+          // dashboard list will catch up on the next save or refresh.
+          console.warn(
+            "[handleManualRefreshClick] writeback to lit_companies failed",
+            writebackErr,
+          );
+        }
+
         showShareToast("Intelligence refreshed", "success");
       }
     } catch (err) {
-      // Map the raw "Edge Function returned a non-2xx status code" error
-      // (which is what supabase-js says when our edge function 403s on
-      // LIMIT_EXCEEDED) into a friendly, actionable message instead of
-      // cryptic engineering text.
-      const raw = String(err?.message || "Refresh failed");
-      const isLimit =
-        /LIMIT_EXCEEDED/i.test(raw) ||
-        /403/.test(raw) ||
-        /non-2xx/i.test(raw);
-      const friendly = isLimit
-        ? "Refresh limit reached for this billing cycle. Contact your admin or upgrade your plan to refresh more companies."
-        : raw;
+      // Use the structured `code` attached by getIyCompanyProfile
+      // (LIMIT_EXCEEDED, COMPANY_PROFILE_FAILED, etc) to route to the
+      // right toast — never assume a non-2xx is a quota issue. Logs
+      // showed the previous regex mislabeled COMPANY_PROFILE_FAILED
+      // (upstream IY returning an error for an unknown slug) as
+      // "Refresh limit reached", which scared users.
+      const code = err?.code || null;
+      let friendly;
+      if (code === "LIMIT_EXCEEDED") {
+        friendly =
+          "Refresh limit reached for this billing cycle. Contact your admin or upgrade your plan to refresh more companies.";
+      } else if (code === "COMPANY_PROFILE_FAILED" || code === "IY_API_KEY_MISSING") {
+        friendly =
+          "Couldn't refresh trade intel right now. The data provider is temporarily unavailable — please try again in a moment.";
+      } else if (code === "UNAUTHORIZED") {
+        friendly = "Your session expired. Please sign in again.";
+      } else {
+        friendly = err?.message || "Refresh failed. Please try again.";
+      }
       setRefreshError(friendly);
       showShareToast(friendly, "error");
     } finally {
