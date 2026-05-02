@@ -52,14 +52,25 @@ type PulseCoachContextValue = {
 
 const PulseCoachContext = createContext<PulseCoachContextValue | null>(null);
 
-const CACHE_KEY = "lit.pulse_coach.cache.v1";
+// v2 of the cache key: now scoped per user id so logging out / switching
+// accounts on the same browser does not leak the previous user's saved-
+// account aggregations into the new session. Without this scoping, User
+// A's workspace_lanes (and nudges referencing A's accounts) were visible
+// to User B until the 30-min TTL expired. The unscoped v1 key is purged
+// on mount below.
+const CACHE_KEY_PREFIX = "lit.pulse_coach.cache.v2.";
+const LEGACY_CACHE_KEYS = ["lit.pulse_coach.cache.v1"];
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
 type CacheRow = { at: number; result: PulseCoachResult };
 
-function readCache(): CacheRow | null {
+function cacheKeyFor(userId: string | null | undefined): string {
+  return `${CACHE_KEY_PREFIX}${userId || "anon"}`;
+}
+
+function readCacheFor(userId: string | null | undefined): CacheRow | null {
   try {
-    const raw = window.localStorage.getItem(CACHE_KEY);
+    const raw = window.localStorage.getItem(cacheKeyFor(userId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CacheRow;
     if (!parsed?.at || !parsed?.result) return null;
@@ -70,14 +81,26 @@ function readCache(): CacheRow | null {
   }
 }
 
-function writeCache(result: PulseCoachResult) {
+function writeCacheFor(
+  userId: string | null | undefined,
+  result: PulseCoachResult,
+) {
   try {
     window.localStorage.setItem(
-      CACHE_KEY,
+      cacheKeyFor(userId),
       JSON.stringify({ at: Date.now(), result }),
     );
   } catch (_) {
     // ignore quota / private mode
+  }
+}
+
+function purgeLegacyCaches() {
+  if (typeof window === "undefined") return;
+  try {
+    for (const k of LEGACY_CACHE_KEYS) window.localStorage.removeItem(k);
+  } catch (_) {
+    // ignore
   }
 }
 
@@ -92,9 +115,15 @@ export function PulseCoachProvider({
   pageContext: string;
   children: React.ReactNode;
 }) {
+  const { user } = useAuth();
+  const userId = user?.id || null;
+  // Initial render: read cache for the current user only. If the user
+  // is not yet known (auth still warming up) start empty — the userId
+  // effect below kicks in once auth resolves.
   const [result, setResult] = useState<PulseCoachResult | null>(() => {
     if (typeof window === "undefined") return null;
-    return readCache()?.result ?? null;
+    purgeLegacyCaches();
+    return readCacheFor(userId)?.result ?? null;
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +135,7 @@ export function PulseCoachProvider({
   const fetchNudges = useCallback(
     async (force = false) => {
       if (!force) {
-        const cached = readCache();
+        const cached = readCacheFor(userId);
         if (cached?.result) {
           setResult(cached.result);
           return;
@@ -155,7 +184,7 @@ export function PulseCoachProvider({
             }
             return r;
           });
-          writeCache(r);
+          writeCacheFor(userId, r);
           if (!r.ok && r.error) setError(r.error);
         } catch (err: any) {
           setError(err?.message || "Coach fetch failed");
@@ -167,8 +196,21 @@ export function PulseCoachProvider({
       inflight.current = p;
       return p;
     },
-    [pageContext],
+    [pageContext, userId],
   );
+
+  // When the logged-in user changes (sign-in, sign-out, account
+  // switch), reset coach state and reload from THAT user's cache or
+  // fetch fresh. Without this, the previous user's nudges + workspace
+  // lanes would stick around in memory until a manual refresh.
+  useEffect(() => {
+    setResult(readCacheFor(userId)?.result ?? null);
+    setError(null);
+    setHighlightedLane(null);
+    inflight.current = null;
+    if (userId) fetchNudges(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   // Initial load on mount when cache is empty.
   useEffect(() => {
