@@ -2511,10 +2511,12 @@ export async function getIyCompanyProfile({
     // lets the UI route to the right toast (limit vs upstream issue).
     let code: string | null = null;
     let bodyMsg: string | null = null;
+    let gateBody: any = null;
     try {
       if (data && typeof data === "object") {
         code = (data as any)?.code || null;
         bodyMsg = (data as any)?.message || (data as any)?.error || null;
+        gateBody = data;
       }
       if (!code && (error as any)?.context?.response) {
         const cloned = (error as any).context.response.clone?.();
@@ -2523,6 +2525,7 @@ export async function getIyCompanyProfile({
           if (body && typeof body === "object") {
             code = body?.code || code;
             bodyMsg = body?.message || body?.error || bodyMsg;
+            gateBody = body;
           }
         }
       }
@@ -2533,6 +2536,10 @@ export async function getIyCompanyProfile({
       `getIyCompanyProfile failed: ${bodyMsg || error.message || "Unknown error"}`,
     );
     thrown.code = code;
+    // Attach the full structured gate response (plan / used / limit /
+    // reset_at / upgrade_url for LIMIT_EXCEEDED) so the UI can render
+    // a premium quota-warning card without re-fetching.
+    thrown.gate = gateBody;
     throw thrown;
   }
 
@@ -3776,15 +3783,51 @@ async function saveCompanyDirectToSupabase(opts: {
   const lclShipments = getLclShipments12m(opts.profile);
   const topRoute = opts.profile?.routeKpis?.topRouteLast12m ?? null;
   const recentRoute = opts.profile?.routeKpis?.mostRecentRoute ?? null;
-  // Pull estimated 12m spend from any of the shapes the profile
-  // normalizer might have populated. Was previously dropped by the
-  // save mapper, leaving lit_companies.est_spend_12m null even when
-  // we had a real number — visible on the Command Center list as a
-  // missing "Est spend" column for newly-saved companies.
+  // Phase C — pull every snapshot-derivable field through the save
+  // mapper so newly-saved companies aren't sparse on the Command
+  // Center list / Pulse Coach lane aggregator. Anything that lives
+  // only on the snapshot (recent_bols, full top_routes) stays in
+  // lit_importyeti_company_snapshot — but the headline KPIs and
+  // contact bits go into lit_companies columns where dashboards read.
   const estSpend12m =
     (opts.profile as any)?.estSpendUsd12m ??
     opts.profile?.routeKpis?.estSpendUsd12m ??
     (opts.profile as any)?.totalShippingCost ??
+    null;
+  const phone =
+    (opts.profile as any)?.phoneNumber ??
+    (opts.profile as any)?.phone ??
+    (opts.shipper as any)?.phone ??
+    null;
+  // The IY search hit's `city` field often holds the full address
+  // (e.g. "100 Park Ave 685, Florham Park, Nj 07932, Us"). Detect
+  // that pattern and re-route to address_line1 so city/state stay
+  // queryable.
+  const rawCity = opts.shipper.city ?? null;
+  const looksLikeAddress =
+    typeof rawCity === "string" && rawCity.split(",").length >= 3;
+  const cityClean = looksLikeAddress ? null : rawCity;
+  const addressLine1 =
+    (opts.profile as any)?.address ??
+    (opts.shipper as any)?.address ??
+    (looksLikeAddress ? rawCity : null);
+  const stateClean =
+    (opts.shipper as any)?.state ??
+    (opts.profile as any)?.state ??
+    null;
+  // Pulse-AI–derived enrichment fields. Most saves won't have these
+  // (Pulse AI runs on demand), but if the profile happens to carry
+  // them we persist so the right rail Industry / Revenue / Headcount
+  // tiles populate without an extra Supabase update.
+  const industry =
+    (opts.profile as any)?.industry ?? null;
+  const revenue =
+    (opts.profile as any)?.estimatedRevenue ??
+    (opts.profile as any)?.revenue ??
+    null;
+  const headcount =
+    (opts.profile as any)?.employeeCount ??
+    (opts.profile as any)?.headcount ??
     null;
 
   const company_data = {
@@ -3793,10 +3836,14 @@ async function saveCompanyDirectToSupabase(opts: {
     name: opts.shipper.title || opts.shipper.name || "Unknown",
     domain: opts.profile?.domain ?? opts.shipper.domain ?? null,
     website: opts.profile?.website ?? opts.shipper.website ?? null,
-    address_line1: opts.profile?.address ?? opts.shipper.address ?? null,
-    city: opts.shipper.city ?? null,
-    state: opts.shipper.state ?? null,
+    phone,
+    address_line1: addressLine1,
+    city: cityClean,
+    state: stateClean,
     country_code: opts.profile?.countryCode ?? opts.shipper.countryCode ?? null,
+    industry,
+    revenue,
+    headcount,
     shipments_12m:
       opts.profile?.routeKpis?.shipmentsLast12m ??
       opts.shipper.shipmentsLast12m ??

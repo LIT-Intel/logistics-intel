@@ -37,6 +37,7 @@ import { supabase } from "@/lib/supabase";
 
 import CDPHeader from "@/components/company/CDPHeader";
 import CDPDetailsPanel from "@/components/company/CDPDetailsPanel";
+import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import CDPSupplyChain from "@/components/company/CDPSupplyChain";
 import CDPContacts from "@/components/company/CDPContacts";
 import CDPResearch from "@/components/company/CDPResearch";
@@ -295,6 +296,12 @@ export default function Company() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState(null);
+  // Phase E — when a refresh fails because the user hit a monthly
+  // quota cap (or is close to it), we surface a richer Pulse-Coach-
+  // styled card instead of a plain amber error banner. The shape
+  // mirrors the gateData payload from check_usage_limit so we can
+  // tell trial users which plan would unlock them.
+  const [refreshLimitState, setRefreshLimitState] = useState(null);
   const [snapshotUpdatedAt, setSnapshotUpdatedAt] = useState(null);
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
@@ -819,25 +826,40 @@ export default function Company() {
     } catch (err) {
       // Use the structured `code` attached by getIyCompanyProfile
       // (LIMIT_EXCEEDED, COMPANY_PROFILE_FAILED, etc) to route to the
-      // right toast — never assume a non-2xx is a quota issue. Logs
-      // showed the previous regex mislabeled COMPANY_PROFILE_FAILED
-      // (upstream IY returning an error for an unknown slug) as
-      // "Refresh limit reached", which scared users.
+      // right surface — never assume a non-2xx is a quota issue.
       const code = err?.code || null;
-      let friendly;
       if (code === "LIMIT_EXCEEDED") {
-        friendly =
-          "Refresh limit reached for this billing cycle. Contact your admin or upgrade your plan to refresh more companies.";
+        // Phase E — Pulse Coach card instead of a raw "non-2xx"
+        // toast. We have plan / used / limit / reset_at on the
+        // gateData payload supabase-js attached to the error, so
+        // surface a premium message that explains the monthly
+        // refresh cycle and (for trial users) suggests an upgrade.
+        const gate = err?.gate || {};
+        setRefreshLimitState({
+          feature: gate.feature || "company_profile_view",
+          plan: gate.plan || null,
+          used: gate.used ?? null,
+          limit: gate.limit ?? null,
+          reset_at: gate.reset_at ?? null,
+          upgrade_url: gate.upgrade_url || "/app/billing",
+        });
+        // Drop the plain text banner so it doesn't double-render
+        // alongside the rich card.
+        setRefreshError(null);
       } else if (code === "COMPANY_PROFILE_FAILED" || code === "IY_API_KEY_MISSING") {
-        friendly =
+        const friendly =
           "Couldn't refresh trade intel right now. The data provider is temporarily unavailable — please try again in a moment.";
+        setRefreshError(friendly);
+        showShareToast(friendly, "error");
       } else if (code === "UNAUTHORIZED") {
-        friendly = "Your session expired. Please sign in again.";
+        const friendly = "Your session expired. Please sign in again.";
+        setRefreshError(friendly);
+        showShareToast(friendly, "error");
       } else {
-        friendly = err?.message || "Refresh failed. Please try again.";
+        const friendly = err?.message || "Refresh failed. Please try again.";
+        setRefreshError(friendly);
+        showShareToast(friendly, "error");
       }
-      setRefreshError(friendly);
-      showShareToast(friendly, "error");
     } finally {
       setManualRefreshing(false);
     }
@@ -1055,6 +1077,21 @@ export default function Company() {
           );
         })}
       </div>
+
+      {/* Premium Pulse Coach quota card — only renders when refresh
+          fails because the user hit a monthly cap. The plain refresh
+          banner below covers all other failure modes. */}
+      {refreshLimitState && (
+        <PulseCoachQuotaCard
+          plan={refreshLimitState.plan}
+          feature={refreshLimitState.feature}
+          used={refreshLimitState.used}
+          limit={refreshLimitState.limit}
+          reset_at={refreshLimitState.reset_at}
+          upgrade_url={refreshLimitState.upgrade_url}
+          onDismiss={() => setRefreshLimitState(null)}
+        />
+      )}
 
       {refreshError && (
         <div className="font-body shrink-0 border-b border-amber-100 bg-amber-50 px-6 py-2 text-[12px] text-amber-700">

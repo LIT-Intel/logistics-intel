@@ -21,7 +21,6 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
 import {
   searchShippers,
-  fetchCompanySnapshot,
   normalizeIyCompanyProfile,
   saveCompanyToCommandCenter,
   fetchSearchKpiOverlay,
@@ -130,6 +129,19 @@ export default function SearchPage() {
     [currentYear],
   );
 
+  // Normalize any company key shape (prefixed "company/foo" or bare
+  // "foo") to a single canonical form. The previous version stored
+  // bare slugs in `savedCompanyIds` while the View Details click
+  // checked with prefixed keys, so `.includes()` returned false for
+  // every saved company and the full save flow re-ran on every click.
+  // That re-fetched the snapshot (free if cached, but a credit burn
+  // when stale) and re-invoked save-company. Centralizing the shape
+  // here so the guard actually fires.
+  const normalizeKey = (raw: unknown): string => {
+    if (raw == null) return "";
+    return String(raw).trim().replace(/^company\//, "").toLowerCase();
+  };
+
   useEffect(() => {
     const loadSavedCompanies = async () => {
       if (!user) return;
@@ -143,11 +155,25 @@ export default function SearchPage() {
         if (error) throw error;
 
         if (data) {
-          const keys = data
-            .map((item: any) => item.lit_companies?.source_company_key)
-            .filter(Boolean);
-
-          setSavedCompanyIds(keys);
+          // Store every saved row in BOTH prefixed and bare-slug form
+          // so existing `.includes(companyKey)` callsites that pass
+          // either shape will match. Cheap (the array stays small;
+          // typical user has <50 saved companies).
+          const keys: string[] = [];
+          for (const item of data as any[]) {
+            const slug = item?.lit_companies?.source_company_key;
+            if (!slug) continue;
+            const bare = normalizeKey(slug);
+            const prefixed = bare ? `company/${bare}` : "";
+            if (bare) keys.push(bare);
+            if (prefixed) keys.push(prefixed);
+            // Also keep the original raw form just in case the DB
+            // ever stores something funky.
+            if (typeof slug === "string" && !keys.includes(slug)) {
+              keys.push(slug);
+            }
+          }
+          setSavedCompanyIds(Array.from(new Set(keys)));
         }
       } catch (error) {
         console.error("[Search] Failed to load saved companies:", error);
@@ -562,9 +588,15 @@ export default function SearchPage() {
         title: "Company saved",
         description: `${company.name} has been saved to your Command Center`,
       });
-      setSavedCompanyIds((prev) =>
-        prev.includes(companyKey) ? prev : [...prev, companyKey],
-      );
+      const bare = normalizeKey(companyKey);
+      const prefixed = bare ? `company/${bare}` : "";
+      setSavedCompanyIds((prev) => {
+        const next = new Set(prev);
+        if (companyKey) next.add(companyKey);
+        if (bare) next.add(bare);
+        if (prefixed) next.add(prefixed);
+        return Array.from(next);
+      });
     } catch (error: any) {
       console.error("[saveToCommandCenter] Fatal error:", error);
       if (error instanceof LimitExceededError) {
@@ -624,33 +656,35 @@ export default function SearchPage() {
 
     setViewingId(companyKey);
     try {
-      // Wait for the snapshot before saving so the lit_companies row
-      // lands with full intel (top_route_12m, teu_12m, est_spend,
-      // domain → logo, fcl/lcl). The earlier 350ms race traded data
-      // quality for click latency, but cache misses (every
-      // first-time view) blew past the budget and the saved row
-      // showed up sparse on the Command Center list. We hard-cap at
-      // 6 s so a flaky upstream can't strand the user — past that,
-      // we save with row-level data and let the Profile page do its
-      // own snapshot fetch on landing.
+      // Phase B — read the cached snapshot directly from Supabase
+      // instead of calling importyeti-proxy. The snapshot table is
+      // the system of record (TTL 30 days, written on save and on
+      // explicit Refresh Intel). A direct table read costs zero
+      // ImportYeti credits even on cache miss — we just save with
+      // row-level data when the table is empty for this slug. The
+      // user can warm the cache later via Refresh Intel.
       let profile: IyCompanyProfile | null = null;
-      if (company.importyeti_key) {
+      const slugForSnapshot = company.importyeti_key
+        ? String(company.importyeti_key).replace(/^company\//, "")
+        : "";
+      if (slugForSnapshot) {
         try {
-          const snapshot = await Promise.race<any>([
-            fetchCompanySnapshot(company.importyeti_key),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("snapshot_timeout")), 6000),
-            ),
-          ]);
-          if (snapshot && (snapshot.snapshot || snapshot.company)) {
-            profile = normalizeIyCompanyProfile(
-              snapshot,
-              company.importyeti_key,
-            );
+          const { data: snapshotRow } = await supabase
+            .from("lit_importyeti_company_snapshot")
+            .select("company_id, parsed_summary, raw_payload, updated_at")
+            .eq("company_id", slugForSnapshot)
+            .maybeSingle();
+          const cached =
+            snapshotRow?.parsed_summary ?? snapshotRow?.raw_payload ?? null;
+          if (cached && typeof cached === "object") {
+            profile = normalizeIyCompanyProfile(cached, slugForSnapshot);
           }
         } catch (snapshotErr) {
+          // Non-fatal — save proceeds with row data. The Profile
+          // page's lit_companies fallback shell will still render
+          // saved KPIs after navigate.
           console.warn(
-            "[viewAndOpen] snapshot fetch failed; saving with row data",
+            "[viewAndOpen] snapshot table read failed; saving with row data",
             snapshotErr,
           );
         }
@@ -658,9 +692,15 @@ export default function SearchPage() {
 
       await persistCompanySave(company, profile);
 
-      setSavedCompanyIds((prev) =>
-        prev.includes(companyKey) ? prev : [...prev, companyKey],
-      );
+      const bareKey = normalizeKey(companyKey);
+      const prefixedKey = bareKey ? `company/${bareKey}` : "";
+      setSavedCompanyIds((prev) => {
+        const next = new Set(prev);
+        if (companyKey) next.add(companyKey);
+        if (bareKey) next.add(bareKey);
+        if (prefixedKey) next.add(prefixedKey);
+        return Array.from(next);
+      });
       toast({
         title: "Saved",
         description: `${company.name} added to your Command Center`,
