@@ -383,6 +383,13 @@ export default function Company() {
         if (!haveCached) setLoading(false);
       } catch (refreshErr) {
         if (cancelled) return;
+        // After the lit_companies fallback added in getSavedCompanyShellOnly,
+        // `haveCached` is true whenever we have ANY data to render — either
+        // a real snapshot or a saved-row shell. Quota errors (403
+        // LIMIT_EXCEEDED) and IY upstream timeouts therefore land here and
+        // surface as a soft refresh banner instead of a hard error screen.
+        // The page keeps the shell KPIs visible so freshly-saved companies
+        // are usable even before the snapshot fetch succeeds.
         if (haveCached) {
           setRefreshError(
             refreshErr?.message || "Refresh failed; showing cached snapshot.",

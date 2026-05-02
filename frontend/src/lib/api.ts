@@ -3109,6 +3109,108 @@ export async function getSavedCompanyShellOnly(
     console.warn("getSavedCompanyShellOnly: snapshot table query threw", err);
   }
 
+  // Fallback path — no snapshot row yet (fresh save before the upstream
+  // returned, or upstream gated by quota). Build a minimal profile from
+  // `lit_companies` so the page can render saved KPIs (shipments, teu,
+  // est_spend, top_route, last_shipment) plus header chrome (name,
+  // domain, logo) instead of throwing a hard error. The full snapshot-
+  // only fields (recent_bols, top_container_length, containers detail,
+  // top_routes objects) stay empty until the snapshot lands; the main
+  // useEffect's needsRefresh path will retry the upstream and fill them
+  // in on a subsequent successful fetch.
+  if (!parsedProfile) {
+    try {
+      // The route param can arrive as either a slug ("rivian-automotive")
+      // or a raw UUID. Postgres rejects the latter form being filtered
+      // against the slug column and vice versa, so branch the query
+      // shape on a uuid-shape test rather than using .or() which would
+      // type-error one side.
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          normalizedSlug,
+        );
+      const baseSelect = supabase
+        .from("lit_companies")
+        .select(
+          "id, source_company_key, name, domain, website, address_line1, city, state, country_code, shipments_12m, teu_12m, fcl_shipments_12m, lcl_shipments_12m, est_spend_12m, most_recent_shipment_date, top_route_12m, recent_route",
+        );
+      const { data: row } = isUuid
+        ? await baseSelect.eq("id", normalizedSlug).maybeSingle()
+        : await baseSelect
+            .eq("source_company_key", normalizedSlug)
+            .maybeSingle();
+      if (row) {
+        const shipments = Number(row.shipments_12m) || 0;
+        const teu = Number(row.teu_12m);
+        const fcl = Number(row.fcl_shipments_12m);
+        const lcl = Number(row.lcl_shipments_12m);
+        const estSpend = Number(row.est_spend_12m);
+        parsedProfile = {
+          key: `company/${row.source_company_key || normalizedSlug}`,
+          companyId: `company/${row.source_company_key || normalizedSlug}`,
+          name: row.name || normalizedSlug,
+          title: row.name || normalizedSlug,
+          domain: row.domain || null,
+          website: row.website || null,
+          address: row.address_line1 || null,
+          countryCode: row.country_code || null,
+          country: null,
+          phoneNumber: null,
+          phone: null,
+          lastShipmentDate: row.most_recent_shipment_date || null,
+          estSpendUsd12m: Number.isFinite(estSpend) ? estSpend : 0,
+          totalShipments: shipments,
+          totalShippingCost: Number.isFinite(estSpend) ? estSpend : 0,
+          routeKpis: {
+            shipmentsLast12m: shipments,
+            teuLast12m: Number.isFinite(teu) ? teu : 0,
+            estSpendUsd12m: Number.isFinite(estSpend) ? estSpend : 0,
+            topRouteLast12m: row.top_route_12m || null,
+            mostRecentRoute: row.recent_route || null,
+            sampleSize: 0,
+            topRoutesLast12m: [],
+          },
+          timeSeries: [],
+          containers: {
+            fclShipments12m: Number.isFinite(fcl) ? fcl : 0,
+            lclShipments12m: Number.isFinite(lcl) ? lcl : 0,
+          },
+          topSuppliers: [],
+          time_series: {},
+          containers_load: [],
+          containers_detail: [],
+          top_routes: row.top_route_12m
+            ? [{ route: row.top_route_12m, shipments, teu: null, fclShipments: null, lclShipments: null }]
+            : [],
+          most_recent_route: row.recent_route ? { route: row.recent_route } : null,
+          suppliers_sample: [],
+          notify_party_table: [],
+          recent_bols: [],
+          avg_teu_per_shipment: null,
+          avg_teu_per_month: null,
+          rawOverview: {
+            totalShipmentsAllTime: shipments,
+            carriersPerCountry: {},
+            dateRange: null,
+            alsoKnownNames: [],
+            hsCodes: [],
+          },
+        } as unknown as IyCompanyProfile;
+        parsedRouteKpis = parsedProfile.routeKpis ?? null;
+      }
+    } catch (rowErr) {
+      console.warn(
+        "getSavedCompanyShellOnly: lit_companies fallback failed",
+        rowErr,
+      );
+    }
+  }
+
+  // Mark stale whenever the snapshot itself is missing/old, regardless
+  // of whether we filled in a lit_companies fallback. This keeps the
+  // main useEffect's needsRefresh check honest so we still try to
+  // fetch fresh intel — we just no longer hard-error on failure
+  // because the page now has a usable shell to render.
   const isStale =
     !snapshotUpdatedAt ||
     Date.now() - new Date(snapshotUpdatedAt).getTime() > STALE_AFTER_MS;
