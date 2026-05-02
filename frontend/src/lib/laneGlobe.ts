@@ -1109,3 +1109,79 @@ export function canonicalizeLanes(
 
   return { canonical, nonCanonical };
 }
+
+/* ── Short lane label formatter ───────────────────────────────────────
+ * Transforms raw `top_route_12m` strings like:
+ *
+ *   "Shanghai, China → Savannah, United States of America"
+ *   "Yeongdeungpo-gu, South Korea → United States of America"
+ *   "Thailand → Canada"
+ *
+ * into the short pair-of-tokens our subscribers expect:
+ *
+ *   { fromLabel: "Shanghai, CN", toLabel: "Savannah, US" }
+ *   { fromLabel: "Yeongdeungpo-gu, KR", toLabel: "US" }
+ *   { fromLabel: "Thailand", toLabel: "Canada" }
+ *
+ * The country code falls back to the full name when no ISO match is
+ * available so we never render an empty string. City extraction is
+ * the first comma-segment (skipped when it matches the country name).
+ */
+export type ShortLane = {
+  fromLabel: string;
+  fromCity: string | null;
+  fromCountryCode: string | null;
+  fromCountryName: string | null;
+  toLabel: string;
+  toCity: string | null;
+  toCountryCode: string | null;
+  toCountryName: string | null;
+};
+
+export function formatLaneShort(rawLane: unknown): ShortLane | null {
+  if (typeof rawLane !== "string" || !rawLane.trim()) return null;
+  const split = rawLane.split(/→|->|>/).map((s) => s.trim()).filter(Boolean);
+  if (split.length < 2) return null;
+  const fromRaw = split[0];
+  const toRaw = split.slice(1).join(" ");
+
+  const formatHalf = (raw: string) => {
+    const meta = resolveEndpoint(raw);
+    const code = (meta?.countryCode || "").toUpperCase().trim() || null;
+    const country = (meta?.countryName || "").trim() || null;
+    const segs = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    let city: string | null = null;
+    if (segs.length > 1) {
+      const first = segs[0];
+      const last = segs[segs.length - 1];
+      const lcFirst = first.toLowerCase();
+      const lcLast = last.toLowerCase();
+      const lcCountry = (country || "").toLowerCase();
+      if (lcFirst !== lcLast && lcFirst !== lcCountry) {
+        city = first;
+      }
+    }
+    const display = city
+      ? `${city}, ${code || country || ""}`.replace(/,\s*$/, "")
+      : code || country || raw;
+    return {
+      label: display,
+      city,
+      countryCode: code,
+      countryName: country,
+    };
+  };
+
+  const f = formatHalf(fromRaw);
+  const t = formatHalf(toRaw);
+  return {
+    fromLabel: f.label,
+    fromCity: f.city,
+    fromCountryCode: f.countryCode,
+    fromCountryName: f.countryName,
+    toLabel: t.label,
+    toCity: t.city,
+    toCountryCode: t.countryCode,
+    toCountryName: t.countryName,
+  };
+}

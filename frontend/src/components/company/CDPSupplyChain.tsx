@@ -885,7 +885,7 @@ function CombinedLaneIntelligenceTable({
                         label={lane.fromMeta?.countryName}
                       />
                       <span className="font-mono text-[11px] font-semibold text-slate-900">
-                        {lane.fromMeta?.countryName || lane.fromMeta?.label}
+                        {laneEndpointLabel(lane.fromMeta)}
                       </span>
                       <ArrowRight
                         aria-hidden
@@ -897,7 +897,7 @@ function CombinedLaneIntelligenceTable({
                         label={lane.toMeta?.countryName}
                       />
                       <span className="font-mono text-[11px] font-semibold text-slate-900">
-                        {lane.toMeta?.countryName || lane.toMeta?.label}
+                        {laneEndpointLabel(lane.toMeta)}
                       </span>
                     </span>
                   </td>
@@ -1638,6 +1638,21 @@ function TopSuppliersCard({ suppliers }: { suppliers: SupplierRow[] }) {
   );
 }
 
+function laneEndpointLabel(meta: any, fallback?: string): string {
+  // "Shanghai, CN" when label has city info, just "CN" otherwise.
+  // The canonicalizer's `label` is usually the city/region; the
+  // `countryName` is the full country. When they're identical (rare),
+  // we fall back to the ISO code alone.
+  const label = String(meta?.label || "").trim();
+  const country = String(meta?.countryName || "").trim();
+  const code = String(meta?.countryCode || "").toUpperCase().trim();
+  if (label && country && label.toLowerCase() !== country.toLowerCase()) {
+    return code ? `${label}, ${code}` : `${label}, ${country}`;
+  }
+  if (code) return code;
+  return label || country || fallback || "—";
+}
+
 function LaneRowInner({
   lane,
   index,
@@ -1670,7 +1685,7 @@ function LaneRowInner({
               highlight ? "text-blue-700" : "text-slate-700",
             ].join(" ")}
           >
-            {lane.fromMeta?.countryName || lane.fromMeta?.label}
+            {laneEndpointLabel(lane.fromMeta)}
           </span>
           <ArrowRight className="h-2 w-2 text-slate-300" aria-hidden />
           <LitFlag
@@ -1684,7 +1699,7 @@ function LaneRowInner({
               highlight ? "text-blue-700" : "text-slate-700",
             ].join(" ")}
           >
-            {lane.toMeta?.countryName || lane.toMeta?.label}
+            {laneEndpointLabel(lane.toMeta)}
           </span>
           {index === 0 && <LitPill tone="blue">Primary</LitPill>}
         </div>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Globe2, Layers } from "lucide-react";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
-import { resolveEndpoint } from "@/lib/laneGlobe";
+import { formatLaneShort, resolveEndpoint } from "@/lib/laneGlobe";
 import LitFlag from "@/components/ui/LitFlag";
 import { usePulseCoach, useWorkspaceLanes } from "./PulseCoachWidget";
 
@@ -216,27 +216,39 @@ export default function WorkspaceLanesGlobe() {
                     #{i + 1}
                   </span>
                   <div className="flex min-w-0 flex-wrap items-center gap-1 sm:flex-nowrap sm:gap-1.5">
-                    {fromMeta?.countryCode ? (
-                      <LitFlag
-                        code={fromMeta.countryCode}
-                        size={14}
-                        label={fromMeta.countryName}
-                      />
-                    ) : null}
-                    <span className="font-display truncate text-[11.5px] font-semibold text-slate-900">
-                      {fromMeta?.countryName || l.from_label}
-                    </span>
-                    <span className="text-slate-300">→</span>
-                    {toMeta?.countryCode ? (
-                      <LitFlag
-                        code={toMeta.countryCode}
-                        size={14}
-                        label={toMeta.countryName}
-                      />
-                    ) : null}
-                    <span className="font-display truncate text-[11.5px] font-semibold text-slate-900">
-                      {toMeta?.countryName || l.to_label}
-                    </span>
+                    {(() => {
+                      // Short labels: "Shanghai, CN → Savannah, US"
+                      const short = formatLaneShort(
+                        `${l.from_label} → ${l.to_label}`,
+                      );
+                      const fromLabel = short?.fromLabel || l.from_label;
+                      const toLabel = short?.toLabel || l.to_label;
+                      return (
+                        <>
+                          {fromMeta?.countryCode ? (
+                            <LitFlag
+                              code={fromMeta.countryCode}
+                              size={14}
+                              label={fromMeta.countryName}
+                            />
+                          ) : null}
+                          <span className="font-display truncate text-[11.5px] font-semibold text-slate-900">
+                            {fromLabel}
+                          </span>
+                          <span className="text-slate-300">→</span>
+                          {toMeta?.countryCode ? (
+                            <LitFlag
+                              code={toMeta.countryCode}
+                              size={14}
+                              label={toMeta.countryName}
+                            />
+                          ) : null}
+                          <span className="font-display truncate text-[11.5px] font-semibold text-slate-900">
+                            {toLabel}
+                          </span>
+                        </>
+                      );
+                    })()}
                   </div>
                   <div className="text-right">
                     <div className="font-mono text-[11.5px] font-bold text-slate-900">
