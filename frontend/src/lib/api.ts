@@ -2444,10 +2444,19 @@ export async function getIyCompanyProfile({
   companyKey,
   query,
   userGoal,
+  forceRefresh,
 }: {
   companyKey: string;
   query?: string;
   userGoal?: string;
+  /**
+   * When true, asks importyeti-proxy to bypass its 30-day snapshot
+   * cache and pull fresh upstream data. Required by the manual
+   * "Refresh Intel" button. Burns one company_profile_view quota
+   * credit per call (admins bypass server-side). Defaults to false so
+   * cache-driven page loads stay free.
+   */
+  forceRefresh?: boolean;
 }): Promise<{ companyProfile: IyCompanyProfile; enrichment: any | null }> {
   const normalizedSlug = normalizeCompanyIdToSlug(companyKey);
   if (!normalizedSlug) {
@@ -2465,8 +2474,9 @@ export async function getIyCompanyProfile({
     "importyeti-proxy",
     {
       body: {
-        action: "companyProfile",
+        action: forceRefresh ? "refresh" : "companyProfile",
         company_id: normalizedSlug,
+        refresh: forceRefresh ? true : undefined,
       },
     }
   );
@@ -2481,6 +2491,7 @@ export async function getIyCompanyProfile({
         body: {
           action: "company",
           company_id: normalizedSlug,
+          refresh: forceRefresh ? true : undefined,
         },
       }
     );
@@ -3010,6 +3021,7 @@ export async function resolveLitCompanyUuid(input: {
 export async function getSavedCompanyDetail(
   companyKey: string,
   signal?: AbortSignal,
+  options?: { forceRefresh?: boolean },
 ): Promise<{ profile: IyCompanyProfile; routeKpis: IyRouteKpis | null }> {
   const normalizedKey = ensureCompanyKey(companyKey);
   if (!normalizedKey) {
@@ -3017,7 +3029,10 @@ export async function getSavedCompanyDetail(
   }
 
   const [profileResult, routeKpis] = await Promise.all([
-    getIyCompanyProfile({ companyKey: normalizedKey }),
+    getIyCompanyProfile({
+      companyKey: normalizedKey,
+      forceRefresh: options?.forceRefresh,
+    }),
     getIyRouteKpisForCompany({ companyKey: normalizedKey }, signal),
   ]);
 

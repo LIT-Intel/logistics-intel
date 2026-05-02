@@ -345,6 +345,13 @@ export default function Company() {
     }
 
     (async () => {
+      // Cache-only mount. Previously the page auto-called the upstream
+      // edge function (getSavedCompanyDetail) whenever the snapshot
+      // was older than 7 days OR missing. On quota-capped accounts that
+      // produced a "non-2xx status code" toast on every saved-company
+      // click. The snapshot is the system of record; if it's missing we
+      // fall back to the lit_companies shell. Refreshing fresh intel is
+      // now opt-in via the "Refresh Intel" button.
       let cached = {
         profile: null,
         routeKpis: null,
@@ -364,45 +371,11 @@ export default function Company() {
         setRouteKpis(cached.routeKpis || null);
         setSnapshotUpdatedAt(cached.snapshotUpdatedAt || null);
         if (cached.profile) applyYearFromProfile(cached.profile);
-        setLoading(false);
+      } else {
+        setProfile(null);
+        setRouteKpis(null);
       }
-
-      const needsRefresh = cached.isStale || !haveCached;
-      if (!needsRefresh) return;
-
-      if (haveCached) setRefreshing(true);
-      try {
-        const fresh = await getSavedCompanyDetail(companyId, ctrl.signal);
-        if (cancelled) return;
-        if (fresh) {
-          setProfile(fresh.profile || null);
-          setRouteKpis(fresh.routeKpis || null);
-          setSnapshotUpdatedAt(new Date().toISOString());
-          if (fresh.profile) applyYearFromProfile(fresh.profile);
-        }
-        if (!haveCached) setLoading(false);
-      } catch (refreshErr) {
-        if (cancelled) return;
-        // After the lit_companies fallback added in getSavedCompanyShellOnly,
-        // `haveCached` is true whenever we have ANY data to render — either
-        // a real snapshot or a saved-row shell. Quota errors (403
-        // LIMIT_EXCEEDED) and IY upstream timeouts therefore land here and
-        // surface as a soft refresh banner instead of a hard error screen.
-        // The page keeps the shell KPIs visible so freshly-saved companies
-        // are usable even before the snapshot fetch succeeds.
-        if (haveCached) {
-          setRefreshError(
-            refreshErr?.message || "Refresh failed; showing cached snapshot.",
-          );
-        } else {
-          setError(refreshErr?.message || "Failed to load company profile");
-          setProfile(null);
-          setRouteKpis(null);
-          setLoading(false);
-        }
-      } finally {
-        if (!cancelled) setRefreshing(false);
-      }
+      setLoading(false);
     })();
 
     return () => {
@@ -779,16 +752,36 @@ export default function Company() {
     setManualRefreshing(true);
     setRefreshError(null);
     try {
-      const fresh = await getSavedCompanyDetail(companyId);
+      // forceRefresh:true tells importyeti-proxy to bypass its 30-day
+      // snapshot cache and pull fresh upstream data so the KPI cards,
+      // top container, recent shipments, and right rail all visibly
+      // update. Burns one company_profile_view quota credit (admins
+      // bypass server-side via platform_admins / SUPER_ADMIN_EMAILS /
+      // app_metadata.role / org_members owner role).
+      const fresh = await getSavedCompanyDetail(companyId, undefined, {
+        forceRefresh: true,
+      });
       if (fresh) {
         setProfile(fresh.profile || null);
         setRouteKpis(fresh.routeKpis || null);
         setSnapshotUpdatedAt(new Date().toISOString());
-        showShareToast("Snapshot refreshed", "success");
+        showShareToast("Intelligence refreshed", "success");
       }
     } catch (err) {
-      setRefreshError(err?.message || "Refresh failed");
-      showShareToast(err?.message || "Refresh failed", "error");
+      // Map the raw "Edge Function returned a non-2xx status code" error
+      // (which is what supabase-js says when our edge function 403s on
+      // LIMIT_EXCEEDED) into a friendly, actionable message instead of
+      // cryptic engineering text.
+      const raw = String(err?.message || "Refresh failed");
+      const isLimit =
+        /LIMIT_EXCEEDED/i.test(raw) ||
+        /403/.test(raw) ||
+        /non-2xx/i.test(raw);
+      const friendly = isLimit
+        ? "Refresh limit reached for this billing cycle. Contact your admin or upgrade your plan to refresh more companies."
+        : raw;
+      setRefreshError(friendly);
+      showShareToast(friendly, "error");
     } finally {
       setManualRefreshing(false);
     }
