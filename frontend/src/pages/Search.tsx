@@ -2,9 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Search as SearchIcon,
   MapPin,
-  Package,
-  Ship,
-  Plane,
   X,
   BookmarkPlus,
   Bookmark,
@@ -13,19 +10,12 @@ import {
   List,
   Loader2,
   Users,
+  Sparkles,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { motion } from "framer-motion";
 import { useSearchParams } from "react-router-dom";
+import LitSectionCard from "@/components/ui/LitSectionCard";
+import LitKpiStrip from "@/components/ui/LitKpiStrip";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
@@ -35,12 +25,10 @@ import {
   normalizeIyCompanyProfile,
   saveCompanyToCommandCenter,
   fetchSearchKpiOverlay,
-  type CompanySnapshot,
   type IyCompanyProfile,
 } from "@/lib/api";
 import {
   parseImportYetiDate,
-  formatUserFriendlyDate,
   getDateBadgeInfo,
   formatSafeShipmentDate,
   capFutureDate,
@@ -520,10 +508,10 @@ export default function SearchPage() {
         // Overlay KPI data from lit_company_search_results
         try {
           const keys = mappedResults
-            .map((r: MockCompany) => r.importyeti_key)
+            .map((r: SearchCompany) => r.importyeti_key)
             .filter((k): k is string => Boolean(k));
           const overlay = await fetchSearchKpiOverlay(keys);
-          const enriched = mappedResults.map((r: MockCompany) => {
+          const enriched = mappedResults.map((r: SearchCompany) => {
             const kpiRow = r.importyeti_key ? overlay[r.importyeti_key] : null;
             if (!kpiRow) return r;
             return {
@@ -712,18 +700,6 @@ export default function SearchPage() {
     }
   };
 
-  const getModeIcon = (mode: string) => {
-    if (mode === "Ocean") return <Ship className="h-4 w-4" />;
-    if (mode === "Air") return <Plane className="h-4 w-4" />;
-    return <Package className="h-4 w-4" />;
-  };
-
-  const getFrequencyColor = (frequency: string) => {
-    if (frequency === "High") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-    if (frequency === "Medium") return "bg-amber-50 text-amber-700 border-amber-200";
-    return "bg-slate-50 text-slate-700 border-slate-200";
-  };
-
   // Phase D client-side filter pipeline. Applies the 4 approved chips
   // (TEU Range, Load Type, Top Container, Saved Only) to `results` in-memory.
   // Zero new network calls. Every field read here is already on the mapped
@@ -787,12 +763,14 @@ export default function SearchPage() {
 
   if (!authReady) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="text-center">
-          <Loader2 className="h-12 w-12 text-indigo-600 animate-spin mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-slate-900 mb-2">Initializing...</h2>
-          <p className="text-slate-600">
-            Please wait while we prepare your search experience
+          <Loader2 className="mx-auto mb-4 h-10 w-10 animate-spin text-blue-500" />
+          <h2 className="font-display text-base font-bold text-slate-900">
+            Initializing…
+          </h2>
+          <p className="font-body mt-1 text-[12px] text-slate-500">
+            Preparing your search experience
           </p>
         </div>
       </div>
@@ -801,68 +779,71 @@ export default function SearchPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 px-3 py-4 sm:px-6 sm:py-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <motion.div
-          initial={{ opacity: 0, y: -16 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm sm:px-6"
-        >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+      <div className="mx-auto max-w-7xl space-y-4">
+        {/* Hero — eyebrow + title + view-mode + year picker */}
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+          <div className="flex flex-col gap-3 px-4 py-3.5 md:flex-row md:items-end md:justify-between md:px-5 md:py-4">
+            <div className="min-w-0">
+              <div className="font-display text-[10px] font-bold uppercase tracking-[0.18em] text-blue-500">
                 Discover
               </div>
-              <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
+              <h1 className="font-display mt-1 text-[18px] font-bold tracking-tight text-slate-900 md:text-[20px]">
                 Discover Companies
               </h1>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="font-body mt-0.5 text-[11.5px] text-slate-500">
                 Global shipment and company intelligence
                 {hasSearched && !searching && filteredResults.length > 0 ? (
-                  <span className="ml-2 text-slate-400">·</span>
-                ) : null}
-                {hasSearched && !searching && filteredResults.length > 0 ? (
-                  <span className="ml-2 text-slate-600">
-                    <span className="font-semibold text-slate-900">{filteredResults.length.toLocaleString()}</span>{" "}
+                  <>
+                    <span className="mx-1.5 text-slate-300">·</span>
+                    <span className="font-mono font-semibold text-slate-700">
+                      {filteredResults.length.toLocaleString()}
+                    </span>{" "}
                     {filteredResults.length === 1 ? "company" : "companies"} shown
-                  </span>
+                  </>
                 ) : null}
               </p>
             </div>
 
-            <div className="flex items-center gap-2 self-start lg:self-auto">
-              <div className="hidden md:flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
+            <div className="flex shrink-0 items-center gap-1.5 self-start md:self-auto">
+              <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 p-0.5">
                 <button
                   type="button"
                   onClick={() => setViewMode("grid")}
-                  className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  aria-pressed={viewMode === "grid"}
+                  title="Grid view"
+                  className={[
+                    "font-display inline-flex h-7 w-7 items-center justify-center rounded transition",
                     viewMode === "grid"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-500 hover:text-slate-800",
+                  ].join(" ")}
                 >
-                  <Grid3x3 className="h-4 w-4" />
+                  <Grid3x3 className="h-3.5 w-3.5" />
                 </button>
                 <button
                   type="button"
                   onClick={() => setViewMode("list")}
-                  className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  aria-pressed={viewMode === "list"}
+                  title="List view"
+                  className={[
+                    "font-display inline-flex h-7 w-7 items-center justify-center rounded transition",
                     viewMode === "list"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-500 hover:text-slate-800",
+                  ].join(" ")}
                 >
-                  <List className="h-4 w-4" />
+                  <List className="h-3.5 w-3.5" />
                 </button>
               </div>
 
-              <div className="hidden md:flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <div className="hidden items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 md:inline-flex">
+                <span className="font-display text-[9px] font-bold uppercase tracking-[0.09em] text-slate-400">
                   Year
                 </span>
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="bg-transparent text-sm font-semibold text-slate-700 outline-none"
+                  className="font-mono bg-transparent text-[12px] font-semibold text-slate-800 outline-none"
                 >
                   {years.map((y) => (
                     <option key={y} value={y}>
@@ -873,135 +854,85 @@ export default function SearchPage() {
               </div>
             </div>
           </div>
-        </motion.div>
 
-        {/* Phase D — Discover KPI strip. All four tiles read real, already
-            in-flight data; no extra fetches, no mock numbers. Tiles show
-            "—" when their source is empty. Only rendered after a search
-            completes so the pre-search empty state stays calm. */}
-        {hasSearched && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.04 }}
-            className="rounded-2xl border border-slate-200 p-3 md:p-4 shadow-sm"
-            style={{
-              background:
-                "linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.9) 100%)",
-              boxShadow: "0 10px 30px -22px rgba(15, 23, 42, 0.22)",
-            }}
-          >
-            <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-500">
-              Discover · This search
-            </div>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {[
-              {
-                label: "Total Companies",
-                value: kpiTotal > 0 ? kpiTotal.toLocaleString() : "—",
-                icon: SearchIcon,
-                tintBg: "bg-indigo-50",
-                tintText: "text-indigo-600",
-                tintRing: "ring-indigo-100",
-              },
-              {
-                label: "Active Shippers",
-                value: kpiActive > 0 ? kpiActive.toLocaleString() : "—",
-                icon: Ship,
-                tintBg: "bg-cyan-50",
-                tintText: "text-cyan-600",
-                tintRing: "ring-cyan-100",
-              },
-              {
-                label: "Avg TEU / Year",
-                value: kpiAvgTeu != null && kpiAvgTeu > 0 ? kpiAvgTeu.toLocaleString() : "—",
-                icon: Package,
-                tintBg: "bg-amber-50",
-                tintText: "text-amber-600",
-                tintRing: "ring-amber-100",
-              },
-              {
-                label: "In Command Center",
-                value: kpiSaved > 0 ? kpiSaved.toLocaleString() : "—",
-                icon: Bookmark,
-                tintBg: "bg-emerald-50",
-                tintText: "text-emerald-600",
-                tintRing: "ring-emerald-100",
-              },
-            ].map((k) => (
-              <div
-                key={k.label}
-                className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
-              >
-                <div
-                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${k.tintBg} ${k.tintRing}`}
-                >
-                  <k.icon className={`h-4 w-4 ${k.tintText}`} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    {k.label}
-                  </div>
-                  <div className="mt-0.5 truncate text-lg font-semibold tracking-tight text-slate-950">
-                    {k.value}
-                  </div>
-                </div>
-              </div>
-            ))}
-            </div>
-          </motion.div>
-        )}
+          {/* KPI strip — only after a search completes; pre-search the hero stays calm */}
+          {hasSearched && (
+            <LitKpiStrip
+              cells={[
+                {
+                  label: "Total companies",
+                  value: kpiTotal > 0 ? kpiTotal.toLocaleString() : "—",
+                },
+                {
+                  label: "Active shippers",
+                  value: kpiActive > 0 ? kpiActive.toLocaleString() : "—",
+                },
+                {
+                  label: "Avg TEU / yr",
+                  value:
+                    kpiAvgTeu != null && kpiAvgTeu > 0
+                      ? kpiAvgTeu.toLocaleString()
+                      : "—",
+                },
+                {
+                  label: "In command center",
+                  value: kpiSaved > 0 ? kpiSaved.toLocaleString() : "—",
+                },
+              ]}
+            />
+          )}
+        </div>
 
-        <motion.form
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
+        <form
           onSubmit={handleSearch}
-          className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4"
+          className="overflow-hidden rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.03)] sm:p-3.5"
         >
-          <div className="flex flex-col gap-3 md:flex-row">
+          <div className="flex flex-col gap-2.5 sm:flex-row">
             <div className="relative flex-1">
-              <SearchIcon className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-              <Input
+              <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
                 type="text"
-                placeholder="Search company name..."
+                placeholder="Search by company name…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-12 rounded-xl border-slate-300 pl-12 pr-12 text-sm focus:border-indigo-500 focus:ring-indigo-500 sm:h-14 sm:text-base"
+                className="font-body h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-10 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={handleClear}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
+                  aria-label="Clear search"
                 >
-                  <X className="h-5 w-5" />
+                  <X className="h-4 w-4" />
                 </button>
               )}
             </div>
 
-            <Button
+            <button
               type="submit"
-              size="lg"
-              className="h-12 rounded-xl bg-indigo-600 px-6 text-sm font-semibold hover:bg-indigo-500 sm:h-14 sm:px-8 sm:text-base"
               disabled={!authReady || searchQuery.length < 2 || searching}
+              className="font-display inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-b from-blue-500 to-blue-600 px-5 text-[13px] font-semibold text-white shadow-sm transition hover:from-blue-600 hover:to-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {searching ? (
                 <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Searching...
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Searching…
                 </>
               ) : !authReady ? (
                 <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Authenticating...
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Authenticating…
                 </>
               ) : (
-                "Search"
+                <>
+                  <SearchIcon className="h-3.5 w-3.5" />
+                  Search
+                </>
               )}
-            </Button>
+            </button>
           </div>
-        </motion.form>
+        </form>
 
         {/* Phase D — Inline filter chips. Only shown after a search, and
             only for filters backed by real fields already on the mapped
@@ -1010,510 +941,476 @@ export default function SearchPage() {
             No Carrier / Trade Lane / HS Code chips because those fields
             aren't on search results today. */}
         {hasSearched && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+          <LitSectionCard
+            title="Filters"
+            sub="Narrow down results — TEU range, load type, container size"
+            action={
+              hasActiveFilter ? (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="font-display inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50"
+                >
+                  <X className="h-2.5 w-2.5" />
+                  Clear
+                </button>
+              ) : null
+            }
+            bodyClassName="px-4 py-3"
           >
-            {[
-              {
-                label: "TEU Range",
-                value: teuRange,
-                onChange: (v: string) => setTeuRange(v as TeuRange),
-                options: [
-                  { value: "any", label: "Any" },
-                  { value: "<=1k", label: "≤1K" },
-                  { value: "1k-10k", label: "1K–10K" },
-                  { value: "10k-100k", label: "10K–100K" },
-                  { value: ">100k", label: ">100K" },
-                ] as Array<{ value: string; label: string }>,
-              },
-              {
-                label: "Load Type",
-                value: loadType,
-                onChange: (v: string) => setLoadType(v as LoadType),
-                options: [
-                  { value: "any", label: "Any" },
-                  { value: "fcl", label: "FCL-heavy" },
-                  { value: "lcl", label: "LCL-heavy" },
-                ] as Array<{ value: string; label: string }>,
-              },
-              {
-                label: "Top Container",
-                value: topContainer,
-                onChange: (v: string) => setTopContainer(v as TopContainer),
-                options: [
-                  { value: "any", label: "Any" },
-                  { value: "20FT", label: "20FT" },
-                  { value: "40FT", label: "40FT" },
-                  { value: "40HC", label: "40HC" },
-                  { value: "45FT", label: "45FT" },
-                ] as Array<{ value: string; label: string }>,
-              },
-            ].map((group) => (
-              <div key={group.label} className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  {group.label}
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {group.options.map((opt) => {
-                    const active = group.value === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => group.onChange(opt.value)}
-                        aria-pressed={active}
-                        className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-200 ${
-                          active
-                            ? "bg-slate-900 text-white shadow-sm"
-                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+              {[
+                {
+                  label: "TEU Range",
+                  value: teuRange,
+                  onChange: (v: string) => setTeuRange(v as TeuRange),
+                  options: [
+                    { value: "any", label: "Any" },
+                    { value: "<=1k", label: "≤1K" },
+                    { value: "1k-10k", label: "1K–10K" },
+                    { value: "10k-100k", label: "10K–100K" },
+                    { value: ">100k", label: ">100K" },
+                  ],
+                },
+                {
+                  label: "Load Type",
+                  value: loadType,
+                  onChange: (v: string) => setLoadType(v as LoadType),
+                  options: [
+                    { value: "any", label: "Any" },
+                    { value: "fcl", label: "FCL-heavy" },
+                    { value: "lcl", label: "LCL-heavy" },
+                  ],
+                },
+                {
+                  label: "Top Container",
+                  value: topContainer,
+                  onChange: (v: string) => setTopContainer(v as TopContainer),
+                  options: [
+                    { value: "any", label: "Any" },
+                    { value: "20FT", label: "20FT" },
+                    { value: "40FT", label: "40FT" },
+                    { value: "40HC", label: "40HC" },
+                    { value: "45FT", label: "45FT" },
+                  ],
+                },
+              ].map((group) => (
+                <div key={group.label} className="flex items-center gap-2">
+                  <span className="font-display text-[9px] font-bold uppercase tracking-[0.09em] text-slate-400">
+                    {group.label}
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {group.options.map((opt) => {
+                      const active = group.value === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => group.onChange(opt.value)}
+                          aria-pressed={active}
+                          className={[
+                            "font-display inline-flex items-center rounded-md border px-2 py-0.5 text-[10.5px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-100",
+                            active
+                              ? "border-blue-200 bg-blue-50 text-blue-700"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                          ].join(" ")}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
+              ))}
+
+              <div className="flex items-center gap-2">
+                <span className="font-display text-[9px] font-bold uppercase tracking-[0.09em] text-slate-400">
+                  Saved Only
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSavedOnly((v) => !v)}
+                  aria-pressed={savedOnly}
+                  className={[
+                    "font-display inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10.5px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-100",
+                    savedOnly
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  ].join(" ")}
+                >
+                  {savedOnly && <Bookmark className="h-2.5 w-2.5" />}
+                  {savedOnly ? "On" : "Off"}
+                </button>
               </div>
-            ))}
-
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Saved Only
-              </span>
-              <button
-                type="button"
-                onClick={() => setSavedOnly((v) => !v)}
-                aria-pressed={savedOnly}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-200 ${
-                  savedOnly
-                    ? "bg-emerald-600 text-white shadow-sm"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                }`}
-              >
-                {savedOnly ? <Bookmark className="h-3 w-3" /> : null}
-                {savedOnly ? "On" : "Off"}
-              </button>
             </div>
-
-            {hasActiveFilter && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="ml-auto inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
-              >
-                <X className="h-3 w-3" /> Clear filters
-              </button>
-            )}
-          </motion.div>
+          </LitSectionCard>
         )}
 
         {hasSearched && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
-            >
-              <p className="text-sm text-slate-600">
-                {searching ? (
-                  "Searching..."
-                ) : (
-                  <>
-                    Showing{" "}
-                    <span className="font-semibold text-slate-900">{filteredResults.length.toLocaleString()}</span>
-                    {hasActiveFilter && filteredResults.length !== results.length ? (
-                      <>
-                        {" "}
-                        of <span className="font-semibold text-slate-700">{results.length.toLocaleString()}</span>
-                      </>
-                    ) : null}{" "}
-                    companies
-                  </>
-                )}
-              </p>
-
-              <div className="flex items-center gap-2 md:hidden">
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode("grid")}
-                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                      viewMode === "grid"
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    <Grid3x3 className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode("list")}
-                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                      viewMode === "list"
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    <List className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-
+          <LitSectionCard
+            title="Results"
+            sub={
+              searching
+                ? "Searching…"
+                : hasActiveFilter && filteredResults.length !== results.length
+                  ? `Showing ${filteredResults.length.toLocaleString()} of ${results.length.toLocaleString()} companies`
+                  : `${filteredResults.length.toLocaleString()} ${filteredResults.length === 1 ? "company" : "companies"} matching your search`
+            }
+            padded={false}
+          >
             {viewMode !== "list" ? (
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                {filteredResults.map((company, index) => (
-                  <motion.div
-                    key={company.id}
-                    initial={{ opacity: 0, y: 18 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.04 + index * 0.03 }}
-                  >
-                    <Card className="group h-full overflow-hidden rounded-2xl border border-slate-200 shadow-sm transition hover:border-slate-300 hover:shadow-md" style={{ background: 'linear-gradient(180deg,#FFFFFF 0%,#F8FAFC 100%)' }}>
-                      <CardHeader className="space-y-4 p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex min-w-0 items-start gap-3">
-                            <CompanyAvatar
-                              name={company.name}
-                              logoUrl={getCompanyLogoUrl(company.website)}
-                              size="md"
-                              className="shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <div className="flex items-start gap-2">
-                                <CardTitle className="truncate text-base font-semibold text-slate-900 transition group-hover:text-indigo-600 font-['Space_Grotesk']">
-                                  {company.name}
-                                </CardTitle>
-                                <span className="text-lg">{getCountryFlag(company.country_code)}</span>
+              <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {filteredResults.map((company, index) => {
+                  const isSaved = Boolean(
+                    company.importyeti_key &&
+                      savedCompanyIds.includes(company.importyeti_key),
+                  );
+                  const flag = getCountryFlag(company.country_code);
+                  const isActive =
+                    company.status === "Active" && (company.shipments || 0) > 0;
+                  const fclPct = company.fcl_shipments_perc ?? company.fcl_percent;
+                  return (
+                    <motion.div
+                      key={company.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.02 + index * 0.015 }}
+                      className="group flex flex-col gap-3 overflow-hidden rounded-lg border border-slate-200 bg-white p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition hover:border-blue-200 hover:shadow-md"
+                    >
+                      {/* Header: avatar + name/location + status pill */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex min-w-0 items-start gap-2.5">
+                          <CompanyAvatar
+                            name={company.name}
+                            logoUrl={getCompanyLogoUrl(company.website)}
+                            size="sm"
+                            className="shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <div className="font-display truncate text-[12.5px] font-bold text-slate-900 transition group-hover:text-blue-700">
+                                {company.name}
                               </div>
-                              <div className="mt-1 flex items-center gap-1 text-sm text-slate-600">
-                                <MapPin className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">
-                                  {company.city}
-                                  {company.state ? `, ${company.state}` : ""}
+                              {flag && (
+                                <span className="text-[12px] leading-none">
+                                  {flag}
                                 </span>
-                              </div>
+                              )}
+                            </div>
+                            <div className="font-body mt-0.5 flex items-center gap-1 text-[10.5px] text-slate-500">
+                              <MapPin className="h-2.5 w-2.5 shrink-0" />
+                              <span className="truncate">
+                                {company.city}
+                                {company.state ? `, ${company.state}` : ""}
+                              </span>
                             </div>
                           </div>
+                        </div>
 
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 4,
-                            padding: '3px 9px', borderRadius: 9999, fontSize: 11, fontWeight: 600,
-                            fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap',
-                            ...(company.status === 'Active' && (company.shipments || 0) > 0
-                              ? { background: '#F0FDF4', color: '#15803d', border: '1px solid #BBF7D0' }
-                              : { background: '#F1F5F9', color: '#64748b', border: '1px solid #E2E8F0' }),
-                          }}>
-                            <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: company.status === 'Active' && (company.shipments || 0) > 0 ? '#22C55E' : '#94A3B8' }} />
-                            {company.status === 'Active' && (company.shipments || 0) > 0 ? 'Active' : 'Inactive'}
+                        <span
+                          className={[
+                            "font-display inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em]",
+                            isActive
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : "border-slate-200 bg-slate-50 text-slate-500",
+                          ].join(" ")}
+                        >
+                          <span
+                            className={[
+                              "h-1 w-1 rounded-full",
+                              isActive ? "bg-emerald-500" : "bg-slate-400",
+                            ].join(" ")}
+                          />
+                          {isActive ? "Active" : "Inactive"}
+                        </span>
+                      </div>
+
+                      {/* Saved indicator */}
+                      {isSaved && (
+                        <div className="font-display inline-flex w-fit items-center gap-1 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-blue-700">
+                          <Bookmark className="h-2.5 w-2.5 fill-current" />
+                          Saved
+                        </div>
+                      )}
+
+                      {/* KPI row */}
+                      <div className="grid grid-cols-3 gap-1.5 rounded-md bg-slate-50 p-2">
+                        <div>
+                          <div className="font-display text-[8.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                            Shipments
+                          </div>
+                          <div className="font-mono mt-0.5 text-[12.5px] font-bold text-blue-700">
+                            {company.shipments_12m
+                              ? company.shipments_12m.toLocaleString()
+                              : company.shipments.toLocaleString()}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-display text-[8.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                            TEU
+                          </div>
+                          <div className="font-mono mt-0.5 text-[12.5px] font-bold text-slate-800">
+                            {company.teu_estimate != null
+                              ? Math.round(company.teu_estimate).toLocaleString()
+                              : "—"}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-display text-[8.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                            Last
+                          </div>
+                          <div className="font-body mt-0.5 truncate text-[11px] font-semibold text-slate-700">
+                            {formatSafeShipmentDate(company.last_shipment, "—")}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Meta row: top supplier + container/FCL chips */}
+                      <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
+                        <span className="font-body inline-flex min-w-0 items-center gap-1 text-[10.5px] text-slate-500">
+                          <Users className="h-2.5 w-2.5 shrink-0" />
+                          <span className="truncate">
+                            {company.top_suppliers.length > 0
+                              ? company.top_suppliers[0]
+                              : "—"}
                           </span>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          <Badge variant="secondary" className="rounded-full">
-                            Search Preview
-                          </Badge>
-                          {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) && (
-                            <Badge className="rounded-full bg-indigo-600 text-white hover:bg-indigo-600">
-                              Saved
-                            </Badge>
+                          {company.top_suppliers.length > 1 && (
+                            <span className="font-mono shrink-0 rounded bg-slate-100 px-1 py-px text-[9px] font-bold text-slate-500">
+                              +{company.top_suppliers.length - 1}
+                            </span>
                           )}
-                          {company.latest_year_teu == null &&
-                            company.latest_year_shipments == null &&
-                            company.top_container_length == null &&
-                            company.fcl_percent == null &&
-                            company.lcl_percent == null && (
-                            <Badge variant="outline" className="rounded-full text-xs text-slate-500">
-                              More intelligence on open
-                            </Badge>
+                        </span>
+                        <div className="flex shrink-0 items-center gap-1">
+                          {company.top_container_length && (
+                            <span className="font-display rounded border border-blue-200 bg-blue-50 px-1.5 py-px text-[9px] font-bold text-blue-700">
+                              {company.top_container_length}
+                            </span>
+                          )}
+                          {fclPct != null && (
+                            <span className="font-display rounded border border-slate-200 bg-white px-1.5 py-px text-[9px] font-bold text-slate-600">
+                              {Math.round(fclPct)}% FCL
+                            </span>
                           )}
                         </div>
-                      </CardHeader>
+                      </div>
 
-                      <CardContent className="space-y-4 p-4 pt-0">
-                        <div className="grid grid-cols-3 gap-2">
-                          <div style={{ background: '#F8FAFC', borderRadius: 6, padding: '8px 10px' }}>
-                            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 3 }}>
-                              Shipments
-                            </div>
-                            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600, color: '#1d4ed8' }}>
-                              {company.shipments_12m ? company.shipments_12m.toLocaleString() : company.shipments.toLocaleString()}
-                            </div>
-                          </div>
-
-                          <div style={{ background: '#F8FAFC', borderRadius: 6, padding: '8px 10px' }}>
-                            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 3 }}>
-                              TEU
-                            </div>
-                            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600, color: '#374151' }}>
-                              {company.teu_estimate != null ? company.teu_estimate.toLocaleString() : "—"}
-                            </div>
-                          </div>
-
-                          <div style={{ background: '#F8FAFC', borderRadius: 6, padding: '8px 10px' }}>
-                            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 3 }}>
-                              Last Ship
-                            </div>
-                            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600, color: '#374151' }}>
-                              {/* Phase B.5 — cap future-dated shipment values so a stale row never paints "Dec 26, 2027" on a card. */}
-                              {formatSafeShipmentDate(company.last_shipment, "—")}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <Users className="h-3 w-3" />
-                            {company.top_suppliers.length > 0 ? company.top_suppliers[0] : '—'}
-                            {company.top_suppliers.length > 1 && (
-                              <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 9999, background: '#F1F5F9', color: '#64748b' }}>
-                                +{company.top_suppliers.length - 1}
-                              </span>
-                            )}
-                          </span>
-                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                            {company.top_container_length && (
-                              <span style={{ fontSize: 10, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", padding: '2px 7px', borderRadius: 4, background: '#EFF6FF', color: '#3b82f6', border: '1px solid #BFDBFE' }}>
-                                {company.top_container_length}
-                              </span>
-                            )}
-                            {(company.fcl_shipments_perc != null || company.fcl_percent != null) && (
-                              <span style={{ fontSize: 10, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", padding: '2px 7px', borderRadius: 4, background: '#F8FAFC', color: '#64748b', border: '1px solid #E5E7EB' }}>
-                                {Math.round(company.fcl_shipments_perc ?? company.fcl_percent ?? 0)}% FCL
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2 pt-1">
-                          <Button
-                            variant="default"
-                            size="sm"
-                            className="h-10 flex-1 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-sm font-semibold text-white shadow-sm hover:from-blue-700 hover:to-indigo-700"
-                            onClick={() => setSelectedCompany(company)}
-                          >
-                            <Eye className="mr-1.5 h-4 w-4" />
-                            View Details
-                          </Button>
-
-                          <Button
-                            variant={
-                              company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
-                                ? "secondary"
-                                : "outline"
-                            }
-                            size="sm"
-                            onClick={() => saveToCommandCenter(company)}
-                            disabled={
-                              saving ||
-                              (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))
-                            }
-                            className={`h-10 rounded-xl px-3 ${
-                              company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
-                                ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-                                : ""
-                            }`}
-                          >
-                            {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? (
-                              <Bookmark className="h-4 w-4 fill-current" />
-                            ) : (
-                              <BookmarkPlus className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ))}
+                      {/* Actions */}
+                      <div className="mt-auto flex gap-1.5 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCompany(company)}
+                          className="font-display inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 text-[11px] font-semibold text-white shadow-sm transition hover:from-blue-600 hover:to-blue-700"
+                        >
+                          <Eye className="h-3 w-3" />
+                          View details
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => saveToCommandCenter(company)}
+                          disabled={saving || isSaved}
+                          title={isSaved ? "Saved" : "Save to Command Center"}
+                          className={[
+                            "font-display inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition",
+                            isSaved
+                              ? "border-blue-200 bg-blue-50 text-blue-700"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                            saving && "opacity-60",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
+                          {isSaved ? (
+                            <Bookmark className="h-3.5 w-3.5 fill-current" />
+                          ) : (
+                            <BookmarkPlus className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
             ) : (
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[880px]">
-                    <thead className="border-b border-slate-200 bg-slate-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Company
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Location
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Total Shipments
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Top Container
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          FCL / LCL
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Last Shipment
-                        </th>
-                        <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredResults.map((company, index) => (
-                        <motion.tr
-                          key={company.id}
-                          initial={{ opacity: 0, x: -14 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: index * 0.02 }}
-                          className="transition hover:bg-slate-50"
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[880px] border-collapse">
+                  <thead>
+                    <tr className="bg-[#FAFBFC]">
+                      {[
+                        "Company",
+                        "Location",
+                        "Shipments",
+                        "Top container",
+                        "FCL / LCL",
+                        "Last shipment",
+                        "",
+                      ].map((h, i) => (
+                        <th
+                          key={`${h}-${i}`}
+                          className={[
+                            "font-display whitespace-nowrap border-b border-slate-100 px-3.5 py-2.5 text-[9px] font-bold uppercase tracking-[0.09em] text-slate-400",
+                            i === 6 ? "text-right" : "text-left",
+                          ].join(" ")}
                         >
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredResults.map((company) => {
+                      const isSaved = Boolean(
+                        company.importyeti_key &&
+                          savedCompanyIds.includes(company.importyeti_key),
+                      );
+                      const cappedForBadge = capFutureDate(company.last_shipment);
+                      const badgeInfo = cappedForBadge
+                        ? getDateBadgeInfo(cappedForBadge)
+                        : null;
+                      return (
+                        <tr
+                          key={company.id}
+                          className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/60"
+                        >
+                          <td className="px-3.5 py-2.5">
+                            <div className="flex items-center gap-2.5">
                               <CompanyAvatar
                                 name={company.name}
                                 logoUrl={getCompanyLogoUrl(company.website)}
-                                size="md"
+                                size="sm"
                               />
-                              <div>
-                                <div className="font-semibold text-slate-900">{company.name}</div>
-                                <div className="text-xs text-slate-500">Search Preview</div>
+                              <div className="min-w-0">
+                                <div className="font-display truncate text-[12.5px] font-bold text-slate-900">
+                                  {company.name}
+                                </div>
+                                {company.website && (
+                                  <div className="font-mono truncate text-[10px] text-slate-400">
+                                    {company.website}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </td>
-
-                          <td className="px-6 py-4">
-                            <div className="text-sm text-slate-900">
+                          <td className="px-3.5 py-2.5">
+                            <div className="font-body text-[12px] text-slate-700">
                               {company.city}
                               {company.state ? `, ${company.state}` : ""}
                             </div>
-                            <div className="text-xs text-slate-500">{company.country_code}</div>
-                          </td>
-
-                          <td className="px-6 py-4">
-                            <div className="text-sm font-semibold text-slate-900">
-                              {company.shipments.toLocaleString()}
+                            <div className="font-mono text-[10px] text-slate-400">
+                              {company.country_code}
                             </div>
                           </td>
-
-                          <td className="px-6 py-4">
-                            <div className="text-sm font-medium text-slate-900">
+                          <td className="px-3.5 py-2.5">
+                            <span className="font-mono text-[12.5px] font-bold text-slate-900">
+                              {company.shipments.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-3.5 py-2.5">
+                            <div className="font-display text-[11.5px] font-semibold text-slate-800">
                               {company.top_container_length || "—"}
                             </div>
-                            <div className="text-xs text-slate-500">
+                            <div className="font-body text-[10px] text-slate-400">
                               {company.top_container_count != null
                                 ? `${company.top_container_count.toLocaleString()} units`
-                                : "No detail"}
-                            </div>
-                          </td>
-
-                          <td className="px-6 py-4">
-                            <div className="text-sm font-medium text-slate-900">
-                              {company.fcl_percent != null && company.lcl_percent != null
-                                ? `${Math.round(company.fcl_percent)}% / ${Math.round(company.lcl_percent)}%`
                                 : "—"}
                             </div>
                           </td>
-
-                          <td className="px-6 py-4">
+                          <td className="px-3.5 py-2.5">
+                            <span className="font-mono text-[11.5px] text-slate-700">
+                              {company.fcl_percent != null && company.lcl_percent != null
+                                ? `${Math.round(company.fcl_percent)}% / ${Math.round(company.lcl_percent)}%`
+                                : "—"}
+                            </span>
+                          </td>
+                          <td className="px-3.5 py-2.5">
                             <div className="flex items-center gap-1.5">
-                              <div className="text-sm text-slate-900">
-                                {/* Phase B.5 — cap future dates and only show recency badges when the date is actually in the past. */}
+                              <span className="font-body whitespace-nowrap text-[11.5px] text-slate-700">
                                 {formatSafeShipmentDate(company.last_shipment, "—")}
-                              </div>
-                              {(() => {
-                                const cappedForBadge = capFutureDate(company.last_shipment);
-                                const badgeInfo = cappedForBadge
-                                  ? getDateBadgeInfo(cappedForBadge)
-                                  : null;
-                                if (!badgeInfo) return null;
-                                return (
-                                  <Badge
-                                    variant="secondary"
-                                    className={`text-xs ${
-                                      badgeInfo.color === "green"
-                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                        : badgeInfo.color === "yellow"
-                                          ? "bg-amber-50 text-amber-700 border-amber-200"
-                                          : "bg-slate-100 text-slate-600"
-                                    }`}
-                                  >
-                                    {badgeInfo.label}
-                                  </Badge>
-                                );
-                              })()}
+                              </span>
+                              {badgeInfo && (
+                                <span
+                                  className={[
+                                    "font-display inline-flex items-center rounded border px-1 py-px text-[9px] font-bold uppercase tracking-[0.06em]",
+                                    badgeInfo.color === "green"
+                                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                      : badgeInfo.color === "yellow"
+                                        ? "border-amber-200 bg-amber-50 text-amber-700"
+                                        : "border-slate-200 bg-slate-50 text-slate-500",
+                                  ].join(" ")}
+                                >
+                                  {badgeInfo.label}
+                                </span>
+                              )}
                             </div>
                           </td>
-
-                          <td className="px-6 py-4">
-                            <div className="flex items-center justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
+                          <td className="px-3.5 py-2.5 text-right">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
                                 onClick={() => setSelectedCompany(company)}
-                                className="rounded-xl"
+                                title="View details"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
                               >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
+                                <Eye className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => saveToCommandCenter(company)}
-                                disabled={
-                                  saving ||
-                                  (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))
-                                }
-                                className={`rounded-xl ${
-                                  company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
-                                    ? "text-indigo-600"
-                                    : ""
-                                }`}
+                                disabled={saving || isSaved}
+                                title={isSaved ? "Saved" : "Save"}
+                                className={[
+                                  "inline-flex h-7 w-7 items-center justify-center rounded-md border transition",
+                                  isSaved
+                                    ? "border-blue-200 bg-blue-50 text-blue-700"
+                                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                                ].join(" ")}
                               >
-                                {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? (
-                                  <Bookmark className="h-4 w-4 fill-current" />
+                                {isSaved ? (
+                                  <Bookmark className="h-3.5 w-3.5 fill-current" />
                                 ) : (
-                                  <BookmarkPlus className="h-4 w-4" />
+                                  <BookmarkPlus className="h-3.5 w-3.5" />
                                 )}
-                              </Button>
+                              </button>
                             </div>
                           </td>
-                        </motion.tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
 
             {!searching && filteredResults.length === 0 && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="rounded-2xl border border-slate-200 bg-white py-16 text-center shadow-sm"
-              >
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
-                  <SearchIcon className="h-8 w-8 text-slate-400" />
+              <div className="px-6 py-12 text-center">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                  <SearchIcon className="h-5 w-5 text-slate-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-slate-900">No companies found</h3>
-                <p className="mt-1 text-slate-600">Try adjusting your search query</p>
-              </motion.div>
+                <p className="font-display text-[13px] font-bold text-slate-700">
+                  No companies found
+                </p>
+                <p className="font-body mt-1 text-[11.5px] text-slate-500">
+                  Try a different query or clear the active filters.
+                </p>
+              </div>
             )}
-          </>
+          </LitSectionCard>
         )}
 
         {!hasSearched && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="rounded-2xl border border-slate-200 bg-white py-20 text-center shadow-sm"
-          >
-            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-indigo-50">
-              <SearchIcon className="h-10 w-10 text-indigo-600" />
+          <LitSectionCard padded={false}>
+            <div className="px-6 py-16 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 ring-1 ring-blue-100">
+                <Sparkles className="h-6 w-6 text-blue-500" />
+              </div>
+              <h3 className="font-display text-[15px] font-bold text-slate-900">
+                Start your search
+              </h3>
+              <p className="font-body mx-auto mt-1 max-w-md text-[12px] text-slate-500">
+                Enter a company name to discover trade intelligence and preview
+                KPI insights before saving to Command Center.
+              </p>
             </div>
-            <h3 className="text-xl font-semibold text-slate-900">Start Your Search</h3>
-            <p className="mx-auto mt-2 max-w-md text-slate-600">
-              Enter a company name to discover trade intelligence and preview KPI insights before saving to Command Center.
-            </p>
-          </motion.div>
+          </LitSectionCard>
         )}
 
         {selectedCompany && (
