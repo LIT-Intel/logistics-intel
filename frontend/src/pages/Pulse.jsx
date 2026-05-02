@@ -384,8 +384,19 @@ export default function Pulse() {
         </div>
 
         <div className="flex items-start gap-3.5 px-6 pb-4 pt-3">
-          <div className="font-display flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-[0_4px_12px_rgba(59,130,246,0.35)]">
-            <Sparkles className="h-5 w-5" />
+          <div
+            className="font-display relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md text-white"
+            style={{
+              background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
+              boxShadow: '0 4px 14px rgba(0,240,255,0.18), 0 1px 3px rgba(15,23,42,0.25)',
+            }}
+            aria-hidden
+          >
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{ background: 'radial-gradient(circle at 30% 30%, rgba(0,240,255,0.32), transparent 65%)' }}
+            />
+            <Sparkles className="relative h-5 w-5" style={{ color: '#00F0FF' }} />
           </div>
           <div className="min-w-0 flex-1">
             <h1 className="font-display m-0 text-[22px] font-bold leading-tight tracking-tight text-slate-900">
@@ -580,28 +591,67 @@ function PulseLoading() {
     return () => clearInterval(t);
   }, []);
   return (
-    <div className="mt-5 flex flex-col gap-2 rounded-[14px] border border-slate-200 bg-white px-5 py-4 shadow-[0_4px_16px_rgba(15,23,42,0.05)]">
-      {LOADING_STEPS.map((s, i) => {
-        const done = i < active;
-        const now = i === active;
-        return (
-          <div key={s} className="flex items-center gap-2.5" style={{ opacity: i > active ? 0.45 : 1 }}>
-            <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-100">
-              {done ? <CheckCircle2 className="h-2.5 w-2.5 text-green-600" /> : null}
-              {now ? <span className="h-2 w-2 animate-spin rounded-full border-[1.5px] border-blue-100 border-t-blue-600" /> : null}
-              {!done && !now ? <span className="h-1 w-1 rounded-full bg-slate-300" /> : null}
+    <div
+      className="relative mt-5 overflow-hidden rounded-[14px] border px-5 py-4"
+      style={{
+        background: 'linear-gradient(160deg, #0F172A 0%, #1E293B 60%, #102240 100%)',
+        borderColor: 'rgba(255,255,255,0.08)',
+        boxShadow: '0 8px 30px rgba(15,23,42,0.18)',
+      }}
+    >
+      {/* Cyan halo to align with Pulse Coach branding */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full"
+        style={{ background: 'radial-gradient(circle, rgba(0,240,255,0.22), transparent 70%)' }}
+      />
+      <div className="relative mb-3 flex items-center gap-2">
+        <div
+          className="flex h-6 w-6 items-center justify-center rounded-md border"
+          style={{ background: 'rgba(0,240,255,0.12)', borderColor: 'rgba(0,240,255,0.35)' }}
+        >
+          <Sparkles className="h-3 w-3" style={{ color: '#00F0FF' }} />
+        </div>
+        <div
+          className="font-display text-[10.5px] font-bold uppercase tracking-[0.08em]"
+          style={{ color: '#00F0FF' }}
+        >
+          Pulse Coach is searching
+        </div>
+      </div>
+      <div className="relative flex flex-col gap-2">
+        {LOADING_STEPS.map((s, i) => {
+          const done = i < active;
+          const now = i === active;
+          return (
+            <div key={s} className="flex items-center gap-2.5" style={{ opacity: i > active ? 0.4 : 1 }}>
+              <div
+                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
+                style={{ background: 'rgba(255,255,255,0.06)' }}
+              >
+                {done ? <CheckCircle2 className="h-2.5 w-2.5" style={{ color: '#00F0FF' }} /> : null}
+                {now ? (
+                  <span
+                    className="h-2 w-2 animate-spin rounded-full border-[1.5px]"
+                    style={{ borderColor: 'rgba(0,240,255,0.2)', borderTopColor: '#00F0FF' }}
+                  />
+                ) : null}
+                {!done && !now ? (
+                  <span className="h-1 w-1 rounded-full" style={{ background: 'rgba(255,255,255,0.2)' }} />
+                ) : null}
+              </div>
+              <span
+                className={[
+                  'font-body text-[12.5px]',
+                  done ? 'font-medium text-slate-400' : now ? 'font-semibold text-slate-100' : 'font-medium text-slate-500',
+                ].join(' ')}
+              >
+                {s}
+              </span>
             </div>
-            <span
-              className={[
-                'font-body text-[12.5px]',
-                done ? 'font-medium text-slate-600' : now ? 'font-semibold text-slate-900' : 'font-medium text-slate-400',
-              ].join(' ')}
-            >
-              {s}
-            </span>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

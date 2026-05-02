@@ -22,6 +22,7 @@ import {
   Briefcase,
   Building2,
   CheckCircle2,
+  Cpu,
   Database,
   ExternalLink,
   Link as LinkIcon,
@@ -38,6 +39,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import BrandIcon from '@/features/pulse/BrandIcon';
 
 const RAIL_BG = 'bg-white';
 
@@ -65,6 +67,11 @@ export default function PulseQuickCard({
   const shipments = company.kpis?.shipments_12m ?? null;
   const teu = company.kpis?.teu_12m ?? null;
   const recentDate = company.kpis?.most_recent_shipment_date ?? null;
+
+  // Tech stack — populated from enrichment when available. Until then we
+  // surface the row honestly with a "Detection pending" empty state.
+  const techStack = Array.isArray(company.tech_stack) ? company.tech_stack : [];
+  const ecomPlatform = company.ecommerce_platform || detectEcomFromStack(techStack);
 
   return (
     <>
@@ -166,9 +173,10 @@ export default function PulseQuickCard({
             <SignalRow
               icon={ShoppingBag}
               label="E-commerce platform"
-              value={null}
+              value={ecomPlatform || null}
+              brand={ecomPlatform}
               hint="Detection pending"
-              accent="mute"
+              accent={ecomPlatform ? 'blue' : 'mute'}
             />
             <SignalRow
               icon={Zap}
@@ -185,15 +193,75 @@ export default function PulseQuickCard({
             />
           </Section>
 
-          {/* Coach insight */}
-          <Section label="Coach insight">
-            <div className="rounded-[10px] border border-blue-100 bg-gradient-to-br from-blue-50/60 to-violet-50/40 p-3">
-              <div className="flex items-start gap-2">
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white shadow-sm">
-                  <Sparkles className="h-3 w-3 text-blue-600" />
+          {/* Tech stack — visual brand row */}
+          <Section label="Tech stack">
+            {techStack.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 py-1">
+                {techStack.slice(0, 8).map((tech) => (
+                  <span
+                    key={tech}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+                  >
+                    <BrandIcon name={tech} size={13} />
+                    <span className="font-body text-[11px] font-medium text-slate-700">
+                      {tech}
+                    </span>
+                  </span>
+                ))}
+                {techStack.length > 8 ? (
+                  <span className="font-mono inline-flex items-center rounded-md bg-slate-100 px-1.5 py-1 text-[10.5px] font-semibold text-slate-500">
+                    +{techStack.length - 8}
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 py-1.5">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-50">
+                  <Cpu className="h-3 w-3 text-slate-400" />
+                </div>
+                <div className="font-body text-[11px] italic text-slate-400">
+                  Detection pending — Coach will surface platforms, CRM, and analytics tools.
+                </div>
+              </div>
+            )}
+          </Section>
+
+          {/* Coach insight — dark slate + cyan to match Pulse Coach branding */}
+          <Section label="Coach insight" tone="dark">
+            <div
+              className="relative overflow-hidden rounded-[10px] border p-3"
+              style={{
+                background: 'linear-gradient(160deg, #0F172A 0%, #1E293B 60%, #102240 100%)',
+                borderColor: 'rgba(255,255,255,0.08)',
+                boxShadow: '0 8px 24px rgba(15,23,42,0.18)',
+              }}
+            >
+              {/* Cyan radial halo */}
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full"
+                style={{
+                  background: 'radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)',
+                }}
+              />
+              <div className="relative flex items-start gap-2">
+                <div
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border"
+                  style={{
+                    background: 'rgba(0,240,255,0.12)',
+                    borderColor: 'rgba(0,240,255,0.35)',
+                  }}
+                >
+                  <Sparkles className="h-3 w-3" style={{ color: '#00F0FF' }} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="font-body text-[12px] leading-relaxed text-slate-700">
+                  <div
+                    className="font-display mb-1 text-[10px] font-bold uppercase tracking-[0.08em]"
+                    style={{ color: '#00F0FF' }}
+                  >
+                    Pulse Coach
+                  </div>
+                  <div className="font-body text-[12px] leading-relaxed text-slate-300">
                     Ask the coach to analyze this company's growth, recent product launches, and
                     why their volume changed.
                   </div>
@@ -201,7 +269,12 @@ export default function PulseQuickCard({
                     type="button"
                     onClick={() => onGenerateInsight?.(company)}
                     disabled={isGeneratingInsight}
-                    className="font-display mt-2 inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)] disabled:opacity-60"
+                    className="font-display mt-2.5 inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-60"
+                    style={{
+                      background: 'rgba(0,240,255,0.10)',
+                      borderColor: 'rgba(0,240,255,0.35)',
+                      color: '#7DD3FC',
+                    }}
                   >
                     {isGeneratingInsight ? (
                       <>
@@ -318,11 +391,15 @@ export default function PulseQuickCard({
 
 /* ─── Primitives ─── */
 
-function Section({ label, children }) {
+function Section({ label, tone, children }) {
+  const headerStyle =
+    tone === 'dark'
+      ? 'bg-gradient-to-r from-[#0F172A] to-[#1E293B] text-[#7DD3FC]'
+      : 'bg-[#FAFBFC] text-slate-500';
   return (
     <div className="border-b border-slate-100">
-      <div className="bg-[#FAFBFC] px-4 py-2">
-        <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500">
+      <div className={['px-4 py-2', headerStyle].join(' ')}>
+        <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.08em]">
           {label}
         </span>
       </div>
@@ -350,7 +427,7 @@ function Row({ icon: Icon, label, value, mono }) {
   );
 }
 
-function SignalRow({ icon: Icon, label, value, hint, accent }) {
+function SignalRow({ icon: Icon, label, value, hint, accent, brand }) {
   const valueColor =
     accent === 'blue' ? 'text-blue-700' :
     accent === 'mute' ? 'text-slate-400' :
@@ -363,13 +440,30 @@ function SignalRow({ icon: Icon, label, value, hint, accent }) {
       <div className="min-w-0 flex-1">
         <div className="font-body text-[11px] text-slate-500">{label}</div>
         {value != null ? (
-          <div className={['font-mono text-[12.5px] font-semibold', valueColor].join(' ')}>{value}</div>
+          <div className={['flex items-center gap-1.5 text-[12.5px] font-semibold', valueColor, brand ? 'font-display' : 'font-mono'].join(' ')}>
+            {brand ? <BrandIcon name={brand} size={12} /> : null}
+            <span>{value}</span>
+          </div>
         ) : (
           <div className="font-body text-[11px] italic text-slate-400">{hint || '—'}</div>
         )}
       </div>
     </div>
   );
+}
+
+// Best-effort guess of the e-commerce platform from a tech stack list.
+// If the backend later returns an explicit ecommerce_platform field this
+// helper is bypassed.
+function detectEcomFromStack(stack) {
+  if (!Array.isArray(stack) || !stack.length) return null;
+  const lc = stack.map((s) => String(s).toLowerCase());
+  if (lc.some((s) => s.includes('shopify'))) return 'Shopify';
+  if (lc.some((s) => s.includes('woocommerce') || s.includes('woo'))) return 'WooCommerce';
+  if (lc.some((s) => s.includes('bigcommerce'))) return 'BigCommerce';
+  if (lc.some((s) => s.includes('magento') || s.includes('adobe commerce'))) return 'Magento';
+  if (lc.some((s) => s.includes('squarespace'))) return 'Squarespace';
+  return null;
 }
 
 function Badge({ tone, icon: Icon, children }) {
