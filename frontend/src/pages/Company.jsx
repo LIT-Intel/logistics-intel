@@ -22,7 +22,7 @@
 //     existing listContacts / enrichContacts helpers; no schema drift
 //   - Hooks declared above the early-return guard (B.13.1 fix)
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Sparkles, Users, Workflow, Activity } from "lucide-react";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import {
@@ -268,7 +268,26 @@ export default function Company() {
   const [canonicalDomain, setCanonicalDomain] = useState(null);
   const [companyEnrichment, setCompanyEnrichment] = useState(null);
 
-  const [tab, setTab] = useState("supply");
+  // Honor ?tab=<id> query param so deep-links (Pulse Coach action
+  // buttons, Recent Enrichments page, etc.) land on the right tab.
+  // Valid tabs: supply | contacts | research | activity.
+  const [searchParams] = useSearchParams();
+  const initialTab = (() => {
+    const t = String(searchParams?.get("tab") || "").toLowerCase();
+    return ["supply", "contacts", "research", "activity"].includes(t)
+      ? t
+      : "supply";
+  })();
+  const [tab, setTab] = useState(initialTab);
+  // Re-sync if the URL changes after mount (e.g. user clicks a Coach
+  // action that swaps `?tab=`).
+  useEffect(() => {
+    const t = String(searchParams?.get("tab") || "").toLowerCase();
+    if (["supply", "contacts", "research", "activity"].includes(t)) {
+      setTab(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams?.get("tab")]);
   const [starred, setStarred] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [campaignModalOpen, setCampaignModalOpen] = useState(false);

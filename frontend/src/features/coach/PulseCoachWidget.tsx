@@ -471,16 +471,29 @@ export function PulseCoachFloating() {
   const { result, loading, refresh } = usePulseCoach();
   const handleAction = useNudgeActionHandler();
   const usage = usePulseUsage();
+  // Default collapsed so the widget greets the user as a quiet pill
+  // rather than a popped-open card every page load.
   const [open, setOpen] = useState(() => {
     if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(FLOATING_COLLAPSED_KEY) !== "1";
+    return window.localStorage.getItem(FLOATING_COLLAPSED_KEY) === "0";
   });
   const [tipIdx, setTipIdx] = useState(0);
+  const [hovering, setHovering] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(FLOATING_COLLAPSED_KEY, open ? "0" : "1");
   }, [open]);
+
+  // Auto-collapse after 8 seconds of no interaction. Resets when the
+  // user paginates, hovers, refreshes, or any open-state change kicks
+  // the timer over. Skipped while hovering so reading isn't cut off.
+  useEffect(() => {
+    if (!open) return;
+    if (hovering) return;
+    const timer = setTimeout(() => setOpen(false), 8000);
+    return () => clearTimeout(timer);
+  }, [open, tipIdx, hovering, loading]);
 
   const nudges = result?.nudges || [];
   const safeIdx = Math.min(tipIdx, Math.max(0, nudges.length - 1));
@@ -510,6 +523,8 @@ export function PulseCoachFloating() {
 
   return (
     <div
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
       className="fixed bottom-6 right-6 z-30 w-[340px] max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl border shadow-[0_24px_60px_rgba(15,23,42,0.35)]"
       style={{
         background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",

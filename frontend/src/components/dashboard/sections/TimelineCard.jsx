@@ -19,10 +19,17 @@ import LitSectionCard from "@/components/ui/LitSectionCard";
  * Wired to the live `lit_activity_events` feed (already loaded by
  * LITDashboard from Supabase). Empty state when the user has no events.
  */
+const MAX_TIMELINE_ITEMS = 10;
+
 export default function TimelineCard({ events, loading }) {
-  const items = Array.isArray(events)
+  const allItems = Array.isArray(events)
     ? events.map(eventToItem).filter(Boolean)
     : [];
+  // Cap at 10 — the dashboard rail shouldn't grow indefinitely. Older
+  // events are still queryable from /app/dashboard or per-company
+  // Activity tab.
+  const items = allItems.slice(0, MAX_TIMELINE_ITEMS);
+  const truncated = allItems.length > MAX_TIMELINE_ITEMS;
   const hasItems = items.length > 0;
 
   return (
@@ -67,6 +74,13 @@ export default function TimelineCard({ events, loading }) {
               </div>
             );
           })}
+          {truncated && (
+            <div className="mt-2 border-t border-slate-100 pt-2 text-center">
+              <span className="font-body text-[10.5px] text-slate-400">
+                Showing 10 of {allItems.length} recent events.
+              </span>
+            </div>
+          )}
         </div>
       )}
     </LitSectionCard>

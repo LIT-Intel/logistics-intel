@@ -100,7 +100,7 @@ export default function RecentEnrichmentsCard() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {rows.map((c) => {
             const name =
               c.full_name ||
@@ -113,7 +113,7 @@ export default function RecentEnrichmentsCard() {
             return (
               <div
                 key={c.id}
-                className="flex flex-col gap-1.5 border-b border-slate-100 p-3 last:border-b-0 sm:[&:nth-child(2n)]:border-l xl:[&:nth-child(2n)]:border-l-0 xl:[&:not(:nth-child(3n+1))]:border-l"
+                className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-shadow hover:shadow-md"
               >
                 <div className="flex items-center gap-2">
                   <Avatar name={name} />
@@ -131,10 +131,10 @@ export default function RecentEnrichmentsCard() {
                     </div>
                   </div>
                 </div>
-                <div className="font-body text-[10.5px] text-slate-500">
+                <div className="font-body truncate text-[10.5px] text-slate-500">
                   {c.company?.name || "—"}
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
                   <div className="flex items-center gap-1.5 text-[10.5px] text-slate-400">
                     {c.email ? (
                       <Mail className="h-3 w-3 text-slate-500" />

@@ -409,6 +409,35 @@ Deno.serve(async (req: Request) => {
     // string that listContacts() can never find on reload.
     const resolvedCompanyId = await resolveCompanyUuid(supabase, body.company_id ?? null);
 
+    // Auto-save the company to lit_saved_companies for this user.
+    // Without this, a user who enriches a contact for a company they
+    // haven't explicitly saved will lose visibility into the resulting
+    // row — lit_contacts SELECT RLS only allows reads when the
+    // contact's company is in the user's saved list. The user
+    // demonstrably cares about the company (they just spent a credit
+    // enriching it), so saving it makes the workflow work end-to-end.
+    if (resolvedCompanyId && user?.id) {
+      try {
+        await supabase
+          .from("lit_saved_companies")
+          .upsert(
+            {
+              user_id: user.id,
+              company_id: resolvedCompanyId,
+              last_activity_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id,company_id" },
+          );
+      } catch (err) {
+        // Non-fatal — the contact still got enriched even if the
+        // saved-company upsert hits a missing constraint or RLS.
+        console.warn(
+          "[apollo-contact-enrich] auto-save company failed",
+          (err as any)?.message || err,
+        );
+      }
+    }
+
     // Plan + super-admin bypass for monthly enrichment cap.
     const bypassLimits = await isSuperAdmin(supabase, user);
     const { orgId, plan } = await getOrgIdAndPlan(supabase, user.id);
