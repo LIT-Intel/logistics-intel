@@ -1283,18 +1283,35 @@ export default function SearchPage() {
 
                       {/* Actions */}
                       <div className="mt-auto flex gap-1.5 pt-0.5">
-                        {/* View details: switched from bright blue → deep
-                            slate/indigo gradient. Reads as authoritative
-                            without competing with the brand-blue Save
-                            button on the row, and complements the dashboard
-                            color palette. */}
+                        {/* View details — matches the Pulse Coach floating
+                            card so the two surfaces feel like siblings:
+                            slate-900→slate-800 gradient, white/10 gloss
+                            border, cyan icon accent, ambient shadow,
+                            rounded-xl corners. */}
                         <button
                           type="button"
                           onClick={() => setSelectedCompany(company)}
-                          className="font-display inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-md bg-gradient-to-b from-slate-900 to-slate-800 text-[11px] font-semibold text-white shadow-[0_1px_2px_rgba(15,23,42,0.15)] transition hover:from-slate-800 hover:to-slate-900 hover:shadow-md"
+                          className="font-display group/btn relative inline-flex h-8 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-white/10 text-[11px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.22)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.28)]"
+                          style={{
+                            background:
+                              "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+                          }}
                         >
-                          <Eye className="h-3 w-3" />
-                          View details
+                          {/* subtle radial accent — same trick as the
+                              Pulse Coach card */}
+                          <span
+                            aria-hidden
+                            className="pointer-events-none absolute -top-6 -right-6 h-16 w-16 rounded-full opacity-60"
+                            style={{
+                              background:
+                                "radial-gradient(circle, rgba(0,240,255,0.22), transparent 70%)",
+                            }}
+                          />
+                          <Eye
+                            className="h-3 w-3"
+                            style={{ color: "#00F0FF" }}
+                          />
+                          <span className="relative">View details</span>
                         </button>
                         <button
                           type="button"

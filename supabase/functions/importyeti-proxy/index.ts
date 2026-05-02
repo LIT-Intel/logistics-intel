@@ -1270,6 +1270,14 @@ async function handleSearchAction(
   try {
     const url = new URL(env.searchUrl);
     url.searchParams.set("name", searchTerm);
+    // Tell the upstream how many rows we actually want. Without this,
+    // ImportYeti's DMA search defaults to ~10 results, which capped the
+    // UI at 10 even after we lifted the proxy cap to 50. We mirror the
+    // same pattern the bols endpoint uses (limit + offset).
+    url.searchParams.set("limit", String(validatedPageSize));
+    if (offset > 0) {
+      url.searchParams.set("offset", String(offset));
+    }
 
     const iyUrl = url.toString();
 

@@ -1,37 +1,18 @@
 import React, { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   X,
   Bookmark,
   MapPin,
   Globe,
   Phone,
-  Package2,
-  Route,
-  Truck,
-  CalendarDays,
-  BarChart3,
-  ShipWheel,
-  Boxes,
-  ChevronRight,
-  FileText,
-  Users,
-  Mail,
-  Briefcase,
-  Container,
+  ArrowRight,
+  ArrowUpRight,
+  Loader2,
 } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
-import { getCompanyLogoUrl } from "@/lib/logo";
+import LitFlag from "@/components/ui/LitFlag";
+import { formatLaneShort, resolveEndpoint } from "@/lib/laneGlobe";
 import {
   type IyCompanyProfile,
   type IyRouteKpis,
@@ -415,7 +396,7 @@ export default function ShipperDetailModal({
   onClose,
   onSaveToCommandCenter,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const navigate = useNavigate();
 
   const companyName = shipper?.name || shipper?.title || profile?.title || "Company";
   const website = buildWebsite(shipper || {}, profile);
@@ -437,668 +418,362 @@ export default function ShipperDetailModal({
     [profile, routeKpis],
   );
 
-  const shipmentRows = useMemo(() => {
-    const rows = buildShipmentRows(profile);
-    // Phase B.12 — newest first; rows with unparseable dates sink to
-    // the bottom (timestamp 0). Underlying `row.date` source field is
-    // not mutated — display layer only.
-    return rows
-      .map((row) => ({ row, ts: parseShipmentDateForSort(row.date) }))
-      .sort((a, b) => b.ts - a.ts)
-      .map(({ row }) => row);
-  }, [profile]);
-
   const suppliers = useMemo(
     () => buildSuppliers(shipper || {}, profile),
     [shipper, profile],
   );
 
-  const topContainer =
-    (profile as any)?.top_container_length ||
-    "—";
-
-  const estSpend12m =
-    safeNumber(routeKpis?.estSpendUsd12m) ??
-    safeNumber(profile?.estSpendUsd12m) ??
-    safeNumber((profile as any)?.estSpendUsd) ??
-    null;
-
-  const topRoute =
-    routeKpis?.topRouteLast12m ||
-    profile?.routeKpis?.topRouteLast12m ||
-    "—";
-
-  const mostRecentRoute =
-    routeKpis?.mostRecentRoute ||
-    profile?.routeKpis?.mostRecentRoute ||
-    "—";
-
   if (!isOpen || !shipper) return null;
 
-  const tabStyle = (tab: TabKey): React.CSSProperties =>
-    activeTab === tab
-      ? {
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '7px 13px', borderRadius: 8, border: 'none', cursor: 'pointer',
-          background: 'linear-gradient(180deg,#0F172A,#1E293B)',
-          color: '#fff', fontSize: 12, fontWeight: 600,
-          fontFamily: "'Space Grotesk', sans-serif",
-          boxShadow: '0 1px 3px rgba(15,23,42,0.18)',
-        }
-      : {
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '7px 13px', borderRadius: 8, cursor: 'pointer',
-          background: '#FFFFFF', border: '1px solid #E5E7EB',
-          color: '#475569', fontSize: 12, fontWeight: 600,
-          fontFamily: "'Space Grotesk', sans-serif",
-        };
+  // Resolve a slug for the deep-link target. Search rows carry
+  // `importyeti_key` like "company/acme-industries"; CRM rows carry a
+  // raw `company_id`. Either is a valid /app/companies/:id path.
+  const commandCenterSlug =
+    (shipper as any)?.importyeti_key ||
+    shipper?.id ||
+    shipper?.companyId ||
+    shipper?.company_id ||
+    null;
+
+  // Strip the legacy "company/" prefix the IY proxy attaches; the route
+  // expects a bare slug.
+  const ccTarget = commandCenterSlug
+    ? String(commandCenterSlug).replace(/^company\//, "")
+    : null;
+
+  const handleOpenInCommandCenter = () => {
+    if (!ccTarget) return;
+    onClose();
+    navigate(`/app/companies/${encodeURIComponent(ccTarget)}`);
+  };
+
+  // Pre-compute the top 3 lanes with city + ISO-code labels (matches
+  // the format used everywhere else in the app — Dashboard, Profile,
+  // ActivityCard).
+  const slimLanes = routeRows.slice(0, 3).map((row) => {
+    const short = formatLaneShort(row.route);
+    return {
+      label: row.route,
+      shipments: row.shipments,
+      from: short?.fromLabel || row.route,
+      fromCode: short?.fromCountryCode || null,
+      fromCountry: short?.fromCountryName || null,
+      to: short?.toLabel || "",
+      toCode: short?.toCountryCode || null,
+      toCountry: short?.toCountryName || null,
+    };
+  });
+
+  // Tiny 12-month sparkline data; we just need the magnitude per month.
+  const sparkData = chartData.slice(-12).map((row: any) => ({
+    month: row.month,
+    value: Number(row.shipments) || 0,
+  }));
+  const sparkMax = Math.max(1, ...sparkData.map((d) => d.value));
 
   return (
-    // Right-side slide-out drawer. Replaces the previous fullscreen modal:
-    // backdrop dims the page, the panel anchors right and runs floor-to-
-    // ceiling so the user can keep scanning the result list behind it.
-    // Mobile (<sm) keeps the drawer full-bleed; ≥sm it caps at ~640px so
-    // the search list stays visible on wide screens.
+    // Right-anchored preview drawer — tighter than the previous
+    // tabbed modal, intentionally feels like an "appetizer" that
+    // funnels the user into the Command Center company profile.
+    // Backdrop click closes; the drawer itself stops propagation.
     <div
       className="fixed inset-0 z-[80] flex justify-end bg-slate-950/45"
       onClick={onClose}
     >
       <div
-        className="flex h-full w-full flex-col overflow-hidden bg-[#F8FAFC] shadow-2xl transition-transform sm:max-w-[640px] xl:max-w-[760px]"
-        style={{ borderLeft: '1px solid #E5E7EB' }}
+        className="flex h-full w-full flex-col overflow-hidden bg-[#F8FAFC] shadow-[0_24px_60px_rgba(15,23,42,0.35)] sm:max-w-[440px] xl:max-w-[480px]"
+        style={{ borderLeft: "1px solid #E5E7EB" }}
         onClick={(e) => e.stopPropagation()}
       >
-
-        {/* Gradient accent bar */}
-        <div style={{ height: 3, background: 'linear-gradient(90deg,#0F172A,#1E293B)', flexShrink: 0 }} />
+        {/* Cyan/blue accent strip — same hue family as the Pulse Coach
+            card so the surfaces feel related. */}
+        <div
+          style={{
+            height: 3,
+            background:
+              "linear-gradient(90deg,#0F172A 0%,#1E293B 50%,#00F0FF 100%)",
+            flexShrink: 0,
+          }}
+        />
 
         {/* Header */}
-        <div style={{ borderBottom: '1px solid #E5E7EB', background: '#FFFFFF', padding: '14px 20px', flexShrink: 0 }}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-start gap-3">
-              <CompanyAvatar
-                name={companyName}
-                domain={website || null}
-                size="md"
-                className="mt-0.5 shrink-0"
-              />
-
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em', margin: 0 }}>
-                    {companyName}
-                  </h2>
-                  <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: '#F1F5F9', color: '#64748b', fontFamily: "'Space Grotesk', sans-serif" }}>
-                    {shipper?.country_code || (profile as any)?.countryCode || "US"}
-                  </span>
-                </div>
-
-                <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1" style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#64748b' }}>
-                  <span className="inline-flex items-center gap-1">
-                    <MapPin className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{locationLine}</span>
-                  </span>
-                  {website && (
-                    <span className="inline-flex items-center gap-1">
-                      <Globe className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{website.replace(/^https?:\/\//, "")}</span>
-                    </span>
-                  )}
-                  {phone && (
-                    <span className="inline-flex items-center gap-1">
-                      <Phone className="h-3 w-3 shrink-0" />
-                      <span>{phone}</span>
-                    </span>
-                  )}
-                </div>
-              </div>
+        <div className="flex shrink-0 items-start gap-3 border-b border-slate-200 bg-white px-4 py-3">
+          <CompanyAvatar
+            name={companyName}
+            domain={website || null}
+            size="sm"
+            className="mt-0.5 shrink-0"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h2 className="font-display truncate text-[14px] font-bold tracking-tight text-slate-900">
+                {companyName}
+              </h2>
+              <span className="font-display inline-flex shrink-0 items-center rounded-md border border-slate-200 bg-slate-50 px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.06em] text-slate-500">
+                {shipper?.country_code || (profile as any)?.countryCode || "US"}
+              </span>
             </div>
-
-            <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={onSaveToCommandCenter}
-                disabled={saveLoading || isSaved}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '7px 14px', borderRadius: 10, cursor: (saveLoading || isSaved) ? 'not-allowed' : 'pointer',
-                  ...(isSaved
-                    ? { background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803d' }
-                    : { background: 'linear-gradient(180deg,#3B82F6,#2563EB)', border: 'none', color: '#fff', boxShadow: '0 2px 8px rgba(59,130,246,0.3)' }),
-                  fontSize: 12, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif",
-                }}
-              >
-                <Bookmark className={`h-3.5 w-3.5 ${isSaved ? "fill-current" : ""}`} />
-                <span className="hidden sm:inline">{isSaved ? "Saved" : "Save"}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onClose}
-                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 8, border: '1px solid #E5E7EB', background: '#FFFFFF', color: '#64748b', cursor: 'pointer' }}
-              >
-                <X className="h-4 w-4" />
-              </button>
+            <div className="font-body mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10.5px] text-slate-500">
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate">{locationLine}</span>
+              </span>
+              {website && (
+                <span className="inline-flex items-center gap-1">
+                  <Globe className="h-2.5 w-2.5 shrink-0" />
+                  <span className="truncate">
+                    {website.replace(/^https?:\/\//, "")}
+                  </span>
+                </span>
+              )}
+              {phone && (
+                <span className="inline-flex items-center gap-1">
+                  <Phone className="h-2.5 w-2.5 shrink-0" />
+                  <span>{phone}</span>
+                </span>
+              )}
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
 
-        {/* Tab bar */}
-        <div style={{ borderBottom: '1px solid #E5E7EB', background: '#F8FAFC', padding: '10px 20px', flexShrink: 0 }}>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" style={tabStyle("overview")} onClick={() => setActiveTab("overview")}>
-              <BarChart3 className="h-3.5 w-3.5" /> Overview
-            </button>
-            <button type="button" style={tabStyle("routes")} onClick={() => setActiveTab("routes")}>
-              <Route className="h-3.5 w-3.5" /> Routes
-            </button>
-            <button type="button" style={tabStyle("shipments")} onClick={() => setActiveTab("shipments")}>
-              <Truck className="h-3.5 w-3.5" /> Shipments
-            </button>
-            {contacts && contacts.length > 0 && (
-              <button type="button" style={tabStyle("contacts")} onClick={() => setActiveTab("contacts")}>
-                <Users className="h-3.5 w-3.5" /> Contacts ({contacts.length})
-              </button>
-            )}
-            <button type="button" style={tabStyle("equipment")} onClick={() => setActiveTab("equipment")}>
-              <Container className="h-3.5 w-3.5" /> Equipment
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-4 py-4">
           {loadingProfile ? (
-            <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-              <div className="text-base font-medium text-slate-900">Loading company preview...</div>
-              <div className="mt-2 text-sm text-slate-500">Pulling trade intelligence and KPI snapshot.</div>
+            <div className="flex h-full min-h-[300px] flex-col items-center justify-center text-center">
+              <Loader2 className="mb-2 h-5 w-5 animate-spin text-slate-400" />
+              <div className="font-display text-[12px] font-semibold text-slate-700">
+                Loading preview…
+              </div>
+              <div className="font-body mt-1 text-[10.5px] text-slate-400">
+                Pulling shipment intelligence
+              </div>
             </div>
           ) : error ? (
-            <div className="rounded-3xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700">
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-[12px] text-rose-700">
               {error}
             </div>
-          ) : activeTab === "overview" ? (
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <KpiCard
-                  icon={<Package2 className="h-4 w-4 text-indigo-500" />}
-                  label="Shipments 12m"
-                  value={fullNumber(shipments12m)}
-                  accent="hover:bg-indigo-50/60"
-                />
-                <KpiCard
-                  icon={<ShipWheel className="h-4 w-4 text-cyan-500" />}
-                  label="TEU 12m"
-                  value={fullNumber(teu12m)}
-                  accent="hover:bg-cyan-50/60"
-                />
-                <KpiCard
-                  icon={<Boxes className="h-4 w-4 text-violet-500" />}
-                  label="FCL / LCL"
-                  value={fclLcl}
-                  accent="hover:bg-violet-50/60"
-                />
-                <KpiCard
-                  icon={<CalendarDays className="h-4 w-4 text-emerald-500" />}
-                  label="Last shipment"
-                  // Phase B.12 — same DD/MM/YYYY-aware parser as the
-                  // Shipments-tab rows so the KPI doesn't render "—"
-                  // for an ImportYeti-formatted last_shipment string.
-                  value={formatSafeShipmentDate(lastShipment, "—")}
-                  accent="hover:bg-emerald-50/60"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_360px]">
-                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="mb-4 flex items-center justify-between">
-                    <div>
-                      <div className="inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
-                        <BarChart3 className="h-5 w-5 text-indigo-500" />
-                        Monthly activity
-                      </div>
-                      <div className="mt-1 text-sm text-slate-500">
-                        {year ? `Year ${year}` : "Latest 12-month activity"} · Shipments by month
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="rounded-full border-indigo-200 bg-indigo-50 text-indigo-700">
-                      Preview
-                    </Badge>
+          ) : (
+            <div className="space-y-3">
+              {/* 4-up KPI strip */}
+              <div className="grid grid-cols-2 gap-1.5 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <div className="border-b border-r border-slate-100 px-3 py-2">
+                  <div className="font-display text-[8.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                    Shipments 12m
                   </div>
-
-                  <div className="mb-3 flex items-center gap-4 text-xs text-slate-500">
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "#2563EB" }} />
-                      FCL
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "#EA580C" }} />
-                      LCL
-                    </span>
-                  </div>
-                  <div className="h-[240px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} barCategoryGap="30%">
-                        <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                        <XAxis
-                          dataKey="month"
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{ fontSize: 11 }}
-                        />
-                        <YAxis
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{ fontSize: 11 }}
-                        />
-                        <RechartsTooltip
-                          cursor={{ fill: "rgba(0,0,0,0.04)" }}
-                          formatter={(value: any, name: any) => [
-                            fullNumber(safeNumber(value)),
-                            name === "fcl" ? "FCL Shipments" : "LCL Shipments",
-                          ]}
-                        />
-                        <Bar dataKey="fcl" stackId="a" fill="#2563EB" radius={[0, 0, 0, 0]} />
-                        <Bar dataKey="lcl" stackId="a" fill="#EA580C" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div className="font-mono mt-0.5 text-[15px] font-bold text-slate-900">
+                    {fullNumber(shipments12m)}
                   </div>
                 </div>
-
-                <div style={{ background: 'linear-gradient(180deg,#FFFFFF 0%,#F8FAFC 100%)', border: '1px solid #E5E7EB', borderRadius: 14, padding: 20, boxShadow: '0 8px 30px rgba(15,23,42,0.06)' }}>
-                  <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 16, fontWeight: 700, color: '#0F172A', marginBottom: 16 }}>Snapshot</div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 4 }}>Est. Spend 12m</div>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: '#1d4ed8' }}>{currencyCompact(estSpend12m)}</div>
-                    </div>
-
-                    <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: 12 }}>
-                      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 4 }}>Top Route</div>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 600, color: '#374151', background: '#F1F5F9', padding: '3px 8px', borderRadius: 4, display: 'inline-block' }}>{topRoute}</div>
-                    </div>
-
-                    <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: 12 }}>
-                      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 4 }}>Recent Route</div>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 600, color: '#374151', background: '#F1F5F9', padding: '3px 8px', borderRadius: 4, display: 'inline-block' }}>{mostRecentRoute}</div>
-                    </div>
-
-                    <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: 12 }}>
-                      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 4 }}>Top Container</div>
-                      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, color: '#374151' }}>{topContainer}</div>
-                    </div>
-
-                    <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: 12 }}>
-                      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 8 }}>Suppliers</div>
-                      <div className="flex flex-wrap gap-2">
-                        {suppliers.length > 0 ? (
-                          suppliers.map((supplier) => (
-                            <span key={supplier} style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999, background: '#F8FAFC', color: '#374151', border: '1px solid #E5E7EB', fontFamily: "'DM Sans', sans-serif" }}>
-                              {supplier}
-                            </span>
-                          ))
-                        ) : (
-                          <div style={{ fontSize: 12, color: '#94a3b8', fontFamily: "'DM Sans', sans-serif" }}>No supplier data</div>
-                        )}
-                      </div>
-                    </div>
+                <div className="border-b border-slate-100 px-3 py-2">
+                  <div className="font-display text-[8.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                    TEU 12m
+                  </div>
+                  <div className="font-mono mt-0.5 text-[15px] font-bold text-slate-900">
+                    {fullNumber(teu12m)}
+                  </div>
+                </div>
+                <div className="border-r border-slate-100 px-3 py-2">
+                  <div className="font-display text-[8.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                    Last shipment
+                  </div>
+                  <div className="font-body mt-0.5 truncate text-[12px] font-semibold text-slate-700">
+                    {formatSafeShipmentDate(lastShipment, "—")}
+                  </div>
+                </div>
+                <div className="px-3 py-2">
+                  <div className="font-display text-[8.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                    FCL / LCL
+                  </div>
+                  <div className="font-mono mt-0.5 text-[12px] font-semibold text-slate-700">
+                    {fclLcl}
                   </div>
                 </div>
               </div>
-            </div>
-          ) : activeTab === "routes" ? (
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_340px]">
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
-                  <Route className="h-5 w-5 text-indigo-500" />
-                  Top routes
-                </div>
 
-                <div className="space-y-3">
-                  {routeRows.length > 0 ? (
-                    routeRows.map((route, index) => (
+              {/* 12-month sparkline */}
+              {sparkData.length > 0 && (
+                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                  <div className="font-display mb-1.5 flex items-center justify-between text-[8.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                    <span>Last 12 months</span>
+                    <span className="font-mono normal-case tracking-normal text-slate-400">
+                      shipments
+                    </span>
+                  </div>
+                  <div className="flex h-12 items-end gap-[3px]">
+                    {sparkData.map((d, i) => {
+                      const h = Math.max(2, Math.round((d.value / sparkMax) * 100));
+                      return (
+                        <div
+                          key={`${d.month}-${i}`}
+                          className="flex-1 rounded-t-sm"
+                          style={{
+                            height: `${h}%`,
+                            background:
+                              "linear-gradient(180deg,#0F172A 0%,#1E293B 100%)",
+                          }}
+                          title={`${d.month}: ${d.value.toLocaleString()}`}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Top lanes */}
+              {slimLanes.length > 0 && (
+                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                  <div className="font-display border-b border-slate-100 px-3 py-1.5 text-[8.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                    Top lanes
+                  </div>
+                  <div>
+                    {slimLanes.map((l, i) => (
                       <div
-                        key={`${route.route}-${index}`}
-                        className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 transition hover:border-indigo-200 hover:bg-indigo-50/60"
+                        key={`${l.label}-${i}`}
+                        className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-1.5 last:border-b-0"
                       >
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex items-start gap-2">
-                              <div className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
-                                <ChevronRight className="h-4 w-4" />
-                              </div>
-                              <div className="min-w-0">
-                                <div className="text-base font-semibold leading-6 text-slate-900">
-                                  {route.route}
-                                </div>
-                                <div className="mt-1 flex flex-wrap gap-2">
-                                  <Badge className="rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-100">
-                                    {fullNumber(route.shipments)} shipments
-                                  </Badge>
-                                  <Badge className="rounded-full bg-cyan-100 text-cyan-700 hover:bg-cyan-100">
-                                    {fullNumber(route.teu)} TEU
-                                  </Badge>
-                                  {(route.fcl > 0 || route.lcl > 0) && (
-                                    <Badge className="rounded-full bg-violet-100 text-violet-700 hover:bg-violet-100">
-                                      FCL {fullNumber(route.fcl)} · LCL {fullNumber(route.lcl)}
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                        <span
+                          className="inline-flex min-w-0 items-center gap-1.5 truncate"
+                          title={l.label}
+                        >
+                          {l.fromCode && (
+                            <LitFlag
+                              code={l.fromCode}
+                              size={12}
+                              label={l.fromCountry || l.from}
+                            />
+                          )}
+                          <span className="font-mono truncate text-[11px] font-semibold text-slate-800">
+                            {l.from}
+                          </span>
+                          <ArrowRight className="h-2.5 w-2.5 shrink-0 text-slate-300" />
+                          {l.toCode && (
+                            <LitFlag
+                              code={l.toCode}
+                              size={12}
+                              label={l.toCountry || l.to}
+                            />
+                          )}
+                          <span className="font-mono truncate text-[11px] font-semibold text-slate-800">
+                            {l.to}
+                          </span>
+                        </span>
+                        <span className="font-mono shrink-0 text-[11px] font-bold text-slate-700">
+                          {fullNumber(l.shipments)}
+                        </span>
                       </div>
-                    ))
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
-                      No route breakdown available for this company yet.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-lg font-semibold text-slate-900">Route KPIs</div>
-
-                <div className="mt-5 space-y-5">
-                  <div>
-                    <div className="text-sm text-slate-500">Top route 12m</div>
-                    <div className="mt-1 text-base font-medium leading-7 text-slate-900">{topRoute}</div>
-                  </div>
-
-                  <div>
-                    <div className="text-sm text-slate-500">Most recent route</div>
-                    <div className="mt-1 text-base font-medium leading-7 text-slate-900">{mostRecentRoute}</div>
-                  </div>
-
-                  <div>
-                    <div className="text-sm text-slate-500">Sample size</div>
-                    <div className="mt-1 text-2xl font-semibold text-slate-900">
-                      {fullNumber(safeNumber(routeKpis?.sampleSize ?? profile?.routeKpis?.sampleSize))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-sm text-slate-500">Shipments 12m</div>
-                    <div className="mt-1 text-2xl font-semibold text-slate-900">
-                      {fullNumber(shipments12m)}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-sm text-slate-500">TEU 12m</div>
-                    <div className="mt-1 text-2xl font-semibold text-slate-900">
-                      {fullNumber(teu12m)}
-                    </div>
+                    ))}
                   </div>
                 </div>
-              </div>
-            </div>
-          ) : activeTab === "shipments" ? (
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
-                <FileText className="h-5 w-5 text-indigo-500" />
-                Recent shipment records
-              </div>
+              )}
 
-              <div className="overflow-hidden rounded-2xl border border-slate-200">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[860px]">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          Date
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          BOL
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          Route
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          Origin
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          Destination
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          TEU
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {shipmentRows.length > 0 ? (
-                        shipmentRows.map((row, index) => (
-                          <tr key={`${row.bol || row.date || "shipment"}-${index}`} className="hover:bg-indigo-50/40">
-                            <td className="px-4 py-3 text-sm text-slate-700">
-                              {/* Phase B.12 — DD/MM/YYYY-aware parser
-                                  with 24h future-tolerance cap. Falls
-                                  back to "Unknown" for unparseable
-                                  values rather than silently rendering
-                                  Invalid-Date "—" rows. */}
-                              {formatSafeShipmentDate(row.date, "Unknown")}
-                            </td>
-                            <td className="px-4 py-3 text-sm font-medium text-slate-900">
-                              {row.bol || "—"}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-slate-700">
-                              {row.route || "—"}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-slate-700">
-                              {row.origin || "—"}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-slate-700">
-                              {row.destination || "—"}
-                            </td>
-                            <td className="px-4 py-3 text-sm font-medium text-slate-900">
-                              {row.teu != null ? fullNumber(row.teu) : "—"}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
-                            No shipment rows available.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+              {/* Top suppliers */}
+              {suppliers.length > 0 && (
+                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                  <div className="font-display mb-1.5 text-[8.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                    Top suppliers
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {suppliers.slice(0, 5).map((s, i) => (
+                      <span
+                        key={`${s}-${i}`}
+                        className="font-display inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600"
+                      >
+                        {s}
+                      </span>
+                    ))}
+                    {suppliers.length > 5 && (
+                      <span className="font-mono inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
+                        +{suppliers.length - 5}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="mt-4 text-xs text-slate-500">
-                Preview only. Save to Command Center to work with the full company intelligence record.
-              </div>
-            </div>
-          ) : activeTab === "contacts" ? (
-            <div>
-              {loadingContacts ? (
-                <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-                  <div className="text-base font-medium text-slate-900">Loading contacts...</div>
-                </div>
-              ) : contacts && contacts.length > 0 ? (
-                <div className="space-y-3">
-                  {contacts.map((contact) => (
-                    <div
-                      key={contact.id}
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-4 transition hover:border-indigo-200 hover:bg-indigo-50/30"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start gap-3">
-                            <div className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
-                              <Users className="h-4 w-4" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-base font-semibold text-slate-900">
-                                {contact.full_name || "Unknown contact"}
-                              </div>
-                              {contact.title && (
-                                <div className="mt-0.5 flex items-center gap-1.5 text-sm text-slate-600">
-                                  <Briefcase className="h-3.5 w-3.5 text-slate-400" />
-                                  <span>{contact.title}</span>
-                                </div>
-                              )}
-                              {contact.department && (
-                                <div className="text-xs text-slate-500">
-                                  {contact.department}
-                                  {contact.seniority && ` · ${contact.seniority}`}
-                                </div>
-                              )}
-                              <div className="mt-2 flex flex-col gap-1">
-                                {contact.email && (
-                                  <a
-                                    href={`mailto:${contact.email}`}
-                                    className="inline-flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700"
-                                  >
-                                    <Mail className="h-3.5 w-3.5" />
-                                    <span className="truncate">{contact.email}</span>
-                                  </a>
-                                )}
-                                {contact.phone && (
-                                  <a
-                                    href={`tel:${contact.phone}`}
-                                    className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
-                                  >
-                                    <Phone className="h-3.5 w-3.5" />
-                                    <span>{contact.phone}</span>
-                                  </a>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        {contact.linkedin_url && (
-                          <a
-                            href={contact.linkedin_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-2 inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 sm:mt-0"
-                          >
-                            LinkedIn
-                            <ChevronRight className="h-3 w-3" />
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
-                  <Users className="mx-auto h-8 w-8 text-slate-300" />
-                  <div className="mt-2">No contacts available for this company.</div>
+              {/* Contacts teaser — only render the count, full list lives
+                  in the Command Center contacts tab */}
+              {contacts && contacts.length > 0 && (
+                <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                  <div className="font-body text-[11px] text-slate-500">
+                    {contacts.length} verified contact
+                    {contacts.length === 1 ? "" : "s"} on file
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenInCommandCenter}
+                    disabled={!ccTarget}
+                    className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 transition hover:text-blue-800 disabled:opacity-40"
+                  >
+                    Manage in Command Center
+                    <ArrowUpRight className="h-3 w-3" />
+                  </button>
                 </div>
               )}
             </div>
-          ) : activeTab === "equipment" ? (
-            <div className="space-y-5">
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
-                  <Container className="h-5 w-5 text-indigo-500" />
-                  Container breakdown
-                </div>
+          )}
+        </div>
 
-                <div className="space-y-6">
-                  {topContainer && topContainer !== "—" && (
-                    <div>
-                      <div className="text-sm text-slate-500">Most used container</div>
-                      <div className="mt-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3">
-                        <div className="text-base font-semibold text-indigo-900">{topContainer}</div>
-                        <div className="mt-1 text-xs text-indigo-700">Primary container type for shipments</div>
-                      </div>
-                    </div>
-                  )}
+        {/* Sticky footer — primary CTA mirrors the Pulse Coach card
+            styling so the two surfaces feel like siblings. Save is a
+            small secondary action; the drawer's whole job is to push
+            the user to the full Command Center page. */}
+        <div className="sticky bottom-0 z-10 flex shrink-0 items-center gap-1.5 border-t border-slate-200 bg-white px-3 py-2.5 shadow-[0_-4px_16px_rgba(15,23,42,0.06)]">
+          <button
+            type="button"
+            onClick={handleOpenInCommandCenter}
+            disabled={!ccTarget || loadingProfile}
+            className="font-display group/btn relative inline-flex h-10 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-white/10 text-[12px] font-semibold text-white shadow-[0_6px_20px_rgba(15,23,42,0.25)] transition hover:shadow-[0_10px_28px_rgba(15,23,42,0.32)] disabled:cursor-not-allowed disabled:opacity-50"
+            style={{
+              background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+            }}
+          >
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -top-8 -right-8 h-20 w-20 rounded-full opacity-70"
+              style={{
+                background:
+                  "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)",
+              }}
+            />
+            <span className="relative">Open in Command Center</span>
+            <ArrowRight
+              className="relative h-3.5 w-3.5"
+              style={{ color: "#00F0FF" }}
+            />
+          </button>
 
-                  <div>
-                    <div className="text-sm text-slate-500 mb-3">FCL / LCL split</div>
-                    <div className="space-y-2">
-                      {(() => {
-                        const fclShips = safeNumber(
-                          (profile as any)?.fclShipments12m ??
-                            (profile as any)?.fcl_shipments_12m ??
-                            (profile as any)?.containers?.fclShipments12m,
-                        ) ?? 0;
-                        const lclShips = safeNumber(
-                          (profile as any)?.lclShipments12m ??
-                            (profile as any)?.lcl_shipments_12m ??
-                            (profile as any)?.containers?.lclShipments12m,
-                        ) ?? 0;
-                        const total = fclShips + lclShips;
-                        const fclPct = total > 0 ? Math.round((fclShips / total) * 100) : 0;
-                        const lclPct = total > 0 ? Math.round((lclShips / total) * 100) : 0;
-
-                        return (
-                          <>
-                            <div className="flex items-center gap-3">
-                              <div className="flex-1">
-                                <div className="text-sm font-medium text-slate-900">FCL (Full Container Load)</div>
-                                <div className="mt-1 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
-                                  <div
-                                    className="h-full bg-blue-500 transition-all"
-                                    style={{ width: `${fclPct}%` }}
-                                  />
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-lg font-semibold text-slate-900">{fclPct}%</div>
-                                <div className="text-xs text-slate-500">{fullNumber(fclShips)}</div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <div className="flex-1">
-                                <div className="text-sm font-medium text-slate-900">LCL (Less Than Container Load)</div>
-                                <div className="mt-1 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
-                                  <div
-                                    className="h-full bg-orange-500 transition-all"
-                                    style={{ width: `${lclPct}%` }}
-                                  />
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-lg font-semibold text-slate-900">{lclPct}%</div>
-                                <div className="text-xs text-slate-500">{fullNumber(lclShips)}</div>
-                              </div>
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-lg font-semibold text-slate-900">Shipping patterns</div>
-
-                <div className="mt-5 space-y-4">
-                  <div>
-                    <div className="text-sm text-slate-500">Total shipments (12m)</div>
-                    <div className="mt-2 text-3xl font-semibold text-slate-900">
-                      {fullNumber(shipments12m)}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-sm text-slate-500">Total TEU (12m)</div>
-                    <div className="mt-2 text-3xl font-semibold text-slate-900">
-                      {fullNumber(teu12m)}
-                    </div>
-                  </div>
-
-                  {teu12m && shipments12m && shipments12m > 0 && (
-                    <div>
-                      <div className="text-sm text-slate-500">Average TEU per shipment</div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-900">
-                        {(teu12m / shipments12m).toFixed(1)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : null}
+          <button
+            type="button"
+            onClick={onSaveToCommandCenter}
+            disabled={saveLoading || isSaved}
+            title={isSaved ? "Saved" : "Save to Command Center"}
+            className={[
+              "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition",
+              isSaved
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+              (saveLoading || isSaved) && "cursor-default",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            {saveLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Bookmark
+                className={`h-4 w-4 ${isSaved ? "fill-current" : ""}`}
+              />
+            )}
+          </button>
         </div>
       </div>
     </div>
