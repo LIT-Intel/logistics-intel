@@ -40,6 +40,8 @@ import {
   Zap,
 } from 'lucide-react';
 import BrandIcon from '@/features/pulse/BrandIcon';
+import { CompanyAvatar } from '@/components/CompanyAvatar';
+import { extractDomain } from '@/lib/logo';
 
 const RAIL_BG = 'bg-white';
 
@@ -57,7 +59,7 @@ export default function PulseQuickCard({
 }) {
   if (!open || !company) return null;
 
-  const domain = company.domain || extractDomain(company.website);
+  const domain = extractDomain(company.domain || company.website);
   const location = [company.city, company.state, company.country].filter(Boolean).join(', ');
   const inDb = isInDatabase || company.provenance === 'database' || company.alsoLive;
 
@@ -91,7 +93,12 @@ export default function PulseQuickCard({
       >
         {/* Header */}
         <header className="flex items-start gap-3 border-b border-slate-200 bg-white px-4 py-3">
-          <Avatar name={company.name} domain={domain} />
+          <CompanyAvatar
+            name={company.name || 'Unknown'}
+            domain={domain || null}
+            size="sm"
+            className="!h-9 !w-9 !rounded-md"
+          />
           <div className="min-w-0 flex-1">
             <div className="font-display truncate text-[15px] font-bold leading-tight text-slate-900">
               {company.name}
@@ -512,30 +519,12 @@ function ActionButton({ icon: Icon, label, primary, onClick }) {
   );
 }
 
-function Avatar({ name, domain }) {
-  const initials = (name || '?').slice(0, 1).toUpperCase();
-  // No external logo fetch — keeps the rail snappy and avoids leaking
-  // company names to third parties on every Quick Card open.
-  return (
-    <div
-      aria-hidden
-      className="font-display flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-blue-500 to-indigo-500 text-[13px] font-bold text-white"
-    >
-      {initials}
-    </div>
-  );
-}
-
 function ensureHttp(u) {
   if (!u) return '';
   return /^https?:\/\//i.test(u) ? u : `https://${u}`;
 }
 function stripHttp(u) {
   return String(u || '').replace(/^https?:\/\//i, '').replace(/\/$/, '');
-}
-function extractDomain(url) {
-  if (!url) return '';
-  return String(url).replace(/^https?:\/\//i, '').split('/')[0];
 }
 function formatRelative(d) {
   try {

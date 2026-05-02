@@ -39,6 +39,8 @@ import { searchPulse } from '@/api/pulse';
 import { supabase } from '@/lib/supabase';
 import AddToCampaignModal from '@/components/command-center/AddToCampaignModal';
 import { saveCompany, isLimitExceeded, LimitExceededError } from '@/lib/saveCompany';
+import { CompanyAvatar } from '@/components/CompanyAvatar';
+import { extractDomain } from '@/lib/logo';
 
 import {
   classifyPulseError,
@@ -49,6 +51,7 @@ import {
 } from '@/features/pulse/PulseResults';
 import { searchLocalCompanies, mergeResults } from '@/features/pulse/pulseLocalSearch';
 import PulseQuickCard from '@/features/pulse/PulseQuickCard';
+import PulseLibrary from '@/features/pulse/PulseLibrary';
 
 const PLACEHOLDER_EXAMPLES = [
   'Find marketing directors at SaaS companies in California',
@@ -151,6 +154,9 @@ export default function Pulse() {
   const [campaignTarget, setCampaignTarget] = useState(null);
   const [isEnriching, setIsEnriching] = useState(false);
   const [isGeneratingInsight, setIsGeneratingInsight] = useState(false);
+  // Bumped after a successful save so PulseLibrary refetches and the
+  // user sees the new company appear in their library immediately.
+  const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
 
   // — UI flourishes —
   const [phIdx, setPhIdx] = useState(0);
@@ -254,6 +260,7 @@ export default function Pulse() {
   async function handleSaveToList(company) {
     try {
       await upsertCompanyFromResult(company);
+      setLibraryRefreshKey((k) => k + 1);
     } catch (error) {
       console.error('[Pulse] save failed:', error);
       if (error instanceof LimitExceededError) {
@@ -269,6 +276,7 @@ export default function Pulse() {
     try {
       const saved = await upsertCompanyFromResult(company);
       if (!saved?.id) throw new Error('Failed to save company before campaign assignment.');
+      setLibraryRefreshKey((k) => k + 1);
       setCampaignTarget({ company_id: saved.id, name: saved.name });
     } catch (error) {
       console.error('[Pulse] add to campaign failed:', error);
@@ -549,6 +557,9 @@ export default function Pulse() {
             </div>
           </div>
         ) : null}
+
+        {/* Pulse Library — collapsible, scoped to source='pulse' */}
+        <PulseLibrary onSelect={setActiveCompany} refreshKey={libraryRefreshKey} />
       </div>
 
       {/* Quick Card right rail */}
@@ -719,7 +730,7 @@ function ResultsHeader({ query, total, local, mode }) {
 }
 
 function ResultCard({ company, active, onClick }) {
-  const domain = company.domain || stripUrl(company.website);
+  const domain = extractDomain(company.domain || company.website) || company.domain || stripUrl(company.website);
   const location = [company.city, company.state, company.country].filter(Boolean).join(', ');
   const inDb = company.provenance === 'database' || company.alsoLive;
   const shipments = company.kpis?.shipments_12m;
@@ -737,9 +748,12 @@ function ResultCard({ company, active, onClick }) {
     >
       {/* identity */}
       <div className="flex items-start gap-2.5">
-        <div className="font-display flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-blue-500 to-indigo-500 text-[13px] font-bold text-white">
-          {(company.name || '?').slice(0, 1).toUpperCase()}
-        </div>
+        <CompanyAvatar
+          name={company.name || 'Unknown'}
+          domain={domain || null}
+          size="sm"
+          className="!h-9 !w-9 !rounded-md"
+        />
         <div className="min-w-0 flex-1">
           <div className="font-display truncate text-[13.5px] font-bold leading-tight text-slate-900">
             {company.name}
