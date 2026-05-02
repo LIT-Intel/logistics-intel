@@ -479,27 +479,38 @@ export default function ShipperDetailModal({
     activeTab === tab
       ? {
           display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
-          background: 'linear-gradient(180deg,#3B82F6,#2563EB)',
-          color: '#fff', fontSize: 13, fontWeight: 600,
+          padding: '7px 13px', borderRadius: 8, border: 'none', cursor: 'pointer',
+          background: 'linear-gradient(180deg,#0F172A,#1E293B)',
+          color: '#fff', fontSize: 12, fontWeight: 600,
           fontFamily: "'Space Grotesk', sans-serif",
-          boxShadow: '0 2px 8px rgba(59,130,246,0.3)',
+          boxShadow: '0 1px 3px rgba(15,23,42,0.18)',
         }
       : {
           display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '8px 16px', borderRadius: 10, cursor: 'pointer',
+          padding: '7px 13px', borderRadius: 8, cursor: 'pointer',
           background: '#FFFFFF', border: '1px solid #E5E7EB',
-          color: '#374151', fontSize: 13, fontWeight: 600,
+          color: '#475569', fontSize: 12, fontWeight: 600,
           fontFamily: "'Space Grotesk', sans-serif",
         };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
-      <div className="flex h-[96vh] w-full max-w-6xl flex-col overflow-hidden shadow-2xl sm:h-[90vh]"
-        style={{ borderRadius: 18, border: '1px solid #E5E7EB', background: '#F8FAFC' }}>
+    // Right-side slide-out drawer. Replaces the previous fullscreen modal:
+    // backdrop dims the page, the panel anchors right and runs floor-to-
+    // ceiling so the user can keep scanning the result list behind it.
+    // Mobile (<sm) keeps the drawer full-bleed; ≥sm it caps at ~640px so
+    // the search list stays visible on wide screens.
+    <div
+      className="fixed inset-0 z-[80] flex justify-end bg-slate-950/45"
+      onClick={onClose}
+    >
+      <div
+        className="flex h-full w-full flex-col overflow-hidden bg-[#F8FAFC] shadow-2xl transition-transform sm:max-w-[640px] xl:max-w-[760px]"
+        style={{ borderLeft: '1px solid #E5E7EB' }}
+        onClick={(e) => e.stopPropagation()}
+      >
 
         {/* Gradient accent bar */}
-        <div style={{ height: 3, background: 'linear-gradient(90deg,#3B82F6,#6366F1)', borderRadius: '18px 18px 0 0', flexShrink: 0 }} />
+        <div style={{ height: 3, background: 'linear-gradient(90deg,#0F172A,#1E293B)', flexShrink: 0 }} />
 
         {/* Header */}
         <div style={{ borderBottom: '1px solid #E5E7EB', background: '#FFFFFF', padding: '14px 20px', flexShrink: 0 }}>
@@ -507,7 +518,7 @@ export default function ShipperDetailModal({
             <div className="flex min-w-0 items-start gap-3">
               <CompanyAvatar
                 name={companyName}
-                logoUrl={getCompanyLogoUrl(website || undefined)}
+                domain={website || null}
                 size="md"
                 className="mt-0.5 shrink-0"
               />

@@ -34,7 +34,6 @@ import {
   capFutureDate,
 } from "@/lib/dateUtils";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
-import { getCompanyLogoUrl } from "@/lib/logo";
 import { canonicalContainerCode } from "@/lib/containerUtils";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import { UpgradeModal } from "@/components/billing/UpgradeModal";
@@ -123,6 +122,9 @@ export default function SearchPage() {
   const [loadType, setLoadType] = useState<LoadType>("any");
   const [topContainer, setTopContainer] = useState<TopContainer>("any");
   const [savedOnly, setSavedOnly] = useState(false);
+  // Free-text city / state filter — narrows results to rows whose city
+  // OR state contains the typed substring (case-insensitive).
+  const [locationQuery, setLocationQuery] = useState("");
 
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
@@ -707,26 +709,64 @@ export default function SearchPage() {
   // path. When every chip is at its default value the filter is a
   // pass-through identity, so unfiltered UX is byte-for-byte unchanged.
   const filteredResults = useMemo(() => {
+    const locQ = locationQuery.trim().toLowerCase();
     return results.filter((co) => {
+      // TEU range — fall back to overlay-supplied latest_year_teu when
+      // teu_estimate is missing. Lenient: rows with no TEU at all are
+      // kept (so the filter narrows what it can verify rather than
+      // wiping the result set).
       if (teuRange !== "any") {
-        const t = co.teu_estimate;
-        if (t == null || !Number.isFinite(t)) return false;
-        if (teuRange === "<=1k" && t > 1000) return false;
-        if (teuRange === "1k-10k" && (t <= 1000 || t > 10000)) return false;
-        if (teuRange === "10k-100k" && (t <= 10000 || t > 100000)) return false;
-        if (teuRange === ">100k" && t <= 100000) return false;
+        const tRaw =
+          typeof co.teu_estimate === "number" ? co.teu_estimate : null;
+        const tFallback =
+          typeof (co as any).latest_year_teu === "number"
+            ? Number((co as any).latest_year_teu)
+            : null;
+        const t = tRaw ?? tFallback;
+        if (t != null && Number.isFinite(t)) {
+          if (teuRange === "<=1k" && t > 1000) return false;
+          if (teuRange === "1k-10k" && (t <= 1000 || t > 10000)) return false;
+          if (teuRange === "10k-100k" && (t <= 10000 || t > 100000)) return false;
+          if (teuRange === ">100k" && t <= 100000) return false;
+        }
       }
+      // Load type — only reject if row has a percentage AND it disagrees
+      // with the chosen direction. Rows missing the field pass through.
       if (loadType === "fcl") {
-        const pct = (co as any).fcl_percent;
-        if (pct == null || Number(pct) < 50) return false;
+        const pct =
+          (co as any).fcl_shipments_perc ?? (co as any).fcl_percent;
+        if (pct != null && Number(pct) < 50) return false;
       }
       if (loadType === "lcl") {
-        const pct = (co as any).lcl_percent;
-        if (pct == null || Number(pct) < 50) return false;
+        const pct =
+          (co as any).lcl_shipments_perc ?? (co as any).lcl_percent;
+        if (pct != null && Number(pct) < 50) return false;
       }
+      // Top container — only reject when we can confidently classify the
+      // container length AND it doesn't match. Missing data = pass.
       if (topContainer !== "any") {
-        const code = canonicalContainerCode((co as any).top_container_length);
-        if (code !== topContainer) return false;
+        const raw = (co as any).top_container_length;
+        if (raw) {
+          const code = canonicalContainerCode(raw);
+          if (code && code !== topContainer) return false;
+        }
+      }
+      // Location — match substring in city OR state OR country (case
+      // insensitive). Missing fields just don't match (so empty input
+      // means everyone passes).
+      if (locQ) {
+        const city = String(co.city || "").toLowerCase();
+        const state = String(co.state || "").toLowerCase();
+        const country = String(co.country || "").toLowerCase();
+        const cc = String(co.country_code || "").toLowerCase();
+        if (
+          !city.includes(locQ) &&
+          !state.includes(locQ) &&
+          !country.includes(locQ) &&
+          !cc.includes(locQ)
+        ) {
+          return false;
+        }
       }
       if (savedOnly) {
         const key =
@@ -736,16 +776,29 @@ export default function SearchPage() {
       }
       return true;
     });
-  }, [results, teuRange, loadType, topContainer, savedOnly, savedCompanyIds]);
+  }, [
+    results,
+    teuRange,
+    loadType,
+    topContainer,
+    savedOnly,
+    savedCompanyIds,
+    locationQuery,
+  ]);
 
   const hasActiveFilter =
-    teuRange !== "any" || loadType !== "any" || topContainer !== "any" || savedOnly;
+    teuRange !== "any" ||
+    loadType !== "any" ||
+    topContainer !== "any" ||
+    savedOnly ||
+    locationQuery.trim().length > 0;
 
   const clearFilters = () => {
     setTeuRange("any");
     setLoadType("any");
     setTopContainer("any");
     setSavedOnly(false);
+    setLocationQuery("");
   };
 
   // KPI strip values — Total / Active / Avg TEU / Saved. All read from
@@ -1025,6 +1078,22 @@ export default function SearchPage() {
 
               <div className="flex items-center gap-2">
                 <span className="font-display text-[9px] font-bold uppercase tracking-[0.09em] text-slate-400">
+                  City / State
+                </span>
+                <div className="relative">
+                  <MapPin className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={locationQuery}
+                    onChange={(e) => setLocationQuery(e.target.value)}
+                    placeholder="e.g. Chicago, TX, China"
+                    className="font-body h-7 w-44 rounded-md border border-slate-200 bg-white pl-7 pr-2 text-[11px] text-slate-700 placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="font-display text-[9px] font-bold uppercase tracking-[0.09em] text-slate-400">
                   Saved Only
                 </span>
                 <button
@@ -1069,20 +1138,38 @@ export default function SearchPage() {
                   const isActive =
                     company.status === "Active" && (company.shipments || 0) > 0;
                   const fclPct = company.fcl_shipments_perc ?? company.fcl_percent;
+                  // Fall back to overlay-supplied latest_year_teu when the
+                  // initial map missed teu_estimate (the IY hit didn't carry
+                  // a TEU but the overlay row from lit_company_search_results
+                  // does — earlier we only set latest_year_teu, never the
+                  // teu_estimate the card reads).
+                  const teuValue =
+                    typeof company.teu_estimate === "number" &&
+                    Number.isFinite(company.teu_estimate)
+                      ? company.teu_estimate
+                      : typeof (company as any).latest_year_teu === "number" &&
+                          Number.isFinite((company as any).latest_year_teu)
+                        ? (company as any).latest_year_teu
+                        : null;
                   return (
                     <motion.div
                       key={company.id}
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.02 + index * 0.015 }}
-                      className="group flex flex-col gap-3 overflow-hidden rounded-lg border border-slate-200 bg-white p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition hover:border-blue-200 hover:shadow-md"
+                      className="group flex flex-col gap-3 overflow-hidden rounded-lg border border-slate-200 bg-white p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition hover:border-slate-300 hover:shadow-md"
                     >
                       {/* Header: avatar + name/location + status pill */}
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex min-w-0 items-start gap-2.5">
+                          {/* Pass `domain` so CompanyAvatar walks the full
+                              logo cascade (logo.dev → clearbit → unavatar)
+                              before falling back to initials. Passing only
+                              logoUrl gave us a single-shot try and exhausted
+                              when logo.dev returned 401/404. */}
                           <CompanyAvatar
                             name={company.name}
-                            logoUrl={getCompanyLogoUrl(company.website)}
+                            domain={company.website || null}
                             size="sm"
                             className="shrink-0"
                           />
@@ -1150,8 +1237,8 @@ export default function SearchPage() {
                             TEU
                           </div>
                           <div className="font-mono mt-0.5 text-[12.5px] font-bold text-slate-800">
-                            {company.teu_estimate != null
-                              ? Math.round(company.teu_estimate).toLocaleString()
+                            {teuValue != null
+                              ? Math.round(teuValue).toLocaleString()
                               : "—"}
                           </div>
                         </div>
@@ -1196,10 +1283,15 @@ export default function SearchPage() {
 
                       {/* Actions */}
                       <div className="mt-auto flex gap-1.5 pt-0.5">
+                        {/* View details: switched from bright blue → deep
+                            slate/indigo gradient. Reads as authoritative
+                            without competing with the brand-blue Save
+                            button on the row, and complements the dashboard
+                            color palette. */}
                         <button
                           type="button"
                           onClick={() => setSelectedCompany(company)}
-                          className="font-display inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 text-[11px] font-semibold text-white shadow-sm transition hover:from-blue-600 hover:to-blue-700"
+                          className="font-display inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-md bg-gradient-to-b from-slate-900 to-slate-800 text-[11px] font-semibold text-white shadow-[0_1px_2px_rgba(15,23,42,0.15)] transition hover:from-slate-800 hover:to-slate-900 hover:shadow-md"
                         >
                           <Eye className="h-3 w-3" />
                           View details
@@ -1275,7 +1367,7 @@ export default function SearchPage() {
                             <div className="flex items-center gap-2.5">
                               <CompanyAvatar
                                 name={company.name}
-                                logoUrl={getCompanyLogoUrl(company.website)}
+                                domain={company.website || null}
                                 size="sm"
                               />
                               <div className="min-w-0">

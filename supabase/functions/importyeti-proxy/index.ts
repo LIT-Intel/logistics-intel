@@ -1256,9 +1256,13 @@ async function handleSearchAction(
   }
 
   const validatedPage = Math.max(1, Number.isFinite(page) ? Number(page) : 1);
+  // Bumped cap from 25 → 50 so a query like "automotive" returns a richer
+  // lead surface for sales discovery. The IY upstream returns a larger
+  // pool by default; we just slice down to validatedPageSize, so this
+  // doesn't add any extra upstream load — only what we expose to the UI.
   const validatedPageSize = Math.max(
     1,
-    Math.min(25, Number.isFinite(pageSize) ? Number(pageSize) : 25),
+    Math.min(50, Number.isFinite(pageSize) ? Number(pageSize) : 25),
   );
   const offset = (validatedPage - 1) * validatedPageSize;
   const searchTerm = q.trim();
