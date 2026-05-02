@@ -624,40 +624,36 @@ export default function SearchPage() {
 
     setViewingId(companyKey);
     try {
-      // Kick the snapshot fetch off in the background so it warms the
-      // `lit_importyeti_company_snapshot` cache for the Company page
-      // to consume on landing. We don't await it for navigation — that
-      // was the 1-2 s bottleneck the user felt as "View details is
-      // slow." Race with a short budget (350ms) so cache hits still
-      // contribute richer fields to the saved row.
+      // Wait for the snapshot before saving so the lit_companies row
+      // lands with full intel (top_route_12m, teu_12m, est_spend,
+      // domain → logo, fcl/lcl). The earlier 350ms race traded data
+      // quality for click latency, but cache misses (every
+      // first-time view) blew past the budget and the saved row
+      // showed up sparse on the Command Center list. We hard-cap at
+      // 6 s so a flaky upstream can't strand the user — past that,
+      // we save with row-level data and let the Profile page do its
+      // own snapshot fetch on landing.
       let profile: IyCompanyProfile | null = null;
-      const snapshotPromise = company.importyeti_key
-        ? fetchCompanySnapshot(company.importyeti_key).catch((err) => {
-            console.warn(
-              "[viewAndOpen] snapshot fetch failed (non-fatal)",
-              err,
+      if (company.importyeti_key) {
+        try {
+          const snapshot = await Promise.race<any>([
+            fetchCompanySnapshot(company.importyeti_key),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("snapshot_timeout")), 6000),
+            ),
+          ]);
+          if (snapshot && (snapshot.snapshot || snapshot.company)) {
+            profile = normalizeIyCompanyProfile(
+              snapshot,
+              company.importyeti_key,
             );
-            return null;
-          })
-        : Promise.resolve(null);
-
-      try {
-        const fastSnapshot = await Promise.race<any>([
-          snapshotPromise,
-          new Promise((resolve) => setTimeout(() => resolve(null), 350)),
-        ]);
-        if (
-          company.importyeti_key &&
-          fastSnapshot &&
-          (fastSnapshot.snapshot || fastSnapshot.company)
-        ) {
-          profile = normalizeIyCompanyProfile(
-            fastSnapshot,
-            company.importyeti_key,
+          }
+        } catch (snapshotErr) {
+          console.warn(
+            "[viewAndOpen] snapshot fetch failed; saving with row data",
+            snapshotErr,
           );
         }
-      } catch {
-        /* race timeout / fetch error → save with row data */
       }
 
       await persistCompanySave(company, profile);

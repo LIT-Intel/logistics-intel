@@ -3416,7 +3416,11 @@ export async function getSavedCompanies(signal?: AbortSignal) {
           teu_12m:          item.lit_companies?.teu_12m           ?? null,
           fcl_shipments_12m: item.lit_companies?.fcl_shipments_12m ?? null,
           lcl_shipments_12m: item.lit_companies?.lcl_shipments_12m ?? null,
-          est_spend_12m:    null,
+          // Was hardcoded to null even though est_spend_12m is selected
+          // from lit_companies above. Reading the column now so the
+          // Command Center list and downstream consumers (dashboard
+          // KPIs, Pulse Coach) get a real value when one is available.
+          est_spend_12m:    item.lit_companies?.est_spend_12m      ?? null,
           top_route_12m:    item.lit_companies?.top_route_12m    || null,
           recent_route:     item.lit_companies?.recent_route      || null,
           last_activity:    item.lit_companies?.most_recent_shipment_date ?? null,
@@ -3624,6 +3628,16 @@ async function saveCompanyDirectToSupabase(opts: {
   const lclShipments = getLclShipments12m(opts.profile);
   const topRoute = opts.profile?.routeKpis?.topRouteLast12m ?? null;
   const recentRoute = opts.profile?.routeKpis?.mostRecentRoute ?? null;
+  // Pull estimated 12m spend from any of the shapes the profile
+  // normalizer might have populated. Was previously dropped by the
+  // save mapper, leaving lit_companies.est_spend_12m null even when
+  // we had a real number — visible on the Command Center list as a
+  // missing "Est spend" column for newly-saved companies.
+  const estSpend12m =
+    (opts.profile as any)?.estSpendUsd12m ??
+    opts.profile?.routeKpis?.estSpendUsd12m ??
+    (opts.profile as any)?.totalShippingCost ??
+    null;
 
   const company_data = {
     source: opts.source ?? "importyeti",
@@ -3646,6 +3660,7 @@ async function saveCompanyDirectToSupabase(opts: {
       null,
     fcl_shipments_12m: fclShipments,
     lcl_shipments_12m: lclShipments,
+    est_spend_12m: estSpend12m,
     most_recent_shipment_date:
       opts.profile?.lastShipmentDate ??
       opts.shipper.lastShipmentDate ??
