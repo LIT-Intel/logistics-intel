@@ -5690,3 +5690,84 @@ export async function sendTestEmail(toEmail: string): Promise<
     return classifyFunctionError(e);
   }
 }
+
+/* ── Pulse Coach ──────────────────────────────────────────────────── */
+
+export type CoachNudge = {
+  id: string;
+  title: string;
+  body: string;
+  cta: string;
+  action: string | null;
+  accent: string;
+  lane_focus: { from: string | null; to: string | null } | null;
+  account_keys: string[];
+  contact_ids: string[];
+};
+
+export type WorkspaceLane = {
+  key: string;
+  from_label: string;
+  to_label: string;
+  account_count: number;
+  account_names: string[];
+  shipments_total: number;
+};
+
+export type PulseCoachResult = {
+  ok: boolean;
+  nudges: CoachNudge[];
+  workspace_lanes: WorkspaceLane[];
+  source?: string;
+  setupRequired?: boolean;
+  error?: string;
+};
+
+export async function getPulseCoachNudges(
+  pageContext: string = "dashboard",
+): Promise<PulseCoachResult> {
+  const { data, error } = await supabase.functions.invoke("pulse-coach", {
+    body: { page_context: pageContext },
+  });
+  if (error) {
+    const msg = String(error.message || "");
+    // Edge function not deployed yet → fallback shape.
+    if (/not\s+found|404|FunctionsHttpError|FunctionsRelay/i.test(msg)) {
+      return {
+        ok: false,
+        nudges: [],
+        workspace_lanes: [],
+        setupRequired: true,
+        error: "Pulse Coach is not configured yet.",
+      };
+    }
+    // Try to read structured body (FunctionsHttpError).
+    try {
+      const ctx: any = (error as any).context;
+      const cloned = ctx?.clone?.();
+      const parsed = await cloned?.json?.();
+      if (parsed && typeof parsed === "object") {
+        return {
+          ok: false,
+          nudges: parsed.nudges || [],
+          workspace_lanes: parsed.workspace_lanes || [],
+          error: parsed.message || parsed.error || msg,
+        };
+      }
+    } catch {}
+    return {
+      ok: false,
+      nudges: [],
+      workspace_lanes: [],
+      error: msg,
+    };
+  }
+  return {
+    ok: Boolean(data?.ok),
+    nudges: Array.isArray(data?.nudges) ? data.nudges : [],
+    workspace_lanes: Array.isArray(data?.workspace_lanes)
+      ? data.workspace_lanes
+      : [],
+    source: data?.source,
+  };
+}
