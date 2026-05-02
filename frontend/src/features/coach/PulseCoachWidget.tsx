@@ -118,19 +118,40 @@ export function PulseCoachProvider({
         setError(null);
         try {
           const r = await getPulseCoachNudges(pageContext);
-          // Stability guard: if the new response carries zero lanes
-          // but the previous result had some, keep the previous lanes
-          // so the globe doesn't blank out mid-session. Nudges still
-          // refresh from the new response.
+          // Stability guards on workspace_lanes so the trade-lane globe
+          // and the workspace-lanes list don't reflow on every coach
+          // refresh:
+          //
+          //   A. Zero-lane response while prev had lanes → keep prev.
+          //      Prevents the globe blanking out if the LLM call drops
+          //      the lanes block.
+          //
+          //   B. Same lane keys as before → reuse the prev array
+          //      reference. Without this, every refresh produced a new
+          //      array (same content, new identity) which forced the
+          //      `sorted` / `globeLanes` useMemos to recompute and the
+          //      GlobeCanvas three.js scene to rebuild — the visible
+          //      "tabs disappear and reflow" symptom on dashboard.
           setResult((prev) => {
+            if (!r.ok) return r;
+            const newLanes = Array.isArray(r.workspace_lanes)
+              ? r.workspace_lanes
+              : [];
+            const prevLanes = Array.isArray(prev?.workspace_lanes)
+              ? prev!.workspace_lanes
+              : [];
+
+            // Guard A
+            if (newLanes.length === 0 && prevLanes.length > 0) {
+              return { ...r, workspace_lanes: prevLanes };
+            }
+            // Guard B
             if (
-              r.ok &&
-              (!Array.isArray(r.workspace_lanes) ||
-                r.workspace_lanes.length === 0) &&
-              prev?.workspace_lanes &&
-              prev.workspace_lanes.length > 0
+              newLanes.length > 0 &&
+              prevLanes.length === newLanes.length &&
+              prevLanes.every((x, i) => x.key === newLanes[i].key)
             ) {
-              return { ...r, workspace_lanes: prev.workspace_lanes };
+              return { ...r, workspace_lanes: prevLanes };
             }
             return r;
           });

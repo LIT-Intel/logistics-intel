@@ -624,26 +624,40 @@ export default function SearchPage() {
 
     setViewingId(companyKey);
     try {
-      // Fetch a fresh snapshot so the saved lit_companies row is rich
-      // (top_route_12m, fcl/lcl breakdown, phone). If the snapshot
-      // call itself fails we still attempt the save with row-level
-      // fallbacks so the user isn't stranded.
+      // Kick the snapshot fetch off in the background so it warms the
+      // `lit_importyeti_company_snapshot` cache for the Company page
+      // to consume on landing. We don't await it for navigation — that
+      // was the 1-2 s bottleneck the user felt as "View details is
+      // slow." Race with a short budget (350ms) so cache hits still
+      // contribute richer fields to the saved row.
       let profile: IyCompanyProfile | null = null;
-      if (company.importyeti_key) {
-        try {
-          const snapshot = await fetchCompanySnapshot(company.importyeti_key);
-          if (snapshot && (snapshot.snapshot || snapshot.company)) {
-            profile = normalizeIyCompanyProfile(
-              snapshot,
-              company.importyeti_key,
+      const snapshotPromise = company.importyeti_key
+        ? fetchCompanySnapshot(company.importyeti_key).catch((err) => {
+            console.warn(
+              "[viewAndOpen] snapshot fetch failed (non-fatal)",
+              err,
             );
-          }
-        } catch (snapshotErr) {
-          console.warn(
-            "[viewAndOpen] snapshot fetch failed; falling back to row data",
-            snapshotErr,
+            return null;
+          })
+        : Promise.resolve(null);
+
+      try {
+        const fastSnapshot = await Promise.race<any>([
+          snapshotPromise,
+          new Promise((resolve) => setTimeout(() => resolve(null), 350)),
+        ]);
+        if (
+          company.importyeti_key &&
+          fastSnapshot &&
+          (fastSnapshot.snapshot || fastSnapshot.company)
+        ) {
+          profile = normalizeIyCompanyProfile(
+            fastSnapshot,
+            company.importyeti_key,
           );
         }
+      } catch {
+        /* race timeout / fetch error → save with row data */
       }
 
       await persistCompanySave(company, profile);

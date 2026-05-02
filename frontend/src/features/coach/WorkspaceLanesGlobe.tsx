@@ -205,58 +205,69 @@ export default function WorkspaceLanesGlobe() {
                     highlightLane({ from: l.from_label, to: l.to_label })
                   }
                   className={[
+                    // Single-line grid: index | from | arrow | to | metric.
+                    // Fixed slots for index, arrow, and metric column keep
+                    // every row's geometry identical regardless of label
+                    // length, so lanes line up edge-to-edge.
                     "grid w-full items-center gap-2 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 md:px-4 md:py-2.5",
                     isActive
                       ? "border-l-2 border-l-blue-500 bg-blue-50/60"
                       : "border-l-2 border-l-transparent hover:bg-slate-50/60",
                   ].join(" ")}
-                  style={{ gridTemplateColumns: "20px minmax(0, 1fr) auto" }}
+                  style={{
+                    gridTemplateColumns:
+                      "20px minmax(0,1fr) 14px minmax(0,1fr) 70px",
+                  }}
                 >
                   <span className="font-mono shrink-0 text-[10px] text-slate-400">
                     #{i + 1}
                   </span>
-                  <div className="flex min-w-0 flex-wrap items-center gap-1 sm:flex-nowrap sm:gap-1.5">
-                    {(() => {
-                      // Short labels: "Shanghai, CN → Savannah, US"
-                      const short = formatLaneShort(
-                        `${l.from_label} → ${l.to_label}`,
-                      );
-                      const fromLabel = short?.fromLabel || l.from_label;
-                      const toLabel = short?.toLabel || l.to_label;
-                      return (
-                        <>
+                  {(() => {
+                    // Short labels: "Shanghai, CN → Savannah, US"
+                    const short = formatLaneShort(
+                      `${l.from_label} → ${l.to_label}`,
+                    );
+                    const fromLabel = short?.fromLabel || l.from_label;
+                    const toLabel = short?.toLabel || l.to_label;
+                    return (
+                      <>
+                        <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">
                           {fromMeta?.countryCode ? (
                             <LitFlag
                               code={fromMeta.countryCode}
-                              size={14}
+                              size={12}
                               label={fromMeta.countryName}
                             />
                           ) : null}
                           <span className="font-display truncate text-[11.5px] font-semibold text-slate-900">
                             {fromLabel}
                           </span>
-                          <span className="text-slate-300">→</span>
+                        </span>
+                        <span className="flex shrink-0 items-center justify-center text-slate-300">
+                          →
+                        </span>
+                        <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">
                           {toMeta?.countryCode ? (
                             <LitFlag
                               code={toMeta.countryCode}
-                              size={14}
+                              size={12}
                               label={toMeta.countryName}
                             />
                           ) : null}
                           <span className="font-display truncate text-[11.5px] font-semibold text-slate-900">
                             {toLabel}
                           </span>
-                        </>
-                      );
-                    })()}
-                  </div>
+                        </span>
+                      </>
+                    );
+                  })()}
                   <div className="text-right">
                     <div className="font-mono text-[11.5px] font-bold text-slate-900">
                       {l.shipments_total.toLocaleString()}
                     </div>
                     <div className="font-body text-[10px] text-slate-500">
                       {l.account_count}{" "}
-                      {l.account_count === 1 ? "account" : "accounts"}
+                      {l.account_count === 1 ? "account" : "accts"}
                     </div>
                   </div>
                 </button>
