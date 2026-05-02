@@ -338,29 +338,33 @@ Deno.serve(async (req: Request) => {
     const pageContext: string = String(body?.page_context || "dashboard");
 
     // ── Fetch context (scoped to this user's saved companies) ─────────
+    // KPI fields live on lit_companies (shipments_12m, teu_12m,
+    // top_route_12m, most_recent_shipment_date) — lit_saved_companies
+    // is just the membership table. The previous version read
+    // sc.kpis which doesn't exist, so workspace_lanes was empty and
+    // the globe rendered blank.
     const { data: savedRows } = await supabase
       .from("lit_saved_companies")
       .select(
-        "id, company_id, source_company_key, kpis, saved_at, company:lit_companies(id, name, domain, website)",
+        "id, company_id, created_at, last_viewed_at, lit_companies (id, source_company_key, name, domain, website, shipments_12m, teu_12m, top_route_12m, most_recent_shipment_date)",
       )
       .eq("user_id", user.id)
-      .order("saved_at", { ascending: false })
+      .order("last_viewed_at", { ascending: false, nullsFirst: false })
       .limit(50);
 
     const saved: SavedCompanyLite[] = (savedRows || [])
       .map((r: any) => {
-        const k = r?.kpis || {};
-        const co = r?.company || {};
+        const co = r?.lit_companies || {};
         return {
           id: String(r.company_id || co.id || ""),
-          source_company_key: r.source_company_key ?? null,
-          name: co.name || r.source_company_key || "Unknown company",
+          source_company_key: co.source_company_key ?? null,
+          name: co.name || co.source_company_key || "Unknown company",
           domain: co.domain || co.website || null,
-          shipments_12m: Number(k.shipments_12m) || null,
-          teu_12m: Number(k.teu_12m) || null,
-          top_route_12m: k.top_route_12m || null,
-          last_shipment_date: k.last_shipment_date || null,
-          saved_at: r.saved_at ?? null,
+          shipments_12m: Number(co.shipments_12m) || null,
+          teu_12m: Number(co.teu_12m) || null,
+          top_route_12m: co.top_route_12m || null,
+          last_shipment_date: co.most_recent_shipment_date || null,
+          saved_at: r.created_at ?? null,
         };
       })
       .filter((c) => c.id);

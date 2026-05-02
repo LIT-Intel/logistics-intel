@@ -77,10 +77,10 @@ export default function RecentEnrichmentsCard() {
           </div>
         </div>
         <a
-          href="/app/companies"
+          href="/app/contacts"
           className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800"
         >
-          View all
+          View all contacts
           <ArrowRight className="h-3 w-3" />
         </a>
       </div>

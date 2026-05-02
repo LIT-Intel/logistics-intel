@@ -44,13 +44,39 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const canUseRfp = isAdmin || canAccessFeature(plan, "rfp_studio");
   const canUseLeadProspecting = isAdmin || canAccessFeature(plan, "lead_prospecting");
 
+  // Show the Command Center submenu only when the user is already
+  // navigating inside its territory (saved companies, contacts,
+  // company profile pages). Keeps the rest of the sidebar uncluttered.
+  const inCommandCenter =
+    currentPath.startsWith("/app/command-center") ||
+    currentPath.startsWith("/app/companies") ||
+    currentPath.startsWith("/app/contacts");
+
   const sections = [
     {
       title: "Menu",
       items: [
         { label: "Dashboard", href: "/app/dashboard", icon: LayoutDashboard },
         { label: "Search", href: "/app/search", icon: Search },
-        { label: "Command Center", href: "/app/command-center", icon: Briefcase },
+        {
+          label: "Command Center",
+          href: "/app/command-center",
+          icon: Briefcase,
+          children: inCommandCenter
+            ? [
+                {
+                  label: "Saved Companies",
+                  href: "/app/command-center",
+                  icon: Briefcase,
+                },
+                {
+                  label: "Contacts",
+                  href: "/app/contacts",
+                  icon: Users,
+                },
+              ]
+            : null,
+        },
         {
           label: "Campaigns",
           href: "/app/campaigns",
@@ -153,37 +179,70 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                   (item.href !== "/" && currentPath.startsWith(item.href));
 
                 return (
-                  <Link
-                    key={item.label}
-                    to={item.locked ? "/app/billing" : item.href}
-                    title={item.label}
-                    className={[
-                      "flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors",
-                      isActive && !item.locked
-                        ? "bg-white/10 text-white font-semibold"
-                        : item.locked
-                        ? "text-slate-500 hover:bg-white/5 hover:text-slate-300"
-                        : "text-slate-200 hover:bg-white/5 hover:text-white",
-                    ].join(" ")}
-                  >
-                    <Icon
-                      className={`${iconClass} ${
-                        item.label === "Pulse"
-                          ? isActive
-                            ? "text-cyan-300 pulse-sidebar-active"
-                            : "text-cyan-200/90"
-                          : ""
-                      }`}
-                    />
-                    {sidebarOpen && (
-                      <span className="flex flex-1 items-center gap-2 truncate">
-                        <span className="truncate">{item.label}</span>
-                        {item.locked && (
-                          <Lock className="ml-auto h-3 w-3 shrink-0 text-slate-500" />
-                        )}
-                      </span>
+                  <div key={item.label}>
+                    <Link
+                      to={item.locked ? "/app/billing" : item.href}
+                      title={item.label}
+                      className={[
+                        "flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors",
+                        isActive && !item.locked
+                          ? "bg-white/10 text-white font-semibold"
+                          : item.locked
+                          ? "text-slate-500 hover:bg-white/5 hover:text-slate-300"
+                          : "text-slate-200 hover:bg-white/5 hover:text-white",
+                      ].join(" ")}
+                    >
+                      <Icon
+                        className={`${iconClass} ${
+                          item.label === "Pulse"
+                            ? isActive
+                              ? "text-cyan-300 pulse-sidebar-active"
+                              : "text-cyan-200/90"
+                            : ""
+                        }`}
+                      />
+                      {sidebarOpen && (
+                        <span className="flex flex-1 items-center gap-2 truncate">
+                          <span className="truncate">{item.label}</span>
+                          {item.locked && (
+                            <Lock className="ml-auto h-3 w-3 shrink-0 text-slate-500" />
+                          )}
+                        </span>
+                      )}
+                    </Link>
+                    {/* Contextual submenu: only renders when the
+                        parent surfaces children (e.g. Command Center
+                        when the user is navigating inside it). */}
+                    {sidebarOpen && item.children && item.children.length > 0 && (
+                      <div className="mt-1 ml-5 flex flex-col gap-0.5 border-l border-white/10 pl-3">
+                        {item.children.map((child) => {
+                          const ChildIcon = child.icon;
+                          const childActive =
+                            currentPath === child.href ||
+                            (child.href !== "/app/command-center" &&
+                              currentPath.startsWith(child.href));
+                          return (
+                            <Link
+                              key={child.label}
+                              to={child.href}
+                              title={child.label}
+                              className={[
+                                "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12.5px] transition-colors",
+                                childActive
+                                  ? "bg-white/10 text-white font-semibold"
+                                  : "text-slate-400 hover:bg-white/5 hover:text-white",
+                              ].join(" ")}
+                            >
+                              {ChildIcon ? (
+                                <ChildIcon className="h-3.5 w-3.5 shrink-0" />
+                              ) : null}
+                              <span className="truncate">{child.label}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
                     )}
-                  </Link>
+                  </div>
                 );
               })}
             </nav>

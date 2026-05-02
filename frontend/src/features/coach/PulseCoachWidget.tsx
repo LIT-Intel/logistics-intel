@@ -22,6 +22,8 @@ import {
   type PulseCoachResult,
   type WorkspaceLane,
 } from "@/lib/api";
+import { useAuth } from "@/auth/AuthProvider";
+import { supabase } from "@/lib/supabase";
 
 /**
  * Pulse Coach widget — proactive AI nudges grounded in the user's
@@ -116,7 +118,22 @@ export function PulseCoachProvider({
         setError(null);
         try {
           const r = await getPulseCoachNudges(pageContext);
-          setResult(r);
+          // Stability guard: if the new response carries zero lanes
+          // but the previous result had some, keep the previous lanes
+          // so the globe doesn't blank out mid-session. Nudges still
+          // refresh from the new response.
+          setResult((prev) => {
+            if (
+              r.ok &&
+              (!Array.isArray(r.workspace_lanes) ||
+                r.workspace_lanes.length === 0) &&
+              prev?.workspace_lanes &&
+              prev.workspace_lanes.length > 0
+            ) {
+              return { ...r, workspace_lanes: prev.workspace_lanes };
+            }
+            return r;
+          });
           writeCache(r);
           if (!r.ok && r.error) setError(r.error);
         } catch (err: any) {
@@ -228,11 +245,16 @@ export function PulseCoachInline() {
 
   return (
     <div
-      className="relative overflow-hidden rounded-xl border p-4 shadow-sm"
+      className="relative flex h-full flex-col overflow-hidden rounded-xl border p-4 shadow-sm"
       style={{
         background:
           "linear-gradient(160deg, #0F172A 0%, #1E293B 60%, #102240 100%)",
         borderColor: "#1E293B",
+        // Match the globe card's intrinsic height on lg+. The globe
+        // renders ~404px tall (300 canvas + 88 header + 16 padding);
+        // setting min-h here keeps the grid row stable when nudge
+        // count changes.
+        minHeight: 404,
       }}
     >
       {/* glow */}
@@ -295,27 +317,148 @@ export function PulseCoachInline() {
           Coach lights up once there's signal to work with.
         </div>
       ) : (
-        <div className="relative grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {nudges.slice(0, 6).map((n) => (
-            <NudgeCard
-              key={n.id}
-              nudge={n}
-              variant="dark"
-              onAction={() => handleAction(n)}
-              isHighlighted={
-                highlightedLane != null &&
-                n.lane_focus != null &&
-                n.lane_focus.from === highlightedLane.from &&
-                n.lane_focus.to === highlightedLane.to
-              }
-              onHover={() => {
-                if (n.lane_focus) highlightLane(n.lane_focus);
-              }}
-              onLeave={() => highlightLane(null)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="relative grid grid-cols-1 gap-2">
+            {nudges.slice(0, 3).map((n) => (
+              <NudgeCard
+                key={n.id}
+                nudge={n}
+                variant="dark"
+                onAction={() => handleAction(n)}
+                isHighlighted={
+                  highlightedLane != null &&
+                  n.lane_focus != null &&
+                  n.lane_focus.from === highlightedLane.from &&
+                  n.lane_focus.to === highlightedLane.to
+                }
+                onHover={() => {
+                  if (n.lane_focus) highlightLane(n.lane_focus);
+                }}
+                onLeave={() => highlightLane(null)}
+              />
+            ))}
+          </div>
+          {nudges.length > 3 && (
+            <div className="relative mt-2 text-center">
+              <span className="font-body text-[10.5px] text-slate-400">
+                + {nudges.length - 3} more in the floating Coach pill (bottom-right)
+              </span>
+            </div>
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+/* ── Plan + usage warning ───────────────────────────────────────── */
+
+const PLAN_PULSE_LIMITS: Record<string, number> = {
+  free_trial: 3,
+  starter: 10,
+  growth: 35,
+  scale: 80,
+  pro: 35,
+  enterprise: Number.POSITIVE_INFINITY,
+};
+
+type UsageState = {
+  plan: string;
+  pulseUsed: number;
+  pulseLimit: number;
+  pulsePct: number;
+  isSuperAdmin: boolean;
+};
+
+function usePulseUsage(): UsageState | null {
+  const auth = useAuth();
+  const userId = auth?.user?.id;
+  const planRaw = String(auth?.plan || "free_trial").toLowerCase();
+  const isSuperAdmin = Boolean(auth?.isSuperAdmin);
+  const [usage, setUsage] = useState<UsageState | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!userId) {
+      setUsage(null);
+      return;
+    }
+    if (isSuperAdmin) {
+      setUsage({
+        plan: planRaw,
+        pulseUsed: 0,
+        pulseLimit: Number.POSITIVE_INFINITY,
+        pulsePct: 0,
+        isSuperAdmin: true,
+      });
+      return;
+    }
+    const monthStartIso = (() => {
+      const d = new Date();
+      return new Date(
+        Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1),
+      ).toISOString();
+    })();
+    (async () => {
+      const { count } = await supabase
+        .from("lit_pulse_ai_reports")
+        .select("id", { count: "exact", head: true })
+        .eq("generated_by_user_id", userId)
+        .gte("created_at", monthStartIso);
+      if (cancelled) return;
+      const limit = PLAN_PULSE_LIMITS[planRaw] ?? PLAN_PULSE_LIMITS.free_trial;
+      const used = Number(count) || 0;
+      const pct =
+        Number.isFinite(limit) && limit > 0
+          ? Math.round((used / limit) * 100)
+          : 0;
+      setUsage({
+        plan: planRaw,
+        pulseUsed: used,
+        pulseLimit: limit,
+        pulsePct: pct,
+        isSuperAdmin: false,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, planRaw, isSuperAdmin]);
+
+  return usage;
+}
+
+function UsageBanner({ usage }: { usage: UsageState | null }) {
+  if (!usage) return null;
+  if (usage.isSuperAdmin) return null;
+  if (!Number.isFinite(usage.pulseLimit)) return null; // enterprise
+  const { pulseUsed, pulseLimit, pulsePct, plan } = usage;
+  // Only show when user is approaching or past limit.
+  if (pulsePct < 75) return null;
+  const overLimit = pulseUsed >= pulseLimit;
+  const tone = overLimit
+    ? "border-rose-500/40 bg-rose-500/15 text-rose-200"
+    : "border-amber-500/40 bg-amber-500/15 text-amber-200";
+  return (
+    <div
+      className={[
+        "font-body relative mx-3.5 mt-2 mb-1 rounded-md border px-2.5 py-1.5 text-[10.5px] leading-snug",
+        tone,
+      ].join(" ")}
+    >
+      <div className="font-display text-[10px] font-bold uppercase tracking-[0.06em]">
+        {overLimit ? "Pulse limit reached" : "Running low on Pulse credits"}
+      </div>
+      <div className="mt-0.5">
+        {pulseUsed} of {pulseLimit} Pulse briefs used this period on the{" "}
+        <strong className="capitalize">{plan}</strong> plan.{" "}
+        <a
+          href="/app/billing"
+          className="font-display font-semibold underline decoration-dotted underline-offset-2"
+        >
+          {overLimit ? "Upgrade to keep generating" : "Consider upgrading"}
+        </a>
+      </div>
     </div>
   );
 }
@@ -327,6 +470,7 @@ const FLOATING_COLLAPSED_KEY = "lit.pulse_coach.floating.collapsed";
 export function PulseCoachFloating() {
   const { result, loading, refresh } = usePulseCoach();
   const handleAction = useNudgeActionHandler();
+  const usage = usePulseUsage();
   const [open, setOpen] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(FLOATING_COLLAPSED_KEY) !== "1";
@@ -443,6 +587,8 @@ export function PulseCoachFloating() {
           </button>
         </div>
       </div>
+
+      <UsageBanner usage={usage} />
 
       <div className="relative p-4">
         {!t ? (

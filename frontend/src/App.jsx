@@ -13,6 +13,7 @@ import { canAccessFeature, normalizePlan } from "@/lib/planLimits";
 const Landing = lazy(() => import("@/pages/LandingPage"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const LITDashboard = lazy(() => import("./components/dashboard/LITDashboard.jsx"));
+const ContactsPage = lazy(() => import("@/pages/Contacts"));
 const Search = lazy(() => import("@/pages/Search"));
 const SearchTrends = lazy(() => import("@/pages/search/Trends"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
@@ -199,6 +200,15 @@ export default function App() {
           element={
             <RequireAuth>
               <LITDashboard />
+            </RequireAuth>
+          }
+        />
+
+        <Route
+          path="/app/contacts"
+          element={
+            <RequireAuth>
+              <ContactsPage />
             </RequireAuth>
           }
         />
