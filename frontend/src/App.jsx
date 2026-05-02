@@ -30,7 +30,7 @@ const PartnersApply = lazy(() => import("@/pages/PartnersApply"));
 const AdminPartnerProgram = lazy(() => import("@/pages/AdminPartnerProgram"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
 const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
-const LeadProspecting = lazy(() => import("@/pages/LeadProspecting"));
+const Pulse = lazy(() => import("@/pages/Pulse"));
 const CMSManager = lazy(() => import("@/pages/CMSManager"));
 const Diagnostic = lazy(() => import("@/pages/Diagnostic"));
 const AdminAgent = lazy(() => import("@/pages/AdminAgent"));
@@ -449,7 +449,7 @@ export default function App() {
               requiredPlan="growth"
             >
               <LITPage>
-                <LeadProspecting />
+                <Pulse />
               </LITPage>
             </RequirePlan>
           }
