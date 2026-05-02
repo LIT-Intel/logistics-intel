@@ -3173,11 +3173,13 @@ export async function getSavedCompanyShellOnly(
   // in on a subsequent successful fetch.
   if (!parsedProfile) {
     try {
-      // The route param can arrive as either a slug ("rivian-automotive")
-      // or a raw UUID. Postgres rejects the latter form being filtered
-      // against the slug column and vice versa, so branch the query
-      // shape on a uuid-shape test rather than using .or() which would
-      // type-error one side.
+      // The route param can arrive as either a slug ("rivian-automotive"),
+      // the prefixed form ("company/rivian-automotive"), or a raw UUID.
+      // The save flow stores prefixed keys in lit_companies.source_company_key,
+      // but Profile-page navigation uses bare slugs in the URL. Try both
+      // shapes via .in() so the fallback resolves either way. Postgres
+      // rejects non-UUID strings on the id column so the UUID branch is
+      // separate.
       const isUuid =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
           normalizedSlug,
@@ -3187,11 +3189,20 @@ export async function getSavedCompanyShellOnly(
         .select(
           "id, source_company_key, name, domain, website, address_line1, city, state, country_code, shipments_12m, teu_12m, fcl_shipments_12m, lcl_shipments_12m, est_spend_12m, most_recent_shipment_date, top_route_12m, recent_route",
         );
-      const { data: row } = isUuid
-        ? await baseSelect.eq("id", normalizedSlug).maybeSingle()
-        : await baseSelect
-            .eq("source_company_key", normalizedSlug)
-            .maybeSingle();
+      let row: any = null;
+      if (isUuid) {
+        const { data } = await baseSelect.eq("id", normalizedSlug).maybeSingle();
+        row = data;
+      } else {
+        // Most rows are stored prefixed; check both forms in one round
+        // trip. .limit(1) avoids the maybeSingle "multiple rows" error
+        // if both happen to exist.
+        const candidates = [normalizedSlug, `company/${normalizedSlug}`];
+        const { data: rows } = await baseSelect
+          .in("source_company_key", candidates)
+          .limit(1);
+        row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+      }
       if (row) {
         const shipments = Number(row.shipments_12m) || 0;
         const teu = Number(row.teu_12m);

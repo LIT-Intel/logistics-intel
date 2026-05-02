@@ -212,14 +212,14 @@ export default function CDPHeader({
           </div>
 
           <div className="font-body mb-2 text-[12px] leading-relaxed text-slate-600">
-            {kpis.shipments != null && kpis.teu != null ? (
+            {kpis.shipments != null && Number(kpis.shipments) > 0 ? (
               <>
                 Trailing 12m:{" "}
                 <strong className="font-mono font-semibold text-slate-900">
                   {Number(kpis.shipments || 0).toLocaleString()}
                 </strong>{" "}
                 shipments
-                {Number(kpis.teu) > 0 && (
+                {kpis.teu != null && Number(kpis.teu) > 0 && (
                   <>
                     {" "}
                     /{" "}
@@ -231,7 +231,16 @@ export default function CDPHeader({
                 )}
               </>
             ) : (
-              <span className="text-slate-400">Snapshot loading…</span>
+              // No shipment data on the saved row yet. Don't say
+              // "Snapshot loading…" — nothing is actually loading;
+              // the user just needs to pull trade intel via Refresh.
+              <span className="text-slate-400">
+                No trade activity on file — click{" "}
+                <span className="font-semibold text-slate-600">
+                  Refresh Intel
+                </span>{" "}
+                to pull a fresh snapshot from ImportYeti.
+              </span>
             )}
           </div>
 

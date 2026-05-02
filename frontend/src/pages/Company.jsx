@@ -219,21 +219,45 @@ function getStoredSelectedCompany() {
 
 function buildShellCompany(companyId, stored) {
   if (!companyId && !stored) return null;
+  // Only use the localStorage shell when its company_id actually
+  // matches the current route. Without this guard, clicking
+  // "Sigma Thermal" from search would land at /app/companies/sigma-thermal
+  // and the page would render the *previous* clicked company's data
+  // ("Old Navy") because it was still sitting in lit:selectedCompany.
+  // Without a match the shell is effectively empty (just the slug)
+  // and the page falls through to the lit_companies fallback shell
+  // built by getSavedCompanyShellOnly.
+  const stripPrefix = (v) =>
+    String(v || "").replace(/^company\//, "").toLowerCase();
+  const routeBare = stripPrefix(companyId);
+  const storedCandidates = [
+    stored?.company_id,
+    stored?.source_company_key,
+    stored?.companyId,
+    stored?.id,
+  ]
+    .filter(Boolean)
+    .map(stripPrefix);
+  const storedMatches =
+    !!stored && routeBare && storedCandidates.includes(routeBare);
+  const safe = storedMatches ? stored : null;
+
   return {
-    companyId: companyId || stored?.company_id || stored?.source_company_key || null,
-    name: stored?.name || stored?.title || "Company",
-    address: stored?.address || null,
-    countryCode: stored?.country_code || stored?.countryCode || null,
-    domain: stored?.domain || null,
-    website: stored?.website || null,
-    phone: stored?.phone || null,
+    companyId:
+      companyId || safe?.company_id || safe?.source_company_key || null,
+    name: safe?.name || safe?.title || "Company",
+    address: safe?.address || null,
+    countryCode: safe?.country_code || safe?.countryCode || null,
+    domain: safe?.domain || null,
+    website: safe?.website || null,
+    phone: safe?.phone || null,
     kpis: {
-      shipments: stored?.kpis?.shipments_12m ?? stored?.shipments_12m ?? null,
-      teu: stored?.kpis?.teu_12m ?? stored?.teu_12m ?? null,
-      spend: stored?.kpis?.est_spend_12m ?? stored?.est_spend_12m ?? null,
-      latestShipment: stored?.kpis?.last_activity ?? stored?.last_activity ?? null,
-      topRoute: stored?.kpis?.top_route_12m ?? stored?.top_route_12m ?? null,
-      recentRoute: stored?.kpis?.recent_route ?? stored?.recent_route ?? null,
+      shipments: safe?.kpis?.shipments_12m ?? safe?.shipments_12m ?? null,
+      teu: safe?.kpis?.teu_12m ?? safe?.teu_12m ?? null,
+      spend: safe?.kpis?.est_spend_12m ?? safe?.est_spend_12m ?? null,
+      latestShipment: safe?.kpis?.last_activity ?? safe?.last_activity ?? null,
+      topRoute: safe?.kpis?.top_route_12m ?? safe?.top_route_12m ?? null,
+      recentRoute: safe?.kpis?.recent_route ?? safe?.recent_route ?? null,
     },
   };
 }

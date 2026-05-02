@@ -669,20 +669,32 @@ export default function SearchPage() {
         : "";
       if (slugForSnapshot) {
         try {
-          const { data: snapshotRow } = await supabase
+          // Race the cache read against a 3s timeout so a slow /
+          // hung Supabase round-trip can never freeze the click.
+          // The user-visible "Opening…" spinner stays bounded; if
+          // the timeout wins we proceed without a profile and the
+          // Profile page's own lit_companies fallback handles it.
+          const snapshotPromise = supabase
             .from("lit_importyeti_company_snapshot")
             .select("company_id, parsed_summary, raw_payload, updated_at")
             .eq("company_id", slugForSnapshot)
             .maybeSingle();
+          const result = await Promise.race<any>([
+            snapshotPromise,
+            new Promise((resolve) =>
+              setTimeout(
+                () => resolve({ data: null, error: { message: "snapshot_read_timeout" } }),
+                3000,
+              ),
+            ),
+          ]);
+          const snapshotRow = result?.data ?? null;
           const cached =
             snapshotRow?.parsed_summary ?? snapshotRow?.raw_payload ?? null;
           if (cached && typeof cached === "object") {
             profile = normalizeIyCompanyProfile(cached, slugForSnapshot);
           }
         } catch (snapshotErr) {
-          // Non-fatal — save proceeds with row data. The Profile
-          // page's lit_companies fallback shell will still render
-          // saved KPIs after navigate.
           console.warn(
             "[viewAndOpen] snapshot table read failed; saving with row data",
             snapshotErr,
@@ -705,6 +717,39 @@ export default function SearchPage() {
         title: "Saved",
         description: `${company.name} added to your Command Center`,
       });
+
+      // Seed lit:selectedCompany with THIS company's data before
+      // routing. Company.jsx's shellCompany helper uses this for
+      // first-paint header info; if we don't refresh it, a previous
+      // company's name/KPIs leak onto the new route until the
+      // lit_companies row resolves.
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(
+            "lit:selectedCompany",
+            JSON.stringify({
+              company_id: slug,
+              source_company_key: companyKey,
+              name: company.name,
+              title: company.name,
+              domain: company.website || null,
+              website: company.website || null,
+              country_code: company.country_code || null,
+              address: company.address || null,
+              kpis: {
+                shipments_12m: company.shipments_12m ?? company.shipments ?? null,
+                teu_12m: company.teu_estimate ?? null,
+                last_activity: company.last_shipment ?? null,
+                top_route_12m: null,
+                recent_route: null,
+                est_spend_12m: null,
+              },
+            }),
+          );
+        }
+      } catch {
+        /* localStorage quota / private mode — non-fatal */
+      }
 
       navigate(`/app/companies/${encodeURIComponent(slug)}`);
     } catch (error: any) {
