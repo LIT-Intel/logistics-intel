@@ -13,7 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitKpiStrip from "@/components/ui/LitKpiStrip";
 import { useAuth } from "@/auth/AuthProvider";
@@ -35,7 +35,6 @@ import {
 } from "@/lib/dateUtils";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { canonicalContainerCode } from "@/lib/containerUtils";
-import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import { UpgradeModal } from "@/components/billing/UpgradeModal";
 import type { LimitExceeded } from "@/lib/usage";
 import { LimitExceededError } from "@/lib/saveCompany";
@@ -90,6 +89,7 @@ type SearchCompany = {
 export default function SearchPage() {
   const { user, authReady } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   // Phase 5 — initialize `searchQuery` from the `?q=` URL parameter on
@@ -99,17 +99,14 @@ export default function SearchPage() {
   const [searchQuery, setSearchQuery] = useState(initialQ);
   const [results, setResults] = useState<SearchCompany[]>([]);
   const [upgradeModal, setUpgradeModal] = useState<LimitExceeded | null>(null);
-  const [selectedCompany, setSelectedCompany] = useState<SearchCompany | null>(null);
-  const [rawData, setRawData] = useState<any>(null);
-  const [normalizedProfile, setNormalizedProfile] = useState<IyCompanyProfile | null>(null);
-  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Per-row spinner state when "View details" is in flight (snapshot
+  // fetch → save → navigate). Tracks which row's button to disable.
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [savedCompanyIds, setSavedCompanyIds] = useState<string[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
-  const [contacts, setContacts] = useState<any[]>([]);
-  const [loadingContacts, setLoadingContacts] = useState(false);
 
   // Phase D client-side filters. Every chip maps to a field that's already
   // populated on the mapped company rows — nothing fetched, nothing mocked.
@@ -181,127 +178,6 @@ export default function SearchPage() {
       channel.unsubscribe();
     };
   }, [user]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadSnapshot = async () => {
-      if (!selectedCompany || !selectedCompany.importyeti_key) {
-        setRawData(null);
-        setNormalizedProfile(null);
-        setContacts([]);
-        return;
-      }
-
-      setLoadingSnapshot(true);
-      setLoadingContacts(true);
-
-      try {
-        const result = await fetchCompanySnapshot(selectedCompany.importyeti_key);
-
-        if (!cancelled) {
-          if (result && (result.snapshot || result.company)) {
-            setRawData(result);
-            const profile = normalizeIyCompanyProfile(
-              result,
-              selectedCompany.importyeti_key,
-            );
-            setNormalizedProfile(profile);
-
-            // Load contacts
-            const companyId = selectedCompany.id || selectedCompany.importyeti_key;
-            const { data: contactsData, error: contactsError } = await supabase
-              .from("lit_contacts")
-              .select("*")
-              .eq("company_id", companyId)
-              .limit(20);
-
-            if (!cancelled) {
-              if (!contactsError && Array.isArray(contactsData)) {
-                setContacts(contactsData);
-              } else {
-                setContacts([]);
-              }
-            }
-          } else {
-            setRawData(null);
-            setNormalizedProfile(null);
-            setContacts([]);
-          }
-        }
-      } catch (error) {
-        console.error("[Search] Failed to load snapshot:", error);
-        if (!cancelled) {
-          setRawData(null);
-          setNormalizedProfile(null);
-          setContacts([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingSnapshot(false);
-          setLoadingContacts(false);
-        }
-      }
-    };
-
-    loadSnapshot();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedCompany]);
-
-  const computeKPIsFromRaw = () => {
-    if (!rawData?.snapshot) {
-      return {
-        totalTEU: 0,
-        fclCount: 0,
-        lclCount: 0,
-        estSpend: 0,
-        totalShipments: 0,
-        lastShipmentDate: null,
-      };
-    }
-    const snapshot = rawData.snapshot;
-    return {
-      totalTEU: snapshot.total_teu || 0,
-      fclCount: snapshot.fcl_count || 0,
-      lclCount: snapshot.lcl_count || 0,
-      estSpend: snapshot.est_spend || 0,
-      totalShipments: snapshot.total_shipments || 0,
-      lastShipmentDate: snapshot.last_shipment_date || null,
-    };
-  };
-
-  const computeMonthlyVolumes = () => {
-    if (!rawData) {
-      return {};
-    }
-    const snapshot = rawData.snapshot;
-    if (snapshot?.monthly_volumes && Object.keys(snapshot.monthly_volumes).length > 0) {
-      return snapshot.monthly_volumes;
-    }
-    if (rawData?.analytics?.timeSeries && rawData.analytics.timeSeries.length > 0) {
-      const fromSeries: Record<string, { fcl: number; lcl: number; shipments?: number; teu?: number }> = {};
-      rawData.analytics.timeSeries.forEach((pt: any) => {
-        fromSeries[pt.month] = { fcl: pt.fcl ?? 0, lcl: pt.lcl ?? 0, shipments: pt.shipments, teu: pt.teu };
-      });
-      return fromSeries;
-    }
-    return {};
-  };
-
-  const computeTradeRoutes = () => {
-    if (!rawData?.snapshot?.top_ports) {
-      return { origins: [], destinations: [] };
-    }
-    const topPorts = rawData.snapshot.top_ports || [];
-    return { origins: topPorts.slice(0, 5), destinations: [] };
-  };
-
-  const kpis = computeKPIsFromRaw();
-  const monthlyVolumes = computeMonthlyVolumes();
-  const tradeRoutes = computeTradeRoutes();
 
   function resolveLastShipmentDate(r: any): string | null {
     return r?.lastShipmentDate ?? r?.mostRecentShipment
@@ -599,6 +475,67 @@ export default function SearchPage() {
     setHasSearched(false);
   };
 
+  // Pure save — no closure on snapshot state. Caller passes whatever
+  // `profile` it has (null is fine; falls back to search-row values).
+  // Throws LimitExceededError; caller decides whether to surface the
+  // upgrade modal or just toast.
+  const persistCompanySave = async (
+    company: SearchCompany,
+    profile: IyCompanyProfile | null,
+  ) => {
+    const companyKey = company.importyeti_key || company.id;
+    if (!companyKey) {
+      throw new Error("This company is missing a valid company key.");
+    }
+    const shipper = {
+      key: companyKey,
+      companyId: companyKey,
+      title: company.name,
+      name: company.name,
+      domain: company.website || undefined,
+      website: company.website || undefined,
+      phone:
+        (profile as any)?.phoneNumber ||
+        (profile as any)?.phone ||
+        undefined,
+      address: company.address || undefined,
+      city: company.city || undefined,
+      state: company.state || undefined,
+      countryCode: company.country_code || undefined,
+      totalShipments:
+        profile?.routeKpis?.shipmentsLast12m ??
+        company.shipments_12m ??
+        company.shipments ??
+        0,
+      teusLast12m:
+        profile?.routeKpis?.teuLast12m ??
+        company.teu_estimate ??
+        null,
+      mostRecentShipment:
+        profile?.lastShipmentDate ??
+        company.last_shipment ??
+        null,
+      lastShipmentDate:
+        profile?.lastShipmentDate ??
+        company.last_shipment ??
+        null,
+      primaryRoute:
+        profile?.routeKpis?.topRouteLast12m ??
+        null,
+      topSuppliers: company.top_suppliers ?? [],
+    };
+
+    await saveCompanyToCommandCenter({
+      shipper,
+      profile,
+      stage: "prospect",
+      source: "importyeti",
+    });
+
+    return companyKey;
+  };
+
+  // Bookmark icon click — silent save, stays on the search page.
   const saveToCommandCenter = async (company: SearchCompany) => {
     if (!user) {
       toast({
@@ -608,7 +545,6 @@ export default function SearchPage() {
       });
       return;
     }
-
     const companyKey = company.importyeti_key || company.id;
     if (!companyKey) {
       toast({
@@ -620,64 +556,17 @@ export default function SearchPage() {
     }
 
     setSaving(true);
-
     try {
-      const shipper = {
-        key: companyKey,
-        companyId: companyKey,
-        title: company.name,
-        name: company.name,
-        domain: company.website || undefined,
-        website: company.website || undefined,
-        phone: (normalizedProfile as any)?.phoneNumber || (normalizedProfile as any)?.phone || undefined,
-        address: company.address || undefined,
-        city: company.city || undefined,
-        state: company.state || undefined,
-        countryCode: company.country_code || undefined,
-        totalShipments:
-          normalizedProfile?.routeKpis?.shipmentsLast12m ??
-          company.shipments_12m ??
-          company.shipments ??
-          0,
-        teusLast12m:
-          normalizedProfile?.routeKpis?.teuLast12m ??
-          company.teu_estimate ??
-          null,
-        mostRecentShipment:
-          normalizedProfile?.lastShipmentDate ??
-          company.last_shipment ??
-          null,
-        lastShipmentDate:
-          normalizedProfile?.lastShipmentDate ??
-          company.last_shipment ??
-          null,
-        primaryRoute:
-          normalizedProfile?.routeKpis?.topRouteLast12m ??
-          null,
-        topSuppliers: company.top_suppliers ?? [],
-      };
-
-      await saveCompanyToCommandCenter({
-        shipper,
-        profile: normalizedProfile,
-        stage: "prospect",
-        source: "importyeti",
-      });
-
+      await persistCompanySave(company, null);
       toast({
         title: "Company saved",
         description: `${company.name} has been saved to your Command Center`,
       });
-
       setSavedCompanyIds((prev) =>
         prev.includes(companyKey) ? prev : [...prev, companyKey],
       );
-
-      setSelectedCompany(null);
     } catch (error: any) {
       console.error("[saveToCommandCenter] Fatal error:", error);
-      // LimitExceededError thrown from the canonical save path: surface
-      // the upgrade modal instead of a generic "Save failed" toast.
       if (error instanceof LimitExceededError) {
         setUpgradeModal({
           ok: false,
@@ -699,6 +588,98 @@ export default function SearchPage() {
       }
     } finally {
       setSaving(false);
+    }
+  };
+
+  // "View details" — primary CTA. Skips the preview drawer entirely:
+  // fetch a fresh snapshot so the saved row carries full intel, save,
+  // then navigate into the Command Center company profile. If the row
+  // is already saved we skip the save and just navigate. LIMIT_EXCEEDED
+  // surfaces the upgrade modal and aborts navigation.
+  const viewAndOpenInCommandCenter = async (company: SearchCompany) => {
+    if (!user) {
+      toast({
+        title: "Authentication required",
+        description: "Please log in to open a company",
+        variant: "destructive",
+      });
+      return;
+    }
+    const companyKey = company.importyeti_key || company.id;
+    if (!companyKey) {
+      toast({
+        title: "Cannot open company",
+        description: "This row is missing a valid company key.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const slug = String(companyKey).replace(/^company\//, "");
+
+    // Already saved → just navigate, no fetch, no save credit burned.
+    if (savedCompanyIds.includes(companyKey)) {
+      navigate(`/app/companies/${encodeURIComponent(slug)}`);
+      return;
+    }
+
+    setViewingId(companyKey);
+    try {
+      // Fetch a fresh snapshot so the saved lit_companies row is rich
+      // (top_route_12m, fcl/lcl breakdown, phone). If the snapshot
+      // call itself fails we still attempt the save with row-level
+      // fallbacks so the user isn't stranded.
+      let profile: IyCompanyProfile | null = null;
+      if (company.importyeti_key) {
+        try {
+          const snapshot = await fetchCompanySnapshot(company.importyeti_key);
+          if (snapshot && (snapshot.snapshot || snapshot.company)) {
+            profile = normalizeIyCompanyProfile(
+              snapshot,
+              company.importyeti_key,
+            );
+          }
+        } catch (snapshotErr) {
+          console.warn(
+            "[viewAndOpen] snapshot fetch failed; falling back to row data",
+            snapshotErr,
+          );
+        }
+      }
+
+      await persistCompanySave(company, profile);
+
+      setSavedCompanyIds((prev) =>
+        prev.includes(companyKey) ? prev : [...prev, companyKey],
+      );
+      toast({
+        title: "Saved",
+        description: `${company.name} added to your Command Center`,
+      });
+
+      navigate(`/app/companies/${encodeURIComponent(slug)}`);
+    } catch (error: any) {
+      console.error("[viewAndOpen] failed:", error);
+      if (error instanceof LimitExceededError) {
+        setUpgradeModal({
+          ok: false,
+          code: "LIMIT_EXCEEDED",
+          feature: error.feature as any,
+          used: error.used,
+          limit: error.limit,
+          plan: error.plan,
+          reset_at: null,
+          upgrade_url: error.upgrade_url || "/app/billing",
+          message: error.message,
+        });
+      } else {
+        toast({
+          title: "Could not open company",
+          description: error?.message || "Please try again.",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setViewingId(null);
     }
   };
 
@@ -1283,15 +1264,20 @@ export default function SearchPage() {
 
                       {/* Actions */}
                       <div className="mt-auto flex gap-1.5 pt-0.5">
-                        {/* View details — matches the Pulse Coach floating
-                            card so the two surfaces feel like siblings:
-                            slate-900→slate-800 gradient, white/10 gloss
-                            border, cyan icon accent, ambient shadow,
-                            rounded-xl corners. */}
+                        {/* View details — auto-saves the company and
+                            navigates straight into the Command Center
+                            company profile. The right-side preview drawer
+                            was removed: the goal is to land users inside,
+                            not give them another surface to scan from.
+                            Already-saved rows skip the save and just
+                            navigate. Styling mirrors the Pulse Coach
+                            floating card so the two surfaces feel like
+                            siblings. */}
                         <button
                           type="button"
-                          onClick={() => setSelectedCompany(company)}
-                          className="font-display group/btn relative inline-flex h-8 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-white/10 text-[11px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.22)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.28)]"
+                          onClick={() => viewAndOpenInCommandCenter(company)}
+                          disabled={viewingId === (company.importyeti_key || company.id)}
+                          className="font-display group/btn relative inline-flex h-8 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-white/10 text-[11px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.22)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.28)] disabled:cursor-wait disabled:opacity-90"
                           style={{
                             background:
                               "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
@@ -1307,11 +1293,23 @@ export default function SearchPage() {
                                 "radial-gradient(circle, rgba(0,240,255,0.22), transparent 70%)",
                             }}
                           />
-                          <Eye
-                            className="h-3 w-3"
-                            style={{ color: "#00F0FF" }}
-                          />
-                          <span className="relative">View details</span>
+                          {viewingId === (company.importyeti_key || company.id) ? (
+                            <>
+                              <Loader2
+                                className="h-3 w-3 animate-spin"
+                                style={{ color: "#00F0FF" }}
+                              />
+                              <span className="relative">Opening…</span>
+                            </>
+                          ) : (
+                            <>
+                              <Eye
+                                className="h-3 w-3"
+                                style={{ color: "#00F0FF" }}
+                              />
+                              <span className="relative">View details</span>
+                            </>
+                          )}
                         </button>
                         <button
                           type="button"
@@ -1455,11 +1453,25 @@ export default function SearchPage() {
                             <div className="inline-flex items-center gap-1">
                               <button
                                 type="button"
-                                onClick={() => setSelectedCompany(company)}
-                                title="View details"
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                                onClick={() => viewAndOpenInCommandCenter(company)}
+                                disabled={viewingId === (company.importyeti_key || company.id)}
+                                title="Open in Command Center"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-700 text-white shadow-[0_2px_6px_rgba(15,23,42,0.2)] transition hover:shadow-md disabled:cursor-wait disabled:opacity-90"
+                                style={{
+                                  background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+                                }}
                               >
-                                <Eye className="h-3.5 w-3.5" />
+                                {viewingId === (company.importyeti_key || company.id) ? (
+                                  <Loader2
+                                    className="h-3.5 w-3.5 animate-spin"
+                                    style={{ color: "#00F0FF" }}
+                                  />
+                                ) : (
+                                  <Eye
+                                    className="h-3.5 w-3.5"
+                                    style={{ color: "#00F0FF" }}
+                                  />
+                                )}
                               </button>
                               <button
                                 type="button"
@@ -1522,31 +1534,6 @@ export default function SearchPage() {
           </LitSectionCard>
         )}
 
-        {selectedCompany && (
-          <ShipperDetailModal
-            year={selectedYear}
-            isOpen={true}
-            shipper={selectedCompany as any}
-            loadingProfile={loadingSnapshot}
-            profile={normalizedProfile}
-            routeKpis={normalizedProfile?.routeKpis ?? null}
-            enrichment={null}
-            error={null}
-            contacts={contacts}
-            loadingContacts={loadingContacts}
-            onClose={() => setSelectedCompany(null)}
-            onSaveToCommandCenter={() => {
-              if (selectedCompany) {
-                saveToCommandCenter(selectedCompany);
-              }
-            }}
-            saveLoading={saving}
-            isSaved={Boolean(
-              selectedCompany?.importyeti_key &&
-                savedCompanyIds.includes(selectedCompany.importyeti_key),
-            )}
-          />
-        )}
       </div>
       <UpgradeModal limit={upgradeModal} onClose={() => setUpgradeModal(null)} />
     </div>
