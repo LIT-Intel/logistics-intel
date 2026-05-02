@@ -1,0 +1,459 @@
+// Pulse Quick Card — right-rail analyze panel.
+//
+// Mirrors CDPDetailsPanel chrome (light, slate tokens, font-display labels)
+// so it feels native next to the Company Profile. Sections:
+//   - Identity        (logo, name, domain, location, status pill)
+//   - Key signals     (database membership, growth YoY, e-commerce stack,
+//                      hiring/sales signals, recent activity)
+//   - Coach insight   (placeholder for AI-narrated growth reason)
+//   - Firmographics   (industry, employees, revenue, founded)
+//   - Contact         (phone, website, LinkedIn)
+//   - Actions         (Open in Search · Find decision makers ·
+//                      Add to list · Add to Campaign)
+//   - Similar         (3 like-companies, when available)
+//
+// Vendor-neutral copy: nothing here mentions Apollo / ImportYeti / Tavily /
+// Hunter. "Verified", "In database", "Live", "Coach" — that's it.
+
+import { useMemo } from 'react';
+import {
+  ArrowUpRight,
+  BarChart3,
+  Briefcase,
+  Building2,
+  CheckCircle2,
+  Database,
+  ExternalLink,
+  Link as LinkIcon,
+  Linkedin,
+  MapPin,
+  Phone,
+  Search,
+  ShoppingBag,
+  Sparkles,
+  Target,
+  TrendingUp,
+  UserPlus,
+  Users,
+  X,
+  Zap,
+} from 'lucide-react';
+
+const RAIL_BG = 'bg-white';
+
+export default function PulseQuickCard({
+  company,
+  open,
+  onClose,
+  onOpenInSearch,
+  onAddToCampaign,
+  onSaveToList,
+  onFindDecisionMakers,
+  onGenerateInsight,
+  isInDatabase,
+  isGeneratingInsight,
+}) {
+  if (!open || !company) return null;
+
+  const domain = company.domain || extractDomain(company.website);
+  const location = [company.city, company.state, company.country].filter(Boolean).join(', ');
+  const inDb = isInDatabase || company.provenance === 'database' || company.alsoLive;
+
+  // YoY growth — if the row carries shipment kpis we can compute / show
+  // the trailing-12m number, but real YoY needs prior-period data we may
+  // not have. Show what we can; never fabricate.
+  const shipments = company.kpis?.shipments_12m ?? null;
+  const teu = company.kpis?.teu_12m ?? null;
+  const recentDate = company.kpis?.most_recent_shipment_date ?? null;
+
+  return (
+    <>
+      {/* mobile scrim */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close panel"
+        className="fixed inset-0 z-40 bg-slate-950/30 lg:hidden"
+      />
+
+      <aside
+        className={[
+          'fixed right-0 top-0 z-50 flex h-full w-[360px] max-w-[92vw] flex-col border-l border-slate-200 shadow-[0_-8px_36px_rgba(15,23,42,0.10)]',
+          RAIL_BG,
+        ].join(' ')}
+      >
+        {/* Header */}
+        <header className="flex items-start gap-3 border-b border-slate-200 bg-white px-4 py-3">
+          <Avatar name={company.name} domain={domain} />
+          <div className="min-w-0 flex-1">
+            <div className="font-display truncate text-[15px] font-bold leading-tight text-slate-900">
+              {company.name}
+            </div>
+            <div className="font-body mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+              {domain ? (
+                <a
+                  href={ensureHttp(company.website || `https://${domain}`)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 truncate text-blue-600 hover:underline"
+                >
+                  {domain}
+                  <ExternalLink className="h-2.5 w-2.5" />
+                </a>
+              ) : (
+                <span className="truncate">No domain</span>
+              )}
+              {location ? (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span className="inline-flex items-center gap-0.5 truncate">
+                    <MapPin className="h-2.5 w-2.5" />
+                    {location}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </header>
+
+        {/* Provenance strip */}
+        <div className="flex items-center gap-1.5 border-b border-slate-100 bg-[#FAFBFC] px-4 py-2">
+          {inDb ? (
+            <Badge tone="blue" icon={Database}>
+              In your database
+            </Badge>
+          ) : null}
+          {company.alsoLive ? (
+            <Badge tone="green" icon={CheckCircle2}>
+              Verified
+            </Badge>
+          ) : company.provenance === 'live' ? (
+            <Badge tone="amber" icon={Sparkles}>
+              Live
+            </Badge>
+          ) : !inDb ? (
+            <Badge tone="slate" icon={Sparkles}>
+              Discovered
+            </Badge>
+          ) : null}
+        </div>
+
+        {/* Body — scroll */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Key signals */}
+          <Section label="Key signals">
+            <SignalRow
+              icon={BarChart3}
+              label="Trailing 12m shipments"
+              value={shipments != null ? Number(shipments).toLocaleString() : '—'}
+              accent={shipments != null ? 'blue' : 'mute'}
+            />
+            <SignalRow
+              icon={TrendingUp}
+              label="Year-over-year growth"
+              value={null}
+              hint="Coach can analyze the change for you"
+              accent="mute"
+            />
+            <SignalRow
+              icon={ShoppingBag}
+              label="E-commerce platform"
+              value={null}
+              hint="Detection pending"
+              accent="mute"
+            />
+            <SignalRow
+              icon={Zap}
+              label="Hiring / sales signal"
+              value={null}
+              hint="Detection pending"
+              accent="mute"
+            />
+            <SignalRow
+              icon={Briefcase}
+              label="Recent activity"
+              value={recentDate ? formatRelative(recentDate) : null}
+              accent={recentDate ? 'blue' : 'mute'}
+            />
+          </Section>
+
+          {/* Coach insight */}
+          <Section label="Coach insight">
+            <div className="rounded-[10px] border border-blue-100 bg-gradient-to-br from-blue-50/60 to-violet-50/40 p-3">
+              <div className="flex items-start gap-2">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white shadow-sm">
+                  <Sparkles className="h-3 w-3 text-blue-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-body text-[12px] leading-relaxed text-slate-700">
+                    Ask the coach to analyze this company's growth, recent product launches, and
+                    why their volume changed.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onGenerateInsight?.(company)}
+                    disabled={isGeneratingInsight}
+                    className="font-display mt-2 inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)] disabled:opacity-60"
+                  >
+                    {isGeneratingInsight ? (
+                      <>
+                        <Sparkles className="h-3 w-3 animate-pulse" />
+                        Analyzing…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3 w-3" />
+                        Generate insight
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Section>
+
+          {/* Firmographics */}
+          <Section label="Firmographics">
+            <Row label="Industry" value={company.industry || '—'} />
+            <Row label="Employees" value={company.employee_count || '—'} />
+            <Row label="Revenue band" value={company.annual_revenue || '—'} />
+            <Row label="HQ" value={location || '—'} />
+          </Section>
+
+          {/* Contact */}
+          <Section label="Contact">
+            <Row
+              icon={Phone}
+              label="Phone"
+              value={company.phone || '—'}
+              mono={!!company.phone}
+            />
+            <Row
+              icon={LinkIcon}
+              label="Website"
+              value={
+                company.website ? (
+                  <a
+                    href={ensureHttp(company.website)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+                  >
+                    {stripHttp(company.website)}
+                    <ExternalLink className="h-2.5 w-2.5" />
+                  </a>
+                ) : (
+                  '—'
+                )
+              }
+            />
+            <Row
+              icon={Linkedin}
+              label="LinkedIn"
+              value={
+                company.linkedin_url ? (
+                  <a
+                    href={company.linkedin_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+                  >
+                    Open profile
+                    <ExternalLink className="h-2.5 w-2.5" />
+                  </a>
+                ) : (
+                  '—'
+                )
+              }
+            />
+          </Section>
+        </div>
+
+        {/* Action stack — sticky footer */}
+        <footer className="border-t border-slate-200 bg-white p-3">
+          <div className="grid grid-cols-2 gap-2">
+            {inDb ? (
+              <ActionButton
+                primary
+                icon={Search}
+                label="Open in Search"
+                onClick={() => onOpenInSearch?.(company)}
+              />
+            ) : (
+              <ActionButton
+                icon={Search}
+                label="Check in Search"
+                onClick={() => onOpenInSearch?.(company)}
+              />
+            )}
+            <ActionButton
+              icon={UserPlus}
+              label="Find decision makers"
+              onClick={() => onFindDecisionMakers?.(company)}
+            />
+            <ActionButton
+              icon={Database}
+              label="Add to list"
+              onClick={() => onSaveToList?.(company)}
+            />
+            <ActionButton
+              icon={Target}
+              label="Add to Campaign"
+              onClick={() => onAddToCampaign?.(company)}
+            />
+          </div>
+        </footer>
+      </aside>
+    </>
+  );
+}
+
+/* ─── Primitives ─── */
+
+function Section({ label, children }) {
+  return (
+    <div className="border-b border-slate-100">
+      <div className="bg-[#FAFBFC] px-4 py-2">
+        <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500">
+          {label}
+        </span>
+      </div>
+      <div className="flex flex-col gap-px px-4 py-2.5">{children}</div>
+    </div>
+  );
+}
+
+function Row({ icon: Icon, label, value, mono }) {
+  return (
+    <div className="grid grid-cols-[88px_1fr] items-baseline gap-2 py-1">
+      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+        {Icon ? <Icon className="h-3 w-3 text-slate-400" /> : null}
+        <span className="font-body">{label}</span>
+      </div>
+      <div
+        className={[
+          mono ? 'font-mono' : 'font-body',
+          'min-w-0 truncate text-[12px] text-slate-900',
+        ].join(' ')}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function SignalRow({ icon: Icon, label, value, hint, accent }) {
+  const valueColor =
+    accent === 'blue' ? 'text-blue-700' :
+    accent === 'mute' ? 'text-slate-400' :
+    'text-slate-900';
+  return (
+    <div className="flex items-center gap-2 py-1.5">
+      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-50">
+        <Icon className="h-3 w-3 text-slate-500" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="font-body text-[11px] text-slate-500">{label}</div>
+        {value != null ? (
+          <div className={['font-mono text-[12.5px] font-semibold', valueColor].join(' ')}>{value}</div>
+        ) : (
+          <div className="font-body text-[11px] italic text-slate-400">{hint || '—'}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Badge({ tone, icon: Icon, children }) {
+  const map = {
+    blue: 'bg-blue-50 text-blue-700 border-blue-100',
+    green: 'bg-green-50 text-green-700 border-green-100',
+    amber: 'bg-amber-50 text-amber-700 border-amber-100',
+    slate: 'bg-slate-50 text-slate-600 border-slate-200',
+  };
+  return (
+    <span
+      className={[
+        'font-display inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] font-semibold',
+        map[tone] || map.slate,
+      ].join(' ')}
+    >
+      {Icon ? <Icon className="h-2.5 w-2.5" /> : null}
+      {children}
+    </span>
+  );
+}
+
+function ActionButton({ icon: Icon, label, primary, onClick }) {
+  if (primary) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="font-display col-span-2 inline-flex items-center justify-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)] hover:from-blue-500 hover:to-blue-700"
+      >
+        <Icon className="h-3 w-3" />
+        {label}
+        <ArrowUpRight className="h-3 w-3 opacity-80" />
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="font-display inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11.5px] font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+    >
+      <Icon className="h-3 w-3" />
+      {label}
+    </button>
+  );
+}
+
+function Avatar({ name, domain }) {
+  const initials = (name || '?').slice(0, 1).toUpperCase();
+  // No external logo fetch — keeps the rail snappy and avoids leaking
+  // company names to third parties on every Quick Card open.
+  return (
+    <div
+      aria-hidden
+      className="font-display flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-blue-500 to-indigo-500 text-[13px] font-bold text-white"
+    >
+      {initials}
+    </div>
+  );
+}
+
+function ensureHttp(u) {
+  if (!u) return '';
+  return /^https?:\/\//i.test(u) ? u : `https://${u}`;
+}
+function stripHttp(u) {
+  return String(u || '').replace(/^https?:\/\//i, '').replace(/\/$/, '');
+}
+function extractDomain(url) {
+  if (!url) return '';
+  return String(url).replace(/^https?:\/\//i, '').split('/')[0];
+}
+function formatRelative(d) {
+  try {
+    const date = new Date(d);
+    const ms = Date.now() - date.getTime();
+    const days = Math.floor(ms / 86400000);
+    if (days < 1) return 'today';
+    if (days < 7) return `${days}d ago`;
+    if (days < 60) return `${Math.floor(days / 7)}w ago`;
+    if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+    return `${Math.floor(days / 365)}y ago`;
+  } catch {
+    return '—';
+  }
+}
