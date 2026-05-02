@@ -231,15 +231,8 @@ export default function CDPHeader({
                 )}
               </>
             ) : (
-              // No shipment data on the saved row yet. Don't say
-              // "Snapshot loading…" — nothing is actually loading;
-              // the user just needs to pull trade intel via Refresh.
               <span className="text-slate-400">
-                No trade activity on file — click{" "}
-                <span className="font-semibold text-slate-600">
-                  Refresh Intel
-                </span>{" "}
-                to pull a fresh snapshot from ImportYeti.
+                No recent trade activity recorded.
               </span>
             )}
           </div>

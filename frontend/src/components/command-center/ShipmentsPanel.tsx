@@ -183,7 +183,7 @@ export default function ShipmentsPanel() {
               <Badge variant="secondary">{filteredShipments.length}</Badge>
             </h3>
             <p className="text-sm text-slate-500 mt-0.5">
-              Bill of lading records from ImportYeti
+              Bill of lading records
             </p>
           </div>
 

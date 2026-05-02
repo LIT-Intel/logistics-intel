@@ -24,6 +24,7 @@ import {
   normalizeIyCompanyProfile,
   saveCompanyToCommandCenter,
   fetchSearchKpiOverlay,
+  getIyCompanyProfile,
   type IyCompanyProfile,
 } from "@/lib/api";
 import {
@@ -656,24 +657,23 @@ export default function SearchPage() {
 
     setViewingId(companyKey);
     try {
-      // Phase B — read the cached snapshot directly from Supabase
-      // instead of calling importyeti-proxy. The snapshot table is
-      // the system of record (TTL 30 days, written on save and on
-      // explicit Refresh Intel). A direct table read costs zero
-      // ImportYeti credits even on cache miss — we just save with
-      // row-level data when the table is empty for this slug. The
-      // user can warm the cache later via Refresh Intel.
+      // Pull the full company profile so the saved page lands fully
+      // populated on first visit. Order of preference:
+      //   1) Cached snapshot in lit_importyeti_company_snapshot (free,
+      //      written by a prior view/refresh). Direct table read keeps
+      //      it cheap and bounded.
+      //   2) Cache miss → call importyeti-proxy `companyProfile`. The
+      //      proxy itself returns cached data without burning a credit
+      //      when its 30-day cache hits; only a true upstream fetch
+      //      consumes one company_profile_view credit. This is the
+      //      single credit the user expects to pay for opening details
+      //      — no follow-up Refresh required.
       let profile: IyCompanyProfile | null = null;
       const slugForSnapshot = company.importyeti_key
         ? String(company.importyeti_key).replace(/^company\//, "")
         : "";
       if (slugForSnapshot) {
         try {
-          // Race the cache read against a 3s timeout so a slow /
-          // hung Supabase round-trip can never freeze the click.
-          // The user-visible "Opening…" spinner stays bounded; if
-          // the timeout wins we proceed without a profile and the
-          // Profile page's own lit_companies fallback handles it.
           const snapshotPromise = supabase
             .from("lit_importyeti_company_snapshot")
             .select("company_id, parsed_summary, raw_payload, updated_at")
@@ -696,8 +696,44 @@ export default function SearchPage() {
           }
         } catch (snapshotErr) {
           console.warn(
-            "[viewAndOpen] snapshot table read failed; saving with row data",
+            "[viewAndOpen] snapshot table read failed; will try proxy",
             snapshotErr,
+          );
+        }
+      }
+
+      // Cache miss → enrich now so the page isn't an empty shell.
+      if (!profile && slugForSnapshot) {
+        try {
+          const fetched = await getIyCompanyProfile({
+            companyKey: company.importyeti_key || companyKey,
+          });
+          profile = fetched?.companyProfile ?? null;
+        } catch (enrichErr: any) {
+          if (enrichErr?.code === "LIMIT_EXCEEDED") {
+            const gate = enrichErr?.gate || {};
+            setUpgradeModal({
+              ok: false,
+              code: "LIMIT_EXCEEDED",
+              feature: gate.feature || "company_profile_view",
+              used: gate.used ?? null,
+              limit: gate.limit ?? null,
+              plan: gate.plan ?? null,
+              reset_at: gate.reset_at ?? null,
+              upgrade_url: gate.upgrade_url || "/app/billing",
+              message:
+                gate.message ||
+                "You've reached your company-profile refresh limit for this billing cycle.",
+            });
+            setViewingId(null);
+            return;
+          }
+          // Any other failure (upstream down, transient 5xx) — fall
+          // through with whatever we have. The page will render the
+          // shell from search-row data; user can hit Refresh later.
+          console.warn(
+            "[viewAndOpen] live enrichment failed; saving with row data",
+            enrichErr,
           );
         }
       }
@@ -737,12 +773,23 @@ export default function SearchPage() {
               country_code: company.country_code || null,
               address: company.address || null,
               kpis: {
-                shipments_12m: company.shipments_12m ?? company.shipments ?? null,
-                teu_12m: company.teu_estimate ?? null,
-                last_activity: company.last_shipment ?? null,
-                top_route_12m: null,
-                recent_route: null,
-                est_spend_12m: null,
+                shipments_12m:
+                  profile?.routeKpis?.shipmentsLast12m ??
+                  company.shipments_12m ??
+                  company.shipments ??
+                  null,
+                teu_12m:
+                  profile?.routeKpis?.teuLast12m ??
+                  company.teu_estimate ??
+                  null,
+                last_activity:
+                  profile?.lastShipmentDate ?? company.last_shipment ?? null,
+                top_route_12m:
+                  profile?.routeKpis?.topRouteLast12m ?? null,
+                recent_route:
+                  profile?.routeKpis?.mostRecentRoute ?? null,
+                est_spend_12m:
+                  profile?.routeKpis?.estSpendUsd12m ?? null,
               },
             }),
           );

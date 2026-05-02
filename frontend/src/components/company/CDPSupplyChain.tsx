@@ -332,7 +332,7 @@ function ProductsView({ products }: { products: ProductRow[] }) {
         title="Products / Commodities"
         sub="From BOL descriptions"
       >
-        <EmptyMessage text="No product data on file. Refresh enrichment when ImportYeti has indexed shipments." />
+        <EmptyMessage text="No product data on file yet — try Refresh Intel to pull the latest shipments." />
       </LitSectionCard>
     );
   }
@@ -734,7 +734,7 @@ function TopLanesCard({ canonicalLanes }: { canonicalLanes: any[] }) {
         title="Top trade lanes"
         sub="By trailing-12m share"
       >
-        <EmptyMessage text="No lane data yet — refresh enrichment when ImportYeti has indexed this company." />
+        <EmptyMessage text="No lane data yet — try Refresh Intel to pull the latest shipments." />
       </LitSectionCard>
     );
   }
@@ -808,7 +808,7 @@ function CombinedLaneIntelligenceTable({
         title="All trade lanes"
         sub="Every origin → destination pair on file"
       >
-        <EmptyMessage text="No lane data yet — refresh enrichment when ImportYeti has indexed this company." />
+        <EmptyMessage text="No lane data yet — try Refresh Intel to pull the latest shipments." />
       </LitSectionCard>
     );
   }
