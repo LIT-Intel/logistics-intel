@@ -72,8 +72,8 @@ export default async function TradeLanePage({ params }: { params: { slug: string
             <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
               Top shippers · last 12 months
             </div>
-            <div className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-sm">
-              <table className="w-full text-left">
+            <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-white shadow-sm">
+              <table className="w-full min-w-[720px] text-left">
                 <thead>
                   <tr className="border-b border-ink-100 bg-ink-25 text-[11px] uppercase tracking-wider text-ink-500">
                     <th className="px-5 py-3 font-display font-bold">#</th>

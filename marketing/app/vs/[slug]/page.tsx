@@ -97,9 +97,9 @@ export default async function ComparisonPage({ params }: { params: { slug: strin
       {c.comparisonTable?.length > 0 && (
         <section className="px-8 py-12">
           <div className="mx-auto max-w-container">
-            <div className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-white shadow-sm">
               {c.comparisonTable.map((section: any, si: number) => (
-                <div key={si}>
+                <div key={si} className="min-w-[640px]">
                   {section.section && (
                     <div className="font-display border-b border-ink-100 bg-ink-25 px-5 py-3 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-500">
                       {section.section}

@@ -56,8 +56,8 @@ export default function DpaPage() {
             We notify customers in-app and by email at least 30 days before adding any new sub-processor that
             processes customer personal data.
           </p>
-          <div className="mt-6 overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-sm">
-            <table className="w-full text-left">
+          <div className="mt-6 overflow-x-auto rounded-2xl border border-ink-100 bg-white shadow-sm">
+            <table className="w-full min-w-[480px] text-left">
               <thead>
                 <tr className="border-b border-ink-100 bg-ink-25 text-[11px] uppercase tracking-wider text-ink-500">
                   <th className="font-display px-5 py-3 font-bold">Processor</th>
