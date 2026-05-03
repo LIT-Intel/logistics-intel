@@ -18,12 +18,16 @@ import {
   Layers,
   LayoutList,
   Loader2,
+  Lock,
   RefreshCw,
   Search as SearchIcon,
+  Share2,
   Sparkles,
+  Users,
   X,
   Zap,
 } from 'lucide-react';
+import { useAuth } from '@/auth/AuthProvider';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
 import { extractDomain } from '@/lib/logo';
 import {
@@ -35,6 +39,7 @@ import {
   listPulseLists,
   getListCompanies,
   getLastRefreshAt,
+  shareList,
 } from '@/features/pulse/pulseListsApi';
 import { refreshList } from '@/features/pulse/refreshList';
 
@@ -426,42 +431,58 @@ function ListsTab({
         </button>
       </div>
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-        {lists.map((list) => (
-          <button
-            key={list.id}
-            type="button"
-            onClick={() => onSelectList(list.id)}
-            className="group flex flex-col gap-2 rounded-[12px] border border-slate-200 bg-white p-3 text-left transition hover:border-blue-300 hover:shadow-[0_4px_14px_rgba(15,23,42,0.06)]"
-          >
-            <div className="flex items-start gap-2">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-600">
-                <Layers className="h-3.5 w-3.5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="font-display truncate text-[13px] font-bold text-slate-900">
-                  {list.name}
+        {lists.map((list) => {
+          const isShared = Boolean(list.is_shared);
+          const isOwner = list.is_owner ?? true;
+          return (
+            <button
+              key={list.id}
+              type="button"
+              onClick={() => onSelectList(list.id)}
+              className="group flex flex-col gap-2 rounded-[12px] border border-slate-200 bg-white p-3 text-left transition hover:border-blue-300 hover:shadow-[0_4px_14px_rgba(15,23,42,0.06)]"
+            >
+              <div className="flex items-start gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-600">
+                  <Layers className="h-3.5 w-3.5" />
                 </div>
-                {list.query_text ? (
-                  <div className="font-body line-clamp-2 text-[10.5px] text-slate-500">
-                    "{list.query_text}"
+                <div className="min-w-0 flex-1">
+                  <div className="font-display flex items-center gap-1.5 truncate text-[13px] font-bold text-slate-900">
+                    <span className="truncate">{list.name}</span>
+                    {isShared && isOwner ? (
+                      <Users className="h-2.5 w-2.5 shrink-0 text-blue-600" />
+                    ) : null}
                   </div>
-                ) : (
-                  <div className="font-body text-[10.5px] italic text-slate-400">
-                    No source query
-                  </div>
-                )}
+                  {list.query_text ? (
+                    <div className="font-body line-clamp-2 text-[10.5px] text-slate-500">
+                      "{list.query_text}"
+                    </div>
+                  ) : (
+                    <div className="font-body text-[10.5px] italic text-slate-400">
+                      No source query
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-100 pt-1.5">
-              <span className="font-mono text-[10px] font-semibold text-slate-500">
-                {list.company_count ?? 0} compan{(list.company_count ?? 0) === 1 ? 'y' : 'ies'}
-              </span>
-              <span className="font-display text-[10px] font-semibold text-blue-600 group-hover:text-blue-700">
-                Open →
-              </span>
-            </div>
-          </button>
-        ))}
+              <div className="flex items-center justify-between border-t border-slate-100 pt-1.5">
+                <span className="font-mono inline-flex items-center gap-1.5 text-[10px] font-semibold text-slate-500">
+                  {list.company_count ?? 0} compan{(list.company_count ?? 0) === 1 ? 'y' : 'ies'}
+                  {!isOwner && list.owner ? (
+                    <>
+                      <span className="text-slate-300">·</span>
+                      <span className="font-display inline-flex items-center gap-0.5 text-[9.5px] font-semibold text-slate-500">
+                        <Share2 className="h-2 w-2" />
+                        {list.owner.name}
+                      </span>
+                    </>
+                  ) : null}
+                </span>
+                <span className="font-display text-[10px] font-semibold text-blue-600 group-hover:text-blue-700">
+                  Open →
+                </span>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -470,6 +491,7 @@ function ListsTab({
 /* ─── List detail view (with Refresh / Inbox affordance) ─── */
 
 function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelectCompany, onListUpdated }) {
+  const { orgId } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState(null);
   // companies just added by the most recent refresh — used to paint a
@@ -480,6 +502,30 @@ function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelect
   const [lastRefreshAt, setLastRefreshAt] = useState(() =>
     list?.id ? getLastRefreshAt(list.id) : null,
   );
+  const [sharingPending, setSharingPending] = useState(false);
+  const [shareError, setShareError] = useState(null);
+
+  const isOwner = list?.is_owner ?? true;
+  const isShared = Boolean(list?.is_shared);
+
+  async function handleToggleShare() {
+    if (!list || !isOwner) return;
+    if (!isShared && !orgId) {
+      setShareError(
+        'You need to be a member of an organization to share this list. Open Settings → Workspace to join one.',
+      );
+      return;
+    }
+    setSharingPending(true);
+    setShareError(null);
+    const res = await shareList(list.id, !isShared, orgId);
+    setSharingPending(false);
+    if (!res.ok) {
+      setShareError(res.message || 'Failed to update sharing.');
+      return;
+    }
+    onListUpdated?.(list.id);
+  }
 
   async function handleRefresh() {
     if (!list || refreshing) return;
@@ -533,8 +579,26 @@ function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelect
           ← All lists
         </button>
         <div className="min-w-0 flex-1">
-          <div className="font-display truncate text-[12.5px] font-bold text-slate-900">
-            {list?.name || 'List'}
+          <div className="font-display flex items-center gap-1.5 truncate text-[12.5px] font-bold text-slate-900">
+            <span className="truncate">{list?.name || 'List'}</span>
+            {isShared ? (
+              <span
+                title="Shared with your team"
+                className="font-display inline-flex items-center gap-0.5 rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-blue-700"
+              >
+                <Users className="h-2 w-2" />
+                Shared
+              </span>
+            ) : null}
+            {!isOwner && list?.owner ? (
+              <span
+                title={`Shared by ${list.owner.email || list.owner.name}`}
+                className="font-display inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[9px] font-semibold text-slate-600"
+              >
+                <Share2 className="h-2 w-2" />
+                {list.owner.name}
+              </span>
+            ) : null}
           </div>
           {list?.query_text ? (
             <div className="font-body truncate text-[10.5px] text-slate-500">
@@ -550,21 +614,65 @@ function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelect
             Refreshed {formatRelativeAgo(lastRefreshAt)}
           </span>
         ) : null}
-        <button
-          type="button"
-          onClick={handleRefresh}
-          disabled={refreshing || !list?.query_text}
-          title={!list?.query_text ? 'No source query — refresh requires the original prompt.' : 'Re-run the source query and add new matches'}
-          className="font-display inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {refreshing ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <Inbox className="h-3 w-3" />
-          )}
-          {refreshing ? (progress || 'Refreshing…') : 'Refresh inbox'}
-        </button>
+
+        {/* Share toggle — owner only */}
+        {isOwner ? (
+          <button
+            type="button"
+            onClick={handleToggleShare}
+            disabled={sharingPending}
+            title={isShared ? 'Stop sharing with your team' : 'Share with your team'}
+            className={[
+              'font-display inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition disabled:opacity-50',
+              isShared
+                ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+            ].join(' ')}
+          >
+            {sharingPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : isShared ? (
+              <Users className="h-3 w-3" />
+            ) : (
+              <Share2 className="h-3 w-3" />
+            )}
+            {isShared ? 'Shared' : 'Share'}
+          </button>
+        ) : (
+          <span
+            title="Read-only — owned by another team member"
+            className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-500"
+          >
+            <Lock className="h-2.5 w-2.5" />
+            Read only
+          </span>
+        )}
+
+        {/* Refresh — owner only */}
+        {isOwner ? (
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshing || !list?.query_text}
+            title={!list?.query_text ? 'No source query — refresh requires the original prompt.' : 'Re-run the source query and add new matches'}
+            className="font-display inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {refreshing ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Inbox className="h-3 w-3" />
+            )}
+            {refreshing ? (progress || 'Refreshing…') : 'Refresh inbox'}
+          </button>
+        ) : null}
       </div>
+
+      {/* Share error */}
+      {shareError ? (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-[11.5px] text-amber-800">
+          {shareError}
+        </div>
+      ) : null}
 
       {/* Status strip — shows after a refresh attempt */}
       {refreshStatus ? (

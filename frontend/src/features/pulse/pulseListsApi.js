@@ -26,17 +26,26 @@ function classifyError(err) {
   return 'UNKNOWN';
 }
 
-/** List the current user's Saved Lists, newest-updated first. */
+/** List the user's own + org-shared Saved Lists, newest-updated first.
+ *  RLS handles the visibility filter; we also pull owner info so the
+ *  UI can show "Shared by Jane Doe" on lists that aren't yours. */
 export async function listPulseLists() {
   try {
+    const { data: userResp } = await supabase.auth.getUser();
+    const currentUserId = userResp?.user?.id || null;
+
     const { data, error } = await supabase
       .from('pulse_lists')
       .select(`
         id,
+        user_id,
         name,
         description,
         query_text,
         filter_recipe,
+        org_id,
+        is_shared,
+        shared_at,
         created_at,
         updated_at
       `)
@@ -48,7 +57,7 @@ export async function listPulseLists() {
       return { ok: false, code, message: error.message, rows: [] };
     }
 
-    // Fetch counts in a second pass so the row payload stays small.
+    // Membership counts (second pass keeps the row payload small)
     const ids = (data || []).map((r) => r.id);
     let countMap = {};
     if (ids.length) {
@@ -63,14 +72,77 @@ export async function listPulseLists() {
       }
     }
 
+    // Owner display lookup — only fetch profiles for non-self lists.
+    const ownerIds = Array.from(
+      new Set(
+        (data || [])
+          .filter((r) => r.user_id && r.user_id !== currentUserId)
+          .map((r) => r.user_id),
+      ),
+    );
+    const ownerMap = await fetchOwnerDisplay(ownerIds);
+
     const rows = (data || []).map((r) => ({
       ...r,
       company_count: countMap[r.id] || 0,
+      is_owner: r.user_id === currentUserId,
+      owner: r.user_id === currentUserId ? null : ownerMap[r.user_id] || null,
     }));
 
     return { ok: true, rows };
   } catch (err) {
     return { ok: false, code: classifyError(err), message: err?.message, rows: [] };
+  }
+}
+
+// Best-effort owner display — reads `profiles` table if present,
+// falls back to user_id slice. Failures degrade silently.
+async function fetchOwnerDisplay(userIds) {
+  if (!userIds.length) return {};
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, avatar_url')
+      .in('id', userIds);
+    if (error || !Array.isArray(data)) return {};
+    const map = {};
+    for (const p of data) {
+      map[p.id] = {
+        name: p.full_name || (p.email ? p.email.split('@')[0] : `User ${String(p.id).slice(0, 6)}`),
+        email: p.email || null,
+        avatar_url: p.avatar_url || null,
+      };
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+/** Toggle a list's org-share state. The list owner's org_id is
+ *  required when sharing; we accept it as an arg so the caller (with
+ *  AuthProvider context) can pass it cleanly. Unshare clears
+ *  is_shared but keeps org_id stamped for audit. */
+export async function shareList(listId, share, orgId) {
+  if (!listId) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'List id is required.' };
+  }
+  if (share && !orgId) {
+    return {
+      ok: false,
+      code: 'NO_ORG',
+      message: 'You need to be a member of an organization to share a list.',
+    };
+  }
+  try {
+    const patch = share
+      ? { is_shared: true, org_id: orgId, shared_at: new Date().toISOString() }
+      : { is_shared: false };
+    const { error } = await supabase.from('pulse_lists').update(patch).eq('id', listId);
+    if (error) return { ok: false, code: classifyError(error), message: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
   }
 }
 
