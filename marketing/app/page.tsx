@@ -5,7 +5,9 @@ import { HOMEPAGE_QUERY } from "@/sanity/lib/queries";
 import { Nav } from "@/components/nav/Nav";
 import { Footer } from "@/components/nav/Footer";
 import { ArrowRight, Calendar } from "lucide-react";
-import { PulseSearchBar } from "@/components/sections/PulseSearchBar";
+import { HeroSearchDemo } from "@/components/sections/HeroSearchDemo";
+import { CompanyIntelMock } from "@/components/sections/CompanyIntelMock";
+import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
 import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
 
 export const revalidate = 600; // ISR — refresh every 10 min
@@ -40,6 +42,8 @@ export default async function HomePage() {
       <main>
         <Hero hero={hero} />
         <PillarsTrustBar />
+        <CompanyIntelShowcase />
+        <TradeLaneShowcase />
         <ProblemSection />
         <PlatformSection />
         <SignalToPipelineSection />
@@ -119,100 +123,127 @@ function Hero({ hero }: { hero: any }) {
         </div>
 
         <div className="relative">
-          <HeroProductPlaceholder />
+          <HeroSearchDemo />
         </div>
       </div>
     </section>
   );
 }
 
-function HeroProductPlaceholder() {
+function CompanyIntelShowcase() {
   return (
-    <div
-      className="relative overflow-hidden rounded-[18px]"
-      style={{
-        background: "#020617",
-        boxShadow:
-          "0 60px 120px -30px rgba(15,23,42,0.45), 0 40px 80px -20px rgba(59,130,246,0.12)",
-        border: "1px solid rgba(15,23,42,0.95)",
-      }}
-    >
-      <div className="flex items-center gap-2 px-4 py-3">
-        <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
-        <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-        <span className="font-mono ml-3 flex-1 rounded-md border border-dark-3 bg-dark-2 px-2.5 py-1 text-[11px] text-ink-200">
-          app.logisticintel.com
-        </span>
+    <section className="px-8 py-20">
+      <div className="mx-auto max-w-container">
+        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+          <div className="lg:order-1">
+            <div className="eyebrow">Company Intelligence</div>
+            <h2 className="display-lg mt-3">
+              Every account, with the <span className="grad-text">trade picture</span> built in.
+            </h2>
+            <p className="lead mt-5 max-w-[480px]">
+              Not just firmographics. KPIs, trade lanes, carrier mix, modal split, recent shipments,
+              top suppliers — refreshed daily and joined to the people you'd actually pitch.
+            </p>
+            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span><b className="text-ink-900">Pulse Coach</b> tells you what changed this week, in one sentence.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>Live trailing-12m volume, top lane, carrier mix, container types.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>One click to start outbound, save to a campaign, or push to your CRM.</span>
+              </li>
+            </ul>
+          </div>
+          <div className="lg:order-2">
+            <CompanyIntelMock />
+          </div>
+        </div>
       </div>
-      <div className="aspect-[16/10] bg-dark-0 p-5">
-        <div className="flex h-full flex-col gap-3 rounded-xl border border-dark-3 bg-gradient-to-b from-dark-1 to-dark-2 p-4">
-          {/* Pulse search bar — auto-typing */}
-          <PulseSearchBar />
+    </section>
+  );
+}
 
-          {/* Result rows placeholder */}
-          <div className="grid flex-1 grid-cols-2 gap-3">
-            <div className="rounded-lg border border-dark-3 bg-dark-1 p-3">
-              <div className="font-display text-[10.5px] font-bold uppercase tracking-wider text-ink-200">
-                Companies · 127
-              </div>
-              <div className="mt-2 space-y-1.5">
-                {["Atlas Global Logistics", "Harbor Logistics Group", "Blue Ocean Express", "Pacific Freight Co."].map(
-                  (n, i) => (
-                    <div
-                      key={n}
-                      className="flex items-center gap-2 rounded-md border border-dark-3 bg-dark-0/50 px-2 py-1.5"
-                    >
-                      <div
-                        className="font-display flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold text-white"
-                        style={{ background: ["#3b82f6", "#8b5cf6", "#06b6d4", "#10b981"][i] }}
-                      >
-                        {n[0]}
-                      </div>
-                      <div className="font-display flex-1 truncate text-[11px] font-semibold text-white">
-                        {n}
-                      </div>
-                      <div className="font-mono text-[11px] font-bold" style={{ color: "#00F0FF" }}>
-                        {[14, 9, 7, 3][i]}K
-                      </div>
-                    </div>
-                  ),
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col gap-3">
+function TradeLaneShowcase() {
+  return (
+    <section className="px-8 py-20">
+      <div className="mx-auto max-w-container">
+        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
+          <div>
+            <div
+              className="relative overflow-hidden rounded-3xl border border-white/10 p-6 sm:p-8"
+              style={{
+                background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+                boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18), 0 30px 80px -20px rgba(15,23,42,0.5)",
+              }}
+            >
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -top-20 -right-16 h-72 w-72 rounded-full opacity-50"
+                style={{ background: "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)" }}
+              />
               <div
-                className="flex flex-1 items-center justify-center rounded-lg border border-dark-3 bg-dark-1"
-                style={{
-                  background:
-                    "radial-gradient(circle at 50% 50%, rgba(0,240,255,0.15), #0F172A 60%)",
-                }}
+                className="font-display relative mb-3 text-[10.5px] font-bold uppercase tracking-[0.12em]"
+                style={{ color: "#00F0FF" }}
               >
-                <div className="font-mono text-[11px] uppercase tracking-wider" style={{ color: "#00F0FF" }}>
-                  Lane visualization
-                </div>
+                Trade Lane Visualization · Live
               </div>
-              <div className="rounded-lg border border-dark-3 bg-dark-1 p-3">
-                <div className="font-display text-[10.5px] font-bold uppercase tracking-wider text-ink-200">
-                  Outbound queue · +12
+              <div className="relative mx-auto" style={{ maxWidth: 480 }}>
+                <MarketingGlobe size={480} />
+              </div>
+              <div className="font-mono relative mt-4 grid grid-cols-3 gap-3 text-[11px] text-ink-150 sm:grid-cols-3">
+                <div>
+                  <div className="text-[9px] uppercase tracking-wider" style={{ color: "#00F0FF" }}>
+                    Tracked lanes
+                  </div>
+                  <div className="font-display text-[18px] font-semibold text-white">142</div>
                 </div>
-                <div className="font-body mt-2 text-[11.5px] text-ink-150">
-                  12 contacts at 4 importers w/ Vietnam lane activity in last 30d.
+                <div>
+                  <div className="text-[9px] uppercase tracking-wider" style={{ color: "#00F0FF" }}>
+                    Active arcs
+                  </div>
+                  <div className="font-display text-[18px] font-semibold text-white">8</div>
                 </div>
-                <div className="mt-2 flex gap-1.5">
-                  <button
-                    className="font-display flex-1 rounded-md px-2 py-1.5 text-[10.5px] font-semibold text-white"
-                    style={{ background: "linear-gradient(180deg,#3b82f6,#2563eb)" }}
-                  >
-                    Launch campaign
-                  </button>
+                <div>
+                  <div className="text-[9px] uppercase tracking-wider" style={{ color: "#00F0FF" }}>
+                    TEU 12m
+                  </div>
+                  <div className="font-display text-[18px] font-semibold text-white">61.4K</div>
                 </div>
               </div>
             </div>
           </div>
+          <div>
+            <div className="eyebrow">Trade Lane Intelligence</div>
+            <h2 className="display-lg mt-3">
+              The trade flows you sell into, <span className="grad-text">live and ranked.</span>
+            </h2>
+            <p className="lead mt-5 max-w-[480px]">
+              Watch any origin → destination lane. See top shippers, carrier mix, monthly cadence,
+              and YoY change. Get pinged when volume shifts.
+            </p>
+            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>500+ origin × destination pairs tracked, refreshed daily.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>Top 25 shippers per lane with verified company + contact data.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>Save lanes to your watchlist — Pulse Coach surfaces shifts.</span>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
