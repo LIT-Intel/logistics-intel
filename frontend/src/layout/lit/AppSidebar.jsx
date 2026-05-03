@@ -8,11 +8,8 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Blocks,
   CreditCard,
   Shield,
-  Database,
-  Bug,
   Lock,
   Users,
 } from "lucide-react";
@@ -41,7 +38,6 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
 
   const canUseCampaigns = isAdmin || canAccessFeature(plan, "campaign_builder");
   const canUsePulse = isAdmin || canAccessFeature(plan, "pulse");
-  const canUseRfp = isAdmin || canAccessFeature(plan, "rfp_studio");
   const canUseLeadProspecting = isAdmin || canAccessFeature(plan, "lead_prospecting");
 
   // Show the Command Center submenu only when the user is already
@@ -92,18 +88,6 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
       ],
     },
     {
-      title: "Tools",
-      items: [
-        {
-          label: "RFP Studio",
-          href: "/app/rfp",
-          icon: Blocks,
-          locked: !canUseRfp,
-        },
-        { label: "Widgets", href: "/app/widgets", icon: Blocks },
-      ],
-    },
-    {
       title: "Account",
       items: [
         { label: "Settings", href: "/app/settings", icon: Settings },
@@ -118,8 +102,6 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
             items: [
               { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
               { label: "Partner program", href: "/app/admin/partner-program", icon: Users },
-              { label: "CMS", href: "/app/cms", icon: Database },
-              { label: "Debug Agent", href: "/app/agent", icon: Bug },
               { label: "Team", href: "/app/settings?tab=team", icon: Users },
             ],
           },
@@ -131,14 +113,21 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
     <aside
       className={[
         "hidden md:flex md:flex-col shrink-0 transition-all duration-300",
-        "bg-gradient-to-b from-slate-800 via-slate-800 to-slate-900 text-white border-r border-white/10",
+        "text-white border-r border-white/10",
         sidebarOpen ? "w-[270px]" : "w-[92px]",
       ].join(" ")}
+      // Pulse Coach gradient — same exact tokens as the Profile-page
+      // quota cards, Settings Account Snapshot, and Billing modals so
+      // the chrome reads as one consistent brand surface.
+      style={{
+        background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+        boxShadow: "inset -1px 0 0 rgba(0,240,255,0.18)",
+      }}
     >
       <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
         <div className="flex items-center gap-3 overflow-hidden">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 shadow-lg ring-1 ring-white/10">
-            <LitAppIcon className="h-7 w-7 text-cyan-300" />
+            <LitAppIcon className="h-7 w-7" style={{ color: "#00F0FF" }} />
           </div>
 
           {sidebarOpen && (
@@ -196,10 +185,15 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                         className={`${iconClass} ${
                           item.label === "Pulse"
                             ? isActive
-                              ? "text-cyan-300 pulse-sidebar-active"
-                              : "text-cyan-200/90"
+                              ? "pulse-sidebar-active"
+                              : ""
                             : ""
                         }`}
+                        style={
+                          item.label === "Pulse"
+                            ? { color: "#00F0FF", opacity: isActive ? 1 : 0.85 }
+                            : undefined
+                        }
                       />
                       {sidebarOpen && (
                         <span className="flex flex-1 items-center gap-2 truncate">
@@ -251,11 +245,17 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
       </div>
 
       <div className="border-t border-white/10 p-4">
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+        <div
+          className="rounded-2xl border border-white/10 px-4 py-3"
+          style={{
+            background: "rgba(0,240,255,0.05)",
+            boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
+          }}
+        >
           {sidebarOpen ? (
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 ring-1 ring-white/10">
-                <PulseIcon className="h-[18px] w-[18px] text-cyan-300" />
+                <PulseIcon className="h-[18px] w-[18px]" style={{ color: "#00F0FF" }} />
               </div>
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-white">Pulse</div>
@@ -266,7 +266,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
             </div>
           ) : (
             <div className="flex items-center justify-center">
-              <PulseIcon className="h-[18px] w-[18px] text-cyan-300" />
+              <PulseIcon className="h-[18px] w-[18px]" style={{ color: "#00F0FF" }} />
             </div>
           )}
         </div>

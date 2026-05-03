@@ -11,17 +11,14 @@ import {
   LayoutDashboard,
   Briefcase,
   Megaphone,
-  RadioTower,
-  Blocks,
   Shield,
-  Database,
-  Bug,
   Award,
   ExternalLink,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { usePartnerStatus } from "@/lib/affiliate";
+import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 
 const BASE_MOBILE_SECTIONS = [
   {
@@ -31,14 +28,11 @@ const BASE_MOBILE_SECTIONS = [
       { label: "Search", href: "/app/search", icon: Search },
       { label: "Command Center", href: "/app/command-center", icon: Briefcase },
       { label: "Campaigns", href: "/app/campaigns", icon: Megaphone },
-      { label: "Lead Prospecting", href: "/app/prospecting", icon: RadioTower },
-    ],
-  },
-  {
-    title: "Tools",
-    items: [
-      { label: "RFP Studio", href: "/app/rfp", icon: Blocks },
-      { label: "Widgets", href: "/app/widgets", icon: Blocks },
+      // Use PulseIcon + the "Pulse" label to match the desktop sidebar
+      // exactly. Mobile previously called this "Lead Prospecting" which
+      // landed users on the same /app/prospecting route under a different
+      // name — confusing across the two surfaces.
+      { label: "Pulse", href: "/app/prospecting", icon: PulseIcon },
     ],
   },
   {
@@ -55,8 +49,6 @@ const ADMIN_MOBILE_SECTION = {
   title: "Admin",
   items: [
     { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
-    { label: "CMS", href: "/app/cms", icon: Database },
-    { label: "Debug Agent", href: "/app/agent", icon: Bug },
   ],
 };
 
@@ -72,15 +64,11 @@ const PAGE_META = [
   { match: /^\/app\/search/, title: "Search", subtitle: "Find companies and shipment intelligence" },
   { match: /^\/app\/command-center/, title: "Command Center", subtitle: "Your saved accounts and CRM workspace" },
   { match: /^\/app\/campaigns/, title: "Campaigns", subtitle: "Create and manage campaigns" },
-  { match: /^\/app\/prospecting/, title: "Lead Prospecting", subtitle: "Target outreach and pipeline generation" },
-  { match: /^\/app\/rfp/, title: "RFP Studio", subtitle: "Build and manage freight RFPs" },
-  { match: /^\/app\/widgets/, title: "Widgets", subtitle: "Interactive logistics tools" },
+  { match: /^\/app\/prospecting/, title: "Pulse", subtitle: "AI lead intelligence" },
   { match: /^\/app\/settings/, title: "Settings", subtitle: "Manage profile, preferences, and account" },
   { match: /^\/app\/billing/, title: "Billing", subtitle: "Plan, invoices, and payment methods" },
   { match: /^\/app\/affiliate/, title: "Affiliate", subtitle: "Partner performance and referrals" },
   { match: /^\/app\/admin/, title: "Admin", subtitle: "Administration and internal controls" },
-  { match: /^\/app\/cms/, title: "CMS", subtitle: "Content and publishing controls" },
-  { match: /^\/app\/agent/, title: "Debug Agent", subtitle: "Diagnostics and developer tools" },
 ];
 
 function getInitials(nameOrEmail) {
@@ -349,11 +337,25 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
             onClick={() => setMobileNavOpen(false)}
           />
 
-          <aside className="absolute inset-y-0 right-0 flex w-[88%] max-w-[360px] flex-col overflow-hidden border-l border-white/10 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-white shadow-2xl">
+          <aside
+            className="absolute inset-y-0 right-0 flex w-[88%] max-w-[360px] flex-col overflow-hidden border-l border-white/10 text-white shadow-2xl"
+            // Same Pulse Coach gradient as the desktop sidebar, Profile-page
+            // quota cards, Settings Account Snapshot, and Billing modals.
+            // Single canonical brand surface across every dark-chrome
+            // touchpoint in the app.
+            style={{
+              background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+              boxShadow: "inset 1px 0 0 rgba(0,240,255,0.18)",
+            }}
+          >
             <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-sm font-bold text-white shadow-lg">
-                  LIT
+                {/* Match the desktop sidebar logo treatment — real LitAppIcon
+                    in cyan #00F0FF inside a slate-950 box. The previous
+                    "LIT" text in indigo-violet gradient diverged from
+                    every other branded surface in the app. */}
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-950 shadow-lg ring-1 ring-white/10">
+                  <LitAppIcon className="h-7 w-7" style={{ color: "#00F0FF" }} />
                 </div>
                 <div>
                   <div className="text-base font-semibold text-white">Trade Intelligence</div>
@@ -410,19 +412,33 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
                         location.pathname === item.href ||
                         (item.href !== "/" && location.pathname.startsWith(item.href));
 
+                      // Pulse uses cyan #00F0FF inline so the
+                      // mobile Pulse row picks up the same accent the
+                      // desktop sidebar applies to its Pulse icon.
+                      const isPulse = item.label === "Pulse";
                       return (
                         <Link
                           key={item.label}
                           to={item.href}
                           onClick={() => setMobileNavOpen(false)}
                           className={[
-                            "flex items-center gap-3 rounded-2xl px-3 py-3.5 text-sm transition-colors",
+                            // Match the desktop sidebar's exact active state
+                            // (bg-white/10) so the two surfaces don't drift.
+                            "flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors",
                             isActive
-                              ? "bg-white/12 text-white font-semibold shadow-sm"
-                              : "text-slate-200 hover:bg-white/8 hover:text-white",
+                              ? "bg-white/10 text-white font-semibold"
+                              : "text-slate-200 hover:bg-white/5 hover:text-white",
                           ].join(" ")}
                         >
-                          <Icon size={18} className="shrink-0" />
+                          <Icon
+                            size={18}
+                            className="shrink-0"
+                            style={
+                              isPulse
+                                ? { color: "#00F0FF", opacity: isActive ? 1 : 0.85 }
+                                : undefined
+                            }
+                          />
                           <span className="truncate">{item.label}</span>
                         </Link>
                       );
@@ -432,11 +448,26 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
               ))}
             </div>
 
+            {/* Same Pulse footer card as the desktop sidebar so the
+                two chrome surfaces share the brand anchor. */}
             <div className="border-t border-white/10 p-4">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="text-sm font-semibold text-white">Pro Intelligence</div>
-                <div className="mt-1 text-xs leading-5 text-slate-300">
-                  Track companies, campaigns, shipment activity, and pipeline in one branded workspace.
+              <div
+                className="rounded-2xl border border-white/10 px-4 py-3"
+                style={{
+                  background: "rgba(0,240,255,0.05)",
+                  boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 ring-1 ring-white/10">
+                    <PulseIcon className="h-[18px] w-[18px]" style={{ color: "#00F0FF" }} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-white">Pulse</div>
+                    <div className="truncate text-xs text-slate-300">
+                      AI lead intelligence
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
