@@ -47,6 +47,7 @@ import {
   triggerAutoRefresh,
 } from '@/features/pulse/pulseListsApi';
 import { refreshList } from '@/features/pulse/refreshList';
+import DigestSettings from '@/features/pulse/DigestSettings';
 
 export default function PulseLibrary({ onSelect, refreshKey = 0 }) {
   const [expanded, setExpanded] = useState(false);
@@ -421,7 +422,11 @@ function ListsTab({
 
   // Lists overview grid
   return (
-    <div className="px-4 py-4">
+    <div>
+      {/* Email digest settings — pinned above the list grid */}
+      <DigestSettings />
+
+      <div className="px-4 pb-4">
       <div className="mb-3 flex items-center justify-between">
         <div className="font-body text-[11.5px] text-slate-500">
           {lists.length} list{lists.length === 1 ? '' : 's'}
@@ -488,6 +493,7 @@ function ListsTab({
             </button>
           );
         })}
+      </div>
       </div>
     </div>
   );

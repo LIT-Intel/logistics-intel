@@ -496,6 +496,101 @@ export async function triggerAutoRefresh({ listId } = {}) {
   }
 }
 
+/* ─── Digest preferences ─── */
+
+/** Read this user's digest pref row (or a default if none exists). */
+export async function getDigestPrefs() {
+  try {
+    const { data: userResp } = await supabase.auth.getUser();
+    if (!userResp?.user) {
+      return { ok: false, code: 'UNAUTHORIZED', prefs: null };
+    }
+    const { data, error } = await supabase
+      .from('pulse_digest_prefs')
+      .select('*')
+      .eq('user_id', userResp.user.id)
+      .maybeSingle();
+    if (error) {
+      return { ok: false, code: classifyError(error), message: error.message, prefs: null };
+    }
+    // No row yet — return a sane default so the UI can render the "Off" state
+    if (!data) {
+      return {
+        ok: true,
+        prefs: {
+          user_id: userResp.user.id,
+          enabled: false,
+          cadence: 'daily',
+          last_digest_at: null,
+          last_status: null,
+          last_lists_count: 0,
+          last_matches_count: 0,
+        },
+      };
+    }
+    return { ok: true, prefs: data };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message, prefs: null };
+  }
+}
+
+/** Toggle digest on/off and pick cadence ('daily' | 'weekly'). */
+export async function setDigestPrefs({ enabled, cadence }) {
+  try {
+    const { data: userResp } = await supabase.auth.getUser();
+    if (!userResp?.user) {
+      return { ok: false, code: 'UNAUTHORIZED', message: 'Sign in required.' };
+    }
+    const patch = {
+      user_id: userResp.user.id,
+      ...(enabled != null ? { enabled: Boolean(enabled) } : {}),
+      ...(cadence ? { cadence } : {}),
+    };
+    const { error } = await supabase
+      .from('pulse_digest_prefs')
+      .upsert(patch, { onConflict: 'user_id' });
+    if (error) return { ok: false, code: classifyError(error), message: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
+  }
+}
+
+/** Manually trigger a digest send for the calling user (force=true so
+ *  it doesn't wait for the cadence window). Useful for "Send test"
+ *  buttons in the UI. */
+export async function sendDigestNow() {
+  try {
+    const { data, error } = await supabase.functions.invoke('pulse-list-digest-email', {
+      body: { force: true },
+    });
+    if (error) {
+      let parsed = null;
+      try {
+        const cloned = error?.context?.clone?.();
+        parsed = await cloned?.json?.();
+      } catch { parsed = null; }
+      return {
+        ok: false,
+        code: parsed?.code || 'NETWORK',
+        message: parsed?.message || error.message || 'Digest send failed.',
+      };
+    }
+    if (!data?.ok) {
+      return { ok: false, code: data?.code || 'WORKER_ERROR', message: data?.message };
+    }
+    const result = data.results?.[0] || null;
+    return {
+      ok: true,
+      sent: data.sent || 0,
+      skipped: data.skipped || 0,
+      status: result?.status || (data.sent > 0 ? 'sent' : 'no_matches'),
+    };
+  } catch (err) {
+    return { ok: false, code: 'NETWORK', message: err?.message };
+  }
+}
+
 /* ─── Refresh / inbox state (localStorage) ─── */
 
 const REFRESH_KEY_PREFIX = 'lit.pulse.list_refresh.v1.';
