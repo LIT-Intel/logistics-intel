@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Menu,
   Search,
-  Bell,
   ChevronDown,
   Settings,
   CreditCard,
@@ -11,9 +10,9 @@ import {
   LayoutDashboard,
   Briefcase,
   Megaphone,
-  Shield,
   Award,
   ExternalLink,
+  Users,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
@@ -26,12 +25,20 @@ const BASE_MOBILE_SECTIONS = [
     items: [
       { label: "Dashboard", href: "/app/dashboard", icon: LayoutDashboard },
       { label: "Search", href: "/app/search", icon: Search },
-      { label: "Command Center", href: "/app/command-center", icon: Briefcase },
+      // Command Center surfaces a contextual submenu on mobile when the
+      // user is already navigating inside it — same pattern as the
+      // desktop sidebar so the two surfaces don't drift on feature parity.
+      {
+        label: "Command Center",
+        href: "/app/command-center",
+        icon: Briefcase,
+        children: [
+          { label: "Saved Companies", href: "/app/command-center", icon: Briefcase },
+          { label: "Contacts", href: "/app/contacts", icon: Users },
+        ],
+      },
       { label: "Campaigns", href: "/app/campaigns", icon: Megaphone },
-      // Use PulseIcon + the "Pulse" label to match the desktop sidebar
-      // exactly. Mobile previously called this "Lead Prospecting" which
-      // landed users on the same /app/prospecting route under a different
-      // name — confusing across the two surfaces.
+      // PulseIcon + the "Pulse" label to match the desktop sidebar exactly.
       { label: "Pulse", href: "/app/prospecting", icon: PulseIcon },
     ],
   },
@@ -40,7 +47,9 @@ const BASE_MOBILE_SECTIONS = [
     items: [
       { label: "Settings", href: "/app/settings", icon: Settings },
       { label: "Billing", href: "/app/billing", icon: CreditCard },
-      { label: "Affiliate", href: "/app/affiliate", icon: Shield },
+      // Award icon (matches the partner pill in the dropdown). Shield was
+      // overloaded — also used for Admin Dashboard.
+      { label: "Affiliate", href: "/app/affiliate", icon: Award },
     ],
   },
 ];
@@ -48,7 +57,7 @@ const BASE_MOBILE_SECTIONS = [
 const ADMIN_MOBILE_SECTION = {
   title: "Admin",
   items: [
-    { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
+    { label: "Admin Dashboard", href: "/app/admin", icon: Settings },
   ],
 };
 
@@ -202,7 +211,10 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
           </div>
 
           <div className="flex items-center gap-2 md:gap-3">
-            <div className="hidden min-w-[280px] items-center gap-2 rounded-2xl border border-blue-100 bg-gradient-to-r from-slate-50 to-blue-50/60 px-3 py-2 shadow-sm md:flex">
+            {/* Header search — neutralized white pill with a single
+                slate ring so it stops competing with the sidebar's
+                cyan accent. Same idea as the Profile-page chrome. */}
+            <div className="hidden min-w-[280px] items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm md:flex">
               <Search size={16} className="text-slate-400" />
               <input
                 type="text"
@@ -211,14 +223,9 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
               />
             </div>
 
-            <button
-              type="button"
-              aria-label="Notifications"
-              className="relative inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 text-slate-700 shadow-sm transition hover:border-blue-200 hover:from-blue-100 hover:to-indigo-100 hover:text-blue-700"
-            >
-              <Bell size={18} className="stroke-[2.2]" />
-              <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full border border-white bg-emerald-500" />
-            </button>
+            {/* Notifications bell intentionally hidden — the green dot
+                was promising a feature that doesn't exist. Re-enable
+                here once notifications ship. */}
 
             <button
               type="button"
@@ -227,27 +234,23 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
                 setMobileNavOpen(true);
               }}
               aria-label="Open mobile navigation"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-blue-100 bg-gradient-to-br from-slate-50 to-blue-50 text-slate-700 shadow-sm transition hover:border-blue-200 hover:from-blue-100 hover:to-indigo-100 hover:text-blue-700 md:hidden"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 md:hidden"
             >
               <Menu size={18} className="stroke-[2.2]" />
             </button>
 
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              aria-label="Toggle desktop sidebar"
-              className="hidden h-11 w-11 items-center justify-center rounded-2xl border border-blue-100 bg-gradient-to-br from-slate-50 to-blue-50 text-slate-700 shadow-sm transition hover:border-blue-200 hover:from-blue-100 hover:to-indigo-100 hover:text-blue-700 md:inline-flex xl:hidden"
-            >
-              <Menu size={18} className="stroke-[2.2]" />
-            </button>
+            {/* The desktop sidebar collapse toggle now lives as a
+                floating boundary button on the sidebar itself — single,
+                obvious, persistent. The redundant in-header hamburger
+                was removed. */}
 
             <div className="relative" ref={profileRef}>
               <button
                 type="button"
                 onClick={() => setProfileOpen((prev) => !prev)}
-                className="inline-flex items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-slate-50 to-blue-50/70 px-3 py-2 shadow-sm transition hover:border-blue-200 hover:from-white hover:to-blue-50"
+                className="inline-flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm transition hover:bg-slate-50"
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-sm font-semibold text-white shadow-sm ring-2 ring-blue-100">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-sm font-semibold text-white shadow-sm">
                   {displayInitials}
                 </div>
 
@@ -402,7 +405,7 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
             <div className="flex-1 overflow-y-auto px-4 py-5">
               {mobileSections.map((section) => (
                 <div key={section.title} className="mb-6">
-                  <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
                     {section.title}
                   </div>
                   <nav className="space-y-1.5">
@@ -416,31 +419,72 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
                       // mobile Pulse row picks up the same accent the
                       // desktop sidebar applies to its Pulse icon.
                       const isPulse = item.label === "Pulse";
+                      // Show the contextual submenu (e.g. Command Center
+                      // → Saved Companies / Contacts) when the user is
+                      // already navigating inside it. Mirrors the desktop
+                      // sidebar exactly so mobile + desktop don't drift.
+                      const inItemContext =
+                        item.children &&
+                        (location.pathname === item.href ||
+                          location.pathname.startsWith(item.href) ||
+                          item.children.some((c) =>
+                            location.pathname.startsWith(c.href),
+                          ));
                       return (
-                        <Link
-                          key={item.label}
-                          to={item.href}
-                          onClick={() => setMobileNavOpen(false)}
-                          className={[
-                            // Match the desktop sidebar's exact active state
-                            // (bg-white/10) so the two surfaces don't drift.
-                            "flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors",
-                            isActive
-                              ? "bg-white/10 text-white font-semibold"
-                              : "text-slate-200 hover:bg-white/5 hover:text-white",
-                          ].join(" ")}
-                        >
-                          <Icon
-                            size={18}
-                            className="shrink-0"
-                            style={
-                              isPulse
-                                ? { color: "#00F0FF", opacity: isActive ? 1 : 0.85 }
-                                : undefined
-                            }
-                          />
-                          <span className="truncate">{item.label}</span>
-                        </Link>
+                        <div key={item.label}>
+                          <Link
+                            to={item.href}
+                            onClick={() => setMobileNavOpen(false)}
+                            className={[
+                              // Match the desktop sidebar's exact active state
+                              // (bg-white/10) so the two surfaces don't drift.
+                              "flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors",
+                              isActive
+                                ? "bg-white/10 text-white font-semibold"
+                                : "text-slate-200 hover:bg-white/5 hover:text-white",
+                            ].join(" ")}
+                          >
+                            <Icon
+                              size={18}
+                              className="shrink-0"
+                              style={
+                                isPulse
+                                  ? { color: "#00F0FF", opacity: isActive ? 1 : 0.85 }
+                                  : undefined
+                              }
+                            />
+                            <span className="truncate">{item.label}</span>
+                          </Link>
+                          {inItemContext && item.children?.length > 0 && (
+                            <div className="mt-1 ml-5 flex flex-col gap-0.5 border-l border-white/10 pl-3">
+                              {item.children.map((child) => {
+                                const ChildIcon = child.icon;
+                                const childActive =
+                                  location.pathname === child.href ||
+                                  (child.href !== "/app/command-center" &&
+                                    location.pathname.startsWith(child.href));
+                                return (
+                                  <Link
+                                    key={child.label}
+                                    to={child.href}
+                                    onClick={() => setMobileNavOpen(false)}
+                                    className={[
+                                      "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12.5px] transition-colors",
+                                      childActive
+                                        ? "bg-white/10 text-white font-semibold"
+                                        : "text-slate-400 hover:bg-white/5 hover:text-white",
+                                    ].join(" ")}
+                                  >
+                                    {ChildIcon && (
+                                      <ChildIcon size={14} className="shrink-0" />
+                                    )}
+                                    <span className="truncate">{child.label}</span>
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </nav>

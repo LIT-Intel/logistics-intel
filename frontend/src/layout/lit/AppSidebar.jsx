@@ -5,11 +5,12 @@ import {
   Search,
   Briefcase,
   Megaphone,
-  ChevronLeft,
-  ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen,
   Shield,
   Lock,
   Users,
+  Award,
 } from "lucide-react";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 import { useAuth } from "@/auth/AuthProvider";
@@ -107,7 +108,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
   return (
     <aside
       className={[
-        "hidden md:flex md:flex-col shrink-0 transition-all duration-300",
+        "relative hidden md:flex md:flex-col shrink-0 transition-all duration-300",
         "text-white border-r border-white/10",
         sidebarOpen ? "w-[270px]" : "w-[92px]",
       ].join(" ")}
@@ -119,32 +120,45 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
         boxShadow: "inset -1px 0 0 rgba(0,240,255,0.18)",
       }}
     >
-      <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
+      <div className="flex h-20 items-center justify-center border-b border-white/10 px-5">
         <div className="flex items-center gap-3 overflow-hidden">
+          {/* App icon — same slate-950/cyan box, sized to host the LIT
+              wordmark right next to it at matching weight. */}
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 shadow-lg ring-1 ring-white/10">
             <LitAppIcon className="h-7 w-7" style={{ color: "#00F0FF" }} />
           </div>
 
           {sidebarOpen && (
-            <div className="min-w-0">
-              <div className="truncate text-base font-semibold text-white">
-                Trade Intelligence
-              </div>
-              <div className="truncate text-xs text-slate-300">
-                Logistics Intel
-              </div>
+            <div
+              className="text-[26px] font-bold tracking-[-0.02em] text-white"
+              style={{ fontFamily: "Space Grotesk,sans-serif" }}
+            >
+              LIT
             </div>
           )}
         </div>
-
-        <button
-          type="button"
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
-        >
-          {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
-        </button>
       </div>
+
+      {/* Floating boundary toggle — sits half on the sidebar edge / half
+          on the main content. Persists via localStorage so the user's
+          preference sticks across reloads. Common pattern in Linear /
+          Notion / Vercel; replaces the in-header chevron that was easy
+          to miss and didn't survive page navigation. */}
+      <button
+        type="button"
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+        className="absolute top-[60px] -right-3 z-30 inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 text-slate-200 shadow-[0_4px_12px_rgba(2,6,23,0.45)] transition hover:text-white"
+        style={{
+          background: "linear-gradient(180deg,#0F172A 0%,#0B1220 100%)",
+        }}
+      >
+        {sidebarOpen ? (
+          <PanelLeftClose className="h-3.5 w-3.5" />
+        ) : (
+          <PanelLeftOpen className="h-3.5 w-3.5" />
+        )}
+      </button>
 
       <div className="flex-1 overflow-y-auto px-3 py-5">
         {sections.map((section) => (
