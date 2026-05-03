@@ -153,13 +153,36 @@ export function BillingPlans({
             effect immediately.
           </p>
         </div>
-        <div className="rounded-full border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-[12px] text-slate-500">
-          <span className="font-semibold text-slate-900">
-            {cycle === 'monthly' ? 'Monthly billing' : 'Annual billing'}
-          </span>
+        <div className="inline-flex items-center gap-2">
+          <div className="rounded-full border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-[12px] text-slate-500">
+            <span className="font-semibold text-slate-900">
+              {cycle === 'monthly' ? 'Monthly billing' : 'Annual billing'}
+            </span>
+          </div>
           {cycle === 'yearly' ? (
-            <span className="ml-2 font-semibold text-emerald-600">best value</span>
-          ) : null}
+            <div
+              className="font-display inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 text-[11px] font-bold text-white"
+              style={{
+                background: 'linear-gradient(135deg,#0F172A,#1E293B)',
+                boxShadow: '0 2px 8px rgba(15,23,42,0.18)',
+              }}
+            >
+              <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: '#00F0FF' }} />
+              You're saving 17% vs monthly
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                // surfaced as a hint; cycle toggle lives on the hero
+                document.getElementById('lit-billing-plans')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="font-display inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.06em] text-emerald-700"
+            >
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Save 17% with annual
+            </button>
+          )}
         </div>
       </div>
 

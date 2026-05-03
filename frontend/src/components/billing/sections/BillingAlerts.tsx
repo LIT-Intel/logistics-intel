@@ -133,6 +133,10 @@ export function BillingAlerts({
 }
 
 interface BannerProps {
+  /** `tone` controls the leading-dot color + the tier badge accent only —
+   *  the surface is always the same Pulse-Coach dark gradient so the
+   *  Billing alerts visually match the Profile-page premium quota cards
+   *  and Settings upgrade nudges. */
   tone: 'amber' | 'red' | 'slate' | 'indigo' | 'violet';
   icon: React.ComponentType<{ className?: string }>;
   title: string;
@@ -142,76 +146,86 @@ interface BannerProps {
   onCta: () => void;
 }
 
-const TONE: Record<BannerProps['tone'], { bg: string; border: string; iconBg: string; iconText: string; title: string; body: string; cta: string }> = {
-  amber: {
-    bg: 'bg-amber-50',
-    border: 'border-amber-200',
-    iconBg: 'bg-amber-100',
-    iconText: 'text-amber-700',
-    title: 'text-amber-900',
-    body: 'text-amber-800',
-    cta: 'bg-amber-600 hover:bg-amber-700 text-white',
-  },
-  red: {
-    bg: 'bg-red-50',
-    border: 'border-red-200',
-    iconBg: 'bg-red-100',
-    iconText: 'text-red-700',
-    title: 'text-red-900',
-    body: 'text-red-800',
-    cta: 'bg-red-600 hover:bg-red-700 text-white',
-  },
-  slate: {
-    bg: 'bg-slate-50',
-    border: 'border-slate-200',
-    iconBg: 'bg-slate-100',
-    iconText: 'text-slate-700',
-    title: 'text-slate-900',
-    body: 'text-slate-700',
-    cta: 'bg-slate-900 hover:bg-slate-800 text-white',
-  },
-  indigo: {
-    bg: 'bg-indigo-50',
-    border: 'border-indigo-200',
-    iconBg: 'bg-indigo-100',
-    iconText: 'text-indigo-700',
-    title: 'text-indigo-900',
-    body: 'text-indigo-800',
-    cta: 'bg-blue-600 hover:bg-blue-700 text-white',
-  },
-  violet: {
-    bg: 'bg-violet-50',
-    border: 'border-violet-200',
-    iconBg: 'bg-violet-100',
-    iconText: 'text-violet-700',
-    title: 'text-violet-900',
-    body: 'text-violet-800',
-    cta: 'bg-violet-600 hover:bg-violet-700 text-white',
-  },
+const TONE_DOT: Record<BannerProps['tone'], string> = {
+  amber: 'bg-amber-400',
+  red: 'bg-red-400',
+  slate: 'bg-slate-400',
+  indigo: 'bg-blue-400',
+  violet: 'bg-violet-400',
+};
+
+const TONE_LABEL: Record<BannerProps['tone'], string> = {
+  amber: 'Action needed',
+  red: 'Payment issue',
+  slate: 'Status',
+  indigo: 'Upgrade',
+  violet: 'Enterprise',
 };
 
 function Banner({ tone, icon: Icon, title, body, ctaLabel, ctaIcon: CtaIcon, onCta }: BannerProps) {
-  const t = TONE[tone];
   return (
-    <div className={`flex flex-col gap-3 rounded-2xl border ${t.border} ${t.bg} p-4 sm:flex-row sm:items-start sm:justify-between`}>
-      <div className="flex min-w-0 items-start gap-3">
-        <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${t.iconBg} ${t.iconText}`}>
-          <Icon className="h-4 w-4" />
-        </span>
-        <div className="min-w-0">
-          <p className={`text-sm font-semibold ${t.title}`}>{title}</p>
-          <p className={`mt-0.5 text-sm ${t.body}`}>{body}</p>
+    <div
+      className="relative overflow-hidden rounded-xl border border-white/10 px-5 py-4 sm:px-6"
+      style={{
+        background: 'linear-gradient(160deg,#0F172A 0%,#1E293B 100%)',
+        boxShadow: 'inset 0 -1px 0 rgba(0,240,255,0.18), 0 1px 3px rgba(15,23,42,0.06)',
+      }}
+    >
+      {/* radial accent — same trick as the Profile-page Pulse Coach card */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-12 -right-10 h-40 w-40 rounded-full opacity-50"
+        style={{
+          background: 'radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)',
+        }}
+      />
+
+      <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border"
+            style={{
+              background: 'rgba(0,240,255,0.10)',
+              borderColor: 'rgba(255,255,255,0.10)',
+            }}
+          >
+            <Icon className="h-4 w-4" style={{ color: '#00F0FF' }} />
+          </div>
+          <div className="min-w-0">
+            <div
+              className="font-display flex items-center gap-2 text-[12.5px] font-bold tracking-wide text-white"
+            >
+              Pulse Coach
+              <span
+                className={`inline-flex items-center gap-1 rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.06em]`}
+                style={{
+                  color: '#00F0FF',
+                  borderColor: 'rgba(0,240,255,0.35)',
+                  background: 'rgba(0,240,255,0.08)',
+                  fontFamily: 'ui-monospace,monospace',
+                }}
+              >
+                <span className={`inline-block h-1.5 w-1.5 rounded-full ${TONE_DOT[tone]}`} />
+                {TONE_LABEL[tone]}
+              </span>
+            </div>
+            <p className="font-display mt-1.5 text-[13px] font-semibold text-white">{title}</p>
+            <p className="font-body mt-1 text-[12px] leading-snug text-slate-300">{body}</p>
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={onCta}
+          className="font-display group/btn relative inline-flex h-8 shrink-0 items-center gap-1.5 self-start overflow-hidden rounded-lg border border-white/10 px-3 text-[11.5px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.35)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.45)] sm:self-center"
+          style={{
+            background: 'linear-gradient(180deg,#0F172A 0%,#0B1220 100%)',
+          }}
+        >
+          {CtaIcon ? <CtaIcon className="h-3 w-3" style={{ color: '#00F0FF' }} /> : null}
+          {ctaLabel}
+          {!CtaIcon ? <ArrowRight className="h-3 w-3" style={{ color: '#00F0FF' }} /> : null}
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={onCta}
-        className={`inline-flex flex-shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${t.cta}`}
-      >
-        {CtaIcon ? <CtaIcon className="h-4 w-4" /> : null}
-        {ctaLabel}
-        {!CtaIcon ? <ArrowRight className="h-4 w-4" /> : null}
-      </button>
     </div>
   );
 }

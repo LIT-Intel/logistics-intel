@@ -14,8 +14,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import { createStripeCheckout, createStripePortalSession } from '@/api/functions';
 import { supabase } from '@/lib/supabase';
-import { getSavedCompanies } from '@/lib/api';
-import { getLitCampaigns } from '@/lib/litCampaigns';
 import {
   getPlanConfig,
   getTotalPrice,
@@ -24,7 +22,7 @@ import {
 } from '@/lib/planLimits';
 import { useEntitlements, FEATURE_LABELS, type FeatureKey } from '@/lib/usage';
 import { usePartnerStatus } from '@/lib/affiliate';
-import { CheckCircle2, AlertCircle } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
 
 import { BillingHeader, ReadOnlyBanner } from '@/components/billing/sections/BillingHeader';
 import { BillingAlerts } from '@/components/billing/sections/BillingAlerts';
@@ -74,10 +72,11 @@ export default function Billing() {
   // quantity:1. We intentionally keep no `selectedSeats` state to remove
   // any role-derived input that could affect the comparison grid.
 
-  // Phase F — real usage counters (preserved verbatim from prior impl).
-  const [realSearches, setRealSearches] = useState<number>(0);
-  const [realSaves, setRealSaves] = useState<number>(0);
-  const [realActiveCampaigns, setRealActiveCampaigns] = useState<number>(0);
+  // Seats — wire to actual org_members count instead of subscription.seats
+  // (which is null for most accounts since seat tracking lives in org_members,
+  // not on the Stripe subscription row). Falls back to null so the hero hides
+  // the row cleanly when the user isn't part of an org.
+  const [orgSeatCount, setOrgSeatCount] = useState<number | null>(null);
 
   const checkoutSuccess = searchParams.get('checkout') === 'success';
 
@@ -88,49 +87,39 @@ export default function Billing() {
   useEffect(() => {
     if (!user) return;
     loadSubscription();
-    loadRealUsageCounters();
+    loadOrgSeatCount();
     if (checkoutSuccess) {
       const t = setTimeout(() => {
         loadSubscription();
-        loadRealUsageCounters();
+        loadOrgSeatCount();
       }, 3500);
       return () => clearTimeout(t);
     }
   }, [user, checkoutSuccess]);
 
-  // PRESERVED VERBATIM (from prior phase). Reads three real meters and
-  // silently fails per branch — never blocks Billing page render.
-  async function loadRealUsageCounters() {
+  // Resolve the user's org → count active members so the hero "X seats
+  // assigned" line shows real numbers instead of the always-blank
+  // subscription.seats column.
+  async function loadOrgSeatCount() {
     if (!user?.id) return;
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-
-    supabase
-      .from('lit_activity_events')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', (user as any).id)
-      .eq('event_type', 'search')
-      .gte('created_at', monthStart)
-      .then(
-        (res: any) => {
-          if (!res?.error && typeof res?.count === 'number') setRealSearches(res.count);
-        },
-        () => { /* silent */ },
-      );
-
-    getSavedCompanies()
-      .then((resp: any) => {
-        const rows = Array.isArray(resp?.rows) ? resp.rows : Array.isArray(resp) ? resp : [];
-        setRealSaves(rows.length || 0);
-      })
-      .catch(() => { /* silent */ });
-
-    getLitCampaigns()
-      .then((resp: any) => {
-        const rows = Array.isArray(resp?.rows) ? resp.rows : Array.isArray(resp) ? resp : [];
-        const active = rows.filter((c: any) => c?.status === 'active' || c?.status === 'live').length;
-        setRealActiveCampaigns(active);
-      })
-      .catch(() => { /* silent */ });
+    try {
+      const { data: membership } = await supabase
+        .from('org_members')
+        .select('org_id')
+        .eq('user_id', user.id)
+        .order('joined_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      const orgId = membership?.org_id;
+      if (!orgId) return;
+      const { count } = await supabase
+        .from('org_members')
+        .select('user_id', { count: 'exact', head: true })
+        .eq('org_id', orgId);
+      if (typeof count === 'number') setOrgSeatCount(count);
+    } catch {
+      /* silent — hero hides the row when null */
+    }
   }
 
   // PRESERVED VERBATIM. Reads from `subscriptions` table.
@@ -249,11 +238,14 @@ export default function Billing() {
     ? 'affiliate'
     : 'none';
 
-  // Seat config
+  // Seat config — `assignedSeats` is the real number of org members the
+  // user currently shares a workspace with (loaded above). `seatsIncluded`
+  // is what the package bundles. The hero hides the row when assigned is
+  // null (solo accounts not in an org).
   const assignedSeats =
-    subscription?.seats ||
-    (user as any)?.seat_count ||
-    (user as any)?.team_seat_count ||
+    orgSeatCount ??
+    subscription?.seats ??
+    (user as any)?.seat_count ??
     null;
   // 2026-04-29: included seats per package. Growth = 3, Scale = 5,
   // Enterprise = Custom, everything else = 1.
@@ -335,16 +327,12 @@ export default function Billing() {
   // for free / trial / active.
   const showCycleToggle = canonicalState === 'free' || canonicalState === 'trial' || canonicalState === 'active';
 
-  // Build real usage meters from useEntitlements snapshot. Falls back to
-  // legacy in-page counters until snapshot loads.
+  // Build real usage meters from useEntitlements snapshot. Single source
+  // of truth — get-entitlements is canonical, so we no longer maintain a
+  // parallel set of fallback queries against lit_activity_events /
+  // saved_companies / lit_campaigns.
   const usageMeters: UsageMeter[] = useMemo(() => {
-    if (!entitlements) {
-      return [
-        { key: 'company_search', label: 'Searches', used: realSearches, limit: currentPlan.limits.searches_per_month },
-        { key: 'saved_company', label: 'Saved companies', used: realSaves, limit: currentPlan.limits.command_center_saves_per_month },
-        { key: 'campaign_send', label: 'Active campaigns', used: realActiveCampaigns, limit: currentPlan.limits.campaigns_active },
-      ];
-    }
+    if (!entitlements) return [];
     const keys: FeatureKey[] = [
       'company_search',
       'saved_company',
@@ -362,7 +350,7 @@ export default function Billing() {
         used: entitlements.used[k] ?? 0,
         limit: entitlements.limits[k] ?? null,
       }));
-  }, [entitlements, realSearches, realSaves, realActiveCampaigns, currentPlan]);
+  }, [entitlements]);
 
   // Usage warnings for BillingAlerts (≥80% of any limited counter)
   const usageWarnings = useMemo(() => {
@@ -431,6 +419,22 @@ export default function Billing() {
           />
         </div>
 
+        {/* Trial countdown — shown only for trial users. Pulse Coach
+            visual language so it slots cleanly above the hero without
+            competing with it. Surfaces real days-left + the highest-burn
+            usage meter so users see exactly what's about to run out. */}
+        {canonicalState === 'trial' && (
+          <div className="mb-6">
+            <TrialCountdownCard
+              daysLeft={daysUntilRenewal}
+              endDate={renewalDate}
+              meters={usageMeters}
+              onUpgrade={() => handleCheckout('starter')}
+              onCompare={scrollToPlans}
+            />
+          </div>
+        )}
+
         {/* Hero */}
         <div className="mb-6">
           <BillingHero
@@ -490,6 +494,17 @@ export default function Billing() {
           />
         </div>
 
+        {/* Affiliate tie-in — moved above Invoices so the partner program
+            is visible without scrolling past an empty invoices block. */}
+        <div className="mb-6">
+          <AffiliateTieIn
+            state={affiliateState}
+            onApply={() => navigate('/partners/apply')}
+            onOpenDash={() => navigate('/app/affiliate')}
+            onOpenAdmin={() => navigate('/app/admin/partner-program')}
+          />
+        </div>
+
         {/* Invoices */}
         <div className="mb-6">
           <BillingInvoices
@@ -498,16 +513,6 @@ export default function Billing() {
             canManage={canManage}
             onOpenPortal={handlePortal}
             isLoading={isRedirecting}
-          />
-        </div>
-
-        {/* Affiliate tie-in */}
-        <div className="mb-6">
-          <AffiliateTieIn
-            state={affiliateState}
-            onApply={() => navigate('/partners/apply')}
-            onOpenDash={() => navigate('/app/affiliate')}
-            onOpenAdmin={() => navigate('/app/admin/partner-program')}
           />
         </div>
 
@@ -521,4 +526,123 @@ export default function Billing() {
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Trial-specific countdown banner. Only renders for users in the `trial`
+ * canonical state. Shows real days-left, the highest-burn usage meter,
+ * and a strong upgrade CTA — keeps trial users anchored to "what runs
+ * out, when, and how to keep going." Pulse Coach styling matches the
+ * Profile-page premium quota card pattern for cross-page brand
+ * consistency.
+ */
+function TrialCountdownCard({
+  daysLeft,
+  endDate,
+  meters,
+  onUpgrade,
+  onCompare,
+}: {
+  daysLeft: number | null;
+  endDate: string | null;
+  meters: UsageMeter[];
+  onUpgrade: () => void;
+  onCompare: () => void;
+}) {
+  const hottestMeter = useMemo(() => {
+    const limited = meters.filter((m) => m.limit != null && m.limit > 0);
+    if (!limited.length) return null;
+    return limited
+      .map((m) => ({ ...m, pct: Math.min(100, Math.round((m.used / (m.limit as number)) * 100)) }))
+      .sort((a, b) => b.pct - a.pct)[0];
+  }, [meters]);
+
+  const headlineDays = daysLeft != null ? `${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}` : null;
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-xl border border-white/10 px-5 py-4 sm:px-6"
+      style={{
+        background: 'linear-gradient(160deg,#0F172A 0%,#1E293B 100%)',
+        boxShadow: 'inset 0 -1px 0 rgba(0,240,255,0.18), 0 1px 3px rgba(15,23,42,0.06)',
+      }}
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-12 -right-10 h-40 w-40 rounded-full opacity-50"
+        style={{ background: 'radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)' }}
+      />
+      <div className="relative flex flex-wrap items-start gap-4 sm:flex-nowrap">
+        <div
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border"
+          style={{ background: 'rgba(0,240,255,0.10)', borderColor: 'rgba(255,255,255,0.10)' }}
+        >
+          <Sparkles className="h-4 w-4" style={{ color: '#00F0FF' }} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-display flex flex-wrap items-center gap-2 text-[12.5px] font-bold tracking-wide text-white">
+            Pulse Coach
+            <span
+              className="inline-flex items-center rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.06em]"
+              style={{
+                color: '#00F0FF',
+                borderColor: 'rgba(0,240,255,0.35)',
+                background: 'rgba(0,240,255,0.08)',
+                fontFamily: 'ui-monospace,monospace',
+              }}
+            >
+              Trial
+            </span>
+            {headlineDays && (
+              <span className="font-mono text-[10.5px] font-semibold text-slate-300">
+                {headlineDays} left{endDate ? ` · ends ${endDate}` : ''}
+              </span>
+            )}
+          </div>
+          <p className="font-display mt-1.5 text-[14px] font-semibold text-white">
+            {hottestMeter && hottestMeter.pct >= 60
+              ? `${hottestMeter.label} ${hottestMeter.pct}% used — upgrade now and we'll honor your trial usage.`
+              : `Get the most out of your trial — upgrade to unlock unlimited workflows.`}
+          </p>
+          {hottestMeter && hottestMeter.limit != null && (
+            <div className="mt-2.5 flex items-center gap-2 text-[11px] text-slate-300" style={{ fontFamily: 'DM Sans,sans-serif' }}>
+              <span className="font-mono text-white">
+                {hottestMeter.used} / {hottestMeter.limit}
+              </span>
+              <span>·</span>
+              <span>{hottestMeter.label.toLowerCase()}</span>
+              <div className="ml-2 h-1 flex-1 overflow-hidden rounded-full bg-white/5 max-w-[180px]">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${Math.max(2, hottestMeter.pct)}%`,
+                    background:
+                      hottestMeter.pct >= 90 ? '#F97316' : hottestMeter.pct >= 70 ? '#FACC15' : '#00F0FF',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
+          <button
+            type="button"
+            onClick={onCompare}
+            className="font-display inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[11.5px] font-semibold text-slate-200 transition hover:bg-white/10"
+          >
+            Compare plans
+          </button>
+          <button
+            type="button"
+            onClick={onUpgrade}
+            className="font-display inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-[11.5px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.35)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.45)]"
+            style={{ background: 'linear-gradient(180deg,#0F172A 0%,#0B1220 100%)' }}
+          >
+            Upgrade now
+            <ArrowRight className="h-3 w-3" style={{ color: '#00F0FF' }} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
