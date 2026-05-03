@@ -20,6 +20,7 @@ import {
   AlertCircle,
   ArrowUpRight,
   BarChart3,
+  Bookmark,
   Briefcase,
   Building2,
   CheckCircle2,
@@ -29,6 +30,9 @@ import {
   GitBranch,
   Link as LinkIcon,
   Linkedin,
+  Loader2,
+  Mail,
+  MailCheck,
   MapPin,
   Phone,
   RefreshCw,
@@ -47,6 +51,7 @@ import { CompanyAvatar } from '@/components/CompanyAvatar';
 import { extractDomain } from '@/lib/logo';
 import {
   computeVolumeSignal,
+  fetchDecisionMakers,
   fetchHiringSignal,
   summarizeHiring,
 } from '@/features/pulse/pulseSignals';
@@ -59,10 +64,12 @@ export default function PulseQuickCard({
   onClose,
   onOpenInSearch,
   onAddToCampaign,
-  onSaveToList,
-  onFindDecisionMakers,
+  onSaveToLibrary,        // NEW: save to All-saves without opening list picker
+  onSaveToList,           // existing: save + open named-list picker
+  onAddContactToCampaign, // optional: add a discovered Apollo contact to campaign
   onGenerateInsight,
   isInDatabase,
+  saveToLibraryPending,
   // Coach insight state — populated by Pulse page after pulse-ai-enrich
   // returns. `insight` carries { report, generatedAt, cached, confidence,
   // companyId }. `insightLoading` and `insightError` handle in-flight /
@@ -117,6 +124,49 @@ export default function PulseQuickCard({
     });
     return () => { cancelled = true; };
   }, [open, orgId]);
+
+  // Decision makers — lazy on user click, cached client-side for 6h
+  const [decisionMakers, setDecisionMakers] = useState(null);
+  const [dmLoading, setDmLoading] = useState(false);
+  const [dmError, setDmError] = useState(null);
+  const [revealedContactKeys, setRevealedContactKeys] = useState(new Set());
+
+  // Reset DM state on company change
+  useEffect(() => {
+    setDecisionMakers(null);
+    setDmLoading(false);
+    setDmError(null);
+    setRevealedContactKeys(new Set());
+  }, [company.id]);
+
+  async function handleFindDecisionMakers() {
+    if (dmLoading) return;
+    setDmLoading(true);
+    setDmError(null);
+    const res = await fetchDecisionMakers({
+      domain,
+      name: company.name,
+      city: company.city,
+      state: company.state,
+      country: company.country,
+    });
+    setDmLoading(false);
+    if (!res.ok) {
+      setDmError(res.message || 'Could not load decision makers.');
+      setDecisionMakers([]);
+      return;
+    }
+    setDecisionMakers(res.contacts);
+  }
+
+  function toggleReveal(key) {
+    setRevealedContactKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   return (
     <>
@@ -279,6 +329,19 @@ export default function PulseQuickCard({
             )}
           </Section>
 
+          {/* Decision makers — Apollo contact search inline */}
+          <Section label="Decision makers">
+            <DecisionMakersPanel
+              contacts={decisionMakers}
+              loading={dmLoading}
+              error={dmError}
+              onFetch={handleFindDecisionMakers}
+              revealedKeys={revealedContactKeys}
+              onToggleReveal={toggleReveal}
+              onAddContactToCampaign={onAddContactToCampaign}
+            />
+          </Section>
+
           {/* Coach insight — dark slate + cyan to match Pulse Coach branding */}
           <Section label="Coach insight" tone="dark">
             <CoachInsightPanel
@@ -350,35 +413,42 @@ export default function PulseQuickCard({
 
         {/* Action stack — sticky footer */}
         <footer className="border-t border-slate-200 bg-white p-3">
-          <div className="grid grid-cols-2 gap-2">
-            {inDb ? (
-              <ActionButton
-                primary
-                icon={Search}
-                label="Open in Search"
-                onClick={() => onOpenInSearch?.(company)}
-              />
-            ) : (
-              <ActionButton
-                icon={Search}
-                label="Check in Search"
-                onClick={() => onOpenInSearch?.(company)}
-              />
-            )}
+          {/* Primary CTA — full width, contextual label */}
+          {inDb ? (
             <ActionButton
-              icon={UserPlus}
-              label="Find decision makers"
-              onClick={() => onFindDecisionMakers?.(company)}
+              primary
+              icon={Search}
+              label="Open in Search"
+              onClick={() => onOpenInSearch?.(company)}
+            />
+          ) : (
+            <ActionButton
+              primary
+              icon={Search}
+              label="Check in Search"
+              onClick={() => onOpenInSearch?.(company)}
+            />
+          )}
+          {/* Secondary actions — Save / Add to list / Add to Campaign */}
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <ActionButton
+              icon={Bookmark}
+              label="Save"
+              busy={saveToLibraryPending}
+              onClick={() => onSaveToLibrary?.(company)}
+              title="Save to your Pulse library (All saves)"
             />
             <ActionButton
               icon={Database}
               label="Add to list"
               onClick={() => onSaveToList?.(company)}
+              title="Save and add to a named list"
             />
             <ActionButton
               icon={Target}
-              label="Add to Campaign"
+              label="Campaign"
               onClick={() => onAddToCampaign?.(company)}
+              title="Save and attach to a campaign"
             />
           </div>
         </footer>
@@ -573,15 +643,17 @@ function Badge({ tone, icon: Icon, children }) {
   );
 }
 
-function ActionButton({ icon: Icon, label, primary, onClick }) {
+function ActionButton({ icon: Icon, label, primary, onClick, busy, title }) {
   if (primary) {
     return (
       <button
         type="button"
         onClick={onClick}
-        className="font-display col-span-2 inline-flex items-center justify-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)] hover:from-blue-500 hover:to-blue-700"
+        title={title}
+        disabled={busy}
+        className="font-display flex w-full items-center justify-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-2 text-[12px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)] transition hover:from-blue-500 hover:to-blue-700 disabled:opacity-60"
       >
-        <Icon className="h-3 w-3" />
+        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Icon className="h-3 w-3" />}
         {label}
         <ArrowUpRight className="h-3 w-3 opacity-80" />
       </button>
@@ -591,11 +663,233 @@ function ActionButton({ icon: Icon, label, primary, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="font-display inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11.5px] font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+      title={title}
+      disabled={busy}
+      className="font-display inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 disabled:opacity-60"
     >
-      <Icon className="h-3 w-3" />
+      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Icon className="h-3 w-3" />}
       {label}
     </button>
+  );
+}
+
+// Decision Makers panel — Apollo contact search rendered inline in
+// the rail. Empty state: a clear CTA explaining what'll happen.
+// Loading: spinner + "Asking Apollo for decision makers at {company}".
+// Populated: stacked contact cards with reveal-on-click for email +
+// phone (so the user knows when they're consuming a credit), plus
+// LinkedIn link and per-contact "Add to Campaign".
+function DecisionMakersPanel({
+  contacts,
+  loading,
+  error,
+  onFetch,
+  revealedKeys,
+  onToggleReveal,
+  onAddContactToCampaign,
+}) {
+  // Idle — never fetched yet
+  if (contacts == null && !loading && !error) {
+    return (
+      <div className="flex items-start gap-2.5 py-2">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50">
+          <UserPlus className="h-3.5 w-3.5 text-blue-600" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-body text-[11.5px] leading-relaxed text-slate-600">
+            Pull verified buyers and decision-makers at this company —
+            VPs, Directors, and C-suite — with email + phone reveal.
+          </div>
+          <button
+            type="button"
+            onClick={onFetch}
+            className="font-display mt-2 inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+          >
+            <UserPlus className="h-3 w-3" />
+            Find decision makers
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-2">
+        <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
+        <span className="font-body text-[11.5px] text-slate-600">
+          Looking up decision makers…
+        </span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-start gap-2 py-2">
+        <AlertCircle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
+        <div className="min-w-0 flex-1">
+          <div className="font-body text-[11.5px] text-amber-800">{error}</div>
+          <button
+            type="button"
+            onClick={onFetch}
+            className="font-display mt-1 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10.5px] font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <RefreshCw className="h-2.5 w-2.5" />
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!contacts.length) {
+    return (
+      <div className="py-2 text-center">
+        <div className="font-body text-[11.5px] text-slate-500">
+          No decision-makers indexed for this company yet.
+        </div>
+        <button
+          type="button"
+          onClick={onFetch}
+          className="font-display mt-1 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10.5px] font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          <RefreshCw className="h-2.5 w-2.5" />
+          Re-check
+        </button>
+      </div>
+    );
+  }
+
+  // Sort: c-suite/founder/owner first, then VP, then Director — all
+  // already filtered by the edge fn but the response order is
+  // Apollo-internal so a quick re-sort makes the rail predictable.
+  const seniorityWeight = (s) => {
+    const v = String(s || '').toLowerCase();
+    if (v.includes('c_suite') || v.includes('founder') || v.includes('owner')) return 0;
+    if (v.includes('vp')) return 1;
+    if (v.includes('head')) return 2;
+    if (v.includes('director')) return 3;
+    return 4;
+  };
+  const sorted = [...contacts].sort(
+    (a, b) => seniorityWeight(a.seniority) - seniorityWeight(b.seniority),
+  );
+  const visible = sorted.slice(0, 8);
+
+  return (
+    <div className="flex flex-col gap-1.5 py-1">
+      <div className="flex items-center justify-between text-[10.5px] text-slate-500">
+        <span className="font-body">{contacts.length} decision-maker{contacts.length === 1 ? '' : 's'} found</span>
+        <button
+          type="button"
+          onClick={onFetch}
+          className="font-display inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-700"
+        >
+          <RefreshCw className="h-2.5 w-2.5" />
+          Re-fetch
+        </button>
+      </div>
+      {visible.map((c) => {
+        const key = c.source_contact_key || `${c.full_name}-${c.title}`;
+        const revealed = revealedKeys.has(key);
+        const initials = (c.full_name || '?')
+          .split(/\s+/).filter(Boolean).slice(0, 2)
+          .map((p) => p[0]?.toUpperCase() ?? '').join('') || '?';
+        return (
+          <div
+            key={key}
+            className="rounded-md border border-slate-200 bg-white px-2 py-1.5"
+          >
+            <div className="flex items-start gap-2">
+              <div className="font-display flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-[10.5px] font-bold text-white">
+                {initials}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-display flex items-center gap-1 truncate text-[12px] font-semibold text-slate-900">
+                  <span className="truncate">{c.full_name || 'Unknown'}</span>
+                  {c.email && c.email_status === 'verified' ? (
+                    <span title="Verified email">
+                      <MailCheck className="h-2.5 w-2.5 shrink-0 text-green-600" />
+                    </span>
+                  ) : null}
+                </div>
+                <div className="font-body truncate text-[10.5px] text-slate-500">
+                  {c.title || '—'}
+                  {c.department ? ` · ${c.department}` : ''}
+                </div>
+                {/* Reveal block */}
+                {revealed ? (
+                  <div className="mt-1 flex flex-col gap-0.5">
+                    {c.email ? (
+                      <a
+                        href={`mailto:${c.email}`}
+                        className="font-mono inline-flex items-center gap-1 truncate text-[10.5px] text-blue-700 hover:underline"
+                      >
+                        <Mail className="h-2.5 w-2.5 shrink-0" />
+                        {c.email}
+                      </a>
+                    ) : (
+                      <span className="font-body text-[10.5px] italic text-slate-400">
+                        No email on file
+                      </span>
+                    )}
+                    {c.phone ? (
+                      <a
+                        href={`tel:${c.phone}`}
+                        className="font-mono inline-flex items-center gap-1 text-[10.5px] text-slate-700 hover:underline"
+                      >
+                        <Phone className="h-2.5 w-2.5 shrink-0" />
+                        {c.phone}
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+              {/* Side actions */}
+              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => onToggleReveal(key)}
+                  title={revealed ? 'Hide details' : 'Reveal email + phone'}
+                  className="font-display inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[9.5px] font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  {revealed ? 'Hide' : 'Reveal'}
+                </button>
+                {c.linkedin_url ? (
+                  <a
+                    href={c.linkedin_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open LinkedIn"
+                    className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-0.5 text-blue-700 hover:bg-blue-50"
+                  >
+                    <Linkedin className="h-2.5 w-2.5" />
+                  </a>
+                ) : null}
+              </div>
+            </div>
+            {onAddContactToCampaign ? (
+              <div className="mt-1.5 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => onAddContactToCampaign(c)}
+                  className="font-display inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+                >
+                  <Target className="h-2.5 w-2.5" />
+                  Add to Campaign
+                </button>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+      {contacts.length > 8 ? (
+        <div className="font-body text-center text-[10px] text-slate-500">
+          +{contacts.length - 8} more — re-run with tighter filters to focus
+        </div>
+      ) : null}
+    </div>
   );
 }
 

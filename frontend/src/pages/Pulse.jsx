@@ -314,6 +314,28 @@ export default function Pulse() {
     return { id: co?.id, source_company_key: co?.source_company_key, name: co?.name };
   }
 
+  // "Save" — quick save to the Pulse Library (All saves view). No
+  // picker, no extra clicks. Distinct from "Add to list" which opens
+  // the named-list chooser.
+  const [saveLibraryPendingId, setSaveLibraryPendingId] = useState(null);
+  async function handleSaveToLibrary(company) {
+    if (!company) return;
+    setSaveLibraryPendingId(company.id || company.name);
+    try {
+      await upsertCompanyFromResult(company);
+      setLibraryRefreshKey((k) => k + 1);
+    } catch (error) {
+      console.error('[Pulse] save to library failed:', error);
+      if (error instanceof LimitExceededError) {
+        setErrorMessage(error.message + ' Upgrade at /app/billing.');
+      } else {
+        setErrorMessage(error?.message || 'Failed to save company.');
+      }
+    } finally {
+      setSaveLibraryPendingId(null);
+    }
+  }
+
   // "Add to list" — open the Saved Lists picker. The picker needs a
   // canonical lit_companies.id, so we save the company first (idempotent)
   // and resolve the UUID before showing the chooser.
@@ -332,6 +354,47 @@ export default function Pulse() {
         setErrorMessage(error.message + ' Upgrade at /app/billing.');
       } else {
         setErrorMessage(error?.message || 'Failed to save company.');
+      }
+    }
+  }
+
+  // "Add to Campaign" for an Apollo decision-maker contact discovered
+  // inside the Quick Card. Saves the parent company first (so the FK
+  // resolves), persists the contact to lit_contacts, then opens the
+  // existing campaign picker.
+  async function handleAddContactToCampaign(contact) {
+    if (!contact) return;
+    setErrorMessage('');
+    try {
+      const company = activeCompany;
+      if (!company) throw new Error('No active company.');
+      const saved = await upsertCompanyFromResult(company);
+      if (!saved?.id) throw new Error('Failed to save parent company.');
+
+      try {
+        await supabase.from('lit_contacts').insert({
+          company_id: saved.id,
+          full_name: contact.full_name || null,
+          title: contact.title || null,
+          dept: contact.department || null,
+          email: contact.email || null,
+          phone: contact.phone || null,
+          linkedin: contact.linkedin_url || null,
+          source: 'pulse',
+          verified: Boolean(contact.email || contact.phone),
+        });
+      } catch (contactErr) {
+        console.warn('[Pulse] save decision-maker contact failed:', contactErr);
+      }
+
+      setLibraryRefreshKey((k) => k + 1);
+      setCampaignTarget({ company_id: saved.id, name: saved.name || company.name });
+    } catch (error) {
+      console.error('[Pulse] add contact to campaign failed:', error);
+      if (error instanceof LimitExceededError) {
+        setErrorMessage(error.message + ' Upgrade at /app/billing.');
+      } else {
+        setErrorMessage(error?.message || 'Failed to add contact to campaign.');
       }
     }
   }
@@ -357,14 +420,6 @@ export default function Pulse() {
     const name = company?.name || '';
     if (!name) return;
     window.location.href = `/app/search?q=${encodeURIComponent(name)}`;
-  }
-
-  async function handleFindDecisionMakers(company) {
-    // Re-run Pulse with a contact-style query for this company. The
-    // backend mode-classifier picks people mode automatically.
-    const focus = company?.name ? `Decision makers at ${company.name}` : 'Decision makers';
-    setActiveCompany(null);
-    runSearch(focus);
   }
 
   // Coach insight handler — invokes the existing pulse-ai-enrich edge fn
@@ -796,9 +851,11 @@ export default function Pulse() {
         onClose={() => setActiveCompany(null)}
         onOpenInSearch={handleOpenInSearch}
         onAddToCampaign={handleAddToCampaign}
+        onSaveToLibrary={handleSaveToLibrary}
         onSaveToList={handleSaveToList}
-        onFindDecisionMakers={handleFindDecisionMakers}
+        onAddContactToCampaign={handleAddContactToCampaign}
         onGenerateInsight={handleGenerateInsight}
+        saveToLibraryPending={saveLibraryPendingId === (activeCompany?.id || activeCompany?.name)}
         isInDatabase={activeCompany?.provenance === 'database' || activeCompany?.alsoLive}
         insight={(() => {
           if (!activeCompany) return null;

@@ -150,6 +150,105 @@ export async function fetchHiringSignal(orgId) {
   }
 }
 
+/* ─── Decision makers (Apollo contact search) ─── */
+
+const DM_CACHE_PREFIX = 'lit.pulse.dm.v1.';
+const DM_TTL_MS = 6 * 60 * 60 * 1000; // 6h
+
+function dmCacheKey(company) {
+  // Stable key — domain wins, falls back to lower-cased name
+  const k = (company?.domain || company?.name || '').toLowerCase().trim();
+  return DM_CACHE_PREFIX + k;
+}
+
+function readDmCache(company) {
+  try {
+    const raw = window.localStorage.getItem(dmCacheKey(company));
+    if (!raw) return null;
+    const { at, contacts } = JSON.parse(raw);
+    if (!at || !Array.isArray(contacts)) return null;
+    if (Date.now() - at > DM_TTL_MS) return null;
+    return contacts;
+  } catch {
+    return null;
+  }
+}
+
+function writeDmCache(company, contacts) {
+  try {
+    window.localStorage.setItem(
+      dmCacheKey(company),
+      JSON.stringify({ at: Date.now(), contacts }),
+    );
+  } catch {
+    // ignore quota
+  }
+}
+
+/**
+ * Find decision makers AT a company via Apollo's contact search.
+ * Pre-filters seniorities to c-suite + VP + Director so the rail
+ * doesn't get flooded with low-signal hits. Cached per-company for
+ * 6h — repeat opens of the same Quick Card don't burn credits.
+ *
+ * Returns:
+ *   { ok: true, contacts: [...], cached: bool }
+ *   { ok: false, code, message }
+ */
+export async function fetchDecisionMakers(company) {
+  if (!company?.domain && !company?.name) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Need a domain or name.' };
+  }
+
+  const cached = readDmCache(company);
+  if (cached) return { ok: true, cached: true, contacts: cached };
+
+  try {
+    const { data, error } = await supabase.functions.invoke('apollo-contact-search', {
+      body: {
+        domain: company.domain || undefined,
+        company_name: company.name || undefined,
+        city: company.city || undefined,
+        state: company.state || undefined,
+        country: company.country || undefined,
+        // Decision-maker scope
+        seniorities: ['c_suite', 'founder', 'owner', 'partner', 'vp', 'head', 'director'],
+        // Reasonable page size — we only render top ~10 in the rail
+        per_page: 25,
+        page: 1,
+      },
+    });
+    if (error) {
+      let parsed = null;
+      try {
+        const cloned = error?.context?.clone?.();
+        parsed = await cloned?.json?.();
+      } catch { parsed = null; }
+      return {
+        ok: false,
+        code: parsed?.code || 'NETWORK',
+        message: parsed?.message || parsed?.error || error.message || 'Lookup failed.',
+      };
+    }
+    if (!data?.ok) {
+      return {
+        ok: false,
+        code: data?.code || 'PROVIDER_ERROR',
+        message: data?.message || data?.error || 'Lookup failed.',
+      };
+    }
+    const contacts = Array.isArray(data.contacts) ? data.contacts : [];
+    writeDmCache(company, contacts);
+    return { ok: true, cached: false, contacts };
+  } catch (err) {
+    return {
+      ok: false,
+      code: 'NETWORK',
+      message: err?.message || 'Decision-maker lookup network error.',
+    };
+  }
+}
+
 /** Cheap formatter for "12 open roles · Engineering · 3d ago" */
 export function summarizeHiring(signal) {
   if (!signal || !signal.total) return null;
