@@ -44,13 +44,22 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// Maps any historical alias to the canonical plan codes that exist in
+// the public.plans table today (free_trial / starter / growth / scale /
+// enterprise). The previous version normalized everything paid-but-not-
+// growth/enterprise into the legacy "standard" code that no longer
+// exists in the table — so every Starter checkout returned a 404
+// "Active plan not found for code: standard". 2026-04-29 catalog
+// rewrite is the source of truth; nothing should map to "standard"
+// or "pro" anymore.
 function normalizePlanCode(plan?: string | null) {
   const p = String(plan || "").toLowerCase().trim();
 
-  if (!p || p === "free" || p === "free_trial") return "standard";
-  if (p === "pro" || p === "starter" || p === "standard") return "standard";
-  if (p === "growth" || p === "growth_plus") return "growth";
-  if (p.startsWith("enterprise")) return "enterprise";
+  if (!p || p === "free" || p === "free_trial") return "free_trial";
+  if (p === "starter" || p === "standard") return "starter";
+  if (p === "growth" || p === "growth_plus" || p === "pro") return "growth";
+  if (p === "scale") return "scale";
+  if (p.startsWith("enterprise") || p === "unlimited") return "enterprise";
 
   return p;
 }
