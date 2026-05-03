@@ -15,7 +15,7 @@
 // Vendor-neutral copy: nothing here mentions Apollo / ImportYeti / Tavily /
 // Hunter. "Verified", "In database", "Live", "Coach" — that's it.
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowUpRight,
@@ -45,6 +45,11 @@ import {
 import BrandIcon from '@/features/pulse/BrandIcon';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
 import { extractDomain } from '@/lib/logo';
+import {
+  computeVolumeSignal,
+  fetchHiringSignal,
+  summarizeHiring,
+} from '@/features/pulse/pulseSignals';
 
 const RAIL_BG = 'bg-white';
 
@@ -83,6 +88,35 @@ export default function PulseQuickCard({
   // surface the row honestly with a "Detection pending" empty state.
   const techStack = Array.isArray(company.tech_stack) ? company.tech_stack : [];
   const ecomPlatform = company.ecommerce_platform || detectEcomFromStack(techStack);
+
+  // Volume signal — derived from shipments_12m + most_recent_shipment_date.
+  // Honest computation; not fabricated YoY growth.
+  const volumeSignal = useMemo(() => computeVolumeSignal(company.kpis), [company.kpis]);
+
+  // Hiring signal — lazy-fetched per-company on rail open. Cache on the
+  // helper side keeps repeat opens free.
+  const orgId = company.business_id || company.source_company_key || null;
+  const [hiring, setHiring] = useState(null);
+  const [hiringLoading, setHiringLoading] = useState(false);
+  const [hiringError, setHiringError] = useState(null);
+
+  useEffect(() => {
+    if (!open || !orgId) return;
+    let cancelled = false;
+    setHiringLoading(true);
+    setHiringError(null);
+    setHiring(null);
+    fetchHiringSignal(orgId).then((res) => {
+      if (cancelled) return;
+      if (res.ok) {
+        setHiring(res.signal);
+      } else {
+        setHiringError(res.code || 'UNAVAILABLE');
+      }
+      setHiringLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [open, orgId]);
 
   return (
     <>
@@ -181,10 +215,10 @@ export default function PulseQuickCard({
             />
             <SignalRow
               icon={TrendingUp}
-              label="Year-over-year growth"
-              value={null}
-              hint="Coach can analyze the change for you"
-              accent="mute"
+              label="Volume tier"
+              value={volumeSignal ? volumeSignal.label : null}
+              hint="No shipment history yet"
+              accent={volumeSignal?.accent || 'mute'}
             />
             <SignalRow
               icon={ShoppingBag}
@@ -194,17 +228,20 @@ export default function PulseQuickCard({
               hint="Detection pending"
               accent={ecomPlatform ? 'blue' : 'mute'}
             />
-            <SignalRow
-              icon={Zap}
-              label="Hiring / sales signal"
-              value={null}
-              hint="Detection pending"
-              accent="mute"
+            <HiringSignalRow
+              loading={hiringLoading}
+              error={hiringError}
+              signal={hiring}
+              orgId={orgId}
             />
             <SignalRow
               icon={Briefcase}
               label="Recent activity"
-              value={recentDate ? formatRelative(recentDate) : null}
+              value={
+                recentDate
+                  ? `${formatRelative(recentDate)}${volumeSignal?.activity ? ` · ${volumeSignal.activity}` : ''}`
+                  : null
+              }
               accent={recentDate ? 'blue' : 'mute'}
             />
           </Section>
@@ -408,6 +445,95 @@ function SignalRow({ icon: Icon, label, value, hint, accent, brand }) {
         ) : (
           <div className="font-body text-[11px] italic text-slate-400">{hint || '—'}</div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Hiring signal row — its own component because it has 4 states
+// (loading, error, empty, populated) and each renders differently.
+// Vendor-neutral copy: never references Apollo; says "hiring data
+// unavailable" or "no open roles".
+function HiringSignalRow({ loading, error, signal, orgId }) {
+  // No org id at all — show the row as detection-pending so the slot
+  // doesn't disappear (keeps the layout stable across companies)
+  if (!orgId) {
+    return (
+      <SignalRow
+        icon={Zap}
+        label="Hiring signal"
+        value={null}
+        hint="Detection pending"
+        accent="mute"
+      />
+    );
+  }
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-1.5">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-50">
+          <Zap className="h-3 w-3 text-slate-500" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-body text-[11px] text-slate-500">Hiring signal</div>
+          <div className="font-body text-[11px] italic text-slate-400">Checking…</div>
+        </div>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <SignalRow
+        icon={Zap}
+        label="Hiring signal"
+        value={null}
+        hint="Hiring data unavailable"
+        accent="mute"
+      />
+    );
+  }
+  if (!signal || !signal.total) {
+    return (
+      <SignalRow
+        icon={Zap}
+        label="Hiring signal"
+        value="No open roles"
+        hint=""
+        accent="mute"
+      />
+    );
+  }
+  const summary = summarizeHiring(signal);
+  const accent =
+    signal.freshness === 'hot' ? 'green' :
+    signal.freshness === 'warm' ? 'blue' :
+    'slate';
+  const valueColor =
+    accent === 'green' ? 'text-green-700' :
+    accent === 'blue' ? 'text-blue-700' :
+    'text-slate-900';
+  return (
+    <div className="flex items-center gap-2 py-1.5">
+      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-50">
+        <Zap className="h-3 w-3 text-slate-500" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="font-body text-[11px] text-slate-500">Hiring signal</div>
+        <div className={['font-mono text-[12.5px] font-semibold', valueColor].join(' ')}>
+          {summary}
+        </div>
+        {signal.departments?.length > 1 ? (
+          <div className="mt-0.5 flex flex-wrap gap-1">
+            {signal.departments.slice(1, 4).map((d) => (
+              <span
+                key={d.name}
+                className="font-display inline-flex rounded-full bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-semibold text-slate-600"
+              >
+                {d.name} · {d.count}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
