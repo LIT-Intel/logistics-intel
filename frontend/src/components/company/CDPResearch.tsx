@@ -239,6 +239,7 @@ export default function CDPResearch({
           report={report!}
           companyName={companyName}
           tradeKpis={tradeKpis}
+          topRoutes={topRoutes}
           navigate={navigate}
         />
       )}
@@ -559,11 +560,13 @@ function ReportBody({
   report,
   companyName,
   tradeKpis,
+  topRoutes,
   navigate,
 }: {
   report: PulseReport;
   companyName: string;
   tradeKpis?: TradeKpis;
+  topRoutes?: TopRouteItem[] | null;
   navigate?: (path: string) => void;
 }) {
   const exec = mergeText(report.company_summary, report.why_now);
