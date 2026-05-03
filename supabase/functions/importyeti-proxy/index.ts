@@ -918,6 +918,42 @@ function buildSnapshotFromCompanyData(
     .sort((a, b) => b.shipments - a.shipments)
     .slice(0, 10);
 
+  // ImportYeti's `time_series` carries monthly TEU values that are often
+  // 0 for recent months (the parser only fills TEU when the full container
+  // detail is available). That makes our naive "sum monthly TEU over last
+  // 12m" wildly underestimate when most BOLs lack container detail —
+  // Superior Essex shows 9 TEU against 44 12m shipments, while the
+  // top_routes aggregate adds to ~138 TEU and avg_teu_per_month.12m × 12
+  // says ~174. Pick the largest credible value so we never persist the
+  // single-digit number.
+  {
+    const routeTeuSum = topRoutes.reduce(
+      (sum, r) => sum + (Number(r?.teu) || 0),
+      0,
+    );
+    const avgPerMonth12m = (() => {
+      const obj = raw?.avg_teu_per_month;
+      if (!obj || typeof obj !== "object") return 0;
+      const v = Number((obj as any)["12m"] ?? (obj as any).twelve_m);
+      return Number.isFinite(v) && v > 0 ? v * 12 : 0;
+    })();
+    const avgPerShipment12m = (() => {
+      const obj = raw?.avg_teu_per_shipment;
+      if (!obj || typeof obj !== "object" || !shipmentsLast12m) return 0;
+      const v = Number((obj as any)["12m"] ?? (obj as any).twelve_m);
+      return Number.isFinite(v) && v > 0 ? v * shipmentsLast12m : 0;
+    })();
+    const candidates = [
+      totalTeu12m,
+      routeTeuSum,
+      avgPerMonth12m,
+      avgPerShipment12m,
+    ].filter((v) => Number.isFinite(v) && v > 0);
+    if (candidates.length > 0) {
+      totalTeu12m = Math.max(...candidates);
+    }
+  }
+
   const topSuppliers = pickTopSuppliers(raw);
 
   const lastShipmentDate =
