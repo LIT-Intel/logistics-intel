@@ -20,11 +20,14 @@ import {
   Flag,
   Globe,
   Hash,
+  HelpCircle,
+  Loader2,
   MapPin,
   Ship,
   Sparkles,
   TrendingUp,
   User,
+  Wand2,
   X,
 } from 'lucide-react';
 
@@ -34,8 +37,16 @@ const DIRECTION_LABEL = {
   ship: 'Shipping',
 };
 
-export default function QueryInterpretation({ parsed, query, onChangeQuery, onRun }) {
-  if (!parsed?.hasAny) return null;
+export default function QueryInterpretation({
+  parsed,
+  query,
+  onChangeQuery,
+  onRun,
+  classifying,
+}) {
+  // Show the card when we have entities OR when an LLM call is in
+  // flight (so the spinner appears even before the first result lands)
+  if (!parsed?.hasAny && !classifying) return null;
 
   function removeFromQuery(needle) {
     if (!query || !needle) return;
@@ -85,8 +96,26 @@ export default function QueryInterpretation({ parsed, query, onChangeQuery, onRu
           <span className="font-body text-[11px] text-slate-400">·</span>
           <span className="font-body text-[11px] text-slate-300">{intentLabel}</span>
 
+          {classifying ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]"
+              style={{ background: 'rgba(0,240,255,0.10)', color: '#7DD3FC' }}
+            >
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              Coach thinking…
+            </span>
+          ) : parsed?.source === 'llm' && parsed?.confidence != null ? (
+            <span
+              title={`LLM confidence ${Math.round(parsed.confidence * 100)}%`}
+              className="font-mono inline-flex rounded-full px-1.5 py-0.5 text-[10px]"
+              style={{ background: 'rgba(0,240,255,0.08)', color: '#7DD3FC' }}
+            >
+              {Math.round(parsed.confidence * 100)}%
+            </span>
+          ) : null}
+
           {/* Run button — gives the user a CTA inside the card */}
-          {onRun ? (
+          {onRun && parsed?.hasAny ? (
             <button
               type="button"
               onClick={onRun}
@@ -102,6 +131,23 @@ export default function QueryInterpretation({ parsed, query, onChangeQuery, onRu
             </button>
           ) : null}
         </div>
+
+        {/* Clarifying question — surfaced when the LLM thought the
+            prompt was ambiguous enough to ask. Only one at a time. */}
+        {parsed?.clarifying_question ? (
+          <div
+            className="mb-2 flex items-start gap-2 rounded-md border px-2.5 py-2"
+            style={{
+              background: 'rgba(0,240,255,0.06)',
+              borderColor: 'rgba(0,240,255,0.20)',
+            }}
+          >
+            <HelpCircle className="mt-0.5 h-3 w-3 shrink-0" style={{ color: '#7DD3FC' }} />
+            <span className="font-body text-[12px] leading-relaxed text-slate-200">
+              {parsed.clarifying_question}
+            </span>
+          </div>
+        ) : null}
 
         {/* Chips */}
         <div className="flex flex-wrap items-center gap-1.5">
@@ -189,8 +235,40 @@ export default function QueryInterpretation({ parsed, query, onChangeQuery, onRu
           ))}
         </div>
 
+        {/* Suggested refinements — surface the LLM's "try this" chips
+            so the user can one-click into a tighter / broader search */}
+        {parsed?.suggested_refinements?.length > 0 ? (
+          <div className="mt-2.5 border-t border-white/5 pt-2">
+            <div
+              className="font-display mb-1.5 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em]"
+              style={{ color: '#7DD3FC' }}
+            >
+              <Wand2 className="h-2.5 w-2.5" />
+              Coach suggests
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {parsed.suggested_refinements.slice(0, 3).map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => onChangeQuery?.(suggestion)}
+                  title="Replace your prompt with this refinement"
+                  className="font-body inline-flex max-w-full items-center gap-1 truncate rounded-md border px-2 py-1 text-left text-[11px]"
+                  style={{
+                    background: 'rgba(255,255,255,0.04)',
+                    borderColor: 'rgba(255,255,255,0.10)',
+                    color: '#E2E8F0',
+                  }}
+                >
+                  <span className="truncate">{suggestion}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {/* Footer hint when freight filters are detected */}
-        {(parsed.direction || parsed.products.length || parsed.origins.length || parsed.destinations.length) ? (
+        {(parsed?.direction || parsed?.products?.length || parsed?.origins?.length || parsed?.destinations?.length) ? (
           <div className="mt-2.5 flex items-center gap-1.5 border-t border-white/5 pt-2 text-[10.5px] text-slate-400">
             <TrendingUp className="h-2.5 w-2.5" style={{ color: '#7DD3FC' }} />
             Freight filters will narrow the cache-first search against your saved companies.

@@ -57,6 +57,10 @@ import {
   parsePulseQuery,
   buildLocalFilterRecipe,
 } from '@/features/pulse/pulseQueryParser';
+import {
+  classifyQuery,
+  mergeClassification,
+} from '@/features/pulse/pulseCoachClassify';
 import QueryInterpretation from '@/features/pulse/QueryInterpretation';
 import PulseMap from '@/features/pulse/PulseMap';
 
@@ -184,11 +188,47 @@ export default function Pulse() {
   }, [query]);
 
   const intent = useMemo(() => detectIntent(query), [query]);
-  // Coach query parser — debounced so it doesn't tear on every keystroke
+
+  // Coach query parser — two layers:
+  //   1. Heuristic runs instantly on every keystroke (debounced 220ms)
+  //      so the user gets immediate entity chips
+  //   2. LLM classifier fires after a longer pause (700ms) and merges
+  //      its richer extraction into the parsed object. Cached 24h
+  //      per-query so repeat searches are free.
   const [parsedQuery, setParsedQuery] = useState(() => parsePulseQuery(''));
+  const [classifyState, setClassifyState] = useState({ loading: false, error: null });
+
   useEffect(() => {
     const t = setTimeout(() => setParsedQuery(parsePulseQuery(query)), 220);
     return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    const trimmed = String(query || '').trim();
+    if (trimmed.length < 4) {
+      setClassifyState({ loading: false, error: null });
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setClassifyState({ loading: true, error: null });
+      const res = await classifyQuery(trimmed);
+      if (cancelled) return;
+      if (!res.ok) {
+        setClassifyState({ loading: false, error: res.code });
+        return;
+      }
+      // Merge LLM result onto current heuristic parse. Re-parse here
+      // so we're merging against the latest heuristic for the
+      // submitted query (handles case where user kept typing).
+      const fresh = parsePulseQuery(trimmed);
+      setParsedQuery(mergeClassification(fresh, res.classification));
+      setClassifyState({ loading: false, error: null });
+    }, 700);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [query]);
   const errorClass = useMemo(() => classifyPulseError(errorMessage), [errorMessage]);
   const isSetupError = errorClass === 'setup';
@@ -754,6 +794,7 @@ export default function Pulse() {
           query={query}
           onChangeQuery={setQuery}
           onRun={() => runSearch()}
+          classifying={classifyState.loading}
         />
 
         {/* Globe — only renders when the parser found freight endpoints */}
