@@ -218,9 +218,28 @@ export default function Pulse() {
       const remotePromise = searchPulse({ query: trimmed, ui_mode: 'auto' });
 
       const [localOut, remote] = await Promise.allSettled([localPromise, remotePromise]);
-      const localRows = localOut.status === 'fulfilled' ? localOut.value.rows : [];
+      let localRows = localOut.status === 'fulfilled' ? localOut.value.rows : [];
       const remoteResp = remote.status === 'fulfilled' ? remote.value : null;
       const remoteRows = Array.isArray(remoteResp?.data?.results) ? remoteResp.data.results : [];
+
+      // Cascade fallback — if the recipe-narrowed local search returned
+      // 0 AND the remote also returned 0, retry the local lookup
+      // without the recipe so the user gets best-effort keyword matches.
+      // This is the safety net for prompts where the recipe is too
+      // strict (e.g. "Georgia" matched a state nobody is saved in yet,
+      // but the keyword "Vietnam" might match company summaries).
+      let usedFallback = false;
+      if (recipe && !localRows.length && !remoteRows.length) {
+        try {
+          const retried = await searchLocalCompanies(trimmed, 12, null);
+          if (retried.rows.length) {
+            localRows = retried.rows;
+            usedFallback = true;
+          }
+        } catch (_) {
+          // ignore — the empty state below will fire
+        }
+      }
 
       const merged = mergeResults(localRows, remoteRows);
 
@@ -240,8 +259,18 @@ export default function Pulse() {
       } else if (remoteResp?.error) {
         if (!localRows.length) setErrorMessage(remoteResp.error);
       } else if (!merged.length) {
+        // Build a specific empty-state message that names what the
+        // parser actually tried — much more useful than generic copy.
+        const tried = describeAttempt(parsedAtSubmit, recipe);
         setErrorMessage(
-          'No matches found. Try widening geography, simplifying the prompt, or asking for a different industry.',
+          tried
+            ? `No matches for ${tried}. The Coach narrowed to your saved freight database; try removing a chip above (e.g. drop the destination) or rephrase as a broader question.`
+            : 'No matches found. Try widening geography, simplifying the prompt, or asking for a different industry.',
+        );
+      } else if (usedFallback) {
+        // Surface a soft hint so the user knows the recipe was loosened
+        setErrorMessage(
+          'Showing keyword matches — your structured freight filters returned no companies. Edit the chips above to refine.',
         );
       }
     } catch (error) {
@@ -476,6 +505,29 @@ export default function Pulse() {
 
   function isUuid(v) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || ''));
+  }
+
+  // Build a human-readable summary of what the search actually tried,
+  // so the empty-state can name the parsed entities back to the user
+  // ("automotive parts importers in Georgia, US") instead of saying
+  // "no matches" with no context.
+  function describeAttempt(parsed, recipe) {
+    if (!parsed?.hasAny) return null;
+    const bits = [];
+    if (parsed.products.length) bits.push(parsed.products.slice(0, 2).join(' / '));
+    else if (parsed.industries.length) bits.push(parsed.industries.slice(0, 2).join(' / '));
+    if (parsed.direction === 'import') bits.push('importers');
+    else if (parsed.direction === 'export') bits.push('exporters');
+    else if (parsed.direction === 'ship') bits.push('shippers');
+    if (parsed.destinations.length) {
+      bits.push(`in ${parsed.destinations.map((d) => d.name).join(', ')}`);
+    } else if (recipe?.states?.length) {
+      bits.push(`in ${recipe.states.join(', ')}`);
+    }
+    if (parsed.origins.length) {
+      bits.push(`sourcing from ${parsed.origins.map((o) => o.name).join(', ')}`);
+    }
+    return bits.length ? bits.join(' ') : null;
   }
 
   async function enrichContact(contact) {

@@ -319,26 +319,49 @@ function dedupeBy(arr, key) {
  * Reduce a parsed query into a small filter recipe the cache-first
  * lit_companies search can consume. Returns null when no useful
  * structured filters are present.
+ *
+ * Critical: this filter targets the WHERE THE COMPANY LIVES, not
+ * sourcing geography. For an import query like "automotive parts
+ * from Vietnam to Georgia," the importer is in Georgia (US) — NOT
+ * in Vietnam. So we always derive country/state from destinations,
+ * and never bleed origin countries into the country filter.
  */
 export function buildLocalFilterRecipe(parsed) {
   if (!parsed?.hasAny) return null;
   const recipe = {};
-  // For freight queries with a clear destination US state, prefer
-  // matching against company state field.
-  const destStates = parsed.destinations.filter((d) => d.kind === 'us_state');
-  if (destStates.length) recipe.states = destStates.map((s) => s.code);
-  // Otherwise any explicit state mentions.
-  else if (parsed.states.length) recipe.states = parsed.states.map((s) => s.code);
 
-  // Country — single-country filter is most useful for the local
-  // cache (lit_companies stores country_code as ISO-2)
-  if (parsed.destinations.some((d) => d.kind === 'country')) {
-    recipe.countries = parsed.destinations
-      .filter((d) => d.kind === 'country')
-      .map((c) => c.code);
-  } else if (parsed.countries.length) {
-    recipe.countries = parsed.countries.map((c) => c.code);
+  // 1) Destination US states or metros → state filter + implied US country
+  const destStates = parsed.destinations.filter((d) => d.kind === 'us_state');
+  const destMetros = parsed.destinations.filter((d) => d.kind === 'metro');
+  if (destStates.length || destMetros.length) {
+    if (destStates.length) recipe.states = destStates.map((s) => s.code);
+    recipe.countries = ['US'];
+    return recipe;
   }
 
-  return Object.keys(recipe).length ? recipe : null;
+  // 2) Destination country → country filter
+  const destCountries = parsed.destinations.filter((d) => d.kind === 'country');
+  if (destCountries.length) {
+    recipe.countries = destCountries.map((c) => c.code);
+    return recipe;
+  }
+
+  // 3) No destinations parsed — fall back to standalone state/metro hits
+  // (these are NOT direction-scoped, so they stand for "company is in X")
+  if (parsed.states.length || parsed.metros.length) {
+    if (parsed.states.length) recipe.states = parsed.states.map((s) => s.code);
+    recipe.countries = ['US'];
+    return recipe;
+  }
+
+  // 4) Standalone country mentions — only safe to apply when there
+  // are NO origins/destinations parsed. If origins exist, the user is
+  // describing sourcing geography ("from Vietnam"), not where the
+  // target company lives, so we must NOT filter on it.
+  if (!parsed.origins.length && !parsed.destinations.length && parsed.countries.length) {
+    recipe.countries = parsed.countries.map((c) => c.code);
+    return recipe;
+  }
+
+  return null;
 }
