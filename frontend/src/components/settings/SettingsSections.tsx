@@ -378,28 +378,106 @@ function planDisplayLabel(plan?: string | null): string {
   return PLAN_LIMITS[normalizePlanCode(plan)].label;
 }
 
+/**
+ * Premium gating card. Replaces the previous amber lock-style card so
+ * upgrade nudges share the same Pulse-Coach visual language as the
+ * Profile-page quota cards: slate gradient, cyan accent, white/10
+ * gloss border. Plan-aware copy + CTA.
+ */
 function TeamUpgradeCard({ plan, onUpgrade }: { plan?: string | null; onUpgrade?: () => void }) {
+  const planLabel = planDisplayLabel(plan);
+  const recommended = (plan ?? "").toLowerCase().includes("starter") ? "Growth" : "Growth";
   return (
-    <div style={{
-      borderRadius: 12, border: "1px solid #FDE68A", background: "#FFFBEB",
-      padding: 20, boxShadow: "0 1px 3px rgba(15,23,42,0.04)",
-    }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: 10, background: "#FEF3C7",
-          border: "1px solid #FDE68A", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-        }}>
-          <Lock size={16} color="#b45309" />
+    <div
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        borderRadius: 12,
+        border: "1px solid rgba(255,255,255,0.10)",
+        background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+        padding: 18,
+        boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18), 0 4px 14px rgba(15,23,42,0.18)",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          pointerEvents: "none",
+          position: "absolute",
+          top: -48,
+          right: -40,
+          width: 160,
+          height: 160,
+          borderRadius: "50%",
+          opacity: 0.5,
+          background: "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)",
+        }}
+      />
+      <div style={{ position: "relative", display: "flex", alignItems: "flex-start", gap: 14 }}>
+        <div
+          style={{
+            width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+            background: "rgba(0,240,255,0.10)",
+            border: "1px solid rgba(255,255,255,0.10)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <Lock size={14} color="#00F0FF" />
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: "Space Grotesk,sans-serif", fontSize: 13, fontWeight: 700, color: "#0F172A" }}>
-            Team invites are on Growth and above
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              display: "flex", alignItems: "center", gap: 8,
+              fontFamily: "Space Grotesk,sans-serif",
+              fontSize: 12.5, fontWeight: 700, color: "#fff",
+              letterSpacing: "0.01em",
+            }}
+          >
+            Pulse Coach
+            <span
+              style={{
+                fontFamily: "ui-monospace,monospace",
+                fontSize: 9, fontWeight: 700,
+                color: "#00F0FF",
+                border: "1px solid rgba(0,240,255,0.35)",
+                background: "rgba(0,240,255,0.08)",
+                padding: "1px 6px",
+                borderRadius: 4,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+              }}
+            >
+              {planLabel}
+            </span>
           </div>
-          <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 12.5, color: "#64748b", marginTop: 3 }}>
-            Your current plan is <strong>{planDisplayLabel(plan)}</strong>. Upgrade to invite teammates, manage roles, and share campaigns.
+          <div
+            style={{
+              marginTop: 6,
+              fontFamily: "DM Sans,sans-serif",
+              fontSize: 12.5, lineHeight: 1.55, color: "#cbd5e1",
+            }}
+          >
+            Team invites unlock on <strong style={{ color: "#fff" }}>{recommended}</strong> and above. Bring your colleagues into one shared workspace, share saved companies and Pulse briefs, and route deals by role.
           </div>
-          <button onClick={onUpgrade} style={{ ...sBtnPrimary, marginTop: 12 }}>
-            View plans
+          <button
+            onClick={onUpgrade}
+            style={{
+              marginTop: 12,
+              display: "inline-flex", alignItems: "center", gap: 6,
+              height: 32,
+              padding: "0 14px",
+              borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.10)",
+              background: "linear-gradient(180deg,#0F172A 0%,#0B1220 100%)",
+              color: "#fff",
+              fontFamily: "Space Grotesk,sans-serif",
+              fontSize: 12, fontWeight: 600,
+              cursor: "pointer",
+              boxShadow: "0 4px 14px rgba(15,23,42,0.35)",
+            }}
+          >
+            Compare plans
+            <span style={{ color: "#00F0FF", fontSize: 13, lineHeight: 1 }}>→</span>
           </button>
         </div>
       </div>

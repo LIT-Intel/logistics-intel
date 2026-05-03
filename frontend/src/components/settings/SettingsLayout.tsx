@@ -25,6 +25,7 @@ import {
   IntegrationsHubSection,
 } from "./SettingsSections";
 import { SBadge, sBtnPrimary } from "./SettingsPrimitives";
+import SettingsAccountSnapshot from "./SettingsAccountSnapshot";
 
 // Accepts ?tab=… (case/spacing tolerant) so deep links route correctly.
 function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
@@ -552,12 +553,16 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
             style={{
               flex: 1,
               overflowY: "auto",
-              padding: "28px 32px 40px",
+              padding: "24px 32px 40px",
               position: "relative",
               minWidth: 0,
             }}
           >
-            <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+              <SettingsAccountSnapshot
+                seatsUsed={props.members?.length}
+                seatsLimit={props.subscription?.seat_limit ?? null}
+              />
               {renderSection(activeSection, props, navigate)}
             </div>
           </div>
