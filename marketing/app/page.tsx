@@ -8,6 +8,11 @@ import { ArrowRight, Calendar } from "lucide-react";
 import { HeroSearchDemo } from "@/components/sections/HeroSearchDemo";
 import { CompanyIntelMock } from "@/components/sections/CompanyIntelMock";
 import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
+import { PulseBriefMock } from "@/components/sections/PulseBriefMock";
+import { ContactDiscoveryMock } from "@/components/sections/ContactDiscoveryMock";
+import { SequenceBuilderMock } from "@/components/sections/SequenceBuilderMock";
+import { CustomerLogosRail } from "@/components/sections/CustomerLogosRail";
+import { LoomTourPlaceholder } from "@/components/sections/LoomTourPlaceholder";
 import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
 
 export const revalidate = 600; // ISR — refresh every 10 min
@@ -41,9 +46,14 @@ export default async function HomePage() {
       <Nav />
       <main>
         <Hero hero={hero} />
+        <CustomerLogosRail />
+        <LoomTourPlaceholder />
         <PillarsTrustBar />
         <CompanyIntelShowcase />
         <TradeLaneShowcase />
+        <PulseBriefShowcase />
+        <ContactDiscoveryShowcase />
+        <SequenceBuilderShowcase />
         <ProblemSection />
         <PlatformSection />
         <SignalToPipelineSection />
@@ -240,6 +250,122 @@ function TradeLaneShowcase() {
                 <span>Save lanes to your watchlist — Pulse Coach surfaces shifts.</span>
               </li>
             </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PulseBriefShowcase() {
+  return (
+    <section className="px-8 py-20">
+      <div className="mx-auto max-w-container">
+        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+          <div>
+            <div className="eyebrow">Pulse AI Brief</div>
+            <h2 className="display-lg mt-3">
+              The first 30 seconds of <span className="grad-text">account research</span>, done.
+            </h2>
+            <p className="lead mt-5 max-w-[480px]">
+              One click on any account and Pulse generates a full intel brief — exec summary,
+              opportunity signals, risk flags, ready-to-send outreach hooks. Cited sources, 95%
+              confidence, refreshed weekly.
+            </p>
+            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>Buying / forwarder / carrier / supplier signal classification.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>Email + LinkedIn opener variants you can copy and send today.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>Every claim cited to a public source — no hallucinated facts.</span>
+              </li>
+            </ul>
+          </div>
+          <div>
+            <PulseBriefMock />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ContactDiscoveryShowcase() {
+  return (
+    <section className="px-8 py-20">
+      <div className="mx-auto max-w-container">
+        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+          <div className="lg:order-1">
+            <ContactDiscoveryMock />
+          </div>
+          <div className="lg:order-2">
+            <div className="eyebrow">Contact Discovery</div>
+            <h2 className="display-lg mt-3">
+              The right buyers, <span className="grad-text">not just any buyers.</span>
+            </h2>
+            <p className="lead mt-5 max-w-[480px]">
+              LIT's contact graph is filtered by title, seniority, department, and location — then
+              joined to who actually owns shipments at that company. Verified emails, LinkedIn URLs,
+              and direct dials revealed on enrich.
+            </p>
+            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>Email-verified contacts — no spam-trap-rate roulette.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>One-click bulk enrichment, plan-aware credit usage.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>Native push to HubSpot, Salesforce, Outreach, Apollo.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SequenceBuilderShowcase() {
+  return (
+    <section className="px-8 py-20">
+      <div className="mx-auto max-w-container">
+        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+          <div>
+            <div className="eyebrow">Campaign Builder</div>
+            <h2 className="display-lg mt-3">
+              Sequences seeded by <span className="grad-text">the signal that started them.</span>
+            </h2>
+            <p className="lead mt-5 max-w-[480px]">
+              Lane-launch, carrier-pivot, RFP follow-up, win-back — six starter plays that bake the
+              signal into the message. Multichannel by default. Send forecast before you launch.
+            </p>
+            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>Email + LinkedIn + call-task in one timeline.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>Predicted opens / replies / meetings before launch.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                <span>Auto-personalization with the recipient's lane, top HS, top carrier.</span>
+              </li>
+            </ul>
+          </div>
+          <div>
+            <SequenceBuilderMock />
           </div>
         </div>
       </div>
