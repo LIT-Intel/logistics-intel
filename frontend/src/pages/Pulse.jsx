@@ -58,6 +58,7 @@ import {
   buildLocalFilterRecipe,
 } from '@/features/pulse/pulseQueryParser';
 import QueryInterpretation from '@/features/pulse/QueryInterpretation';
+import PulseMap from '@/features/pulse/PulseMap';
 
 const PLACEHOLDER_EXAMPLES = [
   'Find marketing directors at SaaS companies in California',
@@ -647,6 +648,9 @@ export default function Pulse() {
           onChangeQuery={setQuery}
           onRun={() => runSearch()}
         />
+
+        {/* Globe — only renders when the parser found freight endpoints */}
+        <PulseMap parsed={parsedQuery} results={results} />
 
         {/* Prompt category gallery — idle only */}
         {!searchPerformed && !isSearching ? (
