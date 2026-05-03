@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --font-display: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+body {
+  font-family: var(--font-body);
+  color: theme('colors.ink.500');
+  background: theme('colors.ink.25');
+}
+
+/* The "light but not plain" page background — same recipe as the design files. */
+.lit-page {
+  position: relative;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 85% -10%, rgba(0,240,255,0.07), transparent 60%),
+    radial-gradient(1000px 500px at -10% 40%, rgba(59,130,246,0.06), transparent 60%),
+    radial-gradient(800px 400px at 50% 110%, rgba(139,92,246,0.05), transparent 60%),
+    linear-gradient(180deg, #fbfcfe 0%, #f6f8fc 100%);
+  overflow: hidden;
+}
+.lit-page::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(15,23,42,0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15,23,42,0.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, black 30%, transparent 75%);
+  pointer-events: none;
+}
+
+/* Pulse Coach dark surface — used for sidebar / mobile menu / upgrade
+   modals / final CTA banner. Same canonical brand surface as the in-app. */
+.pulse-coach-surface {
+  background: linear-gradient(160deg, #0F172A 0%, #1E293B 100%);
+  box-shadow: inset 0 -1px 0 rgba(0, 240, 255, 0.18);
+}
+
+/* Premium gradient text used for hero highlights. */
+.grad-text {
+  background: linear-gradient(95deg, #3b82f6 0%, #8b5cf6 55%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+.grad-text-cyan {
+  background: linear-gradient(90deg, #0ea5e9 0%, #06b6d4 60%, #00F0FF 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Display typography classes mirroring the design files. */
+.display-xl { font-family: var(--font-display); font-weight: 700; font-size: clamp(40px, 5.2vw, 72px); line-height: 1.02; letter-spacing: -0.035em; color: theme('colors.ink.900'); text-wrap: balance; }
+.display-lg { font-family: var(--font-display); font-weight: 700; font-size: clamp(32px, 4vw, 52px); line-height: 1.06; letter-spacing: -0.03em; color: theme('colors.ink.900'); text-wrap: balance; }
+.display-md { font-family: var(--font-display); font-weight: 700; font-size: clamp(28px, 3vw, 40px); line-height: 1.1; letter-spacing: -0.025em; color: theme('colors.ink.900'); text-wrap: balance; }
+.display-sm { font-family: var(--font-display); font-weight: 600; font-size: 22px; line-height: 1.25; letter-spacing: -0.015em; color: theme('colors.ink.900'); }
+.lead { font-family: var(--font-body); font-size: 19px; line-height: 1.55; color: theme('colors.ink.500'); text-wrap: pretty; }
+.eyebrow { font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: theme('colors.brand.blue'); }
+
+/* Section pill (used in heroes). */
+.lit-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-display);
+  font-size: 12px; font-weight: 500;
+  padding: 5px 10px 5px 8px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 1px solid rgba(15,23,42,0.08);
+  color: theme('colors.ink.500');
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+}
+.lit-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: theme('colors.brand.blue'); box-shadow: 0 0 8px rgba(59,130,246,0.55); }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cfd7e6; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }

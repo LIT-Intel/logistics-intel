@@ -1,0 +1,44 @@
+{
+  "name": "lit-marketing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LIT marketing site — Next.js 14 App Router, Sanity CMS, Vercel hosting",
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "sanity:dataset": "sanity dataset create",
+    "sanity:deploy": "sanity deploy",
+    "sanity:graphql": "sanity graphql deploy",
+    "seed": "tsx scripts/seed.ts"
+  },
+  "dependencies": {
+    "@portabletext/react": "^3.1.0",
+    "@sanity/client": "^6.21.3",
+    "@sanity/image-url": "^1.0.2",
+    "@sanity/vision": "^3.57.4",
+    "@vercel/og": "^0.6.3",
+    "framer-motion": "^11.5.4",
+    "lucide-react": "^0.451.0",
+    "next": "14.2.15",
+    "next-sanity": "^9.5.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sanity": "^3.57.4",
+    "styled-components": "^6.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.15",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}
