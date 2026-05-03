@@ -21,7 +21,7 @@
 //   - Save-contact RLS (B.7) handled inside CDPContacts.tsx by reusing the
 //     existing listContacts / enrichContacts helpers; no schema drift
 //   - Hooks declared above the early-return guard (B.13.1 fix)
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Sparkles, Users, Workflow, Activity } from "lucide-react";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
@@ -459,6 +459,81 @@ export default function Company() {
     })();
     return () => { cancelled = true; };
   }, [companyId]);
+
+  // Auto-heal `lit_companies` row from the freshly-loaded snapshot. Saves
+  // made before the BOL/container normalizer fixes landed wrong values
+  // (e.g. fcl_shipments_12m=788 vs snapshot's 40, est_spend_12m=27900 vs
+  // 284447). The Profile page itself reads from the snapshot first so it
+  // already shows correct numbers — but the Command Center list cards
+  // read from lit_companies and stay stale until something rewrites them.
+  // This is a single UPDATE: no quota check, no extra credit, RLS-safe.
+  // Runs once per page mount once `profile` has hydrated from snapshot
+  // (skipped when profile only has shell-fallback data).
+  const autoHealedRef = useRef(null);
+  useEffect(() => {
+    if (!profile || !companyId) return;
+    // Only run when we actually have snapshot-grade data — the
+    // lit_companies-fallback shell builds a profile too, but its
+    // routeKpis comes from the same row we'd write back, so skip.
+    const hasSnapshotData =
+      Array.isArray(profile?.recentBols) && profile.recentBols.length > 0;
+    if (!hasSnapshotData) return;
+    if (autoHealedRef.current === companyId) return;
+    autoHealedRef.current = companyId;
+
+    const sourceKey =
+      profile.key ||
+      profile.companyId ||
+      `company/${String(companyId).replace(/^company\//, "")}`;
+    const bareSlug = String(sourceKey).replace(/^company\//, "");
+    const candidates = Array.from(
+      new Set([sourceKey, `company/${bareSlug}`, bareSlug].filter(Boolean)),
+    );
+
+    const update = {
+      shipments_12m:
+        profile.routeKpis?.shipmentsLast12m ??
+        profile.totalShipments ??
+        null,
+      teu_12m: profile.routeKpis?.teuLast12m ?? null,
+      fcl_shipments_12m: profile.containers?.fclShipments12m ?? null,
+      lcl_shipments_12m: profile.containers?.lclShipments12m ?? null,
+      est_spend_12m:
+        profile.routeKpis?.estSpendUsd12m ??
+        profile.estSpendUsd12m ??
+        null,
+      most_recent_shipment_date: profile.lastShipmentDate ?? null,
+      top_route_12m: profile.routeKpis?.topRouteLast12m ?? null,
+      recent_route: profile.routeKpis?.mostRecentRoute ?? null,
+    };
+    // Only set industry when the row currently has none — never overwrite
+    // a real Lusha/Apollo industry with the HS-derived guess.
+    if (
+      profile.industry &&
+      (!companyEnrichment || companyEnrichment.industry == null)
+    ) {
+      update.industry = profile.industry;
+    }
+    // Drop nulls so we never blank a column that has real data.
+    const cleaned = Object.fromEntries(
+      Object.entries(update).filter(([, v]) => v !== null && v !== undefined),
+    );
+    if (Object.keys(cleaned).length === 0) return;
+
+    (async () => {
+      try {
+        const { error } = await supabase
+          .from("lit_companies")
+          .update(cleaned)
+          .in("source_company_key", candidates);
+        if (error) {
+          console.warn("[autoHeal] lit_companies update failed:", error);
+        }
+      } catch (err) {
+        console.warn("[autoHeal] lit_companies update threw:", err);
+      }
+    })();
+  }, [profile, companyId, companyEnrichment]);
 
   // ── Derived data ───────────────────────────────────────────────────────
   const yearScopedProfile = useMemo(() => {
