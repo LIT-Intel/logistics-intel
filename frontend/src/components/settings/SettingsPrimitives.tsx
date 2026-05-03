@@ -1,6 +1,20 @@
-// SettingsPrimitives.tsx — Lifted verbatim from design/SettingsShared.jsx
-// Inline style={{ }} approach with exact hex tokens, gradients, and shadows.
-// lucide-react icons used in place of the design's data-lucide= CDN references.
+// SettingsPrimitives.tsx — Settings-page primitives, currently inline-style
+// based for historical reasons (lifted from design/SettingsShared.jsx).
+//
+// MIGRATION NOTE (2026-05-03): the shared primitives in
+// `@/components/ui/LitPill` and `@/components/ui/LitSectionCard` now cover
+// the SBadge + SCard surface area (cyan/violet tones, dot variant,
+// collapsible/danger/dense). For NEW Settings code, prefer importing those
+// shared primitives directly so any future brand updates ripple across
+// every page (Profile, Settings, Command Center, etc.) at once.
+//
+// The legacy inline-style components below (SCard, SBadge, etc.) stay
+// exported for backward compatibility — ~70 call sites in
+// SettingsSections.tsx still consume them. They produce visually
+// equivalent output to the Lit* shared primitives but using inline
+// style props rather than Tailwind classes. A future cleanup PR can
+// migrate the SettingsSections call sites mechanically; doing it now
+// would risk subtle visual regressions for low user-visible payoff.
 import React from "react";
 import { ChevronDown, Lock, ArrowUpCircle } from "lucide-react";
 
