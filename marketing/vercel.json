@@ -2,15 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "next build",
   "framework": "nextjs",
-  "regions": ["iad1"],
-  "crons": [
-    { "path": "/api/cron/trade-lane-refresh", "schedule": "0 2 * * *" },
-    { "path": "/api/cron/blog-drafter", "schedule": "0 6 * * 1" },
-    { "path": "/api/cron/glossary-expander", "schedule": "0 6 * * 3" },
-    { "path": "/api/cron/news-watcher", "schedule": "0 * * * *" },
-    { "path": "/api/cron/internal-linking", "schedule": "0 3 * * *" },
-    { "path": "/api/cron/seo-audit", "schedule": "0 6 * * 0" },
-    { "path": "/api/cron/comparison-refresh", "schedule": "0 8 1 * *" },
-    { "path": "/api/cron/press-citations", "schedule": "0 4 * * *" }
-  ]
+  "regions": ["iad1"]
 }
