@@ -317,6 +317,185 @@ export async function deletePulseList(listId) {
   }
 }
 
+/* ─── Auto-refresh + inbox ─── */
+
+/** Update a list's auto-refresh cadence ('off' | 'daily' | 'weekly'). */
+export async function setAutoRefresh(listId, cadence) {
+  if (!['off', 'daily', 'weekly'].includes(cadence)) {
+    return { ok: false, code: 'INVALID_CADENCE', message: 'Invalid cadence.' };
+  }
+  try {
+    const { error } = await supabase
+      .from('pulse_lists')
+      .update({ auto_refresh_cadence: cadence })
+      .eq('id', listId);
+    if (error) return { ok: false, code: classifyError(error), message: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
+  }
+}
+
+/** Read the inbox (pending matches) for a list, joined to lit_companies. */
+export async function getListInbox(listId) {
+  if (!listId) return { ok: false, code: 'INVALID_INPUT', rows: [] };
+  try {
+    const { data, error } = await supabase
+      .from('pulse_list_inbox')
+      .select(`
+        company_id,
+        found_at,
+        match_reason,
+        status,
+        lit_companies!inner (
+          id,
+          name,
+          domain,
+          website,
+          phone,
+          city,
+          state,
+          country_code,
+          shipments_12m,
+          teu_12m,
+          most_recent_shipment_date,
+          top_route_12m
+        )
+      `)
+      .eq('list_id', listId)
+      .eq('status', 'pending')
+      .order('found_at', { ascending: false })
+      .limit(50);
+    if (error) {
+      return { ok: false, code: classifyError(error), message: error.message, rows: [] };
+    }
+    const rows = (data || [])
+      .map((row) => {
+        const c = row.lit_companies;
+        if (!c) return null;
+        return {
+          id: c.id,
+          name: c.name || 'Unknown Company',
+          domain: c.domain || '',
+          website: c.website || '',
+          phone: c.phone || '',
+          city: c.city || '',
+          state: c.state || '',
+          country: c.country_code || '',
+          found_at: row.found_at,
+          match_reason: row.match_reason || '',
+          provenance: 'database',
+          kpis: {
+            shipments_12m: c.shipments_12m ?? null,
+            teu_12m: c.teu_12m ?? null,
+            most_recent_shipment_date: c.most_recent_shipment_date ?? null,
+            top_route_12m: c.top_route_12m ?? null,
+          },
+        };
+      })
+      .filter(Boolean);
+    return { ok: true, rows };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message, rows: [] };
+  }
+}
+
+/** Accept inbox items: move them from inbox → list_companies in bulk. */
+export async function acceptInboxItems(listId, companyIds) {
+  if (!listId || !companyIds?.length) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'List + companies required.' };
+  }
+  try {
+    const { data: userResp } = await supabase.auth.getUser();
+    const addedBy = userResp?.user?.id || null;
+
+    // Insert membership rows (upsert to no-op if already member)
+    const memberRows = companyIds.map((cid) => ({
+      list_id: listId,
+      company_id: cid,
+      added_by: addedBy,
+    }));
+    const { error: memberErr } = await supabase
+      .from('pulse_list_companies')
+      .upsert(memberRows, { onConflict: 'list_id,company_id' });
+    if (memberErr) return { ok: false, code: classifyError(memberErr), message: memberErr.message };
+
+    // Stamp the inbox rows as accepted (kept for audit, hidden by status filter)
+    const { error: updErr } = await supabase
+      .from('pulse_list_inbox')
+      .update({
+        status: 'accepted',
+        resolved_at: new Date().toISOString(),
+        resolved_by: addedBy,
+      })
+      .eq('list_id', listId)
+      .in('company_id', companyIds);
+    if (updErr) return { ok: false, code: classifyError(updErr), message: updErr.message };
+
+    return { ok: true, accepted: companyIds.length };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
+  }
+}
+
+/** Dismiss inbox items so they stop appearing as pending. */
+export async function dismissInboxItems(listId, companyIds) {
+  if (!listId || !companyIds?.length) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'List + companies required.' };
+  }
+  try {
+    const { data: userResp } = await supabase.auth.getUser();
+    const resolvedBy = userResp?.user?.id || null;
+    const { error } = await supabase
+      .from('pulse_list_inbox')
+      .update({
+        status: 'dismissed',
+        resolved_at: new Date().toISOString(),
+        resolved_by: resolvedBy,
+      })
+      .eq('list_id', listId)
+      .in('company_id', companyIds);
+    if (error) return { ok: false, code: classifyError(error), message: error.message };
+    return { ok: true, dismissed: companyIds.length };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
+  }
+}
+
+/** Manually trigger the auto-refresh worker for the calling user's
+ *  enabled lists (or one specific list). Returns the worker's
+ *  per-list summary. */
+export async function triggerAutoRefresh({ listId } = {}) {
+  try {
+    const { data, error } = await supabase.functions.invoke('pulse-refresh-lists', {
+      body: { user_only: true, ...(listId ? { list_id: listId } : {}) },
+    });
+    if (error) {
+      let parsed = null;
+      try {
+        const cloned = error?.context?.clone?.();
+        parsed = await cloned?.json?.();
+      } catch { parsed = null; }
+      return {
+        ok: false,
+        code: parsed?.code || 'NETWORK',
+        message: parsed?.message || error.message || 'Auto-refresh failed.',
+      };
+    }
+    if (!data?.ok) {
+      return { ok: false, code: data?.code || 'WORKER_ERROR', message: data?.message };
+    }
+    return {
+      ok: true,
+      total_added: data.total_added || 0,
+      lists_run: data.lists_run || 0,
+      results: data.results || [],
+    };
+  } catch (err) {
+    return { ok: false, code: 'NETWORK', message: err?.message };
+  }
+}
+
 /* ─── Refresh / inbox state (localStorage) ─── */
 
 const REFRESH_KEY_PREFIX = 'lit.pulse.list_refresh.v1.';

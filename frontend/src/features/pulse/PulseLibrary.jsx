@@ -40,6 +40,11 @@ import {
   getListCompanies,
   getLastRefreshAt,
   shareList,
+  setAutoRefresh,
+  getListInbox,
+  acceptInboxItems,
+  dismissInboxItems,
+  triggerAutoRefresh,
 } from '@/features/pulse/pulseListsApi';
 import { refreshList } from '@/features/pulse/refreshList';
 
@@ -505,8 +510,122 @@ function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelect
   const [sharingPending, setSharingPending] = useState(false);
   const [shareError, setShareError] = useState(null);
 
+  // Auto-refresh + inbox state
+  const [cadence, setCadence] = useState(list?.auto_refresh_cadence || 'off');
+  const [cadencePending, setCadencePending] = useState(false);
+  const [inbox, setInbox] = useState([]);
+  const [inboxLoading, setInboxLoading] = useState(false);
+  const [inboxBusy, setInboxBusy] = useState(false);
+  const [autoTriggering, setAutoTriggering] = useState(false);
+
   const isOwner = list?.is_owner ?? true;
   const isShared = Boolean(list?.is_shared);
+
+  useEffect(() => {
+    setCadence(list?.auto_refresh_cadence || 'off');
+  }, [list?.id, list?.auto_refresh_cadence]);
+
+  async function loadInbox() {
+    if (!list?.id) return;
+    setInboxLoading(true);
+    const res = await getListInbox(list.id);
+    setInbox(res.ok ? res.rows : []);
+    setInboxLoading(false);
+  }
+
+  useEffect(() => {
+    if (list?.id) loadInbox();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list?.id]);
+
+  async function handleCadenceChange(next) {
+    if (!isOwner) return;
+    setCadence(next);
+    setCadencePending(true);
+    const res = await setAutoRefresh(list.id, next);
+    setCadencePending(false);
+    if (!res.ok) {
+      setRefreshStatus({ tone: 'error', message: res.message || 'Could not change cadence.' });
+      setCadence(list?.auto_refresh_cadence || 'off');
+      return;
+    }
+    onListUpdated?.(list.id);
+  }
+
+  async function handleAutoTriggerNow() {
+    if (!isOwner || autoTriggering) return;
+    setAutoTriggering(true);
+    setRefreshStatus(null);
+    const res = await triggerAutoRefresh({ listId: list.id });
+    setAutoTriggering(false);
+    if (!res.ok) {
+      setRefreshStatus({ tone: 'error', message: res.message || 'Auto-refresh failed.' });
+      return;
+    }
+    if (res.total_added > 0) {
+      setRefreshStatus({
+        tone: 'success',
+        message: `Auto-refresh found ${res.total_added} new match${res.total_added === 1 ? '' : 'es'}. Review them in the inbox below.`,
+      });
+      loadInbox();
+    } else {
+      setRefreshStatus({
+        tone: 'idle',
+        message: 'Auto-refresh ran — no new matches in your saved freight database.',
+      });
+    }
+    onListUpdated?.(list.id);
+  }
+
+  async function handleAcceptAll() {
+    if (!inbox.length || inboxBusy) return;
+    setInboxBusy(true);
+    const ids = inbox.map((r) => r.id);
+    const res = await acceptInboxItems(list.id, ids);
+    setInboxBusy(false);
+    if (!res.ok) {
+      setRefreshStatus({ tone: 'error', message: res.message || 'Failed to accept inbox.' });
+      return;
+    }
+    setRefreshStatus({
+      tone: 'success',
+      message: `Added ${res.accepted} compan${res.accepted === 1 ? 'y' : 'ies'} to the list.`,
+    });
+    setInbox([]);
+    onListUpdated?.(list.id);
+  }
+
+  async function handleDismissAll() {
+    if (!inbox.length || inboxBusy) return;
+    setInboxBusy(true);
+    const ids = inbox.map((r) => r.id);
+    const res = await dismissInboxItems(list.id, ids);
+    setInboxBusy(false);
+    if (!res.ok) {
+      setRefreshStatus({ tone: 'error', message: res.message || 'Failed to dismiss inbox.' });
+      return;
+    }
+    setInbox([]);
+  }
+
+  async function handleAcceptOne(companyId) {
+    if (inboxBusy) return;
+    setInboxBusy(true);
+    const res = await acceptInboxItems(list.id, [companyId]);
+    setInboxBusy(false);
+    if (res.ok) {
+      setInbox((prev) => prev.filter((r) => r.id !== companyId));
+      onListUpdated?.(list.id);
+    }
+  }
+
+  async function handleDismissOne(companyId) {
+    if (inboxBusy) return;
+    setInboxBusy(true);
+    const res = await dismissInboxItems(list.id, [companyId]);
+    setInboxBusy(false);
+    if (res.ok) setInbox((prev) => prev.filter((r) => r.id !== companyId));
+  }
 
   async function handleToggleShare() {
     if (!list || !isOwner) return;
@@ -671,6 +790,138 @@ function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelect
       {shareError ? (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-[11.5px] text-amber-800">
           {shareError}
+        </div>
+      ) : null}
+
+      {/* Auto-refresh row — owner only */}
+      {isOwner ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-[#FAFBFC] px-4 py-2">
+          <span className="font-display inline-flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500">
+            <Inbox className="h-2.5 w-2.5" />
+            Auto-refresh
+          </span>
+          <select
+            value={cadence}
+            onChange={(e) => handleCadenceChange(e.target.value)}
+            disabled={cadencePending || !list?.query_text}
+            title={!list?.query_text ? 'Auto-refresh needs the original prompt' : 'How often Pulse should look for new matches'}
+            className="font-body rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-700 outline-none focus:border-blue-300 disabled:opacity-50"
+          >
+            <option value="off">Off</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+          {cadence !== 'off' && list?.last_auto_refresh_at ? (
+            <span className="font-body text-[10.5px] text-slate-400">
+              Last run {formatRelativeAgo(new Date(list.last_auto_refresh_at).getTime())}
+              {list?.last_auto_refresh_added > 0
+                ? ` · added ${list.last_auto_refresh_added}`
+                : ''}
+            </span>
+          ) : null}
+          {cadence !== 'off' ? (
+            <button
+              type="button"
+              onClick={handleAutoTriggerNow}
+              disabled={autoTriggering}
+              className="font-display ml-auto inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {autoTriggering ? (
+                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              ) : (
+                <Zap className="h-2.5 w-2.5" />
+              )}
+              Run now
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Inbox banner — pending matches found by auto-refresh */}
+      {inbox.length > 0 ? (
+        <div className="border-b border-cyan-200 bg-gradient-to-r from-cyan-50/60 to-blue-50/40 px-4 py-3">
+          <div className="mb-2 flex items-center gap-2">
+            <div
+              className="flex h-6 w-6 items-center justify-center rounded-md border"
+              style={{ background: 'rgba(0,240,255,0.12)', borderColor: 'rgba(0,240,255,0.35)' }}
+            >
+              <Inbox className="h-3 w-3" style={{ color: '#0891B2' }} />
+            </div>
+            <div className="font-display text-[12.5px] font-bold text-slate-900">
+              {inbox.length} new match{inbox.length === 1 ? '' : 'es'} from auto-refresh
+            </div>
+            <div className="ml-auto flex gap-1.5">
+              <button
+                type="button"
+                onClick={handleAcceptAll}
+                disabled={inboxBusy}
+                className="font-display inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)] disabled:opacity-50"
+              >
+                {inboxBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                Add all
+              </button>
+              <button
+                type="button"
+                onClick={handleDismissAll}
+                disabled={inboxBusy}
+                className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Dismiss all
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+            {inbox.slice(0, 9).map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center gap-2 rounded-md border border-cyan-200 bg-white px-2 py-1.5 text-left"
+              >
+                <CompanyAvatar
+                  name={c.name}
+                  domain={extractDomain(c.domain || c.website) || null}
+                  size="sm"
+                  className="!h-6 !w-6 !rounded-md"
+                />
+                <div className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => onSelectCompany?.(c)}
+                    className="font-display block max-w-full truncate text-left text-[11.5px] font-semibold text-slate-900 hover:text-blue-700"
+                  >
+                    {c.name}
+                  </button>
+                  <div className="font-body truncate text-[10px] text-slate-500">
+                    {[c.city, c.state, c.country].filter(Boolean).join(', ') || c.match_reason || 'New match'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleAcceptOne(c.id)}
+                  disabled={inboxBusy}
+                  aria-label="Add to list"
+                  title="Add to list"
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-blue-600 hover:bg-blue-50"
+                >
+                  ✓
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDismissOne(c.id)}
+                  disabled={inboxBusy}
+                  aria-label="Dismiss"
+                  title="Dismiss"
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+          {inbox.length > 9 ? (
+            <div className="mt-2 text-center font-body text-[10.5px] text-slate-500">
+              +{inbox.length - 9} more pending — Add all surfaces them in the grid below.
+            </div>
+          ) : null}
         </div>
       ) : null}
 
