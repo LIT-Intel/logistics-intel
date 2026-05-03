@@ -153,7 +153,11 @@ export default function Pulse() {
   const [activeContact, setActiveContact] = useState(null);
   const [campaignTarget, setCampaignTarget] = useState(null);
   const [isEnriching, setIsEnriching] = useState(false);
-  const [isGeneratingInsight, setIsGeneratingInsight] = useState(false);
+  // Coach insight cache, keyed per-company so reopening the Quick Card
+  // for the same company returns the cached brief instantly.
+  const [insightMap, setInsightMap] = useState({});      // id → { report, generatedAt, cached, plan, limit, used }
+  const [insightLoadingId, setInsightLoadingId] = useState(null);
+  const [insightErrorMap, setInsightErrorMap] = useState({});  // id → { code, message, used, limit }
   // Bumped after a successful save so PulseLibrary refetches and the
   // user sees the new company appear in their library immediately.
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
@@ -302,16 +306,144 @@ export default function Pulse() {
     runSearch(focus);
   }
 
-  async function handleGenerateInsight(/* company */) {
-    // Placeholder for the future pulse-ai-enrich call. Keeps the UI
-    // honest — surfaces the action, but never fabricates the analysis.
-    setIsGeneratingInsight(true);
+  // Coach insight handler — invokes the existing pulse-ai-enrich edge fn
+  // (the same one Company Profile uses). For "discovered" rows that aren't
+  // in lit_companies yet we save first so the function has a row to load
+  // context against. Per-company cache so re-opening the Quick Card returns
+  // the brief instantly without burning quota.
+  async function handleGenerateInsight(company, { force = false } = {}) {
+    if (!company) return;
+    const cacheKey = company.id || company.business_id || company.domain || company.name;
+    if (!force && insightMap[cacheKey]) return; // already loaded
+    if (insightLoadingId === cacheKey) return;
+
+    setInsightLoadingId(cacheKey);
+    setInsightErrorMap((m) => ({ ...m, [cacheKey]: null }));
+
     try {
-      await new Promise((r) => setTimeout(r, 600));
-      setErrorMessage('Coach insight generation will land in the next Pulse phase.');
+      // Resolve a target the edge fn understands. Prefer source_company_key
+      // (no DB lookup needed) when the row is "discovered" / not yet saved.
+      let companyId = isUuid(company.id) ? company.id : null;
+      let sourceKey = company.business_id || company.source_company_key || null;
+
+      // If the company isn't in our database yet, save it first so the
+      // edge fn can hydrate verified context. This matches how Company
+      // Profile uses pulse-ai-enrich (it expects a lit_companies row).
+      const inDb = company.provenance === 'database' || company.alsoLive;
+      if (!inDb && !companyId) {
+        try {
+          const saved = await upsertCompanyFromResult(company);
+          if (saved?.id) {
+            companyId = saved.id;
+            sourceKey = saved.source_company_key || sourceKey;
+            setLibraryRefreshKey((k) => k + 1);
+          }
+        } catch (saveErr) {
+          if (saveErr instanceof LimitExceededError) {
+            setInsightErrorMap((m) => ({
+              ...m,
+              [cacheKey]: {
+                code: 'LIMIT_EXCEEDED',
+                message: saveErr.message + ' Upgrade at /app/billing.',
+              },
+            }));
+            setInsightLoadingId(null);
+            return;
+          }
+          throw saveErr;
+        }
+      }
+
+      if (!companyId && !sourceKey) {
+        setInsightErrorMap((m) => ({
+          ...m,
+          [cacheKey]: {
+            code: 'MISSING_IDENTIFIER',
+            message: 'Could not identify this company to generate an insight.',
+          },
+        }));
+        setInsightLoadingId(null);
+        return;
+      }
+
+      const { data, error: invokeError } = await supabase.functions.invoke('pulse-ai-enrich', {
+        body: {
+          ...(companyId ? { company_id: companyId } : {}),
+          ...(sourceKey ? { source_company_key: sourceKey } : {}),
+          mode: 'pulse_page',
+          force_refresh: force,
+        },
+      });
+
+      // supabase-js wraps non-2xx in FunctionsHttpError; pull the structured
+      // body out so we render the real error code (LIMIT_EXCEEDED etc.)
+      let parsedErr = null;
+      if (invokeError) {
+        try {
+          const ctx = invokeError?.context;
+          const cloned = ctx?.clone?.();
+          parsedErr = await cloned?.json?.();
+        } catch {
+          parsedErr = null;
+        }
+      }
+      const effective = parsedErr || data;
+
+      if (invokeError && !parsedErr) throw invokeError;
+
+      if (!effective?.ok) {
+        const code = effective?.code || 'PULSE_AI_FAILED';
+        const friendly =
+          effective?.message ||
+          (code === 'LIMIT_EXCEEDED'
+            ? "You've reached your Coach insight limit for this billing period."
+            : code === 'COMPANY_NOT_FOUND'
+              ? "We couldn't find this company in the database."
+              : 'Coach insight failed. Try again in a moment.');
+        setInsightErrorMap((m) => ({
+          ...m,
+          [cacheKey]: {
+            code,
+            message: friendly,
+            used: effective?.used,
+            limit: effective?.limit,
+          },
+        }));
+      } else {
+        const report = data.report || {};
+        const reportRow = data.report_row || {};
+        setInsightMap((m) => ({
+          ...m,
+          [cacheKey]: {
+            report,
+            generatedAt: reportRow.generated_at || report.generated_at || null,
+            cached: Boolean(data.cached),
+            plan: data.plan ?? null,
+            used: data.used ?? null,
+            limit: data.limit ?? null,
+            confidence:
+              report.confidence_score ?? report.confidence ?? reportRow.confidence ?? null,
+            companyId,
+            sourceKey,
+          },
+        }));
+      }
+    } catch (err) {
+      console.error('[Pulse] coach insight failed:', err);
+      setInsightErrorMap((m) => ({
+        ...m,
+        [cacheKey]: {
+          code: 'NETWORK',
+          message: err?.message || 'Coach insight network error.',
+        },
+      }));
     } finally {
-      setIsGeneratingInsight(false);
+      setInsightLoadingId(null);
     }
+  }
+
+  function isUuid(v) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || ''));
   }
 
   async function enrichContact(contact) {
@@ -573,7 +705,21 @@ export default function Pulse() {
         onFindDecisionMakers={handleFindDecisionMakers}
         onGenerateInsight={handleGenerateInsight}
         isInDatabase={activeCompany?.provenance === 'database' || activeCompany?.alsoLive}
-        isGeneratingInsight={isGeneratingInsight}
+        insight={(() => {
+          if (!activeCompany) return null;
+          const k = activeCompany.id || activeCompany.business_id || activeCompany.domain || activeCompany.name;
+          return insightMap[k] || null;
+        })()}
+        insightLoading={(() => {
+          if (!activeCompany) return false;
+          const k = activeCompany.id || activeCompany.business_id || activeCompany.domain || activeCompany.name;
+          return insightLoadingId === k;
+        })()}
+        insightError={(() => {
+          if (!activeCompany) return null;
+          const k = activeCompany.id || activeCompany.business_id || activeCompany.domain || activeCompany.name;
+          return insightErrorMap[k] || null;
+        })()}
       />
 
       {/* Drawers / modals */}

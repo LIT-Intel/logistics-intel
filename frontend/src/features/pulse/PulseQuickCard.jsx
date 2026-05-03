@@ -17,6 +17,7 @@
 
 import { useMemo } from 'react';
 import {
+  AlertCircle,
   ArrowUpRight,
   BarChart3,
   Briefcase,
@@ -25,10 +26,12 @@ import {
   Cpu,
   Database,
   ExternalLink,
+  GitBranch,
   Link as LinkIcon,
   Linkedin,
   MapPin,
   Phone,
+  RefreshCw,
   Search,
   ShoppingBag,
   Sparkles,
@@ -55,7 +58,13 @@ export default function PulseQuickCard({
   onFindDecisionMakers,
   onGenerateInsight,
   isInDatabase,
-  isGeneratingInsight,
+  // Coach insight state — populated by Pulse page after pulse-ai-enrich
+  // returns. `insight` carries { report, generatedAt, cached, confidence,
+  // companyId }. `insightLoading` and `insightError` handle in-flight /
+  // failure states.
+  insight,
+  insightLoading,
+  insightError,
 }) {
   if (!open || !company) return null;
 
@@ -235,69 +244,14 @@ export default function PulseQuickCard({
 
           {/* Coach insight — dark slate + cyan to match Pulse Coach branding */}
           <Section label="Coach insight" tone="dark">
-            <div
-              className="relative overflow-hidden rounded-[10px] border p-3"
-              style={{
-                background: 'linear-gradient(160deg, #0F172A 0%, #1E293B 60%, #102240 100%)',
-                borderColor: 'rgba(255,255,255,0.08)',
-                boxShadow: '0 8px 24px rgba(15,23,42,0.18)',
-              }}
-            >
-              {/* Cyan radial halo */}
-              <div
-                aria-hidden
-                className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full"
-                style={{
-                  background: 'radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)',
-                }}
-              />
-              <div className="relative flex items-start gap-2">
-                <div
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border"
-                  style={{
-                    background: 'rgba(0,240,255,0.12)',
-                    borderColor: 'rgba(0,240,255,0.35)',
-                  }}
-                >
-                  <Sparkles className="h-3 w-3" style={{ color: '#00F0FF' }} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div
-                    className="font-display mb-1 text-[10px] font-bold uppercase tracking-[0.08em]"
-                    style={{ color: '#00F0FF' }}
-                  >
-                    Pulse Coach
-                  </div>
-                  <div className="font-body text-[12px] leading-relaxed text-slate-300">
-                    Ask the coach to analyze this company's growth, recent product launches, and
-                    why their volume changed.
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onGenerateInsight?.(company)}
-                    disabled={isGeneratingInsight}
-                    className="font-display mt-2.5 inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-60"
-                    style={{
-                      background: 'rgba(0,240,255,0.10)',
-                      borderColor: 'rgba(0,240,255,0.35)',
-                      color: '#7DD3FC',
-                    }}
-                  >
-                    {isGeneratingInsight ? (
-                      <>
-                        <Sparkles className="h-3 w-3 animate-pulse" />
-                        Analyzing…
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="h-3 w-3" />
-                        Generate insight
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
+            <CoachInsightPanel
+              insight={insight}
+              loading={insightLoading}
+              error={insightError}
+              onGenerate={() => onGenerateInsight?.(company)}
+              onRefresh={() => onGenerateInsight?.(company, { force: true })}
+              companyName={company.name}
+            />
           </Section>
 
           {/* Firmographics */}
@@ -517,6 +471,290 @@ function ActionButton({ icon: Icon, label, primary, onClick }) {
       {label}
     </button>
   );
+}
+
+// Coach insight panel — three states:
+//   1. idle  → invitation + Generate CTA
+//   2. loading → cyan spinner with "Analyzing"
+//   3. ready → structured brief (summary, why-now, buying signals,
+//              similar companies) with refresh + full-brief link
+//   4. error → friendly error tile with retry. LIMIT_EXCEEDED gets
+//              an upgrade nudge.
+function CoachInsightPanel({ insight, loading, error, onGenerate, onRefresh, companyName }) {
+  const panelStyle = {
+    background: 'linear-gradient(160deg, #0F172A 0%, #1E293B 60%, #102240 100%)',
+    borderColor: 'rgba(255,255,255,0.08)',
+    boxShadow: '0 8px 24px rgba(15,23,42,0.18)',
+  };
+  const haloStyle = {
+    background: 'radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)',
+  };
+
+  // Error state takes priority
+  if (error) {
+    const isLimit = error.code === 'LIMIT_EXCEEDED';
+    return (
+      <div className="relative overflow-hidden rounded-[10px] border p-3" style={panelStyle}>
+        <div aria-hidden className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full" style={haloStyle} />
+        <div className="relative flex items-start gap-2">
+          <div
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border"
+            style={{ background: 'rgba(251,146,60,0.15)', borderColor: 'rgba(251,146,60,0.4)' }}
+          >
+            <AlertCircle className="h-3 w-3" style={{ color: '#FB923C' }} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-display mb-1 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: '#FB923C' }}>
+              {isLimit ? 'Limit reached' : 'Coach insight failed'}
+            </div>
+            <div className="font-body text-[12px] leading-relaxed text-slate-300">{error.message}</div>
+            <div className="mt-2.5 flex gap-1.5">
+              {isLimit ? (
+                <a
+                  href="/app/billing"
+                  className="font-display inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition"
+                  style={{
+                    background: 'rgba(0,240,255,0.10)',
+                    borderColor: 'rgba(0,240,255,0.35)',
+                    color: '#7DD3FC',
+                  }}
+                >
+                  <Sparkles className="h-3 w-3" />
+                  Upgrade plan
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onGenerate}
+                  className="font-display inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition"
+                  style={{
+                    background: 'rgba(0,240,255,0.10)',
+                    borderColor: 'rgba(0,240,255,0.35)',
+                    color: '#7DD3FC',
+                  }}
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Try again
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="relative overflow-hidden rounded-[10px] border p-3" style={panelStyle}>
+        <div aria-hidden className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full" style={haloStyle} />
+        <div className="relative flex items-start gap-2">
+          <div
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border"
+            style={{ background: 'rgba(0,240,255,0.12)', borderColor: 'rgba(0,240,255,0.35)' }}
+          >
+            <span
+              className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px]"
+              style={{ borderColor: 'rgba(0,240,255,0.2)', borderTopColor: '#00F0FF' }}
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-display mb-1 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: '#00F0FF' }}>
+              Pulse Coach
+            </div>
+            <div className="font-body text-[12px] leading-relaxed text-slate-300">
+              Analyzing growth, web signals, and buying triggers for {companyName}…
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Ready state — render the structured brief
+  if (insight?.report) {
+    const r = insight.report;
+    const summary = pickText(r.company_summary);
+    const whyNow = pickText(r.why_now);
+    const buyingSignals = (Array.isArray(r.buying_signals) ? r.buying_signals : [])
+      .map(pickText)
+      .filter(Boolean)
+      .slice(0, 4);
+    const similar = (Array.isArray(r.similar_companies) ? r.similar_companies : [])
+      .filter((s) => s?.name)
+      .slice(0, 3);
+
+    return (
+      <div className="relative overflow-hidden rounded-[10px] border p-3" style={panelStyle}>
+        <div aria-hidden className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full" style={haloStyle} />
+        <div className="relative">
+          {/* Header row */}
+          <div className="mb-2 flex items-center gap-2">
+            <div
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border"
+              style={{ background: 'rgba(0,240,255,0.12)', borderColor: 'rgba(0,240,255,0.35)' }}
+            >
+              <Sparkles className="h-3 w-3" style={{ color: '#00F0FF' }} />
+            </div>
+            <div className="font-display text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: '#00F0FF' }}>
+              Pulse Coach
+            </div>
+            {insight.cached ? (
+              <span className="font-mono text-[9.5px] text-slate-500">
+                · cached
+              </span>
+            ) : null}
+            {insight.confidence != null ? (
+              <span className="font-mono ml-auto text-[10px] text-slate-400">
+                {Math.round(insight.confidence)}% conf.
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={onRefresh}
+              aria-label="Regenerate insight"
+              className="ml-1 flex h-5 w-5 items-center justify-center rounded-md text-slate-500 hover:bg-white/5 hover:text-slate-300"
+            >
+              <RefreshCw className="h-2.5 w-2.5" />
+            </button>
+          </div>
+
+          {/* Summary — the lead paragraph */}
+          {summary ? (
+            <div className="font-body mb-2.5 text-[12px] leading-relaxed text-slate-200">
+              {summary}
+            </div>
+          ) : null}
+
+          {/* Why-now — the growth narrative */}
+          {whyNow ? (
+            <div className="mb-2.5 rounded-md border border-white/5 bg-white/[0.02] p-2.5">
+              <div className="font-display mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                <TrendingUp className="h-2.5 w-2.5" />
+                Why now
+              </div>
+              <div className="font-body text-[11.5px] leading-relaxed text-slate-300">{whyNow}</div>
+            </div>
+          ) : null}
+
+          {/* Buying signals — pills */}
+          {buyingSignals.length > 0 ? (
+            <div className="mb-2.5">
+              <div className="font-display mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                <Zap className="h-2.5 w-2.5" />
+                Buying signals
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {buyingSignals.map((s, i) => (
+                  <span
+                    key={i}
+                    className="font-body inline-flex max-w-full items-center rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10.5px] text-slate-300"
+                    title={s}
+                  >
+                    {truncate(s, 60)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Similar companies — clickable chips that route to Search */}
+          {similar.length > 0 ? (
+            <div className="mb-2">
+              <div className="font-display mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                <GitBranch className="h-2.5 w-2.5" />
+                Similar companies
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {similar.map((s, i) => (
+                  <a
+                    key={i}
+                    href={s.search_url || `/app/search?q=${encodeURIComponent(s.name)}`}
+                    title={s.reason || s.name}
+                    className="font-body inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10.5px] transition"
+                    style={{
+                      background: 'rgba(0,240,255,0.06)',
+                      borderColor: 'rgba(0,240,255,0.25)',
+                      color: '#7DD3FC',
+                    }}
+                  >
+                    {s.name}
+                    <ExternalLink className="h-2 w-2" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Footer — full brief link */}
+          {insight.companyId ? (
+            <a
+              href={`/app/companies/${insight.companyId}?tab=research`}
+              className="font-display inline-flex items-center gap-1 text-[10.5px] font-semibold"
+              style={{ color: '#7DD3FC' }}
+            >
+              Open full brief
+              <ArrowUpRight className="h-2.5 w-2.5" />
+            </a>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  // Idle state — invite + Generate CTA
+  return (
+    <div className="relative overflow-hidden rounded-[10px] border p-3" style={panelStyle}>
+      <div aria-hidden className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full" style={haloStyle} />
+      <div className="relative flex items-start gap-2">
+        <div
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border"
+          style={{ background: 'rgba(0,240,255,0.12)', borderColor: 'rgba(0,240,255,0.35)' }}
+        >
+          <Sparkles className="h-3 w-3" style={{ color: '#00F0FF' }} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-display mb-1 text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: '#00F0FF' }}>
+            Pulse Coach
+          </div>
+          <div className="font-body text-[12px] leading-relaxed text-slate-300">
+            Generate an insight to see why this company is growing, recent product launches, and
+            what to talk about on first contact.
+          </div>
+          <button
+            type="button"
+            onClick={onGenerate}
+            className="font-display mt-2.5 inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition"
+            style={{
+              background: 'rgba(0,240,255,0.10)',
+              borderColor: 'rgba(0,240,255,0.35)',
+              color: '#7DD3FC',
+            }}
+          >
+            <Sparkles className="h-3 w-3" />
+            Generate insight
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function pickText(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'object') {
+    if (value.summary) return String(value.summary).trim();
+    if (value.body) return String(value.body).trim();
+    if (value.headline) return String(value.headline).trim();
+  }
+  return '';
+}
+
+function truncate(s, max) {
+  const str = String(s || '');
+  return str.length > max ? `${str.slice(0, max - 1)}…` : str;
 }
 
 function ensureHttp(u) {
