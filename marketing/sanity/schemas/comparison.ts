@@ -94,6 +94,31 @@ export const comparison = defineType({
     }),
     defineField({ name: "faq", type: "array", of: [{ type: "faqItem" }] }),
     defineField({ name: "lastReviewedAt", type: "datetime" }),
+    defineField({
+      name: "pendingReview",
+      title: "Pending review (auto)",
+      description: "Populated by the Comparison Refresher agent. Marketing approves before publishing.",
+      type: "object",
+      fields: [
+        { name: "generatedAt", type: "datetime" },
+        { name: "model", type: "string" },
+        {
+          name: "rows",
+          type: "array",
+          of: [
+            {
+              type: "object",
+              fields: [
+                { name: "feature", type: "string" },
+                { name: "currentCompetitorValue", type: "string" },
+                { name: "suggestion", type: "string" },
+                { name: "confidence", type: "string", options: { list: ["high", "medium", "low"] } },
+              ],
+            },
+          ],
+        },
+      ],
+    }),
     defineField({ name: "seo", type: "seoFields" }),
   ],
   preview: {

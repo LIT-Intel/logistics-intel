@@ -141,6 +141,59 @@ export const siteSettings = defineType({
       ],
     }),
     defineField({
+      name: "newsCallouts",
+      title: "News callouts (auto)",
+      description: "Populated by the News-Watcher agent. Last 5 retained, FIFO.",
+      type: "array",
+      of: [
+        {
+          type: "object",
+          fields: [
+            { name: "title", type: "string" },
+            { name: "link", type: "url" },
+            { name: "insight", type: "text", rows: 2 },
+            { name: "tag", type: "string" },
+            { name: "addedAt", type: "datetime" },
+          ],
+        },
+      ],
+    }),
+    defineField({
+      name: "pressCitations",
+      title: "Press citations (auto)",
+      description: "Populated by the Press Citation Watcher agent.",
+      type: "array",
+      of: [
+        {
+          type: "object",
+          fields: [
+            { name: "publication", type: "string" },
+            { name: "title", type: "string" },
+            { name: "url", type: "url" },
+            { name: "foundAt", type: "datetime" },
+          ],
+        },
+      ],
+    }),
+    defineField({
+      name: "seoAuditFindings",
+      title: "SEO audit findings (auto)",
+      description: "Populated by the SEO Health Auditor agent.",
+      type: "array",
+      of: [
+        {
+          type: "object",
+          fields: [
+            { name: "id", type: "string" },
+            { name: "type", type: "string" },
+            { name: "title", type: "string" },
+            { name: "warning", type: "string" },
+          ],
+        },
+      ],
+    }),
+    defineField({ name: "seoAuditRunAt", type: "datetime", readOnly: true }),
+    defineField({
       name: "ctaCopy",
       title: "Final CTA section",
       type: "object",

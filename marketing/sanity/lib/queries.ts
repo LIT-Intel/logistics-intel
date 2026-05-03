@@ -79,6 +79,31 @@ export const ALL_USE_CASE_SLUGS = groq`*[_type == "useCase" && defined(slug.curr
 
 export const COMPARISON_QUERY = groq`*[_type == "comparison" && slug.current == $slug][0]`;
 
+/** Port — programmatic single page. */
+export const PORT_QUERY = groq`*[_type == "port" && slug.current == $slug][0]{
+  ...,
+  "topLanes": topLanes[]->{ title, slug, kpis, originPort, destinationPort }
+}`;
+
+export const ALL_PORT_SLUGS = groq`*[_type == "port" && defined(slug.current)]{ "slug": slug.current }`;
+
+export const PORTS_INDEX_QUERY = groq`*[_type == "port"] | order(name asc){
+  _id, name, unlocode, slug, country, type, kpis
+}`;
+
+/** HS code — programmatic single page. */
+export const HS_CODE_QUERY = groq`*[_type == "hsCode" && slug.current == $slug][0]{
+  ...,
+  "topLanes": topLanes[]->{ title, slug, kpis, originPort, destinationPort },
+  "relatedIndustries": relatedIndustries[]->{ name, slug }
+}`;
+
+export const ALL_HS_CODE_SLUGS = groq`*[_type == "hsCode" && defined(slug.current)]{ "slug": slug.current }`;
+
+export const HS_INDEX_QUERY = groq`*[_type == "hsCode"] | order(code asc){
+  _id, code, slug, title, level, shortDefinition
+}`;
+
 export const ALL_COMPARISON_SLUGS = groq`*[_type == "comparison" && defined(slug.current)]{ "slug": slug.current }`;
 
 export const INTEGRATIONS_INDEX_QUERY = groq`*[_type == "integration"] | order(category asc, displayOrder asc){
@@ -121,6 +146,8 @@ export const SITEMAP_QUERY = groq`{
   "industries": *[_type == "industry" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
   "useCases": *[_type == "useCase" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
   "comparisons": *[_type == "comparison" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
+  "ports": *[_type == "port" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
+  "hsCodes": *[_type == "hsCode" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
   "freeTools": *[_type == "freeTool" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
   "pages": *[_type == "page" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt }
 }`;

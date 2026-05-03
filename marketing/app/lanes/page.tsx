@@ -4,6 +4,7 @@ import { sanityClient } from "@/sanity/lib/client";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
 import { CtaBanner } from "@/components/sections/CtaBanner";
+import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
 import { buildMetadata } from "@/lib/seo";
 import { groq } from "next-sanity";
 import { ArrowRight } from "lucide-react";
@@ -35,6 +36,12 @@ export default async function LanesIndexPage() {
         subtitle="Top shippers, carrier mix, TEU trend, and YoY change for every major ocean and air lane. Refreshed daily."
         align="center"
       />
+
+      <section className="px-8 pb-10">
+        <div className="mx-auto max-w-[520px]">
+          <MarketingGlobe />
+        </div>
+      </section>
 
       {lanes.length === 0 ? (
         <section className="px-8 pb-20">

@@ -4,7 +4,9 @@ import { sanityClient } from "@/sanity/lib/client";
 import { HOMEPAGE_QUERY } from "@/sanity/lib/queries";
 import { Nav } from "@/components/nav/Nav";
 import { Footer } from "@/components/nav/Footer";
-import { Sparkles, ArrowRight, Calendar } from "lucide-react";
+import { ArrowRight, Calendar } from "lucide-react";
+import { PulseSearchBar } from "@/components/sections/PulseSearchBar";
+import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
 
 export const revalidate = 600; // ISR — refresh every 10 min
 
@@ -40,6 +42,7 @@ export default async function HomePage() {
         <PillarsTrustBar />
         <ProblemSection />
         <PlatformSection />
+        <SignalToPipelineSection />
       </main>
       <Footer />
 
@@ -144,32 +147,8 @@ function HeroProductPlaceholder() {
       </div>
       <div className="aspect-[16/10] bg-dark-0 p-5">
         <div className="flex h-full flex-col gap-3 rounded-xl border border-dark-3 bg-gradient-to-b from-dark-1 to-dark-2 p-4">
-          {/* Pulse search bar */}
-          <div className="flex items-center gap-3 rounded-lg border border-dark-3 bg-dark-1 px-3 py-2.5">
-            <div
-              className="flex h-7 w-7 items-center justify-center rounded-md"
-              style={{ background: "rgba(0,240,255,0.12)", boxShadow: "0 0 0 1px rgba(0,240,255,0.2)" }}
-            >
-              <Sparkles className="h-3.5 w-3.5" style={{ color: "#00F0FF" }} />
-            </div>
-            <span className="font-body flex-1 text-[13px] text-ink-150">
-              Find furniture importers shipping from Vietnam
-              <span
-                className="ml-1 inline-block h-3 w-[2px] align-middle"
-                style={{ background: "#00F0FF", animation: "caret 1s steps(2) infinite" }}
-              />
-            </span>
-            <span
-              className="font-mono inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-              style={{
-                color: "#00F0FF",
-                borderColor: "rgba(0,240,255,0.35)",
-                background: "rgba(0,240,255,0.08)",
-              }}
-            >
-              Trade · Industry
-            </span>
-          </div>
+          {/* Pulse search bar — auto-typing */}
+          <PulseSearchBar />
 
           {/* Result rows placeholder */}
           <div className="grid flex-1 grid-cols-2 gap-3">
@@ -300,6 +279,26 @@ function ProblemSection() {
               <p className="font-body mt-2 text-[14px] leading-relaxed text-ink-500">{p.body}</p>
             </div>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SignalToPipelineSection() {
+  return (
+    <section className="px-8 py-24">
+      <div className="mx-auto max-w-container">
+        <div className="mx-auto max-w-[780px] text-center">
+          <div className="eyebrow">Signal → Pipeline</div>
+          <h2 className="display-lg mt-3">Five steps from question to closed deal.</h2>
+          <p className="lead mx-auto mt-3 max-w-[640px]">
+            LIT collapses what was a five-tool, five-day workflow into a single board you finish in 20
+            minutes.
+          </p>
+        </div>
+        <div className="mt-14">
+          <WorkflowMotion />
         </div>
       </div>
     </section>

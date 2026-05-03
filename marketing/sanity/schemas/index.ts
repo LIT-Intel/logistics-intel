@@ -12,6 +12,8 @@ import { glossaryTerm } from "./glossaryTerm";
 import { caseStudy } from "./caseStudy";
 import { customerLogo } from "./customerLogo";
 import { tradeLane } from "./tradeLane";
+import { port } from "./port";
+import { hsCode } from "./hsCode";
 import { industry } from "./industry";
 import { useCase } from "./useCase";
 import { comparison } from "./comparison";
@@ -37,6 +39,8 @@ export const schemaTypes = [
   customerLogo,
   // programmatic
   tradeLane,
+  port,
+  hsCode,
   industry,
   useCase,
   comparison,

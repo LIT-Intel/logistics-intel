@@ -15,10 +15,12 @@
     "seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
     "@portabletext/react": "^3.1.0",
     "@sanity/client": "^6.21.3",
     "@sanity/image-url": "^1.0.2",
     "@sanity/vision": "^3.57.4",
+    "@supabase/supabase-js": "^2.45.4",
     "@vercel/og": "^0.6.3",
     "framer-motion": "^11.5.4",
     "lucide-react": "^0.451.0",

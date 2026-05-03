@@ -20,6 +20,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     industries: SitemapItem[];
     useCases: SitemapItem[];
     comparisons: SitemapItem[];
+    ports: SitemapItem[];
+    hsCodes: SitemapItem[];
     freeTools: SitemapItem[];
     pages: SitemapItem[];
   } | null;
@@ -38,6 +40,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/glossary`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: `${SITE_URL}/use-cases`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${SITE_URL}/lanes`, lastModified: now, changeFrequency: "daily", priority: 0.7 },
+    { url: `${SITE_URL}/ports`, lastModified: now, changeFrequency: "daily", priority: 0.7 },
+    { url: `${SITE_URL}/hs`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: `${SITE_URL}/industries`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: `${SITE_URL}/tools`, lastModified: now, changeFrequency: "monthly", priority: 0.65 },
     { url: `${SITE_URL}/contact`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
@@ -90,6 +94,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           lastModified: new Date(p.updatedAt),
           changeFrequency: "monthly" as const,
           priority: 0.85,
+        })),
+        ...(dynamic.ports || []).map((p) => ({
+          url: `${SITE_URL}/ports/${p.slug}`,
+          lastModified: new Date(p.updatedAt),
+          changeFrequency: "daily" as const,
+          priority: 0.65,
+        })),
+        ...(dynamic.hsCodes || []).map((p) => ({
+          url: `${SITE_URL}/hs/${p.slug}`,
+          lastModified: new Date(p.updatedAt),
+          changeFrequency: "weekly" as const,
+          priority: 0.65,
         })),
         ...dynamic.freeTools.map((p) => ({
           url: `${SITE_URL}/tools/${p.slug}`,

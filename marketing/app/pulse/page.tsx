@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
-import { Sparkles, Search, Compass, Bell, Zap, MessageSquare } from "lucide-react";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
 import { FeatureGrid } from "@/components/sections/FeatureGrid";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { FaqSection } from "@/components/sections/FaqSection";
+import { PulseSearchBar } from "@/components/sections/PulseSearchBar";
+import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
+import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
@@ -99,51 +101,41 @@ export default function PulsePage() {
               boxShadow: "0 30px 80px -20px rgba(15,23,42,0.5)",
             }}
           >
-            <div className="aspect-[16/8] rounded-2xl bg-dark-0 p-6">
-              <div className="flex items-center gap-3 rounded-xl border border-dark-3 bg-dark-1 px-4 py-3">
-                <div
-                  className="flex h-8 w-8 items-center justify-center rounded-lg"
-                  style={{
-                    background: "rgba(0,240,255,0.12)",
-                    boxShadow: "0 0 0 1px rgba(0,240,255,0.2)",
-                  }}
-                >
-                  <Sparkles className="h-4 w-4" style={{ color: "#00F0FF" }} />
+            <div className="grid gap-6 rounded-2xl bg-dark-0 p-6 md:grid-cols-[1fr_280px]">
+              <div className="flex flex-col gap-4">
+                <PulseSearchBar />
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    "23 companies match",
+                    "8 had volume +25% MoM",
+                    "5 use Yusen, 3 use OOCL, 15 mixed",
+                    "Top contact pattern: Logistics Mgr",
+                  ].map((chip) => (
+                    <span
+                      key={chip}
+                      className="font-mono rounded-full border border-dark-3 bg-dark-1 px-3 py-1 text-[11px] text-ink-150"
+                    >
+                      {chip}
+                    </span>
+                  ))}
                 </div>
-                <span className="font-body flex-1 text-[14px] text-ink-150">
-                  Show me wire harness importers shipping from Mexico that pivoted carriers in the last 60 days
-                  <span
-                    className="ml-1 inline-block h-3.5 w-[2px] align-middle"
-                    style={{ background: "#00F0FF", animation: "caret 1s steps(2) infinite" }}
-                  />
-                </span>
-                <span
-                  className="font-mono inline-flex items-center rounded border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-                  style={{
-                    color: "#00F0FF",
-                    borderColor: "rgba(0,240,255,0.35)",
-                    background: "rgba(0,240,255,0.08)",
-                  }}
-                >
-                  Trade · Industry · Carrier
-                </span>
               </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {[
-                  "23 companies match",
-                  "8 had volume +25% MoM",
-                  "5 use Yusen, 3 use OOCL, 15 mixed",
-                  "Top contact pattern: Logistics Mgr",
-                ].map((chip) => (
-                  <span
-                    key={chip}
-                    className="font-mono rounded-full border border-dark-3 bg-dark-1 px-3 py-1 text-[11px] text-ink-150"
-                  >
-                    {chip}
-                  </span>
-                ))}
+              <div className="hidden md:block">
+                <MarketingGlobe />
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-8 py-16">
+        <div className="mx-auto max-w-container">
+          <div className="mx-auto max-w-[760px] text-center">
+            <div className="eyebrow">From signal to pipeline</div>
+            <h2 className="display-lg mt-3">Watch one query turn into one campaign.</h2>
+          </div>
+          <div className="mt-12">
+            <WorkflowMotion />
           </div>
         </div>
       </section>
