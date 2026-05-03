@@ -483,27 +483,13 @@ export default function Billing() {
           </div>
         )}
 
-        {/* State-driven alerts */}
-        <div className="mb-5">
-          <BillingAlerts
-            state={canonicalState}
-            trialEndIso={subscription?.current_period_end || null}
-            paymentFailedAt={subscription?.current_period_end || null}
-            canceledAt={subscription?.current_period_end || null}
-            onUpgrade={() => handleCheckout(currentPlanCode === 'free_trial' ? 'starter' : currentPlanCode === 'enterprise' ? 'growth' : currentPlanCode)}
-            onUpdatePayment={handlePortal}
-            onContactSales={() => { window.location.href = SALES_MAILTO; }}
-            onSeePlans={scrollToPlans}
-            usageWarnings={usageWarnings}
-          />
-        </div>
-
-        {/* Trial countdown — shown only for trial users. Pulse Coach
-            visual language so it slots cleanly above the hero without
-            competing with it. Surfaces real days-left + the highest-burn
-            usage meter so users see exactly what's about to run out. */}
-        {canonicalState === 'trial' && (
-          <div className="mb-6">
+        {/* PRIMARY — the upgrade nudge. On trial we use the rich
+            TrialCountdownCard (real days + hottest meter). On other
+            non-active states (pastdue / canceled) we use the standard
+            BillingAlerts. We never show both — the user requested less
+            Pulse-Coach noise above the fold. */}
+        {canonicalState === 'trial' ? (
+          <div className="mb-5">
             <TrialCountdownCard
               daysLeft={daysUntilRenewal}
               endDate={renewalDate}
@@ -512,6 +498,25 @@ export default function Billing() {
               onCompare={scrollToPlans}
             />
           </div>
+        ) : (
+          (canonicalState === 'pastdue' ||
+            canonicalState === 'canceled' ||
+            canonicalState === 'enterprise' ||
+            usageWarnings.length > 0) && (
+            <div className="mb-5">
+              <BillingAlerts
+                state={canonicalState}
+                trialEndIso={subscription?.current_period_end || null}
+                paymentFailedAt={subscription?.current_period_end || null}
+                canceledAt={subscription?.current_period_end || null}
+                onUpgrade={() => handleCheckout(currentPlanCode === 'free_trial' ? 'starter' : currentPlanCode === 'enterprise' ? 'growth' : currentPlanCode)}
+                onUpdatePayment={handlePortal}
+                onContactSales={() => { window.location.href = SALES_MAILTO; }}
+                onSeePlans={scrollToPlans}
+                usageWarnings={usageWarnings}
+              />
+            </div>
+          )
         )}
 
         {/* Hero */}
@@ -538,30 +543,9 @@ export default function Billing() {
           />
         </div>
 
-        {/* Spend summary — anchors the page to the #1 question users
-            actually open Billing for: "what have you charged me?" Real
-            data from Stripe via list-invoices. Pulse Coach styling for
-            cross-page brand consistency. */}
-        {(spendTotals || stripeCustomerId) && (
-          <div className="mb-6">
-            <SpendSummaryCard
-              mtdLabel={spendTotals?.mtdLabel ?? '$0.00'}
-              ytdLabel={spendTotals?.ytdLabel ?? '$0.00'}
-              lastInvoice={invoices[0] || null}
-              nextRenewalDate={renewalDate}
-              nextRenewalAmount={amountForHero}
-              loading={invoicesLoading}
-              onOpenPortal={handlePortal}
-            />
-          </div>
-        )}
-
-        {/* Usage */}
-        <div className="mb-6">
-          <BillingUsage meters={usageMeters} resetAt={formatDate(entitlements?.reset_at)} />
-        </div>
-
-        {/* Plans */}
+        {/* PURCHASE GRID — pulled up above the informational cards so
+            users land on the actual buy decision before scrolling past
+            spend / usage / invoice context. */}
         <div className="mb-6">
           <BillingPlans
             currentPlanCode={currentPlanCode}
@@ -574,6 +558,42 @@ export default function Billing() {
             hasStripeCustomer={Boolean(stripeCustomerId)}
           />
         </div>
+
+        {/* Usage — collapsible so it doesn't push the purchase grid
+            below the fold on trial accounts. Auto-opens when any meter
+            is ≥70% so users see the burn that's prompting an upgrade. */}
+        <CollapsibleSection
+          title="Usage this period"
+          subtitle={
+            entitlements?.reset_at
+              ? `Resets ${formatDate(entitlements.reset_at)}`
+              : null
+          }
+          defaultOpen={usageWarnings.length > 0}
+        >
+          <BillingUsage meters={usageMeters} resetAt={formatDate(entitlements?.reset_at)} />
+        </CollapsibleSection>
+
+        {/* Spend summary — collapsible. Most trial users have no spend
+            history yet, so leaving it open just adds noise. Auto-opens
+            when there's actual YTD spend on file. */}
+        {(spendTotals || stripeCustomerId) && (
+          <CollapsibleSection
+            title="Spend summary"
+            subtitle="MTD, YTD, last invoice, next renewal"
+            defaultOpen={Boolean(spendTotals && (spendTotals.mtdCents > 0 || spendTotals.ytdCents > 0))}
+          >
+            <SpendSummaryCard
+              mtdLabel={spendTotals?.mtdLabel ?? '$0.00'}
+              ytdLabel={spendTotals?.ytdLabel ?? '$0.00'}
+              lastInvoice={invoices[0] || null}
+              nextRenewalDate={renewalDate}
+              nextRenewalAmount={amountForHero}
+              loading={invoicesLoading}
+              onOpenPortal={handlePortal}
+            />
+          </CollapsibleSection>
+        )}
 
         {/* Payment method + Enterprise — 2-up grid that stacks <820px */}
         <div className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -602,8 +622,17 @@ export default function Billing() {
           />
         </div>
 
-        {/* Invoices — now populated from Stripe via list-invoices */}
-        <div className="mb-6">
+        {/* Invoices — collapsible. Defaults open only when the user
+            actually has invoices on file (active sub history). */}
+        <CollapsibleSection
+          title="Invoice history"
+          subtitle={
+            invoices.length > 0
+              ? `${invoices.length} invoice${invoices.length === 1 ? '' : 's'} on file`
+              : 'Past charges and downloadable receipts'
+          }
+          defaultOpen={invoices.length > 0}
+        >
           <BillingInvoices
             invoices={invoices}
             hasStripeCustomer={Boolean(stripeCustomerId)}
@@ -611,7 +640,7 @@ export default function Billing() {
             onOpenPortal={handlePortal}
             isLoading={isRedirecting || invoicesLoading}
           />
-        </div>
+        </CollapsibleSection>
 
         {/* In-app cancellation affordance — only renders for active
             subscriptions that aren't already cancelling. Stripe portal
@@ -666,6 +695,62 @@ export default function Billing() {
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Lightweight collapsible wrapper for billing-page sections that don't
+ * need to be open by default (Usage, Spend, Invoices). Keeps the
+ * purchase decision close to the fold; users expand only when they
+ * want detail. Header strip uses the shared LIT chrome (white card,
+ * slate border, chevron toggle).
+ */
+function CollapsibleSection({
+  title,
+  subtitle,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  subtitle?: string | null;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="mb-6 rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 rounded-t-2xl px-5 py-3 transition hover:bg-slate-50"
+      >
+        <div className="min-w-0 text-left">
+          <div className="font-display text-[13px] font-bold text-slate-900">
+            {title}
+          </div>
+          {subtitle && (
+            <div className="font-body mt-0.5 truncate text-[11.5px] text-slate-500">
+              {subtitle}
+            </div>
+          )}
+        </div>
+        <span
+          aria-hidden
+          className={[
+            "font-display text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 transition-transform",
+            open ? "rotate-180" : "rotate-0",
+          ].join(" ")}
+        >
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-slate-100">
+          <div className="p-5">{children}</div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**

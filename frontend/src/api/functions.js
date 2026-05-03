@@ -18,8 +18,37 @@ async function invokeSupabaseFunction(functionName, body = {}) {
   });
 
   if (error) {
-    console.error(`[Functions] Supabase invoke failed for ${functionName}:`, error);
-    throw error;
+    // supabase-js wraps non-2xx responses in a generic "Edge Function
+    // returned a non-2xx status code" error — the actual structured
+    // body the edge fn returned (e.g. { error, code, message }) lives
+    // on error.context (a Response). Parse it so callers see the real
+    // reason instead of the unhelpful "non-2xx" toast.
+    let parsed = null;
+    try {
+      const ctx = error?.context;
+      if (ctx?.clone && ctx?.json) {
+        parsed = await ctx.clone().json();
+      } else if (ctx?.json) {
+        parsed = await ctx.json();
+      }
+    } catch {
+      /* body wasn't JSON — leave parsed null */
+    }
+
+    console.error(
+      `[Functions] Supabase invoke failed for ${functionName}:`,
+      parsed || error,
+    );
+
+    const friendlyMessage =
+      (parsed && (parsed.message || parsed.error)) || error?.message;
+    const wrapped = new Error(
+      friendlyMessage || `Request to ${functionName} failed.`,
+    );
+    wrapped.code = parsed?.code || error?.code || null;
+    wrapped.body = parsed;
+    wrapped.original = error;
+    throw wrapped;
   }
 
   return data ?? { ok: false, message: `No response returned from ${functionName}` };

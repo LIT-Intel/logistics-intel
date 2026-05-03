@@ -95,18 +95,22 @@ function RequirePlan({ feature, featureName, description, requiredPlan = "growth
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
   const plan = normalizePlan(userPlan);
   const hasAccess = canAccessFeature(plan, feature);
-  if (!hasAccess) {
-    return (
-      <UpgradeGate
-        featureName={featureName}
-        description={description}
-        requiredPlan={requiredPlan}
-        currentPlan={plan}
-        hasAccess={false}
-      />
-    );
-  }
-  return children;
+  // Always render the underlying page through UpgradeGate — when the
+  // user lacks access the gate blurs the page behind the Pulse Coach
+  // upgrade card so they see the feature they're being asked to pay
+  // for. Replaces the old behavior that returned a stark white gate
+  // page with no preview.
+  return (
+    <UpgradeGate
+      featureName={featureName}
+      description={description}
+      requiredPlan={requiredPlan}
+      currentPlan={plan}
+      hasAccess={hasAccess}
+    >
+      {children}
+    </UpgradeGate>
+  );
 }
 
 function LITPage({ children }) {

@@ -1,19 +1,20 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { Lock, ArrowRight, Zap } from "lucide-react";
+import { Lock, ArrowRight, Sparkles } from "lucide-react";
 import { normalizePlan, type PlanCode } from "@/lib/planLimits";
 
-const PLAN_ORDER: PlanCode[] = ["free_trial", "starter", "growth", "enterprise"];
+const PLAN_ORDER: PlanCode[] = ["free_trial", "starter", "growth", "scale", "enterprise"];
 
 const PLAN_LABELS: Record<PlanCode, string> = {
   free_trial: "Free Trial",
   starter: "Starter",
   growth: "Growth",
+  scale: "Scale",
   enterprise: "Enterprise",
 };
 
 interface UpgradeGateProps {
-  /** Feature name shown in the lock screen headline */
+  /** Feature name shown in the headline */
   featureName: string;
   /** Brief description of what becomes available */
   description?: string;
@@ -23,9 +24,23 @@ interface UpgradeGateProps {
   currentPlan?: string | null;
   /** If true, render children instead of the gate (feature is accessible) */
   hasAccess?: boolean;
+  /** The locked feature page itself — rendered behind a blur when locked
+   *  so users see what they're missing instead of a stark white gate. */
   children?: React.ReactNode;
 }
 
+/**
+ * Plan-gated feature wrapper. When the user lacks access, renders the
+ * underlying page in the background (blurred + dimmed, non-interactive)
+ * and lays a premium Pulse-Coach upgrade card on top. Same visual
+ * vocabulary as the Profile-page quota cards, Settings Account Snapshot,
+ * Billing modals, and sidebar usage chip — single canonical brand
+ * surface across every locked / quota / upgrade prompt in the app.
+ *
+ * Replaces the previous full-page white gate that hid the feature
+ * entirely; users now see real product behind the overlay so the value
+ * of upgrading is concrete instead of abstract.
+ */
 export function UpgradeGate({
   featureName,
   description,
@@ -45,46 +60,127 @@ export function UpgradeGate({
   const nextPlanLabel = PLAN_LABELS[nextPlan];
 
   return (
-    <div className="flex min-h-[60vh] items-center justify-center px-6 py-16">
-      <div className="w-full max-w-md text-center">
-        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 ring-1 ring-indigo-100">
-          <Lock className="h-7 w-7 text-indigo-500" />
+    <div className="relative">
+      {/* Underlying feature page — blurred + dimmed, fully non-interactive
+          so we don't accidentally fire onClick handlers underneath. */}
+      <div
+        aria-hidden
+        className="pointer-events-none select-none"
+        style={{
+          filter: "blur(6px) saturate(0.85)",
+          opacity: 0.55,
+        }}
+      >
+        {children}
+      </div>
+
+      {/* Overlay: Pulse Coach card centered. Sits inside an absolute
+          container that covers the blurred children. Click the backdrop
+          → noop (we don't dismiss; the gate is the whole point). */}
+      <div className="absolute inset-0 flex items-start justify-center overflow-y-auto px-4 py-12 sm:py-16">
+        <div
+          className="relative w-full max-w-md overflow-hidden rounded-2xl border border-white/10 shadow-[0_24px_60px_rgba(2,6,23,0.55)]"
+          style={{
+            background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+            boxShadow:
+              "inset 0 -1px 0 rgba(0,240,255,0.18), 0 24px 60px rgba(2,6,23,0.55)",
+          }}
+        >
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -top-16 -right-16 h-56 w-56 rounded-full opacity-50"
+            style={{
+              background:
+                "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)",
+            }}
+          />
+
+          <div className="relative px-6 py-6">
+            <div className="flex items-start gap-3">
+              <div
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border"
+                style={{
+                  background: "rgba(0,240,255,0.10)",
+                  borderColor: "rgba(255,255,255,0.10)",
+                }}
+              >
+                <Sparkles className="h-5 w-5" style={{ color: "#00F0FF" }} />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div
+                  className="font-display flex flex-wrap items-center gap-2 text-[12.5px] font-bold tracking-wide text-white"
+                >
+                  Pulse Coach
+                  <span
+                    className="inline-flex items-center gap-1 rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.06em]"
+                    style={{
+                      color: "#00F0FF",
+                      borderColor: "rgba(0,240,255,0.35)",
+                      background: "rgba(0,240,255,0.08)",
+                      fontFamily: "ui-monospace,monospace",
+                    }}
+                  >
+                    <Lock className="h-2.5 w-2.5" />
+                    {PLAN_LABELS[requiredPlan]} feature
+                  </span>
+                </div>
+
+                <h2
+                  className="font-display mt-2 text-[18px] font-bold leading-tight text-white"
+                  style={{ letterSpacing: "-0.01em" }}
+                >
+                  {featureName}
+                </h2>
+
+                <p
+                  className="font-body mt-2 text-[12.5px] leading-relaxed text-slate-300"
+                >
+                  {description ||
+                    `${featureName} unlocks on the ${PLAN_LABELS[requiredPlan]} plan and above. You can preview the page behind this card — upgrade to unlock the workflow.`}
+                </p>
+
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate("/app/billing")}
+                    className="font-display inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-4 text-[12px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.35)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.45)]"
+                    style={{
+                      background:
+                        "linear-gradient(180deg,#0F172A 0%,#0B1220 100%)",
+                    }}
+                  >
+                    Upgrade to {nextPlanLabel}
+                    <ArrowRight
+                      className="h-3 w-3"
+                      style={{ color: "#00F0FF" }}
+                    />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => navigate(-1)}
+                    className="font-display inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-4 text-[12px] font-semibold text-slate-200 transition hover:bg-white/10"
+                  >
+                    Go back
+                  </button>
+                </div>
+
+                <p
+                  className="font-body mt-4 text-[10.5px] text-slate-400"
+                >
+                  Current plan:{" "}
+                  <span
+                    className="font-mono"
+                    style={{ color: "#00F0FF" }}
+                  >
+                    {PLAN_LABELS[normalizedCurrent]}
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
-
-        <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
-          <Zap className="h-3 w-3" />
-          Requires {PLAN_LABELS[requiredPlan]} or above
-        </div>
-
-        <h2 className="mt-4 text-2xl font-bold text-slate-900">{featureName}</h2>
-
-        <p className="mt-3 text-sm leading-relaxed text-slate-500">
-          {description ||
-            `${featureName} is available on the ${PLAN_LABELS[requiredPlan]} plan and above. Upgrade to unlock this feature and access your full workflow.`}
-        </p>
-
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-          <button
-            type="button"
-            onClick={() => navigate("/app/billing")}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
-          >
-            Upgrade to {nextPlanLabel}
-            <ArrowRight className="h-4 w-4" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            Go back
-          </button>
-        </div>
-
-        <p className="mt-6 text-xs text-slate-400">
-          Current plan: <span className="font-medium text-slate-600">{PLAN_LABELS[normalizedCurrent]}</span>
-        </p>
       </div>
     </div>
   );

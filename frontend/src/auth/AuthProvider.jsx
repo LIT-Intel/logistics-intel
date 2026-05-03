@@ -9,9 +9,13 @@ import {
   supabase,
 } from './supabaseAuthClient';
 
+// Platform super-admin allowlist. These emails see the Admin Dashboard,
+// Partner program, Team admin, and bypass plan-feature locks. The demo
+// trial account (vraymond83@gmail.com) is intentionally NOT included — it
+// must experience the app as a real free-trial user would. Use the
+// sparkfusiondigital.com login for any actual admin work.
 const SUPER_ADMIN_EMAILS = new Set([
   'vraymond@sparkfusiondigital.com',
-  'vraymond83@gmail.com',
   'support@logisticintel.com',
 ]);
 
