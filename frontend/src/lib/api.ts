@@ -4421,12 +4421,33 @@ export async function recallCompany(payload: {
 }
 
 async function resolveCompanyUuid(company_id_or_slug: string): Promise<{ id: string; name?: string | null; domain?: string | null; website?: string | null }> {
-  if (company_id_or_slug.startsWith("company/")) {
-    const { data: company } = await supabase
+  // Three input shapes flow into here:
+  //   1) UUID                 — "248e8528-..."         (lit_companies.id)
+  //   2) Prefixed slug        — "company/amsafe-aviation" (source_company_key)
+  //   3) Bare slug            — "amsafe-aviation"         (Profile route param)
+  // The legacy logic only handled #1 + #2; case #3 fell through to a
+  // .eq("id", "amsafe-aviation") which Postgres rejected with
+  // "22P02 invalid input syntax for type uuid", surfacing as the
+  // user-visible "contacts.list 22P02" toast on the Contacts tab.
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      company_id_or_slug,
+    );
+  if (!isUuid) {
+    const bare = company_id_or_slug.replace(/^company\//, "");
+    const candidates = Array.from(
+      new Set([
+        `company/${bare}`,
+        bare,
+        company_id_or_slug,
+      ].filter(Boolean)),
+    );
+    const { data: rows } = await supabase
       .from("lit_companies")
       .select("id, name, website, domain")
-      .eq("source_company_key", company_id_or_slug)
-      .maybeSingle();
+      .in("source_company_key", candidates)
+      .limit(1);
+    const company = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
     if (!company?.id) {
       throw new Error(`Company not found for slug: ${company_id_or_slug}`);
     }

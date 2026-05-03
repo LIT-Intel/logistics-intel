@@ -144,6 +144,14 @@ type TradeKpis = {
   yoyPct?: number | null;
 };
 
+type TopRouteItem = {
+  route?: string | null;
+  shipments?: number | null;
+  teu?: number | null;
+  fclShipments?: number | null;
+  lclShipments?: number | null;
+};
+
 type CDPResearchProps = {
   companyName: string;
   companyMeta?: {
@@ -153,6 +161,10 @@ type CDPResearchProps = {
     vertical?: string | null;
   };
   tradeKpis?: TradeKpis;
+  /** Real top routes from the importyeti snapshot — used to render the
+   *  "Top Lanes & Lane Movement" section directly when the AI report's
+   *  lane_insights field is missing or returns a placeholder string. */
+  topRoutes?: TopRouteItem[] | null;
   pulseBrief: PulseBrief;
   pulseLoading: boolean;
   pulseError: PulseError;
@@ -170,6 +182,7 @@ export default function CDPResearch({
   companyName,
   companyMeta,
   tradeKpis,
+  topRoutes,
   pulseBrief,
   pulseLoading,
   pulseError,
@@ -613,13 +626,16 @@ function ReportBody({
         </div>
       </BriefSection>
 
-      {/* 03 Top Lanes */}
+      {/* 03 Top Lanes — render real snapshot routes first, then AI
+          commentary when meaningful. The AI's lane_insights frequently
+          comes back as ["No specific insights available."] for companies
+          with sparse signals; that's worse than just showing the actual
+          routes we already have. */}
       <BriefSection idx="03" title="Top Lanes & Lane Movement" icon={<TrendingUp className="h-3.5 w-3.5" />}>
-        {hasContent(report.lane_insights) ? (
-          <BulletProse section={report.lane_insights} />
-        ) : (
-          <EmptyLine text="Lane intelligence will appear once trade lane data is on file." />
-        )}
+        <TopLanesPanel
+          topRoutes={topRoutes || []}
+          aiInsights={report.lane_insights}
+        />
       </BriefSection>
 
       {/* 04 Opportunity Signals (accent) */}
@@ -903,6 +919,132 @@ function EmptyLine({ text }: { text: string }) {
     >
       {text}
     </p>
+  );
+}
+
+// Strings the AI returns when it has nothing real to say. We treat these
+// as "empty" so we render derived data instead of a hollow placeholder.
+const AI_PLACEHOLDER_PATTERNS = [
+  /^no specific insights available\.?$/i,
+  /^no insights available\.?$/i,
+  /^not available\.?$/i,
+  /^n\/?a\.?$/i,
+  /^none\.?$/i,
+];
+
+function aiInsightsAreMeaningful(section: SectionShape | undefined): boolean {
+  if (!hasContent(section)) return false;
+  const bullets = sectionAllBullets(section);
+  const text = sectionText(section);
+  const allTexts = [
+    text,
+    ...bullets.map((b) => bulletToText(b)),
+  ]
+    .map((s) => (typeof s === "string" ? s.trim() : ""))
+    .filter(Boolean);
+  if (allTexts.length === 0) return false;
+  // Meaningful if at least one bullet/sentence isn't a known placeholder.
+  return allTexts.some(
+    (t) => !AI_PLACEHOLDER_PATTERNS.some((re) => re.test(t)),
+  );
+}
+
+function TopLanesPanel({
+  topRoutes,
+  aiInsights,
+}: {
+  topRoutes: TopRouteItem[];
+  aiInsights?: SectionShape;
+}) {
+  const validRoutes = (topRoutes || []).filter(
+    (r) =>
+      r &&
+      typeof r.route === "string" &&
+      r.route.trim().length > 0 &&
+      r.route !== "Unknown → Unknown",
+  );
+  const totalShipments = validRoutes.reduce(
+    (sum, r) => sum + (Number(r.shipments) || 0),
+    0,
+  );
+  const ranked = [...validRoutes].sort(
+    (a, b) => (Number(b.shipments) || 0) - (Number(a.shipments) || 0),
+  );
+  const showAi = aiInsightsAreMeaningful(aiInsights);
+
+  if (ranked.length === 0 && !showAi) {
+    return <EmptyLine text="Lane intelligence will appear once trade lane data is on file." />;
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {ranked.length > 0 && (
+        <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+          {ranked.slice(0, 5).map((r, i) => {
+            const ships = Number(r.shipments) || 0;
+            const teu = Number(r.teu) || 0;
+            const sharePct =
+              totalShipments > 0
+                ? Math.round((ships / totalShipments) * 100)
+                : null;
+            const fcl = Number(r.fclShipments) || 0;
+            const lcl = Number(r.lclShipments) || 0;
+            const mix = (() => {
+              if (fcl + lcl <= 0) return null;
+              if (lcl === 0) return "FCL";
+              if (fcl === 0) return "LCL";
+              const fclPct = Math.round((fcl / (fcl + lcl)) * 100);
+              return `${fclPct}% FCL`;
+            })();
+            return (
+              <li key={`${r.route}-${i}`} className="flex items-start gap-2">
+                <span
+                  className="mt-[7px] inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ background: i === 0 ? "#3B82F6" : "#94A3B8" }}
+                />
+                <span
+                  className="font-body text-[12px] leading-[1.55]"
+                  style={{ color: "#374151" }}
+                >
+                  <span className="font-display font-semibold text-slate-900">
+                    {r.route}
+                  </span>
+                  {" — "}
+                  <span className="font-mono font-semibold text-slate-900">
+                    {ships.toLocaleString()}
+                  </span>{" "}
+                  shipments
+                  {teu > 0 && (
+                    <>
+                      {" / "}
+                      <span className="font-mono font-semibold text-slate-900">
+                        {Math.round(teu).toLocaleString()}
+                      </span>{" "}
+                      TEU
+                    </>
+                  )}
+                  {sharePct != null && (
+                    <span className="text-slate-500">{` · ${sharePct}% of trailing-12m volume`}</span>
+                  )}
+                  {mix && <span className="text-slate-500">{` · ${mix}`}</span>}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {showAi && (
+        <div className="border-t border-slate-100 pt-2.5">
+          <div
+            className="font-display mb-1.5 text-[10px] font-bold uppercase tracking-[0.08em]"
+            style={{ color: "#64748B" }}
+          >
+            Lane commentary
+          </div>
+          <BulletProse section={aiInsights} />
+        </div>
+      )}
+    </div>
   );
 }
 

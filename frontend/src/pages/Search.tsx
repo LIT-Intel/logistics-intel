@@ -122,6 +122,10 @@ export default function SearchPage() {
   // Free-text city / state filter — narrows results to rows whose city
   // OR state contains the typed substring (case-insensitive).
   const [locationQuery, setLocationQuery] = useState("");
+  // Filters are collapsed by default — they take a lot of vertical space
+  // and most searches don't need them. Auto-expands once the user has any
+  // active filter so they can always see what they've applied.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
@@ -916,6 +920,20 @@ export default function SearchPage() {
     savedOnly ||
     locationQuery.trim().length > 0;
 
+  const activeFilterCount =
+    (teuRange !== "any" ? 1 : 0) +
+    (loadType !== "any" ? 1 : 0) +
+    (topContainer !== "any" ? 1 : 0) +
+    (savedOnly ? 1 : 0) +
+    (locationQuery.trim().length > 0 ? 1 : 0);
+
+  // Auto-open filters whenever an active filter exists (e.g. user clears
+  // search but a chip is still applied) so the chips don't silently filter
+  // out rows the user can't see why are missing.
+  useEffect(() => {
+    if (hasActiveFilter) setFiltersOpen(true);
+  }, [hasActiveFilter]);
+
   const clearFilters = () => {
     setTeuRange("any");
     setLoadType("any");
@@ -1115,25 +1133,72 @@ export default function SearchPage() {
             results (teu_estimate, fcl_percent / lcl_percent,
             top_container_length via canonicalContainerCode, savedCompanyIds).
             No Carrier / Trade Lane / HS Code chips because those fields
-            aren't on search results today. */}
+            aren't on search results today.
+
+            Collapsible: header strip is always visible (so the chip count
+            badge + Clear button stay reachable), the chip body renders only
+            when expanded. Defaults to collapsed; auto-expands when an
+            active filter exists. */}
         {hasSearched && (
-          <LitSectionCard
-            title="Filters"
-            sub="Narrow down results — TEU range, load type, container size"
-            action={
-              hasActiveFilter ? (
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="font-display inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50"
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((v) => !v)}
+              aria-expanded={filtersOpen}
+              className="flex w-full items-center justify-between gap-3 rounded-t-xl px-4 py-3 transition hover:bg-slate-50"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="font-display text-[12px] font-bold text-slate-900">
+                  Filters
+                </span>
+                {activeFilterCount > 0 && (
+                  <span className="font-mono inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-50 px-1.5 text-[10px] font-bold text-blue-700">
+                    {activeFilterCount}
+                  </span>
+                )}
+                <span className="font-body truncate text-[11px] text-slate-500">
+                  {filtersOpen
+                    ? "TEU range, load type, container size, location, saved"
+                    : activeFilterCount > 0
+                      ? `${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"} applied`
+                      : "Narrow down results"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {hasActiveFilter && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearFilters();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        clearFilters();
+                      }
+                    }}
+                    className="font-display inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                    Clear
+                  </span>
+                )}
+                <span
+                  className={[
+                    "font-display text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 transition-transform",
+                    filtersOpen ? "rotate-180" : "rotate-0",
+                  ].join(" ")}
+                  aria-hidden
                 >
-                  <X className="h-2.5 w-2.5" />
-                  Clear
-                </button>
-              ) : null
-            }
-            bodyClassName="px-4 py-3"
-          >
+                  ▾
+                </span>
+              </div>
+            </button>
+            {filtersOpen && (
+              <div className="border-t border-slate-100 px-4 py-3">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
               {[
                 {
@@ -1235,7 +1300,9 @@ export default function SearchPage() {
                 </button>
               </div>
             </div>
-          </LitSectionCard>
+              </div>
+            )}
+          </div>
         )}
 
         {hasSearched && (

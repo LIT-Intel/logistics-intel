@@ -1300,6 +1300,13 @@ export default function Company() {
                 })(),
                 yoyPct: null,
               }}
+              topRoutes={(() => {
+                const fromKpis = activeRouteKpis?.topRoutesLast12m;
+                if (Array.isArray(fromKpis) && fromKpis.length > 0) return fromKpis;
+                if (Array.isArray(activeProfile?.topRoutes)) return activeProfile.topRoutes;
+                if (Array.isArray(activeProfile?.top_routes)) return activeProfile.top_routes;
+                return [];
+              })()}
               pulseBrief={pulseBrief}
               pulseLoading={pulseLoading}
               pulseError={pulseError}
