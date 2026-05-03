@@ -223,6 +223,36 @@ export function ProfileSection({
     .split(/\s+|@/).filter(Boolean).slice(0, 2)
     .map((s) => s[0]).join("").toUpperCase().slice(0, 2) || "U";
 
+  const avatarUrl = initialData?.avatar_url || "";
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !onUploadAvatar) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file (PNG, JPG, GIF).");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Image must be under 5 MB.");
+      return;
+    }
+    setUploadingAvatar(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await onUploadAvatar(file);
+      if ((result as any)?.error) setError((result as any).error);
+      else setSuccess("Photo updated");
+    } catch (err: any) {
+      setError(err?.message || "Failed to upload photo");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <SectionHeader
@@ -238,16 +268,37 @@ export function ProfileSection({
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, flexShrink: 0 }}>
             <div style={{
               width: 104, height: 104, borderRadius: "50%",
-              background: "linear-gradient(135deg,#1d4ed8,#3b82f6)",
+              background: avatarUrl
+                ? `url(${avatarUrl}) center/cover`
+                : "linear-gradient(135deg,#1d4ed8,#3b82f6)",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontFamily: "Space Grotesk,sans-serif", fontSize: 36, fontWeight: 700,
               color: "#fff", letterSpacing: "-0.02em",
               boxShadow: "0 4px 14px rgba(59,130,246,0.25)",
+              overflow: "hidden",
             }}>
-              {initials}
+              {!avatarUrl && initials}
             </div>
-            <button disabled style={{ ...sBtnGhost, fontSize: 12, padding: "6px 11px", opacity: 0.5, cursor: "not-allowed" }}>
-              <Upload size={12} /> Change photo
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              onChange={handleAvatarChange}
+              style={{ display: "none" }}
+            />
+            <button
+              type="button"
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={uploadingAvatar || !onUploadAvatar}
+              style={{
+                ...sBtnGhost,
+                fontSize: 12,
+                padding: "6px 11px",
+                opacity: uploadingAvatar || !onUploadAvatar ? 0.6 : 1,
+                cursor: uploadingAvatar || !onUploadAvatar ? "not-allowed" : "pointer",
+              }}
+            >
+              <Upload size={12} /> {uploadingAvatar ? "Uploading…" : "Change photo"}
             </button>
           </div>
           {/* Fields */}
@@ -1475,50 +1526,3 @@ export function PreferencesSection(props: {
   );
 }
 
-// ─── AccessRolesSection (exported, used internally by WorkspaceSection) ────────
-export function AccessRolesSection({
-  members = [],
-  invites = [],
-  seatLimit,
-  onInvite,
-  onRevoke,
-  onUpdateRole,
-  onRevokeInvite,
-  isAdmin,
-}: any) {
-  // This component is no longer used directly from outside but kept exported.
-  // WorkspaceSection now inlines the equivalent UI.
-  return null;
-}
-
-// ─── TeamSection (exported for SettingsPage compat) ───────────────────────────
-export function TeamSection(props: {
-  plan?: string | null;
-  members?: any[];
-  invites?: any[];
-  seatLimit?: number;
-  onInvite?: (email: string, role: string) => Promise<{ error?: string } | void>;
-  onRevoke?: (memberId: string) => Promise<{ error?: string } | void>;
-  onUpdateRole?: (memberId: string, role: string) => Promise<{ error?: string } | void>;
-  onRevokeInvite?: (inviteId: string) => Promise<{ error?: string } | void>;
-  isAdmin?: boolean;
-  onUpgrade?: () => void;
-  inviteBackendAvailable?: boolean;
-}) {
-  // Delegated to WorkspaceSection's inline implementation.
-  return null;
-}
-
-// ─── Legacy no-op exports (keep file exportable, not rendered by settings nav) ─
-export function CompanySignatureSection(props: any) { return null; }
-export function EmailSection(props: any) { return null; }
-export function LinkedInSection(props: any) { return null; }
-export function BillingPlansSection(props: any) { return null; }
-export function RfpPipelineSection(props: any) { return null; }
-export function CampaignPreferencesSection(props: any) { return null; }
-export function SecurityApiSection(props: any) { return null; }
-export function WorkspaceCreditsSection(props: any) { return null; }
-export function TeamSubscriptionsSection(props: any) { return null; }
-export function IntegrationsSection(props: any) { return null; }
-export function OutreachAccountsSection(props: any) { return null; }
-export function AffiliateProgramSection() { return null; }
