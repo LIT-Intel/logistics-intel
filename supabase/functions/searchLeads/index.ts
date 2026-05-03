@@ -15,11 +15,36 @@ const MAX_PAGE_SIZE = 100;
 const PROVIDER_NAME = 'apollo';
 const APOLLO_LOCKED_EMAIL_MARKER = 'email_not_unlocked@';
 
+interface ParsedLocation {
+  name: string;
+  code?: string;
+  kind: 'country' | 'us_state' | 'metro';
+}
+
+interface ParsedEntities {
+  intent?: string;
+  direction?: string | null;
+  quantity?: number | null;
+  products?: string[];
+  industries?: string[];
+  roles?: string[];
+  origins?: ParsedLocation[];
+  destinations?: ParsedLocation[];
+  countries?: ParsedLocation[];
+  states?: ParsedLocation[];
+  metros?: ParsedLocation[];
+  similarTo?: string | null;
+}
+
 interface SearchRequest {
   query?: string;
   ui_mode?: string;
   page?: number;
   pageSize?: number;
+  // Optional: classifier output from Pulse Coach (heuristic + LLM merged
+  // on the client). When present we map it to Apollo's structured
+  // filter params instead of relying on weak keyword matching alone.
+  entities?: ParsedEntities;
 }
 
 interface EnrichRequest {
@@ -173,7 +198,7 @@ async function callApolloEndpoint(
 
 function callApolloMixedCompanies(
   config: ProviderConfig,
-  query: string,
+  body: Record<string, unknown>,
   page: number,
   pageSize: number,
   requestId: string,
@@ -181,14 +206,14 @@ function callApolloMixedCompanies(
   return callApolloEndpoint(
     config,
     '/api/v1/mixed_companies/search',
-    { q_organization_name: query, page, per_page: pageSize },
+    { ...body, page, per_page: pageSize },
     requestId,
   );
 }
 
 function callApolloAccounts(
   config: ProviderConfig,
-  query: string,
+  body: Record<string, unknown>,
   page: number,
   pageSize: number,
   requestId: string,
@@ -196,14 +221,14 @@ function callApolloAccounts(
   return callApolloEndpoint(
     config,
     '/api/v1/accounts/search',
-    { q_keywords: query, page, per_page: pageSize },
+    { ...body, page, per_page: pageSize },
     requestId,
   );
 }
 
 function callApolloMixedPeople(
   config: ProviderConfig,
-  query: string,
+  body: Record<string, unknown>,
   page: number,
   pageSize: number,
   requestId: string,
@@ -213,14 +238,14 @@ function callApolloMixedPeople(
     // Apollo deprecated `/mixed_people/search` for API-key callers in
     // favor of `/mixed_people/api_search` (same shape).
     '/api/v1/mixed_people/api_search',
-    { q_keywords: query, page, per_page: pageSize },
+    { ...body, page, per_page: pageSize },
     requestId,
   );
 }
 
 function callApolloContacts(
   config: ProviderConfig,
-  query: string,
+  body: Record<string, unknown>,
   page: number,
   pageSize: number,
   requestId: string,
@@ -228,9 +253,120 @@ function callApolloContacts(
   return callApolloEndpoint(
     config,
     '/api/v1/contacts/search',
-    { q_keywords: query, page, per_page: pageSize },
+    { ...body, page, per_page: pageSize },
     requestId,
   );
+}
+
+/* ─── Entity → Apollo filter mappers ─────────────────────────────── */
+
+function locationStringFor(loc: ParsedLocation): string {
+  if (loc.kind === 'us_state') return `${loc.name}, US`;
+  return loc.name;
+}
+
+function buildLocationsArray(entities: ParsedEntities): string[] {
+  const out: string[] = [];
+  // Destinations are where the target COMPANY lives. Use them first.
+  for (const d of entities.destinations || []) out.push(locationStringFor(d));
+  if (out.length) return out;
+  // Fall back to standalone state/metro hits (also represent company HQ).
+  for (const s of entities.states || []) out.push(`${s.name}, US`);
+  for (const m of entities.metros || []) out.push(m.name);
+  if (out.length) return out;
+  // Standalone countries are ONLY safe when no origins were parsed
+  // (otherwise they'd be sourcing geography, not company HQ).
+  if (!(entities.origins || []).length) {
+    for (const c of entities.countries || []) out.push(c.name);
+  }
+  return out;
+}
+
+function buildApolloCompaniesBody(
+  query: string,
+  entities: ParsedEntities | undefined,
+): Record<string, unknown> {
+  // No entities → fall back to keyword text. This is honest behavior
+  // for prompts the classifier couldn't extract anything from.
+  if (!entities) return { q_keywords: query };
+
+  // Lookalike intent → Apollo can search by company name fragment.
+  if (entities.similarTo) {
+    return { q_organization_name: entities.similarTo };
+  }
+
+  const body: Record<string, unknown> = {};
+
+  const locations = buildLocationsArray(entities);
+  if (locations.length) body.organization_locations = locations;
+
+  if (Array.isArray(entities.industries) && entities.industries.length) {
+    body.q_organization_keyword_tags = entities.industries;
+  }
+
+  // Products go into q_keywords (Apollo has no product taxonomy).
+  // If no products, residual q_keywords falls through to the raw
+  // prompt so Apollo still has a text signal.
+  const kw = (entities.products || []).join(' ').trim();
+  if (kw) body.q_keywords = kw;
+  else if (!locations.length && !body.q_organization_keyword_tags) {
+    // No structured filter at all — keep the keyword fallback so we
+    // don't hand Apollo an empty search.
+    body.q_keywords = query;
+  }
+
+  return body;
+}
+
+const ROLE_TO_SENIORITY: Array<{ rx: RegExp; seniority: string }> = [
+  { rx: /\b(c[\s_-]?suite|chief|cxo|ce[o]\b|cf[o]\b|ct[o]\b|co[o]\b|cm[o]\b|cio\b|cro\b)\b/i, seniority: 'c_suite' },
+  { rx: /\bfounder\b/i, seniority: 'founder' },
+  { rx: /\bowner\b/i, seniority: 'owner' },
+  { rx: /\bpartner\b/i, seniority: 'partner' },
+  { rx: /\bvp\b/i, seniority: 'vp' },
+  { rx: /\bhead( of)?\b/i, seniority: 'head' },
+  { rx: /\bdirector\b/i, seniority: 'director' },
+  { rx: /\bmanager\b/i, seniority: 'manager' },
+];
+
+function rolesToSeniorities(roles: string[]): string[] {
+  const set = new Set<string>();
+  for (const role of roles) {
+    for (const { rx, seniority } of ROLE_TO_SENIORITY) {
+      if (rx.test(role)) set.add(seniority);
+    }
+  }
+  return Array.from(set);
+}
+
+function buildApolloPeopleBody(
+  query: string,
+  entities: ParsedEntities | undefined,
+): Record<string, unknown> {
+  if (!entities) return { q_keywords: query };
+
+  const body: Record<string, unknown> = {};
+
+  const locations = buildLocationsArray(entities);
+  if (locations.length) body.organization_locations = locations;
+
+  if (Array.isArray(entities.industries) && entities.industries.length) {
+    body.q_organization_keyword_tags = entities.industries;
+  }
+
+  if (Array.isArray(entities.roles) && entities.roles.length) {
+    body.person_titles = entities.roles;
+    const seniorities = rolesToSeniorities(entities.roles);
+    if (seniorities.length) body.person_seniorities = seniorities;
+  }
+
+  const kw = (entities.products || []).join(' ').trim();
+  if (kw) body.q_keywords = kw;
+  else if (!locations.length && !body.person_titles && !body.q_organization_keyword_tags) {
+    body.q_keywords = query;
+  }
+
+  return body;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -409,7 +545,7 @@ type ResolvedSearch = {
 
 async function searchCompaniesWithFallback(
   config: ProviderConfig,
-  query: string,
+  body: Record<string, unknown>,
   page: number,
   pageSize: number,
   requestId: string,
@@ -417,7 +553,7 @@ async function searchCompaniesWithFallback(
   skipMixed: boolean,
 ): Promise<{ resolved?: ResolvedSearch; error?: string }> {
   const tryAccountsFallback = async (): Promise<{ resolved?: ResolvedSearch; error?: string }> => {
-    const fb = await callApolloAccounts(config, query, page, pageSize, requestId);
+    const fb = await callApolloAccounts(config, body, page, pageSize, requestId);
     if (fb.error) {
       if (fb.status === 403) {
         return {
@@ -446,7 +582,7 @@ async function searchCompaniesWithFallback(
     return tryAccountsFallback();
   }
 
-  const primary = await callApolloMixedCompanies(config, query, page, pageSize, requestId);
+  const primary = await callApolloMixedCompanies(config, body, page, pageSize, requestId);
   if (!primary.error) {
     const data = primary.data || {};
     const orgs = Array.isArray(data.organizations) ? data.organizations : [];
@@ -472,7 +608,7 @@ async function searchCompaniesWithFallback(
 
 async function searchPeopleWithFallback(
   config: ProviderConfig,
-  query: string,
+  body: Record<string, unknown>,
   page: number,
   pageSize: number,
   requestId: string,
@@ -480,7 +616,7 @@ async function searchPeopleWithFallback(
   skipMixed: boolean,
 ): Promise<{ resolved?: ResolvedSearch; error?: string }> {
   const tryContactsFallback = async (): Promise<{ resolved?: ResolvedSearch; error?: string }> => {
-    const fb = await callApolloContacts(config, query, page, pageSize, requestId);
+    const fb = await callApolloContacts(config, body, page, pageSize, requestId);
     if (fb.error) {
       if (fb.status === 403) {
         return {
@@ -509,7 +645,7 @@ async function searchPeopleWithFallback(
     return tryContactsFallback();
   }
 
-  const primary = await callApolloMixedPeople(config, query, page, pageSize, requestId);
+  const primary = await callApolloMixedPeople(config, body, page, pageSize, requestId);
   if (!primary.error) {
     const data = primary.data || {};
     const people = Array.isArray(data.people) ? data.people : [];
@@ -555,9 +691,18 @@ async function handleSearchAction(
   const pageSize = clampPageSize(body.pageSize);
   const mode = resolveSearchMode(uiMode);
   const skipMixed = Deno.env.get('APOLLO_DISABLE_MIXED') === 'true';
+  const entities = body.entities;
+
+  // Build the Apollo request body. When entities (from the Coach
+  // classifier) are present we use Apollo's structured filter params;
+  // otherwise we fall back to plain keyword text. This is the bridge
+  // between Pulse's NL UX and Apollo's structured search API.
+  const apolloBody = mode === 'people'
+    ? buildApolloPeopleBody(query, entities)
+    : buildApolloCompaniesBody(query, entities);
 
   console.log(
-    `[${requestId}] Apollo search: query="${query}", ui_mode="${uiMode}", mode="${mode}", page=${page}, per_page=${pageSize}, skipMixed=${skipMixed}`,
+    `[${requestId}] Apollo search: query="${query}", ui_mode="${uiMode}", mode="${mode}", page=${page}, per_page=${pageSize}, skipMixed=${skipMixed}, structured=${entities ? 'yes' : 'no'}, body_keys=${Object.keys(apolloBody).join(',')}`,
   );
 
   const warnings: string[] = [];
@@ -566,14 +711,16 @@ async function handleSearchAction(
       'auto/both currently routes to Apollo company search; specify People to search contacts directly.',
     );
   }
-  warnings.push(
-    'Pulse passed your prompt to Apollo as a single keyword. Structured filter parsing ships in the next phase.',
-  );
+  if (!entities) {
+    warnings.push(
+      'Pulse classifier output not provided — falling back to keyword search.',
+    );
+  }
 
   const search =
     mode === 'people'
-      ? await searchPeopleWithFallback(config, query, page, pageSize, requestId, warnings, skipMixed)
-      : await searchCompaniesWithFallback(config, query, page, pageSize, requestId, warnings, skipMixed);
+      ? await searchPeopleWithFallback(config, apolloBody, page, pageSize, requestId, warnings, skipMixed)
+      : await searchCompaniesWithFallback(config, apolloBody, page, pageSize, requestId, warnings, skipMixed);
 
   if (search.error || !search.resolved) {
     return { ok: false, error: search.error || 'Apollo search failed' };

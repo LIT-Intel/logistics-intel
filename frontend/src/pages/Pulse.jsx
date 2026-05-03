@@ -254,8 +254,21 @@ export default function Pulse() {
       // come back first to give immediate feedback, remote rows merge in
       // when they land. Local search uses the structured filter recipe
       // (countries/states) when present so freight queries tighten.
+      // The remote (Apollo) call ALSO receives the parsed entities so
+      // searchLeads can map them to Apollo's structured filter params
+      // (organization_locations[], q_organization_keyword_tags[],
+      // person_titles[], person_seniorities[]) — not just q_keywords.
+      // Prefer the LLM-merged parsedQuery (carries source='llm' when
+      // the classifier landed) over a fresh heuristic re-parse.
+      const submittedEntities = parsedQuery?.source === 'llm' && parsedQuery?.raw === trimmed
+        ? parsedQuery
+        : parsedAtSubmit;
       const localPromise = searchLocalCompanies(trimmed, 12, recipe);
-      const remotePromise = searchPulse({ query: trimmed, ui_mode: 'auto' });
+      const remotePromise = searchPulse({
+        query: trimmed,
+        ui_mode: 'auto',
+        entities: submittedEntities?.hasAny ? submittedEntities : undefined,
+      });
 
       const [localOut, remote] = await Promise.allSettled([localPromise, remotePromise]);
       let localRows = localOut.status === 'fulfilled' ? localOut.value.rows : [];

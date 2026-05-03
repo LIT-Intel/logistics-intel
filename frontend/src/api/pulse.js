@@ -129,9 +129,45 @@ function normalizeResults(mode, rawResults) {
   return rows.map(normalizeCompanyResult);
 }
 
+/**
+ * Run a Pulse search against the searchLeads edge fn.
+ *
+ * payload accepts:
+ *   - query: string (required) — the user's NL prompt
+ *   - ui_mode: 'auto' | 'companies' | 'people' (default 'auto')
+ *   - page, pageSize
+ *   - entities: ParsedEntities — output from pulseQueryParser +
+ *     pulseCoachClassify merged on the client. When supplied, the
+ *     edge fn maps these to Apollo's structured filter parameters
+ *     (organization_locations[], q_organization_keyword_tags[],
+ *     person_titles[], person_seniorities[]) instead of relying on
+ *     keyword matching alone.
+ */
 export async function searchPulse(payload = {}) {
+  // Strip client-only fields (raw, source, hasAny, suggested_refinements,
+  // clarifying_question) that the edge fn doesn't need. Keep only the
+  // structured entity fields we know how to map.
+  const cleaned = { ...payload };
+  if (cleaned.entities) {
+    const e = cleaned.entities;
+    cleaned.entities = {
+      intent: e.intent,
+      direction: e.direction,
+      quantity: e.quantity,
+      products: Array.isArray(e.products) ? e.products : [],
+      industries: Array.isArray(e.industries) ? e.industries : [],
+      roles: Array.isArray(e.roles) ? e.roles : [],
+      origins: Array.isArray(e.origins) ? e.origins : [],
+      destinations: Array.isArray(e.destinations) ? e.destinations : [],
+      countries: Array.isArray(e.countries) ? e.countries : [],
+      states: Array.isArray(e.states) ? e.states : [],
+      metros: Array.isArray(e.metros) ? e.metros : [],
+      similarTo: e.similarTo || null,
+    };
+  }
+
   const { data, error } = await supabase.functions.invoke('searchLeads', {
-    body: payload,
+    body: cleaned,
   });
 
   if (error) {
