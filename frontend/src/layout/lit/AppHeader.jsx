@@ -473,9 +473,15 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
                                 }}
                               />
                             )}
+                            {/* PulseIcon is a custom SVG that ignores
+                                the lucide `size` prop and falls back to
+                                100% width (rendered ~10× larger than
+                                neighbours). Use className-based sizing
+                                so both lucide icons and custom SVG
+                                components render at the same 18px. */}
                             <Icon
                               size={18}
-                              className="shrink-0"
+                              className="h-[18px] w-[18px] shrink-0"
                               style={
                                 isPulse
                                   ? { color: "#00F0FF", opacity: isActive ? 1 : 0.85 }
