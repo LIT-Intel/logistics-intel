@@ -18,6 +18,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { usePartnerStatus } from "@/lib/affiliate";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
+import SidebarUsageChip from "@/components/shared/SidebarUsageChip";
+import "@/layout/lit/litLogo.css";
 
 const BASE_MOBILE_SECTIONS = [
   {
@@ -351,18 +353,19 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
               boxShadow: "inset 1px 0 0 rgba(0,240,255,0.18)",
             }}
           >
-            <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
-              <div className="flex items-center gap-3">
-                {/* Match the desktop sidebar logo treatment — real LitAppIcon
-                    in cyan #00F0FF inside a slate-950 box. The previous
-                    "LIT" text in indigo-violet gradient diverged from
-                    every other branded surface in the app. */}
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-950 shadow-lg ring-1 ring-white/10">
-                  <LitAppIcon className="h-7 w-7" style={{ color: "#00F0FF" }} />
+            {/* Header — exactly mirrors the desktop sidebar: 64px tall,
+                LIT wordmark + cyan icon with the breathing glow, no
+                two-liner subtitle. Single canonical brand mark. */}
+            <div className="flex h-16 items-center justify-between border-b border-white/10 px-4">
+              <div className="flex items-center gap-2.5">
+                <div className="lit-logo-alive flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 ring-1 ring-white/10">
+                  <LitAppIcon className="h-6 w-6" style={{ color: "#00F0FF" }} />
                 </div>
-                <div>
-                  <div className="text-base font-semibold text-white">Trade Intelligence</div>
-                  <div className="text-xs text-slate-300">Logistic Intel</div>
+                <div
+                  className="text-[22px] font-extrabold tracking-[-0.03em] text-white"
+                  style={{ fontFamily: "Space Grotesk,sans-serif" }}
+                >
+                  LIT
                 </div>
               </div>
 
@@ -377,7 +380,16 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
 
             <div className="border-b border-white/10 px-4 py-4">
               <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-sm font-semibold text-white">
+                {/* Avatar — neutralized to slate-950 + cyan ring instead
+                    of the previous blue→indigo gradient that was the only
+                    off-brand surface left in the dark chrome. */}
+                <div
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-950 text-sm font-bold text-white ring-2"
+                  style={{
+                    borderColor: "transparent",
+                    boxShadow: "0 0 0 2px rgba(0,240,255,0.35)",
+                  }}
+                >
                   {displayInitials}
                 </div>
                 <div className="min-w-0">
@@ -402,10 +414,14 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-5">
+            {/* Section padding mirrors the desktop sidebar exactly:
+                px-3 parent + px-3 nav items = consistent 24px inset
+                from the brand surface edge. Was px-4/px-2 — drifted
+                by 4px on Link items which was visible side-by-side. */}
+            <div className="flex-1 overflow-y-auto px-3 py-5">
               {mobileSections.map((section) => (
                 <div key={section.title} className="mb-6">
-                  <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+                  <div className="mb-3 px-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
                     {section.title}
                   </div>
                   <nav className="space-y-1.5">
@@ -437,13 +453,26 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
                             onClick={() => setMobileNavOpen(false)}
                             className={[
                               // Match the desktop sidebar's exact active state
-                              // (bg-white/10) so the two surfaces don't drift.
-                              "flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors",
+                              // (bg-white/10) + same px/py rhythm so the
+                              // two surfaces don't drift visually.
+                              "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
                               isActive
                                 ? "bg-white/10 text-white font-semibold"
                                 : "text-slate-200 hover:bg-white/5 hover:text-white",
                             ].join(" ")}
                           >
+                            {/* Same cyan left-edge accent strip as desktop
+                                so active state reads identically. */}
+                            {isActive && (
+                              <span
+                                aria-hidden
+                                className="pointer-events-none absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full"
+                                style={{
+                                  background: "#00F0FF",
+                                  boxShadow: "0 0 8px rgba(0,240,255,0.5)",
+                                }}
+                              />
+                            )}
                             <Icon
                               size={18}
                               className="shrink-0"
@@ -492,28 +521,15 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
               ))}
             </div>
 
-            {/* Same Pulse footer card as the desktop sidebar so the
-                two chrome surfaces share the brand anchor. */}
+            {/* Live usage chip — same component the desktop sidebar
+                renders, in its open variant. Real plan, days-left,
+                hottest meter. Closes the mobile menu on tap and routes
+                to Settings → Billing so users can act on what they see. */}
             <div className="border-t border-white/10 p-4">
-              <div
-                className="rounded-2xl border border-white/10 px-4 py-3"
-                style={{
-                  background: "rgba(0,240,255,0.05)",
-                  boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
-                }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 ring-1 ring-white/10">
-                    <PulseIcon className="h-[18px] w-[18px]" style={{ color: "#00F0FF" }} />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-white">Pulse</div>
-                    <div className="truncate text-xs text-slate-300">
-                      AI lead intelligence
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <SidebarUsageChip
+                variant="open"
+                onNavigate={() => setMobileNavOpen(false)}
+              />
             </div>
           </aside>
         </div>

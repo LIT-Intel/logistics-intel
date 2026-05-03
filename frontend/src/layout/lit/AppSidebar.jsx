@@ -10,12 +10,12 @@ import {
   Shield,
   Lock,
   Users,
-  Award,
 } from "lucide-react";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 import { useAuth } from "@/auth/AuthProvider";
-import { canAccessFeature, PLAN_LIMITS } from "@/lib/planLimits";
-import { useUsageSummary } from "@/hooks/useUsageSummary";
+import { canAccessFeature } from "@/lib/planLimits";
+import SidebarUsageChip from "@/components/shared/SidebarUsageChip";
+import "./litLogo.css";
 
 const iconClass = "h-[18px] w-[18px] shrink-0";
 
@@ -108,9 +108,14 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
   return (
     <aside
       className={[
-        "relative hidden md:flex md:flex-col shrink-0 transition-all duration-300",
+        // 200ms transition — was 300ms which felt sluggish. Matches the
+        // snappier collapse cadence on Linear / Vercel.
+        "relative hidden md:flex md:flex-col shrink-0 transition-all duration-200",
         "text-white border-r border-white/10",
-        sidebarOpen ? "w-[270px]" : "w-[92px]",
+        // Standard sizing: 240px expanded matches Linear/Stripe/Notion;
+        // 72px collapsed feels like a true icon rail (was 92 — too wide
+        // to read as a deliberate rail mode, too narrow to fit labels).
+        sidebarOpen ? "w-[240px]" : "w-[72px]",
       ].join(" ")}
       // Pulse Coach gradient — same exact tokens as the Profile-page
       // quota cards, Settings Account Snapshot, and Billing modals so
@@ -120,17 +125,26 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
         boxShadow: "inset -1px 0 0 rgba(0,240,255,0.18)",
       }}
     >
-      <div className="flex h-20 items-center justify-center border-b border-white/10 px-5">
-        <div className="flex items-center gap-3 overflow-hidden">
-          {/* App icon — same slate-950/cyan box, sized to host the LIT
-              wordmark right next to it at matching weight. */}
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 shadow-lg ring-1 ring-white/10">
-            <LitAppIcon className="h-7 w-7" style={{ color: "#00F0FF" }} />
+      {/* Header — h-16 (64px) tighter than the previous h-20 since we
+          dropped the two-line subtitle. Logo lockup is icon (36px) +
+          gap (10px) + "LIT" (22px Space Grotesk extrabold). 1.6× ratio
+          between icon-box and wordmark feels balanced. */}
+      <div
+        className={[
+          "flex h-16 shrink-0 items-center border-b border-white/10",
+          sidebarOpen ? "justify-start px-4" : "justify-center px-2",
+        ].join(" ")}
+      >
+        <div className="flex items-center gap-2.5 overflow-hidden">
+          <div
+            className="lit-logo-alive flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 ring-1 ring-white/10"
+          >
+            <LitAppIcon className="h-6 w-6" style={{ color: "#00F0FF" }} />
           </div>
 
           {sidebarOpen && (
             <div
-              className="text-[26px] font-bold tracking-[-0.02em] text-white"
+              className="text-[22px] font-extrabold tracking-[-0.03em] text-white"
               style={{ fontFamily: "Space Grotesk,sans-serif" }}
             >
               LIT
@@ -139,16 +153,20 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
         </div>
       </div>
 
-      {/* Floating boundary toggle — sits half on the sidebar edge / half
-          on the main content. Persists via localStorage so the user's
-          preference sticks across reloads. Common pattern in Linear /
-          Notion / Vercel; replaces the in-header chevron that was easy
-          to miss and didn't survive page navigation. */}
+      {/* Floating boundary toggle — anchored to the bottom edge of the
+          header so it never drifts if header height changes. Position
+          biases more toward the page when collapsed so it reads as a
+          clear "click to expand" affordance instead of a vestigial nub. */}
       <button
         type="button"
         onClick={() => setSidebarOpen(!sidebarOpen)}
         aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-        className="absolute top-[60px] -right-3 z-30 inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 text-slate-200 shadow-[0_4px_12px_rgba(2,6,23,0.45)] transition hover:text-white"
+        className={[
+          "absolute z-30 inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 text-slate-200 shadow-[0_4px_12px_rgba(2,6,23,0.45)] transition hover:text-white",
+          // top-12 == 48px — anchored just below the 64px header divider.
+          "top-12",
+          sidebarOpen ? "-right-3" : "-right-4",
+        ].join(" ")}
         style={{
           background: "linear-gradient(180deg,#0F172A 0%,#0B1220 100%)",
         }}
@@ -178,11 +196,26 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
 
                 return (
                   <div key={item.label} className="group/navitem relative">
+                    {/* Cyan left-edge accent strip — only renders for the
+                        active item. In collapsed mode this is the primary
+                        wayfinding signal since labels are hidden. In
+                        expanded mode it sits flush with the rounded
+                        background for a polished selected state. */}
+                    {isActive && !item.locked && (
+                      <span
+                        aria-hidden
+                        className="pointer-events-none absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full"
+                        style={{
+                          background: "#00F0FF",
+                          boxShadow: "0 0 8px rgba(0,240,255,0.5)",
+                        }}
+                      />
+                    )}
                     <Link
                       to={item.locked ? "/app/billing" : item.href}
                       title={item.label}
                       className={[
-                        "flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors",
+                        "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
                         // Centre the icon when collapsed so there's no
                         // off-balance gap on the right.
                         sidebarOpen ? "" : "justify-center",
@@ -193,20 +226,33 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                           : "text-slate-200 hover:bg-white/5 hover:text-white",
                       ].join(" ")}
                     >
-                      <Icon
-                        className={`${iconClass} ${
-                          item.label === "Pulse"
-                            ? isActive
-                              ? "pulse-sidebar-active"
+                      <span className="relative inline-flex">
+                        <Icon
+                          className={`${iconClass} ${
+                            item.label === "Pulse"
+                              ? isActive
+                                ? "pulse-sidebar-active"
+                                : ""
                               : ""
-                            : ""
-                        }`}
-                        style={
-                          item.label === "Pulse"
-                            ? { color: "#00F0FF", opacity: isActive ? 1 : 0.85 }
-                            : undefined
-                        }
-                      />
+                          }`}
+                          style={
+                            item.label === "Pulse"
+                              ? { color: "#00F0FF", opacity: isActive ? 1 : 0.85 }
+                              : undefined
+                          }
+                        />
+                        {/* Locked overlay — small lock pip on the icon
+                            so collapsed-mode users see the gate state
+                            without hovering for the tooltip. */}
+                        {item.locked && !sidebarOpen && (
+                          <span
+                            aria-hidden
+                            className="absolute -bottom-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full border border-slate-900 bg-slate-700"
+                          >
+                            <Lock className="h-2 w-2 text-slate-300" />
+                          </span>
+                        )}
+                      </span>
                       {sidebarOpen && (
                         <span className="flex flex-1 items-center gap-2 truncate">
                           <span className="truncate">{item.label}</span>
@@ -286,160 +332,14 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
         ))}
       </div>
 
-      {/* Live usage chip — replaces the decorative "Pulse · AI lead
-          intelligence" anchor with real signal. Plan label, days-left
-          in the cycle, and the highest-burn meter so every navigation
-          gets a glanceable budget read. Click → Settings → Billing. */}
-      <SidebarUsageChip sidebarOpen={sidebarOpen} />
+      {/* Live usage chip — same component the mobile menu footer renders
+          so both surfaces share signal + brand voice. Real plan, real
+          days-left, real hottest meter. Click → Settings → Billing. */}
+      <div className="border-t border-white/10 p-3">
+        <SidebarUsageChip variant={sidebarOpen ? "open" : "collapsed"} />
+      </div>
     </aside>
   );
 };
-
-/**
- * Live usage chip rendered in the sidebar footer. Two modes:
- *   - sidebarOpen=true  → 3-line card with plan badge, days-left chip,
- *     hottest meter (label + used/limit + thin progress bar).
- *   - sidebarOpen=false → compact circle showing plan initial + a
- *     single ring whose color reflects the hottest meter's burn.
- *
- * Click anywhere routes to the Billing surface in Settings so users
- * can act on what they see. Pulse Coach styling so it slots into the
- * sidebar's brand surface without competing with it.
- */
-function SidebarUsageChip({ sidebarOpen }) {
-  const { plan, periodEnd, rows, loading } = useUsageSummary();
-  const planConfig = PLAN_LIMITS[plan];
-  const planLabel = planConfig?.label || "Free Trial";
-  const planInitial = (planLabel[0] || "F").toUpperCase();
-
-  const now = new Date();
-  const end = periodEnd ? new Date(periodEnd) : null;
-  const daysLeft = end
-    ? Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
-    : null;
-
-  // Pick the row with the highest used/limit ratio so the chip surfaces
-  // the user's most-pressing budget signal rather than the first one
-  // alphabetically.
-  const hottest = (() => {
-    const limited = rows.filter((r) => r.limit != null && r.limit > 0);
-    if (!limited.length) return null;
-    return limited
-      .map((r) => ({ ...r, pct: Math.min(100, Math.round((r.used / r.limit) * 100)) }))
-      .sort((a, b) => b.pct - a.pct)[0];
-  })();
-
-  const burnColor =
-    hottest == null
-      ? "#475569"
-      : hottest.pct >= 90
-      ? "#F97316"
-      : hottest.pct >= 70
-      ? "#FACC15"
-      : "#00F0FF";
-
-  return (
-    <div className="border-t border-white/10 p-4">
-      <Link
-        to="/app/settings?tab=billing"
-        className="block rounded-2xl border border-white/10 px-3 py-3 transition hover:border-white/20"
-        style={{
-          background: "rgba(0,240,255,0.05)",
-          boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
-        }}
-      >
-        {sidebarOpen ? (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <span
-                  className="font-display inline-flex items-center rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.06em]"
-                  style={{
-                    color: "#00F0FF",
-                    borderColor: "rgba(0,240,255,0.35)",
-                    background: "rgba(0,240,255,0.08)",
-                    fontFamily: "ui-monospace,monospace",
-                  }}
-                >
-                  {planLabel}
-                </span>
-                {daysLeft != null && (
-                  <span
-                    className="text-[10.5px] text-slate-300"
-                    style={{ fontFamily: "DM Sans,sans-serif" }}
-                  >
-                    {daysLeft}d left
-                  </span>
-                )}
-              </div>
-              <PulseIcon className="h-3.5 w-3.5 shrink-0" style={{ color: "#00F0FF" }} />
-            </div>
-            <div className="min-w-0">
-              <div
-                className="truncate text-[11.5px] font-semibold text-white"
-                style={{ fontFamily: "Space Grotesk,sans-serif" }}
-              >
-                {hottest
-                  ? hottest.label
-                  : loading
-                  ? "Loading usage…"
-                  : "Manage plan"}
-              </div>
-              {hottest && (
-                <div
-                  className="mt-1 flex items-center gap-1.5"
-                  style={{ fontFamily: "ui-monospace,monospace" }}
-                >
-                  <span className="text-[10.5px] tabular-nums text-slate-300">
-                    {hottest.used.toLocaleString()} / {hottest.limit?.toLocaleString()}
-                  </span>
-                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/5">
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{
-                        width: `${Math.max(2, hottest.pct)}%`,
-                        background: burnColor,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-1.5">
-            <div
-              className="flex h-9 w-9 items-center justify-center rounded-full ring-2"
-              style={{
-                background: "#0F172A",
-                color: "#00F0FF",
-                boxShadow: hottest ? `0 0 0 2px ${burnColor}40` : undefined,
-                border: `2px solid ${burnColor}`,
-              }}
-            >
-              <span
-                className="text-[12px] font-bold"
-                style={{ fontFamily: "Space Grotesk,sans-serif" }}
-              >
-                {planInitial}
-              </span>
-            </div>
-            {hottest && (
-              <span
-                className="text-[9px] font-bold tabular-nums"
-                style={{
-                  color: burnColor,
-                  fontFamily: "ui-monospace,monospace",
-                }}
-              >
-                {hottest.pct}%
-              </span>
-            )}
-          </div>
-        )}
-      </Link>
-    </div>
-  );
-}
 
 export default AppSidebar;

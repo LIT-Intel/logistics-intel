@@ -1,0 +1,57 @@
+/* LIT logo "alive" treatment — applied to the icon container in the
+ * sidebar + mobile menu headers. Two layered animations:
+ *
+ *   1. lit-mount-burst: a one-time cyan ring that expands outward on
+ *      page load (~800ms). Tells users "intelligence is online."
+ *
+ *   2. lit-breathe: a slow continuous box-shadow pulse that runs forever
+ *      after the burst ends. Low-intensity (visible peripherally,
+ *      never distracting). Reinforces the Pulse Coach brand voice
+ *      across every surface that hosts the LIT lockup.
+ *
+ * Cyan token: #00F0FF — same canonical accent used in every Pulse
+ * Coach surface (Profile quota cards, Settings Account Snapshot,
+ * Billing modals, sidebar usage chip).
+ */
+
+@keyframes lit-mount-burst {
+  0% {
+    box-shadow:
+      0 0 0 0 rgba(0, 240, 255, 0.7),
+      0 4px 14px rgba(0, 240, 255, 0.18);
+  }
+  100% {
+    box-shadow:
+      0 0 0 26px rgba(0, 240, 255, 0),
+      0 4px 14px rgba(0, 240, 255, 0.18);
+  }
+}
+
+@keyframes lit-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(0, 240, 255, 0.15),
+      0 4px 14px rgba(0, 240, 255, 0.18);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px rgba(0, 240, 255, 0.1),
+      0 4px 18px rgba(0, 240, 255, 0.32);
+  }
+}
+
+.lit-logo-alive {
+  animation:
+    lit-mount-burst 800ms ease-out 1,
+    lit-breathe 4s ease-in-out 800ms infinite;
+}
+
+/* Respect user motion preferences — disable both animations when the
+ * OS reports prefers-reduced-motion. The static cyan accent on the
+ * icon still reads as the brand mark; we just don't pulse it. */
+@media (prefers-reduced-motion: reduce) {
+  .lit-logo-alive {
+    animation: none;
+  }
+}
