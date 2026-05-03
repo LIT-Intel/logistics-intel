@@ -63,6 +63,7 @@ export function ProrationConfirmModal({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setPreview(null);
     (async () => {
       try {
         const result: any = await previewUpcomingInvoice({
@@ -78,18 +79,31 @@ export function ProrationConfirmModal({
             recurringInterval: result.recurringInterval,
             nextChargeDate: result.nextChargeDate,
           });
+          setLoading(false);
         } else {
-          setError(result?.error || "Couldn't load preview.");
+          // Server returned a structured error — fall through to
+          // checkout. The user will see Stripe's hosted breakdown of
+          // the actual charge there; better than blocking on a
+          // preview that we can't compute.
+          onConfirm();
         }
       } catch (e: any) {
-        if (!cancelled) setError(e?.message || "Couldn't load preview.");
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (cancelled) return;
+        // The upcoming-invoice fn may be unavailable (e.g. not yet
+        // deployed in this environment) or may have legitimately
+        // failed. Either way, don't trap the user in a "Couldn't
+        // load preview" dead-end — bypass directly to checkout where
+        // Stripe Hosted Checkout will show the real prorated charge
+        // before the card is captured. The preview is a polish
+        // feature, not a gate.
+        console.warn("[BillingModals] preview unavailable, bypassing modal:", e?.message);
+        onConfirm();
       }
     })();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, planCode, interval]);
 
   if (!open || !planCode) return null;

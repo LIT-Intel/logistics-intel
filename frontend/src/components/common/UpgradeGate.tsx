@@ -61,23 +61,27 @@ export function UpgradeGate({
 
   return (
     <div className="relative">
-      {/* Underlying feature page — blurred + dimmed, fully non-interactive
-          so we don't accidentally fire onClick handlers underneath. */}
+      {/* Underlying feature page — fully readable so users can see the
+          product they're upgrading for. Pointer-events disabled so we
+          don't fire interactive handlers underneath the modal, but no
+          blur / dim — same modal-block pattern as the in-app limit
+          modal that pops when a user hits a usage cap. */}
       <div
         aria-hidden
         className="pointer-events-none select-none"
-        style={{
-          filter: "blur(6px) saturate(0.85)",
-          opacity: 0.55,
-        }}
       >
         {children}
       </div>
 
-      {/* Overlay: Pulse Coach card centered. Sits inside an absolute
-          container that covers the blurred children. Click the backdrop
-          → noop (we don't dismiss; the gate is the whole point). */}
-      <div className="absolute inset-0 flex items-start justify-center overflow-y-auto px-4 py-12 sm:py-16">
+      {/* Centered modal — same Pulse-Coach surface as Billing /
+          Settings / Profile. Backdrop tints the page so the modal
+          floats clearly on top; backdrop click is a noop because the
+          gate is the whole point. Position fixed so the modal stays
+          centered even if the user has scrolled the locked page. */}
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto px-4 py-8"
+        style={{ background: "rgba(2,6,23,0.55)", backdropFilter: "blur(2px)" }}
+      >
         <div
           className="relative w-full max-w-md overflow-hidden rounded-2xl border border-white/10 shadow-[0_24px_60px_rgba(2,6,23,0.55)]"
           style={{
