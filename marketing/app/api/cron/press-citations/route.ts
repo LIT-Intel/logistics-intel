@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  * Pure data-pull — no LLM needed. Source list is intentionally small
  * to start; the user expands it as PR coverage grows.
  */
-const SOURCES = [
+const SOURCES: string[] = [
   // Hand-pickable feeds where LIT might get covered. Empty list is fine —
   // the agent no-ops gracefully and you wire feeds when a press hit lands.
   // "https://example-trade-pub.com/feed",
