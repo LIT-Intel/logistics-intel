@@ -53,6 +53,11 @@ import { searchLocalCompanies, mergeResults } from '@/features/pulse/pulseLocalS
 import PulseQuickCard from '@/features/pulse/PulseQuickCard';
 import PulseLibrary from '@/features/pulse/PulseLibrary';
 import AddToListPicker from '@/features/pulse/AddToListPicker';
+import {
+  parsePulseQuery,
+  buildLocalFilterRecipe,
+} from '@/features/pulse/pulseQueryParser';
+import QueryInterpretation from '@/features/pulse/QueryInterpretation';
 
 const PLACEHOLDER_EXAMPLES = [
   'Find marketing directors at SaaS companies in California',
@@ -178,6 +183,12 @@ export default function Pulse() {
   }, [query]);
 
   const intent = useMemo(() => detectIntent(query), [query]);
+  // Coach query parser — debounced so it doesn't tear on every keystroke
+  const [parsedQuery, setParsedQuery] = useState(() => parsePulseQuery(''));
+  useEffect(() => {
+    const t = setTimeout(() => setParsedQuery(parsePulseQuery(query)), 220);
+    return () => clearTimeout(t);
+  }, [query]);
   const errorClass = useMemo(() => classifyPulseError(errorMessage), [errorMessage]);
   const isSetupError = errorClass === 'setup';
   const isPermissionError = errorClass === 'permission';
@@ -192,10 +203,17 @@ export default function Pulse() {
     setActiveCompany(null);
 
     try {
+      // Re-parse the trimmed query so the cache-first filter recipe
+      // matches what the user actually submitted (debounced parsedQuery
+      // may lag by ~200ms when they hit Enter quickly).
+      const parsedAtSubmit = parsePulseQuery(trimmed);
+      const recipe = buildLocalFilterRecipe(parsedAtSubmit);
+
       // Cache-first cascade. Both queries fire in parallel; local results
       // come back first to give immediate feedback, remote rows merge in
-      // when they land.
-      const localPromise = searchLocalCompanies(trimmed, 12);
+      // when they land. Local search uses the structured filter recipe
+      // (countries/states) when present so freight queries tighten.
+      const localPromise = searchLocalCompanies(trimmed, 12, recipe);
       const remotePromise = searchPulse({ query: trimmed, ui_mode: 'auto' });
 
       const [localOut, remote] = await Promise.allSettled([localPromise, remotePromise]);
@@ -621,6 +639,14 @@ export default function Pulse() {
             )}
           </div>
         </div>
+
+        {/* Coach query interpretation — entity chips parsed from the prompt */}
+        <QueryInterpretation
+          parsed={parsedQuery}
+          query={query}
+          onChangeQuery={setQuery}
+          onRun={() => runSearch()}
+        />
 
         {/* Prompt category gallery — idle only */}
         {!searchPerformed && !isSearching ? (

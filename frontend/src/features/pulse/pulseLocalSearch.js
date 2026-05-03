@@ -50,8 +50,13 @@ function buildOrFilter(tokens) {
  * Each row carries `provenance: 'database'` so the UI can paint the
  * "In your database" badge — and a populated `kpis` block when the
  * underlying lit_companies row has freight numbers.
+ *
+ * Optional `recipe` (from buildLocalFilterRecipe in pulseQueryParser)
+ * tightens the lookup with structured filters: { states: ['GA'],
+ * countries: ['VN'] } etc. When the recipe yields zero rows the
+ * caller falls back to the unrefined keyword search.
  */
-export async function searchLocalCompanies(query, limit = 12) {
+export async function searchLocalCompanies(query, limit = 12, recipe = null) {
   const tokens = tokenize(query);
   if (!tokens.length) return { rows: [], tokens };
 
@@ -59,7 +64,7 @@ export async function searchLocalCompanies(query, limit = 12) {
   if (!orFilter) return { rows: [], tokens };
 
   try {
-    const { data, error } = await supabase
+    let q = supabase
       .from('lit_companies')
       .select(`
         id,
@@ -81,7 +86,19 @@ export async function searchLocalCompanies(query, limit = 12) {
         top_route_12m,
         recent_route
       `)
-      .or(orFilter)
+      .or(orFilter);
+
+    // Apply structured filters from the parsed prompt when present.
+    // Only the freight-relevant ones; tech/industry filters are
+    // honored remotely by Apollo.
+    if (recipe?.countries?.length) {
+      q = q.in('country_code', recipe.countries);
+    }
+    if (recipe?.states?.length) {
+      q = q.in('state', recipe.states);
+    }
+
+    const { data, error } = await q
       .order('shipments_12m', { ascending: false, nullsFirst: false })
       .limit(limit);
 
