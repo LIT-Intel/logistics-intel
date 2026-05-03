@@ -60,31 +60,36 @@ export function UpgradeGate({
   const nextPlanLabel = PLAN_LABELS[nextPlan];
 
   return (
-    <div className="relative">
-      {/* Underlying feature page — fully readable so users can see the
-          product they're upgrading for. Pointer-events disabled so we
-          don't fire interactive handlers underneath the modal, but no
-          blur / dim — same modal-block pattern as the in-app limit
-          modal that pops when a user hits a usage cap. */}
-      <div
-        aria-hidden
-        className="pointer-events-none select-none"
-      >
+    <div className="relative min-h-[60vh]">
+      {/* Underlying feature page — fully readable. Pointer-events
+          disabled so accidental clicks don't fire underneath the modal,
+          but no blur / no dim — users see exactly what they're paying
+          to unlock. */}
+      <div aria-hidden className="pointer-events-none select-none">
         {children}
       </div>
 
-      {/* Centered modal — same Pulse-Coach surface as Billing /
-          Settings / Profile. Backdrop tints the page so the modal
-          floats clearly on top; backdrop click is a noop because the
-          gate is the whole point. Position fixed so the modal stays
-          centered even if the user has scrolled the locked page. */}
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto px-4 py-8"
-        style={{ background: "rgba(2,6,23,0.55)", backdropFilter: "blur(2px)" }}
-      >
+      {/* Overlay scoped to the PAGE CONTENT AREA only (absolute inset-0
+          inside the gate's `relative` container). Sidebar + header stay
+          fully interactive — users can navigate away to Dashboard /
+          Settings / Billing without dismissing anything. The modal card
+          uses sticky positioning so it stays visible at the same screen
+          spot as the user scrolls the locked page behind it. */}
+      <div className="absolute inset-0 z-40 flex items-start justify-center px-4 pt-8 pb-16 sm:pt-12">
+        {/* Subtle tint so the modal reads as floating on top, but light
+            enough that the underlying page stays clearly visible. No
+            backdrop-filter blur — explicit ask was for the page to
+            remain readable. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{ background: "rgba(15,23,42,0.18)" }}
+        />
         <div
           className="relative w-full max-w-md overflow-hidden rounded-2xl border border-white/10 shadow-[0_24px_60px_rgba(2,6,23,0.55)]"
           style={{
+            position: "sticky",
+            top: "10vh",
             background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
             boxShadow:
               "inset 0 -1px 0 rgba(0,240,255,0.18), 0 24px 60px rgba(2,6,23,0.55)",
