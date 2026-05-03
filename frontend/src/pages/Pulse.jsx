@@ -52,6 +52,7 @@ import {
 import { searchLocalCompanies, mergeResults } from '@/features/pulse/pulseLocalSearch';
 import PulseQuickCard from '@/features/pulse/PulseQuickCard';
 import PulseLibrary from '@/features/pulse/PulseLibrary';
+import AddToListPicker from '@/features/pulse/AddToListPicker';
 
 const PLACEHOLDER_EXAMPLES = [
   'Find marketing directors at SaaS companies in California',
@@ -161,6 +162,10 @@ export default function Pulse() {
   // Bumped after a successful save so PulseLibrary refetches and the
   // user sees the new company appear in their library immediately.
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
+  // Saved Lists picker state — opened from the Quick Card's "Add to list"
+  // action. Carries the resolved lit_companies.id so the picker can
+  // write a membership row directly via pulse_list_companies.
+  const [listPicker, setListPicker] = useState(null); // { companyId, companyName }
 
   // — UI flourishes —
   const [phIdx, setPhIdx] = useState(0);
@@ -261,10 +266,18 @@ export default function Pulse() {
     return { id: co?.id, source_company_key: co?.source_company_key, name: co?.name };
   }
 
+  // "Add to list" — open the Saved Lists picker. The picker needs a
+  // canonical lit_companies.id, so we save the company first (idempotent)
+  // and resolve the UUID before showing the chooser.
   async function handleSaveToList(company) {
     try {
-      await upsertCompanyFromResult(company);
+      const saved = await upsertCompanyFromResult(company);
       setLibraryRefreshKey((k) => k + 1);
+      if (!saved?.id) {
+        setErrorMessage('Saved, but could not resolve a database id for the lists picker.');
+        return;
+      }
+      setListPicker({ companyId: saved.id, companyName: saved.name || company.name });
     } catch (error) {
       console.error('[Pulse] save failed:', error);
       if (error instanceof LimitExceededError) {
@@ -734,6 +747,14 @@ export default function Pulse() {
         open={Boolean(campaignTarget)}
         onClose={() => setCampaignTarget(null)}
         company={campaignTarget || { name: '' }}
+      />
+      <AddToListPicker
+        open={Boolean(listPicker)}
+        onClose={() => setListPicker(null)}
+        companyId={listPicker?.companyId || null}
+        companyName={listPicker?.companyName || ''}
+        contextQuery={submittedQuery || query || null}
+        onSaved={() => setLibraryRefreshKey((k) => k + 1)}
       />
     </div>
   );

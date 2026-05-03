@@ -31,6 +31,20 @@ function normalizeContact(contact, index = 0) {
 
 function normalizeCompanyResult(item, index = 0) {
   const contacts = toArray(item?.contacts).map(normalizeContact);
+  // Tech stack: Apollo returns this as `tech_stack` (already deduped
+  // string[] from our edge fn) or as raw `technologies` / `technology_names`
+  // depending on plan / endpoint. Accept any of them.
+  const techStack = (() => {
+    const candidates = [item?.tech_stack, item?.technology_names, item?.technologies];
+    for (const c of candidates) {
+      if (Array.isArray(c) && c.length) {
+        return c
+          .map((t) => (typeof t === 'string' ? t.trim() : (t?.name || t?.uid || '')))
+          .filter(Boolean);
+      }
+    }
+    return [];
+  })();
 
   return {
     id: item?.id || item?.business_id || item?.domain || item?.name || `company-${index}`,
@@ -40,6 +54,7 @@ function normalizeCompanyResult(item, index = 0) {
     domain: clean(item?.domain),
     website: clean(item?.website),
     linkedin_url: clean(item?.linkedin_url || item?.linkedin_profile),
+    phone: clean(item?.phone || item?.sanitized_phone),
     city: clean(item?.city || item?.city_name),
     state: clean(item?.state || item?.region),
     country: clean(item?.country || item?.country_name),
@@ -60,6 +75,9 @@ function normalizeCompanyResult(item, index = 0) {
       item?.yearly_revenue_range ||
       '—',
     summary: clean(item?.summary || item?.business_description),
+    keywords: Array.isArray(item?.keywords) ? item.keywords.filter(Boolean) : [],
+    tech_stack: techStack,
+    founded_year: item?.founded_year || null,
     status: clean(item?.status) || 'Prospect',
     contacts_count:
       typeof item?.contacts_count === 'number' ? item.contacts_count : contacts.length,

@@ -255,8 +255,28 @@ function unlockedEmail(value: unknown): string | null {
   return email;
 }
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const v of value) {
+    if (typeof v === 'string' && v.trim()) {
+      out.push(v.trim());
+    } else if (v && typeof v === 'object') {
+      const name = asString((v as Record<string, unknown>).name)
+        || asString((v as Record<string, unknown>).uid);
+      if (name) out.push(name);
+    }
+  }
+  // Dedupe while preserving order
+  return Array.from(new Set(out));
+}
+
 function mapApolloCompany(orgRaw: unknown): Record<string, unknown> {
   const org = asRecord(orgRaw) || {};
+  // Apollo returns tech detection on either `technology_names`
+  // (string[]) or `technologies` (array of {name, uid, ...}). We
+  // surface a deduped string array so the UI can render brand icons.
+  const techStack = asStringArray(org.technology_names || org.technologies);
   return {
     id: asString(org.id),
     business_id: asString(org.id),
@@ -267,6 +287,7 @@ function mapApolloCompany(orgRaw: unknown): Record<string, unknown> {
       asString(org.website_url),
     website: asString(org.website_url),
     linkedin_url: asString(org.linkedin_url),
+    phone: asString(org.phone) || asString(org.sanitized_phone),
     city: asString(org.city),
     state: asString(org.state),
     country: asString(org.country),
@@ -274,6 +295,9 @@ function mapApolloCompany(orgRaw: unknown): Record<string, unknown> {
     employee_count: asNumber(org.estimated_num_employees),
     annual_revenue: asNumber(org.annual_revenue),
     summary: asString(org.short_description),
+    keywords: asStringArray(org.keywords),
+    tech_stack: techStack,
+    founded_year: asNumber(org.founded_year),
     status: 'Prospect',
     contacts_count: 0,
     contacts: [],
