@@ -244,3 +244,28 @@ export async function deletePulseList(listId) {
     return { ok: false, code: classifyError(err), message: err?.message };
   }
 }
+
+/* ─── Refresh / inbox state (localStorage) ─── */
+
+const REFRESH_KEY_PREFIX = 'lit.pulse.list_refresh.v1.';
+
+/** Last-refresh timestamp this client has seen for the given list. */
+export function getLastRefreshAt(listId) {
+  try {
+    const raw = window.localStorage.getItem(REFRESH_KEY_PREFIX + listId);
+    if (!raw) return null;
+    const t = Number(raw);
+    return Number.isFinite(t) ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Stamp the current time as the last-refresh moment for this list. */
+export function markRefreshedNow(listId) {
+  try {
+    window.localStorage.setItem(REFRESH_KEY_PREFIX + listId, String(Date.now()));
+  } catch {
+    // ignore
+  }
+}

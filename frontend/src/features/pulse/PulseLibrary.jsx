@@ -14,6 +14,7 @@ import {
   Database,
   Filter,
   Grid3x3,
+  Inbox,
   Layers,
   LayoutList,
   Loader2,
@@ -21,6 +22,7 @@ import {
   Search as SearchIcon,
   Sparkles,
   X,
+  Zap,
 } from 'lucide-react';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
 import { extractDomain } from '@/lib/logo';
@@ -29,7 +31,12 @@ import {
   filterLibrary,
   uniqueValues,
 } from '@/features/pulse/pulseLibraryApi';
-import { listPulseLists, getListCompanies } from '@/features/pulse/pulseListsApi';
+import {
+  listPulseLists,
+  getListCompanies,
+  getLastRefreshAt,
+} from '@/features/pulse/pulseListsApi';
+import { refreshList } from '@/features/pulse/refreshList';
 
 export default function PulseLibrary({ onSelect, refreshKey = 0 }) {
   const [expanded, setExpanded] = useState(false);
@@ -163,6 +170,12 @@ export default function PulseLibrary({ onSelect, refreshKey = 0 }) {
               listRowsLoading={listRowsLoading}
               onSelectCompany={onSelect}
               onRefresh={loadLists}
+              onListUpdated={(listId) => {
+                // Refetch the list-companies (so new rows appear) AND
+                // the lists overview (so the count + updated_at bump)
+                loadListRows(listId);
+                loadLists();
+              }}
             />
           ) : (
           <>
@@ -336,6 +349,7 @@ function ListsTab({
   listRowsLoading,
   onSelectCompany,
   onRefresh,
+  onListUpdated,
 }) {
   if (tablesPending) {
     return (
@@ -384,48 +398,14 @@ function ListsTab({
   if (activeList) {
     const list = lists.find((l) => l.id === activeList);
     return (
-      <div>
-        <div className="flex items-center gap-2 border-b border-slate-100 bg-[#FAFBFC] px-4 py-2">
-          <button
-            type="button"
-            onClick={onCloseList}
-            className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            ← All lists
-          </button>
-          <div className="min-w-0">
-            <div className="font-display truncate text-[12.5px] font-bold text-slate-900">
-              {list?.name || 'List'}
-            </div>
-            {list?.query_text ? (
-              <div className="font-body truncate text-[10.5px] text-slate-500">
-                "{list.query_text}"
-              </div>
-            ) : null}
-          </div>
-          <span className="font-mono ml-auto rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
-            {listRows.length} compan{listRows.length === 1 ? 'y' : 'ies'}
-          </span>
-        </div>
-        <div className="px-4 py-4">
-          {listRowsLoading ? (
-            <div className="flex items-center justify-center gap-2 py-4 text-slate-500">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span className="font-body text-[12px]">Loading list…</span>
-            </div>
-          ) : listRows.length === 0 ? (
-            <div className="font-body py-4 text-center text-[12px] text-slate-500">
-              This list is empty.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {listRows.map((c) => (
-                <LibraryCard key={c.id} company={c} onClick={() => onSelectCompany?.(c)} />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      <ListDetailView
+        list={list}
+        listRows={listRows}
+        listRowsLoading={listRowsLoading}
+        onCloseList={onCloseList}
+        onSelectCompany={onSelectCompany}
+        onListUpdated={onListUpdated}
+      />
     );
   }
 
@@ -487,16 +467,172 @@ function ListsTab({
   );
 }
 
+/* ─── List detail view (with Refresh / Inbox affordance) ─── */
+
+function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelectCompany, onListUpdated }) {
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState(null);
+  // companies just added by the most recent refresh — used to paint a
+  // NEW badge on the cards for the rest of the session
+  const [newIds, setNewIds] = useState(new Set());
+  const [progress, setProgress] = useState(null);
+  // Last refresh timestamp lives in localStorage (no schema change).
+  const [lastRefreshAt, setLastRefreshAt] = useState(() =>
+    list?.id ? getLastRefreshAt(list.id) : null,
+  );
+
+  async function handleRefresh() {
+    if (!list || refreshing) return;
+    setRefreshing(true);
+    setRefreshStatus(null);
+    setProgress('Reading list members…');
+
+    const res = await refreshList({
+      list,
+      onProgress: (msg) => setProgress(msg),
+    });
+
+    setRefreshing(false);
+    setProgress(null);
+
+    if (!res.ok) {
+      setRefreshStatus({ tone: 'error', message: res.message || 'Refresh failed.' });
+      return;
+    }
+
+    setLastRefreshAt(Date.now());
+
+    if (res.newAdded > 0) {
+      setNewIds(new Set(res.newCompanyIds));
+      setRefreshStatus({
+        tone: 'success',
+        message: `Added ${res.newAdded} new compan${res.newAdded === 1 ? 'y' : 'ies'} to this list${res.limitHit ? ' (some skipped — plan limit hit)' : ''}.`,
+      });
+      onListUpdated?.(list.id);
+    } else if (res.limitHit) {
+      setRefreshStatus({
+        tone: 'warn',
+        message: 'Could not add new companies — plan limit reached. Upgrade at /app/billing.',
+      });
+    } else {
+      setRefreshStatus({
+        tone: 'idle',
+        message: `No new matches. ${res.totalRun} total result${res.totalRun === 1 ? '' : 's'} were already in your list.`,
+      });
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-[#FAFBFC] px-4 py-2.5">
+        <button
+          type="button"
+          onClick={onCloseList}
+          className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          ← All lists
+        </button>
+        <div className="min-w-0 flex-1">
+          <div className="font-display truncate text-[12.5px] font-bold text-slate-900">
+            {list?.name || 'List'}
+          </div>
+          {list?.query_text ? (
+            <div className="font-body truncate text-[10.5px] text-slate-500">
+              "{list.query_text}"
+            </div>
+          ) : null}
+        </div>
+        <span className="font-mono rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+          {listRows.length} compan{listRows.length === 1 ? 'y' : 'ies'}
+        </span>
+        {lastRefreshAt ? (
+          <span className="font-body text-[10px] text-slate-400">
+            Refreshed {formatRelativeAgo(lastRefreshAt)}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={refreshing || !list?.query_text}
+          title={!list?.query_text ? 'No source query — refresh requires the original prompt.' : 'Re-run the source query and add new matches'}
+          className="font-display inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {refreshing ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Inbox className="h-3 w-3" />
+          )}
+          {refreshing ? (progress || 'Refreshing…') : 'Refresh inbox'}
+        </button>
+      </div>
+
+      {/* Status strip — shows after a refresh attempt */}
+      {refreshStatus ? (
+        <div
+          className={[
+            'flex items-center gap-2 border-b border-slate-100 px-4 py-2 text-[11.5px]',
+            refreshStatus.tone === 'success' ? 'bg-green-50 text-green-700'
+              : refreshStatus.tone === 'error' ? 'bg-rose-50 text-rose-700'
+              : refreshStatus.tone === 'warn' ? 'bg-amber-50 text-amber-700'
+              : 'bg-slate-50 text-slate-600',
+          ].join(' ')}
+        >
+          {refreshStatus.tone === 'success' ? <Sparkles className="h-3 w-3" /> : null}
+          <span className="font-body">{refreshStatus.message}</span>
+        </div>
+      ) : null}
+
+      <div className="px-4 py-4">
+        {listRowsLoading ? (
+          <div className="flex items-center justify-center gap-2 py-4 text-slate-500">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span className="font-body text-[12px]">Loading list…</span>
+          </div>
+        ) : listRows.length === 0 ? (
+          <div className="font-body py-4 text-center text-[12px] text-slate-500">
+            This list is empty. {list?.query_text ? 'Try Refresh inbox to populate it from the source query.' : ''}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {listRows.map((c) => (
+              <LibraryCard
+                key={c.id}
+                company={c}
+                isNew={newIds.has(c.id)}
+                onClick={() => onSelectCompany?.(c)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatRelativeAgo(ts) {
+  if (!ts) return '';
+  const ageMs = Date.now() - ts;
+  if (ageMs < 60_000) return 'just now';
+  if (ageMs < 3_600_000) return `${Math.floor(ageMs / 60_000)}m ago`;
+  if (ageMs < 86_400_000) return `${Math.floor(ageMs / 3_600_000)}h ago`;
+  return `${Math.floor(ageMs / 86_400_000)}d ago`;
+}
+
 /* ─── Sub-components ─── */
 
-function LibraryCard({ company, onClick }) {
+function LibraryCard({ company, onClick, isNew }) {
   const domain = extractDomain(company.domain || company.website);
   const location = [company.city, company.state, company.country].filter(Boolean).join(', ');
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group flex flex-col gap-2 rounded-[12px] border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:shadow-[0_4px_14px_rgba(15,23,42,0.06)]"
+      className={[
+        'group flex flex-col gap-2 rounded-[12px] border bg-white p-3 text-left transition',
+        isNew
+          ? 'border-cyan-300 shadow-[0_4px_14px_rgba(34,211,238,0.18)]'
+          : 'border-slate-200 hover:border-slate-300 hover:shadow-[0_4px_14px_rgba(15,23,42,0.06)]',
+      ].join(' ')}
     >
       <div className="flex items-start gap-2.5">
         <CompanyAvatar
@@ -506,8 +642,21 @@ function LibraryCard({ company, onClick }) {
           className="!h-9 !w-9 !rounded-md"
         />
         <div className="min-w-0 flex-1">
-          <div className="font-display truncate text-[13px] font-bold leading-tight text-slate-900">
-            {company.name}
+          <div className="font-display flex items-center gap-1.5 text-[13px] font-bold leading-tight text-slate-900">
+            <span className="truncate">{company.name}</span>
+            {isNew ? (
+              <span
+                className="font-display inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]"
+                style={{
+                  background: 'linear-gradient(135deg,#0F172A,#1E293B)',
+                  color: '#00F0FF',
+                  border: '1px solid rgba(0,240,255,0.35)',
+                }}
+              >
+                <Zap className="h-2 w-2" />
+                New
+              </span>
+            ) : null}
           </div>
           <div className="font-body mt-0.5 truncate text-[10.5px] text-slate-500">
             {domain || 'No domain'}
