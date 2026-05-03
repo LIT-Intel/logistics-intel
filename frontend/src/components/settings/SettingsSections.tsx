@@ -347,8 +347,14 @@ export function ProfileSection({
         </div>
       </SCard>
 
-      {/* Messaging preferences */}
-      <SCard title="Messaging preferences" subtitle="How teammates and automated systems contact you inside the app.">
+      {/* Messaging preferences — collapsible since this is a "set once,
+          rarely revisit" surface. */}
+      <SCard
+        title="Messaging preferences"
+        subtitle="How teammates and automated systems contact you inside the app."
+        collapsible
+        defaultOpen={false}
+      >
         <div className="lit-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           {MESSAGING_ROWS.map((row) => (
             <SToggle
@@ -790,9 +796,12 @@ export function SecuritySection(props: {
         </SCard>
       </div>
 
-      {/* Recent activity / audit log */}
+      {/* Recent activity / audit log — collapsed by default to keep the
+          page scannable; users open it on demand for forensics. */}
       <SCard
         title="Recent activity"
+        collapsible
+        defaultOpen={false}
         right={
           <span style={{ fontFamily: "Space Grotesk,sans-serif", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#94a3b8" }}>
             Last {Math.min(20, props.auditLog?.length ?? 0)} events
@@ -829,10 +838,13 @@ export function SecuritySection(props: {
         )}
       </SCard>
 
-      {/* API keys — plan-gated */}
+      {/* API keys — plan-gated. Collapsed by default since most users
+          never generate one, but quick to open when needed. */}
       <SCard
         title="API keys"
         subtitle="Programmatic access to company intelligence, pipeline, and outbound events."
+        collapsible
+        defaultOpen={false}
         danger={!apiAllowed}
         right={apiAllowed && props.onGenerateKey ? (
           <button style={sBtnPrimary} onClick={async () => {

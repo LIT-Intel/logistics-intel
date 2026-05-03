@@ -87,9 +87,29 @@ export type SCardProps = {
   children?: React.ReactNode;
   dense?: boolean;
   danger?: boolean;
+  /** When true, the title row becomes a chevron toggle that hides/shows
+   *  the body. Mirrors the collapsible Section pattern in the Profile-page
+   *  right rail (CDPDetailsPanel). Use for long lists or rarely-edited
+   *  sections where the page should default to a quick scan. */
+  collapsible?: boolean;
+  /** Initial open state when collapsible=true. Defaults to true so the
+   *  user always sees the content unless explicitly defaulted closed. */
+  defaultOpen?: boolean;
 };
 
-export function SCard({ title, subtitle, right, children, dense, danger }: SCardProps) {
+export function SCard({
+  title,
+  subtitle,
+  right,
+  children,
+  dense,
+  danger,
+  collapsible,
+  defaultOpen = true,
+}: SCardProps) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  const showHeader = title || right;
+  const headerInteractive = collapsible && Boolean(title);
   return (
     <div style={{
       background: "#fff",
@@ -98,44 +118,85 @@ export function SCard({ title, subtitle, right, children, dense, danger }: SCard
       boxShadow: "0 1px 3px rgba(15,23,42,0.04)",
       overflow: "hidden",
     }}>
-      {(title || right) && (
-        <div style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 16,
-          padding: "16px 20px 14px",
-          borderBottom: "1px solid #F1F5F9",
-        }}>
-          <div>
-            {title && (
-              <div style={{
-                fontFamily: "Space Grotesk,sans-serif",
-                fontSize: 14,
-                fontWeight: 700,
-                color: "#0F172A",
-                letterSpacing: "-0.01em",
-              }}>{title}</div>
+      {showHeader && (
+        <div
+          onClick={headerInteractive ? () => setOpen((v) => !v) : undefined}
+          role={headerInteractive ? "button" : undefined}
+          tabIndex={headerInteractive ? 0 : undefined}
+          aria-expanded={collapsible ? open : undefined}
+          onKeyDown={
+            headerInteractive
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setOpen((v) => !v);
+                  }
+                }
+              : undefined
+          }
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 16,
+            padding: "16px 20px 14px",
+            borderBottom: open || !collapsible ? "1px solid #F1F5F9" : "none",
+            cursor: headerInteractive ? "pointer" : undefined,
+            userSelect: headerInteractive ? "none" : undefined,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
+            {collapsible && (
+              <span
+                aria-hidden
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 16,
+                  height: 16,
+                  marginTop: 2,
+                  color: "#94a3b8",
+                  transition: "transform 140ms",
+                  transform: open ? "rotate(0deg)" : "rotate(-90deg)",
+                }}
+              >
+                <ChevronDown size={14} />
+              </span>
             )}
-            {subtitle && (
-              <div style={{
-                fontFamily: "DM Sans,sans-serif",
-                fontSize: 12.5,
-                color: "#64748b",
-                marginTop: 3,
-                lineHeight: 1.45,
-                maxWidth: 560,
-              }}>{subtitle}</div>
-            )}
+            <div>
+              {title && (
+                <div style={{
+                  fontFamily: "Space Grotesk,sans-serif",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: "#0F172A",
+                  letterSpacing: "-0.01em",
+                }}>{title}</div>
+              )}
+              {subtitle && (
+                <div style={{
+                  fontFamily: "DM Sans,sans-serif",
+                  fontSize: 12.5,
+                  color: "#64748b",
+                  marginTop: 3,
+                  lineHeight: 1.45,
+                  maxWidth: 560,
+                }}>{subtitle}</div>
+              )}
+            </div>
           </div>
           {right && (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+            <div
+              onClick={headerInteractive ? (e) => e.stopPropagation() : undefined}
+              style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}
+            >
               {right}
             </div>
           )}
         </div>
       )}
-      {children !== undefined && (
+      {children !== undefined && (!collapsible || open) && (
         <div style={{ padding: dense ? "14px 20px" : "18px 20px" }}>{children}</div>
       )}
     </div>
