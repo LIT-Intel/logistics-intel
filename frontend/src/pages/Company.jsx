@@ -466,7 +466,36 @@ export default function Company() {
     return buildYearScopedProfile(profile, selectedYear) || profile;
   }, [profile, selectedYear]);
 
-  const activeProfile = yearScopedProfile || profile;
+  // Merge firmographic fields from the lit_companies row into the profile
+  // so the right-rail Firmographics block surfaces industry/revenue/
+  // headcount when those columns are populated. The snapshot from
+  // importyeti-proxy doesn't carry firmographics, so without this merge
+  // those rows would always render "—" until a future Lusha/Apollo enrich.
+  const baseActiveProfile = yearScopedProfile || profile;
+  const activeProfile = useMemo(() => {
+    if (!baseActiveProfile && !companyEnrichment) return null;
+    const merged = { ...(baseActiveProfile || {}) };
+    if (companyEnrichment?.industry && !merged.industry) {
+      merged.industry = companyEnrichment.industry;
+    }
+    if (
+      companyEnrichment?.revenue != null &&
+      merged.estimatedRevenue == null &&
+      merged.revenue == null
+    ) {
+      merged.estimatedRevenue = companyEnrichment.revenue;
+      merged.revenue = companyEnrichment.revenue;
+    }
+    if (
+      companyEnrichment?.headcount != null &&
+      merged.employeeCount == null &&
+      merged.headcount == null
+    ) {
+      merged.employeeCount = companyEnrichment.headcount;
+      merged.headcount = companyEnrichment.headcount;
+    }
+    return merged;
+  }, [baseActiveProfile, companyEnrichment]);
   const activeRouteKpis = yearScopedProfile?.routeKpis || routeKpis || null;
 
   const shellCompany = useMemo(

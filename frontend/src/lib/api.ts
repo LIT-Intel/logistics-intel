@@ -386,6 +386,10 @@ export interface IyCompanyProfile {
   topContainerCount?: number | null;
   topContainerShipments?: number | null;
   topContainerTeu?: number | null;
+  /** Industry label — explicit if `lit_companies.industry` is populated,
+   *  otherwise inferred from the dominant HS chapter (Plastics, Machinery,
+   *  Electrical Equipment, etc.). Null only when no HS data exists. */
+  industry?: string | null;
   routeKpis: IyRouteKpis | null;
   timeSeries: IyTimeSeriesPoint[];
   recentBols: IyRecentBol[];
@@ -1665,6 +1669,26 @@ function normalizeTopSuppliers(raw: any): string[] | null {
 }
 
 function normalizeContainers(raw: any): IyCompanyContainers | null {
+  // Snapshot stores TWO related but distinct fields:
+  //   - `fcl_count` / `lcl_count` at the top level → trailing-12m totals
+  //   - `containers_load[].shipments` → ALL-TIME totals (despite the name)
+  // The CDP page's FCL/LCL pills + Imports-by-mode chart want 12m, so we
+  // prefer the top-level counts and only fall back to containers_load when
+  // they're missing.
+  const fcl12m =
+    coerceNumber(raw?.fcl_count) ??
+    coerceNumber(raw?.fcl_shipments_12m) ??
+    coerceNumber(raw?.fclShipments12m);
+  const lcl12m =
+    coerceNumber(raw?.lcl_count) ??
+    coerceNumber(raw?.lcl_shipments_12m) ??
+    coerceNumber(raw?.lclShipments12m);
+  if (fcl12m != null || lcl12m != null) {
+    return {
+      fclShipments12m: fcl12m,
+      lclShipments12m: lcl12m,
+    };
+  }
   const loads = Array.isArray(raw?.containers_load)
     ? raw.containers_load
     : Array.isArray(raw?.containersLoad)
@@ -1682,6 +1706,103 @@ function normalizeContainers(raw: any): IyCompanyContainers | null {
   return {
     fclShipments12m: coerceNumber(fcl?.shipments) ?? coerceNumber(fcl?.shipments_12m),
     lclShipments12m: coerceNumber(lcl?.shipments) ?? coerceNumber(lcl?.shipments_12m),
+  };
+}
+
+/**
+ * Build a `containerProfile` from the rich `containers` array the
+ * importyeti-proxy stores in lit_importyeti_company_snapshot. Each entry
+ * looks like { type, length, group, count, shipments, shipments_12m, teu,
+ * yoy, weight }. We bucket by length, sum 12m shipments + TEU, and pick
+ * the dominant length so CDPDetailsPanel and CDPSupplyChain stop showing
+ * "—" for the dominant container row.
+ */
+function deriveContainerProfileFromSnapshot(raw: any): {
+  byLength: Array<{
+    length: string;
+    shipments: number;
+    shipments_12m: number;
+    teu: number;
+  }>;
+  containerTypes: Array<{
+    isoCode: string;
+    group: string | null;
+    length: string | null;
+    count: number;
+    shipments: number;
+    shipments_12m: number;
+    teu: number;
+  }>;
+  dominantContainer: { length: string | null; type: string | null } | null;
+  topContainerLength: string | null;
+} | null {
+  const containers = Array.isArray(raw?.containers) ? raw.containers : null;
+  if (!containers || containers.length === 0) return null;
+  const byLengthMap = new Map<
+    string,
+    { length: string; shipments: number; shipments_12m: number; teu: number }
+  >();
+  const containerTypes: Array<{
+    isoCode: string;
+    group: string | null;
+    length: string | null;
+    count: number;
+    shipments: number;
+    shipments_12m: number;
+    teu: number;
+  }> = [];
+  for (const entry of containers) {
+    const length =
+      typeof entry?.length === "string" && entry.length ? entry.length : null;
+    const ships12m = Number(entry?.shipments_12m) || 0;
+    const shipsAll = Number(entry?.shipments) || 0;
+    const teu = Number(entry?.teu) || 0;
+    if (length) {
+      const cur = byLengthMap.get(length) || {
+        length,
+        shipments: 0,
+        shipments_12m: 0,
+        teu: 0,
+      };
+      cur.shipments += shipsAll;
+      cur.shipments_12m += ships12m;
+      cur.teu += teu;
+      byLengthMap.set(length, cur);
+    }
+    const isoCode =
+      typeof entry?.type === "string" && entry.type ? entry.type : null;
+    if (isoCode) {
+      containerTypes.push({
+        isoCode,
+        group: typeof entry?.group === "string" ? entry.group : null,
+        length,
+        count: Number(entry?.count) || 0,
+        shipments: shipsAll,
+        shipments_12m: ships12m,
+        teu,
+      });
+    }
+  }
+  const byLength = Array.from(byLengthMap.values()).sort(
+    (a, b) =>
+      (b.shipments_12m || b.shipments) - (a.shipments_12m || a.shipments),
+  );
+  const topByLength = byLength[0] ?? null;
+  // Dominant container type — prefer 12m winner, fall back to all-time.
+  const sortedTypes = [...containerTypes].sort(
+    (a, b) =>
+      (b.shipments_12m || b.shipments) - (a.shipments_12m || a.shipments),
+  );
+  const dominantType = sortedTypes[0] ?? null;
+  return {
+    byLength,
+    containerTypes: sortedTypes,
+    dominantContainer: dominantType
+      ? { length: dominantType.length, type: dominantType.isoCode }
+      : topByLength
+        ? { length: topByLength.length, type: null }
+        : null,
+    topContainerLength: topByLength?.length ?? dominantType?.length ?? null,
   };
 }
   
@@ -1825,7 +1946,100 @@ function normalizeRecentBols(raw: any): IyRecentBol[] {
               ? entry.arrival_date
               : null;
       const dateObj = parseBolDateValue(dateRaw);
+
+      // ImportYeti's raw BOL payload uses PascalCase (Country, HS_Code,
+      // Shipper_Name, Notify_Party_Name, Master_Bill_of_Lading,
+      // Product_Description, Weight_in_KG, Bill_of_Lading) plus a few
+      // snake_case helpers (supplier_address_country, supplier_address_location,
+      // company_address_country, country_code, supplier_address_country_code).
+      // Downstream readers in CDPDetailsPanel / CDPSupplyChain expect
+      // snake_case so we surface canonical fields here.
+      const supplierName =
+        routeValueToText(entry?.supplier) ??
+        routeValueToText(entry?.supplier_name) ??
+        routeValueToText(entry?.Shipper_Name) ??
+        routeValueToText(entry?.shipper_basename) ??
+        null;
+      const supplierCountry =
+        routeValueToText(entry?.supplier_address_country) ??
+        routeValueToText(entry?.supplier_country) ??
+        routeValueToText(entry?.shipper_country) ??
+        routeValueToText(entry?.Country) ??
+        null;
+      const supplierCountryCode =
+        routeValueToText(entry?.supplier_address_country_code) ??
+        routeValueToText(entry?.country_code) ??
+        null;
+      const supplierLocation =
+        routeValueToText(entry?.supplier_address_location) ??
+        routeValueToText(entry?.supplier_location) ??
+        null;
+      const consigneeName =
+        routeValueToText(entry?.company) ??
+        routeValueToText(entry?.company_name) ??
+        routeValueToText(entry?.Consignee_Name) ??
+        routeValueToText(entry?.consignee_basename) ??
+        null;
+      const consigneeCountry =
+        routeValueToText(entry?.company_address_country) ??
+        routeValueToText(entry?.company_country) ??
+        routeValueToText(entry?.destination_country) ??
+        null;
+      const consigneeCountryCode =
+        routeValueToText(entry?.company_address_country_code) ??
+        routeValueToText(entry?.destination_country_code) ??
+        null;
+      const consigneeLocation =
+        routeValueToText(entry?.company_address_location) ??
+        routeValueToText(entry?.company_location) ??
+        null;
+      const notifyParty =
+        routeValueToText(entry?.notify_party) ??
+        routeValueToText(entry?.notify_party_name) ??
+        routeValueToText(entry?.Notify_Party_Name) ??
+        null;
+      const hsCode =
+        (typeof entry?.hs_code === "string" && entry.hs_code) ||
+        (typeof entry?.hsCode === "string" && entry.hsCode) ||
+        (typeof entry?.HS_Code === "string" && entry.HS_Code) ||
+        (typeof entry?.hts_code === "string" && entry.hts_code) ||
+        (typeof entry?.commodity_code === "string" && entry.commodity_code) ||
+        null;
+      const productDescription =
+        (typeof entry?.product_description === "string" && entry.product_description) ||
+        (typeof entry?.Product_Description === "string" && entry.Product_Description) ||
+        (typeof entry?.description === "string" && entry.description) ||
+        (typeof entry?.commodity === "string" && entry.commodity) ||
+        null;
+      const masterBol =
+        (typeof entry?.master_bill_of_lading_number === "string" &&
+          entry.master_bill_of_lading_number) ||
+        (typeof entry?.Master_Bill_of_Lading === "string" &&
+          entry.Master_Bill_of_Lading) ||
+        (typeof entry?.mbl === "string" && entry.mbl) ||
+        null;
+      const houseBol =
+        (typeof entry?.house_bill_of_lading === "string" && entry.house_bill_of_lading) ||
+        (typeof entry?.Bill_of_Lading === "string" && entry.Bill_of_Lading) ||
+        (typeof entry?.bol_number === "string" && entry.bol_number) ||
+        (typeof entry?.bol === "string" && entry.bol) ||
+        null;
+      const weightKg =
+        coerceNumber(entry?.weight_kg) ??
+        coerceNumber(entry?.Weight_in_KG) ??
+        null;
+      // SCAC = first 4 chars of master bill of lading. ImportYeti doesn't
+      // ship a normalized carrier name; the SCAC is the closest signal we
+      // can derive without a SCAC→carrier mapping table.
+      const scac = (() => {
+        if (typeof masterBol !== "string") return null;
+        const prefix = masterBol.slice(0, 4).toUpperCase();
+        return /^[A-Z]{4}$/.test(prefix) ? prefix : null;
+      })();
+
       const origin =
+        supplierLocation ??
+        supplierCountry ??
         routeValueToText(entry?.origin) ??
         routeValueToText(entry?.origin_port) ??
         routeValueToText(entry?.shipper_country) ??
@@ -1833,6 +2047,8 @@ function normalizeRecentBols(raw: any): IyRecentBol[] {
         routeValueToText(entry?.origin_country) ??
         null;
       const destination =
+        consigneeLocation ??
+        consigneeCountry ??
         routeValueToText(entry?.destination) ??
         routeValueToText(entry?.destination_port) ??
         routeValueToText(entry?.company_country) ??
@@ -1847,12 +2063,7 @@ function normalizeRecentBols(raw: any): IyRecentBol[] {
           destination_country: destination,
         }) ?? null;
       return {
-        bolNumber:
-          typeof entry?.bol_number === "string"
-            ? entry.bol_number
-            : typeof entry?.bol === "string"
-              ? entry.bol
-              : null,
+        bolNumber: houseBol,
         date: dateRaw,
         dateObj,
         teu:
@@ -1874,27 +2085,40 @@ function normalizeRecentBols(raw: any): IyRecentBol[] {
           coerceNumber(entry?.shipping_cost) ??
           coerceNumber(entry?.est_spend_usd) ??
           null,
-        supplier:
-          routeValueToText(entry?.supplier) ??
-          routeValueToText(entry?.supplier_name) ??
-          null,
-        supplierCountry:
-          routeValueToText(entry?.supplier_country) ??
-          routeValueToText(entry?.shipper_country) ??
-          null,
-        company:
-          routeValueToText(entry?.company) ??
-          routeValueToText(entry?.company_name) ??
-          null,
-        companyCountry:
-          routeValueToText(entry?.company_country) ??
-          routeValueToText(entry?.destination_country) ??
-          null,
+        supplier: supplierName,
+        // alias surfaces so downstream `bol.shipper_name`, `bol.supplier_name`
+        // case-insensitive readers all hit.
+        supplier_name: supplierName,
+        shipper_name: supplierName,
+        supplierCountry,
+        supplier_country: supplierCountry,
+        shipper_country: supplierCountry,
+        supplier_country_code: supplierCountryCode,
+        origin_country: supplierCountry,
+        company: consigneeName,
+        company_name: consigneeName,
+        companyCountry: consigneeCountry,
+        company_country: consigneeCountry,
+        company_country_code: consigneeCountryCode,
+        notify_party: notifyParty,
+        notify_party_name: notifyParty,
+        hs_code: hsCode,
+        hsCode,
+        product_description: productDescription,
+        description: productDescription,
+        commodity: productDescription,
+        master_bill_of_lading_number: masterBol,
+        mbl: masterBol,
+        master_bill_prefix: scac,
+        mbl_prefix: scac,
+        scac,
+        carrier_name: scac,
+        weight_kg: weightKg,
         origin,
         destination,
         route,
         raw: entry && typeof entry === "object" ? entry : {},
-      };
+      } as any;
     })
     .filter((entry: IyRecentBol) => Boolean(entry.date || entry.route || entry.bolNumber));
 }
@@ -2059,6 +2283,51 @@ function normalizeTopRoutes(raw: any): IyRouteTopRoute[] {
     .sort((a, b) => (b.shipments ?? 0) - (a.shipments ?? 0));
 }
 
+/**
+ * The snapshot's `total_teu` and `routeKpis.teuLast12m` are sometimes
+ * computed against a tiny sample (50 BOLs) and come back surprisingly low
+ * (Superior Essex shows total_teu=9 against 44 12m shipments). When the
+ * page would otherwise display a tiny TEU number that contradicts the
+ * shipment count, prefer a derived value built from richer signals:
+ *   1) sum of TEU across topRoutesLast12m entries
+ *   2) avg_teu_per_month.12m × 12
+ *   3) the original raw value (so we don't fabricate)
+ */
+function deriveTeuLast12m(
+  raw: any,
+  rawTeu: number | null,
+  shipments12m: number | null,
+  topRoutes: IyRouteTopRoute[],
+): number | null {
+  const candidates: Array<number | null> = [];
+  candidates.push(rawTeu);
+  const routeSum = topRoutes.reduce(
+    (sum, r) => sum + (Number(r.teu) || 0),
+    0,
+  );
+  if (routeSum > 0) candidates.push(routeSum);
+  const avgPerMonth = (() => {
+    const obj = raw?.avg_teu_per_month;
+    if (!obj || typeof obj !== "object") return null;
+    const v = Number((obj as any)["12m"] ?? (obj as any).twelve_m);
+    return Number.isFinite(v) && v > 0 ? v * 12 : null;
+  })();
+  if (avgPerMonth) candidates.push(avgPerMonth);
+  const avgPerShipment = (() => {
+    const obj = raw?.avg_teu_per_shipment;
+    if (!obj || typeof obj !== "object" || !shipments12m) return null;
+    const v = Number((obj as any)["12m"] ?? (obj as any).twelve_m);
+    return Number.isFinite(v) && v > 0 ? v * shipments12m : null;
+  })();
+  if (avgPerShipment) candidates.push(avgPerShipment);
+  // Pick the largest credible value — the parser is biased low, never high.
+  const numeric = candidates.filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0,
+  );
+  if (numeric.length === 0) return rawTeu ?? null;
+  return Math.round(Math.max(...numeric));
+}
+
 function normalizeRouteKpis(raw: any): IyRouteKpis | null {
   if (raw?.routeKpis && typeof raw.routeKpis === "object") {
     const rawTopRoutes = Array.isArray(raw.routeKpis.topRoutesLast12m)
@@ -2079,19 +2348,30 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
       topRoute ??
       null;
 
-    return {
-      shipmentsLast12m: coerceNumber(
+    const shipments12m =
+      coerceNumber(
         raw.routeKpis.shipmentsLast12m ??
           raw.routeKpis.shipments_last_12m ??
           raw.shipments_last_12m ??
           raw.shipments_12m,
-      ) ?? null,
-      teuLast12m: coerceNumber(
+      ) ?? null;
+    const rawTeu12m =
+      coerceNumber(
         raw.routeKpis.teuLast12m ??
           raw.routeKpis.teu_last_12m ??
           raw.teu_12m ??
           raw.teu12m,
-      ) ?? null,
+      ) ?? null;
+    const teuLast12m = deriveTeuLast12m(
+      raw,
+      rawTeu12m,
+      shipments12m,
+      normalizedTopRoutes,
+    );
+
+    return {
+      shipmentsLast12m: shipments12m,
+      teuLast12m,
       estSpendUsd12m:
         coerceNumber(
           raw.routeKpis.estSpendUsd12m ??
@@ -2118,13 +2398,20 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
     return null;
   }
 
+  const fallbackShipments12m =
+    coerceNumber(
+      raw.shipments_12m ?? raw.shipments_last_12m ?? raw.total_shipments,
+    ) ?? null;
+  const fallbackRawTeu =
+    coerceNumber(raw.teu_12m ?? raw.teu12m ?? raw.total_teu) ?? null;
   return {
-    shipmentsLast12m: coerceNumber(
-      raw.shipments_12m ?? raw.shipments_last_12m ?? raw.total_shipments
-    ) ?? null,
-    teuLast12m: coerceNumber(
-      raw.teu_12m ?? raw.teu12m ?? raw.total_teu
-    ) ?? null,
+    shipmentsLast12m: fallbackShipments12m,
+    teuLast12m: deriveTeuLast12m(
+      raw,
+      fallbackRawTeu,
+      fallbackShipments12m,
+      topRoutes,
+    ),
     estSpendUsd12m:
       coerceNumber(
         raw.estSpendUsd12m ??
@@ -2143,6 +2430,82 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
   };
 }
 
+// Coarse mapping from HS chapter (first 2 digits of HS code) to a
+// human-readable industry label. Sourced from the WCO HS-2022 chapter
+// list. Only the chapters most common in containerized US imports are
+// labeled — anything outside the map returns null so we never guess.
+const HS_CHAPTER_INDUSTRY: Record<string, string> = {
+  "08": "Agriculture (Fruit & Nuts)",
+  "09": "Agriculture (Coffee, Tea, Spices)",
+  "16": "Food & Beverage",
+  "20": "Food & Beverage",
+  "21": "Food & Beverage",
+  "22": "Beverages",
+  "27": "Energy & Petrochemicals",
+  "29": "Chemicals",
+  "30": "Pharmaceuticals",
+  "33": "Beauty & Personal Care",
+  "34": "Soap & Cleaning Products",
+  "38": "Chemicals",
+  "39": "Plastics",
+  "40": "Rubber",
+  "42": "Leather Goods",
+  "44": "Wood Products",
+  "48": "Paper & Pulp",
+  "49": "Print & Publishing",
+  "52": "Textiles (Cotton)",
+  "54": "Textiles (Synthetics)",
+  "61": "Apparel (Knit)",
+  "62": "Apparel (Woven)",
+  "63": "Home Textiles",
+  "64": "Footwear",
+  "68": "Building Materials",
+  "69": "Ceramics",
+  "70": "Glass",
+  "72": "Metals (Iron & Steel)",
+  "73": "Metals (Steel Articles)",
+  "74": "Metals (Copper)",
+  "76": "Metals (Aluminum)",
+  "82": "Tools & Hardware",
+  "83": "Hardware",
+  "84": "Industrial Machinery",
+  "85": "Electrical Equipment",
+  "87": "Automotive",
+  "90": "Medical & Optical Instruments",
+  "94": "Furniture & Lighting",
+  "95": "Toys & Sporting Goods",
+  "96": "Consumer Goods",
+};
+
+function inferIndustryFromHs(profileData: any, recentBols: any[]): string | null {
+  // Prefer an explicit hs_profile object when the proxy supplies one.
+  const hsObj = profileData?.hs_profile;
+  let primaryHs: string | null = null;
+  if (hsObj && typeof hsObj === "object") {
+    const top = hsObj.topHsChapter || (Array.isArray(hsObj.topChapters) ? hsObj.topChapters[0] : null);
+    const code = top?.hsCode || top?.hs_code || top?.code || top?.chapter;
+    if (typeof code === "string") primaryHs = code;
+  }
+  if (!primaryHs) {
+    // Fall back to the most-frequent HS code across recent BOLs. We've
+    // already canonicalized recentBols[].hs_code in normalizeRecentBols
+    // so this works regardless of PascalCase upstream.
+    const counts = new Map<string, number>();
+    for (const bol of recentBols) {
+      const code = (bol as any)?.hs_code;
+      if (typeof code !== "string" || !code) continue;
+      counts.set(code, (counts.get(code) || 0) + 1);
+    }
+    if (counts.size > 0) {
+      const sorted = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+      primaryHs = sorted[0][0];
+    }
+  }
+  if (!primaryHs) return null;
+  const chapter = String(primaryHs).slice(0, 2);
+  return HS_CHAPTER_INDUSTRY[chapter] ?? null;
+}
+
 function normalizeCompanyProfile(
   rawProfile: any,
   companyKey: string,
@@ -2159,6 +2522,21 @@ function normalizeCompanyProfile(
   const containers = normalizeContainers(profileData);
   const topSuppliers = normalizeTopSuppliers(profileData);
   const yearMetrics = buildYearMetricsFromSnapshot(profileData);
+  // Build a rich container profile from the snapshot's `containers`
+  // array. Snapshot stores 30+ container types with length / shipments_12m
+  // / teu — but the legacy normalizer never surfaced it, so the right rail
+  // and supply-chain Container Profile card stayed empty.
+  const derivedContainerProfile = deriveContainerProfileFromSnapshot(profileData);
+  // Derive industry from the dominant HS chapter when explicit firmographic
+  // industry is missing. Fed by either an explicit hs_profile object or the
+  // most-frequent BOL HS code. Coarse but useful — Plastics, Machinery,
+  // Electronics, etc. populate without requiring a Lusha/Apollo enrichment.
+  const explicitIndustry =
+    (typeof profileData.industry === "string" && profileData.industry) ||
+    null;
+  const inferredIndustry = explicitIndustry
+    ? null
+    : inferIndustryFromHs(profileData, recentBols);
 
   const websiteValue = typeof profileData.website === "string" ? profileData.website : null;
   const domainValue =
@@ -2282,6 +2660,7 @@ function normalizeCompanyProfile(
     topContainerLength:
       profileData.top_container_length ??
       profileData.topContainerLength ??
+      derivedContainerProfile?.topContainerLength ??
       null,
     topContainerCount:
       coerceNumber(profileData.top_container_count ?? profileData.topContainerCount) ?? null,
@@ -2289,6 +2668,7 @@ function normalizeCompanyProfile(
       coerceNumber(profileData.top_container_shipments ?? profileData.topContainerShipments) ?? null,
     topContainerTeu:
       coerceNumber(profileData.top_container_teu ?? profileData.topContainerTeu) ?? null,
+    industry: explicitIndustry ?? inferredIndustry ?? null,
     routeKpis,
     timeSeries,
     recentBols,
@@ -2312,7 +2692,29 @@ function normalizeCompanyProfile(
       return out.length ? out : null;
     })(),
     hsProfile: (profileData as any).hs_profile ?? null,
-    containerProfile: (profileData as any).container_profile ?? null,
+    containerProfile:
+      (profileData as any).container_profile ??
+      (derivedContainerProfile
+        ? {
+            byLength: derivedContainerProfile.byLength.map((b) => ({
+              length: b.length,
+              shipments: b.shipments_12m || b.shipments,
+              teu: b.teu,
+            })),
+            containerTypes: derivedContainerProfile.containerTypes.map((t) => ({
+              isoCode: t.isoCode,
+              type: t.isoCode,
+              group: t.group,
+              length: t.length,
+              shipments: t.shipments_12m || t.shipments,
+              count: t.count,
+              teu: t.teu,
+            })),
+            dominantContainer: derivedContainerProfile.dominantContainer,
+            fcl: containers ? { shipments: containers.fclShipments12m ?? 0 } : null,
+            lcl: containers ? { shipments: containers.lclShipments12m ?? 0 } : null,
+          }
+        : null),
     serviceProviderMix: (profileData as any).service_provider_mix ?? null,
     carrierMix: (profileData as any).carrier_mix ?? null,
     monthly_shipments: Array.isArray(profileData.monthly_shipments) ? profileData.monthly_shipments : undefined,
