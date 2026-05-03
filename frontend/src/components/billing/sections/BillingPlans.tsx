@@ -121,6 +121,12 @@ const META: Record<
 };
 
 const ORDER: PlanCode[] = ['free_trial', 'starter', 'growth', 'scale', 'enterprise'];
+// Main 3-up commitment grid. Free trial + Enterprise are bookends — they
+// don't compete on the same axis (one is a starting state, one is custom
+// pricing) so showing them inline as 5-up made the section feel cluttered
+// and made the actual 3 commitment plans (Starter / Growth / Scale)
+// harder to compare at a glance.
+const COMMITMENT_PLANS: PlanCode[] = ['starter', 'growth', 'scale'];
 
 export function BillingPlans({
   currentPlanCode,
@@ -186,8 +192,30 @@ export function BillingPlans({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-        {ORDER.map((code) => {
+      {/* Free trial reminder strip — only when the user is currently on
+          the free trial. Compact bookend, doesn't compete with the
+          commitment grid below. */}
+      {currentPlanCode === 'free_trial' && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+            <div className="min-w-0">
+              <div className="text-[12.5px] font-semibold text-slate-900">
+                You're on the free trial
+              </div>
+              <div className="text-[11.5px] text-slate-500">
+                Pick a plan below — your trial usage carries over.
+              </div>
+            </div>
+          </div>
+          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
+            Trial
+          </span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {COMMITMENT_PLANS.map((code) => {
           const m = META[code];
           const cfg = PLAN_LIMITS[code];
           const Icon = m.icon;
@@ -369,6 +397,34 @@ export function BillingPlans({
             </div>
           );
         })}
+      </div>
+
+      {/* Enterprise bookend — full-width slim card. Custom contracts
+          aren't really comparable to the package plans, so we surface
+          them as a "need more?" footer rather than a 5th column that
+          most users would never click. */}
+      <div className="mt-5 flex flex-col items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-gradient-to-r from-white via-[#FAFAFF] to-[#F5F3FF] px-5 py-4 sm:flex-row sm:items-center">
+        <div className="flex items-start gap-3 min-w-0">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+            <Crown className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <div className="text-[13.5px] font-bold text-slate-950">
+              Need more than Scale?
+            </div>
+            <div className="mt-0.5 text-[12px] leading-snug text-slate-500">
+              Custom seats, limits, SSO, dedicated onboarding, and contract terms.
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onContactSales}
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-4 text-[12.5px] font-semibold text-violet-700 transition hover:bg-violet-50"
+        >
+          <Calendar className="h-3.5 w-3.5" />
+          Talk to sales
+        </button>
       </div>
     </section>
   );
