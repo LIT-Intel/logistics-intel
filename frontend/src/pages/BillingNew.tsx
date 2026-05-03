@@ -35,6 +35,10 @@ import { EnterpriseCard } from '@/components/billing/sections/EnterpriseCard';
 import { BillingInvoices } from '@/components/billing/sections/BillingInvoices';
 import { AffiliateTieIn } from '@/components/billing/sections/AffiliateTieIn';
 import { TrustFooter } from '@/components/billing/sections/TrustFooter';
+import {
+  ProrationConfirmModal,
+  CancellationModal,
+} from '@/components/billing/sections/BillingModals';
 import { deriveCanonicalState, daysUntil, formatDate } from '@/components/billing/sections/billingState';
 
 const SALES_MAILTO = 'mailto:support@logisticintel.com?subject=Enterprise%20Inquiry';
@@ -203,6 +207,30 @@ export default function Billing() {
       setErr(e?.message || 'Failed to open billing portal. Please try again.');
       setIsRedirecting(false);
     }
+  }
+
+  // Modals — proration confirm before checkout, in-app cancellation
+  // for active subs.
+  const [pendingPlan, setPendingPlan] = useState<PlanCode | null>(null);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+
+  // Wrap the user's plan-pick click. Free trial activations + enterprise
+  // contact-sales skip the modal (no proration math). Anything else opens
+  // the confirm modal which fetches the upcoming-invoice preview from
+  // Stripe; user clicks "Continue to checkout" to actually start the flow.
+  function handleSelectPlan(planCode: PlanCode) {
+    if (planCode === 'free_trial' || planCode === 'enterprise') {
+      handleCheckout(planCode);
+      return;
+    }
+    setPendingPlan(planCode);
+  }
+
+  function handleConfirmCheckout() {
+    if (!pendingPlan) return;
+    const code = pendingPlan;
+    setPendingPlan(null);
+    handleCheckout(code);
   }
 
   // PRESERVED VERBATIM. Calls billing-checkout edge function.
@@ -538,7 +566,7 @@ export default function Billing() {
           <BillingPlans
             currentPlanCode={currentPlanCode}
             cycle={billingInterval}
-            onSelectPlan={(p) => handleCheckout(p)}
+            onSelectPlan={(p) => handleSelectPlan(p)}
             onContactSales={() => { window.location.href = SALES_MAILTO; }}
             onManageCurrent={handlePortal}
             actionLoading={actionLoading}
@@ -585,9 +613,52 @@ export default function Billing() {
           />
         </div>
 
+        {/* In-app cancellation affordance — only renders for active
+            subscriptions that aren't already cancelling. Stripe portal
+            still available as fallback. */}
+        {(canonicalState === 'active' || canonicalState === 'pastdue') &&
+          !cancelAtPeriodEnd && (
+            <div className="mb-6 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+              <div className="min-w-0">
+                <div className="font-display text-[13px] font-bold text-slate-900">
+                  Cancel subscription
+                </div>
+                <div className="font-body mt-1 text-[12px] leading-snug text-slate-500">
+                  Keep access until the end of your current period. No refund.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCancelModalOpen(true)}
+                className="font-display inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-4 text-[12px] font-semibold text-rose-700 transition hover:bg-rose-100"
+              >
+                Cancel subscription
+              </button>
+            </div>
+          )}
+
         {/* Trust footer */}
         <TrustFooter />
       </div>
+
+      {/* Modals */}
+      <ProrationConfirmModal
+        open={pendingPlan != null}
+        planCode={pendingPlan}
+        interval={billingInterval}
+        onClose={() => setPendingPlan(null)}
+        onConfirm={handleConfirmCheckout}
+      />
+      <CancellationModal
+        open={cancelModalOpen}
+        planLabel={planLabelFor(currentPlanCode)}
+        periodEndDate={renewalDate}
+        onClose={() => setCancelModalOpen(false)}
+        onCancelled={() => {
+          setCancelModalOpen(false);
+          loadSubscription();
+        }}
+      />
     </div>
   );
 }

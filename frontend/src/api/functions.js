@@ -62,6 +62,20 @@ export const createStripePortalSession = async (payload = {}) =>
 export const listStripeInvoices = async (payload = {}) =>
   invokeSupabaseFunction('list-invoices', payload);
 
+// Previews the next invoice + today's prorated charge if the user
+// upgrades / switches plans now. Powers the pre-checkout confirmation
+// modal so users see "today: $X / then $Y/mo from [date]" before
+// hitting Stripe-hosted checkout. Reduces sticker-shock abandonment.
+export const previewUpcomingInvoice = async (payload = {}) =>
+  invokeSupabaseFunction('upcoming-invoice', payload);
+
+// Server-side cancellation flow. Sets cancel_at_period_end = true on
+// the active subscription so the user keeps access until period end;
+// no refund. Persists reason + feedback to subscription metadata.
+// Use action: 'reactivate' to flip cancel_at_period_end back to false.
+export const cancelStripeSubscription = async (payload = {}) =>
+  invokeSupabaseFunction('cancel-subscription', payload);
+
 // Optional webhook (usually server-side only)
 export const stripeWebhookHandler = async (payload = {}) =>
   invokeSupabaseFunction('billing-webhook', payload);
