@@ -12,6 +12,7 @@ import {
   Search,
   LifeBuoy,
   UserCog,
+  Coins,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -20,6 +21,7 @@ import {
   ProfileSection,
   AlertsNotificationsSection,
   WorkspaceSection,
+  BillingSection,
   SecuritySection,
   PreferencesSection,
   IntegrationsHubSection,
@@ -33,6 +35,7 @@ function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
   const v = String(value).trim().toLowerCase().replace(/[-_\s]+/g, "");
   if (v === "profile") return "Profile";
   if (v === "workspace" || v === "team" || v === "members" || v === "access" || v === "roles" || v === "organization" || v === "org") return "Workspace";
+  if (v === "billing" || v === "plan" || v === "subscription" || v === "invoice" || v === "invoices" || v === "payment") return "Billing";
   if (v === "security" || v === "auth" || v === "password") return "Security";
   if (v === "notifications" || v === "alerts") return "Notifications";
   if (v === "integrations" || v === "emailaccounts" || v === "email" || v === "inbox" || v === "integration") return "Integrations";
@@ -194,6 +197,7 @@ const NAV_GROUPS: Array<{
     group: "Workspace",
     items: [
       { id: "Workspace", label: "Workspace", Icon: Building2 },
+      { id: "Billing",   label: "Billing",   Icon: Coins },
     ],
   },
   {
@@ -435,6 +439,15 @@ function renderSection(
           onRevokeInvite={props.onRevokeInvite}
           isAdmin={props.isAdmin}
           onUpgrade={() => navigate("/app/billing")}
+        />
+      );
+    case "Billing":
+      return (
+        <BillingSection
+          email={props.profile?.email}
+          subscription={props.subscription}
+          isAdmin={props.isAdmin}
+          onCompare={() => navigate("/app/billing")}
         />
       );
     case "Security":

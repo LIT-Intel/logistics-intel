@@ -61,6 +61,7 @@ import {
 export type SettingsSectionId =
   | "Profile"
   | "Workspace"
+  | "Billing"
   | "Security"
   | "Notifications"
   | "Integrations"
@@ -73,6 +74,7 @@ export const SETTINGS_SECTIONS: Array<{
 }> = [
   { id: "Profile",       title: "Profile",       icon: User },
   { id: "Workspace",     title: "Workspace",     icon: Building2 },
+  { id: "Billing",       title: "Billing",       icon: Coins },
   { id: "Security",      title: "Security",      icon: ShieldCheck },
   { id: "Notifications", title: "Notifications", icon: Bell },
   { id: "Integrations",  title: "Integrations",  icon: Plug },
@@ -751,6 +753,279 @@ export function WorkspaceSection(props: {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ─── BillingSection ──────────────────────────────────────────────────────────
+// Summary surface lifted from /app/billing. Goal is "in 5 seconds users
+// know what plan they're on, when it renews, what they've burned this
+// cycle, and how to manage it" — without re-implementing the full plan
+// grid + Stripe checkout flows that already live on the standalone page.
+// The full grid stays one click away via "Compare plans".
+type BillingSectionProps = {
+  email?: string | null;
+  subscription?: {
+    plan_code?: string;
+    status?: string;
+    current_period_end?: string;
+    cancel_at_period_end?: boolean;
+    seat_limit?: number;
+    stripe_customer_id?: string;
+  };
+  isAdmin?: boolean;
+  onCompare?: () => void;
+};
+
+export function BillingSection(props: BillingSectionProps) {
+  const planCode = normalizePlanCode(props.subscription?.plan_code ?? "free_trial");
+  const planConfig = PLAN_LIMITS[planCode];
+  const status = String(props.subscription?.status ?? "incomplete").toLowerCase();
+  const cancelling = Boolean(props.subscription?.cancel_at_period_end);
+  const renewISO = props.subscription?.current_period_end ?? null;
+  const renewDate = renewISO
+    ? new Date(renewISO).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+    : null;
+  const daysLeft = renewISO
+    ? Math.max(0, Math.ceil((new Date(renewISO).getTime() - Date.now()) / 86_400_000))
+    : null;
+  const hasStripe = Boolean(props.subscription?.stripe_customer_id);
+  const seats = props.subscription?.seat_limit ?? planConfig.includedSeats ?? null;
+
+  // Status pill copy mirrors what the BillingHero on /app/billing shows
+  // so users see the same language across both surfaces.
+  const statusBadge = (() => {
+    if (cancelling) return { tone: "amber" as const, label: "Cancelling" };
+    if (status === "active" || status === "trialing") return { tone: "green" as const, label: status === "trialing" ? "Trial" : "Active" };
+    if (status === "past_due") return { tone: "amber" as const, label: "Past due" };
+    if (status === "canceled") return { tone: "slate" as const, label: "Cancelled" };
+    return { tone: "slate" as const, label: "Inactive" };
+  })();
+
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
+
+  async function handlePortal() {
+    setPortalLoading(true);
+    setPortalError(null);
+    try {
+      const { createStripePortalSession } = await import("@/api/functions");
+      const result: any = await createStripePortalSession();
+      if (result?.url) {
+        window.location.href = result.url;
+        return;
+      }
+      throw new Error(result?.error || "Couldn't open billing portal.");
+    } catch (e: any) {
+      setPortalError(e?.message || "Failed to open billing portal.");
+      setPortalLoading(false);
+    }
+  }
+
+  // Map plan code → next-tier upgrade pitch. Mirrors the Pulse Coach
+  // recommendation language so upgrade nudges stay consistent.
+  const upgradePitch: Record<string, { next: string; copy: string } | null> = {
+    free_trial: { next: "Starter", copy: "Unlock unlimited search, 50 monthly profile refreshes, and Pulse AI." },
+    starter:    { next: "Growth",  copy: "Bring your team in (3 seats), 5× refresh capacity, full campaign builder." },
+    growth:     { next: "Scale",   copy: "5 seats, priority refresh, API access, and white-glove onboarding." },
+    scale:      null,
+    enterprise: null,
+  };
+  const pitch = upgradePitch[planCode];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <SectionHeader
+        title="Billing"
+        subtitle="Your plan, renewal, and quick links to invoices + payment management. Full plan grid lives in Manage billing."
+        right={<SBadge tone={statusBadge.tone} dot>{statusBadge.label}</SBadge>}
+      />
+
+      {/* Current plan summary */}
+      <SCard>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: 12, flexShrink: 0,
+            background: "linear-gradient(135deg,#1d4ed8,#3b82f6)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#fff", boxShadow: "0 2px 8px rgba(59,130,246,0.25)",
+          }}>
+            <Coins size={20} />
+          </div>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{
+              fontFamily: "Space Grotesk,sans-serif", fontSize: 16, fontWeight: 700,
+              color: "#0F172A", letterSpacing: "-0.01em",
+            }}>
+              {planConfig.label}
+            </div>
+            <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 12.5, color: "#64748b", marginTop: 4, lineHeight: 1.5 }}>
+              {planConfig.pricing.monthly == null
+                ? "Custom pricing — see your account exec for details."
+                : planConfig.pricing.monthly === 0
+                  ? "Free trial — no card on file."
+                  : `$${planConfig.pricing.monthly.toLocaleString()}/mo · $${planConfig.pricing.yearly?.toLocaleString() ?? "—"}/yr`}
+            </div>
+            <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {seats != null && <SBadge tone="slate">{seats} {seats === 1 ? "seat" : "seats"} included</SBadge>}
+              {renewDate && (
+                <SBadge tone={cancelling ? "amber" : "blue"}>
+                  {cancelling ? "Ends " : "Renews "} {renewDate}
+                  {daysLeft != null && daysLeft <= 14 && ` · ${daysLeft} day${daysLeft === 1 ? "" : "s"}`}
+                </SBadge>
+              )}
+              {hasStripe && <SBadge tone="green" dot>Payment method on file</SBadge>}
+              {!hasStripe && planCode !== "free_trial" && <SBadge tone="amber" dot>No payment method</SBadge>}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+            <button
+              onClick={props.onCompare}
+              style={{ ...sBtnGhost, fontSize: 12.5 }}
+            >
+              Compare plans
+            </button>
+            {hasStripe ? (
+              <button
+                onClick={handlePortal}
+                disabled={portalLoading}
+                style={{ ...sBtnPrimary, opacity: portalLoading ? 0.7 : 1, cursor: portalLoading ? "not-allowed" : "pointer" }}
+              >
+                {portalLoading ? "Opening…" : "Manage billing"}
+                <ExternalLink size={12} />
+              </button>
+            ) : (
+              <button onClick={props.onCompare} style={sBtnPrimary}>
+                {planCode === "free_trial" ? "Add payment" : "Activate plan"}
+              </button>
+            )}
+          </div>
+        </div>
+        {portalError && (
+          <div style={{
+            marginTop: 12, padding: "8px 12px", borderRadius: 8,
+            background: "#FEF2F2", border: "1px solid #FECACA",
+            fontFamily: "DM Sans,sans-serif", fontSize: 12, color: "#b91c1c",
+          }}>
+            {portalError}
+          </div>
+        )}
+      </SCard>
+
+      {/* Premium upgrade nudge — only when there's a meaningful next tier */}
+      {pitch && (
+        <div
+          style={{
+            position: "relative",
+            overflow: "hidden",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.10)",
+            background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+            padding: 18,
+            boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
+          }}
+        >
+          <span aria-hidden style={{
+            pointerEvents: "none", position: "absolute", top: -48, right: -40,
+            width: 160, height: 160, borderRadius: "50%", opacity: 0.5,
+            background: "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)",
+          }} />
+          <div style={{ position: "relative", display: "flex", alignItems: "flex-start", gap: 14 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+              background: "rgba(0,240,255,0.10)",
+              border: "1px solid rgba(255,255,255,0.10)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <Gift size={14} color="#00F0FF" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8,
+                fontFamily: "Space Grotesk,sans-serif",
+                fontSize: 12.5, fontWeight: 700, color: "#fff", letterSpacing: "0.01em",
+              }}>
+                Pulse Coach
+                <span style={{
+                  fontFamily: "ui-monospace,monospace", fontSize: 9, fontWeight: 700,
+                  color: "#00F0FF", border: "1px solid rgba(0,240,255,0.35)",
+                  background: "rgba(0,240,255,0.08)", padding: "1px 6px", borderRadius: 4,
+                  textTransform: "uppercase", letterSpacing: "0.06em",
+                }}>
+                  Next: {pitch.next}
+                </span>
+              </div>
+              <div style={{
+                marginTop: 6, fontFamily: "DM Sans,sans-serif",
+                fontSize: 12.5, lineHeight: 1.55, color: "#cbd5e1",
+              }}>
+                {pitch.copy}
+              </div>
+              <button
+                onClick={props.onCompare}
+                style={{
+                  marginTop: 12, display: "inline-flex", alignItems: "center", gap: 6,
+                  height: 32, padding: "0 14px", borderRadius: 8,
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "linear-gradient(180deg,#0F172A 0%,#0B1220 100%)",
+                  color: "#fff", fontFamily: "Space Grotesk,sans-serif",
+                  fontSize: 12, fontWeight: 600, cursor: "pointer",
+                  boxShadow: "0 4px 14px rgba(15,23,42,0.35)",
+                }}
+              >
+                Upgrade to {pitch.next}
+                <span style={{ color: "#00F0FF", fontSize: 13, lineHeight: 1 }}>→</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice history pointer — full list on /app/billing */}
+      <SCard
+        title="Invoice history"
+        subtitle="Past charges and downloadable receipts."
+        collapsible
+        defaultOpen={false}
+        right={
+          <button onClick={props.onCompare} style={{ ...sBtnGhost, fontSize: 12, padding: "5px 10px" }}>
+            <FileText size={12} /> View all
+          </button>
+        }
+      >
+        {hasStripe ? (
+          <div style={{
+            borderRadius: 10, border: "1px dashed #E5E7EB", padding: "20px 16px",
+            textAlign: "center", fontFamily: "DM Sans,sans-serif", fontSize: 13, color: "#64748b",
+          }}>
+            Invoices live in Stripe — open <button
+              onClick={handlePortal}
+              disabled={portalLoading}
+              style={{ background: "none", border: "none", padding: 0, color: "#3b82f6", cursor: "pointer", fontFamily: "inherit", fontSize: "inherit", textDecoration: "underline" }}
+            >Manage billing</button> to download receipts and update payment.
+          </div>
+        ) : (
+          <div style={{
+            borderRadius: 10, border: "1px dashed #E5E7EB", padding: "20px 16px",
+            textAlign: "center", fontFamily: "DM Sans,sans-serif", fontSize: 13, color: "#94a3b8",
+          }}>
+            No invoices yet — your first invoice will appear after you activate a paid plan.
+          </div>
+        )}
+      </SCard>
+
+      {/* Billing email — read-only handoff to Profile */}
+      <SCard
+        title="Billing email"
+        subtitle="Receipts and renewal reminders go here. Update via your Profile email."
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Mail size={14} color="#64748b" />
+          <span style={{ fontFamily: "DM Sans,sans-serif", fontSize: 13, color: "#0F172A" }}>
+            {props.email || "Not on file"}
+          </span>
+        </div>
+      </SCard>
     </div>
   );
 }
