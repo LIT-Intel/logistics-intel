@@ -56,6 +56,12 @@ export const createStripeCheckout = async (payload = {}) =>
 export const createStripePortalSession = async (payload = {}) =>
   invokeSupabaseFunction('billing-portal', payload);
 
+// Lists the user's Stripe invoices + computes MTD/YTD spend totals.
+// Powers the inline invoice table on /app/billing so users don't have
+// to bounce out to the Stripe portal just to see past charges.
+export const listStripeInvoices = async (payload = {}) =>
+  invokeSupabaseFunction('list-invoices', payload);
+
 // Optional webhook (usually server-side only)
 export const stripeWebhookHandler = async (payload = {}) =>
   invokeSupabaseFunction('billing-webhook', payload);

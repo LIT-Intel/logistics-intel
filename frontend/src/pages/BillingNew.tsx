@@ -12,7 +12,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
-import { createStripeCheckout, createStripePortalSession } from '@/api/functions';
+import { createStripeCheckout, createStripePortalSession, listStripeInvoices } from '@/api/functions';
+import type { InvoiceRow } from '@/components/billing/sections/BillingInvoices';
 import { supabase } from '@/lib/supabase';
 import {
   getPlanConfig,
@@ -78,6 +79,18 @@ export default function Billing() {
   // the row cleanly when the user isn't part of an org.
   const [orgSeatCount, setOrgSeatCount] = useState<number | null>(null);
 
+  // Live invoice list + spend totals from Stripe via the list-invoices
+  // edge fn. Populated only when the user has a stripe_customer_id;
+  // otherwise stays as the empty defaults so the empty state renders.
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [spendTotals, setSpendTotals] = useState<{
+    mtdLabel: string;
+    ytdLabel: string;
+    mtdCents: number;
+    ytdCents: number;
+  } | null>(null);
+
   const checkoutSuccess = searchParams.get('checkout') === 'success';
 
   useEffect(() => {
@@ -88,14 +101,52 @@ export default function Billing() {
     if (!user) return;
     loadSubscription();
     loadOrgSeatCount();
+    loadInvoices();
     if (checkoutSuccess) {
       const t = setTimeout(() => {
         loadSubscription();
         loadOrgSeatCount();
+        loadInvoices();
       }, 3500);
       return () => clearTimeout(t);
     }
   }, [user, checkoutSuccess]);
+
+  async function loadInvoices() {
+    setInvoicesLoading(true);
+    try {
+      const result: any = await listStripeInvoices({ limit: 12 });
+      if (result?.ok && Array.isArray(result.invoices)) {
+        // Map upstream `status` (Stripe raw) → InvoiceRow status union the
+        // table component expects. Stripe doesn't have `failed` or
+        // `past_due` on invoices directly — both surface as `open` with
+        // attempt_count > 0; treat `uncollectible` as `failed`.
+        const mapped: InvoiceRow[] = result.invoices.map((inv: any) => ({
+          id: inv.id,
+          number: inv.number ?? inv.id,
+          date: inv.date ?? "",
+          description: inv.description ?? "Subscription charge",
+          amount: inv.amount,
+          status:
+            inv.status === "paid"
+              ? "paid"
+              : inv.status === "void"
+                ? "void"
+                : inv.status === "uncollectible"
+                  ? "failed"
+                  : "open",
+          hostedUrl: inv.hostedUrl,
+          pdfUrl: inv.pdfUrl,
+        }));
+        setInvoices(mapped);
+        if (result.totals) setSpendTotals(result.totals);
+      }
+    } catch (e) {
+      console.warn("[BillingNew] loadInvoices failed:", e);
+    } finally {
+      setInvoicesLoading(false);
+    }
+  }
 
   // Resolve the user's org → count active members so the hero "X seats
   // assigned" line shows real numbers instead of the always-blank
@@ -459,6 +510,24 @@ export default function Billing() {
           />
         </div>
 
+        {/* Spend summary — anchors the page to the #1 question users
+            actually open Billing for: "what have you charged me?" Real
+            data from Stripe via list-invoices. Pulse Coach styling for
+            cross-page brand consistency. */}
+        {(spendTotals || stripeCustomerId) && (
+          <div className="mb-6">
+            <SpendSummaryCard
+              mtdLabel={spendTotals?.mtdLabel ?? '$0.00'}
+              ytdLabel={spendTotals?.ytdLabel ?? '$0.00'}
+              lastInvoice={invoices[0] || null}
+              nextRenewalDate={renewalDate}
+              nextRenewalAmount={amountForHero}
+              loading={invoicesLoading}
+              onOpenPortal={handlePortal}
+            />
+          </div>
+        )}
+
         {/* Usage */}
         <div className="mb-6">
           <BillingUsage meters={usageMeters} resetAt={formatDate(entitlements?.reset_at)} />
@@ -505,14 +574,14 @@ export default function Billing() {
           />
         </div>
 
-        {/* Invoices */}
+        {/* Invoices — now populated from Stripe via list-invoices */}
         <div className="mb-6">
           <BillingInvoices
-            invoices={[]}
+            invoices={invoices}
             hasStripeCustomer={Boolean(stripeCustomerId)}
             canManage={canManage}
             onOpenPortal={handlePortal}
-            isLoading={isRedirecting}
+            isLoading={isRedirecting || invoicesLoading}
           />
         </div>
 
@@ -526,6 +595,146 @@ export default function Billing() {
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Spend summary — answers the #1 question users open Billing for:
+ * "what have you actually charged me?" MTD + YTD totals from real
+ * Stripe invoices, last-invoice and next-renewal anchors, plus a
+ * direct portal link. Pulse Coach styling for cross-page consistency.
+ */
+function SpendSummaryCard({
+  mtdLabel,
+  ytdLabel,
+  lastInvoice,
+  nextRenewalDate,
+  nextRenewalAmount,
+  loading,
+  onOpenPortal,
+}: {
+  mtdLabel: string;
+  ytdLabel: string;
+  lastInvoice: InvoiceRow | null;
+  nextRenewalDate: string | null;
+  nextRenewalAmount: string;
+  loading?: boolean;
+  onOpenPortal: () => void;
+}) {
+  return (
+    <div
+      className="relative overflow-hidden rounded-xl border border-white/10 px-5 py-4 sm:px-6"
+      style={{
+        background: 'linear-gradient(160deg,#0F172A 0%,#1E293B 100%)',
+        boxShadow: 'inset 0 -1px 0 rgba(0,240,255,0.18), 0 1px 3px rgba(15,23,42,0.06)',
+      }}
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-12 -right-10 h-40 w-40 rounded-full opacity-50"
+        style={{ background: 'radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)' }}
+      />
+      <div className="relative flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border"
+            style={{ background: 'rgba(0,240,255,0.10)', borderColor: 'rgba(255,255,255,0.10)' }}
+          >
+            <Sparkles className="h-4 w-4" style={{ color: '#00F0FF' }} />
+          </div>
+          <div className="min-w-0">
+            <div
+              className="font-display flex items-center gap-2 text-[12.5px] font-bold tracking-wide text-white"
+            >
+              Pulse Coach
+              <span
+                className="inline-flex items-center rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.06em]"
+                style={{
+                  color: '#00F0FF',
+                  borderColor: 'rgba(0,240,255,0.35)',
+                  background: 'rgba(0,240,255,0.08)',
+                  fontFamily: 'ui-monospace,monospace',
+                }}
+              >
+                Spend
+              </span>
+            </div>
+            <div className="font-body mt-1 text-[11.5px] text-slate-300">
+              Real charges from Stripe — refreshes when an invoice posts.
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenPortal}
+          className="font-display inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-[11.5px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.35)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.45)]"
+          style={{ background: 'linear-gradient(180deg,#0F172A 0%,#0B1220 100%)' }}
+        >
+          View invoices
+          <ArrowRight className="h-3 w-3" style={{ color: '#00F0FF' }} />
+        </button>
+      </div>
+
+      <div className="relative mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <SpendTile label="This month" value={loading ? '…' : mtdLabel} sub="Charges posted MTD" />
+        <SpendTile
+          label="Year to date"
+          value={loading ? '…' : ytdLabel}
+          sub={`Total charges in ${new Date().getFullYear()}`}
+        />
+        <SpendTile
+          label="Last invoice"
+          value={lastInvoice?.amount ?? '—'}
+          sub={lastInvoice?.date ? `Paid ${lastInvoice.date}` : 'No invoices yet'}
+          accent={lastInvoice?.status === 'failed'}
+        />
+        <SpendTile
+          label="Next renewal"
+          value={nextRenewalAmount}
+          sub={nextRenewalDate ? `Charges ${nextRenewalDate}` : 'No upcoming charge'}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SpendTile({
+  label,
+  value,
+  sub,
+  accent,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      className="rounded-lg border px-3 py-2.5"
+      style={{
+        background: 'rgba(15,23,42,0.45)',
+        borderColor: accent ? 'rgba(249,115,22,0.5)' : 'rgba(255,255,255,0.06)',
+      }}
+    >
+      <div
+        className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400"
+        style={{ fontFamily: 'Space Grotesk,sans-serif' }}
+      >
+        {label}
+      </div>
+      <div
+        className="mt-0.5 text-[16px] font-bold tabular-nums text-white"
+        style={{ fontFamily: 'ui-monospace,monospace' }}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div className="mt-0.5 text-[10.5px] text-slate-400" style={{ fontFamily: 'DM Sans,sans-serif' }}>
+          {sub}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
