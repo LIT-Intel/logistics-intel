@@ -1,19 +1,15 @@
 /**
  * APP_ORIGIN — where the auth + workspace UI is actually reachable.
  *
- * Defaults to the always-working Vercel preview URL because
- * `app.logisticintel.com` is not yet attached to the `logistics-intel`
- * Vercel project at the time of writing. If we proxied to
- * app.logisticintel.com, requests fell back to the marketing project
- * (this one), re-fired this rewrite, and Vercel returned 508
- * INFINITE_LOOP_DETECTED.
+ * Default is `https://app.logisticintel.com` (the canonical workspace
+ * domain). Override with NEXT_PUBLIC_APP_ORIGIN on the lit-marketing
+ * Vercel project if the workspace ever moves.
  *
- * Once `app.logisticintel.com` is attached to the logistics-intel
- * project (Vercel → logistics-intel → Settings → Domains → Add),
- * set NEXT_PUBLIC_APP_ORIGIN=https://app.logisticintel.com on the
- * lit-marketing Vercel project to flip back. No code change required.
+ * Do NOT default to logistics-intel.vercel.app — that hostname is on
+ * Chrome's Safe Browsing list and breaks OAuth callback returns when
+ * marketing's /app/* redirect proxies through it.
  */
-const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_ORIGIN || "https://logistics-intel.vercel.app";
+const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_ORIGIN || "https://app.logisticintel.com";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

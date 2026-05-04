@@ -45,11 +45,11 @@ function buildGmailAuthUrl(state: string) {
   const gmailRedirectUri =
     Deno.env.get("GMAIL_REDIRECT_URI") ?? Deno.env.get("GMAIL_REDIRECT_URL");
 
-  if (!gmailClientId || !gmailRedirectUri) {
-    throw new Error(
-      "Missing Gmail OAuth env vars. Set GMAIL_CLIENT_ID and " +
-      "GMAIL_REDIRECT_URI (or GMAIL_REDIRECT_URL).",
-    );
+  const missing: string[] = [];
+  if (!gmailClientId) missing.push("GMAIL_CLIENT_ID");
+  if (!gmailRedirectUri) missing.push("GMAIL_REDIRECT_URI (or GMAIL_REDIRECT_URL)");
+  if (missing.length) {
+    throw new Error(`Missing Gmail env: ${missing.join(", ")}`);
   }
 
   const params = new URLSearchParams({
@@ -76,11 +76,11 @@ function buildOutlookAuthUrl(state: string) {
   const outlookRedirectUri = Deno.env.get("OUTLOOK_REDIRECT_URI");
   const outlookTenant = Deno.env.get("OUTLOOK_TENANT") || "common";
 
-  if (!outlookClientId || !outlookRedirectUri) {
-    throw new Error(
-      "Missing Outlook OAuth env vars. Set OUTLOOK_CLIENT_ID and " +
-      "OUTLOOK_REDIRECT_URI.",
-    );
+  const missing: string[] = [];
+  if (!outlookClientId) missing.push("OUTLOOK_CLIENT_ID");
+  if (!outlookRedirectUri) missing.push("OUTLOOK_REDIRECT_URI");
+  if (missing.length) {
+    throw new Error(`Missing Outlook env: ${missing.join(", ")}`);
   }
 
   const params = new URLSearchParams({
