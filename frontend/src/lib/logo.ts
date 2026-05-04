@@ -14,10 +14,17 @@ const LOGO_DEV_BASE = (
   FALLBACK_LOGO_BASE
 ).replace(/\/+$/, "");
 
+// Accept any of the historical env-var names so deployments don't break
+// when the operator chose a different convention. logo.dev publishable
+// keys are client-safe; marketing-side uses NEXT_PUBLIC_LOGO_DEV_KEY,
+// the Vite app traditionally used VITE_LOGO_DEV_TOKEN.
 const LOGO_DEV_TOKEN =
   readEnv("VITE_LOGO_DEV_TOKEN") ??
+  readEnv("VITE_LOGO_DEV_KEY") ??
   readEnv("NEXT_PUBLIC_LOGO_DEV_TOKEN") ??
+  readEnv("NEXT_PUBLIC_LOGO_DEV_KEY") ??
   readEnv("LOGO_DEV_TOKEN") ??
+  readEnv("LOGO_DEV_KEY") ??
   "";
 
 function cleanValue(value?: string | null): string {
