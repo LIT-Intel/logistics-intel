@@ -91,8 +91,8 @@ export function LogoImage({
 
   const url = tier === 0 ? src : googleFaviconUrl(domain, 128);
   if (!url) {
-    // Defensive: if URL ended up null, jump to monogram immediately.
-    if (tier !== 2) setTimeout(() => setTier(2), 0);
+    // Defensive: if URL ended up null, jump to monogram on the next tick.
+    setTimeout(() => setTier(2), 0);
     return null;
   }
 
