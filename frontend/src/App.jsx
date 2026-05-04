@@ -20,6 +20,7 @@ const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailM
 const Companies = lazy(() => import("@/pages/companies/index"));
 const Campaigns = lazy(() => import("@/pages/Campaigns"));
 const CampaignBuilder = lazy(() => import("@/pages/CampaignBuilder"));
+const CampaignAnalyticsPage = lazy(() => import("@/pages/CampaignAnalyticsPage"));
 const EmailCenter = lazy(() => import("@/pages/EmailCenter"));
 const RFPStudio = lazy(() => import("@/pages/RFPStudio"));
 const Settings = lazy(() => import("@/pages/SettingsPage"));
@@ -310,6 +311,22 @@ export default function App() {
             >
               <LITPage>
                 <CampaignBuilder />
+              </LITPage>
+            </RequirePlan>
+          }
+        />
+
+        <Route
+          path="/app/campaigns/analytics"
+          element={
+            <RequirePlan
+              feature="campaign_builder"
+              featureName="Campaign Builder"
+              description="Build and run outreach campaigns targeting freight shippers and logistics prospects. Available on Growth and above."
+              requiredPlan="growth"
+            >
+              <LITPage>
+                <CampaignAnalyticsPage />
               </LITPage>
             </RequirePlan>
           }

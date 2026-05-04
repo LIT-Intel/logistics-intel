@@ -240,7 +240,7 @@ export default function CampaignsPage() {
   );
 
   const handleOpenAnalytics = useCallback(() => {
-    navigate("/app/diagnostic");
+    navigate("/app/campaigns/analytics");
   }, [navigate]);
 
   const handleOpenCampaign = useCallback(
