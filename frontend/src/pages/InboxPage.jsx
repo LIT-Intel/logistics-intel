@@ -12,10 +12,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
+  Bold,
   Inbox,
+  Italic,
+  Link2,
   Loader2,
   Mail,
   RefreshCw,
+  RemoveFormatting,
   Search,
   Send,
   AlertCircle,
@@ -271,10 +275,34 @@ function ThreadDetail({ threadId, onChanged }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
-  const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [sendErr, setSendErr] = useState(null);
+  const [composerEmpty, setComposerEmpty] = useState(true);
   const composerRef = useRef(null);
+
+  // Reset the composer when the thread changes so the previous reply
+  // doesn't bleed into the new conversation.
+  useEffect(() => {
+    if (composerRef.current) {
+      composerRef.current.innerHTML = "";
+      setComposerEmpty(true);
+    }
+  }, [threadId]);
+
+  // Inline format commands using the contenteditable execCommand API.
+  // Deprecated formally but still universally supported and trivial to
+  // wire — adequate for an MVP composer; future v2 = ProseMirror/TipTap.
+  const exec = (cmd, value) => {
+    if (!composerRef.current) return;
+    composerRef.current.focus();
+    document.execCommand(cmd, false, value);
+    setComposerEmpty(!composerRef.current.innerText.trim());
+  };
+  const handleLink = () => {
+    const url = window.prompt("Link URL", "https://");
+    if (!url) return;
+    exec("createLink", url);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -299,17 +327,19 @@ function ThreadDetail({ threadId, onChanged }) {
 
   const handleSend = async () => {
     if (sending) return;
-    const trimmed = reply.trim();
-    if (!trimmed) return;
+    const html = composerRef.current?.innerHTML?.trim() ?? "";
+    const text = composerRef.current?.innerText?.trim() ?? "";
+    if (!text) return;
     setSending(true);
     setSendErr(null);
     try {
       const { data, error } = await supabase.functions.invoke("send-inbox-reply", {
-        body: { thread_id: threadId, body: trimmed },
+        body: { thread_id: threadId, body: text, body_html: html },
       });
       if (error) throw error;
       if (data && data.ok === false) throw new Error(data.error || "send_failed");
-      setReply("");
+      if (composerRef.current) composerRef.current.innerHTML = "";
+      setComposerEmpty(true);
       await load();
       onChanged?.();
     } catch (e) {
@@ -362,24 +392,64 @@ function ThreadDetail({ threadId, onChanged }) {
       </div>
 
       <div className="shrink-0 border-t border-slate-200 bg-slate-50 px-4 py-3">
-        <div className="rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm">
-          <textarea
-            ref={composerRef}
-            value={reply}
-            onChange={(e) => setReply(e.target.value)}
-            placeholder="Type your reply…"
-            rows={4}
-            disabled={sending}
-            className="w-full resize-y rounded-md border-none px-2 py-1 text-[13px] text-[#0F172A] focus:outline-none disabled:opacity-50"
-          />
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          {/* Toolbar */}
+          <div className="flex items-center gap-1 border-b border-slate-100 px-2 py-1.5">
+            <ToolbarButton onClick={() => exec("bold")} title="Bold (Cmd/Ctrl+B)" disabled={sending}>
+              <Bold className="h-3 w-3" />
+            </ToolbarButton>
+            <ToolbarButton onClick={() => exec("italic")} title="Italic (Cmd/Ctrl+I)" disabled={sending}>
+              <Italic className="h-3 w-3" />
+            </ToolbarButton>
+            <ToolbarButton onClick={handleLink} title="Insert link" disabled={sending}>
+              <Link2 className="h-3 w-3" />
+            </ToolbarButton>
+            <span className="mx-0.5 h-3.5 w-px bg-slate-200" />
+            <ToolbarButton onClick={() => exec("removeFormat")} title="Clear formatting" disabled={sending}>
+              <RemoveFormatting className="h-3 w-3" />
+            </ToolbarButton>
+            <span className="ml-auto text-[10px] text-slate-400">
+              Rich text · sends as HTML
+            </span>
+          </div>
+          {/* Editor */}
+          <div className="relative">
+            {composerEmpty ? (
+              <div className="pointer-events-none absolute left-3 top-2 select-none text-[13px] text-slate-400">
+                Type your reply…
+              </div>
+            ) : null}
+            <div
+              ref={composerRef}
+              contentEditable={!sending}
+              suppressContentEditableWarning
+              onInput={(e) => setComposerEmpty(!e.currentTarget.innerText.trim())}
+              onPaste={(e) => {
+                // Strip rich-text styles from pastes — keep links + basic
+                // structure but drop colors/fonts/Word-specific markup.
+                const text = e.clipboardData?.getData("text/plain");
+                if (text) {
+                  e.preventDefault();
+                  document.execCommand("insertText", false, text);
+                }
+              }}
+              role="textbox"
+              aria-multiline="true"
+              aria-label="Reply body"
+              className="prose-inbox-editor min-h-[100px] w-full px-3 py-2 text-[13px] leading-relaxed text-[#0F172A] focus:outline-none"
+              style={{ wordBreak: "break-word" }}
+            />
+          </div>
           {sendErr ? (
-            <div className="mt-1 text-[11px] text-rose-600">{sendErr}</div>
+            <div className="border-t border-slate-100 px-3 py-1.5 text-[11px] text-rose-600">
+              {sendErr}
+            </div>
           ) : null}
-          <div className="mt-2 flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-2 py-1.5">
             <button
               type="button"
               onClick={handleSend}
-              disabled={sending || !reply.trim()}
+              disabled={sending || composerEmpty}
               className="inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-sm disabled:opacity-50"
             >
               {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
@@ -389,6 +459,21 @@ function ThreadDetail({ threadId, onChanged }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ToolbarButton({ children, onClick, title, disabled }) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      title={title}
+      disabled={disabled}
+      className="flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+    >
+      {children}
+    </button>
   );
 }
 
