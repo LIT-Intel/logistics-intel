@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Filter,
   Layers,
+  Plus,
   Sparkles,
   Target,
   Users,
@@ -20,6 +21,7 @@ interface PersonaPanelProps {
   onSelectPersona: (id: string | null) => void;
   onOpenAudiencePicker: () => void;
   onOpenTemplates: () => void;
+  onCreatePersona?: () => void;
 }
 
 export function PersonaPanel({
@@ -31,6 +33,7 @@ export function PersonaPanel({
   onSelectPersona,
   onOpenAudiencePicker,
   onOpenTemplates,
+  onCreatePersona,
 }: PersonaPanelProps) {
   const sample = selectedCompanies.slice(0, 6);
 
@@ -112,16 +115,31 @@ export function PersonaPanel({
 
       {/* Persona selector */}
       <div className="px-4 pb-2">
-        <div
-          className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400"
-          style={{ fontFamily: fontDisplay }}
-        >
-          Persona
+        <div className="flex items-center justify-between">
+          <div
+            className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400"
+            style={{ fontFamily: fontDisplay }}
+          >
+            Persona
+          </div>
+          {onCreatePersona && (
+            <button
+              type="button"
+              onClick={onCreatePersona}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#3B82F6] transition hover:bg-blue-50"
+              style={{ fontFamily: fontDisplay }}
+              title="Create a new persona for your workspace"
+            >
+              <Plus className="h-2.5 w-2.5" />
+              New
+            </button>
+          )}
         </div>
         <PersonaSelector
           personasResult={personasResult}
           selectedPersonaId={selectedPersonaId}
           onSelectPersona={onSelectPersona}
+          onCreatePersona={onCreatePersona}
         />
       </div>
 
@@ -237,10 +255,12 @@ function PersonaSelector({
   personasResult,
   selectedPersonaId,
   onSelectPersona,
+  onCreatePersona,
 }: {
   personasResult: PersonasResult | null;
   selectedPersonaId: string | null;
   onSelectPersona: (id: string | null) => void;
+  onCreatePersona?: () => void;
 }) {
   if (!personasResult) {
     return (
@@ -264,6 +284,16 @@ function PersonaSelector({
         style={{ fontFamily: fontBody }}
       >
         No personas defined yet.
+        {onCreatePersona && (
+          <button
+            type="button"
+            onClick={onCreatePersona}
+            className="ml-1 font-semibold text-[#3B82F6] underline"
+            style={{ fontFamily: fontDisplay }}
+          >
+            Create the first one
+          </button>
+        )}
       </div>
     );
   }

@@ -29,6 +29,7 @@ import { TemplatesDrawer } from "@/features/outbound/components/TemplatesDrawer"
 import { AudiencePickerDrawer } from "@/features/outbound/components/AudiencePickerDrawer";
 import { PreviewModal } from "@/features/outbound/components/PreviewModal";
 import { CreateTemplateModal } from "@/features/outbound/components/CreateTemplateModal";
+import { CreatePersonaModal } from "@/features/outbound/components/CreatePersonaModal";
 import { findPlay } from "@/features/outbound/data/plays";
 import { fontDisplay, fontBody } from "@/features/outbound/tokens";
 import {
@@ -212,12 +213,13 @@ export default function CampaignBuilder() {
   const { companies, loading: companiesLoading } = useSavedCompanies();
   const { primaryEmail, known: inboxKnown } = useInboxStatus();
   const { state: templatesState, refresh: refreshTemplates } = useTemplates();
-  const { result: personasResult } = usePersonas();
+  const { result: personasResult, refresh: refreshPersonas } = usePersonas();
 
   const [audienceOpen, setAudienceOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [createTemplateOpen, setCreateTemplateOpen] = useState(false);
+  const [createPersonaOpen, setCreatePersonaOpen] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [launching, setLaunching] = useState(false);
@@ -691,6 +693,7 @@ export default function CampaignBuilder() {
             onSelectPersona={setSelectedPersonaId}
             onOpenAudiencePicker={() => setAudienceOpen(true)}
             onOpenTemplates={() => setTemplatesOpen(true)}
+            onCreatePersona={() => setCreatePersonaOpen(true)}
           />
         </div>
         <TimelineCanvas
@@ -758,6 +761,18 @@ export default function CampaignBuilder() {
           setToast({ message: "Template saved to your workspace.", tone: "success" });
           window.setTimeout(() => setToast(null), 2200);
           await refreshTemplates();
+        }}
+      />
+
+      <CreatePersonaModal
+        open={createPersonaOpen}
+        onClose={() => setCreatePersonaOpen(false)}
+        onCreated={async (newId) => {
+          setCreatePersonaOpen(false);
+          setToast({ message: "Persona saved to your workspace.", tone: "success" });
+          window.setTimeout(() => setToast(null), 2200);
+          await refreshPersonas();
+          setSelectedPersonaId(newId);
         }}
       />
 
