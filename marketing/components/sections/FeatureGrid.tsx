@@ -29,7 +29,7 @@ export function FeatureGrid({
   if (!features?.length) return null;
   const gridClass = cols === 2 ? "md:grid-cols-2" : "md:grid-cols-2 lg:grid-cols-3";
   return (
-    <section className="px-8 py-20">
+    <section className="px-5 sm:px-8 py-12 sm:py-20">
       <div className="mx-auto max-w-container">
         {(eyebrow || title || subtitle) && (
           <div className="mx-auto max-w-[780px] text-center">

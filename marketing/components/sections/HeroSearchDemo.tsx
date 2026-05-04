@@ -244,8 +244,10 @@ export function HeroSearchDemo({ className = "" }: { className?: string }) {
           Reserved results slot — ALWAYS rendered, opacity animates between
           skeleton (typing/intent/chips/exit) and results (results phase).
           Both states use identical 6-card 2/3-col grid so geometry is locked.
+          min-h is set to fit 6 cards in 2-col mobile / 3-col tablet — locks
+          the demo's total height across phases (no jank between transitions).
         */}
-        <div className="relative mt-3">
+        <div className="relative mt-3 min-h-[280px] sm:min-h-[200px]">
           <div className="font-display mb-2 flex h-4 items-center justify-between">
             <motion.span
               animate={{ opacity: phase === "results" ? 1 : 0 }}

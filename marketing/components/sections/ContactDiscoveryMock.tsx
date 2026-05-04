@@ -194,7 +194,8 @@ export function ContactDiscoveryMock({ className = "" }: { className?: string })
 
         {/* Results */}
         <div className="mt-4">
-          <div className="font-display mb-2 grid grid-cols-12 px-3 text-[9.5px] font-bold uppercase tracking-wider text-ink-200">
+          {/* Header row — 12-col layout only on sm+. On mobile we just show the contact row, no header (rows have inline labels). */}
+          <div className="font-display mb-2 hidden grid-cols-12 px-3 text-[9.5px] font-bold uppercase tracking-wider text-ink-200 sm:grid">
             <span className="col-span-5">Contact</span>
             <span className="col-span-3">Title</span>
             <span className="col-span-2">Email</span>
@@ -210,9 +211,9 @@ export function ContactDiscoveryMock({ className = "" }: { className?: string })
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true, margin: "-40px" }}
                   transition={{ delay: 0.4 + i * 0.08, duration: 0.32 }}
-                  className="grid grid-cols-12 items-center gap-2 px-3 py-2.5"
+                  className="flex items-center gap-2 px-3 py-2.5 sm:grid sm:grid-cols-12"
                 >
-                  <div className="col-span-5 flex items-center gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-2 sm:col-span-5 sm:flex-initial">
                     <div
                       className="font-display flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
                       style={{ background: c.tint }}
@@ -223,11 +224,11 @@ export function ContactDiscoveryMock({ className = "" }: { className?: string })
                       <div className="font-display truncate text-[12px] font-semibold text-ink-900">
                         {c.name}
                       </div>
-                      <div className="font-mono truncate text-[10px] text-ink-200">Acme Industries</div>
+                      <div className="font-mono truncate text-[10px] text-ink-200">{c.title}</div>
                     </div>
                   </div>
-                  <div className="font-body col-span-3 truncate text-[11.5px] text-ink-700">{c.title}</div>
-                  <div className="col-span-2">
+                  <div className="font-body hidden truncate text-[11.5px] text-ink-700 sm:col-span-3 sm:block">{c.title}</div>
+                  <div className="shrink-0 sm:col-span-2">
                     <AnimatePresence mode="wait">
                       {isRevealed ? (
                         <motion.span
@@ -257,7 +258,7 @@ export function ContactDiscoveryMock({ className = "" }: { className?: string })
                       )}
                     </AnimatePresence>
                   </div>
-                  <div className="col-span-2 text-right">
+                  <div className="hidden text-right sm:col-span-2 sm:block">
                     {isRevealed ? (
                       <span className="inline-flex items-center gap-2">
                         <Mail className="h-3.5 w-3.5 text-brand-blue" />

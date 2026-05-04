@@ -23,10 +23,9 @@ const nextConfig = {
     serverActions: { allowedOrigins: ["localhost:3001", "logisticintel.com"] },
   },
   async redirects() {
-    // Only forward /app/* deep links off-site. /login and /signup live on
-    // the marketing apex (logisticintel.com/login, /signup) so we don't
-    // intercept them here — the operator wires those paths to the auth
-    // handler at the Vercel/DNS layer (e.g. via a project-level rewrite).
+    // /app/* deep links bounce off-site to the workspace subdomain. The
+    // browser URL bar updates to app.logisticintel.com/app/... — that's
+    // intentional, the workspace is a different surface from marketing.
     const APEX_HOSTS = ["logisticintel.com", "www.logisticintel.com"];
     return APEX_HOSTS.map((value) => ({
       source: "/app/:path*",
@@ -34,6 +33,42 @@ const nextConfig = {
       permanent: false,
       has: [{ type: "host", value }],
     }));
+  },
+  async rewrites() {
+    // Auth + auth-callback routes proxy from the marketing apex through to
+    // the app project at app.logisticintel.com. The browser URL bar STAYS
+    // on logisticintel.com (this is what makes /login look native to
+    // marketing visitors), and the app's auth UI streams back transparently.
+    //
+    // /assets/* is also proxied so the Vite app's static bundle resolves
+    // when /login + /signup pages are rendered through this rewrite.
+    return {
+      beforeFiles: [
+        {
+          source: "/login",
+          destination: "https://app.logisticintel.com/login",
+        },
+        {
+          source: "/signup",
+          destination: "https://app.logisticintel.com/signup",
+        },
+        {
+          source: "/auth/:path*",
+          destination: "https://app.logisticintel.com/auth/:path*",
+        },
+        {
+          source: "/reset-password",
+          destination: "https://app.logisticintel.com/reset-password",
+        },
+        // Vite app static asset paths — required for the rewritten pages
+        // above to load CSS / JS bundles. Marketing itself uses /_next/*
+        // for its bundles so there is no conflict.
+        {
+          source: "/assets/:path*",
+          destination: "https://app.logisticintel.com/assets/:path*",
+        },
+      ],
+    };
   },
   async headers() {
     return [

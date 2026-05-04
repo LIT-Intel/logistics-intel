@@ -3,7 +3,6 @@ import { Loader2, Building2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
-import { getCompanyLogoUrl } from "@/lib/logo";
 
 type SavedCompaniesPanelProps = {
   companies: CommandCenterRecord[];
@@ -124,11 +123,11 @@ export default function SavedCompaniesPanel({
               record.shipments?.[0]?.date ||
               null;
             const recentRoute = buildRouteLabel(record.shipments?.[0]);
-            const logoUrl = getCompanyLogoUrl(
-  record.company?.domain ||
-  record.company?.website ||
-  null
-);;
+            // Resolve a single domain string for CompanyAvatar — the avatar
+            // walks the full logo.dev → Clearbit → Unavatar cascade internally
+            // and falls back to initials if all candidates fail.
+            const companyDomain =
+              record.company?.domain || record.company?.website || null;
 
             return (
               <motion.li
@@ -157,7 +156,7 @@ export default function SavedCompaniesPanel({
                   <motion.div whileHover={{ scale: 1.05 }}>
                     <CompanyAvatar
                       name={record.company?.name || "Company"}
-                      logoUrl={logoUrl ?? undefined}
+                      domain={companyDomain ?? undefined}
                       size="sm"
                     />
                   </motion.div>

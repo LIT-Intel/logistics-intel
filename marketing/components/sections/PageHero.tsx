@@ -30,7 +30,7 @@ export function PageHero({
   const PrimaryIcon = primaryCta?.icon === "calendar" ? Calendar : ArrowRight;
   const isCenter = align === "center";
   return (
-    <section className="relative px-8 pt-[72px] pb-12">
+    <section className="relative px-5 sm:px-8 pt-[72px] pb-12">
       <div className={`mx-auto max-w-container ${isCenter ? "text-center" : ""}`}>
         <div className={isCenter ? "mx-auto inline-flex" : ""}>
           {eyebrow && (

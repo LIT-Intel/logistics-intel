@@ -20,7 +20,7 @@ export function CtaBanner({
 }) {
   const PrimaryIcon = primaryCta.icon === "calendar" ? Calendar : ArrowRight;
   return (
-    <section className="px-8 py-20">
+    <section className="px-5 sm:px-8 py-12 sm:py-20">
       <div className="mx-auto max-w-container">
         <div
           className="relative overflow-hidden rounded-3xl border border-white/10 px-10 py-14 text-white shadow-[0_30px_80px_-20px_rgba(15,23,42,0.45)]"

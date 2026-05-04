@@ -11,7 +11,7 @@ type Crumb = { label: string; href?: string };
 export function BreadcrumbBar({ crumbs }: { crumbs: Crumb[] }) {
   if (!crumbs?.length) return null;
   return (
-    <nav aria-label="Breadcrumb" className="px-8 pt-6">
+    <nav aria-label="Breadcrumb" className="px-5 sm:px-8 pt-6">
       <div className="mx-auto flex max-w-container flex-wrap items-center gap-1.5">
         {crumbs.map((c, i) => {
           const isLast = i === crumbs.length - 1;

@@ -74,7 +74,7 @@ export function SequenceBuilderMock({ className = "" }: { className?: string }) 
           </button>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
           {/* Sequence timeline */}
           <div className="relative">
             {/* Vertical line that draws itself */}

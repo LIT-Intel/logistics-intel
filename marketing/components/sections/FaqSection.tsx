@@ -23,7 +23,7 @@ export function FaqSection({
   const [open, setOpen] = useState(defaultOpenIndex);
   if (!faqs?.length) return null;
   return (
-    <section className="px-8 py-20">
+    <section className="px-5 sm:px-8 py-12 sm:py-20">
       <div className="mx-auto max-w-[840px]">
         <div className="text-center">
           <div className="eyebrow">{eyebrow}</div>

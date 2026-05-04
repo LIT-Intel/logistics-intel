@@ -6,7 +6,7 @@
 export function KpiStrip({ kpis }: { kpis: Array<{ value: string; label: string; sublabel?: string }> }) {
   if (!kpis?.length) return null;
   return (
-    <section className="px-8 py-10">
+    <section className="px-5 sm:px-8 py-10">
       <div className="mx-auto max-w-container">
         <div
           className="grid grid-cols-2 gap-x-8 gap-y-6 rounded-2xl border border-ink-100 bg-white px-7 py-6 shadow-sm md:grid-cols-3 lg:grid-cols-5"

@@ -22,7 +22,7 @@
 //   3. What Matters Now table — saved companies only, scoped to user
 //      via listSavedCompanies() (Supabase RLS).
 //
-// Logos: reuses the CompanyAvatar + getCompanyLogoUrl cascade
+// Logos: pass domain only — CompanyAvatar walks the candidate cascade internally
 // (logo.dev → Clearbit → Unavatar → gradient initials) — same pattern
 // as Search and Command Center. No new logo system.
 //
@@ -55,7 +55,6 @@ import { motion } from "framer-motion";
 import GlobeCanvas from "@/components/GlobeCanvas";
 import { laneStringToGlobeLane } from "@/lib/laneGlobe";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
-import { getCompanyLogoUrl } from "@/lib/logo";
 import { formatSafeShipmentDate } from "@/lib/dateUtils";
 
 // ─── Card primitives ─────────────────────────────────────────────────────────
@@ -605,7 +604,6 @@ function WhatMattersNow({ savedCompanies }) {
                     <div className="flex items-center gap-2.5 min-w-0">
                       <CompanyAvatar
                         name={name}
-                        logoUrl={getCompanyLogoUrl(domain) || undefined}
                         domain={domain || undefined}
                         size="sm"
                       />
