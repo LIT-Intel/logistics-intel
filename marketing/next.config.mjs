@@ -23,11 +23,24 @@ const nextConfig = {
     serverActions: { allowedOrigins: ["localhost:3001", "logisticintel.com"] },
   },
   async redirects() {
+    // The auth + app routes live on the marketing apex
+    // (www.logisticintel.com) where the existing logistics-intel project
+    // serves /login and /app/*. From the lit-marketing surface (currently
+    // lit-marketing.vercel.app, soon to be aliased to logisticintel.com),
+    // we only need to forward visitors hitting bare /login and /signup
+    // toward the canonical login URL. The /app/* path will resolve
+    // natively once domains are merged onto the same Vercel project.
     return [
-      // Anyone hitting the marketing root looking for the app gets bounced
-      { source: "/app/:path*", destination: "https://app.logisticintel.com/:path*", permanent: false },
-      { source: "/login", destination: "https://app.logisticintel.com/login", permanent: false },
-      { source: "/signup", destination: "https://app.logisticintel.com/signup", permanent: false },
+      {
+        source: "/login",
+        destination: "https://www.logisticintel.com/login?next=/app/dashboard",
+        permanent: false,
+      },
+      {
+        source: "/signup",
+        destination: "https://www.logisticintel.com/login?next=/app/dashboard",
+        permanent: false,
+      },
     ];
   },
   async headers() {

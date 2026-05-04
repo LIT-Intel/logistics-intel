@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import Link from "next/link";
 import { sanityClient } from "@/sanity/lib/client";
 import { PageShell } from "@/components/sections/PageShell";
@@ -93,7 +94,7 @@ export default async function LanesIndexPage() {
         eyebrow="Watch your lanes"
         title="Track your specific lanes."
         subtitle="Save lanes to your watchlist and Pulse Coach pings you when volume, carriers, or shippers shift."
-        primaryCta={{ label: "Try free", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Try free", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
       />
     </PageShell>

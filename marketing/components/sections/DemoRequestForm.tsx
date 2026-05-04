@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ArrowRight, CheckCircle2, AlertCircle } from "lucide-react";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 
 type State = "idle" | "submitting" | "ok" | "error";
 
@@ -74,7 +75,7 @@ export function DemoRequestForm() {
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <a
-            href={(process.env.NEXT_PUBLIC_APP_URL || "https://app.logisticintel.com") + "/signup"}
+            href={APP_SIGNUP_URL}
             className="font-display inline-flex h-11 items-center gap-2 rounded-md px-5 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
             style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
           >

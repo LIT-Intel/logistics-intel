@@ -6,6 +6,7 @@ import { PageHero } from "@/components/sections/PageHero";
 import { FaqSection } from "@/components/sections/FaqSection";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 
 export const metadata: Metadata = buildMetadata({
   title: "Pricing — built for revenue teams that hate per-seat math",
@@ -31,7 +32,7 @@ const PLANS = [
       "Standard support",
     ],
     ctaLabel: "Start with Starter",
-    ctaHref: "https://app.logisticintel.com/signup?plan=starter",
+    ctaHref: APP_SIGNUP_URL,
     highlight: false,
   },
   {
@@ -50,7 +51,7 @@ const PLANS = [
       "Priority support",
     ],
     ctaLabel: "Start with Growth",
-    ctaHref: "https://app.logisticintel.com/signup?plan=growth",
+    ctaHref: APP_SIGNUP_URL,
     highlight: true,
   },
   {
@@ -188,7 +189,7 @@ export default function PricingPage() {
                 </div>
               </div>
               <Link
-                href="https://app.logisticintel.com/signup"
+                href=APP_SIGNUP_URL
                 className="font-display inline-flex h-11 items-center gap-2 rounded-xl border border-ink-100 bg-white px-5 text-[14px] font-semibold text-ink-900 hover:bg-ink-25"
               >
                 Start free trial
@@ -247,7 +248,7 @@ export default function PricingPage() {
         title="Still deciding?"
         subtitle="See the platform live with your accounts in 30 minutes."
         primaryCta={{ label: "Book a Demo", href: "/demo", icon: "calendar" }}
-        secondaryCta={{ label: "Start free trial", href: "https://app.logisticintel.com/signup" }}
+        secondaryCta={{ label: "Start free trial", href: APP_SIGNUP_URL }}
       />
 
       <script

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowRight } from "lucide-react";
@@ -181,7 +182,7 @@ export default async function TradeLanePage({ params }: { params: { slug: string
         eyebrow="Watch this lane"
         title="Get pinged when this lane shifts."
         subtitle="Save the lane, set your filters, and Pulse Coach surfaces every meaningful change in TEU, carriers, and shipper mix."
-        primaryCta={{ label: "Try free", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Try free", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
       />
 

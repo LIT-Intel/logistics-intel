@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import Link from "next/link";
 import { sanityClient } from "@/sanity/lib/client";
 import { HS_INDEX_QUERY } from "@/sanity/lib/queries";
@@ -102,7 +103,7 @@ export default async function HsCodeIndexPage() {
         eyebrow="Looking up an HS code?"
         title="See who's actually shipping it."
         subtitle="LIT joins HS classifications to live shipment data — so '8517' becomes a list of importers you can target this week."
-        primaryCta={{ label: "Try free", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Try free", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
       />
     </PageShell>

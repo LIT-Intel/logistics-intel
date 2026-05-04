@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LitLogoMark } from "../seo/LitLogoMark";
 import { APP_LOGIN_URL } from "@/lib/app-urls";
+import { MobileMenu } from "./MobileMenu";
 
 /**
  * Marketing-site top navigation. Server component — content is static
@@ -14,7 +15,7 @@ export function Nav() {
       className="sticky top-0 z-50 border-b border-ink-100/60 backdrop-blur-md backdrop-saturate-150"
       style={{ background: "rgba(251,252,254,0.78)" }}
     >
-      <div className="mx-auto flex h-[68px] max-w-container items-center gap-10 px-8">
+      <div className="mx-auto flex h-[64px] max-w-container items-center gap-6 px-5 sm:gap-10 sm:px-8 md:h-[68px]">
         <Link
           href="/"
           aria-label="Logistic Intel home"
@@ -39,17 +40,18 @@ export function Nav() {
         <div className="ml-auto flex items-center gap-2.5">
           <a
             href={APP_LOGIN_URL}
-            className="font-display hidden h-9 items-center gap-1.5 rounded-md border border-ink-100 bg-white/70 px-3 text-[13px] font-semibold text-ink-700 backdrop-blur transition hover:bg-white sm:inline-flex"
+            className="font-display hidden h-9 items-center gap-1.5 rounded-md border border-ink-100 bg-white/70 px-3 text-[13px] font-semibold text-ink-700 backdrop-blur transition hover:bg-white md:inline-flex"
           >
             Sign in
           </a>
           <Link
             href="/demo"
-            className="font-display inline-flex h-9 items-center gap-1.5 rounded-md px-4 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)] transition hover:shadow-[0_10px_24px_rgba(37,99,235,0.45)]"
+            className="font-display hidden h-9 items-center gap-1.5 rounded-md px-4 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)] transition hover:shadow-[0_10px_24px_rgba(37,99,235,0.45)] md:inline-flex"
             style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
           >
             Book a demo
           </Link>
+          <MobileMenu />
         </div>
       </div>
     </nav>

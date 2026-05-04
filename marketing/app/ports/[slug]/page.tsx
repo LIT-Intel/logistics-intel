@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowRight, Anchor } from "lucide-react";
@@ -108,7 +109,7 @@ export default async function PortPage({ params }: { params: { slug: string } })
         eyebrow="Watch this port"
         title={`Get pinged when ${port.name} shifts.`}
         subtitle="Save the port, set your filters, and Pulse Coach surfaces every meaningful change in shipper mix and volume."
-        primaryCta={{ label: "Try free", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Try free", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
       />
 

@@ -105,8 +105,8 @@ export default async function HomePage() {
 
 function Hero({ hero }: { hero: any }) {
   return (
-    <section className="relative pt-[72px] pb-[80px]">
-      <div className="mx-auto grid max-w-container gap-14 px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center">
+    <section className="relative px-5 pt-[64px] pb-12 sm:px-8 sm:pt-[72px] sm:pb-[80px]">
+      <div className="mx-auto grid max-w-container gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center">
         <div className="min-w-0">
           <div className="lit-pill">
             <span className="dot" />
@@ -163,7 +163,7 @@ function Hero({ hero }: { hero: any }) {
 
 function CompanyIntelShowcase() {
   return (
-    <section className="px-8 py-20">
+    <section className="px-5 py-16 sm:px-8 sm:py-20">
       <div className="mx-auto max-w-container">
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <div className="lg:order-1">
@@ -201,7 +201,7 @@ function CompanyIntelShowcase() {
 
 function TradeLaneShowcase() {
   return (
-    <section className="px-8 py-20">
+    <section className="px-5 py-16 sm:px-8 sm:py-20">
       <div className="mx-auto max-w-container">
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
           <div>
@@ -280,7 +280,7 @@ function TradeLaneShowcase() {
 
 function PulseBriefShowcase() {
   return (
-    <section className="px-8 py-20">
+    <section className="px-5 py-16 sm:px-8 sm:py-20">
       <div className="mx-auto max-w-container">
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <div>
@@ -319,7 +319,7 @@ function PulseBriefShowcase() {
 
 function ContactDiscoveryShowcase() {
   return (
-    <section className="px-8 py-20">
+    <section className="px-5 py-16 sm:px-8 sm:py-20">
       <div className="mx-auto max-w-container">
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
           <div className="lg:order-1">
@@ -358,7 +358,7 @@ function ContactDiscoveryShowcase() {
 
 function SequenceBuilderShowcase() {
   return (
-    <section className="px-8 py-20">
+    <section className="px-5 py-16 sm:px-8 sm:py-20">
       <div className="mx-auto max-w-container">
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <div>
@@ -404,7 +404,7 @@ function PillarsTrustBar() {
     "CRM Workflows",
   ];
   return (
-    <section className="px-8 py-12">
+    <section className="px-5 py-12 sm:px-8">
       <div className="mx-auto max-w-container">
         <div
           className="rounded-2xl border border-ink-100 bg-white/70 px-7 py-6 backdrop-blur shadow-sm"
@@ -438,7 +438,7 @@ function ProblemSection() {
     { title: "No single source of truth", body: "Market intel, account data, and pipeline live in different tabs — and none of them talk." },
   ];
   return (
-    <section className="px-8 py-24">
+    <section className="px-5 py-16 sm:px-8 sm:py-24">
       <div className="mx-auto max-w-container">
         <div className="mx-auto max-w-[780px] text-center">
           <div className="eyebrow">The problem</div>
@@ -465,7 +465,7 @@ function ProblemSection() {
 
 function SignalToPipelineSection() {
   return (
-    <section className="px-8 py-24">
+    <section className="px-5 py-16 sm:px-8 sm:py-24">
       <div className="mx-auto max-w-container">
         <div className="mx-auto max-w-[780px] text-center">
           <div className="eyebrow">Signal → Pipeline</div>
@@ -493,7 +493,7 @@ function PlatformSection() {
     { tag: "Engage", title: "Launch campaigns", body: "Multichannel sequences triggered by shipment signals, not calendar dates." },
   ];
   return (
-    <section className="px-8 py-24">
+    <section className="px-5 py-16 sm:px-8 sm:py-24">
       <div className="mx-auto max-w-container">
         <div className="mx-auto max-w-[780px] text-center">
           <div className="eyebrow">The platform</div>

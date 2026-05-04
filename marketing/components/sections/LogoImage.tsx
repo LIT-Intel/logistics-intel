@@ -3,18 +3,20 @@
 import { useState } from "react";
 
 /**
- * LogoImage — robust logo renderer for the customer rail.
+ * LogoImage — bulletproof logo renderer with 3-tier fallback.
  *
- * Tries the supplied src (typically a logo.dev URL). If the image fails
- * to load OR no src is supplied, renders a deterministic colored
- * monogram tile built from the company name. Either path looks
- * intentional and on-brand.
+ *   1. logo.dev URL (best quality, requires NEXT_PUBLIC_LOGO_DEV_KEY)
+ *   2. Google favicon API (no key, lower quality, always works)
+ *   3. Colored monogram tile (always renders)
+ *
+ * Each tier upgrades on the previous tier's onError. The rail will
+ * always show *something* for every domain, even if logo.dev is
+ * unreachable or the key is missing.
  *
  * Native <img> over next/image because:
- *   1. We want the onError fallback path for failed logo.dev hits.
- *   2. The rail size is fixed and small — no optimizer benefit.
- *   3. Avoids Next/Image's strict remotePatterns enforcement during
- *      flux when keys/configs are mid-rotation.
+ *   - We need onError fallback chains
+ *   - Logo size is fixed and small (no optimizer benefit)
+ *   - Avoids Next/Image strict remotePatterns when keys are mid-rotation
  */
 const TINTS = [
   "#3b82f6",
@@ -40,18 +42,36 @@ function monogramFor(name: string) {
   return { tint, initials };
 }
 
+function googleFaviconUrl(domain?: string | null, size = 64) {
+  if (!domain) return null;
+  const clean = domain.replace(/^https?:\/\//, "").replace(/\/.*/, "").trim();
+  if (!clean) return null;
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(clean)}&sz=${size}`;
+}
+
 export function LogoImage({
   src,
+  domain,
   name,
   className = "",
 }: {
+  /** Primary URL (typically logo.dev). Falls through to Google favicon → monogram on error. */
   src?: string | null;
+  /** Domain for the Google favicon fallback. Falls through to monogram if missing. */
+  domain?: string | null;
   name: string;
   className?: string;
 }) {
-  const [errored, setErrored] = useState(false);
+  // Tier counter: 0 = primary, 1 = google favicon, 2 = monogram
+  const [tier, setTier] = useState<0 | 1 | 2>(src ? 0 : domain ? 1 : 2);
 
-  if (!src || errored) {
+  // If primary fails, advance to favicon. If favicon fails, advance to monogram.
+  const handleError = () => {
+    if (tier === 0) setTier(domain ? 1 : 2);
+    else if (tier === 1) setTier(2);
+  };
+
+  if (tier === 2) {
     const { tint, initials } = monogramFor(name);
     return (
       <div className={`inline-flex items-center gap-2 ${className}`}>
@@ -69,12 +89,40 @@ export function LogoImage({
     );
   }
 
+  const url = tier === 0 ? src : googleFaviconUrl(domain, 128);
+  if (!url) {
+    // Defensive: if URL ended up null, jump to monogram immediately.
+    if (tier !== 2) setTimeout(() => setTier(2), 0);
+    return null;
+  }
+
+  // Tier 1 (Google favicon) renders as monogram-style — small icon + name —
+  // because favicons are typically tiny and look weird stretched.
+  if (tier === 1) {
+    return (
+      <div className={`inline-flex items-center gap-2 ${className}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt={name}
+          onError={handleError}
+          className="h-7 w-7 shrink-0 rounded-md border border-ink-100 bg-white object-contain p-1"
+          loading="lazy"
+        />
+        <span className="font-display whitespace-nowrap text-[12.5px] font-semibold tracking-[-0.01em] text-ink-700">
+          {name}
+        </span>
+      </div>
+    );
+  }
+
+  // Tier 0 (logo.dev) — full logo image, no name (just the brand mark)
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={src}
+      src={url}
       alt={name}
-      onError={() => setErrored(true)}
+      onError={handleError}
       className={`block h-9 w-auto max-w-[160px] object-contain ${className}`}
       loading="lazy"
     />

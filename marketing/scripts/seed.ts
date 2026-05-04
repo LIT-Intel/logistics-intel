@@ -61,7 +61,7 @@ async function seed() {
       primaryLabel: "Book a Demo",
       primaryHref: "/demo",
       secondaryLabel: "Start Free",
-      secondaryHref: "https://app.logisticintel.com/signup",
+      secondaryHref: "https://www.logisticintel.com/login?next=/app/dashboard",
     },
   });
   console.log("[seed] siteSettings ✓");

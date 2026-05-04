@@ -80,7 +80,7 @@ export function DashboardMock({ className = "" }: { className?: string }) {
                 Welcome back
               </div>
               <div className="font-display mt-0.5 text-[18px] font-semibold tracking-[-0.015em] text-ink-900">
-                Valesco Raymond
+                Sales Operator
               </div>
             </div>
             <span

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import Link from "next/link";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
@@ -32,7 +33,7 @@ export default function TradeIntelligencePage() {
         title="Find prospects based on"
         titleHighlight="how freight actually moves."
         subtitle="LIT helps logistics teams search companies by trade activity, not guesswork. Find importers, exporters, lanes, suppliers, shipment volume, and account patterns that point to real opportunity."
-        primaryCta={{ label: "Start Prospecting", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Start Prospecting", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Explore Pulse", href: "/pulse" }}
       />
 
@@ -99,7 +100,7 @@ export default function TradeIntelligencePage() {
         eyebrow="Trade data isn't enough"
         title="See trade signals turn into pipeline."
         subtitle="Pulse joins trade intelligence to verified contacts, account briefs, and outbound — so a signal becomes a meeting in the same week."
-        primaryCta={{ label: "Start Prospecting", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Start Prospecting", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a Demo", href: "/demo" }}
       />
     </PageShell>

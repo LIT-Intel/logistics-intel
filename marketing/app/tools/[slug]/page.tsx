@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import { notFound } from "next/navigation";
 import { sanityClient } from "@/sanity/lib/client";
 import { FREE_TOOL_QUERY, ALL_FREE_TOOL_SLUGS } from "@/sanity/lib/queries";
@@ -68,7 +69,7 @@ export default async function FreeToolPage({ params }: { params: { slug: string 
         eyebrow="Want this for real data?"
         title="LIT runs this against your accounts."
         subtitle="The free tool is great for one-offs. The platform runs every calculation continuously across your real ICP."
-        primaryCta={{ label: "Try free", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Try free", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
       />
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
@@ -56,7 +57,7 @@ export default async function UseCasePage({ params }: { params: { slug: string }
         title={u.headline}
         titleHighlight={u.headlineHighlight}
         subtitle={u.subhead}
-        primaryCta={{ label: "Start Prospecting", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Start Prospecting", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a Demo", href: "/demo" }}
       />
 
@@ -215,7 +216,7 @@ export default async function UseCasePage({ params }: { params: { slug: string }
         title={`A 30-min walk through LIT, tuned for ${u.persona.toLowerCase()}.`}
         subtitle="No deck. We load your accounts and walk through the workflow live."
         primaryCta={{ label: "Book a Demo", href: "/demo", icon: "calendar" }}
-        secondaryCta={{ label: "Start free", href: "https://app.logisticintel.com/signup" }}
+        secondaryCta={{ label: "Start free", href: APP_SIGNUP_URL }}
       />
 
       {u.faq?.length > 0 && (

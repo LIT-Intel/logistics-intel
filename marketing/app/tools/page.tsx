@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import Link from "next/link";
 import { sanityClient } from "@/sanity/lib/client";
 import { groq } from "next-sanity";
@@ -76,7 +77,7 @@ export default async function ToolsPage() {
         eyebrow="Need more"
         title="The full platform is two clicks away."
         subtitle="LIT runs all of these calculations against your real accounts and lanes — and tells you what to do about it."
-        primaryCta={{ label: "Try free", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Try free", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
       />
     </PageShell>

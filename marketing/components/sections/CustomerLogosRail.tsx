@@ -44,7 +44,7 @@ export function CustomerLogosRail({
             const src = l.domain ? logoDevUrl(l.domain, { size: 200 }) : null;
             return (
               <div key={`${l.name}-${i}`} className="flex min-h-[36px] items-center justify-center">
-                <LogoImage src={src} name={l.name} />
+                <LogoImage src={src} domain={l.domain} name={l.name} />
               </div>
             );
           })}

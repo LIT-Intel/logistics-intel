@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import Link from "next/link";
 import { sanityClient } from "@/sanity/lib/client";
 import { PORTS_INDEX_QUERY } from "@/sanity/lib/queries";
@@ -111,7 +112,7 @@ export default async function PortsIndexPage() {
         eyebrow="Watch a port"
         title="Track inbound + outbound activity by gateway."
         subtitle="Save any port to your watchlist and Pulse Coach surfaces every meaningful change in shipper mix and volume."
-        primaryCta={{ label: "Try free", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Try free", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
       />
     </PageShell>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sanityClient } from "@/sanity/lib/client";
@@ -51,7 +52,7 @@ export default async function IndustryPage({ params }: { params: { slug: string 
         titleSuffix="revenue teams."
         subtitle={item.tagline}
         primaryCta={{ label: "Book a demo", href: "/demo", icon: "calendar" }}
-        secondaryCta={{ label: "Try free", href: "https://app.logisticintel.com/signup" }}
+        secondaryCta={{ label: "Try free", href: APP_SIGNUP_URL }}
       />
 
       {item.kpis?.length > 0 && <KpiStrip kpis={item.kpis} />}

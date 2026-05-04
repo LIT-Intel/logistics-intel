@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sanityClient } from "@/sanity/lib/client";
@@ -146,7 +147,7 @@ export default async function GlossaryTermPage({ params }: { params: { slug: str
         title="LIT turns terms into pipeline."
         subtitle="Want to find every importer shipping under this lane / HS code / mode? That's literally what Pulse does."
         primaryCta={{ label: "Book a demo", href: "/demo", icon: "calendar" }}
-        secondaryCta={{ label: "Try free", href: "https://app.logisticintel.com/signup" }}
+        secondaryCta={{ label: "Try free", href: APP_SIGNUP_URL }}
       />
 
       <script

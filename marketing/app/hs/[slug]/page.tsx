@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowRight } from "lucide-react";
@@ -141,7 +142,7 @@ export default async function HsCodePage({ params }: { params: { slug: string } 
         eyebrow="Find importers shipping this code"
         title={`See who's importing under HS ${hs.code} this week.`}
         subtitle="LIT turns HS classifications into a list of real importers you can act on — with verified contacts, lane history, and outbound triggers."
-        primaryCta={{ label: "Try free", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Try free", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
       />
 
