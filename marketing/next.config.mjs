@@ -61,17 +61,28 @@ const nextConfig = {
     //
     // /assets/* is also proxied so the Vite app's static bundle resolves
     // when /login + /signup pages are rendered through this rewrite.
+    //
+    // Host-scoped to apex/www only — without this, when APP_ORIGIN points
+    // at a domain attached to *this same Vercel project* the rewrite
+    // re-fires on every hop and Vercel returns 508 INFINITE_LOOP_DETECTED.
+    const APEX_HOSTS = ["logisticintel.com", "www.logisticintel.com"];
+    const authRules = [
+      { source: "/login", destination: `${APP_ORIGIN}/login` },
+      { source: "/signup", destination: `${APP_ORIGIN}/signup` },
+      { source: "/auth/:path*", destination: `${APP_ORIGIN}/auth/:path*` },
+      { source: "/reset-password", destination: `${APP_ORIGIN}/reset-password` },
+      // Vite app static asset paths — required so the rewritten pages
+      // above can load CSS / JS bundles. Marketing uses /_next/* for
+      // its own bundles so there is no conflict.
+      { source: "/assets/:path*", destination: `${APP_ORIGIN}/assets/:path*` },
+    ];
     return {
-      beforeFiles: [
-        { source: "/login", destination: `${APP_ORIGIN}/login` },
-        { source: "/signup", destination: `${APP_ORIGIN}/signup` },
-        { source: "/auth/:path*", destination: `${APP_ORIGIN}/auth/:path*` },
-        { source: "/reset-password", destination: `${APP_ORIGIN}/reset-password` },
-        // Vite app static asset paths — required so the rewritten pages
-        // above can load CSS / JS bundles. Marketing uses /_next/* for
-        // its own bundles so there is no conflict.
-        { source: "/assets/:path*", destination: `${APP_ORIGIN}/assets/:path*` },
-      ],
+      beforeFiles: APEX_HOSTS.flatMap((value) =>
+        authRules.map((rule) => ({
+          ...rule,
+          has: [{ type: "host", value }],
+        })),
+      ),
     };
   },
   async headers() {
