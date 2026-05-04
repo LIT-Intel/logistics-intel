@@ -1,8 +1,9 @@
 import React from "react";
-import { X } from "lucide-react";
+import { X, AlertTriangle } from "lucide-react";
 import { CHANNEL, fontDisplay, fontBody, fontMono } from "../tokens";
 import { ChannelIcon } from "./ChannelChip";
 import { applyVariables } from "../data/templates";
+import { listMissingVars } from "@/lib/mergeVars";
 import type { BuilderStep } from "../types";
 
 // Renders the sequence as a sample contact would receive it. Variable
@@ -114,6 +115,14 @@ export function PreviewModal({
                 if (s.kind === "email") {
                   const subject = applyVariables(s.subject, SAMPLE_VARS);
                   const body = applyVariables(s.body, SAMPLE_VARS);
+                  // Variables a real recipient might not have. Sample
+                  // context is generous so anything missing here means
+                  // the template references a token outside the standard
+                  // recipient/company/sender set — flag it so the user
+                  // can decide before launch.
+                  const missingSubject = listMissingVars(s.subject, SAMPLE_VARS);
+                  const missingBody = listMissingVars(s.body, SAMPLE_VARS);
+                  const missing = Array.from(new Set([...missingSubject, ...missingBody]));
                   return (
                     <article
                       key={s.localId}
@@ -162,6 +171,21 @@ export function PreviewModal({
                             <span className="text-slate-400">(empty body)</span>
                           )}
                         </pre>
+                        {missing.length > 0 && (
+                          <div
+                            className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10.5px] text-[#B45309]"
+                            style={{ fontFamily: fontBody }}
+                          >
+                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                            <span>
+                              <strong>Unknown variable{missing.length === 1 ? "" : "s"}:</strong>{" "}
+                              <span style={{ fontFamily: fontMono }}>
+                                {missing.map((m) => `{{${m}}}`).join(", ")}
+                              </span>{" "}
+                              — won't resolve at send time. Remove or define before launch.
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </article>
                   );

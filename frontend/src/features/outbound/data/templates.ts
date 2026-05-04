@@ -290,14 +290,19 @@ Wishing you a clean Q ahead.
   },
 ];
 
+// Back-compat wrapper. New call sites should import from "@/lib/mergeVars"
+// directly so they get listVars / listMissingVars too. Kept here so the
+// large surface of existing imports continues to work.
+//
+// Note the shared implementation also accepts dot paths ({{company.name}})
+// and is whitespace-tolerant ({{ first_name }}), which the old regex was
+// not — both extensions are backwards-compatible since old templates
+// don't use those forms.
+import { applyMergeVars } from "@/lib/mergeVars";
+
 export function applyVariables(
   text: string | null | undefined,
   vars: Record<string, string | undefined | null>,
 ): string {
-  if (!text) return "";
-  return text.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-    const v = vars[key];
-    if (v === undefined || v === null || v === "") return match;
-    return String(v);
-  });
+  return applyMergeVars(text, vars as Record<string, unknown>);
 }
