@@ -5886,6 +5886,41 @@ export async function getPrimaryEmailAccount(): Promise<LitEmailAccountRow | nul
 }
 
 /**
+ * launchCampaign — invoke the queue-campaign-recipients edge function.
+ *
+ * Builds the recipient roster from the campaign's attached companies,
+ * upserts into lit_campaign_contacts (status='pending', next_send_at=now()),
+ * and flips the campaign to status='active'. The dispatcher's next tick
+ * picks the recipients up and starts walking the sequence.
+ *
+ * Returns the queued/skipped counts so the caller can show a toast.
+ */
+export async function launchCampaign(
+  campaignId: string,
+): Promise<
+  | { ok: true; queued: number; skipped: number }
+  | { ok: false; error: string }
+> {
+  if (!campaignId) return { ok: false, error: "missing_campaign_id" };
+  try {
+    const { data, error } = await supabase.functions.invoke("queue-campaign-recipients", {
+      body: { campaign_id: campaignId },
+    });
+    if (error) return { ok: false, error: error.message || "invoke_failed" };
+    if (data?.ok) {
+      return {
+        ok: true,
+        queued: Number(data.queued ?? 0),
+        skipped: Number(data.skipped ?? 0),
+      };
+    }
+    return { ok: false, error: String(data?.error || "launch_failed") };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "launch_threw" };
+  }
+}
+
+/**
  * disconnectEmailAccount — soft-disconnect a Gmail/Outlook mailbox.
  *
  * Marks the account as disconnected (preserves audit trail) and drops the

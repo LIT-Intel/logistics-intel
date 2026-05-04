@@ -13,6 +13,7 @@ import {
   createCampaignDraft,
   attachCompaniesToCampaign,
   upsertCampaignStep,
+  launchCampaign,
 } from "@/lib/api";
 
 import { useSavedCompanies } from "@/features/outbound/hooks/useSavedCompanies";
@@ -218,6 +219,7 @@ export default function CampaignBuilder() {
   const [createTemplateOpen, setCreateTemplateOpen] = useState(false);
 
   const [saving, setSaving] = useState(false);
+  const [launching, setLaunching] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [toast, setToast] = useState(null);
@@ -258,7 +260,16 @@ export default function CampaignBuilder() {
     (s) => s.kind !== "wait" && isStepFilled(s),
   );
   const canSave = hasName && hasFilledStep && !saving && (!isEditMode || hydratedFromEdit);
-  const canLaunch = false;
+  // Launch becomes available once: campaign is saved (we have an id),
+  // a sender mailbox is connected, at least one step is filled in, and
+  // at least one recipient company is attached. The actual queueing
+  // runs through queue-campaign-recipients.
+  const canLaunch =
+    Boolean(editId) &&
+    Boolean(primaryEmail) &&
+    hasFilledStep &&
+    selectedIds.size > 0 &&
+    !saving;
 
   const saveGuidance = useMemo(() => {
     if (isEditMode && !hydratedFromEdit && campaignLoading) return null;
@@ -436,6 +447,32 @@ export default function CampaignBuilder() {
     trimmedName,
   ]);
 
+  const handleLaunch = useCallback(async () => {
+    if (!canLaunch || !editId) return;
+    if (typeof window !== "undefined" && !window.confirm(
+      `Launch this campaign? Recipients will be queued and the dispatcher will start sending emails from ${primaryEmail}.`,
+    )) return;
+    setLaunching(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await launchCampaign(editId);
+      if (res.ok) {
+        setSuccess(
+          `Launched · ${res.queued} recipient${res.queued === 1 ? "" : "s"} queued${res.skipped ? ` (${res.skipped} skipped)` : ""}.`,
+        );
+        // Bounce to the analytics page so the user sees the queue light up.
+        setTimeout(() => navigate("/app/campaigns/analytics"), 800);
+      } else {
+        setError(`Launch failed — ${res.error}`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Launch failed");
+    } finally {
+      setLaunching(false);
+    }
+  }, [canLaunch, editId, primaryEmail, navigate]);
+
   // ---- Misc keyboard handler ----
   useEffect(() => {
     const handler = (e) => {
@@ -575,17 +612,24 @@ export default function CampaignBuilder() {
           </button>
           <button
             type="button"
-            disabled={!canLaunch}
+            onClick={handleLaunch}
+            disabled={!canLaunch || launching}
             title={
               canLaunch
-                ? ""
-                : "Launch becomes available once Gmail is connected and the dispatcher ships."
+                ? "Queue recipients and start sending."
+                : !editId
+                  ? "Save the campaign first."
+                  : !primaryEmail
+                    ? "Connect a Gmail or Outlook mailbox in Settings first."
+                    : selectedIds.size === 0
+                      ? "Add at least one recipient company first."
+                      : "Add at least one filled step first."
             }
             className="inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-[#10B981] to-[#059669] px-3 py-1 text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(16,185,129,0.3)] disabled:cursor-not-allowed disabled:opacity-60"
             style={{ fontFamily: fontDisplay }}
           >
             <Rocket className="h-2.5 w-2.5" />
-            Launch
+            {launching ? "Launching…" : "Launch"}
           </button>
         </div>
       </div>
