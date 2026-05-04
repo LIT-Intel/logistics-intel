@@ -322,9 +322,9 @@ export default function ModernLoginPage() {
 
           <p className="mt-6 text-center text-xs text-slate-400">
             By continuing you agree to our{" "}
-            <a href="/terms" className="underline hover:text-slate-600">Terms</a>
+            <a href="https://logisticintel.com/legal/terms" target="_blank" rel="noreferrer" className="underline hover:text-slate-600">Terms</a>
             {" "}and{" "}
-            <a href="/privacy" className="underline hover:text-slate-600">Privacy Policy</a>.
+            <a href="https://logisticintel.com/legal/privacy" target="_blank" rel="noreferrer" className="underline hover:text-slate-600">Privacy Policy</a>.
           </p>
         </div>
       </div>

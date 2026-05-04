@@ -166,11 +166,11 @@ export default function Signup() {
 
             <p className="text-center text-xs font-medium text-slate-400">
               By signing up, you agree to our{" "}
-              <a href="/terms" className="font-bold text-indigo-600 underline">
+              <a href="https://logisticintel.com/legal/terms" target="_blank" rel="noreferrer" className="font-bold text-indigo-600 underline">
                 Terms of Service
               </a>{" "}
               and{" "}
-              <a href="/privacy" className="font-bold text-indigo-600 underline">
+              <a href="https://logisticintel.com/legal/privacy" target="_blank" rel="noreferrer" className="font-bold text-indigo-600 underline">
                 Privacy Policy
               </a>
               .

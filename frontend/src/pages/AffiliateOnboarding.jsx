@@ -707,7 +707,7 @@ export default function AffiliateOnboarding() {
               />
               <span>
                 I accept the{" "}
-                <a href="/terms" target="_blank" rel="noreferrer" style={{ color: T.brand, textDecoration: "underline" }}>
+                <a href="https://logisticintel.com/legal/terms" target="_blank" rel="noreferrer" style={{ color: T.brand, textDecoration: "underline" }}>
                   partner program terms
                 </a>{" "}
                 and acknowledge that Stripe Connect Express is required to receive payouts.

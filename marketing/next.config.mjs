@@ -43,12 +43,19 @@ const nextConfig = {
     // /app/* deep links bounce off-site to the workspace. URL bar updates
     // to APP_ORIGIN — intentional: the workspace is a separate surface.
     const APEX_HOSTS = ["logisticintel.com", "www.logisticintel.com"];
-    return APEX_HOSTS.map((value) => ({
+    const appRedirects = APEX_HOSTS.map((value) => ({
       source: "/app/:path*",
       destination: `${APP_ORIGIN}/app/:path*`,
       permanent: false,
       has: [{ type: "host", value }],
     }));
+    // Bare /privacy and /terms — common shorthand pasted into OAuth consent
+    // screens, footer copy, etc. Canonical home is /legal/*.
+    return [
+      ...appRedirects,
+      { source: "/privacy", destination: "/legal/privacy", permanent: true },
+      { source: "/terms", destination: "/legal/terms", permanent: true },
+    ];
   },
   async rewrites() {
     // Auth + auth-callback routes PROXY (rewrite, not redirect) from the
