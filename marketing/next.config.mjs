@@ -38,21 +38,21 @@ const nextConfig = {
         source: "/app/:path*",
         destination: "https://app.logisticintel.com/:path*",
         permanent: false,
-        has: [{ type: "host" as const, value }],
+        has: [{ type: "host", value }],
       })),
       // /login → app.logisticintel.com/login
       ...APEX_HOSTS.map((value) => ({
         source: "/login",
         destination: "https://app.logisticintel.com/login",
         permanent: false,
-        has: [{ type: "host" as const, value }],
+        has: [{ type: "host", value }],
       })),
       // /signup → app.logisticintel.com/signup
       ...APEX_HOSTS.map((value) => ({
         source: "/signup",
         destination: "https://app.logisticintel.com/signup",
         permanent: false,
-        has: [{ type: "host" as const, value }],
+        has: [{ type: "host", value }],
       })),
     ];
   },
