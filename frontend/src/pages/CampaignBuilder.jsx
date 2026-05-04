@@ -33,6 +33,7 @@ import { PreviewModal } from "@/features/outbound/components/PreviewModal";
 import { CreateTemplateModal } from "@/features/outbound/components/CreateTemplateModal";
 import { CreatePersonaModal } from "@/features/outbound/components/CreatePersonaModal";
 import { findPlay } from "@/features/outbound/data/plays";
+import { INDUSTRY_OPTIONS, TONE_OPTIONS } from "@/features/outbound/data/templates";
 import { fontDisplay, fontBody } from "@/features/outbound/tokens";
 import {
   updateCampaignBasics,
@@ -222,6 +223,8 @@ export default function CampaignBuilder() {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [manualEmails, setManualEmails] = useState([]);
   const [selectedPersonaId, setSelectedPersonaId] = useState(null);
+  const [industry, setIndustry] = useState("any");
+  const [tone, setTone] = useState("consultative");
   const [hydratedFromEdit, setHydratedFromEdit] = useState(false);
 
   const { companies, loading: companiesLoading } = useSavedCompanies();
@@ -268,6 +271,8 @@ export default function CampaignBuilder() {
         )
       : [];
     setManualEmails(persistedManual);
+    if (typeof details.metrics?.industry === "string") setIndustry(details.metrics.industry);
+    if (typeof details.metrics?.tone === "string") setTone(details.metrics.tone);
     setHydratedFromEdit(true);
   }, [isEditMode, details, hydratedFromEdit]);
 
@@ -403,6 +408,10 @@ export default function CampaignBuilder() {
       const metricsExtras = {};
       if (selectedPersonaId) metricsExtras.persona_id = selectedPersonaId;
       if (playId) metricsExtras.play_id = playId;
+      // Industry + tone drive the template drawer's filter chips. Saved
+      // so reopening the campaign restores the same template shortlist.
+      if (industry) metricsExtras.industry = industry;
+      if (tone) metricsExtras.tone = tone;
       // Persist manual recipients on every save so reopening the draft
       // shows what the user typed in. The queue function reads this on
       // Launch in addition to whatever's passed in the request body.
@@ -670,6 +679,32 @@ export default function CampaignBuilder() {
             </span>
             <span className="text-[#CBD5E1]">·</span>
             <span>{steps.length} step{steps.length === 1 ? "" : "s"}</span>
+            <span className="text-[#CBD5E1]">·</span>
+            {/* Industry + tone selectors. Drive template-drawer filter chips
+                and inform the user's pitch style. Persisted on
+                lit_campaigns.metrics so re-opening keeps the choice. */}
+            <select
+              value={industry}
+              onChange={(e) => setIndustry(e.target.value)}
+              className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-200"
+              style={{ fontFamily: fontDisplay }}
+              title="Recipient industry — filters template suggestions"
+            >
+              {INDUSTRY_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </select>
+            <select
+              value={tone}
+              onChange={(e) => setTone(e.target.value)}
+              className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-200"
+              style={{ fontFamily: fontDisplay }}
+              title={TONE_OPTIONS.find((t) => t.id === tone)?.helper || "Pitch style"}
+            >
+              {TONE_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </select>
             {saveGuidance ? (
               <>
                 <span className="text-[#CBD5E1]">·</span>
@@ -832,6 +867,8 @@ export default function CampaignBuilder() {
         onClose={() => setTemplatesOpen(false)}
         onApply={handleApplyTemplate}
         onCreate={() => setCreateTemplateOpen(true)}
+        defaultIndustry={industry}
+        defaultTone={tone}
       />
 
       <PreviewModal

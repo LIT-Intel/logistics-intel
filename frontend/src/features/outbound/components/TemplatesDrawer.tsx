@@ -12,20 +12,42 @@ interface Props {
   onClose: () => void;
   onApply: (template: OutreachTemplate) => void;
   onCreate: () => void;
+  /** Pre-select these filters when the drawer opens (campaign-level setting). */
+  defaultIndustry?: string;
+  defaultTone?: string;
 }
 
 const INDUSTRY_LABEL: Record<string, string> = {
-  any: "Cross-industry",
+  any: "Any",
+  logistics: "Logistics",
+  saas: "SaaS",
+  finance: "Finance",
+  professional: "Pro services",
+  manufacturing: "Manufacturing",
+  retail: "Retail",
+  healthcare: "Healthcare",
+  construction: "Construction",
   automotive: "Automotive",
   electronics: "Electronics",
+  apparel: "Apparel",
+  food_beverage: "Food & Bev",
+  energy: "Energy",
+  media: "Media",
+  education: "Education",
+  // Legacy industry tags from earlier templates.
   solar: "Solar",
   data_centers: "Data centers",
-  manufacturing: "Manufacturing",
-  apparel: "Apparel",
   pharma: "Pharma",
-  food_beverage: "Food & Bev",
   chemicals: "Chemicals",
   cpg: "CPG",
+};
+
+const TONE_LABEL: Record<string, string> = {
+  consultative: "Consultative",
+  direct: "Direct",
+  curious: "Curious",
+  friendly: "Friendly",
+  educational: "Educational",
 };
 
 const INTENT_LABEL: Record<string, string> = {
@@ -34,12 +56,21 @@ const INTENT_LABEL: Record<string, string> = {
   breakup: "Breakup",
 };
 
-export function TemplatesDrawer({ open, state, onClose, onApply, onCreate }: Props) {
+export function TemplatesDrawer({ open, state, onClose, onApply, onCreate, defaultIndustry, defaultTone }: Props) {
   // Hooks MUST run unconditionally on every render — moving them after the
   // early return caused React error #310 (rendered more hooks than during
   // the previous render). Keep all hook calls here.
   const [query, setQuery] = useState("");
-  const [industryFilter, setIndustryFilter] = useState<string>("all");
+  const [industryFilter, setIndustryFilter] = useState<string>(defaultIndustry || "all");
+  const [toneFilter, setToneFilter] = useState<string>(defaultTone || "all");
+
+  // Pre-select campaign-level industry/tone when the drawer opens — but
+  // only when those values are present in the available list. Otherwise
+  // fall back to "all" so the user always sees something.
+  React.useEffect(() => {
+    if (open && defaultIndustry) setIndustryFilter(defaultIndustry);
+    if (open && defaultTone) setToneFilter(defaultTone);
+  }, [open, defaultIndustry, defaultTone]);
 
   const starterRows = state?.starterRows ?? [];
   const workspaceRows = state?.workspaceRows ?? [];
@@ -48,6 +79,17 @@ export function TemplatesDrawer({ open, state, onClose, onApply, onCreate }: Pro
     const set = new Set<string>();
     for (const t of starterRows) {
       if (isStarterTemplate(t)) set.add((t as StarterTemplate).industry);
+    }
+    return ["all", ...Array.from(set)];
+  }, [starterRows]);
+
+  const tones = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of starterRows) {
+      if (isStarterTemplate(t)) {
+        const tone = (t as StarterTemplate).tone;
+        if (tone) set.add(tone);
+      }
     }
     return ["all", ...Array.from(set)];
   }, [starterRows]);
@@ -63,12 +105,24 @@ export function TemplatesDrawer({ open, state, onClose, onApply, onCreate }: Pro
   const matchesIndustry = (t: OutreachTemplate) => {
     if (industryFilter === "all") return true;
     if (!isStarterTemplate(t)) return industryFilter === "workspace";
-    return (t as StarterTemplate).industry === industryFilter;
+    const ind = (t as StarterTemplate).industry;
+    // "any" templates show in every industry filter — they're universal
+    // by design and shouldn't disappear when the user picks a specific industry.
+    return ind === industryFilter || ind === "any";
+  };
+
+  const matchesTone = (t: OutreachTemplate) => {
+    if (toneFilter === "all") return true;
+    if (!isStarterTemplate(t)) return true; // workspace templates have no tone tag yet
+    const tone = (t as StarterTemplate).tone;
+    if (!tone) return toneFilter === "consultative"; // default unspecified to consultative
+    return tone === toneFilter;
   };
 
   const filteredWorkspace = workspaceRows.filter(matchesQuery);
   const filteredStarters = starterRows
     .filter(matchesIndustry)
+    .filter(matchesTone)
     .filter(matchesQuery);
 
   if (!open) return null;
@@ -131,6 +185,12 @@ export function TemplatesDrawer({ open, state, onClose, onApply, onCreate }: Pro
 
         {industries.length > 1 ? (
           <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-slate-100 px-4 py-2">
+            <span
+              className="mr-1 text-[9.5px] font-bold uppercase tracking-wider text-slate-400"
+              style={{ fontFamily: fontDisplay }}
+            >
+              Industry
+            </span>
             {industries.map((ind) => {
               const active = industryFilter === ind;
               return (
@@ -147,6 +207,36 @@ export function TemplatesDrawer({ open, state, onClose, onApply, onCreate }: Pro
                   }}
                 >
                   {ind === "all" ? "All" : INDUSTRY_LABEL[ind] ?? ind}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {tones.length > 1 ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-slate-100 px-4 py-2">
+            <span
+              className="mr-1 text-[9.5px] font-bold uppercase tracking-wider text-slate-400"
+              style={{ fontFamily: fontDisplay }}
+            >
+              Tone
+            </span>
+            {tones.map((tn) => {
+              const active = toneFilter === tn;
+              return (
+                <button
+                  key={tn}
+                  type="button"
+                  onClick={() => setToneFilter(tn)}
+                  className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition"
+                  style={{
+                    background: active ? "#3B82F6" : "#F1F5F9",
+                    color: active ? "#fff" : "#475569",
+                    border: `1px solid ${active ? "#3B82F6" : "#E2E8F0"}`,
+                    fontFamily: fontDisplay,
+                  }}
+                >
+                  {tn === "all" ? "All tones" : TONE_LABEL[tn] ?? tn}
                 </button>
               );
             })}
