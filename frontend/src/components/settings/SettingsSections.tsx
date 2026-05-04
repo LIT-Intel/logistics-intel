@@ -30,7 +30,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { PLAN_LIMITS, normalizePlan as normalizePlanCode } from "@/lib/planLimits";
-import { listEmailAccounts, startGmailOAuth, startOutlookOAuth, sendTestEmail } from "@/lib/api";
+import { listEmailAccounts, startGmailOAuth, startOutlookOAuth, sendTestEmail, disconnectEmailAccount } from "@/lib/api";
 import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
 import type { LitEmailAccountRow } from "@/types/lit-outbound";
 import { useAuth } from "@/auth/AuthProvider";
@@ -1312,25 +1312,39 @@ function IntegrationCard({
   description,
   connected,
   account,
+  accountId,
   cardState,
   onConnect,
   connecting,
   localSetupRequired,
   connectError,
   onRefresh,
+  onDisconnect,
 }: {
   name: string;
   category: string;
   description: string;
   connected: boolean;
   account?: string | null;
+  accountId?: string | null;
   cardState: ProviderCardState;
   onConnect: () => void;
   connecting: boolean;
   localSetupRequired: boolean;
   connectError: string | null;
   onRefresh: () => void;
+  onDisconnect?: (id: string) => Promise<void> | void;
 }) {
+  const [disconnecting, setDisconnecting] = useState(false);
+  async function handleDisconnect() {
+    if (!onDisconnect || !accountId || disconnecting) return;
+    setDisconnecting(true);
+    try {
+      await onDisconnect(accountId);
+    } finally {
+      setDisconnecting(false);
+    }
+  }
   return (
     <div style={{
       background: "#fff",
@@ -1394,11 +1408,15 @@ function IntegrationCard({
       <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
         {connected ? (
           <>
-            <button style={{ ...sBtnGhost, flex: 1, justifyContent: "center" }} onClick={onConnect} disabled={connecting}>
+            <button style={{ ...sBtnGhost, flex: 1, justifyContent: "center" }} onClick={onConnect} disabled={connecting || disconnecting}>
               {connecting ? <><RefreshCw size={12} /> Reconnecting…</> : <><RefreshCw size={12} /> Reconnect</>}
             </button>
-            <button style={{ ...sBtnDanger, flex: 1, justifyContent: "center" }} disabled>
-              Disconnect · setup required
+            <button
+              style={{ ...sBtnDanger, flex: 1, justifyContent: "center", opacity: disconnecting ? 0.6 : 1 }}
+              onClick={handleDisconnect}
+              disabled={disconnecting || connecting || !onDisconnect || !accountId}
+            >
+              {disconnecting ? <><RefreshCw size={12} /> Disconnecting…</> : "Disconnect"}
             </button>
           </>
         ) : localSetupRequired ? (
@@ -1428,10 +1446,12 @@ function GmailCard({
   accounts,
   loadingAccounts,
   onRefresh,
+  onDisconnect,
 }: {
   accounts: LitEmailAccountRow[];
   loadingAccounts: boolean;
   onRefresh: () => void;
+  onDisconnect: (id: string) => Promise<void> | void;
 }) {
   const { orgId } = useAuth();
   const [connecting, setConnecting] = useState(false);
@@ -1462,12 +1482,14 @@ function GmailCard({
       description="Send outbound directly from your Gmail account. LIT never exposes OAuth tokens in the browser."
       connected={cardState === "connected"}
       account={gmailAccount?.email ?? null}
+      accountId={gmailAccount?.id ?? null}
       cardState={cardState}
       onConnect={handleConnect}
       connecting={connecting}
       localSetupRequired={localSetupRequired}
       connectError={connectError}
       onRefresh={onRefresh}
+      onDisconnect={onDisconnect}
     />
   );
 }
@@ -1476,10 +1498,12 @@ function OutlookCard({
   accounts,
   loadingAccounts,
   onRefresh,
+  onDisconnect,
 }: {
   accounts: LitEmailAccountRow[];
   loadingAccounts: boolean;
   onRefresh: () => void;
+  onDisconnect: (id: string) => Promise<void> | void;
 }) {
   const { orgId } = useAuth();
   const [connecting, setConnecting] = useState(false);
@@ -1507,12 +1531,14 @@ function OutlookCard({
       description="Send outbound from your Microsoft 365 / Outlook account. Recommended for freight forwarders and enterprise teams."
       connected={connected}
       account={outlookAccount?.email ?? null}
+      accountId={outlookAccount?.id ?? null}
       cardState={cardState}
       onConnect={handleConnect}
       connecting={connecting}
       localSetupRequired={localSetupRequired}
       connectError={connectError}
       onRefresh={onRefresh}
+      onDisconnect={onDisconnect}
     />
   );
 }
@@ -1645,6 +1671,11 @@ function EmailReadinessPanel({
 }
 
 // ─── EmailAccountsSection ─────────────────────────────────────────────────────
+type OAuthBanner =
+  | { kind: "success"; provider: string; email?: string }
+  | { kind: "error"; provider: string; reason: string }
+  | null;
+
 export function EmailAccountsSection({
   integrations,
   onDisconnect,
@@ -1654,6 +1685,7 @@ export function EmailAccountsSection({
 }) {
   const [accounts, setAccounts] = useState<LitEmailAccountRow[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [banner, setBanner] = useState<OAuthBanner>(null);
   const { primaryEmail, known, loading: inboxLoading, refresh: refreshInbox } = useInboxStatus();
 
   const refreshAccounts = async () => {
@@ -1667,14 +1699,122 @@ export function EmailAccountsSection({
 
   useEffect(() => { void refreshAccounts(); }, []);
 
+  // Read ?email_connect=success|error&provider=...&reason=... that the
+  // Supabase OAuth callback redirects with, surface as a banner, then scrub
+  // the params from the URL so a refresh doesn't re-fire the toast.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("email_connect");
+    if (!status) return;
+    const provider = params.get("provider") || "email";
+    if (status === "success") {
+      setBanner({ kind: "success", provider });
+    } else if (status === "error") {
+      setBanner({ kind: "error", provider, reason: params.get("reason") || "unknown" });
+    }
+    // Scrub
+    params.delete("email_connect");
+    params.delete("provider");
+    params.delete("reason");
+    const search = params.toString();
+    const next = window.location.pathname + (search ? `?${search}` : "") + window.location.hash;
+    window.history.replaceState({}, "", next);
+  }, []);
+
   const handleRefresh = async () => {
     await Promise.all([refreshAccounts(), refreshInbox()]);
+  };
+
+  const handleDisconnect = async (accountId: string) => {
+    if (!accountId) return;
+    if (typeof window !== "undefined" && !window.confirm("Disconnect this mailbox? Active campaigns using it will fail until you reconnect.")) {
+      return;
+    }
+    const res = await disconnectEmailAccount(accountId);
+    if (res.ok) {
+      setBanner({ kind: "success", provider: "disconnect" });
+      await handleRefresh();
+    } else {
+      setBanner({ kind: "error", provider: "disconnect", reason: res.error });
+    }
   };
 
   const noInbox = !loadingAccounts && accounts.filter((a) => a.status === "connected").length === 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* OAuth callback banner — fires once after the Supabase callback
+          redirects back with ?email_connect=success|error. */}
+      {banner && (
+        <div
+          role="status"
+          style={{
+            background: banner.kind === "success"
+              ? "linear-gradient(180deg,#ECFDF5,#F0FDF4)"
+              : "linear-gradient(180deg,#FEF2F2,#FFFBFA)",
+            border: banner.kind === "success" ? "1px solid #BBF7D0" : "1px solid #FECACA",
+            borderRadius: 12,
+            padding: "12px 16px",
+            display: "flex",
+            gap: 12,
+            alignItems: "flex-start",
+          }}
+        >
+          <div style={{
+            width: 28, height: 28, borderRadius: 8,
+            background: banner.kind === "success" ? "#D1FAE5" : "#FEE2E2",
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>
+            {banner.kind === "success"
+              ? <CheckCircle2 size={14} color="#15803d" />
+              : <AlertTriangle size={14} color="#b91c1c" />}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontFamily: "Space Grotesk,sans-serif",
+              fontSize: 13,
+              fontWeight: 700,
+              color: banner.kind === "success" ? "#065f46" : "#7f1d1d",
+            }}>
+              {banner.kind === "success"
+                ? banner.provider === "disconnect"
+                  ? "Mailbox disconnected"
+                  : `${banner.provider === "gmail" ? "Gmail" : banner.provider === "outlook" ? "Outlook" : "Mailbox"} connected`
+                : banner.provider === "disconnect"
+                  ? "Disconnect failed"
+                  : `${banner.provider === "gmail" ? "Gmail" : banner.provider === "outlook" ? "Outlook" : "Mailbox"} connect failed`}
+            </div>
+            {banner.kind === "error" && (
+              <div style={{
+                fontFamily: "JetBrains Mono,monospace",
+                fontSize: 11.5,
+                color: "#991b1b",
+                marginTop: 3,
+                wordBreak: "break-all",
+              }}>
+                {banner.reason}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setBanner(null)}
+            aria-label="Dismiss"
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontSize: 14,
+              color: banner.kind === "success" ? "#065f46" : "#7f1d1d",
+              padding: 4,
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Critical red banner if no inbox connected */}
       {noInbox && (
         <div style={{
@@ -1697,9 +1837,13 @@ export function EmailAccountsSection({
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(420px,1fr))", gap: 14 }}>
-        <GmailCard accounts={accounts} loadingAccounts={loadingAccounts} onRefresh={handleRefresh} />
-        <OutlookCard accounts={accounts} loadingAccounts={loadingAccounts} onRefresh={handleRefresh} />
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,420px),1fr))",
+        gap: 14,
+      }}>
+        <GmailCard accounts={accounts} loadingAccounts={loadingAccounts} onRefresh={handleRefresh} onDisconnect={handleDisconnect} />
+        <OutlookCard accounts={accounts} loadingAccounts={loadingAccounts} onRefresh={handleRefresh} onDisconnect={handleDisconnect} />
       </div>
 
       <EmailReadinessPanel

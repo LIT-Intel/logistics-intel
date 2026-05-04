@@ -5885,6 +5885,45 @@ export async function getPrimaryEmailAccount(): Promise<LitEmailAccountRow | nul
   return (data as LitEmailAccountRow) ?? null;
 }
 
+/**
+ * disconnectEmailAccount — soft-disconnect a Gmail/Outlook mailbox.
+ *
+ * Marks the account as disconnected (preserves audit trail) and drops the
+ * stored OAuth tokens so no further sends can use this account. The user
+ * can reconnect later, which re-runs the OAuth flow and writes fresh
+ * tokens.
+ *
+ * RLS lets the user touch only their own rows.
+ */
+export async function disconnectEmailAccount(
+  accountId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!accountId) return { ok: false, error: "missing_account_id" };
+  try {
+    // Drop tokens first so the row's tokens are revoked even if the
+    // status update later fails for any reason.
+    const { error: tokErr } = await supabase
+      .from("lit_oauth_tokens")
+      .delete()
+      .eq("email_account_id", accountId);
+    if (tokErr) return { ok: false, error: tokErr.message };
+
+    const { error: acctErr } = await supabase
+      .from("lit_email_accounts")
+      .update({
+        status: "disconnected",
+        is_primary: false,
+        error_message: "disconnected by user",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", accountId);
+    if (acctErr) return { ok: false, error: acctErr.message };
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "disconnect_failed" };
+  }
+}
+
 // ---------------- Campaign readiness (computed) ----------------
 
 /**

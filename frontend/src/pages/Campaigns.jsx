@@ -318,7 +318,7 @@ export default function CampaignsPage() {
 
   return (
     <div className="min-h-full bg-[#F8FAFC]">
-      <div className="mx-auto w-full max-w-[1200px] px-3 py-3 md:px-5 md:py-4">
+      <div className="mx-auto w-full max-w-[1500px] px-3 py-3 md:px-5 md:py-4">
         <PageHeader
           onNewCampaign={() => handleNewCampaign(null)}
           onOpenAnalytics={handleOpenAnalytics}
