@@ -72,9 +72,16 @@ export function MobileMenu() {
             className="absolute inset-0 bg-ink-950/60 backdrop-blur-sm"
           />
 
-          {/* Drawer */}
-          <div className="absolute right-0 top-0 flex h-full w-full max-w-[340px] flex-col bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
+          {/* Drawer
+              `height: 100dvh` keeps the drawer stable when iOS Safari's
+              address bar collapses. `min-h-0` on the scroll container is
+              the standard flex-scroll fix — without it the nav links
+              section collapses to 0 height and only header + footer show. */}
+          <div
+            className="absolute right-0 top-0 flex w-full max-w-[340px] flex-col overflow-hidden bg-white shadow-xl"
+            style={{ height: "100dvh", minHeight: "100vh" }}
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-ink-100 px-5 py-4">
               <span className="font-display text-[15px] font-bold tracking-[-0.02em] text-ink-900">
                 Logistic <span className="font-extrabold text-brand-blue-700">Intel</span>
               </span>
@@ -88,7 +95,7 @@ export function MobileMenu() {
               </button>
             </div>
 
-            <nav className="flex-1 overflow-y-auto px-3 py-4">
+            <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
               <ul className="space-y-0.5">
                 {NAV_LINKS.map((l) => (
                   <li key={l.href}>
@@ -104,7 +111,7 @@ export function MobileMenu() {
               </ul>
             </nav>
 
-            <div className="space-y-2 border-t border-ink-100 px-5 py-4">
+            <div className="shrink-0 space-y-2 border-t border-ink-100 px-5 py-4">
               <a
                 href={APP_LOGIN_URL}
                 className="font-display flex h-11 items-center justify-center gap-2 rounded-md border border-ink-100 bg-white text-[14px] font-semibold text-ink-900 transition hover:bg-ink-25"

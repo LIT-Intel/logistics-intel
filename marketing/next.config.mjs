@@ -23,38 +23,17 @@ const nextConfig = {
     serverActions: { allowedOrigins: ["localhost:3001", "logisticintel.com"] },
   },
   async redirects() {
-    // Marketing site at logisticintel.com / www.logisticintel.com forwards
-    // all auth + app routes to the LIT app at app.logisticintel.com.
-    //
-    // The `has` host conditions are CRITICAL: they prevent a redirect loop
-    // when `app.logisticintel.com` falls back to this project (e.g. while
-    // the operator is mid-attaching the subdomain to the app project on
-    // Vercel). Without these conditions, /login on app.logisticintel.com
-    // would 307 to itself indefinitely.
+    // Only forward /app/* deep links off-site. /login and /signup live on
+    // the marketing apex (logisticintel.com/login, /signup) so we don't
+    // intercept them here — the operator wires those paths to the auth
+    // handler at the Vercel/DNS layer (e.g. via a project-level rewrite).
     const APEX_HOSTS = ["logisticintel.com", "www.logisticintel.com"];
-    return [
-      // /app/* → app.logisticintel.com/* (one entry per apex host)
-      ...APEX_HOSTS.map((value) => ({
-        source: "/app/:path*",
-        destination: "https://app.logisticintel.com/:path*",
-        permanent: false,
-        has: [{ type: "host", value }],
-      })),
-      // /login → app.logisticintel.com/login
-      ...APEX_HOSTS.map((value) => ({
-        source: "/login",
-        destination: "https://app.logisticintel.com/login",
-        permanent: false,
-        has: [{ type: "host", value }],
-      })),
-      // /signup → app.logisticintel.com/signup
-      ...APEX_HOSTS.map((value) => ({
-        source: "/signup",
-        destination: "https://app.logisticintel.com/signup",
-        permanent: false,
-        has: [{ type: "host", value }],
-      })),
-    ];
+    return APEX_HOSTS.map((value) => ({
+      source: "/app/:path*",
+      destination: "https://app.logisticintel.com/:path*",
+      permanent: false,
+      has: [{ type: "host", value }],
+    }));
   },
   async headers() {
     return [
