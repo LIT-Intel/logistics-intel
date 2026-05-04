@@ -386,6 +386,15 @@ export default function CampaignBuilder() {
       const metricsExtras = {};
       if (selectedPersonaId) metricsExtras.persona_id = selectedPersonaId;
       if (playId) metricsExtras.play_id = playId;
+      // Persist manual recipients on every save so reopening the draft
+      // shows what the user typed in. The queue function reads this on
+      // Launch in addition to whatever's passed in the request body.
+      if (manualEmails.length > 0) {
+        metricsExtras.manual_recipients = manualEmails;
+      } else if (isEditMode && details?.metrics?.manual_recipients) {
+        // Explicitly clear if the user removed them all in this edit session.
+        metricsExtras.manual_recipients = [];
+      }
       // Preserve any pre-existing metrics keys (description, etc.) when editing.
       const mergedMetrics = isEditMode
         ? { ...(details?.metrics ?? {}), ...metricsExtras }
@@ -733,6 +742,8 @@ export default function CampaignBuilder() {
         open={previewOpen}
         steps={steps}
         onClose={() => setPreviewOpen(false)}
+        senderEmail={primaryEmail}
+        senderName={primaryEmail ? primaryEmail.split("@")[0] : null}
       />
 
       <CreateTemplateModal

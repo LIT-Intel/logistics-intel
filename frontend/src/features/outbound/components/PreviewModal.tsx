@@ -11,7 +11,11 @@ import type { BuilderStep } from "../types";
 // (subject lines, lane data, names). Real send-time resolution will swap
 // these for the actual recipient when the dispatcher ships.
 
-const SAMPLE_VARS: Record<string, string> = {
+// Sample values used to render the preview. Recipient-side values stay
+// generic (Linh / NorthBay) because the preview shows what the recipient
+// sees. Sender-side values come in via props from the live campaign so
+// the From line matches the actual mailbox the dispatcher will send from.
+const RECIPIENT_SAMPLE: Record<string, string> = {
   first_name: "Linh",
   last_name: "Pham",
   company_name: "NorthBay Furniture",
@@ -24,7 +28,6 @@ const SAMPLE_VARS: Record<string, string> = {
   tariff_event: "Section 201 update",
   pct: "18%",
   teu_growth: "+22%",
-  sender_name: "Valesco",
 };
 
 function dayLabelFor(steps: BuilderStep[], index: number): number {
@@ -46,13 +49,30 @@ export function PreviewModal({
   open,
   steps,
   onClose,
+  senderEmail,
+  senderName,
 }: {
   open: boolean;
   steps: BuilderStep[];
   onClose: () => void;
+  senderEmail?: string | null;
+  senderName?: string | null;
 }) {
   if (!open) return null;
   const sendable = steps.filter((s) => s.kind !== "wait");
+  // Build the live merge context: recipient sample + actual sender from
+  // the connected mailbox. Falls back to placeholder hints when no inbox
+  // is connected so the preview still renders.
+  const resolvedSenderEmail =
+    senderEmail || "no-inbox-connected@logisticintel.com";
+  const resolvedSenderName =
+    senderName ||
+    (senderEmail ? senderEmail.split("@")[0] : "Your name");
+  const SAMPLE_VARS: Record<string, string> = {
+    ...RECIPIENT_SAMPLE,
+    sender_name: resolvedSenderName,
+    sender_email: resolvedSenderEmail,
+  };
 
   return (
     <>
@@ -74,7 +94,7 @@ export function PreviewModal({
               className="text-[11px] text-slate-500"
               style={{ fontFamily: fontBody }}
             >
-              Sample variables resolved · {SAMPLE_VARS.first_name} at {SAMPLE_VARS.company_name} · {SAMPLE_VARS.top_lane}
+              Sample recipient · {SAMPLE_VARS.first_name} at {SAMPLE_VARS.company_name} · sending from {resolvedSenderEmail}
             </div>
           </div>
           <button
@@ -145,7 +165,7 @@ export function PreviewModal({
                           className="truncate text-[12px] text-slate-700"
                           style={{ fontFamily: fontBody }}
                         >
-                          From: {SAMPLE_VARS.sender_name}@logisticintel.com
+                          From: {resolvedSenderEmail}
                         </span>
                         <span
                           className="ml-auto text-[10px] text-slate-400"

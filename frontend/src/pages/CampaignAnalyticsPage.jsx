@@ -65,19 +65,31 @@ export default function CampaignAnalyticsPage() {
       setLoading(true);
       setError(null);
       try {
-        // RLS scopes by org_id automatically, but we still pass it so the
-        // query plan uses the (org_id, lower(email)) index.
-        const [recRes, campRes] = await Promise.all([
-          supabase
-            .from("lit_campaign_contacts")
-            .select("id,campaign_id,status")
-            .eq("org_id", orgId),
-          supabase
-            .from("lit_campaigns")
-            .select("id,name,status,created_at")
-            .eq("org_id", orgId)
-            .order("created_at", { ascending: false }),
-        ]);
+        // lit_campaigns is keyed by user_id (no org_id column). To show
+        // every campaign in the user's org, fetch the org's member list
+        // and filter by those user_ids.
+        const { data: members, error: membersErr } = await supabase
+          .from("org_members")
+          .select("user_id")
+          .eq("org_id", orgId);
+        if (membersErr) throw membersErr;
+        const orgUserIds = (members ?? [])
+          .map((m) => m.user_id)
+          .filter(Boolean);
+
+        const recPromise = supabase
+          .from("lit_campaign_contacts")
+          .select("id,campaign_id,status")
+          .eq("org_id", orgId);
+        const campPromise = orgUserIds.length
+          ? supabase
+              .from("lit_campaigns")
+              .select("id,name,status,created_at")
+              .in("user_id", orgUserIds)
+              .order("created_at", { ascending: false })
+          : Promise.resolve({ data: [], error: null });
+
+        const [recRes, campRes] = await Promise.all([recPromise, campPromise]);
         if (cancelled) return;
         if (recRes.error) throw recRes.error;
         if (campRes.error) throw campRes.error;
