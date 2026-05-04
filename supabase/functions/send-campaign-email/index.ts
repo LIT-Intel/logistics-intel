@@ -1,4 +1,4 @@
-// send-campaign-email — outbound dispatcher tick (Phase 3).
+// send-campaign-email — outbound dispatcher tick (Phases 3 + 4 + 5).
 //
 // Designed to be invoked on a schedule (pg_cron + pg_net every 60s) or
 // directly via service-role HTTP. NOT JWT-authenticated.
@@ -6,13 +6,16 @@
 // Per tick:
 //   1. SELECTs a small batch of due recipients from lit_campaign_contacts.
 //   2. For each recipient, walks one step of their campaign sequence.
-//   3. Two deliverability gates fire BEFORE the send:
-//        a) Suppression list — skip + log if recipient is suppressed
-//           (org-scoped or platform-global).
-//        b) Per-mailbox daily cap — re-queue for tomorrow UTC if the
-//           sender mailbox has hit its lit_inbox_sender_caps.daily_cap
-//           (default 50 if no row exists). Catches new-mailbox warmup.
-//   4. Hard bounces auto-add the recipient to the org's suppression list.
+//   3. Two deliverability gates fire BEFORE the send (Phase 3):
+//        a) Suppression list — skip + log if recipient is suppressed.
+//        b) Per-mailbox daily cap — re-queue for tomorrow UTC if at cap.
+//   4. URL rewrite for click tracking (Phase 4): every http(s) URL in
+//      the body is replaced with a /functions/v1/redirect-click?l=<slug>
+//      link, and a lit_outreach_links row is inserted per slug.
+//   5. A/B subject pick (Phase 5): when step.subject_b is non-null,
+//      coin-flip per recipient and record { ab_variant: 'A' | 'B' } in
+//      lit_outreach_history.metadata.
+//   6. Hard bounces auto-add the recipient to the org's suppression list.
 //
 // Hard rules:
 //   - Never log tokens.
@@ -25,6 +28,56 @@ import { applyMergeVars, buildMergeContext } from "../_shared/merge-vars.ts";
 
 const BATCH_SIZE = 25;
 const DEFAULT_DAILY_CAP = 50;
+
+/** Generate a short opaque slug for click-tracking URLs. */
+function makeSlug(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  // base32 (Crockford-ish) without padding, 12 chars from 8 bytes is plenty.
+  const ALPHA = "ABCDEFGHJKMNPQRSTVWXYZ23456789"; // ambiguity-stripped
+  let out = "";
+  for (const b of bytes) out += ALPHA[b % ALPHA.length];
+  out += ALPHA[Date.now() % ALPHA.length];
+  out += ALPHA[Math.floor(Math.random() * ALPHA.length)];
+  out += ALPHA[Math.floor(Math.random() * ALPHA.length)];
+  out += ALPHA[Math.floor(Math.random() * ALPHA.length)];
+  return out;
+}
+
+/**
+ * Rewrite http(s) URLs in body text with click-tracking redirect links.
+ * Returns the rewritten body + the link rows to insert.
+ */
+async function rewriteLinks(
+  body: string,
+  redirectBase: string,
+  meta: {
+    org_id: string | null;
+    user_id: string | null;
+    campaign_id: string;
+    campaign_step_id: string;
+    recipient_id: string;
+  },
+): Promise<{ body: string; rows: any[] }> {
+  if (!body) return { body, rows: [] };
+  const rows: any[] = [];
+  const URL_RE = /https?:\/\/[^\s<>"']+/g;
+  const rewritten = body.replace(URL_RE, (orig) => {
+    const slug = makeSlug();
+    rows.push({
+      org_id: meta.org_id,
+      user_id: meta.user_id,
+      campaign_id: meta.campaign_id,
+      campaign_step_id: meta.campaign_step_id,
+      recipient_id: meta.recipient_id,
+      slug,
+      original_url: orig,
+      context: {},
+    });
+    return `${redirectBase}?l=${slug}`;
+  });
+  return { body: rewritten, rows };
+}
 
 const OUTLOOK_SCOPES = [
   "https://graph.microsoft.com/Mail.Send",
@@ -66,9 +119,11 @@ type Step = {
   id: string;
   campaign_id: string;
   step_order: number;
-  channel: string;       // 'email' | 'linkedin_invite' | 'linkedin_message' | 'call' | 'wait' | …
-  step_type: string;     // 'email' | 'wait' | 'task' | …
+  channel: string;
+  step_type: string;
   subject: string | null;
+  /** Optional alternate subject for A/B testing. When set, dispatcher picks A or B per recipient. */
+  subject_b: string | null;
   body: string | null;
   delay_days: number;
   delay_hours: number;
@@ -152,7 +207,7 @@ serve(async (req) => {
       if (!steps) {
         const { data: stepRows, error: stepErr } = await admin
           .from("lit_campaign_steps")
-          .select("id, campaign_id, step_order, channel, step_type, subject, body, delay_days, delay_hours")
+          .select("id, campaign_id, step_order, channel, step_type, subject, subject_b, body, delay_days, delay_hours")
           .eq("campaign_id", r.campaign_id)
           .order("step_order", { ascending: true });
         if (stepErr) {
@@ -330,7 +385,36 @@ serve(async (req) => {
         }
       }
 
-      // 2g. Build merge context + render subject/body.
+      // Pick A/B subject variant. If subject_b is non-null, coin-flip
+      // uniformly. The chosen variant + identifier go into history
+      // metadata so per-variant performance can be reported later.
+      const hasVariant = step.subject_b != null && String(step.subject_b).trim() !== "";
+      const abVariant: "A" | "B" = hasVariant && Math.random() < 0.5 ? "B" : "A";
+      const chosenSubjectRaw = abVariant === "B" ? step.subject_b! : (step.subject ?? "");
+
+      // Rewrite outbound links for click tracking BEFORE merge vars so
+      // the slug substitutions happen outside any user-supplied {{vars}}.
+      const supabaseUrlForLinks = supabaseUrl;
+      const redirectBase = `${supabaseUrlForLinks}/functions/v1/redirect-click`;
+      const { body: trackedBody, rows: linkRows } = await rewriteLinks(
+        step.body ?? "",
+        redirectBase,
+        {
+          org_id: r.org_id,
+          user_id: r.user_id,
+          campaign_id: r.campaign_id,
+          campaign_step_id: step.id,
+          recipient_id: r.id,
+        },
+      );
+      // Insert link rows BEFORE we send so a click during transit can
+      // still resolve. Best-effort; failure here is logged but doesn't
+      // block the send.
+      if (linkRows.length > 0) {
+        const { error: linkErr } = await admin.from("lit_outreach_links").insert(linkRows);
+        if (linkErr) console.warn("[send-campaign-email] link insert warned", linkErr.code, linkErr.message);
+      }
+
       const ctx = buildMergeContext({
         recipient: {
           email: r.email,
@@ -343,8 +427,8 @@ serve(async (req) => {
         company,
         sender: { email: sender.email, display_name: sender.display_name },
       });
-      const subject = applyMergeVars(step.subject ?? "", ctx, { onMissing: "blank" });
-      const body = applyMergeVars(step.body ?? "", ctx, { onMissing: "blank" });
+      const subject = applyMergeVars(chosenSubjectRaw, ctx, { onMissing: "blank" });
+      const body = applyMergeVars(trackedBody, ctx, { onMissing: "blank" });
 
       if (!subject && !body) {
         await fail(admin, r, "empty_template");
@@ -388,6 +472,8 @@ serve(async (req) => {
           recipient_email: r.email,
           recipient_id: r.id,
           step_order: step.step_order,
+          ab_variant: hasVariant ? abVariant : null,
+          tracked_links: linkRows.length,
         },
       });
 

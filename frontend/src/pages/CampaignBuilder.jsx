@@ -117,12 +117,17 @@ function dbStepToBuilder(row) {
     return { ...base, waitDays: Math.max(0, Number(row.delay_days) || 0) };
   }
   if (kind === "email") {
-    return {
+    const out = {
       ...base,
       subject: row.subject || "",
       body: row.body || "",
       delayDays: Math.max(0, Number(row.delay_days) || 0),
     };
+    // A/B variant — present only when explicitly set on the saved row.
+    if (row.subject_b !== undefined && row.subject_b !== null) {
+      out.subject_b = row.subject_b;
+    }
+    return out;
   }
   return {
     ...base,
@@ -162,7 +167,7 @@ function persistPayloadFor(step, order, campaignId) {
     };
   }
   if (step.kind === "email") {
-    return {
+    const payload = {
       campaign_id: campaignId,
       step_order: order,
       channel: "email",
@@ -172,6 +177,13 @@ function persistPayloadFor(step, order, campaignId) {
       delay_days: Math.max(0, Number(step.delayDays) || 0),
       delay_hours: 0,
     };
+    // Only write subject_b when the variant exists. Trimmed empty
+    // string → null so the dispatcher's "subject_b is set?" check
+    // doesn't fire on a variant the user opened then left blank.
+    if (step.subject_b !== undefined) {
+      payload.subject_b = step.subject_b?.trim() || null;
+    }
+    return payload;
   }
   return {
     campaign_id: campaignId,

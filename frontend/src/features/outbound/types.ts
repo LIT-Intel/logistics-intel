@@ -49,6 +49,9 @@ export interface BuilderStep {
   kind: StepKind;
   // email
   subject: string;
+  // Optional alternate subject for A/B testing. When present at send
+  // time, the dispatcher picks A or B uniformly per recipient.
+  subject_b?: string;
   body: string;
   // linkedin / call
   title: string;

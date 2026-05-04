@@ -173,7 +173,22 @@ export function StepInspector({
               </div>
             </Field>
 
-            <Field label="Subject">
+            <Field
+              label={step.subject_b !== undefined ? "Subject A" : "Subject"}
+              right={
+                step.subject_b === undefined ? (
+                  <button
+                    type="button"
+                    onClick={() => onUpdate({ subject_b: "" })}
+                    className="text-[10px] font-semibold text-[#3B82F6]"
+                    style={{ fontFamily: fontDisplay }}
+                    title="Add an alternate subject. Each recipient sees A or B 50/50 at send time."
+                  >
+                    + A/B test variant
+                  </button>
+                ) : null
+              }
+            >
               <input
                 value={step.subject}
                 onChange={(e) => onUpdate({ subject: e.target.value })}
@@ -182,6 +197,37 @@ export function StepInspector({
                 style={{ fontFamily: fontBody }}
               />
             </Field>
+
+            {step.subject_b !== undefined && (
+              <Field
+                label="Subject B"
+                right={
+                  <button
+                    type="button"
+                    onClick={() => onUpdate({ subject_b: undefined })}
+                    className="text-[10px] font-semibold text-rose-500"
+                    style={{ fontFamily: fontDisplay }}
+                    title="Remove the A/B variant — every recipient gets Subject A"
+                  >
+                    Remove variant
+                  </button>
+                }
+              >
+                <input
+                  value={step.subject_b}
+                  onChange={(e) => onUpdate({ subject_b: e.target.value })}
+                  placeholder="Alternate subject (50/50 split per recipient)"
+                  className={inputClass()}
+                  style={{ fontFamily: fontBody }}
+                />
+                <p
+                  className="mt-1 text-[10.5px] text-slate-400"
+                  style={{ fontFamily: fontBody }}
+                >
+                  Dispatcher picks A or B uniformly per recipient. Per-variant open / click / reply rates appear in Analytics once sends accumulate.
+                </p>
+              </Field>
+            )}
 
             <Field label="Body">
               <textarea
@@ -327,18 +373,23 @@ export function StepInspector({
 
 function Field({
   label,
+  right,
   children,
 }: {
   label: string;
+  right?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="mb-3.5">
-      <div
-        className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400"
-        style={{ fontFamily: fontDisplay }}
-      >
-        {label}
+      <div className="mb-1.5 flex items-center justify-between">
+        <div
+          className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400"
+          style={{ fontFamily: fontDisplay }}
+        >
+          {label}
+        </div>
+        {right ? <div className="flex items-center">{right}</div> : null}
       </div>
       {children}
     </div>

@@ -5802,7 +5802,7 @@ export async function listCampaignSteps(
 }
 
 export async function upsertCampaignStep(
-  input: LitCampaignStepInput,
+  input: LitCampaignStepInput & { subject_b?: string | null },
 ): Promise<LitCampaignStepRow> {
   const userId = await getCurrentUserIdOrThrow();
   const payload: Record<string, unknown> = {
@@ -5818,6 +5818,11 @@ export async function upsertCampaignStep(
     delay_hours: input.delay_hours ?? 0,
     metadata: input.metadata ?? {},
   };
+  // A/B variant — only set when caller passes the field. Pass null to
+  // explicitly clear an existing variant.
+  if (Object.prototype.hasOwnProperty.call(input, "subject_b")) {
+    payload.subject_b = input.subject_b ?? null;
+  }
   if (input.id) payload.id = input.id;
 
   const { data, error } = await supabase
