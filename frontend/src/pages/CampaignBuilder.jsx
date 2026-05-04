@@ -14,7 +14,9 @@ import {
   attachCompaniesToCampaign,
   upsertCampaignStep,
   launchCampaign,
+  sendTestEmail,
 } from "@/lib/api";
+import { applyMergeVars, buildMergeContext } from "@/lib/mergeVars";
 
 import { useSavedCompanies } from "@/features/outbound/hooks/useSavedCompanies";
 import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
@@ -235,6 +237,7 @@ export default function CampaignBuilder() {
 
   const [saving, setSaving] = useState(false);
   const [launching, setLaunching] = useState(false);
+  const [testSending, setTestSending] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [toast, setToast] = useState(null);
@@ -481,6 +484,76 @@ export default function CampaignBuilder() {
     trimmedName,
   ]);
 
+  const handleTestSend = useCallback(async () => {
+    if (testSending) return;
+    if (!primaryEmail) {
+      setError("Connect a Gmail or Outlook mailbox in Settings first.");
+      return;
+    }
+    // Send-to defaults to the user's own inbox so the test always lands somewhere
+    // visible. The user can override via prompt in case they want a different
+    // address (different inbox, deliverability test).
+    let toEmail = primaryEmail;
+    if (typeof window !== "undefined") {
+      const entered = window.prompt(
+        "Send test email to which address?",
+        primaryEmail,
+      );
+      if (entered === null) return; // cancelled
+      const trimmed = String(entered).trim();
+      if (!trimmed) return;
+      toEmail = trimmed;
+    }
+
+    // Render the currently-selected step (or the first email step) with
+    // sample variables so the recipient sees a fully-rendered preview.
+    const emailStep =
+      (selectedStep && selectedStep.kind === "email" ? selectedStep : null) ||
+      steps.find((s) => s.kind === "email");
+    const sampleCtx = buildMergeContext({
+      recipient: {
+        email: toEmail,
+        first_name: "Linh",
+        last_name: "Pham",
+        display_name: "Linh Pham",
+        title: "VP Logistics",
+      },
+      company: { name: "NorthBay Furniture", country_code: "VN" },
+      sender: { email: primaryEmail, display_name: primaryEmail.split("@")[0] },
+    });
+    const subject = applyMergeVars(
+      emailStep?.subject || "[TEST] Logistic Intel campaign preview",
+      sampleCtx,
+      { onMissing: "blank" },
+    );
+    const body = applyMergeVars(
+      emailStep?.body ||
+        "This is a test send from your Logistic Intel campaign builder.",
+      sampleCtx,
+      { onMissing: "blank" },
+    );
+
+    setTestSending(true);
+    setError(null);
+    try {
+      const res = await sendTestEmail(toEmail, subject, body);
+      if ("ok" in res && res.ok) {
+        setToast({ message: `Test sent to ${toEmail}`, tone: "success" });
+        window.setTimeout(() => setToast(null), 2500);
+      } else if ("setupRequired" in res) {
+        setError("Test send not deployed yet. Contact support.");
+      } else if ("configError" in res) {
+        setError("Integration service unavailable. Try again in a moment.");
+      } else {
+        setError(`Test send failed — ${(res).error}`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Test send failed");
+    } finally {
+      setTestSending(false);
+    }
+  }, [testSending, primaryEmail, selectedStep, steps]);
+
   const handleLaunch = useCallback(async () => {
     if (!canLaunch || !editId) return;
     if (typeof window !== "undefined" && !window.confirm(
@@ -591,7 +664,10 @@ export default function CampaignBuilder() {
               <span>Build a sequence and save as draft.</span>
             )}
             <span className="text-[#CBD5E1]">·</span>
-            <span>{selectedIds.size} recipient{selectedIds.size === 1 ? "" : "s"}</span>
+            <span>
+              {selectedIds.size} compan{selectedIds.size === 1 ? "y" : "ies"}
+              {manualEmails.length > 0 ? ` · ${manualEmails.length} manual email${manualEmails.length === 1 ? "" : "s"}` : ""}
+            </span>
             <span className="text-[#CBD5E1]">·</span>
             <span>{steps.length} step{steps.length === 1 ? "" : "s"}</span>
             {saveGuidance ? (
@@ -624,13 +700,18 @@ export default function CampaignBuilder() {
           </button>
           <button
             type="button"
-            disabled
-            title="Test send requires the dispatcher edge function. Available once Gmail OAuth ships."
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-400"
+            onClick={handleTestSend}
+            disabled={testSending || !primaryEmail}
+            title={
+              !primaryEmail
+                ? "Connect a Gmail or Outlook mailbox in Settings first."
+                : "Send the currently-selected email step to your inbox with sample variables."
+            }
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
             style={{ fontFamily: fontDisplay }}
           >
             <FlaskConical className="h-2.5 w-2.5" />
-            Test send
+            {testSending ? "Sending…" : "Test send"}
           </button>
           <button
             type="button"

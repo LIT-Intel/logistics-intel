@@ -6380,7 +6380,11 @@ export async function startOutlookOAuth(
  * sendTestEmail — invoke the send-test-email Edge Function.
  * Sends a test email from the user's primary connected mailbox.
  */
-export async function sendTestEmail(toEmail: string): Promise<
+export async function sendTestEmail(
+  toEmail: string,
+  subject?: string,
+  body?: string,
+): Promise<
   | { ok: true; messageId: string | null; provider: string; from: string; to: string }
   | { setupRequired: true }
   | { configError: true }
@@ -6397,7 +6401,7 @@ export async function sendTestEmail(toEmail: string): Promise<
 
   try {
     const { data, error } = await supabase.functions.invoke("send-test-email", {
-      body: { toEmail },
+      body: { toEmail, subject, body },
     });
 
     if (error) {

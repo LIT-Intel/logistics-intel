@@ -91,12 +91,16 @@ export function AudiencePickerDrawer({
   const [manualError, setManualError] = useState<string | null>(null);
   const [enrichedCounts, setEnrichedCounts] = useState<Record<string, number>>({});
 
-  // Sync manual blob with parent state when drawer opens.
+  // Initialize the textarea ONCE per drawer open. Don't re-sync on every
+  // manualEmails change — that clobbered users typing a second email
+  // after Add cleared the input. The chip list below the textarea is
+  // the authoritative view of what's been added.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!open) return;
-    setManualBlob(formatManualBlob(manualEmails));
+    setManualBlob("");
     setManualError(null);
-  }, [open, manualEmails]);
+  }, [open]);
 
   // Pull enriched contact counts for the visible companies in one query
   // when the drawer opens. Counts populate the per-row "N with email"
@@ -158,21 +162,21 @@ export function AudiencePickerDrawer({
   const totalManual = manualEmails.length;
   const totalEmailable = enrichedSelectedCount + totalManual;
 
-  function handleManualBlur() {
-    const parsed = parseManualEmails(manualBlob);
-    onChangeManualEmails(parsed);
-    setManualError(null);
-  }
-
+  // Blur is no longer authoritative — the textarea is staging input only.
+  // Add only happens via the explicit button so the user can paste
+  // multi-line input + revise it before committing.
   function handleAddSingle() {
     const trimmed = manualBlob.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      setManualError("Type or paste at least one email.");
+      return;
+    }
     const parsed = parseManualEmails(trimmed);
     if (parsed.length === 0) {
       setManualError("No valid emails found. Use one per line.");
       return;
     }
-    // Merge with existing.
+    // Merge with existing — Add is additive, never replaces.
     const merged = new Map<string, ManualRecipient>();
     for (const m of [...manualEmails, ...parsed]) merged.set(m.email, m);
     onChangeManualEmails([...merged.values()]);
@@ -394,7 +398,6 @@ export function AudiencePickerDrawer({
               <textarea
                 value={manualBlob}
                 onChange={(e) => setManualBlob(e.target.value)}
-                onBlur={handleManualBlur}
                 placeholder={`bob@acme.com\nalice@globex.com, Alice, Park, Globex Logistics\n"Linh Pham" <linh@northbay.example>`}
                 rows={5}
                 className="w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-[#0F172A] focus:border-[#3B82F6] focus:outline-none focus:ring-2 focus:ring-blue-100"
