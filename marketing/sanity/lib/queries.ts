@@ -71,7 +71,7 @@ export const ALL_INDUSTRY_SLUGS = groq`*[_type == "industry" && defined(slug.cur
 
 export const USE_CASE_QUERY = groq`*[_type == "useCase" && slug.current == $slug][0]{
   ...,
-  "featuredCaseStudy": featuredCaseStudy->{customer, slug, headline, kpis, quote, logo},
+  "featuredCaseStudy": featuredCaseStudy->{customer, slug, headline, kpis, quote, logo, domain},
   "logos": logos[]->{name, domain, logo, url}
 }`;
 

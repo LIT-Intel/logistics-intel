@@ -12,29 +12,30 @@ import { PulseBriefMock } from "@/components/sections/PulseBriefMock";
 import { ContactDiscoveryMock } from "@/components/sections/ContactDiscoveryMock";
 import { SequenceBuilderMock } from "@/components/sections/SequenceBuilderMock";
 import { CustomerLogosRail } from "@/components/sections/CustomerLogosRail";
+import { CustomerStoriesSection } from "@/components/sections/CustomerStoriesSection";
 import { LoomTourPlaceholder } from "@/components/sections/LoomTourPlaceholder";
 import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
 
 export const revalidate = 600; // ISR — refresh every 10 min
 
 const FALLBACK_HERO = {
-  pillText: "New · Pulse is live — natural-language intelligence",
-  headline: "Find the companies, contacts, shipments, and",
-  headlineHighlight: "market signals",
-  headlineSuffix: "your competitors miss.",
+  pillText: "Pulse AI · Freight revenue intelligence",
+  headline: "Turn shipment data into",
+  headlineHighlight: "booked freight.",
+  headlineSuffix: "",
   subhead:
-    "LIT combines company intelligence, trade data, CRM, Pulse search, and outbound execution into one platform built for modern growth teams.",
+    "LIT helps freight forwarders, brokers, and logistics sales teams find active shippers, understand their trade activity, enrich the right contacts, and launch outreach from one connected workspace.",
   kpis: [
-    { value: "124K+", label: "Companies indexed" },
-    { value: "8.2M", label: "Shipment records" },
-    { value: "94 lanes", label: "Tracked live" },
+    { value: "Find", label: "Active shippers" },
+    { value: "Understand", label: "The freight" },
+    { value: "Reach", label: "The right people" },
   ],
 };
 
 export const metadata: Metadata = {
-  title: "Market intelligence & revenue execution, in one platform",
+  title: "LIT | Freight Revenue Intelligence for Logistics Sales Teams",
   description:
-    "Find the companies, contacts, shipments, and market signals your competitors miss. LIT combines company intelligence, trade data, CRM, Pulse search, and outbound execution into one platform.",
+    "Find active shippers, analyze trade activity, enrich decision makers, and launch outreach from one freight revenue intelligence platform built for logistics sales teams.",
 };
 
 export default async function HomePage() {
@@ -46,7 +47,21 @@ export default async function HomePage() {
       <Nav />
       <main>
         <Hero hero={hero} />
-        <CustomerLogosRail />
+        <CustomerLogosRail
+          eyebrow="Built for the revenue teams running freight at companies like"
+          logos={[
+            { domain: "chrobinson.com", name: "C.H. Robinson" },
+            { domain: "rxo.com", name: "RXO" },
+            { domain: "tql.com", name: "TQL" },
+            { domain: "echo.com", name: "Echo Global Logistics" },
+            { domain: "landstar.com", name: "Landstar" },
+            { domain: "kuehne-nagel.com", name: "Kuehne + Nagel" },
+            { domain: "dhl.com", name: "DHL" },
+            { domain: "dsv.com", name: "DSV" },
+            { domain: "expeditors.com", name: "Expeditors" },
+            { domain: "dbschenker.com", name: "DB Schenker" },
+          ]}
+        />
         <LoomTourPlaceholder />
         <PillarsTrustBar />
         <CompanyIntelShowcase />
@@ -54,6 +69,7 @@ export default async function HomePage() {
         <PulseBriefShowcase />
         <ContactDiscoveryShowcase />
         <SequenceBuilderShowcase />
+        <CustomerStoriesSection />
         <ProblemSection />
         <PlatformSection />
         <SignalToPipelineSection />
@@ -97,23 +113,27 @@ function Hero({ hero }: { hero: any }) {
           </div>
           <h1 className="display-xl mt-6">
             {hero.headline}{" "}
-            <span className="grad-text">{hero.headlineHighlight}</span>{" "}
-            {hero.headlineSuffix || "your competitors miss."}
+            <span className="grad-text">{hero.headlineHighlight}</span>
+            {hero.headlineSuffix ? <> {hero.headlineSuffix}</> : null}
           </h1>
           <p className="lead mt-6 max-w-[560px]">{hero.subhead}</p>
-          <div className="mt-8 flex flex-wrap gap-3">
+          <div className="font-body mt-3 max-w-[520px] text-[13.5px] leading-snug text-ink-500">
+            Built for logistics teams that need better prospects, better timing, and better context
+            before the first email goes out.
+          </div>
+          <div className="mt-7 flex flex-wrap gap-3">
             <Link
-              href="/demo"
+              href="https://app.logisticintel.com/signup"
               className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
               style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
             >
-              <Calendar className="h-4 w-4" /> Book a Demo
+              Start Prospecting <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
-              href="/pulse"
+              href="/demo"
               className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white/80 px-6 text-[15px] font-semibold text-ink-900 backdrop-blur transition hover:bg-white"
             >
-              Explore Platform <ArrowRight className="h-4 w-4" />
+              <Calendar className="h-4 w-4" /> Book a Demo
             </Link>
           </div>
           <div className="mt-9 flex flex-wrap items-center gap-7">

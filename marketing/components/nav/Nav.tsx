@@ -22,12 +22,13 @@ export function Nav() {
         </Link>
 
         <div className="hidden items-center gap-1 md:flex">
+          <NavLink href="/products">Platform</NavLink>
           <NavLink href="/pulse">Pulse</NavLink>
+          <NavLink href="/trade-intelligence">Trade Intelligence</NavLink>
           <NavLink href="/use-cases">Solutions</NavLink>
           <NavLink href="/customers">Customers</NavLink>
           <NavLink href="/pricing">Pricing</NavLink>
           <NavLink href="/blog">Resources</NavLink>
-          <NavLink href="/integrations">Integrations</NavLink>
         </div>
 
         <div className="ml-auto flex items-center gap-2.5">

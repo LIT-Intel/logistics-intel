@@ -17,8 +17,8 @@ export const metadata: Metadata = buildMetadata({
   eyebrow: "Use Cases",
 });
 
-const INDEX = groq`*[_type == "useCase"] | order(displayOrder asc, name asc){
-  _id, name, slug, tagline, persona, primaryOutcome
+const INDEX = groq`*[_type == "useCase"] | order(persona asc){
+  _id, slug, persona, headline, headlineHighlight, subhead, kpis
 }`;
 
 export default async function UseCasesPage() {
@@ -55,21 +55,22 @@ export default async function UseCasesPage() {
                   href={`/use-cases/${u.slug?.current}`}
                   className="group flex flex-col rounded-2xl border border-ink-100 bg-white p-7 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg"
                 >
-                  {u.persona && (
-                    <div className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-brand-blue">
-                      For {u.persona}
-                    </div>
-                  )}
-                  <h3 className="display-sm mt-2">{u.name}</h3>
-                  {u.tagline && (
-                    <p className="font-body mt-2 flex-1 text-[14px] leading-relaxed text-ink-500">
-                      {u.tagline}
+                  <div className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-brand-blue">
+                    For {u.persona}
+                  </div>
+                  <h3 className="display-sm mt-2">
+                    {u.headline}{" "}
+                    {u.headlineHighlight && <span className="grad-text">{u.headlineHighlight}</span>}
+                  </h3>
+                  {u.subhead && (
+                    <p className="font-body mt-2 flex-1 text-[14px] leading-relaxed text-ink-500 line-clamp-3">
+                      {u.subhead}
                     </p>
                   )}
-                  {u.primaryOutcome && (
+                  {u.kpis?.[0]?.value && (
                     <div className="font-body mt-4 rounded-lg bg-ink-25 px-3 py-2 text-[12.5px] text-ink-700">
-                      <span className="font-display font-bold uppercase tracking-wider text-ink-500">Outcome:</span>{" "}
-                      {u.primaryOutcome}
+                      <span className="font-display font-bold uppercase tracking-wider text-ink-500">{u.kpis[0].label}:</span>{" "}
+                      <span className="font-mono font-semibold text-brand-blue-700">{u.kpis[0].value}</span>
                     </div>
                   )}
                 </Link>
