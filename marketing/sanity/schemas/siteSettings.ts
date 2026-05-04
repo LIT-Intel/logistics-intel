@@ -205,7 +205,7 @@ export const siteSettings = defineType({
         { name: "primaryLabel", type: "string", initialValue: "Book a demo" },
         { name: "primaryHref", type: "string", initialValue: "/demo" },
         { name: "secondaryLabel", type: "string", initialValue: "Start free" },
-        { name: "secondaryHref", type: "string", initialValue: "https://www.logisticintel.com/login?next=/app/dashboard" },
+        { name: "secondaryHref", type: "string", initialValue: "https://app.logisticintel.com/signup" },
       ],
     }),
   ],
