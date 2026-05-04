@@ -232,6 +232,19 @@ serve(async (req) => {
       throw new Error(`${provider} did not return mailbox email`);
     }
 
+    // Schema notes (verified against information_schema):
+    //   lit_email_accounts unique key = (user_id, provider, email)
+    //   columns send_enabled and disconnected_at do NOT exist — do not write them.
+    //   lit_oauth_tokens.user_id is NOT NULL — must be set on insert.
+    const scopesArr = String(tokenData.scope || "")
+      .split(" ")
+      .filter(Boolean);
+    const scopeStr =
+      tokenData.scope ||
+      (provider === "gmail"
+        ? "https://www.googleapis.com/auth/gmail.send"
+        : "openid email profile offline_access User.Read Mail.Send");
+
     const { data: emailAccount, error: accountError } = await supabase
       .from("lit_email_accounts")
       .upsert(
@@ -243,47 +256,56 @@ serve(async (req) => {
           display_name: profile.display_name,
           provider_account_id: profile.provider_account_id,
           status: "connected",
-          send_enabled: true,
-          scopes: String(tokenData.scope || "")
-            .split(" ")
-            .filter(Boolean),
+          scopes: scopesArr,
           connected_at: new Date().toISOString(),
-          disconnected_at: null,
+          last_connected_at: new Date().toISOString(),
+          error_message: null,
+          metadata: { source: "email-oauth-callback" },
           updated_at: new Date().toISOString(),
         },
         {
-          onConflict: "org_id,provider,email",
+          onConflict: "user_id,provider,email",
         },
       )
       .select("id")
       .single();
 
     if (accountError || !emailAccount) {
-      throw accountError || new Error(`Failed to save connected ${provider} account`);
+      const detail = accountError
+        ? `${accountError.code || "?"}:${accountError.message || ""}`
+        : "no_row_returned";
+      console.error("[email-oauth-callback] lit_email_accounts upsert failed:", detail);
+      throw new Error(`db_write_failed:account:${detail}`);
     }
 
-    await supabase
+    const { error: delErr } = await supabase
       .from("lit_oauth_tokens")
       .delete()
       .eq("email_account_id", emailAccount.id);
+    if (delErr) {
+      console.warn("[email-oauth-callback] token delete warned:", delErr.code, delErr.message);
+      // Non-fatal — insert below will still proceed.
+    }
 
     const { error: tokenError } = await supabase.from("lit_oauth_tokens").insert({
       email_account_id: emailAccount.id,
+      user_id: statePayload.user_id,
+      org_id: statePayload.org_id,
       provider,
       access_token: accessToken,
       refresh_token: refreshToken,
       expires_at: expiresAt,
+      scopes: scopesArr,
       token_type: tokenData.token_type || "Bearer",
-      scope:
-        tokenData.scope ||
-        (provider === "gmail"
-          ? "https://www.googleapis.com/auth/gmail.send"
-          : "openid email profile offline_access User.Read Mail.Send"),
+      scope: scopeStr,
+      raw_json: tokenData,
       updated_at: new Date().toISOString(),
     });
 
     if (tokenError) {
-      throw tokenError;
+      const detail = `${tokenError.code || "?"}:${tokenError.message || ""}`;
+      console.error("[email-oauth-callback] lit_oauth_tokens insert failed:", detail);
+      throw new Error(`db_write_failed:token:${detail}`);
     }
 
     return redirectSuccess(provider);
