@@ -5885,18 +5885,28 @@ export async function getPrimaryEmailAccount(): Promise<LitEmailAccountRow | nul
   return (data as LitEmailAccountRow) ?? null;
 }
 
+export type ManualRecipientInput = {
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  company_name?: string;
+};
+
 /**
  * launchCampaign — invoke the queue-campaign-recipients edge function.
  *
- * Builds the recipient roster from the campaign's attached companies,
- * upserts into lit_campaign_contacts (status='pending', next_send_at=now()),
- * and flips the campaign to status='active'. The dispatcher's next tick
- * picks the recipients up and starts walking the sequence.
+ * Builds the recipient roster from:
+ *   1. enriched contacts attached to the campaign's companies, AND
+ *   2. any manualEmails passed in (typed in the audience picker)
  *
- * Returns the queued/skipped counts so the caller can show a toast.
+ * The function dedupes both sources, upserts into lit_campaign_contacts
+ * (status='pending', next_send_at=now()), persists manualEmails to
+ * lit_campaigns.metrics.manual_recipients so re-launch keeps them, and
+ * flips status='active'. Dispatcher's next tick picks them up.
  */
 export async function launchCampaign(
   campaignId: string,
+  manualEmails: ManualRecipientInput[] = [],
 ): Promise<
   | { ok: true; queued: number; skipped: number }
   | { ok: false; error: string }
@@ -5904,7 +5914,7 @@ export async function launchCampaign(
   if (!campaignId) return { ok: false, error: "missing_campaign_id" };
   try {
     const { data, error } = await supabase.functions.invoke("queue-campaign-recipients", {
-      body: { campaign_id: campaignId },
+      body: { campaign_id: campaignId, manual_emails: manualEmails },
     });
     if (error) return { ok: false, error: error.message || "invoke_failed" };
     if (data?.ok) {

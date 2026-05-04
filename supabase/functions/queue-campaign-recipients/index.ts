@@ -1,10 +1,18 @@
 // queue-campaign-recipients — called when the user clicks Launch on a
-// campaign. Builds the recipient roster from the campaign's attached
-// companies (lit_campaign_companies → lit_contacts) and writes one
-// lit_campaign_contacts row per contact-with-email, status='pending',
-// next_send_at=now() so the dispatcher picks them up on the next tick.
+// campaign. Builds the recipient roster from THREE sources, all merged
+// onto lit_campaign_contacts (campaign_id, email) so duplicates dedupe:
 //
-// Authenticated POST. Body: { campaign_id: uuid }.
+//   1. Enriched contacts from attached companies
+//      (lit_campaign_companies → lit_contacts WHERE email IS NOT NULL)
+//   2. Manual emails passed in the request body (manual_emails)
+//   3. Manual emails persisted on lit_campaigns.metadata.manual_recipients
+//      from a previous edit (so re-launch works without re-entering them)
+//
+// Authenticated POST.
+// Body: {
+//   campaign_id: uuid,
+//   manual_emails?: Array<{ email: string, first_name?: string, last_name?: string, company_name?: string }>
+// }
 // Returns: { ok, queued: number, skipped: number, errors: string[] }
 //
 // Uses service-role for the insert because lit_campaign_contacts RLS
@@ -52,13 +60,17 @@ serve(async (req) => {
   try { body = await req.json(); } catch { return json({ ok: false, error: "invalid_json" }, 400); }
   const campaignId = String(body?.campaign_id || "").trim();
   if (!campaignId) return json({ ok: false, error: "missing_campaign_id" }, 400);
+  const requestManualEmails: Array<any> = Array.isArray(body?.manual_emails)
+    ? body.manual_emails
+    : [];
 
   const admin = createClient(supabaseUrl, serviceKey);
 
   // 1. Verify the campaign belongs to the caller (lit_campaigns.user_id).
+  //    Also pull metadata so we can read previously-saved manual recipients.
   const { data: camp, error: campErr } = await admin
     .from("lit_campaigns")
-    .select("id, user_id, name")
+    .select("id, user_id, name, metrics")
     .eq("id", campaignId)
     .maybeSingle();
   if (campErr || !camp) return json({ ok: false, error: "campaign_not_found" }, 404);
@@ -74,7 +86,8 @@ serve(async (req) => {
     .maybeSingle();
   const orgId = member?.org_id ?? null;
 
-  // 3. Pull attached companies.
+  // 3. Pull attached companies (may be empty if the user is only sending
+  //    to manual emails — that's a valid flow).
   const { data: campCompanies, error: ccErr } = await admin
     .from("lit_campaign_companies")
     .select("company_id")
@@ -82,25 +95,22 @@ serve(async (req) => {
   if (ccErr) return json({ ok: false, error: ccErr.message }, 500);
 
   const companyIds = (campCompanies ?? []).map((c: any) => c.company_id).filter(Boolean);
-  if (companyIds.length === 0) {
-    return json({ ok: true, queued: 0, skipped: 0, errors: [] });
-  }
 
   // 4. Pull contacts for those companies that have an email address.
-  const { data: contacts, error: contactErr } = await admin
-    .from("lit_contacts")
-    .select("id, company_id, email, first_name, last_name, full_name, title, linkedin_url, phone")
-    .in("company_id", companyIds)
-    .not("email", "is", null);
-  if (contactErr) return json({ ok: false, error: contactErr.message }, 500);
-
-  if (!contacts || contacts.length === 0) {
-    return json({ ok: true, queued: 0, skipped: 0, errors: ["no_contacts_with_email"] });
+  let contacts: any[] = [];
+  if (companyIds.length > 0) {
+    const { data: contactRows, error: contactErr } = await admin
+      .from("lit_contacts")
+      .select("id, company_id, email, first_name, last_name, full_name, title, linkedin_url, phone")
+      .in("company_id", companyIds)
+      .not("email", "is", null);
+    if (contactErr) return json({ ok: false, error: contactErr.message }, 500);
+    contacts = contactRows ?? [];
   }
 
-  // 5. Build roster rows.
+  // 5. Build roster rows from enriched contacts.
   const now = new Date().toISOString();
-  const rows = contacts
+  const fromContacts = (contacts ?? [])
     .filter((c: any) => typeof c.email === "string" && c.email.includes("@"))
     .map((c: any) => ({
       org_id: orgId,
@@ -120,6 +130,51 @@ serve(async (req) => {
       merge_vars: {},
     }));
 
+  // 5b. Layer in manual emails (request body + persisted metadata.manual_recipients).
+  //     Persist combined list back to lit_campaigns.metrics so subsequent
+  //     re-launches don't lose them.
+  const persistedManual: Array<any> = Array.isArray((camp as any)?.metrics?.manual_recipients)
+    ? (camp as any).metrics.manual_recipients
+    : [];
+  const manualSet = new Map<string, any>();
+  for (const m of [...persistedManual, ...requestManualEmails]) {
+    if (!m || typeof m !== "object") continue;
+    const email = String(m.email || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) continue;
+    manualSet.set(email, {
+      email,
+      first_name: m.first_name ?? null,
+      last_name: m.last_name ?? null,
+      company_name: m.company_name ?? null,
+    });
+  }
+  const fromManual = [...manualSet.values()].map((m) => ({
+    org_id: orgId,
+    user_id: user.id,
+    campaign_id: campaignId,
+    contact_id: null,
+    company_id: null,
+    email: m.email,
+    first_name: m.first_name,
+    last_name: m.last_name,
+    display_name: [m.first_name, m.last_name].filter(Boolean).join(" ") || null,
+    title: null,
+    linkedin_url: null,
+    phone: null,
+    status: "pending",
+    next_send_at: now,
+    merge_vars: m.company_name ? { company_name: m.company_name } : {},
+  }));
+
+  // De-dupe: contact emails win over manual emails (richer metadata).
+  const seen = new Set<string>();
+  const rows: any[] = [];
+  for (const row of [...fromContacts, ...fromManual]) {
+    if (seen.has(row.email)) continue;
+    seen.add(row.email);
+    rows.push(row);
+  }
+
   if (rows.length === 0) {
     return json({ ok: true, queued: 0, skipped: 0, errors: ["no_valid_emails"] });
   }
@@ -132,16 +187,24 @@ serve(async (req) => {
     .select("id");
   if (insertErr) return json({ ok: false, error: insertErr.message }, 500);
 
-  // 7. Flip campaign to active.
+  // 7. Persist manual recipients onto the campaign so re-launch works
+  //    without resending them in the request body. Flip status to active.
+  const newMetrics = {
+    ...((camp as any)?.metrics ?? {}),
+    manual_recipients: [...manualSet.values()],
+  };
   await admin
     .from("lit_campaigns")
-    .update({ status: "active", updated_at: now })
+    .update({ status: "active", metrics: newMetrics, updated_at: now })
     .eq("id", campaignId);
 
+  const totalSkipped =
+    Math.max(0, (contacts?.length ?? 0) - fromContacts.length) +
+    Math.max(0, requestManualEmails.length - fromManual.length);
   return json({
     ok: true,
     queued: inserted?.length ?? rows.length,
-    skipped: contacts.length - rows.length,
+    skipped: totalSkipped,
     errors: [],
   });
 });

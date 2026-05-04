@@ -205,6 +205,7 @@ export default function CampaignBuilder() {
     () => steps[0]?.localId ?? null,
   );
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [manualEmails, setManualEmails] = useState([]);
   const [selectedPersonaId, setSelectedPersonaId] = useState(null);
   const [hydratedFromEdit, setHydratedFromEdit] = useState(false);
 
@@ -241,6 +242,15 @@ export default function CampaignBuilder() {
     if (typeof metricsPersona === "string" && metricsPersona) {
       setSelectedPersonaId(metricsPersona);
     }
+    // Pull persisted manual recipients (added in a previous Launch). The
+    // edge function persists them on lit_campaigns.metrics.manual_recipients
+    // when Launch runs, so re-launching keeps them.
+    const persistedManual = Array.isArray(details.metrics?.manual_recipients)
+      ? details.metrics.manual_recipients.filter(
+          (m) => m && typeof m === "object" && typeof m.email === "string",
+        )
+      : [];
+    setManualEmails(persistedManual);
     setHydratedFromEdit(true);
   }, [isEditMode, details, hydratedFromEdit]);
 
@@ -262,13 +272,14 @@ export default function CampaignBuilder() {
   const canSave = hasName && hasFilledStep && !saving && (!isEditMode || hydratedFromEdit);
   // Launch becomes available once: campaign is saved (we have an id),
   // a sender mailbox is connected, at least one step is filled in, and
-  // at least one recipient company is attached. The actual queueing
-  // runs through queue-campaign-recipients.
+  // at least one recipient is selected (company OR manual email). The
+  // actual queueing runs through queue-campaign-recipients.
+  const hasRecipients = selectedIds.size > 0 || manualEmails.length > 0;
   const canLaunch =
     Boolean(editId) &&
     Boolean(primaryEmail) &&
     hasFilledStep &&
-    selectedIds.size > 0 &&
+    hasRecipients &&
     !saving;
 
   const saveGuidance = useMemo(() => {
@@ -456,12 +467,11 @@ export default function CampaignBuilder() {
     setError(null);
     setSuccess(null);
     try {
-      const res = await launchCampaign(editId);
+      const res = await launchCampaign(editId, manualEmails);
       if (res.ok) {
         setSuccess(
           `Launched · ${res.queued} recipient${res.queued === 1 ? "" : "s"} queued${res.skipped ? ` (${res.skipped} skipped)` : ""}.`,
         );
-        // Bounce to the analytics page so the user sees the queue light up.
         setTimeout(() => navigate("/app/campaigns/analytics"), 800);
       } else {
         setError(`Launch failed — ${res.error}`);
@@ -471,7 +481,7 @@ export default function CampaignBuilder() {
     } finally {
       setLaunching(false);
     }
-  }, [canLaunch, editId, primaryEmail, navigate]);
+  }, [canLaunch, editId, primaryEmail, manualEmails, navigate]);
 
   // ---- Misc keyboard handler ----
   useEffect(() => {
@@ -621,8 +631,8 @@ export default function CampaignBuilder() {
                   ? "Save the campaign first."
                   : !primaryEmail
                     ? "Connect a Gmail or Outlook mailbox in Settings first."
-                    : selectedIds.size === 0
-                      ? "Add at least one recipient company first."
+                    : !hasRecipients
+                      ? "Add at least one recipient — pick a company with enriched contacts, or type emails into the Manual tab."
                       : "Add at least one filled step first."
             }
             className="inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-[#10B981] to-[#059669] px-3 py-1 text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(16,185,129,0.3)] disabled:cursor-not-allowed disabled:opacity-60"
@@ -702,10 +712,12 @@ export default function CampaignBuilder() {
         loading={companiesLoading}
         companies={companies}
         selectedIds={selectedIds}
+        manualEmails={manualEmails}
         onClose={() => setAudienceOpen(false)}
         onToggle={handleToggleCompany}
         onSelectAll={handleSelectAll}
         onClearAll={handleClearAll}
+        onChangeManualEmails={setManualEmails}
         onOpenCommandCenter={() => navigate("/app/command-center")}
       />
 
