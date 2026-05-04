@@ -1,25 +1,18 @@
-// send-campaign-email — outbound dispatcher tick.
+// send-campaign-email — outbound dispatcher tick (Phase 3).
 //
 // Designed to be invoked on a schedule (pg_cron + pg_net every 60s) or
-// directly via service-role HTTP. NOT JWT-authenticated; the request
-// must carry a valid SUPABASE_SERVICE_ROLE_KEY in the Authorization
-// header (Supabase enforces this when verify_jwt=true; if cron uses
-// the anon key we instead inspect a shared secret in the body).
+// directly via service-role HTTP. NOT JWT-authenticated.
 //
-// Per tick, this function:
-//   1. SELECTs a small batch of due recipients from lit_campaign_contacts:
-//        status IN ('pending','queued') AND next_send_at <= now()
-//   2. For each recipient, walks one step of their campaign sequence:
-//        - email step  → renders {{vars}}, sends via Gmail/Graph,
-//                        writes lit_outreach_history row, advances cursor
-//        - wait step   → just advances cursor + bumps next_send_at
-//        - other       → currently treated as manual; cursor advances
-//                        and a "task" history row is written
-//   3. If there is no next step, marks recipient completed.
-//
-// Token refresh + Gmail/Graph send code is shared in shape with
-// send-test-email — same lit_oauth_tokens row, same refresh dance,
-// same MIME / Graph payload.
+// Per tick:
+//   1. SELECTs a small batch of due recipients from lit_campaign_contacts.
+//   2. For each recipient, walks one step of their campaign sequence.
+//   3. Two deliverability gates fire BEFORE the send:
+//        a) Suppression list — skip + log if recipient is suppressed
+//           (org-scoped or platform-global).
+//        b) Per-mailbox daily cap — re-queue for tomorrow UTC if the
+//           sender mailbox has hit its lit_inbox_sender_caps.daily_cap
+//           (default 50 if no row exists). Catches new-mailbox warmup.
+//   4. Hard bounces auto-add the recipient to the org's suppression list.
 //
 // Hard rules:
 //   - Never log tokens.
@@ -31,6 +24,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { applyMergeVars, buildMergeContext } from "../_shared/merge-vars.ts";
 
 const BATCH_SIZE = 25;
+const DEFAULT_DAILY_CAP = 50;
 
 const OUTLOOK_SCOPES = [
   "https://graph.microsoft.com/Mail.Send",
@@ -109,6 +103,7 @@ serve(async (req) => {
     completed: 0,
     failed: 0,
     skipped: 0,
+    throttled: 0,
   };
 
   // ─── 1. Pull due recipients ──────────────────────────────────────────────
@@ -146,6 +141,8 @@ serve(async (req) => {
   const senderCache = new Map<string, Account | null>();
   // Cache keyed by company_id.
   const companyCache = new Map<string, { name?: string | null; domain?: string | null; website?: string | null; country_code?: string | null } | null>();
+  // Cache keyed by sender email_account_id for the daily-cap gate.
+  const capCache = new Map<string, { sentToday: number; dailyCap: number }>();
 
   // ─── 2. Process each recipient ───────────────────────────────────────────
   for (const r of recipients) {
@@ -214,7 +211,36 @@ serve(async (req) => {
         continue;
       }
 
-      // 2e. Email step. Resolve sender mailbox.
+      // 2e. Email step. Suppression gate first — catches anyone the
+      //     org has marked unsubscribe / bounce / complaint without
+      //     paying for an OAuth token refresh + send roundtrip.
+      const { data: supRows } = await admin
+        .from("lit_email_suppression_list")
+        .select("reason, org_id")
+        .eq("email", r.email)
+        .limit(5);
+      const matchedSup = (supRows ?? []).find(
+        (s: any) => s.org_id === null || s.org_id === r.org_id,
+      );
+      if (matchedSup) {
+        await admin.from("lit_outreach_history").insert({
+          user_id: r.user_id, campaign_id: r.campaign_id, campaign_step_id: step.id,
+          company_id: r.company_id, contact_id: r.contact_id,
+          channel: "email", event_type: "suppressed", status: "skipped",
+          subject: step.subject, provider: null,
+          occurred_at: new Date().toISOString(),
+          metadata: { recipient_email: r.email, reason: matchedSup.reason },
+        });
+        await admin.from("lit_campaign_contacts").update({
+          status: "skipped", next_send_at: null,
+          last_error: `suppressed:${matchedSup.reason}`,
+          updated_at: new Date().toISOString(),
+        }).eq("id", r.id);
+        summary.skipped += 1;
+        continue;
+      }
+
+      // 2f. Resolve sender mailbox.
       const campaignKey = r.campaign_id;
       let sender = senderCache.get(campaignKey);
       if (sender === undefined) {
@@ -256,7 +282,39 @@ serve(async (req) => {
         continue;
       }
 
-      // 2f. Resolve company info for merge context.
+      // 2g. Daily cap gate. If this mailbox has hit the configured (or
+      //     default) per-day quota, re-queue this recipient for next
+      //     UTC midnight and continue to the next batch entry.
+      let cap = capCache.get(sender.id);
+      if (!cap) {
+        const { data: countRow } = await admin.rpc("lit_inbox_sent_count_today", {
+          p_account: sender.id,
+        });
+        const { data: capRow } = await admin
+          .from("lit_inbox_sender_caps")
+          .select("daily_cap")
+          .eq("email_account_id", sender.id)
+          .maybeSingle();
+        cap = {
+          sentToday: Number(countRow ?? 0),
+          dailyCap: capRow?.daily_cap != null ? Number(capRow.daily_cap) : DEFAULT_DAILY_CAP,
+        };
+        capCache.set(sender.id, cap);
+      }
+      if (cap.sentToday >= cap.dailyCap) {
+        const tomorrow = new Date();
+        tomorrow.setUTCHours(24, 0, 0, 0);
+        await admin.from("lit_campaign_contacts").update({
+          status: "queued",
+          next_send_at: tomorrow.toISOString(),
+          last_error: `throttled:${cap.dailyCap}`,
+          updated_at: new Date().toISOString(),
+        }).eq("id", r.id);
+        summary.throttled += 1;
+        continue;
+      }
+
+      // 2h. Resolve company info for merge context.
       let company: { name?: string | null; domain?: string | null; website?: string | null; country_code?: string | null } | null = null;
       if (r.company_id) {
         if (companyCache.has(r.company_id)) {
@@ -335,8 +393,24 @@ serve(async (req) => {
 
       if (sendRes.ok) {
         await advance(admin, r, step, /* sent */ true);
+        cap.sentToday += 1;
         summary.sent += 1;
       } else {
+        // Auto-suppress on hard bounce signals so retries don't waste
+        // the mailbox's reputation. Soft errors (rate-limit, transient)
+        // do NOT auto-suppress — they just mark the recipient failed.
+        const errStr = (sendRes.error || "").toLowerCase();
+        const isHardBounce = /550|invalid|nonexistent|no such user|recipient.*rejected|user.*unknown/i.test(errStr);
+        if (isHardBounce && r.org_id) {
+          await admin.from("lit_email_suppression_list").upsert({
+            org_id: r.org_id,
+            email: r.email,
+            reason: "bounce_hard",
+            source: `dispatcher:${sender.provider}`,
+            context: { error: sendRes.error?.slice(0, 200) },
+            added_by: r.user_id,
+          }, { onConflict: "org_id,email" });
+        }
         await fail(admin, r, sendRes.error || "send_failed");
         summary.failed += 1;
       }
