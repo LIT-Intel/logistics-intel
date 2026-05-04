@@ -189,7 +189,7 @@ export default function PricingPage() {
                 </div>
               </div>
               <Link
-                href=APP_SIGNUP_URL
+                href={APP_SIGNUP_URL}
                 className="font-display inline-flex h-11 items-center gap-2 rounded-xl border border-ink-100 bg-white px-5 text-[14px] font-semibold text-ink-900 hover:bg-ink-25"
               >
                 Start free trial
