@@ -23,7 +23,7 @@
 //   - Hooks declared above the early-return guard (B.13.1 fix)
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Loader2, Sparkles, Users, Workflow, Activity } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, Users, Workflow, Activity, Inbox } from "lucide-react";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import {
   getSavedCompanyDetail,
@@ -267,6 +267,7 @@ const TABS = [
   { id: "contacts", label: "Contacts", Icon: Users },
   { id: "research", label: "Pulse AI", Icon: Sparkles },
   { id: "activity", label: "Activity", Icon: Activity },
+  { id: "inbox", label: "Inbox", Icon: Inbox },
 ];
 
 export default function Company() {
@@ -300,7 +301,7 @@ export default function Company() {
   const [searchParams] = useSearchParams();
   const initialTab = (() => {
     const t = String(searchParams?.get("tab") || "").toLowerCase();
-    return ["supply", "contacts", "research", "activity"].includes(t)
+    return ["supply", "contacts", "research", "activity", "inbox"].includes(t)
       ? t
       : "supply";
   })();
@@ -309,7 +310,7 @@ export default function Company() {
   // action that swaps `?tab=`).
   useEffect(() => {
     const t = String(searchParams?.get("tab") || "").toLowerCase();
-    if (["supply", "contacts", "research", "activity"].includes(t)) {
+    if (["supply", "contacts", "research", "activity", "inbox"].includes(t)) {
       setTab(t);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1323,6 +1324,9 @@ export default function Company() {
           {tab === "activity" && (
             <CDPActivity companyId={companyId} ownerName={ownerName} />
           )}
+          {tab === "inbox" && (
+            <CompanyInboxTab companyId={companyId} navigate={navigate} />
+          )}
         </div>
         {panelOpen && (
           <CDPDetailsPanel
@@ -1373,6 +1377,112 @@ export default function Company() {
         onClose={() => setCampaignModalOpen(false)}
         company={{ company_id: companyId, name: companyName }}
       />
+    </div>
+  );
+}
+
+// ─── CompanyInboxTab ─────────────────────────────────────────────────────────
+// Embedded thread list filtered to this company. Clicking a row opens
+// the full inbox page focused on that thread. Reuses the same threads
+// table populated by the sync-inbox edge function.
+function CompanyInboxTab({ companyId, navigate }) {
+  const [threads, setThreads] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (!companyId) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setErr(null);
+      try {
+        const { supabase } = await import("@/lib/supabase");
+        const { data, error } = await supabase
+          .from("lit_email_threads")
+          .select("id, subject, participants, last_message_at, message_count, unread_count")
+          .eq("company_id", companyId)
+          .order("last_message_at", { ascending: false, nullsFirst: false })
+          .limit(50);
+        if (cancelled) return;
+        if (error) throw error;
+        setThreads(data ?? []);
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "Couldn't load conversations");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [companyId]);
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+        <Inbox className="h-4 w-4 text-blue-600" />
+        <div>
+          <div className="text-[13px] font-bold text-[#0F172A]">Conversations</div>
+          <div className="text-[11px] text-slate-500">
+            Email threads with anyone at this company. Replies stay in the same thread the recipient sees.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate(`/app/inbox?company_id=${encodeURIComponent(companyId || "")}`)}
+          className="ml-auto rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Open full inbox →
+        </button>
+      </div>
+      <div className="max-h-[60vh] overflow-y-auto">
+        {loading ? (
+          <div className="space-y-1 p-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-12 animate-pulse rounded-md bg-slate-100" />
+            ))}
+          </div>
+        ) : err ? (
+          <div className="px-4 py-6 text-[12px] text-rose-700">{err}</div>
+        ) : threads.length === 0 ? (
+          <div className="px-4 py-8 text-center text-[12px] text-slate-500">
+            No email conversations with this company yet.<br />
+            <span className="text-slate-400">
+              Run a campaign or click "Sync mailbox" in the inbox to pull recent threads.
+            </span>
+          </div>
+        ) : (
+          threads.map((t) => {
+            const counterpart = (t.participants || []).find((p) => p && p.email) || {};
+            const isUnread = (t.unread_count || 0) > 0;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => navigate(`/app/inbox?thread=${encodeURIComponent(t.id)}&company_id=${encodeURIComponent(companyId)}`)}
+                className="flex w-full items-start gap-2 border-b border-slate-100 px-4 py-2.5 text-left hover:bg-slate-50"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className={`truncate text-[12.5px] ${isUnread ? "font-bold text-[#0F172A]" : "font-semibold text-slate-700"}`}>
+                      {counterpart.name || counterpart.email || "Unknown"}
+                    </div>
+                    <div className="ml-auto text-[10px] text-slate-400 tabular-nums">
+                      {t.last_message_at ? new Date(t.last_message_at).toLocaleDateString() : "—"}
+                    </div>
+                  </div>
+                  <div className={`truncate text-[11.5px] ${isUnread ? "font-semibold text-[#0F172A]" : "text-slate-500"}`}>
+                    {t.subject || "(no subject)"}
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-slate-400">
+                    {t.message_count} msg{t.message_count === 1 ? "" : "s"}
+                    {isUnread ? <span className="ml-2 inline-flex items-center gap-1 text-blue-600"><span className="h-1.5 w-1.5 rounded-full bg-blue-500" />unread</span> : null}
+                  </div>
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
