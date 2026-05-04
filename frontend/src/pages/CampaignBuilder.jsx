@@ -563,6 +563,18 @@ export default function CampaignBuilder() {
     }
   }, [testSending, primaryEmail, selectedStep, steps]);
 
+  // Auto-save when the audience picker closes IF the campaign has been
+  // saved at least once (editId set). For new campaigns we surface a
+  // sticky banner instead, since auto-create on every change would
+  // pollute the campaigns list with empty drafts.
+  const handleAudiencePickerClose = useCallback(() => {
+    setAudienceOpen(false);
+    if (canSave && editId) {
+      // Fire-and-forget. handleSave already toasts on success/error.
+      Promise.resolve().then(() => handleSave());
+    }
+  }, [canSave, editId]); // handleSave is stable enough; ignore exhaustive-deps
+
   const handleLaunch = useCallback(async () => {
     if (!canLaunch || !editId) return;
     if (typeof window !== "undefined" && !window.confirm(
@@ -853,7 +865,7 @@ export default function CampaignBuilder() {
         companies={companies}
         selectedIds={selectedIds}
         manualEmails={manualEmails}
-        onClose={() => setAudienceOpen(false)}
+        onClose={handleAudiencePickerClose}
         onToggle={handleToggleCompany}
         onSelectAll={handleSelectAll}
         onClearAll={handleClearAll}

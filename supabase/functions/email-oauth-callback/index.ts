@@ -245,28 +245,38 @@ serve(async (req) => {
         ? "https://www.googleapis.com/auth/gmail.send"
         : "openid email profile offline_access User.Read Mail.Send");
 
+    // Auto-promote: if the user has no other primary connected mailbox,
+    // mark this one primary on insert/upsert. Otherwise leave is_primary
+    // alone so we don't clobber an explicit user choice.
+    const { data: existingPrimary } = await supabase
+      .from("lit_email_accounts")
+      .select("id")
+      .eq("user_id", statePayload.user_id)
+      .eq("is_primary", true)
+      .eq("status", "connected")
+      .maybeSingle();
+    const shouldPromote = !existingPrimary;
+
+    const accountPayload: Record<string, unknown> = {
+      org_id: statePayload.org_id,
+      user_id: statePayload.user_id,
+      provider,
+      email: profile.email,
+      display_name: profile.display_name,
+      provider_account_id: profile.provider_account_id,
+      status: "connected",
+      scopes: scopesArr,
+      connected_at: new Date().toISOString(),
+      last_connected_at: new Date().toISOString(),
+      error_message: null,
+      metadata: { source: "email-oauth-callback" },
+      updated_at: new Date().toISOString(),
+    };
+    if (shouldPromote) accountPayload.is_primary = true;
+
     const { data: emailAccount, error: accountError } = await supabase
       .from("lit_email_accounts")
-      .upsert(
-        {
-          org_id: statePayload.org_id,
-          user_id: statePayload.user_id,
-          provider,
-          email: profile.email,
-          display_name: profile.display_name,
-          provider_account_id: profile.provider_account_id,
-          status: "connected",
-          scopes: scopesArr,
-          connected_at: new Date().toISOString(),
-          last_connected_at: new Date().toISOString(),
-          error_message: null,
-          metadata: { source: "email-oauth-callback" },
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "user_id,provider,email",
-        },
-      )
+      .upsert(accountPayload, { onConflict: "user_id,provider,email" })
       .select("id")
       .single();
 
