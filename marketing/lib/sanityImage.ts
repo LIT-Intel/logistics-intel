@@ -15,20 +15,24 @@ export function imgUrl(
 
 /**
  * logo.dev fallback URL — when a Sanity image isn't provided we resolve
- * the logo via logo.dev using the company's domain. Generates a clean
- * vector SVG for most B2B brands.
+ * the logo via logo.dev using the company's domain.
+ *
+ * logo.dev requires a token for ALL requests. Without
+ * NEXT_PUBLIC_LOGO_DEV_KEY this returns null so the caller can fall
+ * back to a monogram tile. The publishable key is safe to expose.
  */
 export function logoDevUrl(domain?: string | null, opts: { size?: number; format?: "svg" | "png" } = {}) {
   if (!domain) return null;
   const key = process.env.NEXT_PUBLIC_LOGO_DEV_KEY;
+  if (!key) return null;
   const size = opts.size || 128;
-  const format = opts.format || "svg";
-  // Strip protocol if present
+  const format = opts.format || "png";
+  // Strip protocol + trailing slash
   const clean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const params = new URLSearchParams({
     size: String(size),
     format,
-    ...(key ? { token: key } : {}),
+    token: key,
   });
   return `https://img.logo.dev/${clean}?${params.toString()}`;
 }

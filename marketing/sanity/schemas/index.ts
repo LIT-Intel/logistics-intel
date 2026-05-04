@@ -24,6 +24,7 @@ import { seoFields } from "./objects/seoFields";
 import { kpi } from "./objects/kpi";
 import { faqItem } from "./objects/faqItem";
 import { contentBlock } from "./objects/contentBlock";
+import { demoRequest } from "./demoRequest";
 
 export const schemaTypes = [
   // singletons
@@ -48,6 +49,8 @@ export const schemaTypes = [
   freeTool,
   // generic
   page,
+  // inbox
+  demoRequest,
   // reusable objects
   seoFields,
   kpi,

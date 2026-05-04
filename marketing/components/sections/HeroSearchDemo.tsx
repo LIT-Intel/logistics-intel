@@ -187,139 +187,157 @@ export function HeroSearchDemo({ className = "" }: { className?: string }) {
           </button>
         </div>
 
-        {/* Pulse Coach reads prompt panel */}
-        <AnimatePresence mode="wait">
-          {(phase === "intent" || phase === "chips" || phase === "results") && (
-            <motion.div
-              key={`coach-${sceneIdx}`}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.35, ease: "easeOut" }}
-              className="mt-3 rounded-xl border border-white/10 px-4 py-3"
-              style={{
-                background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-                boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
-              }}
+        {/*
+          Reserved coach panel slot — ALWAYS rendered, opacity animates.
+          Locks vertical space so the demo never resizes between phases.
+        */}
+        <div className="mt-3 min-h-[78px] sm:min-h-[82px]">
+          <motion.div
+            animate={{
+              opacity: phase === "intent" || phase === "chips" || phase === "results" ? 1 : 0,
+              y: phase === "intent" || phase === "chips" || phase === "results" ? 0 : 8,
+            }}
+            transition={{ duration: 0.32, ease: "easeOut" }}
+            className="h-full rounded-xl border border-white/10 px-4 py-3"
+            style={{
+              background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+              boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
+            }}
+          >
+            <div
+              className="font-display text-[10.5px] font-bold uppercase tracking-[0.12em]"
+              style={{ color: "#00F0FF" }}
             >
-              <div
-                className="font-display text-[10.5px] font-bold uppercase tracking-[0.12em]"
-                style={{ color: "#00F0FF" }}
+              Pulse Coach reads your prompt
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="font-display text-[12px] text-ink-150">Reading as</span>
+              <span
+                className="font-mono inline-flex items-center rounded-md border px-2 py-0.5 text-[10.5px] font-semibold"
+                style={{
+                  color: "#00F0FF",
+                  borderColor: "rgba(0,240,255,0.35)",
+                  background: "rgba(0,240,255,0.08)",
+                }}
               >
-                Pulse Coach reads your prompt
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <span className="font-display text-[12px] text-ink-150">Reading as</span>
-                <span
-                  className="font-mono inline-flex items-center rounded-md border px-2 py-0.5 text-[10.5px] font-semibold"
-                  style={{
-                    color: "#00F0FF",
-                    borderColor: "rgba(0,240,255,0.35)",
-                    background: "rgba(0,240,255,0.08)",
-                  }}
-                >
-                  {scene.intent}
-                </span>
-                <AnimatePresence>
-                  {scene.chips.slice(0, chipsShown).map((c) => (
-                    <motion.span
-                      key={c.label}
-                      initial={{ opacity: 0, scale: 0.7, y: 4 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      transition={{ duration: 0.28, ease: "backOut" }}
-                      className="font-mono inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10.5px] font-semibold"
-                      style={chipStyle(c.tone)}
-                    >
-                      {c.label}
-                    </motion.span>
-                  ))}
-                </AnimatePresence>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Result grid */}
-        <AnimatePresence mode="wait">
-          {phase === "results" && (
-            <motion.div
-              key={`results-${sceneIdx}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              className="mt-3"
-            >
-              <div className="font-display mb-2 flex items-center justify-between">
-                <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-200">
-                  Results · {scene.results.length} of 33 from your database
-                </span>
-                <span className="text-[10.5px] text-ink-200">Live</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {scene.results.map((r, i) => (
-                  <motion.div
-                    key={r.name}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * (PHASE_DURATION.results_stagger / 1000), duration: 0.32 }}
-                    className="rounded-lg border border-dark-3 bg-dark-1 p-2.5 transition-colors hover:border-brand-blue/40"
+                {scene.intent}
+              </span>
+              <AnimatePresence>
+                {scene.chips.slice(0, chipsShown).map((c) => (
+                  <motion.span
+                    key={c.label}
+                    initial={{ opacity: 0, scale: 0.7, y: 4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ duration: 0.28, ease: "backOut" }}
+                    className="font-mono inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10.5px] font-semibold"
+                    style={chipStyle(c.tone)}
                   >
-                    <div className="flex items-center gap-2">
+                    {c.label}
+                  </motion.span>
+                ))}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+        </div>
+
+        {/*
+          Reserved results slot — ALWAYS rendered, opacity animates between
+          skeleton (typing/intent/chips/exit) and results (results phase).
+          Both states use identical 6-card 2/3-col grid so geometry is locked.
+        */}
+        <div className="relative mt-3">
+          <div className="font-display mb-2 flex h-4 items-center justify-between">
+            <motion.span
+              animate={{ opacity: phase === "results" ? 1 : 0 }}
+              transition={{ duration: 0.25 }}
+              className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-200"
+            >
+              Results · {scene.results.length} of 33 from your database
+            </motion.span>
+            <motion.span
+              animate={{ opacity: phase === "results" ? 1 : 0 }}
+              transition={{ duration: 0.25 }}
+              className="text-[10.5px] text-ink-200"
+            >
+              Live
+            </motion.span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {scene.results.map((r, i) => {
+              const isResults = phase === "results";
+              return (
+                <motion.div
+                  key={`${sceneIdx}-${r.name}`}
+                  animate={{
+                    opacity: isResults ? 1 : 0.18,
+                    y: isResults ? 0 : 6,
+                  }}
+                  transition={{
+                    delay: isResults ? i * (PHASE_DURATION.results_stagger / 1000) : 0,
+                    duration: 0.32,
+                  }}
+                  className="rounded-lg border border-dark-3 bg-dark-1 p-2.5 transition-colors hover:border-brand-blue/40"
+                >
+                  <div className="flex items-center gap-2">
+                    {isResults ? (
                       <div
                         className="font-display flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[11px] font-bold text-white"
                         style={{ background: r.tint }}
                       >
                         {r.mono}
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="font-display truncate text-[11.5px] font-semibold text-white">
-                          {r.name}
-                        </div>
-                        <div className="font-mono truncate text-[9.5px] text-ink-200">{r.lane}</div>
-                      </div>
-                      <BookmarkPlus className="hidden h-3.5 w-3.5 shrink-0 text-ink-200 sm:block" />
+                    ) : (
+                      <div className="h-7 w-7 shrink-0 rounded-md bg-dark-2" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      {isResults ? (
+                        <>
+                          <div className="font-display truncate text-[11.5px] font-semibold text-white">
+                            {r.name}
+                          </div>
+                          <div className="font-mono truncate text-[9.5px] text-ink-200">
+                            {r.lane}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="h-2.5 w-3/4 rounded bg-dark-2" />
+                          <div className="mt-1 h-2 w-1/2 rounded bg-dark-2" />
+                        </>
+                      )}
                     </div>
-                    <div className="mt-2 flex items-baseline gap-2">
-                      <span
-                        className="font-mono text-[12.5px] font-semibold"
-                        style={{ color: "#00F0FF" }}
-                      >
-                        {r.teu}
-                      </span>
-                      <span className="font-mono text-[9.5px] text-ink-200">TEU 12m</span>
-                      <span className="font-mono ml-auto text-[9.5px] text-ink-200">{r.ship} ship</span>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Static placeholder height during typing/intent so the card doesn't jump */}
-        {(phase === "typing" || phase === "exit") && (
-          <div className="mt-3 grid grid-cols-2 gap-2 opacity-30 sm:grid-cols-3">
-            {[...Array(6)].map((_, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-dark-3 bg-dark-1 p-2.5"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="h-7 w-7 shrink-0 rounded-md bg-dark-2" />
-                  <div className="min-w-0 flex-1">
-                    <div className="h-2.5 w-3/4 rounded bg-dark-2" />
-                    <div className="mt-1 h-2 w-1/2 rounded bg-dark-2" />
+                    <BookmarkPlus
+                      className={`hidden h-3.5 w-3.5 shrink-0 sm:block ${
+                        isResults ? "text-ink-200" : "text-dark-2"
+                      }`}
+                    />
                   </div>
-                </div>
-                <div className="mt-2 flex items-center gap-2">
-                  <div className="h-2.5 w-12 rounded bg-dark-2" />
-                  <div className="h-2 w-8 rounded bg-dark-2" />
-                </div>
-              </div>
-            ))}
+                  <div className="mt-2 flex items-baseline gap-2">
+                    {isResults ? (
+                      <>
+                        <span
+                          className="font-mono text-[12.5px] font-semibold"
+                          style={{ color: "#00F0FF" }}
+                        >
+                          {r.teu}
+                        </span>
+                        <span className="font-mono text-[9.5px] text-ink-200">TEU 12m</span>
+                        <span className="font-mono ml-auto text-[9.5px] text-ink-200">
+                          {r.ship} ship
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="h-2.5 w-12 rounded bg-dark-2" />
+                        <div className="h-2 w-8 rounded bg-dark-2" />
+                      </>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Subtle bottom-right "Pulse" badge */}

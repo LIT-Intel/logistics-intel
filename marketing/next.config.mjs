@@ -10,6 +10,9 @@ const nextConfig = {
       { protocol: "https", hostname: "cdn.sanity.io" },
       // logo.dev for company logos (mentioned in the strategic plan)
       { protocol: "https", hostname: "img.logo.dev" },
+      // Unsplash for blog hero images until custom photography is shot
+      { protocol: "https", hostname: "images.unsplash.com" },
+      { protocol: "https", hostname: "plus.unsplash.com" },
       // Generic catch-all for content team uploads through CDN
       { protocol: "https", hostname: "**.vercel-storage.com" },
     ],

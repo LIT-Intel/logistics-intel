@@ -35,6 +35,20 @@ export const blogPost = defineType({
       fields: [{ name: "alt", type: "string", validation: (R) => R.required() }],
       group: "content",
     }),
+    defineField({
+      name: "heroImageUrl",
+      title: "Hero image URL (fallback)",
+      type: "url",
+      description:
+        "Optional external URL for the hero image (e.g. Unsplash). Used when no Sanity heroImage is uploaded.",
+      group: "content",
+    }),
+    defineField({
+      name: "heroImageAlt",
+      type: "string",
+      description: "Alt text for the external hero image URL.",
+      group: "content",
+    }),
     defineField({ name: "body", type: "contentBlock", group: "content" }),
     defineField({
       name: "author",

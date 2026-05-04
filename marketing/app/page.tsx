@@ -5,6 +5,8 @@ import { HOMEPAGE_QUERY } from "@/sanity/lib/queries";
 import { Nav } from "@/components/nav/Nav";
 import { Footer } from "@/components/nav/Footer";
 import { ArrowRight, Calendar } from "lucide-react";
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.logisticintel.com";
 import { HeroSearchDemo } from "@/components/sections/HeroSearchDemo";
 import { CompanyIntelMock } from "@/components/sections/CompanyIntelMock";
 import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
@@ -123,7 +125,7 @@ function Hero({ hero }: { hero: any }) {
           </div>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link
-              href="https://app.logisticintel.com/signup"
+              href={`${APP_URL}/signup`}
               className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
               style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
             >

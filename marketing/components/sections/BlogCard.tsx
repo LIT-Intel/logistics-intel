@@ -9,6 +9,8 @@ type Post = {
   slug: { current: string } | string;
   excerpt?: string;
   heroImage?: any;
+  heroImageUrl?: string;
+  heroImageAlt?: string;
   publishedAt?: string;
   author?: { name?: string; avatar?: any } | null;
   categories?: Array<{ title?: string; color?: string } | null> | null;
@@ -24,7 +26,7 @@ function safeFormat(iso?: string) {
 
 export function BlogCard({ post, featured = false }: { post: Post; featured?: boolean }) {
   const slug = slugOf(post.slug);
-  const heroSrc = imgUrl(post.heroImage, { width: featured ? 1280 : 720 });
+  const heroSrc = imgUrl(post.heroImage, { width: featured ? 1280 : 720 }) || post.heroImageUrl || null;
   const date = safeFormat(post.publishedAt);
   const cat = post.categories?.[0];
   return (

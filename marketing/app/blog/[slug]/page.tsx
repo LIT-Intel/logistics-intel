@@ -48,7 +48,8 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
   const post = await sanityClient.fetch<any>(BLOG_POST_QUERY, { slug: params.slug }).catch(() => null);
   if (!post) notFound();
 
-  const heroSrc = imgUrl(post.heroImage, { width: 1600 });
+  const heroSrc = imgUrl(post.heroImage, { width: 1600 }) || post.heroImageUrl || null;
+  const heroAlt = post.heroImage?.alt || post.heroImageAlt || post.title;
   const author = post.author;
   const authorAvatar = imgUrl(author?.avatar, { width: 96 });
 
@@ -132,7 +133,7 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
             <div className="mx-auto max-w-[1100px] overflow-hidden rounded-3xl border border-ink-100 bg-ink-25 shadow-sm">
               <Image
                 src={heroSrc}
-                alt={post.title}
+                alt={heroAlt}
                 width={1600}
                 height={900}
                 className="h-auto w-full object-cover"
