@@ -64,7 +64,7 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
       />
 
       <article>
-        <header className="px-8 pt-6 pb-10">
+        <header className="px-5 pt-6 pb-10 sm:px-8">
           <div className="mx-auto max-w-[760px]">
             {post.categories?.[0]?.title && (
               <div className="lit-pill">
@@ -129,8 +129,8 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
         </header>
 
         {heroSrc && (
-          <div className="px-8 pb-12">
-            <div className="mx-auto max-w-[1100px] overflow-hidden rounded-3xl border border-ink-100 bg-ink-25 shadow-sm">
+          <div className="px-5 pb-12 sm:px-8">
+            <div className="mx-auto max-w-[1100px] overflow-hidden rounded-2xl border border-ink-100 bg-ink-25 shadow-sm sm:rounded-3xl">
               <Image
                 src={heroSrc}
                 alt={heroAlt}

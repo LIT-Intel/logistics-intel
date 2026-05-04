@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowRight, Calendar } from "lucide-react";
 import { PageShell } from "@/components/sections/PageShell";
-import { PageHero } from "@/components/sections/PageHero";
 import { FeatureGrid } from "@/components/sections/FeatureGrid";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { CompanyIntelMock } from "@/components/sections/CompanyIntelMock";
 import { ContactDiscoveryMock } from "@/components/sections/ContactDiscoveryMock";
 import { SequenceBuilderMock } from "@/components/sections/SequenceBuilderMock";
 import { PulseBriefMock } from "@/components/sections/PulseBriefMock";
+import { DashboardMock } from "@/components/sections/DashboardMock";
 import { buildMetadata } from "@/lib/seo";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 
 export const metadata: Metadata = buildMetadata({
   title: "LIT Platform | Trade Intelligence, Contacts, CRM, and Campaigns",
@@ -29,14 +32,43 @@ const FEATURES = [
 export default function ProductsPage() {
   return (
     <PageShell>
-      <PageHero
-        eyebrow="The LIT platform"
-        title="The connected revenue workspace"
-        titleHighlight="for logistics sales."
-        subtitle="LIT brings the core tools your sales team needs into one platform: company discovery, shipment intelligence, contact enrichment, CRM workflows, and outbound campaigns. From search to outreach in one clean workflow."
-        primaryCta={{ label: "Start Prospecting", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
-        secondaryCta={{ label: "Book a Demo", href: "/demo" }}
-      />
+      <section className="relative px-5 pt-[72px] pb-12 sm:px-8">
+        <div className="mx-auto grid max-w-container gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center">
+          <div className="min-w-0">
+            <div className="lit-pill">
+              <span className="dot" />
+              The Logistic Intel platform
+            </div>
+            <h1 className="display-xl mt-5">
+              The connected revenue workspace{" "}
+              <span className="grad-text">for logistics sales.</span>
+            </h1>
+            <p className="lead mt-5 max-w-[560px]">
+              Logistic Intel brings the core tools your sales team needs into one platform: company
+              discovery, shipment intelligence, contact enrichment, CRM workflows, and outbound
+              campaigns. From search to outreach in one clean workflow.
+            </p>
+            <div className="mt-7 flex flex-wrap gap-3">
+              <Link
+                href={APP_SIGNUP_URL}
+                className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
+                style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
+              >
+                Start Prospecting <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link
+                href="/demo"
+                className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white/80 px-6 text-[15px] font-semibold text-ink-900 backdrop-blur transition hover:bg-white"
+              >
+                <Calendar className="h-4 w-4" /> Book a Demo
+              </Link>
+            </div>
+          </div>
+          <div className="relative">
+            <DashboardMock />
+          </div>
+        </div>
+      </section>
 
       <FeatureGrid features={FEATURES} cols={3} />
 
@@ -124,7 +156,7 @@ export default function ProductsPage() {
         eyebrow="One workspace, one workflow"
         title="Stop prospecting from cold lists. Start selling from freight intelligence."
         subtitle="Free trial gives you Pulse search, company profiles, and 10 saved companies. No credit card."
-        primaryCta={{ label: "Start Prospecting", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Start Prospecting", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a Demo", href: "/demo" }}
       />
     </PageShell>

@@ -14,26 +14,24 @@ export function imgUrl(
 }
 
 /**
- * logo.dev fallback URL — when a Sanity image isn't provided we resolve
- * the logo via logo.dev using the company's domain.
+ * logo.dev fallback URL — resolves a company logo by domain.
  *
- * logo.dev requires a token for ALL requests. Without
- * NEXT_PUBLIC_LOGO_DEV_KEY this returns null so the caller can fall
- * back to a monogram tile. The publishable key is safe to expose.
+ * Uses the canonical logo.dev URL format `https://img.logo.dev/{domain}?token={key}`
+ * with no extra params (size + format defaults work on all logo.dev plans).
+ *
+ * Returns null when NEXT_PUBLIC_LOGO_DEV_KEY is unset — LogoImage falls
+ * back to a monogram tile. Publishable keys are client-safe to expose.
  */
 export function logoDevUrl(domain?: string | null, opts: { size?: number; format?: "svg" | "png" } = {}) {
   if (!domain) return null;
   const key = process.env.NEXT_PUBLIC_LOGO_DEV_KEY;
   if (!key) return null;
-  const size = opts.size || 128;
-  const format = opts.format || "png";
-  // Strip protocol + trailing slash
-  const clean = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
-  const params = new URLSearchParams({
-    size: String(size),
-    format,
-    token: key,
-  });
+  // Strip protocol + trailing slash + path
+  const clean = domain.replace(/^https?:\/\//, "").replace(/\/.*/, "").trim();
+  if (!clean) return null;
+  const params = new URLSearchParams({ token: key });
+  if (opts.size) params.set("size", String(opts.size));
+  if (opts.format) params.set("format", opts.format);
   return `https://img.logo.dev/${clean}?${params.toString()}`;
 }
 

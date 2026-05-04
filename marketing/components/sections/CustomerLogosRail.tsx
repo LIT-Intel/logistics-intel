@@ -39,11 +39,11 @@ export function CustomerLogosRail({
         <div className="font-display mb-7 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-200">
           {eyebrow}
         </div>
-        <div className="grid grid-cols-2 items-center justify-items-center gap-x-6 gap-y-6 sm:grid-cols-3 md:grid-cols-5">
+        <div className="grid grid-cols-2 items-center justify-items-center gap-x-6 gap-y-7 sm:grid-cols-3 md:grid-cols-5">
           {list.map((l, i) => {
             const src = l.domain ? logoDevUrl(l.domain, { size: 200 }) : null;
             return (
-              <div key={`${l.name}-${i}`} className="flex h-8 items-center justify-center">
+              <div key={`${l.name}-${i}`} className="flex min-h-[36px] items-center justify-center">
                 <LogoImage src={src} name={l.name} />
               </div>
             );

@@ -3,14 +3,18 @@
 import { useState } from "react";
 
 /**
- * LogoImage — robust image renderer for the customer logos rail.
+ * LogoImage — robust logo renderer for the customer rail.
  *
- * Tries `src` (typically a logo.dev URL). If the image fails to load
- * OR no src is supplied, renders a deterministic colored monogram tile
- * built from the company name. Looks intentional either way.
+ * Tries the supplied src (typically a logo.dev URL). If the image fails
+ * to load OR no src is supplied, renders a deterministic colored
+ * monogram tile built from the company name. Either path looks
+ * intentional and on-brand.
  *
- * Uses native <img> rather than next/image because the rail looks fine
- * unoptimized at 28px height and we want the onError event for fallback.
+ * Native <img> over next/image because:
+ *   1. We want the onError fallback path for failed logo.dev hits.
+ *   2. The rail size is fixed and small — no optimizer benefit.
+ *   3. Avoids Next/Image's strict remotePatterns enforcement during
+ *      flux when keys/configs are mid-rotation.
  */
 const TINTS = [
   "#3b82f6",
@@ -22,6 +26,19 @@ const TINTS = [
   "#0ea5e9",
   "#a855f7",
 ];
+
+function monogramFor(name: string) {
+  const hash = Array.from(name).reduce((a, c) => a + c.charCodeAt(0), 0);
+  const tint = TINTS[hash % TINTS.length];
+  const initials = name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  return { tint, initials };
+}
 
 export function LogoImage({
   src,
@@ -35,26 +52,19 @@ export function LogoImage({
   const [errored, setErrored] = useState(false);
 
   if (!src || errored) {
-    const hash = Array.from(name).reduce((a, c) => a + c.charCodeAt(0), 0);
-    const tint = TINTS[hash % TINTS.length];
-    const initials = name
-      .split(/\s+/)
-      .map((w) => w[0])
-      .filter(Boolean)
-      .slice(0, 2)
-      .join("")
-      .toUpperCase();
+    const { tint, initials } = monogramFor(name);
     return (
-      <div className={`flex items-center gap-2.5 ${className}`}>
-        <div
-          className="font-display flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[11px] font-bold text-white"
+      <div className={`inline-flex items-center gap-2 ${className}`}>
+        <span
+          className="font-display flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[12px] font-bold text-white"
           style={{ background: tint }}
+          aria-hidden
         >
           {initials}
-        </div>
-        <div className="font-display whitespace-nowrap text-[12.5px] font-semibold tracking-[-0.01em] text-ink-700">
+        </span>
+        <span className="font-display whitespace-nowrap text-[12.5px] font-semibold tracking-[-0.01em] text-ink-700">
           {name}
-        </div>
+        </span>
       </div>
     );
   }
@@ -65,7 +75,8 @@ export function LogoImage({
       src={src}
       alt={name}
       onError={() => setErrored(true)}
-      className={`h-7 w-auto max-w-[128px] object-contain ${className}`}
+      className={`block h-9 w-auto max-w-[160px] object-contain ${className}`}
+      loading="lazy"
     />
   );
 }

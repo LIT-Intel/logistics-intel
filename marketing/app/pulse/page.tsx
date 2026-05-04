@@ -1,18 +1,21 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowRight, Calendar } from "lucide-react";
 import { PageShell } from "@/components/sections/PageShell";
-import { PageHero } from "@/components/sections/PageHero";
 import { FeatureGrid } from "@/components/sections/FeatureGrid";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { FaqSection } from "@/components/sections/FaqSection";
-import { PulseSearchBar } from "@/components/sections/PulseSearchBar";
+import { HeroSearchDemo } from "@/components/sections/HeroSearchDemo";
+import { PulseBriefMock } from "@/components/sections/PulseBriefMock";
 import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
 import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
 import { buildMetadata } from "@/lib/seo";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Pulse — natural-language market intelligence",
+  title: "Pulse AI | Freight Prospecting and Account Intelligence",
   description:
-    "Pulse is the natural-language search and signal layer that powers LIT. Ask in plain English, get a live answer from 124K+ shippers, 8.2M shipments, and the lanes you care about.",
+    "Use Pulse AI to search companies, contacts, trade lanes, industries, and locations. Turn freight data into account briefs, lead lists, and campaign angles.",
   path: "/pulse",
   eyebrow: "Pulse",
 });
@@ -22,7 +25,7 @@ const FEATURES = [
     icon: "Search",
     tag: "Search",
     title: "Ask in plain English",
-    body: "\"Furniture importers shipping from Vietnam in the last 90 days\" — Pulse parses intent, applies filters, and returns ranked results.",
+    body: "\"Furniture importers shipping from Vietnam in the last 90 days\" — Pulse parses intent, applies filters, and returns ranked results across companies + lanes + contacts.",
   },
   {
     icon: "Compass",
@@ -56,6 +59,14 @@ const FEATURES = [
   },
 ];
 
+const SEARCH_EXAMPLES = [
+  "Find furniture importers shipping from Vietnam to the United States.",
+  "Show me retail companies with recent ocean import activity.",
+  "Find companies similar to Old Navy with high import volume.",
+  "Show me supply chain leaders at consumer goods companies in Georgia.",
+  "Which companies are importing through Savannah with growing volume?",
+];
+
 const FAQS = [
   {
     question: "How is Pulse different from a normal search bar?",
@@ -68,9 +79,14 @@ const FAQS = [
       "Pulse can pull from your saved companies and CRM activity if you've connected one — and it never shares that across tenants. Public trade data and our company graph are shared infrastructure; your CRM is yours alone.",
   },
   {
+    question: "Local-first or external-first search?",
+    answer:
+      "Local-first. Pulse searches your owned company directory before expanding into external intelligence. That means faster results, lower enrichment cost, and less wasted usage.",
+  },
+  {
     question: "What model powers Pulse Coach?",
     answer:
-      "We orchestrate Anthropic Claude for reasoning + tool use. Embeddings for retrieval. Classification heuristics first, LLM augmentation when confidence is low — keeps latency snappy and costs predictable.",
+      "We orchestrate Anthropic Claude for reasoning + tool use, with embeddings for retrieval. Classification heuristics run first, LLM augmentation only when confidence is low — keeps latency snappy and costs predictable.",
   },
   {
     question: "Can I use Pulse via API?",
@@ -82,60 +98,146 @@ const FAQS = [
 export default function PulsePage() {
   return (
     <PageShell>
-      <PageHero
-        eyebrow="Pulse · Natural-language intelligence"
-        title="Ask the market"
-        titleHighlight="anything."
-        titleSuffix="Get an answer that's actionable."
-        subtitle="Pulse is the conversational layer over LIT's company graph, trade signals, and your own CRM. It's not search — it's a teammate who already read everything."
-        primaryCta={{ label: "Try Pulse free", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
-        secondaryCta={{ label: "Watch a 90s tour", href: "/demo" }}
-      />
+      <section className="relative px-5 pt-[72px] pb-12 sm:px-8">
+        <div className="mx-auto grid max-w-container gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center">
+          <div className="min-w-0">
+            <div className="lit-pill">
+              <span className="dot" />
+              Pulse AI · Freight prospecting + account intelligence
+            </div>
+            <h1 className="display-xl mt-5">
+              Ask better questions.{" "}
+              <span className="grad-text">Find better freight opportunities.</span>
+            </h1>
+            <p className="lead mt-5 max-w-[560px]">
+              Pulse is the intelligence layer inside Logistic Intel. Ask in plain English and get
+              useful answers across companies, contacts, trade lanes, industries, and locations —
+              with reasoning chips that show how it interpreted your prompt.
+            </p>
+            <div className="mt-7 flex flex-wrap gap-3">
+              <Link
+                href={APP_SIGNUP_URL}
+                className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
+                style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
+              >
+                Try Pulse free <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link
+                href="/demo"
+                className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white/80 px-6 text-[15px] font-semibold text-ink-900 backdrop-blur transition hover:bg-white"
+              >
+                <Calendar className="h-4 w-4" /> Book a Demo
+              </Link>
+            </div>
 
-      <section className="px-8 pb-12">
+            <div className="mt-9">
+              <div className="font-display mb-2 text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-200">
+                Try asking Pulse
+              </div>
+              <ul className="space-y-1.5">
+                {SEARCH_EXAMPLES.slice(0, 3).map((q) => (
+                  <li
+                    key={q}
+                    className="font-body rounded-lg border border-ink-100 bg-white px-3 py-2 text-[13px] leading-snug text-ink-700"
+                  >
+                    "{q}"
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <div className="relative">
+            <HeroSearchDemo />
+          </div>
+        </div>
+      </section>
+
+      <section className="px-5 py-16 sm:px-8">
         <div className="mx-auto max-w-container">
-          <div
-            className="relative overflow-hidden rounded-3xl border border-white/10 p-2"
-            style={{
-              background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-              boxShadow: "0 30px 80px -20px rgba(15,23,42,0.5)",
-            }}
-          >
-            <div className="grid gap-6 rounded-2xl bg-dark-0 p-6 md:grid-cols-[1fr_280px]">
-              <div className="flex flex-col gap-4">
-                <PulseSearchBar />
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    "23 companies match",
-                    "8 had volume +25% MoM",
-                    "5 use Yusen, 3 use OOCL, 15 mixed",
-                    "Top contact pattern: Logistics Mgr",
-                  ].map((chip) => (
-                    <span
-                      key={chip}
-                      className="font-mono rounded-full border border-dark-3 bg-dark-1 px-3 py-1 text-[11px] text-ink-150"
-                    >
-                      {chip}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div className="hidden md:block">
-                <MarketingGlobe />
-              </div>
+          <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+            <div className="lg:order-1">
+              <PulseBriefMock />
+            </div>
+            <div className="lg:order-2">
+              <div className="eyebrow">Pulse Brief</div>
+              <h2 className="display-lg mt-3">
+                One click, one <span className="grad-text">full account brief.</span>
+              </h2>
+              <p className="lead mt-5 max-w-[480px]">
+                Pulse generates an executive account brief on demand: trade snapshot, opportunity
+                signals across buying / forwarder / carrier / supplier categories, risk flags, and
+                ready-to-send outreach hooks. Cited sources, refreshed weekly.
+              </p>
+              <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+                <li className="flex items-start gap-2.5">
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                  <span>Build account lists from any natural-language prompt.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                  <span>Surface sales angles tied to actual shipment patterns.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                  <span>Connect any saved company directly into outbound sequences.</span>
+                </li>
+              </ul>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="px-8 py-16">
+      <section className="px-5 py-16 sm:px-8">
         <div className="mx-auto max-w-container">
-          <div className="mx-auto max-w-[760px] text-center">
-            <div className="eyebrow">From signal to pipeline</div>
-            <h2 className="display-lg mt-3">Watch one query turn into one campaign.</h2>
-          </div>
-          <div className="mt-12">
-            <WorkflowMotion />
+          <div
+            className="relative overflow-hidden rounded-3xl border border-white/10 px-6 py-8 sm:px-10 sm:py-12"
+            style={{
+              background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+              boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18), 0 30px 80px -20px rgba(15,23,42,0.5)",
+            }}
+          >
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -top-20 -right-16 h-72 w-72 rounded-full opacity-50"
+              style={{ background: "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)" }}
+            />
+            <div className="relative grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+              <div>
+                <div
+                  className="font-display text-[11px] font-bold uppercase tracking-[0.12em]"
+                  style={{ color: "#00F0FF" }}
+                >
+                  Trade lane intelligence
+                </div>
+                <h2 className="font-display mt-3 text-[28px] font-semibold leading-tight tracking-[-0.015em] text-white">
+                  Live trade lanes. Real shipper data. One Pulse query away.
+                </h2>
+                <p className="font-body mt-3 max-w-[480px] text-[14.5px] leading-relaxed text-ink-150">
+                  500+ tracked origin × destination pairs, refreshed daily. Top 25 shippers per
+                  lane. Carrier mix, monthly volume, YoY change — Pulse lets you slice by industry,
+                  HS code, or location and seed an outbound sequence in the same query.
+                </p>
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <Link
+                    href="/lanes"
+                    className="font-display inline-flex h-11 items-center gap-1.5 rounded-md bg-white/10 px-4 text-[13px] font-semibold text-white backdrop-blur hover:bg-white/15"
+                  >
+                    Browse trade lanes →
+                  </Link>
+                  <Link
+                    href={APP_SIGNUP_URL}
+                    className="font-display inline-flex h-11 items-center gap-1.5 rounded-md px-4 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.45)]"
+                    style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
+                  >
+                    Try Pulse free
+                  </Link>
+                </div>
+              </div>
+              <div className="mx-auto" style={{ maxWidth: 460 }}>
+                <MarketingGlobe size={460} />
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -147,13 +249,45 @@ export default function PulsePage() {
         cols={3}
       />
 
+      <section className="px-5 py-16 sm:px-8">
+        <div className="mx-auto max-w-container">
+          <div className="mx-auto max-w-[780px] text-center">
+            <div className="eyebrow">From signal to pipeline</div>
+            <h2 className="display-lg mt-3">Watch one query turn into one campaign.</h2>
+            <p className="lead mx-auto mt-3 max-w-[640px]">
+              Pulse query → Coach reasoning → triggered actions → drafted outreach → live replies.
+              Five steps that used to be five tools.
+            </p>
+          </div>
+          <div className="mt-12">
+            <WorkflowMotion />
+          </div>
+        </div>
+      </section>
+
       <FaqSection faqs={FAQS} />
+
       <CtaBanner
         eyebrow="Try Pulse"
         title="Skip the boolean. Ask a question."
         subtitle="Free trial gives you Pulse search, Coach, and 10 saved companies. No credit card."
-        primaryCta={{ label: "Start free", href: "https://app.logisticintel.com/signup", icon: "arrow" }}
+        primaryCta={{ label: "Start free", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
+      />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            mainEntity: FAQS.map((f) => ({
+              "@type": "Question",
+              name: f.question,
+              acceptedAnswer: { "@type": "Answer", text: f.answer },
+            })),
+          }),
+        }}
       />
     </PageShell>
   );

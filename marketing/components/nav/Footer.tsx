@@ -60,10 +60,13 @@ export function Footer() {
           <div>
             <div className="flex items-center gap-2.5">
               <LitLogoMark size={28} />
-              <span className="font-display text-[18px] font-extrabold tracking-[-0.02em] text-white">LIT</span>
+              <span className="font-display text-[18px] font-bold tracking-[-0.02em] text-white">
+                Logistic <span className="font-extrabold" style={{ color: "#00F0FF" }}>Intel</span>
+              </span>
             </div>
             <p className="font-body mt-4 max-w-[280px] text-[13.5px] leading-relaxed text-ink-200">
-              The market intelligence and execution platform for modern revenue teams.
+              Freight revenue intelligence for forwarders, brokers, and logistics sales teams. The
+              LIT app powers the daily prospecting and outreach workflow.
             </p>
           </div>
           {FOOTER_COLS.map((col) => (

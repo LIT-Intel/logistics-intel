@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { LitLogoMark } from "../seo/LitLogoMark";
-
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.logisticintel.com";
+import { APP_LOGIN_URL } from "@/lib/app-urls";
 
 /**
  * Marketing-site top navigation. Server component — content is static
@@ -16,9 +15,15 @@ export function Nav() {
       style={{ background: "rgba(251,252,254,0.78)" }}
     >
       <div className="mx-auto flex h-[68px] max-w-container items-center gap-10 px-8">
-        <Link href="/" className="flex items-center gap-2.5 text-ink-900">
+        <Link
+          href="/"
+          aria-label="Logistic Intel home"
+          className="flex shrink-0 items-center gap-2.5 text-ink-900"
+        >
           <LitLogoMark size={30} alive />
-          <span className="font-display text-[18px] font-extrabold tracking-[-0.02em]">LIT</span>
+          <span className="font-display text-[17px] font-bold tracking-[-0.02em] sm:text-[18px]">
+            Logistic <span className="font-extrabold text-brand-blue-700">Intel</span>
+          </span>
         </Link>
 
         <div className="hidden items-center gap-1 md:flex">
@@ -33,7 +38,7 @@ export function Nav() {
 
         <div className="ml-auto flex items-center gap-2.5">
           <a
-            href={`${APP_URL}/login`}
+            href={APP_LOGIN_URL}
             className="font-display hidden h-9 items-center gap-1.5 rounded-md border border-ink-100 bg-white/70 px-3 text-[13px] font-semibold text-ink-700 backdrop-blur transition hover:bg-white sm:inline-flex"
           >
             Sign in
