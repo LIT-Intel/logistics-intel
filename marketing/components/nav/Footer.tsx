@@ -5,11 +5,13 @@ const FOOTER_COLS: Array<{ heading: string; links: { label: string; href: string
   {
     heading: "Platform",
     links: [
-      { label: "Pulse", href: "/pulse" },
-      { label: "Company Search", href: "/use-cases" },
-      { label: "Command Center", href: "/use-cases" },
-      { label: "Outbound Engine", href: "/use-cases" },
-      { label: "Trade Lane Intel", href: "/lanes" },
+      { label: "Platform overview", href: "/products" },
+      { label: "Pulse AI", href: "/pulse" },
+      { label: "Company Intelligence", href: "/company-intelligence" },
+      { label: "Contact Intelligence", href: "/contact-intelligence" },
+      { label: "Command Center (CRM)", href: "/command-center" },
+      { label: "Outbound Engine", href: "/outbound-engine" },
+      { label: "Trade Intelligence", href: "/trade-intelligence" },
       { label: "Free tools", href: "/tools" },
     ],
   },

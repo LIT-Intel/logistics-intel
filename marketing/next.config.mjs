@@ -25,24 +25,35 @@ const nextConfig = {
   async redirects() {
     // Marketing site at logisticintel.com / www.logisticintel.com forwards
     // all auth + app routes to the LIT app at app.logisticintel.com.
-    // Without these redirects, visiting /login or /signup on the marketing
-    // surface 404s (the marketing project doesn't render those routes).
+    //
+    // The `has` host conditions are CRITICAL: they prevent a redirect loop
+    // when `app.logisticintel.com` falls back to this project (e.g. while
+    // the operator is mid-attaching the subdomain to the app project on
+    // Vercel). Without these conditions, /login on app.logisticintel.com
+    // would 307 to itself indefinitely.
+    const APEX_HOSTS = ["logisticintel.com", "www.logisticintel.com"];
     return [
-      {
+      // /app/* → app.logisticintel.com/* (one entry per apex host)
+      ...APEX_HOSTS.map((value) => ({
         source: "/app/:path*",
         destination: "https://app.logisticintel.com/:path*",
         permanent: false,
-      },
-      {
+        has: [{ type: "host" as const, value }],
+      })),
+      // /login → app.logisticintel.com/login
+      ...APEX_HOSTS.map((value) => ({
         source: "/login",
         destination: "https://app.logisticintel.com/login",
         permanent: false,
-      },
-      {
+        has: [{ type: "host" as const, value }],
+      })),
+      // /signup → app.logisticintel.com/signup
+      ...APEX_HOSTS.map((value) => ({
         source: "/signup",
         destination: "https://app.logisticintel.com/signup",
         permanent: false,
-      },
+        has: [{ type: "host" as const, value }],
+      })),
     ];
   },
   async headers() {

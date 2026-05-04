@@ -6,8 +6,12 @@ import { Menu, X, ArrowRight, Calendar } from "lucide-react";
 import { APP_LOGIN_URL } from "@/lib/app-urls";
 
 const NAV_LINKS = [
-  { label: "Platform", href: "/products" },
-  { label: "Pulse", href: "/pulse" },
+  { label: "Platform overview", href: "/products" },
+  { label: "Pulse AI", href: "/pulse" },
+  { label: "Company Intelligence", href: "/company-intelligence" },
+  { label: "Contact Intelligence", href: "/contact-intelligence" },
+  { label: "Command Center (CRM)", href: "/command-center" },
+  { label: "Outbound Engine", href: "/outbound-engine" },
   { label: "Trade Intelligence", href: "/trade-intelligence" },
   { label: "Solutions", href: "/use-cases" },
   { label: "Customers", href: "/customers" },
