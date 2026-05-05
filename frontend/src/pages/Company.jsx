@@ -1390,8 +1390,22 @@ function CompanyInboxTab({ companyId, navigate }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
 
+  // lit_email_threads.company_id is a UUID column — when the route id is
+  // a slug like "company/foo" we'd otherwise crash with
+  // "invalid input syntax for type uuid". Skip the query in that case.
+  const isUuid =
+    typeof companyId === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      companyId,
+    );
+
   useEffect(() => {
-    if (!companyId) return;
+    if (!companyId || !isUuid) {
+      setLoading(false);
+      setThreads([]);
+      setErr(null);
+      return;
+    }
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -1414,7 +1428,7 @@ function CompanyInboxTab({ companyId, navigate }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [companyId]);
+  }, [companyId, isUuid]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">

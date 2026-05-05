@@ -484,12 +484,15 @@ export default function CampaignBuilder() {
   }, [
     canSave,
     details,
+    industry,
     isEditMode,
+    manualEmails,
     navigate,
     playId,
     selectedIds,
     selectedPersonaId,
     steps,
+    tone,
     trimmedName,
   ]);
 
@@ -570,10 +573,9 @@ export default function CampaignBuilder() {
   const handleAudiencePickerClose = useCallback(() => {
     setAudienceOpen(false);
     if (canSave && editId) {
-      // Fire-and-forget. handleSave already toasts on success/error.
       Promise.resolve().then(() => handleSave());
     }
-  }, [canSave, editId]); // handleSave is stable enough; ignore exhaustive-deps
+  }, [canSave, editId, handleSave]);
 
   const handleLaunch = useCallback(async () => {
     if (!canLaunch || !editId) return;
