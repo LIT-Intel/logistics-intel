@@ -57,6 +57,7 @@ export default function CampaignAnalyticsPage() {
   const [error, setError] = useState(null);
   const [recipients, setRecipients] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
+  const [events, setEvents] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,9 +66,6 @@ export default function CampaignAnalyticsPage() {
       setLoading(true);
       setError(null);
       try {
-        // lit_campaigns is keyed by user_id (no org_id column). To show
-        // every campaign in the user's org, fetch the org's member list
-        // and filter by those user_ids.
         const { data: members, error: membersErr } = await supabase
           .from("org_members")
           .select("user_id")
@@ -88,13 +86,29 @@ export default function CampaignAnalyticsPage() {
               .in("user_id", orgUserIds)
               .order("created_at", { ascending: false })
           : Promise.resolve({ data: [], error: null });
+        // Pull every send / open / click / reply / bounce event for this
+        // org's campaigns. Recipient roster status only captures the
+        // CURRENT lifecycle phase; history captures every transition.
+        const eventsPromise = orgUserIds.length
+          ? supabase
+              .from("lit_outreach_history")
+              .select("campaign_id,event_type,occurred_at")
+              .in("user_id", orgUserIds)
+              .in("event_type", ["sent", "opened", "clicked", "replied", "bounced"])
+          : Promise.resolve({ data: [], error: null });
 
-        const [recRes, campRes] = await Promise.all([recPromise, campPromise]);
+        const [recRes, campRes, evtRes] = await Promise.all([
+          recPromise,
+          campPromise,
+          eventsPromise,
+        ]);
         if (cancelled) return;
         if (recRes.error) throw recRes.error;
         if (campRes.error) throw campRes.error;
+        if (evtRes.error) throw evtRes.error;
         setRecipients(recRes.data ?? []);
         setCampaigns(campRes.data ?? []);
+        setEvents(evtRes.data ?? []);
       } catch (e) {
         if (!cancelled) setError(e?.message || "Failed to load analytics");
       } finally {
@@ -107,28 +121,51 @@ export default function CampaignAnalyticsPage() {
     };
   }, [orgId]);
 
+  const eventCounts = useMemo(() => {
+    const total = { sent: 0, opened: 0, clicked: 0, replied: 0, bounced: 0 };
+    const perCampaign = new Map();
+    for (const e of events) {
+      const evt = e.event_type;
+      if (evt in total) total[evt] += 1;
+      if (e.campaign_id) {
+        const bucket =
+          perCampaign.get(e.campaign_id) ||
+          { sent: 0, opened: 0, clicked: 0, replied: 0, bounced: 0 };
+        if (evt in bucket) bucket[evt] += 1;
+        perCampaign.set(e.campaign_id, bucket);
+      }
+    }
+    return { total, perCampaign };
+  }, [events]);
+
   const totals = useMemo(() => {
     const counts = {};
     for (const r of recipients) counts[r.status] = (counts[r.status] || 0) + 1;
     const total = recipients.length;
-    const sent = Object.entries(counts)
-      .filter(([k]) => SENT_LIKE.has(k))
-      .reduce((acc, [, v]) => acc + v, 0);
+    // Events are the source of truth for sends + opens + clicks + replies.
+    // Recipient status only carries the CURRENT phase, so a recipient who
+    // got step 1 sent + step 2 sent + replied still shows status=replied,
+    // hiding the two earlier sends. Counting events surfaces them all.
+    const sent = eventCounts.total.sent;
+    const opened = eventCounts.total.opened;
+    const clicked = eventCounts.total.clicked;
+    const replied = eventCounts.total.replied;
+    const bounced = eventCounts.total.bounced;
     return {
       total,
       counts,
       sent,
-      opened: counts.opened || 0,
-      clicked: counts.clicked || 0,
-      replied: counts.replied || 0,
-      bounced: counts.bounced || 0,
+      opened,
+      clicked,
+      replied,
+      bounced,
       unsubscribed: counts.unsubscribed || 0,
-      openRate: pct(counts.opened || 0, sent),
-      clickRate: pct(counts.clicked || 0, sent),
-      replyRate: pct(counts.replied || 0, sent),
-      bounceRate: pct(counts.bounced || 0, sent),
+      openRate: pct(opened, sent),
+      clickRate: pct(clicked, sent),
+      replyRate: pct(replied, sent),
+      bounceRate: pct(bounced, sent),
     };
-  }, [recipients]);
+  }, [recipients, eventCounts]);
 
   const perCampaign = useMemo(() => {
     const byId = new Map();
@@ -146,18 +183,25 @@ export default function CampaignAnalyticsPage() {
         bounced: 0,
       });
     }
+    // Recipient roster gives us "Recipients" (total queued).
     for (const r of recipients) {
       const row = byId.get(r.campaign_id);
+      if (row) row.total += 1;
+    }
+    // Sent / open / click / reply / bounce come from history events so the
+    // table reflects every step delivered — not just the recipient's
+    // current lifecycle phase.
+    for (const [campaignId, bucket] of eventCounts.perCampaign) {
+      const row = byId.get(campaignId);
       if (!row) continue;
-      row.total += 1;
-      if (SENT_LIKE.has(r.status)) row.sent += 1;
-      if (r.status === "opened") row.opened += 1;
-      if (r.status === "clicked") row.clicked += 1;
-      if (r.status === "replied") row.replied += 1;
-      if (r.status === "bounced") row.bounced += 1;
+      row.sent += bucket.sent;
+      row.opened += bucket.opened;
+      row.clicked += bucket.clicked;
+      row.replied += bucket.replied;
+      row.bounced += bucket.bounced;
     }
     return Array.from(byId.values());
-  }, [campaigns, recipients]);
+  }, [campaigns, recipients, eventCounts]);
 
   return (
     <div className="min-h-full bg-[#F8FAFC]">
@@ -194,7 +238,7 @@ export default function CampaignAnalyticsPage() {
               <div className="mt-1 font-mono text-[11.5px]">{error}</div>
             </div>
           </div>
-        ) : totals.total === 0 ? (
+        ) : totals.total === 0 && events.length === 0 ? (
           <EmptyState onCreate={() => navigate("/app/campaigns/new")} />
         ) : (
           <>

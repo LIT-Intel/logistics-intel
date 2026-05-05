@@ -179,11 +179,13 @@ serve(async (req) => {
     return json({ ok: true, queued: 0, skipped: 0, errors: ["no_valid_emails"] });
   }
 
-  // 6. Upsert. Conflict on (campaign_id, email) — re-launching the
-  //    campaign re-queues anyone whose status was failed/skipped/completed.
+  // 6. Insert NEW rows only. Existing recipients keep their progress —
+  //    if they're mid-sequence we don't want to reset their next_send_at
+  //    or current_step_id. ignoreDuplicates=true makes the upsert a
+  //    DO NOTHING on (campaign_id, email) conflicts.
   const { error: insertErr, data: inserted } = await admin
     .from("lit_campaign_contacts")
-    .upsert(rows, { onConflict: "campaign_id,email" })
+    .upsert(rows, { onConflict: "campaign_id,email", ignoreDuplicates: true })
     .select("id");
   if (insertErr) return json({ ok: false, error: insertErr.message }, 500);
 

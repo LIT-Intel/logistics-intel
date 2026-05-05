@@ -2,13 +2,11 @@ import React from "react";
 import { Target } from "lucide-react";
 import { fontDisplay, fontBody, fontMono } from "../tokens";
 import type { OutboundCampaign } from "../types";
+import { useOutboundStats } from "../hooks/useOutboundStats";
 
-// Compact KPI strip — mirrors the LitKpiStrip density used on the company
-// profile page (px-3 py-2, text-[9px] uppercase labels, text-base values,
-// thin slate-100 separators, no shadows). PulseBar metrics that don't yet
-// have a live aggregator render as honest "—" placeholders with a "pending"
-// dot. Counts derived from the loaded campaign list (totals, drafts,
-// active) are real.
+// Compact KPI strip — Sent / Opens / Replies / Meetings + Campaigns count.
+// Sent / Opens / Replies pull from lit_outreach_history via useOutboundStats;
+// Meetings has no first-class event yet so it stays a labelled placeholder.
 
 interface KPI {
   label: string;
@@ -17,15 +15,41 @@ interface KPI {
   pending: boolean;
 }
 
-function buildKpis(campaigns: OutboundCampaign[]): KPI[] {
+function buildKpis(
+  campaigns: OutboundCampaign[],
+  stats: ReturnType<typeof useOutboundStats>,
+): KPI[] {
   const total = campaigns.length;
   const active = campaigns.filter((c) => c.status === "active").length;
   const draft = campaigns.filter((c) => c.status === "draft").length;
+  const fmt = (n: number) => n.toLocaleString();
+  const pct = (num: number, denom: number) =>
+    denom > 0 ? `${Math.round((num / denom) * 100)}%` : "—";
   return [
-    { label: "Sent", value: "—", sub: "awaiting outreach data", pending: true },
-    { label: "Opens", value: "—", sub: "awaiting outreach data", pending: true },
-    { label: "Replies", value: "—", sub: "awaiting outreach data", pending: true },
-    { label: "Meetings", value: "—", sub: "awaiting outreach data", pending: true },
+    {
+      label: "Sent",
+      value: stats.loading ? "…" : fmt(stats.sent),
+      sub: stats.sent === 0 ? "no sends yet" : `${stats.bounced} bounced`,
+      pending: false,
+    },
+    {
+      label: "Opens",
+      value: stats.loading ? "…" : fmt(stats.opened),
+      sub: stats.sent > 0 ? `${pct(stats.opened, stats.sent)} open rate` : "tracking pending",
+      pending: stats.sent > 0 && stats.opened === 0,
+    },
+    {
+      label: "Replies",
+      value: stats.loading ? "…" : fmt(stats.replied),
+      sub: stats.sent > 0 ? `${pct(stats.replied, stats.sent)} reply rate` : "tracking pending",
+      pending: stats.sent > 0 && stats.replied === 0,
+    },
+    {
+      label: "Meetings",
+      value: "—",
+      sub: "calendar integration soon",
+      pending: true,
+    },
     {
       label: "Campaigns",
       value: total.toLocaleString(),
@@ -36,7 +60,8 @@ function buildKpis(campaigns: OutboundCampaign[]): KPI[] {
 }
 
 export function PulseBar({ campaigns }: { campaigns: OutboundCampaign[] }) {
-  const tiles = buildKpis(campaigns);
+  const stats = useOutboundStats();
+  const tiles = buildKpis(campaigns, stats);
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-[#FAFBFC]">
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-[repeat(5,1fr)_auto]">

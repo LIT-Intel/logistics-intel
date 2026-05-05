@@ -98,13 +98,16 @@ export default function LITDashboard() {
               .select("id", { count: "exact", head: true })
               .or("verified_by_provider.eq.true,email_verified.eq.true"),
           );
+          // Outreach Sent MTD reads from lit_outreach_history — that's
+          // where the dispatcher writes one row per actual email delivery.
+          // (lit_activity_events is generic activity, not send events.)
           promises.push(
             supabase
-              .from("lit_activity_events")
+              .from("lit_outreach_history")
               .select("id", { count: "exact", head: true })
               .eq("user_id", user.id)
-              .in("event_type", ["campaign_send", "outreach_sent"])
-              .gte("created_at", monthStartIso),
+              .eq("event_type", "sent")
+              .gte("occurred_at", monthStartIso),
           );
         } else {
           promises.push(Promise.resolve({ data: [], error: null }));

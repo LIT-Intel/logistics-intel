@@ -237,9 +237,10 @@ serve(async (req) => {
       }
       const step = steps[stepIndex];
 
-      // 2c. Wait steps just advance the cursor.
+      // 2c. Wait steps just advance the cursor. Schedule next fire after
+      //     the wait duration (the wait step's own delay_days).
       if (step.channel === "wait" || step.step_type === "wait") {
-        await advance(admin, r, step);
+        await advance(admin, r, step, steps[stepIndex + 1] ?? null);
         summary.advanced += 1;
         continue;
       }
@@ -261,7 +262,7 @@ serve(async (req) => {
           occurred_at: new Date().toISOString(),
           metadata: { recipient_email: r.email, step_type: step.step_type },
         });
-        await advance(admin, r, step);
+        await advance(admin, r, step, steps[stepIndex + 1] ?? null);
         summary.advanced += 1;
         continue;
       }
@@ -478,7 +479,7 @@ serve(async (req) => {
       });
 
       if (sendRes.ok) {
-        await advance(admin, r, step, /* sent */ true);
+        await advance(admin, r, step, steps[stepIndex + 1] ?? null, /* sent */ true);
         cap.sentToday += 1;
         summary.sent += 1;
       } else {
@@ -516,16 +517,25 @@ async function advance(
   admin: ReturnType<typeof createClient>,
   r: Recipient,
   step: Step,
+  nextStep: Step | null,
   sent = false,
 ) {
-  // Compute next_send_at from the step's delay (the delay BEFORE the
-  // next step kicks off, applied to this step). For wait steps the
-  // delay is the wait duration; for sent emails it spaces out followups.
-  const delayMs =
-    Math.max(0, step.delay_days) * 86_400_000 +
-    Math.max(0, step.delay_hours) * 3_600_000;
+  // Schedule the recipient's next pickup. delay_days on the FE represents
+  // "wait this long BEFORE this step kicks off", so once we've finished
+  // step N, the next pickup fires after step N+1's delay. Wait steps are
+  // an exception — their delay_days IS the wait duration on the wait
+  // step itself, so we use the current step there.
+  const isWait = step.channel === "wait" || step.step_type === "wait";
+  const ref = isWait ? step : nextStep;
+  const delayMs = ref
+    ? Math.max(0, ref.delay_days) * 86_400_000 +
+      Math.max(0, ref.delay_hours) * 3_600_000
+    : 0;
   const nextSendAt = new Date(Date.now() + delayMs).toISOString();
 
+  // status stays "queued" between steps so the dispatcher re-picks the
+  // recipient on its next tick when next_send_at <= now. The terminal
+  // "completed" status is set by complete() once the sequence runs out.
   const update: Record<string, unknown> = {
     current_step_id: step.id,
     next_send_at: nextSendAt,
@@ -535,7 +545,6 @@ async function advance(
   };
   if (sent) {
     update.last_sent_at = new Date().toISOString();
-    update.status = "sent";
   }
   await admin.from("lit_campaign_contacts").update(update).eq("id", r.id);
 }
