@@ -469,12 +469,15 @@ export default function CampaignBuilder() {
       setSuccess(
         isEditMode
           ? `Saved changes to "${trimmedName}".`
-          : `Saved "${trimmedName}" as draft. Returning to Outbound…`,
+          : `Saved "${trimmedName}" as draft.`,
       );
-      window.setTimeout(
-        () => navigate("/app/campaigns"),
-        isEditMode ? 900 : 700,
-      );
+      // For new campaigns, swap the URL to ?edit=:id so the user stays on
+      // the builder and Launch unlocks. Navigating back to /app/campaigns
+      // forced a round-trip just to hit Launch.
+      if (!isEditMode) {
+        navigate(`/app/campaigns/new?edit=${campaignId}`, { replace: true });
+      }
+      window.setTimeout(() => setSuccess(null), 1800);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to save campaign.";
       setError(message);
@@ -502,20 +505,14 @@ export default function CampaignBuilder() {
       setError("Connect a Gmail or Outlook mailbox in Settings first.");
       return;
     }
-    // Send-to defaults to the user's own inbox so the test always lands somewhere
-    // visible. The user can override via prompt in case they want a different
-    // address (different inbox, deliverability test).
-    let toEmail = primaryEmail;
-    if (typeof window !== "undefined") {
-      const entered = window.prompt(
-        "Send test email to which address?",
-        primaryEmail,
-      );
-      if (entered === null) return; // cancelled
-      const trimmed = String(entered).trim();
-      if (!trimmed) return;
-      toEmail = trimmed;
-    }
+    // Pick a recipient for the test — first manual email if any, otherwise
+    // the user's own inbox. No prompt: the toolbar action is intentionally
+    // one-click. To send to a different address, add it to Manual emails.
+    const firstManual = manualEmails[0];
+    const toEmail = firstManual?.email || primaryEmail;
+    const recipientFirstName = firstManual?.first_name || "Linh";
+    const recipientLastName = firstManual?.last_name || "Pham";
+    const recipientCompany = firstManual?.company_name || "NorthBay Furniture";
 
     // Render the currently-selected step (or the first email step) with
     // sample variables so the recipient sees a fully-rendered preview.
@@ -525,12 +522,12 @@ export default function CampaignBuilder() {
     const sampleCtx = buildMergeContext({
       recipient: {
         email: toEmail,
-        first_name: "Linh",
-        last_name: "Pham",
-        display_name: "Linh Pham",
+        first_name: recipientFirstName,
+        last_name: recipientLastName,
+        display_name: [recipientFirstName, recipientLastName].filter(Boolean).join(" "),
         title: "VP Logistics",
       },
-      company: { name: "NorthBay Furniture", country_code: "VN" },
+      company: { name: recipientCompany, country_code: "VN" },
       sender: { email: primaryEmail, display_name: primaryEmail.split("@")[0] },
     });
     const subject = applyMergeVars(
@@ -564,7 +561,7 @@ export default function CampaignBuilder() {
     } finally {
       setTestSending(false);
     }
-  }, [testSending, primaryEmail, selectedStep, steps]);
+  }, [testSending, primaryEmail, selectedStep, steps, manualEmails]);
 
   // Auto-save when the audience picker closes IF the campaign has been
   // saved at least once (editId set). For new campaigns we surface a
@@ -577,11 +574,16 @@ export default function CampaignBuilder() {
     }
   }, [canSave, editId, handleSave]);
 
-  const handleLaunch = useCallback(async () => {
+  const [launchConfirmOpen, setLaunchConfirmOpen] = useState(false);
+
+  const handleLaunch = useCallback(() => {
     if (!canLaunch || !editId) return;
-    if (typeof window !== "undefined" && !window.confirm(
-      `Launch this campaign? Recipients will be queued and the dispatcher will start sending emails from ${primaryEmail}.`,
-    )) return;
+    setLaunchConfirmOpen(true);
+  }, [canLaunch, editId]);
+
+  const confirmLaunch = useCallback(async () => {
+    if (!canLaunch || !editId) return;
+    setLaunchConfirmOpen(false);
     setLaunching(true);
     setError(null);
     setSuccess(null);
@@ -600,7 +602,7 @@ export default function CampaignBuilder() {
     } finally {
       setLaunching(false);
     }
-  }, [canLaunch, editId, primaryEmail, manualEmails, navigate]);
+  }, [canLaunch, editId, manualEmails, navigate]);
 
   // ---- Misc keyboard handler ----
   useEffect(() => {
@@ -856,7 +858,7 @@ export default function CampaignBuilder() {
           onUpdate={handleUpdateStep}
           onApplyTemplate={handleApplyTemplate}
           onPreview={() => setPreviewOpen(true)}
-          onTestSend={() => {}}
+          onTestSend={handleTestSend}
           onSaveAsTemplate={() => setCreateTemplateOpen(true)}
         />
       </div>
@@ -891,7 +893,77 @@ export default function CampaignBuilder() {
         onClose={() => setPreviewOpen(false)}
         senderEmail={primaryEmail}
         senderName={primaryEmail ? primaryEmail.split("@")[0] : null}
+        sampleRecipient={
+          manualEmails[0]
+            ? {
+                email: manualEmails[0].email,
+                first_name: manualEmails[0].first_name,
+                last_name: manualEmails[0].last_name,
+                company_name: manualEmails[0].company_name,
+              }
+            : null
+        }
       />
+
+      {launchConfirmOpen ? (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-[rgba(15,23,42,0.5)]"
+            onClick={() => setLaunchConfirmOpen(false)}
+            aria-hidden
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="launch-modal-title"
+            className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl bg-white shadow-[0_24px_60px_rgba(15,23,42,0.35)]"
+          >
+            <div className="border-b border-slate-100 px-5 py-4">
+              <div
+                id="launch-modal-title"
+                className="flex items-center gap-2 text-[15px] font-bold text-[#0F172A]"
+                style={{ fontFamily: fontDisplay }}
+              >
+                <Rocket className="h-3.5 w-3.5 text-emerald-600" />
+                Launch this campaign?
+              </div>
+              <p
+                className="mt-1.5 text-[12px] leading-relaxed text-slate-600"
+                style={{ fontFamily: fontBody }}
+              >
+                Recipients will be queued and the dispatcher will start sending
+                emails from <strong className="text-[#0F172A]">{primaryEmail}</strong>.
+              </p>
+              <ul
+                className="mt-2.5 space-y-1 text-[11.5px] text-slate-600"
+                style={{ fontFamily: fontBody }}
+              >
+                <li>· {selectedIds.size} compan{selectedIds.size === 1 ? "y" : "ies"}{manualEmails.length > 0 ? ` + ${manualEmails.length} manual email${manualEmails.length === 1 ? "" : "s"}` : ""}</li>
+                <li>· {steps.filter((s) => s.kind !== "wait").length} step{steps.filter((s) => s.kind !== "wait").length === 1 ? "" : "s"} in sequence</li>
+              </ul>
+            </div>
+            <div className="flex items-center justify-end gap-2 bg-slate-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setLaunchConfirmOpen(false)}
+                className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                style={{ fontFamily: fontDisplay }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmLaunch}
+                className="inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-[#10B981] to-[#059669] px-3.5 py-1.5 text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(16,185,129,0.3)]"
+                style={{ fontFamily: fontDisplay }}
+              >
+                <Rocket className="h-2.5 w-2.5" />
+                Confirm launch
+              </button>
+            </div>
+          </div>
+        </>
+      ) : null}
 
       <CreateTemplateModal
         open={createTemplateOpen}

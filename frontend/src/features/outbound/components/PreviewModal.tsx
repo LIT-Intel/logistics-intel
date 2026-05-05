@@ -51,12 +51,19 @@ export function PreviewModal({
   onClose,
   senderEmail,
   senderName,
+  sampleRecipient,
 }: {
   open: boolean;
   steps: BuilderStep[];
   onClose: () => void;
   senderEmail?: string | null;
   senderName?: string | null;
+  sampleRecipient?: {
+    email?: string;
+    first_name?: string;
+    last_name?: string;
+    company_name?: string;
+  } | null;
 }) {
   if (!open) return null;
   const sendable = steps.filter((s) => s.kind !== "wait");
@@ -68,8 +75,18 @@ export function PreviewModal({
   const resolvedSenderName =
     senderName ||
     (senderEmail ? senderEmail.split("@")[0] : "Your name");
+  // When a real recipient is supplied (e.g. first manual email), prefer
+  // their values for the preview. Otherwise fall back to the deterministic
+  // sample so the preview always renders something.
+  const recipientFirstName = sampleRecipient?.first_name?.trim() || RECIPIENT_SAMPLE.first_name;
+  const recipientLastName = sampleRecipient?.last_name?.trim() || RECIPIENT_SAMPLE.last_name;
+  const recipientCompany = sampleRecipient?.company_name?.trim() || RECIPIENT_SAMPLE.company_name;
+  const recipientEmail = sampleRecipient?.email?.trim() || `${recipientFirstName.toLowerCase()}@northbay.example`;
   const SAMPLE_VARS: Record<string, string> = {
     ...RECIPIENT_SAMPLE,
+    first_name: recipientFirstName,
+    last_name: recipientLastName,
+    company_name: recipientCompany,
     sender_name: resolvedSenderName,
     sender_email: resolvedSenderEmail,
   };
@@ -94,7 +111,7 @@ export function PreviewModal({
               className="text-[11px] text-slate-500"
               style={{ fontFamily: fontBody }}
             >
-              Sample recipient · {SAMPLE_VARS.first_name} at {SAMPLE_VARS.company_name} · sending from {resolvedSenderEmail}
+              {sampleRecipient?.email ? "Recipient" : "Sample recipient"} · {recipientFirstName} at {recipientCompany} · sending from {resolvedSenderEmail}
             </div>
           </div>
           <button
@@ -171,7 +188,7 @@ export function PreviewModal({
                           className="ml-auto text-[10px] text-slate-400"
                           style={{ fontFamily: fontMono }}
                         >
-                          to {SAMPLE_VARS.first_name.toLowerCase()}@northbay.example
+                          to {recipientEmail}
                         </span>
                       </header>
                       <div className="px-3 py-2.5">

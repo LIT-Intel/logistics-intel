@@ -358,12 +358,16 @@ export function StepInspector({
           <button
             type="button"
             onClick={onTestSend}
-            disabled
-            title="Test send ships with the dispatcher in a follow-up phase."
-            className="ml-auto rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-400"
+            disabled={!primaryInboxEmail}
+            title={
+              primaryInboxEmail
+                ? "Send this step to your inbox (or the first manual recipient if added) with sample variables."
+                : "Connect a Gmail or Outlook mailbox in Settings first."
+            }
+            className="ml-auto rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
             style={{ fontFamily: fontDisplay }}
           >
-            Test send · setup required
+            Test send
           </button>
         </div>
       ) : null}
