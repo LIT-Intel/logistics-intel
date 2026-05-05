@@ -116,8 +116,20 @@ function dbStepToBuilder(row) {
     delayDays: 0,
     expanded: false,
   };
+  // delay_minutes is the sub-hour component on the DB; falls back to a
+  // minutes-from-hours computation if a row was written before the column
+  // existed.
+  const dbDelayMinutes =
+    typeof row.delay_minutes === "number"
+      ? Math.max(0, Math.min(59, row.delay_minutes))
+      : Math.max(0, Math.min(59, Math.round((Number(row.delay_hours) || 0) * 60)));
+  const minutesFromHours = dbDelayMinutes;
   if (kind === "wait") {
-    return { ...base, waitDays: Math.max(0, Number(row.delay_days) || 0) };
+    return {
+      ...base,
+      waitDays: Math.max(0, Number(row.delay_days) || 0),
+      waitMinutes: minutesFromHours,
+    };
   }
   if (kind === "email") {
     const out = {
@@ -125,8 +137,8 @@ function dbStepToBuilder(row) {
       subject: row.subject || "",
       body: row.body || "",
       delayDays: Math.max(0, Number(row.delay_days) || 0),
+      delayMinutes: minutesFromHours,
     };
-    // A/B variant — present only when explicitly set on the saved row.
     if (row.subject_b !== undefined && row.subject_b !== null) {
       out.subject_b = row.subject_b;
     }
@@ -137,6 +149,7 @@ function dbStepToBuilder(row) {
     title: row.subject || "",
     description: row.body || "",
     delayDays: Math.max(0, Number(row.delay_days) || 0),
+    delayMinutes: minutesFromHours,
   };
 }
 
@@ -157,6 +170,7 @@ function channelFor(kind) {
 }
 
 function persistPayloadFor(step, order, campaignId) {
+  const clampMinutes = (m) => Math.max(0, Math.min(59, Math.round(Number(m) || 0)));
   if (step.kind === "wait") {
     return {
       campaign_id: campaignId,
@@ -167,6 +181,7 @@ function persistPayloadFor(step, order, campaignId) {
       body: null,
       delay_days: Math.max(0, Number(step.waitDays) || 0),
       delay_hours: 0,
+      delay_minutes: clampMinutes(step.waitMinutes),
     };
   }
   if (step.kind === "email") {
@@ -179,10 +194,8 @@ function persistPayloadFor(step, order, campaignId) {
       body: step.body?.trim() || null,
       delay_days: Math.max(0, Number(step.delayDays) || 0),
       delay_hours: 0,
+      delay_minutes: clampMinutes(step.delayMinutes),
     };
-    // Only write subject_b when the variant exists. Trimmed empty
-    // string → null so the dispatcher's "subject_b is set?" check
-    // doesn't fire on a variant the user opened then left blank.
     if (step.subject_b !== undefined) {
       payload.subject_b = step.subject_b?.trim() || null;
     }
@@ -197,6 +210,7 @@ function persistPayloadFor(step, order, campaignId) {
     body: step.description?.trim() || null,
     delay_days: Math.max(0, Number(step.delayDays) || 0),
     delay_hours: 0,
+    delay_minutes: clampMinutes(step.delayMinutes),
   };
 }
 

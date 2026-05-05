@@ -48,20 +48,17 @@ export default function ContactsPage() {
     }
     (async () => {
       try {
-        // Get the user's saved company UUIDs first; we only show
-        // contacts that belong to one of their accounts.
+        // 1. The user's saved company ids. Don't embed lit_companies here
+        //    — PostgREST relationship-embed sometimes returns null when
+        //    the relationship cache is stale, which would silently empty
+        //    the page even though the data exists.
         const { data: saved } = await supabase
           .from("lit_saved_companies")
-          .select(
-            "company_id, lit_companies (id, name, source_company_key, domain)",
-          )
+          .select("company_id")
           .eq("user_id", user.id);
-        const companyMap = new Map();
-        for (const s of saved || []) {
-          const co = s?.lit_companies;
-          if (co?.id) companyMap.set(co.id, co);
-        }
-        const companyIds = Array.from(companyMap.keys());
+        const companyIds = (saved || [])
+          .map((s) => s?.company_id)
+          .filter(Boolean);
         if (companyIds.length === 0) {
           if (!cancelled) {
             setRows([]);
@@ -70,16 +67,27 @@ export default function ContactsPage() {
           }
           return;
         }
-        const { data } = await supabase
-          .from("lit_contacts")
-          .select(
-            "id, company_id, full_name, first_name, last_name, title, department, email, phone, linkedin_url, source, source_provider, verified_by_provider, email_verified, email_verification_status, updated_at, created_at",
-          )
-          .in("company_id", companyIds)
-          .order("updated_at", { ascending: false })
-          .limit(250);
+        // 2. Hydrate company metadata + contacts in parallel.
+        const [{ data: companyRows }, { data: contactRows }] = await Promise.all([
+          supabase
+            .from("lit_companies")
+            .select("id, name, source_company_key, domain")
+            .in("id", companyIds),
+          supabase
+            .from("lit_contacts")
+            .select(
+              "id, company_id, full_name, first_name, last_name, title, department, email, phone, linkedin_url, source, source_provider, verified_by_provider, email_verified, email_verification_status, updated_at, created_at",
+            )
+            .in("company_id", companyIds)
+            .order("updated_at", { ascending: false })
+            .limit(250),
+        ]);
         if (cancelled) return;
-        const enriched = (data || []).map((c) => ({
+        const companyMap = new Map();
+        for (const co of companyRows || []) {
+          if (co?.id) companyMap.set(co.id, co);
+        }
+        const enriched = (contactRows || []).map((c) => ({
           ...c,
           company: companyMap.get(c.company_id) || null,
         }));

@@ -58,8 +58,13 @@ export interface BuilderStep {
   description: string;
   // wait
   waitDays: number;
+  /** Optional sub-day component for wait steps. 0–59. */
+  waitMinutes?: number;
   // shared
   delayDays: number;
+  /** Optional sub-day component for the delay before this step. 0–59.
+   *  Persisted by mapping to delay_hours fractionally on the DB row. */
+  delayMinutes?: number;
   expanded: boolean;
 }
 

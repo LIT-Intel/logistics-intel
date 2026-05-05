@@ -114,25 +114,38 @@ export function StepInspector({
 
       <div className="flex-1 overflow-y-auto px-4 py-3.5">
         {isWait ? (
-          <Field label="Wait days">
-            <input
-              type="number"
-              min={0}
-              max={60}
-              value={step.waitDays}
-              onChange={(e) =>
-                onUpdate({
-                  waitDays: Math.max(0, Number(e.target.value || 0)),
-                })
-              }
-              className={inputClass()}
-              style={{ fontFamily: fontBody }}
-            />
+          <Field label="Wait">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                max={60}
+                value={step.waitDays ?? 0}
+                onChange={(e) =>
+                  onUpdate({ waitDays: Math.max(0, Number(e.target.value || 0)) })
+                }
+                className={`${inputClass()} w-20`}
+                style={{ fontFamily: fontBody }}
+              />
+              <span className="text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>days</span>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                value={step.waitMinutes ?? 0}
+                onChange={(e) =>
+                  onUpdate({ waitMinutes: Math.max(0, Math.min(59, Number(e.target.value || 0))) })
+                }
+                className={`${inputClass()} w-20`}
+                style={{ fontFamily: fontBody }}
+              />
+              <span className="text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>minutes</span>
+            </div>
             <p
               className="mt-1.5 text-[11px] text-slate-500"
               style={{ fontFamily: fontBody }}
             >
-              How long to pause before the next step.
+              How long to pause before the next step. Use minutes for same-day bursts.
             </p>
           </Field>
         ) : null}
@@ -289,20 +302,46 @@ export function StepInspector({
         ) : null}
 
         {!isWait ? (
-          <Field label="Delay from previous (days)">
-            <input
-              type="number"
-              min={0}
-              max={60}
-              value={step.delayDays}
-              onChange={(e) =>
-                onUpdate({
-                  delayDays: Math.max(0, Number(e.target.value || 0)),
-                })
-              }
-              className={inputClass()}
+          <Field label="Delay from previous">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                max={60}
+                value={step.delayDays ?? 0}
+                onChange={(e) =>
+                  onUpdate({
+                    delayDays: Math.max(0, Number(e.target.value || 0)),
+                  })
+                }
+                className={`${inputClass()} w-20`}
+                style={{ fontFamily: fontBody }}
+                title="Days"
+              />
+              <span className="text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>days</span>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                step={1}
+                value={step.delayMinutes ?? 0}
+                onChange={(e) =>
+                  onUpdate({
+                    delayMinutes: Math.max(0, Math.min(59, Number(e.target.value || 0))),
+                  })
+                }
+                className={`${inputClass()} w-20`}
+                style={{ fontFamily: fontBody }}
+                title="Minutes"
+              />
+              <span className="text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>minutes</span>
+            </div>
+            <p
+              className="mt-1.5 text-[11px] text-slate-500"
               style={{ fontFamily: fontBody }}
-            />
+            >
+              Combine days + minutes — e.g. <strong>0 days · 5 minutes</strong> for a same-day burst, or <strong>2 days · 0 minutes</strong> for a follow-up.
+            </p>
           </Field>
         ) : null}
 
