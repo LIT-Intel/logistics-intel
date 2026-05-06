@@ -97,6 +97,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
             title: "Admin",
             items: [
               { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
+              { label: "LIT Marketing (Resend)", href: "/admin/marketing", icon: Shield },
               { label: "Partner program", href: "/app/admin/partner-program", icon: Users },
               { label: "Team", href: "/app/settings?tab=team", icon: Users },
             ],
