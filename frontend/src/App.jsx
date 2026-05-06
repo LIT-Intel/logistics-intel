@@ -48,6 +48,7 @@ const OnboardingFlow = lazy(() => import("@/pages/OnboardingFlow"));
 const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
+const SectorLandingPage = lazy(() => import("@/pages/landing/SectorLandingPage"));
 
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
@@ -200,6 +201,7 @@ export default function App() {
         />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
+        <Route path="/l/:sector" element={<SectorLandingPage />} />
 
         <Route
           path="/app/dashboard"

@@ -24,6 +24,7 @@ import { useTemplates, usePersonas } from "@/features/outbound/hooks/useTemplate
 import { useCampaign } from "@/features/outbound/hooks/useCampaign";
 
 import { ForecastStrip } from "@/features/outbound/components/ForecastStrip";
+import { ScheduleStrip } from "@/features/outbound/components/ScheduleStrip";
 import { PersonaPanel } from "@/features/outbound/components/PersonaPanel";
 import { TimelineCanvas } from "@/features/outbound/components/TimelineCanvas";
 import { StepInspector } from "@/features/outbound/components/StepInspector";
@@ -814,6 +815,7 @@ export default function CampaignBuilder() {
       </div>
 
       <ForecastStrip audienceCount={selectedIds.size} />
+      <ScheduleStrip steps={steps} launching={launching} />
 
       {error || campaignError ? (
         <div
