@@ -40,6 +40,7 @@ const SearchPanel = lazy(() => import("@/pages/SearchPanel"));
 const Transactions = lazy(() => import("@/pages/Transactions"));
 const Widgets = lazy(() => import("@/pages/Widgets"));
 const Company = lazy(() => import("@/pages/Company"));
+const CompanyProfileV2 = lazy(() => import("@/pages/CompanyProfileV2"));
 const CommandCenterPage = lazy(() => import("@/components/command-center/CommandCenter"));
 const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany = lazy(() => import("@/pages/demo/company"));
@@ -282,6 +283,21 @@ export default function App() {
             <RequireAuth>
               <LITPage>
                 <Company />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+
+        {/* Phase 1 — additive preview route exercising the new
+            companyResolver + company-profile aggregator + useCompanyProfile
+            hook. The canonical /app/companies/:id route above is unchanged.
+            Phase 2 evaluates promotion. */}
+        <Route
+          path="/app/companies/:id/preview"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <CompanyProfileV2 />
               </LITPage>
             </RequireAuth>
           }

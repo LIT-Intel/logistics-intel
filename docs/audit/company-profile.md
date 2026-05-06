@@ -5,6 +5,49 @@
 **Scope:** Read-only audit of the Company Profile data flow. No code changes, no migrations, no deploys.
 **Companion artifact:** [`company-profile.manifest.json`](./company-profile.manifest.json)
 
+> ## ⚠️ Phase 0.5 Correction (verified against live Supabase project `jkmrfiaefxwgbvftohrb`)
+>
+> Two findings in the original Phase 0 audit below were wrong. They are corrected in-place
+> in this section. The original sections are preserved unedited so the diff is clear.
+>
+> **Correction 1 — five "missing" tables exist with row data:**
+>
+> | Table | Status | Rows | Key columns |
+> |---|---|---|---|
+> | `lit_company_directory` | EXISTS | **12,749** | `id`, `company_key`, `canonical_name`, `canonical_domain`, `normalized_name`, `domain`, `city`, `state`, `country`, `industry`, `employee_count`, `revenue`, `raw_json`, `normalized_json`, `enrichment_status`, `enriched_at` |
+> | `lit_company_source_metrics` | EXISTS | **20,000** | `id`, `company_key`, `company_name`, `source`, `shipments`, `kg`, `value_usd`, `teu`, `lcl`, `country`, `domain`, `raw_json` |
+> | `lit_company_index` | EXISTS | **1,179** | search-bar fast-lookup |
+> | `lit_company_search_results` | EXISTS | **1,179** | search-bar fast-lookup |
+> | `lit_company_contact_previews` | EXISTS | **18** | Apollo preview cache with `expires_at` TTL |
+>
+> The original audit relied on local migration files which were stale. The tables were
+> created/loaded directly in production. Phase 1 maps to these real tables.
+>
+> **Correction 2 — the CDP shell is NOT orphaned:**
+>
+> [`frontend/src/pages/Company.jsx`](../../frontend/src/pages/Company.jsx) already imports and
+> mounts all six CDP components: `CDPHeader` (line 38, mounted line 1150), `CDPDetailsPanel`
+> (39, 1332), `CDPSupplyChain` (41, 1235), `CDPContacts` (42, 1244), `CDPResearch` (43, 1253),
+> and `CDPActivity` (44, 1325). The page docstring (lines 1-23) calls itself the "Phase 3
+> Company Profile rebuild against the approved design bundle." The legacy `PreCallBriefing`
+> reference in §2.2 of the original audit was wrong — that page exists but is mounted at
+> a different route (`/app/pre-call`), not at `/company/:id`.
+>
+> Both `/company/:id` and `/app/companies/:id` already render this same `Company.jsx` page
+> (App.jsx lines 149-156 and 279-288). The "container page" Phase 1 deliverable therefore
+> already exists; Phase 1 ships the **data-layer plumbing** that Phase 2 can swap in.
+>
+> **Routing stack:** confirmed Vite + React Router v7 (not Next.js). The aggregator must be
+> a Supabase Edge Function — `supabase/functions/company-profile/index.ts` — not a Next
+> route handler.
+>
+> **Override store:** `lit_company_overrides` is **NOT yet created** (verified in live DB).
+> Phase 1 does not create it.
+>
+> **Pulse cache:** `lit_saved_companies.gemini_brief` confirmed (column exists). LLM-generated
+> Pulse briefs cache there per-user. For unsaved companies, the new aggregator returns
+> `pulse: null` and the UI is expected to render a deterministic local synthesis (Phase 4).
+
 ---
 
 ## 1. TL;DR

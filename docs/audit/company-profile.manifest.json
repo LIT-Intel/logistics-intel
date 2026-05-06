@@ -1,12 +1,23 @@
 {
   "audit": {
     "feature": "company-profile",
-    "phase": 0,
+    "phase": 1,
     "branch": "claude/review-dashboard-deploy-3AmMD",
     "date": "2026-05-06",
-    "code_changes": false,
+    "code_changes": true,
     "migrations_added": false,
-    "deployed": false
+    "deployed": false,
+    "phase_0_5_corrections": {
+      "tables_verified_present_in_live_db": [
+        { "name": "lit_company_directory", "rows": 12749 },
+        { "name": "lit_company_source_metrics", "rows": 20000 },
+        { "name": "lit_company_index", "rows": 1179 },
+        { "name": "lit_company_search_results", "rows": 1179 },
+        { "name": "lit_company_contact_previews", "rows": 18 }
+      ],
+      "cdp_components_already_mounted_in_company_jsx": true,
+      "framework": "Vite + React Router v7 (not Next.js)"
+    }
   },
   "routes": {
     "active": [
