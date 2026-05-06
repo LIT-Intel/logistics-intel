@@ -291,8 +291,10 @@ export default function App() {
           }
         />
 
+        {/* Phase 2 — explicit fallback to the legacy Company.jsx page.
+            Always available for emergency rollback or comparison. */}
         <Route
-          path="/app/companies/:id"
+          path="/app/companies/:id/legacy"
           element={
             <RequireAuth>
               <LITPage>
@@ -302,12 +304,25 @@ export default function App() {
           }
         />
 
-        {/* Phase 1 — additive preview route exercising the new
-            companyResolver + company-profile aggregator + useCompanyProfile
-            hook. The canonical /app/companies/:id route above is unchanged.
-            Phase 2 evaluates promotion. */}
+        {/* Phase 1 alias — Phase 2 promoted CompanyProfileV2 to the
+            canonical route below, but /preview stays alive so any
+            bookmarks or QA scripts targeting it keep working. */}
         <Route
           path="/app/companies/:id/preview"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <CompanyProfileV2 />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+
+        {/* Phase 2 — canonical company profile now rendered by the new
+            CDP shell + useCompanyProfile aggregator. The legacy view is
+            still available at /app/companies/:id/legacy. */}
+        <Route
+          path="/app/companies/:id"
           element={
             <RequireAuth>
               <LITPage>
