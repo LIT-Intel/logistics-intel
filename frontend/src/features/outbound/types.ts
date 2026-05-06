@@ -68,6 +68,9 @@ export interface BuilderStep {
   delayHours?: number;
   /** Optional sub-hour component for the delay before this step. 0–59 minutes. */
   delayMinutes?: number;
+  /** Whether the dispatcher should append the sender's signature to this
+   *  step's body. Defaults to true. */
+  includeSignature?: boolean;
   expanded: boolean;
 }
 

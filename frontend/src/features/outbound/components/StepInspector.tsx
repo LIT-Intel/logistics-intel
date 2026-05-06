@@ -295,6 +295,27 @@ export function StepInspector({
           </>
         ) : null}
 
+        {isEmail ? (
+          <Field label="Email signature">
+            <label
+              className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2"
+              style={{ fontFamily: fontBody }}
+            >
+              <input
+                type="checkbox"
+                checked={step.includeSignature !== false}
+                onChange={(e) => onUpdate({ includeSignature: e.target.checked })}
+              />
+              <span className="text-[12px] font-semibold text-[#0F172A]">
+                Append my email signature
+              </span>
+              <span className="ml-auto text-[10.5px] text-slate-500">
+                Edit in Settings → Preferences
+              </span>
+            </label>
+          </Field>
+        ) : null}
+
         {!isWait ? (
           <Field label="Delay from previous step">
             <div className="flex flex-wrap items-center gap-2">

@@ -20,6 +20,7 @@ import { applyMergeVars, buildMergeContext } from "@/lib/mergeVars";
 
 import { useSavedCompanies } from "@/features/outbound/hooks/useSavedCompanies";
 import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
+import { useUserSignature } from "@/features/outbound/hooks/useUserSignature";
 import { useTemplates, usePersonas } from "@/features/outbound/hooks/useTemplates";
 import { useCampaign } from "@/features/outbound/hooks/useCampaign";
 
@@ -135,6 +136,8 @@ function dbStepToBuilder(row) {
       waitMinutes: dbDelayMinutes,
     };
   }
+  // Default to true so legacy rows get signatures appended automatically.
+  const includeSig = row.include_signature !== false;
   if (kind === "email") {
     const out = {
       ...base,
@@ -143,6 +146,7 @@ function dbStepToBuilder(row) {
       delayDays: Math.max(0, Number(row.delay_days) || 0),
       delayHours: wholeHours,
       delayMinutes: dbDelayMinutes,
+      includeSignature: includeSig,
     };
     if (row.subject_b !== undefined && row.subject_b !== null) {
       out.subject_b = row.subject_b;
@@ -156,6 +160,7 @@ function dbStepToBuilder(row) {
     delayDays: Math.max(0, Number(row.delay_days) || 0),
     delayHours: wholeHours,
     delayMinutes: dbDelayMinutes,
+    includeSignature: includeSig,
   };
 }
 
@@ -202,6 +207,7 @@ function persistPayloadFor(step, order, campaignId) {
       delay_days: Math.max(0, Number(step.delayDays) || 0),
       delay_hours: clampHours(step.delayHours),
       delay_minutes: clampMinutes(step.delayMinutes),
+      include_signature: step.includeSignature !== false,
     };
     if (step.subject_b !== undefined) {
       payload.subject_b = step.subject_b?.trim() || null;
@@ -218,6 +224,7 @@ function persistPayloadFor(step, order, campaignId) {
     delay_days: Math.max(0, Number(step.delayDays) || 0),
     delay_hours: clampHours(step.delayHours),
     delay_minutes: clampMinutes(step.delayMinutes),
+    include_signature: step.includeSignature !== false,
   };
 }
 
@@ -250,6 +257,7 @@ export default function CampaignBuilder() {
 
   const { companies, loading: companiesLoading } = useSavedCompanies();
   const { primaryEmail, known: inboxKnown } = useInboxStatus();
+  const userSignature = useUserSignature();
   const { state: templatesState, refresh: refreshTemplates } = useTemplates();
   const { result: personasResult, refresh: refreshPersonas } = usePersonas();
 
@@ -566,7 +574,8 @@ export default function CampaignBuilder() {
     setTestSending(true);
     setError(null);
     try {
-      const res = await sendTestEmail(toEmail, subject, body);
+      const includeSig = (selectedStep && selectedStep.kind === "email" ? selectedStep : emailStep)?.includeSignature !== false;
+      const res = await sendTestEmail(toEmail, subject, body, includeSig);
       if ("ok" in res && res.ok) {
         setToast({ message: `Test sent to ${toEmail}`, tone: "success" });
         window.setTimeout(() => setToast(null), 2500);
@@ -915,6 +924,7 @@ export default function CampaignBuilder() {
         onClose={() => setPreviewOpen(false)}
         senderEmail={primaryEmail}
         senderName={primaryEmail ? primaryEmail.split("@")[0] : null}
+        signatureHtml={userSignature.html}
         sampleRecipient={
           manualEmails[0]
             ? {

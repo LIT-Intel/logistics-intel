@@ -52,6 +52,7 @@ export function PreviewModal({
   senderEmail,
   senderName,
   sampleRecipient,
+  signatureHtml,
 }: {
   open: boolean;
   steps: BuilderStep[];
@@ -64,6 +65,11 @@ export function PreviewModal({
     last_name?: string;
     company_name?: string;
   } | null;
+  /** Sanitized HTML signature loaded from lit_user_preferences. Rendered
+   *  after each email step's body when the step has includeSignature on
+   *  (default). Server-side sanitization happened at save-time, so it's
+   *  safe to inject here. */
+  signatureHtml?: string | null;
 }) {
   if (!open) return null;
   const sendable = steps.filter((s) => s.kind !== "wait");
@@ -208,6 +214,13 @@ export function PreviewModal({
                             <span className="text-slate-400">(empty body)</span>
                           )}
                         </pre>
+                        {signatureHtml && s.includeSignature !== false ? (
+                          <div
+                            className="mt-3 border-t border-slate-100 pt-3 text-[12px] text-slate-600"
+                            style={{ fontFamily: fontBody }}
+                            dangerouslySetInnerHTML={{ __html: signatureHtml }}
+                          />
+                        ) : null}
                         {missing.length > 0 && (
                           <div
                             className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10.5px] text-[#B45309]"
