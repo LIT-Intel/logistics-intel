@@ -50,6 +50,7 @@ const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const SectorLandingPage = lazy(() => import("@/pages/landing/SectorLandingPage"));
+const LitMarketingAdmin = lazy(() => import("@/pages/admin/LitMarketingAdmin"));
 
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
@@ -203,6 +204,19 @@ export default function App() {
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/l/:sector" element={<SectorLandingPage />} />
+
+        {/* Super-admin only — LIT marketing (Resend). Strictly separated
+            from the user-campaign builder under /app/campaigns. */}
+        <Route
+          path="/admin/marketing/*"
+          element={
+            <RequireSuperAdmin>
+              <LITPage>
+                <LitMarketingAdmin />
+              </LITPage>
+            </RequireSuperAdmin>
+          }
+        />
 
         <Route
           path="/app/dashboard"
