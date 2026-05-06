@@ -12,20 +12,29 @@ export type FeatureKey =
   | 'company_search'
   | 'company_profile_view'
   | 'saved_company'
+  | 'saved_contact'
   | 'contact_enrichment'
   | 'pulse_brief'
+  | 'pulse_ai'
+  | 'pulse_search'
+  | 'saved_pulse_list'
   | 'export_pdf'
   | 'campaign_send'
-  | 'ai_brief';
+  | 'ai_brief'
+  | 'team_invite';
 
 export interface Entitlements {
   plan: string;
   plan_name: string;
   reset_at: string | null;
+  trial_ends_at?: string | null;
+  trial_days?: number;
+  is_admin_bypass?: boolean;
   market_benchmark_enabled: boolean;
   features: Record<string, boolean>;
   limits: Record<FeatureKey, number | null>;
   used: Record<FeatureKey, number>;
+  seats?: { included: number | null; used: number };
 }
 
 export interface LimitExceeded {
@@ -44,11 +53,16 @@ export const FEATURE_LABELS: Record<FeatureKey, { singular: string; plural: stri
   company_search:       { singular: 'company search',     plural: 'company searches',  verb: 'search' },
   company_profile_view: { singular: 'company profile view', plural: 'profile views',   verb: 'view a profile' },
   saved_company:        { singular: 'saved company',      plural: 'saved companies',   verb: 'save a company' },
+  saved_contact:        { singular: 'saved contact',      plural: 'saved contacts',    verb: 'save a contact' },
   contact_enrichment:   { singular: 'contact enrichment', plural: 'contact enrichments', verb: 'enrich a contact' },
   pulse_brief:          { singular: 'Pulse brief',        plural: 'Pulse briefs',      verb: 'run a Pulse brief' },
+  pulse_ai:             { singular: 'Pulse AI run',       plural: 'Pulse AI runs',     verb: 'run Pulse AI' },
+  pulse_search:         { singular: 'Pulse search',       plural: 'Pulse searches',    verb: 'run a Pulse search' },
+  saved_pulse_list:     { singular: 'saved Pulse list',   plural: 'saved Pulse lists', verb: 'save a Pulse list' },
   export_pdf:           { singular: 'PDF export',         plural: 'PDF exports',       verb: 'export a PDF' },
   campaign_send:        { singular: 'campaign send',      plural: 'campaign sends',    verb: 'send a campaign' },
   ai_brief:             { singular: 'AI brief',           plural: 'AI briefs',         verb: 'generate an AI brief' },
+  team_invite:          { singular: 'team seat',          plural: 'team seats',        verb: 'invite a team member' },
 };
 
 async function callGetEntitlements(): Promise<Entitlements | null> {

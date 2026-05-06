@@ -91,6 +91,13 @@ export const createStripePortalSession = async (payload = {}) =>
 export const listStripeInvoices = async (payload = {}) =>
   invokeSupabaseFunction('list-invoices', payload);
 
+// Authoritative billing snapshot. Returns plan, subscription state,
+// REAL Stripe default payment method (not inferred from customer id),
+// trial_ends_at, and seat snapshot. Use this — not subscriptions row
+// alone — for the Billing page payment-method state.
+export const getBillingStatus = async (payload = {}) =>
+  invokeSupabaseFunction('get-billing-status', payload);
+
 // Previews the next invoice + today's prorated charge if the user
 // upgrades / switches plans now. Powers the pre-checkout confirmation
 // modal so users see "today: $X / then $Y/mo from [date]" before

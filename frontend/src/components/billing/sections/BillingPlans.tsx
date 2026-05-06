@@ -2,7 +2,7 @@
 // app, aligned with the Supabase `plans` table). Visual styling follows
 // the LIT billing design package: 16px radius cards, gradient "Most
 // popular" ribbon, dark "Current plan" ribbon, lift on hover, and a
-// trailing 17%-off chip on annual paid plans.
+// trailing 25%-off chip on annual paid plans.
 //
 // 2026-04-29 billing-truth rewrite:
 //   - Five tiles: Free Trial, Starter, Growth, Scale, Enterprise.
@@ -57,12 +57,15 @@ const META: Record<
   free_trial: {
     icon: Sparkles,
     accent: '#94a3b8',
-    tag: 'Explore the product before committing.',
+    tag: '30-day preview of the full product.',
     bullets: [
       '10 company discoveries',
-      '10 saved accounts',
-      'Dashboard + Search access',
-      'Trial expires when usage is exhausted',
+      '10 saved companies',
+      '10 saved contacts',
+      '5 contact enrichments',
+      '5 Pulse briefs · 5 Pulse AI runs',
+      '1 saved Pulse list',
+      '30 days to evaluate',
     ],
     featured: false,
   },
@@ -72,8 +75,10 @@ const META: Record<
     tag: 'For solo operators running freight outbound.',
     bullets: [
       '1 seat included',
-      '100 company discoveries / month',
+      '75 company discoveries / month',
       '50 saved companies',
+      '25 Pulse briefs / month',
+      '250 campaign emails / month',
       'Company Intelligence pages',
     ],
     featured: false,
@@ -84,11 +89,13 @@ const META: Record<
     tag: 'Multi-user prospecting + campaigns.',
     bullets: [
       '3 seats included',
-      '750 company discoveries / month',
-      '250 saved companies',
-      '35 Pulse briefs / month',
+      '350 company discoveries / month',
+      '350 saved companies',
+      '100 Pulse briefs / month',
+      '100 Pulse searches / month',
+      '10 saved Pulse lists',
+      '150 enrichment credits / month',
       '1,000 campaign emails / month',
-      '75 enrichment credits / month',
     ],
     featured: true,
   },
@@ -98,11 +105,13 @@ const META: Record<
     tag: 'Larger teams, bigger discovery, deeper outreach.',
     bullets: [
       '5 seats included',
-      '2,000 company discoveries / month',
-      '1,500 saved companies',
-      '80 Pulse briefs / month',
+      '1,000 company discoveries / month',
+      '1,000 saved companies',
+      '500 Pulse briefs / month',
+      '500 Pulse searches / month',
+      '25 saved Pulse lists',
+      '500 enrichment credits / month',
       '2,500 campaign emails / month',
-      '200 enrichment credits / month',
     ],
     featured: false,
   },
@@ -174,7 +183,7 @@ export function BillingPlans({
               }}
             >
               <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: '#00F0FF' }} />
-              You're saving 17% vs monthly
+              You're saving 25% vs monthly
             </div>
           ) : (
             <button
@@ -186,7 +195,7 @@ export function BillingPlans({
               className="font-display inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.06em] text-emerald-700"
             >
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Save 17% with annual
+              Save 25% with annual
             </button>
           )}
         </div>
@@ -346,7 +355,7 @@ export function BillingPlans({
                 {code !== 'enterprise' && cycle === 'yearly' && price && price > 0 ? (
                   <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-[1px] text-[10.5px] font-bold text-emerald-700">
                     <Tag className="h-2.5 w-2.5" />
-                    17% off
+                    25% off
                   </span>
                 ) : null}
               </div>
