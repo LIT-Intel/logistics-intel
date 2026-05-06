@@ -569,6 +569,12 @@ function ProfilePanel({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {/* Phase 3.2 — content shell capped at 1500px on large desktops while
+          the outer bg stays full-bleed. Surface / laptop widths are below
+          1500px so this is a no-op there; on 27"+ desktops the company
+          profile no longer floats at the natural max-width of the right
+          rail's 300px + flex-1 center, which made the cards feel small. */}
+      <div className="mx-auto flex w-full max-w-[1500px] flex-1 flex-col">
       <CDPHeader
         company={headerProps.company as any}
         kpis={headerProps.kpis as any}
@@ -701,6 +707,7 @@ function ProfilePanel({ id }: { id: string }) {
           />
         ) : null}
       </div>
+      </div>{/* /Phase 3.2 max-w-[1500px] shell */}
 
       <AddToCampaignModal
         open={campaignModalOpen}
