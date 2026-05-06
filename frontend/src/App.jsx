@@ -51,8 +51,6 @@ const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const SectorLandingPage = lazy(() => import("@/pages/landing/SectorLandingPage"));
-const LitMarketingAdmin = lazy(() => import("@/pages/admin/LitMarketingAdmin"));
-
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
@@ -206,18 +204,11 @@ export default function App() {
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/l/:sector" element={<SectorLandingPage />} />
 
-        {/* Super-admin only — LIT marketing (Resend). Strictly separated
-            from the user-campaign builder under /app/campaigns. */}
-        <Route
-          path="/admin/marketing/*"
-          element={
-            <RequireSuperAdmin>
-              <LITPage>
-                <LitMarketingAdmin />
-              </LITPage>
-            </RequireSuperAdmin>
-          }
-        />
+        {/* /admin/marketing retired — LIT marketing now ships through
+            /app/campaigns with provider=resend gated server-side to the
+            super-admin allowlist. The standalone admin console lived in
+            frontend/src/pages/admin/LitMarketingAdmin.tsx; deleted in
+            this commit. */}
 
         <Route
           path="/app/dashboard"
