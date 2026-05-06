@@ -725,7 +725,9 @@ export default function Pulse() {
             {searchPerformed ? (
               <span>
                 {resultCount} result{resultCount === 1 ? '' : 's'}
-                {localCount ? ` · ${localCount} from your database` : ''}
+                {localCount > 0
+                  ? ` · ${localCount} from your shipment database · ${Math.max(0, resultCount - localCount)} prospect${(resultCount - localCount) === 1 ? '' : 's'}`
+                  : ` · 0 in your shipment database (showing prospects only)`}
               </span>
             ) : null}
           </div>

@@ -115,10 +115,13 @@ async function queryLitCompanies(tokens, recipe, limit) {
 }
 
 async function queryDirectoryWithMetrics(tokens, recipe, limit) {
+  // Directory is a U.S. shipper / importer index — `industry` is null on
+  // every row and `country` is always 'United States'. Filter only on
+  // columns that carry actual data to keep the OR filter cheap and
+  // signal-y. State + city DO have values per row, so they stay.
   const orFilter = buildOrFilter(tokens, [
     'company_name', 'normalized_name', 'canonical_name',
-    'domain', 'canonical_domain', 'city', 'state', 'country',
-    'industry', 'description',
+    'domain', 'canonical_domain', 'city', 'state',
   ]);
   if (!orFilter) return [];
 

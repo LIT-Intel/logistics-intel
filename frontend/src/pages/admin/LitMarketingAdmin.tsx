@@ -40,7 +40,8 @@ type AdminAction =
   | { action: "recipients.list"; campaign_id: string; limit?: number; offset?: number }
   | { action: "recipients.add_from_segment"; campaign_id: string; segment?: string; limit?: number }
   | { action: "recipients.add_emails"; campaign_id: string; emails: Array<{ email: string; first_name?: string; last_name?: string; company_name?: string }> }
-  | { action: "events.summary"; campaign_id: string };
+  | { action: "events.summary"; campaign_id: string }
+  | { action: "templates.list"; sector?: string | null };
 
 async function admin<T = any>(payload: AdminAction): Promise<T> {
   const { data, error } = await supabase.functions.invoke("admin-marketing-api", { body: payload });
@@ -202,6 +203,8 @@ function CampaignEditorPage() {
   const [segment, setSegment] = useState<string>("");
   const [personas, setPersonas] = useState<any[]>([]);
   const [segments, setSegments] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [appliedTemplateKey, setAppliedTemplateKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -209,8 +212,19 @@ function CampaignEditorPage() {
     void Promise.all([
       admin<any[]>({ action: "personas.list" }).then(setPersonas).catch(() => {}),
       admin<any[]>({ action: "audience.segments" }).then(setSegments).catch(() => {}),
+      admin<any[]>({ action: "templates.list" }).then(setTemplates).catch(() => {}),
     ]);
   }, []);
+
+  function applyTemplate(t: any) {
+    setName((prev) => prev || t.name);
+    setSubject(t.subject || "");
+    setBodyHtml(t.body_html || "");
+    setBodyText(t.body_text || "");
+    if (t.persona_key) setPersona(t.persona_key);
+    if (t.sector && t.sector !== "general") setSegment((cur) => cur || mapSectorToSegment(t.sector));
+    setAppliedTemplateKey(t.template_key);
+  }
 
   async function save() {
     if (!name.trim() || !subject.trim()) { setError("Name and subject are required."); return; }
@@ -232,8 +246,42 @@ function CampaignEditorPage() {
   }
 
   return (
-    <AdminShell title="New campaign" subtitle="Draft a marketing send. Status starts as Draft; flip to Active to enable the dispatcher.">
+    <AdminShell title="New campaign" subtitle="Draft a marketing send. Pick a starter template or compose from scratch.">
       {error ? <ErrorBox message={error} /> : null}
+      {templates.length > 0 ? (
+        <section className="mb-4 rounded-xl border border-purple-200 bg-purple-50/30 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-purple-800">Starter templates</div>
+            <div className="text-[10.5px] text-purple-700">Click to apply. All copy is editable after.</div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {templates.map((t: any) => (
+              <button
+                key={t.template_key}
+                type="button"
+                onClick={() => applyTemplate(t)}
+                className={[
+                  "flex flex-col rounded-lg border bg-white p-3 text-left transition",
+                  appliedTemplateKey === t.template_key ? "border-purple-400 ring-2 ring-purple-200" : "border-slate-200 hover:border-purple-300 hover:shadow-sm",
+                ].join(" ")}
+              >
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-slate-600">{t.sector}</span>
+                  <span className="text-[9.5px] text-slate-500">{t.use_case}</span>
+                </div>
+                <div className="text-[12.5px] font-semibold text-[#0F172A]">{t.name}</div>
+                <div className="mt-1 line-clamp-2 text-[11px] text-slate-600">{t.subject}</div>
+                {t.description ? <div className="mt-1 line-clamp-2 text-[10.5px] text-slate-500">{t.description}</div> : null}
+                {appliedTemplateKey === t.template_key ? (
+                  <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-800">
+                    Applied
+                  </div>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-[1fr_320px]">
         <div className="space-y-3">
           <Field label="Campaign name (internal)">
@@ -762,3 +810,16 @@ function EmptyBox({ onCreate }: { onCreate: () => void }) {
 }
 
 function escapeHtml(s: string) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+// Map template sector slug → audience segment key. Templates use the
+// /l/<sector> slugs for branding consistency; the audience uses the
+// underscore_form keys carried on lit_marketing_audience_*.target_segment.
+function mapSectorToSegment(sector: string): string {
+  switch (sector) {
+    case "nvocc": return "nvoccs";
+    case "freight-forwarders": return "freight_forwarders";
+    case "air-ocean-forwarders": return "air_ocean_forwarders";
+    case "customs-brokers": return "customs_brokers";
+    default: return "";
+  }
+}
