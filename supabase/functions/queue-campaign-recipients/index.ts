@@ -1,5 +1,5 @@
 // queue-campaign-recipients — called when the user clicks Launch on a
-// campaign. Builds the recipient roster from THREE sources, all merged
+// campaign. Builds the recipient roster from FOUR sources, all merged
 // onto lit_campaign_contacts (campaign_id, email) so duplicates dedupe:
 //
 //   1. Enriched contacts from attached companies
@@ -7,6 +7,12 @@
 //   2. Manual emails passed in the request body (manual_emails)
 //   3. Manual emails persisted on lit_campaigns.metadata.manual_recipients
 //      from a previous edit (so re-launch works without re-entering them)
+//   4. Universal Lists — when lit_campaigns.metrics.audience_pulse_list_id
+//      is set, the function syncs pulse_list_companies into
+//      lit_campaign_companies (additive, never removes) and merges every
+//      explicit pulse_list_contacts row into the roster. Re-running this
+//      function for an active campaign picks up newly-added list
+//      members ("live-bound" audience).
 //
 // Authenticated POST.
 // Body: {
@@ -86,6 +92,37 @@ serve(async (req) => {
     .maybeSingle();
   const orgId = member?.org_id ?? null;
 
+  // 2b. If the campaign is bound to a Pulse List, sync the list's
+  //     companies into lit_campaign_companies first. This is additive —
+  //     existing attachments stay, new list members get pulled in.
+  //     Live-binding for active campaigns happens by simply re-calling
+  //     this function on a tick or on user action.
+  const audiencePulseListId =
+    typeof (camp as any)?.metrics?.audience_pulse_list_id === "string"
+      ? (camp as any).metrics.audience_pulse_list_id
+      : null;
+  let listExplicitContactIds: string[] = [];
+  if (audiencePulseListId) {
+    const { data: listCompanies } = await admin
+      .from("pulse_list_companies")
+      .select("company_id")
+      .eq("list_id", audiencePulseListId);
+    const newAttachments = (listCompanies ?? [])
+      .map((r: any) => r.company_id)
+      .filter(Boolean)
+      .map((cid: string) => ({ campaign_id: campaignId, company_id: cid }));
+    if (newAttachments.length > 0) {
+      await admin
+        .from("lit_campaign_companies")
+        .upsert(newAttachments, { onConflict: "campaign_id,company_id", ignoreDuplicates: true });
+    }
+    const { data: listContacts } = await admin
+      .from("pulse_list_contacts")
+      .select("contact_id")
+      .eq("list_id", audiencePulseListId);
+    listExplicitContactIds = (listContacts ?? []).map((r: any) => r.contact_id).filter(Boolean);
+  }
+
   // 3. Pull attached companies (may be empty if the user is only sending
   //    to manual emails — that's a valid flow).
   const { data: campCompanies, error: ccErr } = await admin
@@ -106,6 +143,23 @@ serve(async (req) => {
       .not("email", "is", null);
     if (contactErr) return json({ ok: false, error: contactErr.message }, 500);
     contacts = contactRows ?? [];
+  }
+
+  // 4b. Pull explicit list contacts (pulse_list_contacts.contact_id) that
+  //     aren't already in the company-derived set, so a list curated at
+  //     contact-level still ships even if its parent company has no
+  //     other enriched contacts.
+  if (listExplicitContactIds.length > 0) {
+    const seenContactIds = new Set(contacts.map((c: any) => c.id));
+    const missingIds = listExplicitContactIds.filter((id) => !seenContactIds.has(id));
+    if (missingIds.length > 0) {
+      const { data: extraRows } = await admin
+        .from("lit_contacts")
+        .select("id, company_id, email, first_name, last_name, full_name, title, linkedin_url, phone")
+        .in("id", missingIds)
+        .not("email", "is", null);
+      contacts = contacts.concat(extraRows ?? []);
+    }
   }
 
   // 5. Build roster rows from enriched contacts.

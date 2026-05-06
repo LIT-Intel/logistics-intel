@@ -42,6 +42,7 @@ import {
   setCampaignCompanies,
   deleteCampaignStepsFrom,
 } from "@/features/outbound/api/campaignActions";
+import { listPulseLists, getListCompanies } from "@/features/pulse/pulseListsApi";
 
 // /app/campaigns/new — create flow
 // /app/campaigns/new?edit=:id — edit flow (loads existing campaign)
@@ -233,8 +234,19 @@ export default function CampaignBuilder() {
   const [searchParams] = useSearchParams();
   const playId = searchParams.get("play");
   const editId = searchParams.get("edit");
+  const audienceListIdFromUrl = searchParams.get("audience_list");
   const isEditMode = Boolean(editId);
   const seedPlay = useMemo(() => findPlay(playId), [playId]);
+
+  // Universal Lists binding. When the user clicks "Use in Campaign" on
+  // /app/lists/<id>, we land here with ?audience_list=<id>. We then:
+  //   - fetch the list's companies and seed selectedIds
+  //   - hold the list id in state so save persists it onto
+  //     lit_campaigns.metrics.audience_pulse_list_id
+  //   - show a Linked List badge so the user knows the campaign will
+  //     pick up new list members on the next sync.
+  const [audiencePulseListId, setAudiencePulseListId] = useState(null);
+  const [audiencePulseListName, setAudiencePulseListName] = useState("");
 
   // Load existing campaign when in edit mode.
   const { details, loading: campaignLoading, error: campaignError } =
@@ -291,6 +303,18 @@ export default function CampaignBuilder() {
     if (typeof metricsPersona === "string" && metricsPersona) {
       setSelectedPersonaId(metricsPersona);
     }
+    const persistedListId = typeof details.metrics?.audience_pulse_list_id === "string"
+      ? details.metrics.audience_pulse_list_id
+      : null;
+    if (persistedListId) {
+      setAudiencePulseListId(persistedListId);
+      // Best-effort name lookup so the badge shows something meaningful.
+      listPulseLists().then((res) => {
+        if (!res.ok) return;
+        const found = (res.rows || []).find((l) => l.id === persistedListId);
+        if (found) setAudiencePulseListName(found.name || "");
+      });
+    }
     // Pull persisted manual recipients (added in a previous Launch). The
     // edge function persists them on lit_campaigns.metrics.manual_recipients
     // when Launch runs, so re-launching keeps them.
@@ -304,6 +328,35 @@ export default function CampaignBuilder() {
     if (typeof details.metrics?.tone === "string") setTone(details.metrics.tone);
     setHydratedFromEdit(true);
   }, [isEditMode, details, hydratedFromEdit]);
+
+  // Create-mode hydration from ?audience_list=<id>. Runs once. Pulls
+  // the list's companies, pre-fills the selectedIds, and remembers the
+  // list id so save persists it onto the campaign metrics. The queue
+  // function uses the persisted id to live-bind on subsequent runs.
+  useEffect(() => {
+    if (isEditMode) return;
+    if (!audienceListIdFromUrl) return;
+    if (audiencePulseListId === audienceListIdFromUrl) return;
+    let cancelled = false;
+    Promise.all([
+      listPulseLists(),
+      getListCompanies(audienceListIdFromUrl),
+    ]).then(([listsRes, companiesRes]) => {
+      if (cancelled) return;
+      const found = (listsRes.rows || []).find((l) => l.id === audienceListIdFromUrl);
+      setAudiencePulseListId(audienceListIdFromUrl);
+      if (found) setAudiencePulseListName(found.name || "");
+      const ids = (companiesRes.rows || []).map((r) => r.id).filter(Boolean);
+      if (ids.length > 0) {
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          for (const id of ids) next.add(id);
+          return next;
+        });
+      }
+    });
+    return () => { cancelled = true; };
+  }, [audienceListIdFromUrl, isEditMode, audiencePulseListId]);
 
   const selectedStep = useMemo(
     () => steps.find((s) => s.localId === selectedStepId) ?? null,
@@ -450,6 +503,9 @@ export default function CampaignBuilder() {
         // Explicitly clear if the user removed them all in this edit session.
         metricsExtras.manual_recipients = [];
       }
+      // Persist the bound Pulse List id so queue-campaign-recipients can
+      // sync new list members on every run. null clears the binding.
+      metricsExtras.audience_pulse_list_id = audiencePulseListId || null;
       // Preserve any pre-existing metrics keys (description, etc.) when editing.
       const mergedMetrics = isEditMode
         ? { ...(details?.metrics ?? {}), ...metricsExtras }
@@ -830,6 +886,32 @@ export default function CampaignBuilder() {
       </div>
 
       <ForecastStrip audienceCount={selectedIds.size} />
+      {audiencePulseListId ? (
+        <div
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-blue-200 bg-blue-50 px-3 py-1.5 text-[11px] text-blue-900"
+          style={{ fontFamily: fontBody }}
+        >
+          <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white">
+            LINKED LIST
+          </span>
+          <span className="font-semibold">{audiencePulseListName || "Universal List"}</span>
+          <span className="text-blue-700">
+            New companies and contacts added to this list will be pulled in on the next Launch.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setAudiencePulseListId(null);
+              setAudiencePulseListName("");
+            }}
+            className="ml-auto inline-flex items-center gap-1 rounded-md border border-blue-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-blue-800 hover:bg-blue-50"
+            style={{ fontFamily: fontDisplay }}
+            title="Detach this list — campaign will only use the manual recipients/companies you've set"
+          >
+            Detach
+          </button>
+        </div>
+      ) : null}
       <ScheduleStrip steps={steps} launching={launching} />
 
       {error || campaignError ? (
