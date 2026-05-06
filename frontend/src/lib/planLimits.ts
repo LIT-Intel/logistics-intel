@@ -129,7 +129,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
   starter: {
     code: "starter",
     label: "Starter",
-    pricing: { monthly: 125, yearly: 1500, perSeat: false },
+    pricing: { monthly: 125, yearly: 1125, perSeat: false },
     seatRules: { min: 1, max: 1, default: 1 },
     includedSeats: 1,
     features: {
