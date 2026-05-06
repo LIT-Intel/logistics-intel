@@ -1,6 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
+import { Code } from "lucide-react";
 import { CHANNEL, fontDisplay, fontBody, fontMono } from "../tokens";
 import { ChannelIcon } from "./ChannelChip";
+import EmailComposerModal from "./EmailComposerModal";
 import type { BuilderStep, OutreachTemplate } from "../types";
 
 const VARIABLES = [
@@ -33,6 +35,7 @@ export function StepInspector({
   onTestSend,
   onSaveAsTemplate,
 }: Props) {
+  const [composerOpen, setComposerOpen] = useState(false);
   if (!step) {
     return (
       <div className="flex h-full items-center justify-center border-l border-slate-200 bg-white px-6 text-center">
@@ -237,6 +240,24 @@ export function StepInspector({
             )}
 
             <Field label="Body">
+              <div className="flex items-center justify-between gap-2 pb-1.5">
+                <p
+                  className="text-[11px] text-slate-500"
+                  style={{ fontFamily: fontBody }}
+                >
+                  Plain text or HTML. Tokens resolve at send time.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setComposerOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[0.04em] text-blue-700 hover:bg-blue-100"
+                  style={{ fontFamily: fontDisplay }}
+                  title="Open the full HTML composer with live preview, sanitizer, and test send"
+                >
+                  <Code className="h-3 w-3" />
+                  Open Composer
+                </button>
+              </div>
               <textarea
                 rows={8}
                 value={step.body}
@@ -246,12 +267,6 @@ export function StepInspector({
                 style={{ fontFamily: fontBody, lineHeight: 1.55 }}
               />
               <VariableChips onInsert={insertVariable} />
-              <p
-                className="mt-1.5 text-[11px] text-slate-400"
-                style={{ fontFamily: fontBody }}
-              >
-                Plain text. Variables resolve at send time once the dispatcher ships.
-              </p>
             </Field>
           </>
         ) : null}
@@ -412,6 +427,17 @@ export function StepInspector({
             Test send
           </button>
         </div>
+      ) : null}
+      {isEmail ? (
+        <EmailComposerModal
+          open={composerOpen}
+          onClose={() => setComposerOpen(false)}
+          initialSubject={step.subject || ""}
+          initialBody={step.body || ""}
+          fromName={undefined}
+          fromEmail={primaryInboxEmail || undefined}
+          onSave={(next) => onUpdate({ subject: next.subject, body: next.body })}
+        />
       ) : null}
     </div>
   );
