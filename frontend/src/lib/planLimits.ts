@@ -168,7 +168,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
   growth: {
     code: "growth",
     label: "Growth",
-    pricing: { monthly: 499, yearly: 4790, perSeat: false },
+    pricing: { monthly: 499, yearly: 4491, perSeat: false },
     seatRules: { min: 3, max: 3, default: 3 },
     includedSeats: 3,
     features: {
