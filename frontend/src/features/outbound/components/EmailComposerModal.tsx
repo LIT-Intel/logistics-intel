@@ -24,6 +24,8 @@ import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fontDisplay, fontBody, fontMono } from "@/features/outbound/tokens";
 import { sendTestEmail } from "@/lib/api";
+import StarterTemplateGallery from "@/features/outbound/components/StarterTemplateGallery";
+import type { StarterTemplate } from "@/features/outbound/data/starterTemplates";
 
 type Token = { token: string; sample: string; label: string };
 
@@ -88,6 +90,7 @@ export default function EmailComposerModal({
   const [body, setBody] = useState(initialBody || "");
   const [previewMode, setPreviewMode] = useState<"desktop" | "mobile" | "dark">("desktop");
   const [tokenOpen, setTokenOpen] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const [testTo, setTestTo] = useState("");
   const [testSending, setTestSending] = useState(false);
   const [testStatus, setTestStatus] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
@@ -236,17 +239,16 @@ table{max-width:100%;}
             />
           </div>
           <div className="flex items-center gap-1.5">
-            {onOpenTemplates ? (
-              <button
-                type="button"
-                onClick={onOpenTemplates}
-                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                style={{ fontFamily: fontDisplay }}
-              >
-                <Copy className="h-3 w-3" />
-                Templates
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => (onOpenTemplates ? onOpenTemplates() : setGalleryOpen(true))}
+              className="inline-flex items-center gap-1 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+              style={{ fontFamily: fontDisplay }}
+              title="Start from a branded template"
+            >
+              <Copy className="h-3 w-3" />
+              Templates
+            </button>
             <button
               type="button"
               onClick={handleSave}
@@ -451,6 +453,16 @@ table{max-width:100%;}
           </div>
         ) : null}
       </div>
+      <StarterTemplateGallery
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        onPick={(t: StarterTemplate) => {
+          setSubject(t.subject);
+          setBody(t.body_html);
+          setDirty(true);
+          setGalleryOpen(false);
+        }}
+      />
     </>
   );
 }
