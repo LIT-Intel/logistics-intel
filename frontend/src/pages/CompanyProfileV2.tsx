@@ -1,34 +1,34 @@
 /**
- * Phase 3 — Canonical Company Profile container (full-width, rich data).
+ * Phase 3.4 — Canonical Company Profile container.
  *
- * Mounted at /app/companies/:id (canonical), /app/companies/:id/preview
- * (alias), with /app/companies/:id/legacy preserved as fallback.
+ * Near-clone of `frontend/src/pages/Company.jsx`. The render tree, state,
+ * and handlers are copied verbatim from the legacy page so V2 has byte-
+ * identical layout / KPI mapping / Pulse generation / refresh / share /
+ * export behavior. The only V2 deltas are the wrappers at the top
+ * (CompanyProfileGuard + V2ErrorBoundary) and a directory-only Save &
+ * Enrich card that replaces the Supply Chain tab body when the resolved
+ * company is absent from `lit_companies` but present in
+ * `lit_company_directory`.
  *
- * Phase 3 architectural note (TEMPORARY):
- * V2 fetches shipment data through the known-good legacy ImportYeti path
- * (`getSavedCompanyShellOnly` → cached snapshot, with a background
- * `getSavedCompanyDetail({ forceRefresh:false })` if the shell is missing
- * or stale) instead of the new `company-profile` aggregator. Identity /
- * contacts / activity / pulse still come from the aggregator + resolver.
- * This dual-fetch is intentional for Phase 3 to match legacy parity; we
- * consolidate in a later phase once the aggregator's shipment block is
- * fully equivalent to `normalizeIyCompanyProfile`.
- *
- * Layout matches the legacy page: full-bleed flex with `flex-1` content +
- * 360px right rail. No `max-w-7xl` cap.
+ * Mounted at /app/companies/:id (canonical) with /app/companies/:id/preview
+ * (alias) and /app/companies/:id/legacy (the actual legacy page) as
+ * peers. Production app.logisticintel.com is unchanged until promoted.
  */
 
 import {
   Component,
-  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { toast } from "sonner";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import {
   ArrowLeft,
   Loader2,
@@ -37,47 +37,238 @@ import {
   Workflow,
   Activity,
   Inbox,
-  ServerCrash,
   Wrench,
   Bookmark,
 } from "lucide-react";
+import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
+import {
+  getSavedCompanyDetail,
+  getSavedCompanyShellOnly,
+  buildYearScopedProfile,
+  saveCompanyToCommandCenter,
+} from "@/lib/api";
+import { useAuth } from "@/auth/AuthProvider";
+import { capFutureDate } from "@/lib/dateUtils";
+import { supabase } from "@/lib/supabase";
 
 import CDPHeader from "@/components/company/CDPHeader";
 import CDPDetailsPanel from "@/components/company/CDPDetailsPanel";
+import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import CDPSupplyChain from "@/components/company/CDPSupplyChain";
 import CDPContacts from "@/components/company/CDPContacts";
 import CDPResearch from "@/components/company/CDPResearch";
 import CDPActivity from "@/components/company/CDPActivity";
 import CompanyInboxTab from "@/components/company/CompanyInboxTab";
 import CompanyProfileGuard from "@/components/company/CompanyProfileGuard";
-import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
-import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
-import { useAuth } from "@/auth/AuthProvider";
 import { useCompanyProfile } from "@/hooks/useCompanyProfile";
-import {
-  buildYearScopedProfile,
-  getSavedCompanyDetail,
-  getSavedCompanyShellOnly,
-  saveCompanyToCommandCenter,
-  type IyCompanyProfile,
-  type IyRouteKpis,
-} from "@/lib/api";
-import {
-  loadSyntheticProfile,
-} from "@/lib/companyProfileFallback";
-import type { ProfileBundle } from "@/lib/companyProfile.types";
+import { loadSyntheticProfile } from "@/lib/companyProfileFallback";
 
-type TabId = "supply-chain" | "contacts" | "pulse" | "activity" | "inbox";
+// =============================================================================
+// Constants & helpers — verbatim from Company.jsx 51–209.
+// =============================================================================
 
-const TABS: { id: TabId; label: string; icon: any }[] = [
-  { id: "supply-chain", label: "Supply Chain", icon: Workflow },
-  { id: "contacts", label: "Contacts", icon: Users },
-  { id: "pulse", label: "Pulse AI", icon: Sparkles },
-  { id: "activity", label: "Activity", icon: Activity },
-  { id: "inbox", label: "Inbox", icon: Inbox },
-];
+const PULSE_ERROR_COPY: Record<string, string> = {
+  LIMIT_EXCEEDED:
+    "You've reached your Pulse AI report limit for this billing period.",
+  MISSING_COMPANY_IDENTIFIER:
+    "We couldn't identify this company to generate a Pulse AI report.",
+  COMPANY_NOT_FOUND: "We couldn't find this company in the database.",
+  PULSE_AI_FAILED: "Pulse AI generation failed. Try again in a moment.",
+  TAVILY_NOT_CONFIGURED:
+    "AI search source not configured. Ask your admin to enable it.",
+  TAVILY_FAILED: "Web search failed. Try again in a moment.",
+  INVALID_INPUT: "We couldn't read this company's identity to build a report.",
+  UNAUTHORIZED: "Sign in again to generate a Pulse AI report.",
+  SUPABASE_NOT_CONFIGURED:
+    "Pulse AI service is missing core configuration. Contact support.",
+};
 
-// ---------- Error boundary ----------
+const EXPORT_ERROR_COPY: Record<string, string> = {
+  STORAGE_NOT_PROVISIONED:
+    "Storage bucket not configured. Page link copied instead.",
+  PDF_NOT_AVAILABLE: "PDF render not available — open HTML version?",
+  COMPANY_NOT_FOUND: "We couldn't find this company in the database.",
+  COMPANY_FETCH_FAILED:
+    "Couldn't load company details for export. Try again in a moment.",
+  UPLOAD_FAILED: "Couldn't upload the export. Try again in a moment.",
+  SIGN_FAILED: "Couldn't generate a share link. Try again in a moment.",
+  INVALID_INPUT: "Export request was malformed.",
+  UNAUTHORIZED: "Sign in again to export this profile.",
+  SUPABASE_NOT_CONFIGURED:
+    "Export service is missing core configuration. Contact support.",
+};
+
+async function parseEdgeFunctionError(invokeError: any): Promise<any | null> {
+  if (!invokeError) return null;
+  const ctx = invokeError.context;
+  if (!ctx) return null;
+  try {
+    if (typeof ctx.clone === "function" && typeof ctx.json === "function") {
+      const cloned = ctx.clone();
+      const body = await cloned.json();
+      if (body && typeof body === "object") return body;
+    } else if (typeof ctx.json === "function") {
+      const body = await ctx.json();
+      if (body && typeof body === "object") return body;
+    } else if (typeof ctx.text === "function") {
+      const text = await ctx.text();
+      try {
+        const body = JSON.parse(text);
+        if (body && typeof body === "object") return body;
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
+
+function capDateAtToday(value: any): string | null {
+  return capFutureDate(value);
+}
+
+function normalizeDateValue(value: any): string | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+  return null;
+}
+
+function getNestedValue(obj: any, path: string[]): any {
+  let current = obj;
+  for (const key of path) {
+    if (current == null) return null;
+    current = current[key];
+  }
+  return current ?? null;
+}
+
+function pickFirstValue(...values: any[]): any {
+  for (const value of values) {
+    if (value == null) continue;
+    if (typeof value === "string" && !value.trim()) continue;
+    return value;
+  }
+  return null;
+}
+
+function getShipmentDateValue(shipment: any): string | null {
+  const candidates = [
+    shipment,
+    shipment?.raw,
+    shipment?.raw?.shipment,
+    shipment?.raw?.data,
+  ];
+  const paths = [
+    ["bill_of_lading_date"],
+    ["bill_of_lading_date_formatted"],
+    ["arrival_date"],
+    ["shipment_date"],
+    ["date"],
+    ["estimated_arrival"],
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    for (const path of paths) {
+      const value = getNestedValue(candidate, path);
+      const normalized = normalizeDateValue(value);
+      const capped = capDateAtToday(normalized);
+      if (capped) return capped;
+    }
+  }
+  return null;
+}
+
+function getLatestShipmentFromProfile(profile: any): string | null {
+  const directLatest = normalizeDateValue(
+    pickFirstValue(profile?.lastShipmentDate, profile?.last_shipment_date),
+  );
+  const safeDirectLatest = capDateAtToday(directLatest);
+  if (safeDirectLatest) return safeDirectLatest;
+
+  const shipments =
+    profile?.recentBols ||
+    profile?.recent_bols ||
+    profile?.bols ||
+    profile?.shipments ||
+    [];
+  if (!Array.isArray(shipments) || shipments.length === 0) return null;
+
+  const validDates = shipments
+    .map(getShipmentDateValue)
+    .filter(Boolean)
+    .sort(
+      (a: any, b: any) => new Date(b).getTime() - new Date(a).getTime(),
+    );
+
+  return (validDates[0] as string) || null;
+}
+
+function getStoredSelectedCompany(): any {
+  try {
+    const raw = localStorage.getItem("lit:selectedCompany");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildShellCompany(companyId: string | null, stored: any): any {
+  if (!companyId && !stored) return null;
+  const stripPrefix = (v: any) =>
+    String(v || "").replace(/^company\//, "").toLowerCase();
+  const routeBare = stripPrefix(companyId);
+  const storedCandidates = [
+    stored?.company_id,
+    stored?.source_company_key,
+    stored?.companyId,
+    stored?.id,
+  ]
+    .filter(Boolean)
+    .map(stripPrefix);
+  const storedMatches =
+    !!stored && routeBare && storedCandidates.includes(routeBare);
+  const safe = storedMatches ? stored : null;
+
+  return {
+    companyId:
+      companyId || safe?.company_id || safe?.source_company_key || null,
+    name: safe?.name || safe?.title || "Company",
+    address: safe?.address || null,
+    countryCode: safe?.country_code || safe?.countryCode || null,
+    domain: safe?.domain || null,
+    website: safe?.website || null,
+    phone: safe?.phone || null,
+    kpis: {
+      shipments: safe?.kpis?.shipments_12m ?? safe?.shipments_12m ?? null,
+      teu: safe?.kpis?.teu_12m ?? safe?.teu_12m ?? null,
+      spend: safe?.kpis?.est_spend_12m ?? safe?.est_spend_12m ?? null,
+      latestShipment: safe?.kpis?.last_activity ?? safe?.last_activity ?? null,
+      topRoute: safe?.kpis?.top_route_12m ?? safe?.top_route_12m ?? null,
+      recentRoute: safe?.kpis?.recent_route ?? safe?.recent_route ?? null,
+    },
+    country: safe?.country || null,
+  };
+}
+
+const TABS = [
+  { id: "supply", label: "Supply Chain", Icon: Workflow },
+  { id: "contacts", label: "Contacts", Icon: Users },
+  { id: "research", label: "Pulse AI", Icon: Sparkles },
+  { id: "activity", label: "Activity", Icon: Activity },
+  { id: "inbox", label: "Inbox", Icon: Inbox },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
+
+// =============================================================================
+// V2-only: error boundary + directory-only Save & Enrich card.
+// =============================================================================
+
 type BoundaryProps = { rawId: string; children: ReactNode };
 type BoundaryState = { error: Error | null };
 class V2ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
@@ -125,671 +316,6 @@ class V2ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
   }
 }
 
-// ---------- Helpers ----------
-function bundleToHeaderProps(bundle: ProfileBundle, profile: IyCompanyProfile | null) {
-  const d = bundle.identity.display;
-  const m = bundle.identity.sources.metrics;
-  const p = profile;
-  const c = bundle.contacts;
-  return {
-    company: {
-      id: bundle.identity.id,
-      name: d.name || p?.name || "Unknown Company",
-      domain: d.domain ?? p?.domain ?? null,
-      website: d.website ?? p?.website ?? null,
-      address:
-        [d.address.line1, d.address.city, d.address.state]
-          .filter(Boolean)
-          .join(", ") || p?.address || null,
-      countryCode: d.address.country_code ?? p?.countryCode ?? null,
-      countryName: d.address.country ?? p?.country ?? null,
-      phone: d.phone ?? p?.phone ?? null,
-    },
-    kpis: {
-      shipments: p?.routeKpis?.shipmentsLast12m ?? p?.totalShipments ?? m.shipments_12m,
-      shipmentsAllTime: p?.totalShipmentsAllTime ?? null,
-      teu: p?.routeKpis?.teuLast12m ?? p?.totalTeuAllTime ?? m.teu_12m,
-      spend: p?.routeKpis?.estSpendUsd12m ?? p?.estSpendUsd12m ?? m.est_spend_12m,
-      spendAllTime: (p as any)?.estSpendAllTime ?? p?.estSpendUsd ?? null,
-      lastShipment: p?.lastShipmentDate ?? m.last_shipment,
-      topRoute: p?.routeKpis?.topRouteLast12m ?? m.top_route,
-      recentRoute: p?.routeKpis?.mostRecentRoute ?? null,
-      // Match legacy: prefer all-time FCL/LCL, fall back to 12m / saved-row.
-      fclCount:
-        p?.fcl_shipments_all_time ??
-        (p as any)?.fcl_count ??
-        p?.containers?.fclShipments12m ??
-        m.fcl_shipments_12m,
-      lclCount:
-        p?.lcl_shipments_all_time ??
-        (p as any)?.lcl_count ??
-        p?.containers?.lclShipments12m ??
-        m.lcl_shipments_12m,
-      tradeLanes: Array.isArray(p?.topRoutes) ? p!.topRoutes!.length : null,
-      contacts: c?.count ?? null,
-      contactsVerified:
-        c?.items.filter((x) => x.is_verified).length ?? null,
-    },
-  };
-}
-
-function deriveYears(profile: IyCompanyProfile | null): number[] {
-  if (!profile?.timeSeries?.length) return [];
-  const set = new Set<number>();
-  for (const point of profile.timeSeries) {
-    const y = Number(point?.year);
-    if (Number.isFinite(y) && y > 1990) set.add(y);
-  }
-  return Array.from(set).sort((a, b) => b - a);
-}
-
-// ---------- Main panel ----------
-function ProfilePanel({ id }: { id: string }) {
-  const navigate = useNavigate();
-  const auth = useAuth();
-  const [activeTab, setActiveTab] = useState<TabId>("supply-chain");
-  const [panelOpen, setPanelOpen] = useState(true);
-  const [savingStar, setSavingStar] = useState(false);
-  const [campaignModalOpen, setCampaignModalOpen] = useState(false);
-
-  // Owner identity for the right-rail Account Details card. Mirrors
-  // legacy Company.jsx:715–730.
-  const ownerName = useMemo(() => {
-    const user: any = auth?.user;
-    return (
-      auth?.fullName ||
-      user?.user_metadata?.full_name ||
-      user?.user_metadata?.name ||
-      user?.email?.split?.("@")[0] ||
-      null
-    );
-  }, [auth]);
-  const ownerInitials = useMemo(() => {
-    if (!ownerName) return null;
-    return ownerName
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part: string) => part.charAt(0).toUpperCase())
-      .join("");
-  }, [ownerName]);
-
-  // Aggregator: identity + contacts + activity + pulse (NOT shipments).
-  const {
-    data: bundle,
-    loading: bundleLoading,
-    error: bundleError,
-    refetch: refetchBundle,
-    usedFallback,
-  } = useCompanyProfile(id, {
-    include: ["identity", "contacts", "activity"],
-  });
-
-  // Legacy ImportYeti shipment path — known-good, mirrors Company.jsx.
-  const [iyProfile, setIyProfile] = useState<IyCompanyProfile | null>(null);
-  const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
-  const [snapshotUpdatedAt, setSnapshotUpdatedAt] = useState<string | null>(null);
-  const [snapshotIsStale, setSnapshotIsStale] = useState<boolean>(true);
-  const [shipmentsLoading, setShipmentsLoading] = useState<boolean>(false);
-  const [manualRefreshing, setManualRefreshing] = useState<boolean>(false);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
-  const [refreshLimitState, setRefreshLimitState] = useState<{
-    feature: string | null;
-    plan: string | null;
-    used: number | null;
-    limit: number | null;
-    reset_at: string | null;
-    upgrade_url: string;
-  } | null>(null);
-  const [didAutoRefresh, setDidAutoRefresh] = useState<boolean>(false);
-
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
-  const years = useMemo(() => deriveYears(iyProfile), [iyProfile]);
-  const lastShipmentKeyRef = useRef<string | null>(null);
-
-  // Pick a sensible year when profile lands.
-  useEffect(() => {
-    if (years.length === 0) {
-      setSelectedYear(null);
-      return;
-    }
-    if (selectedYear == null || !years.includes(selectedYear)) {
-      setSelectedYear(years[0]);
-    }
-  }, [years, selectedYear]);
-
-  // ----- Step 1: shell-only cached read -----
-  // Anchor the shipment fetch to the resolved canonical key/UUID once
-  // the aggregator has resolved identity. We prefer the source_company_key
-  // because the snapshot is keyed on slug, but UUID also works for the
-  // upstream helpers.
-  const shipmentKey = useMemo(() => {
-    if (bundle?.identity?.key) return bundle.identity.key;
-    if (bundle?.identity?.id) return bundle.identity.id;
-    return id;
-  }, [bundle, id]);
-
-  // Reset shipment state when the resolved key changes.
-  useEffect(() => {
-    if (shipmentKey === lastShipmentKeyRef.current) return;
-    lastShipmentKeyRef.current = shipmentKey;
-    setIyProfile(null);
-    setRouteKpis(null);
-    setSnapshotUpdatedAt(null);
-    setSnapshotIsStale(true);
-    setDidAutoRefresh(false);
-  }, [shipmentKey]);
-
-  // Cached-first load.
-  useEffect(() => {
-    if (!shipmentKey) return;
-    let cancelled = false;
-    setShipmentsLoading(true);
-
-    (async () => {
-      try {
-        const shell = await getSavedCompanyShellOnly(shipmentKey);
-        if (cancelled) return;
-        setSnapshotUpdatedAt(shell.snapshotUpdatedAt);
-        setSnapshotIsStale(shell.isStale);
-        if (shell.profile) {
-          setIyProfile(shell.profile);
-          setRouteKpis(shell.routeKpis);
-        }
-      } catch (e) {
-        console.warn("[CompanyProfileV2] shell load failed", e);
-      } finally {
-        if (!cancelled) setShipmentsLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [shipmentKey]);
-
-  // Synthetic fallback from lit_companies + lit_company_source_metrics
-  // when (a) the aggregator has resolved a saved-company UUID and
-  // (b) the shell read returned nothing or no top_routes.
-  useEffect(() => {
-    const savedId = bundle?.identity?.id;
-    const savedPresent = bundle?.identity?.sources?.saved?.present === true;
-    if (!savedId || !savedPresent) return;
-    if (shipmentsLoading) return;
-    const hasRichProfile =
-      iyProfile &&
-      ((iyProfile.topRoutes && iyProfile.topRoutes.length > 0) ||
-        (iyProfile.timeSeries && iyProfile.timeSeries.length > 0));
-    if (hasRichProfile) return;
-
-    let cancelled = false;
-    (async () => {
-      const synthetic = await loadSyntheticProfile(savedId);
-      if (cancelled || !synthetic) return;
-      // Only adopt the synthetic profile if we still don't have a real one.
-      setIyProfile((prev) => (prev && (prev.timeSeries?.length || prev.recentBols?.length) ? prev : synthetic));
-      setRouteKpis((prev) => prev ?? synthetic.routeKpis);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bundle?.identity?.id, bundle?.identity?.sources?.saved?.present, shipmentsLoading, iyProfile]);
-
-  // ----- Step 2: background refresh (no forceRefresh) when stale -----
-  // Mirrors legacy Company.jsx behavior: silently fetch fresh ImportYeti
-  // when the cached snapshot is missing or stale, but never burn a
-  // forceRefresh credit on auto-load. Best-effort; swallow LIMIT_EXCEEDED
-  // and other errors silently because the page is still useful with
-  // synthetic/shell data.
-  useEffect(() => {
-    if (!shipmentKey) return;
-    if (didAutoRefresh) return;
-    if (shipmentsLoading) return;
-    if (!snapshotIsStale && iyProfile && iyProfile.timeSeries?.length) return;
-
-    const savedPresent = bundle?.identity?.sources?.saved?.present === true;
-    if (!savedPresent) return; // do not auto-fetch for directory-only profiles
-
-    let cancelled = false;
-    setDidAutoRefresh(true);
-    (async () => {
-      try {
-        const fresh = await getSavedCompanyDetail(shipmentKey, undefined, {
-          forceRefresh: false,
-        } as any);
-        if (cancelled || !fresh) return;
-        if (fresh.profile) setIyProfile(fresh.profile);
-        if (fresh.routeKpis) setRouteKpis(fresh.routeKpis);
-        setSnapshotUpdatedAt(new Date().toISOString());
-        setSnapshotIsStale(false);
-      } catch (err: any) {
-        const code = err?.code;
-        if (code === "LIMIT_EXCEEDED") {
-          // Silent on auto-refresh — user-triggered refresh handles UI
-          // gating. We don't want to nag trial users on every page load.
-          console.info("[CompanyProfileV2] auto-refresh skipped: LIMIT_EXCEEDED");
-        } else {
-          console.warn("[CompanyProfileV2] auto-refresh failed", code, err);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [shipmentKey, didAutoRefresh, shipmentsLoading, snapshotIsStale, iyProfile, bundle?.identity?.sources?.saved?.present]);
-
-  // ----- User-triggered refresh (forceRefresh: true) -----
-  const handleManualRefresh = useCallback(async () => {
-    if (!shipmentKey || manualRefreshing) return;
-    setManualRefreshing(true);
-    setRefreshLimitState(null);
-    setRefreshError(null);
-    try {
-      const fresh = await getSavedCompanyDetail(shipmentKey, undefined, {
-        forceRefresh: true,
-      } as any);
-      if (fresh?.profile) setIyProfile(fresh.profile);
-      if (fresh?.routeKpis) setRouteKpis(fresh.routeKpis);
-      setSnapshotUpdatedAt(new Date().toISOString());
-      setSnapshotIsStale(false);
-      // Refresh aggregator-fed sections too (counts/activity may change).
-      refetchBundle();
-      // Writeback so Command Center / dashboard see the latest KPIs.
-      try {
-        const fp = fresh?.profile;
-        if (fp) {
-          const slug = String(fp.key || `company/${shipmentKey}`).replace(/^company\//, "");
-          await saveCompanyToCommandCenter({
-            shipper: {
-              key: `company/${slug}`,
-              companyId: `company/${slug}`,
-              title: fp.title || fp.name || "",
-              name: fp.title || fp.name || "",
-              domain: fp.domain || undefined,
-              website: fp.website || undefined,
-              address: fp.address || undefined,
-              countryCode: fp.countryCode || undefined,
-              totalShipments: fp.routeKpis?.shipmentsLast12m,
-              teusLast12m: fp.routeKpis?.teuLast12m,
-              mostRecentShipment: fp.lastShipmentDate,
-              lastShipmentDate: fp.lastShipmentDate,
-              primaryRoute: fp.routeKpis?.topRouteLast12m,
-              topSuppliers: Array.isArray(fp.topSuppliers) ? fp.topSuppliers : [],
-            } as any,
-            profile: fp as any,
-            stage: "prospect",
-            source: "importyeti",
-          } as any);
-        }
-      } catch (writebackErr) {
-        console.warn("[CompanyProfileV2] writeback to lit_companies failed", writebackErr);
-      }
-      toast.success("Intelligence refreshed");
-    } catch (err: any) {
-      const code = err?.code;
-      if (code === "LIMIT_EXCEEDED") {
-        const gate = err?.gate || {};
-        setRefreshLimitState({
-          feature: gate.feature ?? "company_profile_view",
-          plan: gate.plan ?? null,
-          used: gate.used ?? null,
-          limit: gate.limit ?? null,
-          reset_at: gate.reset_at ?? null,
-          upgrade_url: gate.upgrade_url || "/app/billing",
-        });
-        // Drop the inline banner so the premium quota card doesn't
-        // double-render alongside it.
-        setRefreshError(null);
-      } else if (code === "COMPANY_PROFILE_FAILED" || code === "IY_API_KEY_MISSING") {
-        const friendly =
-          "Couldn't refresh trade intel right now. The data provider is temporarily unavailable — please try again in a moment.";
-        setRefreshError(friendly);
-        toast.error(friendly);
-      } else if (code === "UNAUTHORIZED") {
-        const friendly = "Your session expired. Please sign in again.";
-        setRefreshError(friendly);
-        toast.error(friendly);
-      } else {
-        const friendly = `Refresh failed: ${String(err?.message ?? err)}`;
-        setRefreshError(friendly);
-        toast.error(friendly);
-      }
-    } finally {
-      setManualRefreshing(false);
-    }
-  }, [shipmentKey, manualRefreshing, refetchBundle]);
-
-  // ----- Star toggle (save to Command Center) -----
-  const inCrm = bundle?.identity?.sources?.saved?.present === true;
-  const handleToggleStar = useCallback(async () => {
-    if (!bundle?.identity || savingStar) return;
-    setSavingStar(true);
-    try {
-      const ident = bundle.identity;
-      const slug = (ident.key || `company/${ident.id ?? id}`).replace(/^company\//, "");
-      await saveCompanyToCommandCenter({
-        shipper: {
-          key: `company/${slug}`,
-          companyId: `company/${slug}`,
-          title: ident.display.name,
-          name: ident.display.name,
-          domain: ident.display.domain || undefined,
-          website: ident.display.website || undefined,
-          countryCode: ident.display.address.country_code || undefined,
-          totalShipments: ident.sources.metrics.shipments_12m ?? undefined,
-          teusLast12m: ident.sources.metrics.teu_12m ?? undefined,
-          mostRecentShipment: ident.sources.metrics.last_shipment ?? undefined,
-          lastShipmentDate: ident.sources.metrics.last_shipment ?? undefined,
-          primaryRoute: ident.sources.metrics.top_route ?? undefined,
-        } as any,
-        stage: "prospect",
-        source: "importyeti",
-      } as any);
-      toast.success(inCrm ? "Saved" : "Saved to Command Center");
-      await refetchBundle();
-    } catch (e: any) {
-      toast.error(`Couldn't save company: ${String(e?.message ?? e)}`);
-    } finally {
-      setSavingStar(false);
-    }
-  }, [bundle, id, inCrm, refetchBundle, savingStar]);
-
-  const handleShare = useCallback(() => {
-    toast.info("Share — available in the legacy view this week", {
-      action: {
-        label: "Open legacy",
-        onClick: () =>
-          navigate(`/app/companies/${encodeURIComponent(id)}/legacy`),
-      },
-    });
-  }, [id, navigate]);
-
-  const handleExportPdf = useCallback(() => {
-    toast.info("Export — available in the legacy view this week", {
-      action: {
-        label: "Open legacy",
-        onClick: () =>
-          navigate(`/app/companies/${encodeURIComponent(id)}/legacy`),
-      },
-    });
-  }, [id, navigate]);
-
-  // ----- Year-scoped profile (mirrors legacy buildYearScopedProfile) -----
-  const activeProfile = useMemo(() => {
-    if (!iyProfile) return null;
-    if (selectedYear == null || !years.length) return iyProfile;
-    return buildYearScopedProfile(iyProfile, selectedYear) || iyProfile;
-  }, [iyProfile, selectedYear, years]);
-
-  // ----- Render guards -----
-  if (bundleLoading && !bundle) {
-    return (
-      <div className="min-h-[50vh] flex flex-col items-center justify-center text-slate-500 gap-3">
-        <Loader2 className="w-6 h-6 animate-spin" />
-        <p className="text-sm">Loading company profile…</p>
-      </div>
-    );
-  }
-
-  if (bundleError) {
-    return (
-      <div className="min-h-[50vh] flex items-center justify-center px-6">
-        <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center">
-          <div className="mx-auto w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center mb-4">
-            <ServerCrash className="w-6 h-6 text-rose-500" />
-          </div>
-          <h2 className="text-lg font-semibold text-slate-900 mb-2">
-            {bundleError.code === "COMPANY_NOT_FOUND"
-              ? "Company not found"
-              : "Couldn't load profile"}
-          </h2>
-          <p className="text-sm text-slate-600 mb-2">{bundleError.message}</p>
-          {bundleError.hint ? (
-            <p className="text-xs text-slate-400 mb-6">{bundleError.hint}</p>
-          ) : null}
-          <div className="flex items-center justify-center gap-3 mt-4">
-            <Link
-              to="/app/command-center"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Command Center
-            </Link>
-            <button
-              onClick={() => refetchBundle()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
-            >
-              Retry
-            </button>
-            <Link
-              to={`/app/companies/${encodeURIComponent(id)}/legacy`}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
-            >
-              Try legacy view
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!bundle) return null;
-
-  const headerProps = bundleToHeaderProps(bundle, activeProfile ?? iyProfile ?? null);
-
-  // Directory-only state — saved company is absent AND we have no synthetic
-  // profile data. Show a clean empty Supply Chain with a save CTA instead
-  // of cluttered blank cards.
-  const isDirectoryOnly =
-    bundle.identity.sources.saved.present === false &&
-    bundle.identity.sources.directory.present === true;
-
-  return (
-    <div className="flex min-h-screen flex-col bg-[#F8FAFC]">
-      {usedFallback ? (
-        <div className="bg-amber-50 border-b border-amber-200 text-amber-800 text-[12px] px-6 py-1.5 flex items-center justify-center shrink-0">
-          <span>
-            Identity aggregator unreachable — using in-browser resolver fallback.
-            Shipment, contact, and activity data still load via direct queries.{" "}
-            <Link
-              to={`/app/companies/${encodeURIComponent(id)}/legacy`}
-              className="underline font-medium"
-            >
-              Switch to legacy view
-            </Link>
-          </span>
-        </div>
-      ) : null}
-
-      {/* Phase 3.2 — content shell capped at 1500px on large desktops while
-          the outer bg stays full-bleed. Surface / laptop widths are below
-          1500px so this is a no-op there; on 27"+ desktops the company
-          profile no longer floats at the natural max-width of the right
-          rail's 300px + flex-1 center, which made the cards feel small. */}
-      <div className="mx-auto flex w-full max-w-[1500px] flex-1 flex-col">
-      <CDPHeader
-        company={headerProps.company as any}
-        kpis={headerProps.kpis as any}
-        starred={inCrm}
-        onToggleStar={handleToggleStar}
-        panelOpen={panelOpen}
-        onTogglePanel={() => setPanelOpen((p) => !p)}
-        onBack={() => navigate(-1)}
-        onShare={handleShare}
-        onExportPdf={handleExportPdf}
-        onAddToList={() => setCampaignModalOpen(true)}
-        onStartOutreach={() => setCampaignModalOpen(true)}
-        onPulse={() => setActiveTab("pulse")}
-        onRefresh={handleManualRefresh}
-        manualRefreshing={manualRefreshing}
-        snapshotUpdatedAt={snapshotUpdatedAt}
-      />
-
-      {/* Tab bar — matches legacy density (px-6, h-3 w-3 icons, 12.5px font). */}
-      <div
-        role="tablist"
-        aria-label="Company sections"
-        className="flex shrink-0 items-center gap-0 border-b border-slate-200 bg-white px-6"
-      >
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          const isActive = activeTab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setActiveTab(t.id)}
-              className={[
-                "font-display -mb-px inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-[12.5px] font-semibold transition-colors",
-                isActive
-                  ? "border-blue-500 text-blue-700"
-                  : "border-transparent text-slate-500 hover:text-slate-700",
-              ].join(" ")}
-            >
-              <Icon className="h-3 w-3" />
-              {t.label}
-            </button>
-          );
-        })}
-        <div className="ml-auto text-[11px] text-slate-400">
-          <Link
-            to={`/app/companies/${encodeURIComponent(id)}/legacy`}
-            className="hover:text-slate-600 underline-offset-2 hover:underline"
-          >
-            Legacy view
-          </Link>
-        </div>
-      </div>
-
-      {/* Premium Pulse Coach quota card — only renders when refresh hits a
-          plan cap. The plain refresh banner below covers all other failure
-          modes. Mirrors legacy Company.jsx:1213–1229. */}
-      {refreshLimitState ? (
-        <PulseCoachQuotaCard
-          plan={refreshLimitState.plan}
-          feature={refreshLimitState.feature}
-          used={refreshLimitState.used}
-          limit={refreshLimitState.limit}
-          reset_at={refreshLimitState.reset_at}
-          upgrade_url={refreshLimitState.upgrade_url}
-          onDismiss={() => setRefreshLimitState(null)}
-        />
-      ) : null}
-
-      {refreshError ? (
-        <div className="font-body shrink-0 border-b border-amber-100 bg-amber-50 px-6 py-2 text-[12px] text-amber-700">
-          {refreshError}
-        </div>
-      ) : null}
-
-      {/* Body — full-bleed, matches legacy width. */}
-      <div className="flex flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
-        <div className="min-w-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
-          {activeTab === "supply-chain" ? (
-            isDirectoryOnly ? (
-              <DirectoryOnlyEmptyState
-                companyName={bundle.identity.display.name}
-                onSave={handleToggleStar}
-                saving={savingStar}
-              />
-            ) : (
-              <CDPSupplyChain
-                profile={activeProfile as any}
-                routeKpis={routeKpis as any}
-                selectedYear={selectedYear ?? undefined}
-                years={years}
-                onSelectYear={setSelectedYear}
-              />
-            )
-          ) : null}
-
-          {activeTab === "contacts" ? (
-            <CDPContacts
-              companyId={bundle.identity.id}
-              companyName={bundle.identity.display.name}
-              companyDomain={bundle.identity.display.domain}
-              companyLocation={[
-                bundle.identity.display.address.city,
-                bundle.identity.display.address.state,
-              ]
-                .filter(Boolean)
-                .join(", ")}
-            />
-          ) : null}
-
-          {activeTab === "pulse" ? (
-            <CDPResearch
-              companyName={bundle.identity.display.name}
-              tradeKpis={
-                {
-                  shipments12m: headerProps.kpis.shipments,
-                  teu12m: headerProps.kpis.teu,
-                  activeLanes: headerProps.kpis.tradeLanes,
-                  topLaneLabel: headerProps.kpis.topRoute,
-                  topLaneShare: null,
-                  yoyPct: null,
-                } as any
-              }
-              topRoutes={(activeProfile?.topRoutes ?? []) as any}
-              pulseBrief={(bundle.pulse?.brief ?? null) as any}
-              pulseLoading={false}
-              pulseError={null as any}
-              pulseUsage={null as any}
-              onPulse={() => {}}
-              onRefresh={() => refetchBundle()}
-              onShareHtml={handleShare}
-              onExportPdf={handleExportPdf}
-            />
-          ) : null}
-
-          {activeTab === "activity" ? (
-            <CDPActivity companyId={bundle.identity.id} ownerName={ownerName} />
-          ) : null}
-
-          {activeTab === "inbox" ? (
-            <CompanyInboxTab
-              companyId={bundle.identity.id}
-              navigate={navigate as any}
-            />
-          ) : null}
-        </div>
-
-        {panelOpen ? (
-          <CDPDetailsPanel
-            company={headerProps.company as any}
-            kpis={headerProps.kpis as any}
-            profile={(activeProfile ?? iyProfile) as any}
-            ownerName={ownerName}
-            ownerInitials={ownerInitials}
-            lists={null}
-            campaigns={null}
-            contacts={(bundle.contacts?.items ?? null) as any}
-            onOpenContactsTab={() => setActiveTab("contacts")}
-            onRefresh={handleManualRefresh}
-            refreshing={manualRefreshing}
-            snapshotUpdatedAt={snapshotUpdatedAt}
-          />
-        ) : null}
-      </div>
-      </div>{/* /Phase 3.2 max-w-[1500px] shell */}
-
-      <AddToCampaignModal
-        open={campaignModalOpen}
-        onClose={() => setCampaignModalOpen(false)}
-        company={{
-          company_id: bundle.identity.id,
-          name: bundle.identity.display.name,
-        }}
-      />
-    </div>
-  );
-}
-
-// ---------- Directory-only empty state ----------
 function DirectoryOnlyEmptyState({
   companyName,
   onSave,
@@ -832,6 +358,1207 @@ function DirectoryOnlyEmptyState({
   );
 }
 
+// =============================================================================
+// ProfilePanel — clone of legacy Company.jsx body.
+// =============================================================================
+
+function ProfilePanel({ rawId }: { rawId: string }) {
+  const navigate = useNavigate();
+  const auth = useAuth();
+  const { user, fullName } = auth ?? ({} as any);
+
+  // Aggregator-side identity (drives directory-only branch + canonical UUID
+  // when the URL param is a slug). The legacy page derives companyId from
+  // the URL param + localStorage; V2 keeps that path AND additionally uses
+  // the resolver to surface a clean directory-only state when the company
+  // isn't in lit_companies.
+  const { data: bundle } = useCompanyProfile(rawId, {
+    include: ["identity", "contacts", "activity"],
+  });
+
+  const decodedRouteId = useMemo(() => {
+    try {
+      return rawId ? decodeURIComponent(rawId) : null;
+    } catch {
+      return rawId || null;
+    }
+  }, [rawId]);
+
+  const storedSelectedCompany = useMemo(() => getStoredSelectedCompany(), []);
+  const companyId =
+    decodedRouteId || storedSelectedCompany?.company_id || null;
+
+  // ── State (verbatim from Company.jsx 290–351) ──────────────────────────
+  const [profile, setProfile] = useState<any>(null);
+  const [routeKpis, setRouteKpis] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>("");
+  const [selectedYear, setSelectedYear] = useState<number>(
+    new Date().getFullYear(),
+  );
+  const [canonicalDomain, setCanonicalDomain] = useState<string | null>(null);
+  const [companyEnrichment, setCompanyEnrichment] = useState<any>(null);
+
+  const [searchParams] = useSearchParams();
+  const initialTab: TabId = (() => {
+    const t = String(searchParams?.get("tab") || "").toLowerCase();
+    return (["supply", "contacts", "research", "activity", "inbox"] as const).includes(
+      t as TabId,
+    )
+      ? (t as TabId)
+      : "supply";
+  })();
+  const [tab, setTab] = useState<TabId>(initialTab);
+  useEffect(() => {
+    const t = String(searchParams?.get("tab") || "").toLowerCase();
+    if (
+      (["supply", "contacts", "research", "activity", "inbox"] as const).includes(
+        t as TabId,
+      )
+    ) {
+      setTab(t as TabId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams?.get("tab")]);
+
+  const [starred, setStarred] = useState(false);
+  const [savingStar, setSavingStar] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [campaignModalOpen, setCampaignModalOpen] = useState(false);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [refreshLimitState, setRefreshLimitState] = useState<any>(null);
+  const [snapshotUpdatedAt, setSnapshotUpdatedAt] = useState<string | null>(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+
+  const [pulseLoading, setPulseLoading] = useState(false);
+  const [pulseBrief, setPulseBrief] = useState<any>(null);
+  const [pulseError, setPulseError] = useState<any>(null);
+  const [pulseUsage, setPulseUsage] = useState<any>(null);
+
+  const [savedContacts, setSavedContacts] = useState<any[]>([]);
+
+  const [shareLoading, setShareLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [shareToast, setShareToast] = useState<{
+    message: string;
+    tone: string;
+  } | null>(null);
+
+  // ── Cached-first load (verbatim from Company.jsx 354–418) ──────────────
+  useEffect(() => {
+    if (!companyId) {
+      setError("Missing company id");
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    setRefreshing(false);
+    setRefreshError(null);
+
+    function applyYearFromProfile(nextProfile: any) {
+      const yrs = Array.from(
+        new Set(
+          (nextProfile?.timeSeries || [])
+            .map((point: any) => Number(point?.year))
+            .filter(
+              (year: number) => Number.isFinite(year) && year > 2000,
+            ),
+        ),
+      ).sort((a: any, b: any) => b - a);
+      if (yrs.length) setSelectedYear(yrs[0] as number);
+    }
+
+    (async () => {
+      let cached: any = {
+        profile: null,
+        routeKpis: null,
+        snapshotUpdatedAt: null,
+        isStale: true,
+      };
+      try {
+        cached = await getSavedCompanyShellOnly(companyId);
+      } catch (cacheErr) {
+        console.warn(
+          "[CompanyProfileV2] cached snapshot read failed",
+          cacheErr,
+        );
+      }
+      if (cancelled) return;
+
+      const haveCached = Boolean(cached.profile || cached.routeKpis);
+      if (haveCached) {
+        setProfile(cached.profile || null);
+        setRouteKpis(cached.routeKpis || null);
+        setSnapshotUpdatedAt(cached.snapshotUpdatedAt || null);
+        if (cached.profile) applyYearFromProfile(cached.profile);
+      } else {
+        setProfile(null);
+        setRouteKpis(null);
+      }
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
+
+  // V2 addition — synthetic profile fallback when the snapshot is missing
+  // but the company exists in lit_companies (the saved row has KPIs even
+  // without a snapshot). Mirrors legacy's lit_companies fallback path
+  // inside getSavedCompanyShellOnly but reaches the synthesizer when that
+  // helper returns null.
+  useEffect(() => {
+    if (loading) return;
+    if (profile) return;
+    const savedUuid = bundle?.identity?.id;
+    const savedPresent = bundle?.identity?.sources?.saved?.present === true;
+    if (!savedUuid || !savedPresent) return;
+    let cancelled = false;
+    (async () => {
+      const synthetic = await loadSyntheticProfile(savedUuid);
+      if (cancelled || !synthetic) return;
+      setProfile(synthetic);
+      setRouteKpis(synthetic.routeKpis ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, profile, bundle?.identity?.id, bundle?.identity?.sources?.saved?.present]);
+
+  // Canonical domain + enrichment lookup (verbatim from Company.jsx 421–462).
+  useEffect(() => {
+    if (!companyId) {
+      setCanonicalDomain(null);
+      setCompanyEnrichment(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const isUuid =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            String(companyId),
+          );
+        const lookup = isUuid
+          ? supabase
+              .from("lit_companies")
+              .select(
+                "source_company_key, enrichment_params, industry, revenue, headcount, website, domain",
+              )
+              .eq("id", companyId)
+          : supabase
+              .from("lit_companies")
+              .select(
+                "source_company_key, enrichment_params, industry, revenue, headcount, website, domain",
+              )
+              .eq("source_company_key", companyId);
+        const { data: company } = await lookup.maybeSingle();
+        if (cancelled || !company) return;
+        let canonical: string | null = null;
+        const sck = (company as any).source_company_key;
+        if (sck) {
+          try {
+            const { data: override } = await supabase
+              .from("lit_company_domain_overrides")
+              .select("canonical_domain")
+              .eq("source_company_key", sck)
+              .maybeSingle();
+            if ((override as any)?.canonical_domain)
+              canonical = (override as any).canonical_domain;
+          } catch {
+            // table may not exist in this env — non-fatal.
+          }
+        }
+        if (!canonical && (company as any).enrichment_params?.canonicalDomain) {
+          canonical = (company as any).enrichment_params.canonicalDomain;
+        }
+        if (cancelled) return;
+        setCanonicalDomain(canonical || null);
+        setCompanyEnrichment({
+          enrichment_params: (company as any).enrichment_params ?? null,
+          industry: (company as any).industry ?? null,
+          revenue: (company as any).revenue ?? null,
+          headcount: (company as any).headcount ?? null,
+        });
+      } catch (e) {
+        console.warn(
+          "[CompanyProfileV2] canonical domain lookup failed",
+          e,
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
+
+  // Auto-heal lit_companies row from snapshot — verbatim from Company.jsx 473–537.
+  const autoHealedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!profile || !companyId) return;
+    const hasSnapshotData =
+      Array.isArray(profile?.recentBols) && profile.recentBols.length > 0;
+    if (!hasSnapshotData) return;
+    if (autoHealedRef.current === companyId) return;
+    autoHealedRef.current = companyId;
+
+    const sourceKey =
+      profile.key ||
+      profile.companyId ||
+      `company/${String(companyId).replace(/^company\//, "")}`;
+    const bareSlug = String(sourceKey).replace(/^company\//, "");
+    const candidates = Array.from(
+      new Set([sourceKey, `company/${bareSlug}`, bareSlug].filter(Boolean)),
+    );
+
+    const update: Record<string, any> = {
+      shipments_12m:
+        profile.routeKpis?.shipmentsLast12m ?? profile.totalShipments ?? null,
+      teu_12m: profile.routeKpis?.teuLast12m ?? null,
+      fcl_shipments_12m: profile.containers?.fclShipments12m ?? null,
+      lcl_shipments_12m: profile.containers?.lclShipments12m ?? null,
+      est_spend_12m:
+        profile.routeKpis?.estSpendUsd12m ?? profile.estSpendUsd12m ?? null,
+      most_recent_shipment_date: profile.lastShipmentDate ?? null,
+      top_route_12m: profile.routeKpis?.topRouteLast12m ?? null,
+      recent_route: profile.routeKpis?.mostRecentRoute ?? null,
+    };
+    if (
+      profile.industry &&
+      (!companyEnrichment || companyEnrichment.industry == null)
+    ) {
+      update.industry = profile.industry;
+    }
+    const cleaned = Object.fromEntries(
+      Object.entries(update).filter(
+        ([, v]) => v !== null && v !== undefined,
+      ),
+    );
+    if (Object.keys(cleaned).length === 0) return;
+
+    (async () => {
+      try {
+        const { error } = await supabase
+          .from("lit_companies")
+          .update(cleaned)
+          .in("source_company_key", candidates);
+        if (error) {
+          console.warn(
+            "[CompanyProfileV2] autoHeal update failed",
+            error,
+          );
+        }
+      } catch (err) {
+        console.warn("[CompanyProfileV2] autoHeal update threw", err);
+      }
+    })();
+  }, [profile, companyId, companyEnrichment]);
+
+  // ── Derived data (verbatim from Company.jsx 540–626) ───────────────────
+  const yearScopedProfile = useMemo(() => {
+    if (!profile) return null;
+    return buildYearScopedProfile(profile, selectedYear) || profile;
+  }, [profile, selectedYear]);
+
+  const baseActiveProfile = yearScopedProfile || profile;
+  const activeProfile = useMemo(() => {
+    if (!baseActiveProfile && !companyEnrichment) return null;
+    const merged: any = { ...(baseActiveProfile || {}) };
+    if (companyEnrichment?.industry && !merged.industry) {
+      merged.industry = companyEnrichment.industry;
+    }
+    if (
+      companyEnrichment?.revenue != null &&
+      merged.estimatedRevenue == null &&
+      merged.revenue == null
+    ) {
+      merged.estimatedRevenue = companyEnrichment.revenue;
+      merged.revenue = companyEnrichment.revenue;
+    }
+    if (
+      companyEnrichment?.headcount != null &&
+      merged.employeeCount == null &&
+      merged.headcount == null
+    ) {
+      merged.employeeCount = companyEnrichment.headcount;
+      merged.headcount = companyEnrichment.headcount;
+    }
+    return merged;
+  }, [baseActiveProfile, companyEnrichment]);
+  const activeRouteKpis = yearScopedProfile?.routeKpis || routeKpis || null;
+
+  const shellCompany = useMemo(
+    () => buildShellCompany(companyId, storedSelectedCompany),
+    [companyId, storedSelectedCompany],
+  );
+
+  const companyName =
+    activeProfile?.title ||
+    activeProfile?.name ||
+    shellCompany?.name ||
+    bundle?.identity?.display?.name ||
+    "Company";
+
+  const companyDomain =
+    canonicalDomain ||
+    activeProfile?.domain ||
+    shellCompany?.domain ||
+    bundle?.identity?.display?.domain ||
+    null;
+
+  const companyWebsite =
+    canonicalDomain ||
+    activeProfile?.website ||
+    shellCompany?.website ||
+    bundle?.identity?.display?.website ||
+    null;
+
+  const companyAddress =
+    activeProfile?.address ||
+    shellCompany?.address ||
+    [
+      bundle?.identity?.display?.address?.line1,
+      bundle?.identity?.display?.address?.city,
+      bundle?.identity?.display?.address?.state,
+    ]
+      .filter(Boolean)
+      .join(", ") ||
+    null;
+
+  const companyCountryCode =
+    activeProfile?.countryCode ||
+    shellCompany?.countryCode ||
+    bundle?.identity?.display?.address?.country_code ||
+    null;
+
+  const companyCountryName =
+    activeProfile?.country ||
+    activeProfile?.country_name ||
+    shellCompany?.country ||
+    bundle?.identity?.display?.address?.country ||
+    null;
+
+  const companyPhone =
+    activeProfile?.phoneNumber ||
+    activeProfile?.phone ||
+    shellCompany?.phone ||
+    bundle?.identity?.display?.phone ||
+    null;
+
+  const years = useMemo(() => {
+    return Array.from(
+      new Set(
+        (profile?.timeSeries || [])
+          .map((point: any) => Number(point?.year))
+          .filter(
+            (year: number) => Number.isFinite(year) && year > 2000,
+          ),
+      ),
+    ).sort((a: any, b: any) => b - a) as number[];
+  }, [profile]);
+
+  // Header KPIs — verbatim from Company.jsx 628–713.
+  const headerKpis = useMemo(() => {
+    const teu =
+      activeRouteKpis?.teuLast12m ??
+      activeProfile?.teuLast12m ??
+      shellCompany?.kpis?.teu ??
+      null;
+
+    const explicitSpend =
+      activeRouteKpis?.estSpendUsd12m ??
+      activeProfile?.estSpendUsd12m ??
+      activeProfile?.marketSpend ??
+      shellCompany?.kpis?.spend ??
+      null;
+
+    const allTimeSpend =
+      activeProfile?.estSpendAllTime ??
+      activeProfile?.estSpendUsd ??
+      null;
+
+    const spend =
+      explicitSpend != null && Number(explicitSpend) > 0
+        ? Number(explicitSpend)
+        : allTimeSpend != null && Number(allTimeSpend) > 0
+          ? Number(allTimeSpend)
+          : null;
+
+    const profileLatest = getLatestShipmentFromProfile(activeProfile);
+    const shellLatest = capDateAtToday(
+      normalizeDateValue(shellCompany?.kpis?.latestShipment),
+    );
+
+    return {
+      shipments:
+        activeRouteKpis?.shipmentsLast12m ??
+        activeProfile?.totalShipments ??
+        shellCompany?.kpis?.shipments ??
+        null,
+      shipmentsAllTime: activeProfile?.totalShipmentsAllTime ?? null,
+      teu,
+      spend,
+      spendAllTime:
+        activeProfile?.estSpendAllTime ?? activeProfile?.estSpendUsd ?? null,
+      lastShipment: profileLatest || shellLatest,
+      topRoute:
+        activeRouteKpis?.topRouteLast12m ||
+        activeProfile?.topRoutes?.[0]?.route ||
+        activeProfile?.top_routes?.[0]?.route ||
+        activeProfile?.tradeLaneIntelligence?.[0]?.route ||
+        activeProfile?.trade_lane_intelligence?.[0]?.route ||
+        shellCompany?.kpis?.topRoute ||
+        null,
+      recentRoute:
+        activeRouteKpis?.mostRecentRoute ||
+        shellCompany?.kpis?.recentRoute ||
+        null,
+      tradeLanes: (() => {
+        const candidates = [
+          activeProfile?.topRoutes,
+          activeProfile?.top_routes,
+          activeRouteKpis?.topRoutesLast12m,
+          activeProfile?.tradeLaneIntelligence,
+          activeProfile?.trade_lane_intelligence,
+        ];
+        for (const c of candidates) {
+          if (Array.isArray(c) && c.length > 0) return c.length;
+        }
+        return null;
+      })(),
+      fclCount:
+        activeProfile?.fcl_shipments_all_time ??
+        activeProfile?.fcl_count ??
+        null,
+      lclCount:
+        activeProfile?.lcl_shipments_all_time ??
+        activeProfile?.lcl_count ??
+        null,
+      contacts: bundle?.contacts?.count ?? null,
+      contactsVerified:
+        bundle?.contacts?.items.filter((x) => x.is_verified).length ?? null,
+    };
+  }, [activeProfile, activeRouteKpis, shellCompany, bundle]);
+
+  const ownerName =
+    fullName ||
+    user?.user_metadata?.full_name ||
+    user?.user_metadata?.name ||
+    user?.email?.split("@")[0] ||
+    null;
+  const ownerInitials = useMemo(() => {
+    if (!ownerName) return null;
+    return ownerName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part: string) => part.charAt(0).toUpperCase())
+      .join("");
+  }, [ownerName]);
+
+  // ── Handlers (verbatim from Company.jsx 733–1112) ──────────────────────
+  function showShareToast(message: string, tone: string = "info") {
+    setShareToast({ message, tone });
+    setTimeout(() => setShareToast(null), 3500);
+  }
+
+  async function copyToClipboardSafe(text: string) {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
+  async function handlePulseClick(options: { forceRefresh?: boolean } = {}) {
+    if (pulseLoading) return;
+    const forceRefresh = Boolean(options?.forceRefresh);
+    if (!forceRefresh) {
+      setTab("research");
+    }
+    setPulseLoading(true);
+    setPulseError(null);
+    try {
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          String(companyId),
+        );
+      const sourceKey = isUuid
+        ? activeProfile?.source_company_key ||
+          activeProfile?.sourceCompanyKey ||
+          storedSelectedCompany?.source_company_key ||
+          bundle?.identity?.key ||
+          null
+        : String(companyId).startsWith("company/")
+          ? companyId
+          : `company/${companyId}`;
+      if (!isUuid && !sourceKey) {
+        setPulseError({
+          code: "MISSING_COMPANY_IDENTIFIER",
+          message: "Could not identify company.",
+        });
+        setPulseLoading(false);
+        return;
+      }
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "pulse-ai-enrich",
+        {
+          body: {
+            ...(isUuid ? { company_id: companyId } : {}),
+            ...(sourceKey ? { source_company_key: sourceKey } : {}),
+            mode: "company_profile",
+            force_refresh: forceRefresh,
+          },
+        },
+      );
+      const parsedErr = invokeError
+        ? await parseEdgeFunctionError(invokeError)
+        : null;
+      const effective: any = parsedErr || data;
+      if (invokeError && !parsedErr) {
+        throw invokeError;
+      }
+      if (!effective?.ok) {
+        const code = effective?.code || "PULSE_AI_FAILED";
+        const friendly =
+          effective?.message ||
+          PULSE_ERROR_COPY[code] ||
+          effective?.error ||
+          "Pulse AI failed.";
+        setPulseError({
+          code,
+          message: friendly,
+          used: effective?.used ?? null,
+          limit: effective?.limit ?? null,
+          plan: effective?.plan ?? null,
+          feature: effective?.feature ?? null,
+        });
+        if (effective?.plan != null || effective?.limit != null) {
+          setPulseUsage({
+            plan: effective.plan ?? null,
+            limit: effective.limit ?? null,
+          });
+        }
+      } else {
+        const report = data.report || {};
+        const reportRow = data.report_row || {};
+        setPulseBrief({
+          generatedAt: reportRow.generated_at || report.generated_at || null,
+          cached: Boolean(data.cached),
+          report,
+          reportRow,
+          confidence:
+            report.confidence_score ??
+            report.confidence ??
+            reportRow.confidence ??
+            null,
+          model: reportRow.model || report.model || null,
+        });
+        setPulseUsage({
+          plan: data.plan ?? null,
+          limit: data.limit ?? null,
+        });
+      }
+    } catch (err: any) {
+      setPulseError({
+        code: "NETWORK",
+        message: err?.message || "Pulse AI network error.",
+      });
+    } finally {
+      setPulseLoading(false);
+    }
+  }
+
+  function handlePulseRefresh() {
+    return handlePulseClick({ forceRefresh: true });
+  }
+
+  // Auto-load cached Pulse AI brief on first visit to the Pulse tab.
+  useEffect(() => {
+    if (tab !== "research") return;
+    if (pulseLoading) return;
+    if (pulseBrief?.report) return;
+    if (pulseError) return;
+    if (!companyId) return;
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(companyId),
+      );
+    if (
+      isUuid &&
+      !activeProfile &&
+      !storedSelectedCompany?.source_company_key &&
+      !bundle?.identity?.key
+    ) {
+      return;
+    }
+    handlePulseClick({ forceRefresh: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, companyId, activeProfile, bundle?.identity?.key]);
+
+  async function handleManualRefreshClick() {
+    if (!companyId || manualRefreshing) return;
+    setManualRefreshing(true);
+    setRefreshError(null);
+    try {
+      const fresh = await getSavedCompanyDetail(companyId, undefined, {
+        forceRefresh: true,
+      } as any);
+      if (fresh) {
+        setProfile(fresh.profile || null);
+        setRouteKpis(fresh.routeKpis || null);
+        setSnapshotUpdatedAt(new Date().toISOString());
+
+        try {
+          const fp: any = fresh.profile;
+          if (fp) {
+            const slug = String(fp.key || `company/${companyId}`).replace(
+              /^company\//,
+              "",
+            );
+            await saveCompanyToCommandCenter({
+              shipper: {
+                key: `company/${slug}`,
+                companyId: `company/${slug}`,
+                title: fp.title || fp.name || "",
+                name: fp.title || fp.name || "",
+                domain: fp.domain || undefined,
+                website: fp.website || undefined,
+                address: fp.address || undefined,
+                countryCode: fp.countryCode || undefined,
+                totalShipments: fp.routeKpis?.shipmentsLast12m,
+                teusLast12m: fp.routeKpis?.teuLast12m,
+                mostRecentShipment: fp.lastShipmentDate,
+                lastShipmentDate: fp.lastShipmentDate,
+                primaryRoute: fp.routeKpis?.topRouteLast12m,
+                topSuppliers: Array.isArray(fp.topSuppliers)
+                  ? fp.topSuppliers
+                  : [],
+              } as any,
+              profile: fp as any,
+              stage: "prospect",
+              source: "importyeti",
+            } as any);
+          }
+        } catch (writebackErr) {
+          console.warn(
+            "[CompanyProfileV2] writeback to lit_companies failed",
+            writebackErr,
+          );
+        }
+
+        showShareToast("Intelligence refreshed", "success");
+      }
+    } catch (err: any) {
+      const code = err?.code || null;
+      if (code === "LIMIT_EXCEEDED") {
+        const gate = err?.gate || {};
+        setRefreshLimitState({
+          feature: gate.feature || "company_profile_view",
+          plan: gate.plan || null,
+          used: gate.used ?? null,
+          limit: gate.limit ?? null,
+          reset_at: gate.reset_at ?? null,
+          upgrade_url: gate.upgrade_url || "/app/billing",
+        });
+        setRefreshError(null);
+      } else if (
+        code === "COMPANY_PROFILE_FAILED" ||
+        code === "IY_API_KEY_MISSING"
+      ) {
+        const friendly =
+          "Couldn't refresh trade intel right now. The data provider is temporarily unavailable — please try again in a moment.";
+        setRefreshError(friendly);
+        showShareToast(friendly, "error");
+      } else if (code === "UNAUTHORIZED") {
+        const friendly = "Your session expired. Please sign in again.";
+        setRefreshError(friendly);
+        showShareToast(friendly, "error");
+      } else {
+        const friendly = err?.message || "Refresh failed. Please try again.";
+        setRefreshError(friendly);
+        showShareToast(friendly, "error");
+      }
+    } finally {
+      setManualRefreshing(false);
+    }
+  }
+
+  async function handleShareHtmlClick() {
+    if (!companyId || shareLoading) return;
+    setShareLoading(true);
+    try {
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          String(companyId),
+        );
+      const sourceKey = isUuid
+        ? activeProfile?.source_company_key ||
+          activeProfile?.sourceCompanyKey ||
+          bundle?.identity?.key ||
+          null
+        : String(companyId).startsWith("company/")
+          ? companyId
+          : `company/${companyId}`;
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "export-company-profile",
+        {
+          body: {
+            ...(isUuid ? { company_id: companyId } : {}),
+            ...(sourceKey ? { source_company_key: sourceKey } : {}),
+            format: "html",
+            include_pulse_brief: Boolean(pulseBrief),
+          },
+        },
+      );
+      const parsedErr = invokeError
+        ? await parseEdgeFunctionError(invokeError)
+        : null;
+      const effective: any = parsedErr || data;
+      if (invokeError && !parsedErr) throw invokeError;
+      if (effective?.ok && effective.url) {
+        const ok = await copyToClipboardSafe(effective.url);
+        showShareToast(
+          ok
+            ? "Branded share link copied"
+            : "Branded share link generated (copy failed — open console)",
+          "success",
+        );
+        if (!ok)
+          console.info(
+            "export-company-profile signed URL:",
+            effective.url,
+          );
+      } else if (effective?.code === "STORAGE_NOT_PROVISIONED") {
+        const url = typeof window !== "undefined" ? window.location.href : "";
+        await copyToClipboardSafe(url);
+        showShareToast(EXPORT_ERROR_COPY.STORAGE_NOT_PROVISIONED, "warning");
+      } else {
+        const friendly =
+          effective?.message ||
+          EXPORT_ERROR_COPY[effective?.code] ||
+          effective?.error ||
+          "Share export failed.";
+        showShareToast(friendly, "error");
+      }
+    } catch (err: any) {
+      showShareToast(err?.message || "Share export error.", "error");
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
+  async function handleExportPdfClick() {
+    if (!companyId || exportLoading) return;
+    setExportLoading(true);
+    try {
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          String(companyId),
+        );
+      const sourceKey = isUuid
+        ? activeProfile?.source_company_key ||
+          activeProfile?.sourceCompanyKey ||
+          bundle?.identity?.key ||
+          null
+        : String(companyId).startsWith("company/")
+          ? companyId
+          : `company/${companyId}`;
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "export-company-profile",
+        {
+          body: {
+            ...(isUuid ? { company_id: companyId } : {}),
+            ...(sourceKey ? { source_company_key: sourceKey } : {}),
+            format: "pdf",
+            include_pulse_brief: Boolean(pulseBrief),
+          },
+        },
+      );
+      const parsedErr = invokeError
+        ? await parseEdgeFunctionError(invokeError)
+        : null;
+      const effective: any = parsedErr || data;
+      if (invokeError && !parsedErr) throw invokeError;
+      if (effective?.ok && effective.url) {
+        if (typeof window !== "undefined") window.open(effective.url, "_blank");
+      } else if (
+        effective?.code === "PDF_NOT_AVAILABLE" &&
+        effective?.fallback?.url
+      ) {
+        const open =
+          typeof window !== "undefined" &&
+          window.confirm(
+            "PDF render not available — open the branded HTML version instead?",
+          );
+        if (open) window.open(effective.fallback.url, "_blank");
+        else showShareToast("PDF export not available yet", "warning");
+      } else if (effective?.code === "STORAGE_NOT_PROVISIONED") {
+        const url = typeof window !== "undefined" ? window.location.href : "";
+        await copyToClipboardSafe(url);
+        showShareToast(EXPORT_ERROR_COPY.STORAGE_NOT_PROVISIONED, "warning");
+      } else {
+        const friendly =
+          effective?.message ||
+          EXPORT_ERROR_COPY[effective?.code] ||
+          effective?.error ||
+          "PDF export failed.";
+        showShareToast(friendly, "error");
+      }
+    } catch (err: any) {
+      showShareToast(err?.message || "PDF export error.", "error");
+    } finally {
+      setExportLoading(false);
+    }
+  }
+
+  async function handleSaveCompany() {
+    if (!bundle?.identity || savingStar) return;
+    setSavingStar(true);
+    try {
+      const ident = bundle.identity;
+      const slug = (ident.key || `company/${ident.id ?? rawId}`).replace(
+        /^company\//,
+        "",
+      );
+      await saveCompanyToCommandCenter({
+        shipper: {
+          key: `company/${slug}`,
+          companyId: `company/${slug}`,
+          title: ident.display.name,
+          name: ident.display.name,
+          domain: ident.display.domain || undefined,
+          website: ident.display.website || undefined,
+          countryCode: ident.display.address.country_code || undefined,
+        } as any,
+        stage: "prospect",
+        source: "importyeti",
+      } as any);
+      setStarred(true);
+      showShareToast(starred ? "Saved" : "Saved to Command Center", "success");
+    } catch (e: any) {
+      showShareToast(`Couldn't save company: ${String(e?.message ?? e)}`, "error");
+    } finally {
+      setSavingStar(false);
+    }
+  }
+
+  // ── Early return for missing companyId / load error ────────────────────
+  if (error || !companyId) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <div className="mx-auto w-full max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <button
+            type="button"
+            onClick={() => navigate("/app/command-center")}
+            className="font-display inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to Command Center
+          </button>
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-5 py-4 text-[13px] text-rose-700">
+            {error || "Company unavailable"}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Initial loading skeleton ────────────────────────────────────────────
+  if (loading && !profile && !shellCompany) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="font-body inline-flex items-center gap-2 text-[13px] text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+          Loading company profile…
+        </div>
+      </div>
+    );
+  }
+
+  // V2 directory-only state — replaces the Supply Chain tab body when the
+  // resolved company exists in lit_company_directory but not in
+  // lit_companies. Header / right rail / other tabs render normally so the
+  // page is still useful for identity browsing.
+  const isDirectoryOnly =
+    bundle?.identity?.sources?.saved?.present === false &&
+    bundle?.identity?.sources?.directory?.present === true;
+
+  // ── Main layout — verbatim from Company.jsx 1148–1354 ──────────────────
+  return (
+    <div className="flex min-h-screen flex-col bg-[#F8FAFC]">
+      <CDPHeader
+        company={
+          {
+            id: companyId,
+            name: companyName,
+            domain: companyDomain,
+            website: companyWebsite,
+            address: companyAddress,
+            countryCode: companyCountryCode,
+            countryName: companyCountryName,
+            phone: companyPhone,
+          } as any
+        }
+        kpis={headerKpis as any}
+        starred={starred}
+        onToggleStar={handleSaveCompany}
+        panelOpen={panelOpen}
+        onTogglePanel={() => setPanelOpen((v) => !v)}
+        onBack={() => navigate("/app/command-center")}
+        onShare={handleShareHtmlClick}
+        onExportPdf={handleExportPdfClick}
+        onAddToList={() => setCampaignModalOpen(true)}
+        onStartOutreach={() => setCampaignModalOpen(true)}
+        onPulse={handlePulseClick}
+        onRefresh={handleManualRefreshClick}
+        shareLoading={shareLoading}
+        exportLoading={exportLoading}
+        refreshing={refreshing}
+        manualRefreshing={manualRefreshing}
+        snapshotUpdatedAt={snapshotUpdatedAt}
+      />
+
+      {/* Tab bar — verbatim density from legacy. */}
+      <div
+        role="tablist"
+        aria-label="Company sections"
+        className="flex shrink-0 items-center gap-0 border-b border-slate-200 bg-white px-6"
+      >
+        {TABS.map((t) => {
+          const Icon = t.Icon;
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setTab(t.id)}
+              className={[
+                "font-display -mb-px inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-[12.5px] font-semibold transition-colors",
+                active
+                  ? "border-blue-500 text-blue-700"
+                  : "border-transparent text-slate-500 hover:text-slate-700",
+              ].join(" ")}
+            >
+              <Icon className="h-3 w-3" />
+              {t.label}
+            </button>
+          );
+        })}
+        <div className="ml-auto text-[11px] text-slate-400">
+          <Link
+            to={`/app/companies/${encodeURIComponent(rawId)}/legacy`}
+            className="hover:text-slate-600 underline-offset-2 hover:underline"
+          >
+            Legacy view
+          </Link>
+        </div>
+      </div>
+
+      {refreshLimitState && (
+        <PulseCoachQuotaCard
+          plan={refreshLimitState.plan}
+          feature={refreshLimitState.feature}
+          used={refreshLimitState.used}
+          limit={refreshLimitState.limit}
+          reset_at={refreshLimitState.reset_at}
+          upgrade_url={refreshLimitState.upgrade_url}
+          onDismiss={() => setRefreshLimitState(null)}
+        />
+      )}
+
+      {refreshError && (
+        <div className="font-body shrink-0 border-b border-amber-100 bg-amber-50 px-6 py-2 text-[12px] text-amber-700">
+          {refreshError}
+        </div>
+      )}
+
+      {/* Body */}
+      <div className="flex flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+        <div className="min-w-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
+          {tab === "supply" && (
+            isDirectoryOnly ? (
+              <DirectoryOnlyEmptyState
+                companyName={companyName}
+                onSave={handleSaveCompany}
+                saving={savingStar}
+              />
+            ) : (
+              <CDPSupplyChain
+                profile={activeProfile as any}
+                routeKpis={activeRouteKpis as any}
+                selectedYear={selectedYear}
+                years={years}
+                onSelectYear={setSelectedYear}
+              />
+            )
+          )}
+          {tab === "contacts" && (
+            <CDPContacts
+              companyId={companyId}
+              companyName={companyName}
+              companyDomain={companyDomain}
+              companyLocation={companyAddress}
+              onContactsChanged={setSavedContacts}
+            />
+          )}
+          {tab === "research" && (
+            <CDPResearch
+              companyName={companyName}
+              companyMeta={{
+                ticker: companyEnrichment?.enrichment_params?.ticker ?? null,
+                hq:
+                  companyAddress ||
+                  companyEnrichment?.enrichment_params?.hqLocation?.city ||
+                  null,
+                teuYr:
+                  activeRouteKpis?.teuLast12m ??
+                  activeProfile?.totalTeuAllTime ??
+                  null,
+                vertical:
+                  companyEnrichment?.industry ||
+                  companyEnrichment?.enrichment_params?.firmographics?.industry ||
+                  null,
+              }}
+              tradeKpis={{
+                shipments12m:
+                  activeRouteKpis?.shipmentsLast12m ??
+                  activeProfile?.totalShipments ??
+                  null,
+                teu12m:
+                  activeRouteKpis?.teuLast12m ??
+                  activeProfile?.totalTeuAllTime ??
+                  null,
+                activeLanes: Array.isArray(activeProfile?.topRoutes)
+                  ? activeProfile.topRoutes.length
+                  : Array.isArray(activeProfile?.top_routes)
+                    ? activeProfile.top_routes.length
+                    : null,
+                topLaneLabel:
+                  activeRouteKpis?.topRouteLast12m ||
+                  activeProfile?.topRoutes?.[0]?.route ||
+                  activeProfile?.top_routes?.[0]?.route ||
+                  null,
+                topLaneShare: (() => {
+                  const top =
+                    activeProfile?.topRoutes?.[0] ||
+                    activeProfile?.top_routes?.[0] ||
+                    null;
+                  const total = Number(
+                    activeRouteKpis?.shipmentsLast12m ??
+                      activeProfile?.totalShipments,
+                  );
+                  const topShip = Number(top?.shipments);
+                  if (!total || !topShip || total <= 0) return null;
+                  return topShip / total;
+                })(),
+                yoyPct: null,
+              } as any}
+              topRoutes={
+                ((): any[] => {
+                  const fromKpis = activeRouteKpis?.topRoutesLast12m;
+                  if (Array.isArray(fromKpis) && fromKpis.length > 0)
+                    return fromKpis;
+                  if (Array.isArray(activeProfile?.topRoutes))
+                    return activeProfile.topRoutes;
+                  if (Array.isArray(activeProfile?.top_routes))
+                    return activeProfile.top_routes;
+                  return [];
+                })() as any
+              }
+              pulseBrief={pulseBrief}
+              pulseLoading={pulseLoading}
+              pulseError={pulseError}
+              pulseUsage={pulseUsage}
+              onPulse={handlePulseClick}
+              onRefresh={handlePulseRefresh}
+              onShareHtml={handleShareHtmlClick}
+              onExportPdf={handleExportPdfClick}
+              shareLoading={shareLoading}
+              exportLoading={exportLoading}
+              navigate={navigate}
+            />
+          )}
+          {tab === "activity" && (
+            <CDPActivity companyId={companyId} ownerName={ownerName} />
+          )}
+          {tab === "inbox" && (
+            <CompanyInboxTab companyId={companyId} navigate={navigate as any} />
+          )}
+        </div>
+        {panelOpen && (
+          <CDPDetailsPanel
+            company={
+              {
+                domain: companyDomain,
+                website: companyWebsite,
+                address: companyAddress,
+                countryCode: companyCountryCode,
+                countryName: companyCountryName,
+                phone: companyPhone,
+              } as any
+            }
+            kpis={headerKpis as any}
+            profile={activeProfile as any}
+            ownerName={ownerName}
+            ownerInitials={ownerInitials}
+            lists={null}
+            campaigns={null}
+            onRefresh={handleManualRefreshClick}
+            refreshing={manualRefreshing}
+            snapshotUpdatedAt={snapshotUpdatedAt}
+            contacts={savedContacts}
+            onOpenContactsTab={() => setTab("contacts")}
+          />
+        )}
+      </div>
+
+      {/* Toast (verbatim from Company.jsx 1356–1382) */}
+      {shareToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex justify-center px-4"
+        >
+          <div
+            className={[
+              "pointer-events-auto rounded-xl border px-4 py-2.5 text-[12.5px] font-semibold shadow-lg",
+              shareToast.tone === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : shareToast.tone === "warning"
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : shareToast.tone === "error"
+                    ? "border-rose-200 bg-rose-50 text-rose-800"
+                    : "border-slate-200 bg-white text-slate-700",
+            ].join(" ")}
+          >
+            {shareToast.message}
+          </div>
+        </div>
+      )}
+
+      <AddToCampaignModal
+        open={campaignModalOpen}
+        onClose={() => setCampaignModalOpen(false)}
+        company={{
+          company_id: bundle?.identity?.id ?? companyId,
+          name: companyName,
+        }}
+      />
+    </div>
+  );
+}
+
 export default function CompanyProfileV2() {
   const params = useParams();
   const rawId = params.id ?? null;
@@ -839,7 +1566,7 @@ export default function CompanyProfileV2() {
     <CompanyProfileGuard rawId={rawId}>
       {(resolvedId) => (
         <V2ErrorBoundary rawId={resolvedId}>
-          <ProfilePanel id={resolvedId} />
+          <ProfilePanel rawId={resolvedId} />
         </V2ErrorBoundary>
       )}
     </CompanyProfileGuard>
