@@ -33,6 +33,7 @@ const AdminPartnerProgram = lazy(() => import("@/pages/AdminPartnerProgram"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
 const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
 const Pulse = lazy(() => import("@/pages/Pulse"));
+const Lists = lazy(() => import("@/pages/Lists"));
 const CMSManager = lazy(() => import("@/pages/CMSManager"));
 const Diagnostic = lazy(() => import("@/pages/Diagnostic"));
 const AdminAgent = lazy(() => import("@/pages/AdminAgent"));
@@ -386,6 +387,27 @@ export default function App() {
             <RequireAuth>
               <LITPage>
                 <InboxPage />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+
+        <Route
+          path="/app/lists"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <Lists />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/lists/:listId"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <Lists />
               </LITPage>
             </RequireAuth>
           }

@@ -223,6 +223,11 @@ export default function AppShell({ currentPageName, children }) {
                 label={collapsed ? "" : "Pulse"}
               />
             )}
+            <SideLink
+              to="/app/lists"
+              icon={Database}
+              label={collapsed ? "" : "Lists"}
+            />
           </nav>
 
           <SectionLabel collapsed={collapsed}>Tools</SectionLabel>
