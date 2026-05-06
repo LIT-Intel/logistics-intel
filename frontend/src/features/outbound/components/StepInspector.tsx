@@ -115,37 +115,31 @@ export function StepInspector({
       <div className="flex-1 overflow-y-auto px-4 py-3.5">
         {isWait ? (
           <Field label="Wait">
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={0}
-                max={60}
+            <div className="flex flex-wrap items-center gap-2">
+              <DelayBox
                 value={step.waitDays ?? 0}
-                onChange={(e) =>
-                  onUpdate({ waitDays: Math.max(0, Number(e.target.value || 0)) })
-                }
-                className={`${inputClass()} w-20`}
-                style={{ fontFamily: fontBody }}
+                max={60}
+                onChange={(n) => onUpdate({ waitDays: Math.max(0, n) })}
+                unit="days"
               />
-              <span className="text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>days</span>
-              <input
-                type="number"
-                min={0}
-                max={59}
+              <DelayBox
+                value={step.waitHours ?? 0}
+                max={23}
+                onChange={(n) => onUpdate({ waitHours: Math.max(0, Math.min(23, n)) })}
+                unit="hours"
+              />
+              <DelayBox
                 value={step.waitMinutes ?? 0}
-                onChange={(e) =>
-                  onUpdate({ waitMinutes: Math.max(0, Math.min(59, Number(e.target.value || 0))) })
-                }
-                className={`${inputClass()} w-20`}
-                style={{ fontFamily: fontBody }}
+                max={59}
+                onChange={(n) => onUpdate({ waitMinutes: Math.max(0, Math.min(59, n)) })}
+                unit="minutes"
               />
-              <span className="text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>minutes</span>
             </div>
             <p
               className="mt-1.5 text-[11px] text-slate-500"
               style={{ fontFamily: fontBody }}
             >
-              How long to pause before the next step. Use minutes for same-day bursts.
+              How long to pause before the next step. Use hours/minutes for sub-day pacing.
             </p>
           </Field>
         ) : null}
@@ -302,45 +296,33 @@ export function StepInspector({
         ) : null}
 
         {!isWait ? (
-          <Field label="Delay from previous">
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={0}
-                max={60}
+          <Field label="Delay from previous step">
+            <div className="flex flex-wrap items-center gap-2">
+              <DelayBox
                 value={step.delayDays ?? 0}
-                onChange={(e) =>
-                  onUpdate({
-                    delayDays: Math.max(0, Number(e.target.value || 0)),
-                  })
-                }
-                className={`${inputClass()} w-20`}
-                style={{ fontFamily: fontBody }}
-                title="Days"
+                max={60}
+                onChange={(n) => onUpdate({ delayDays: Math.max(0, n) })}
+                unit="days"
               />
-              <span className="text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>days</span>
-              <input
-                type="number"
-                min={0}
-                max={59}
-                step={1}
+              <DelayBox
+                value={step.delayHours ?? 0}
+                max={23}
+                onChange={(n) => onUpdate({ delayHours: Math.max(0, Math.min(23, n)) })}
+                unit="hours"
+              />
+              <DelayBox
                 value={step.delayMinutes ?? 0}
-                onChange={(e) =>
-                  onUpdate({
-                    delayMinutes: Math.max(0, Math.min(59, Number(e.target.value || 0))),
-                  })
-                }
-                className={`${inputClass()} w-20`}
-                style={{ fontFamily: fontBody }}
-                title="Minutes"
+                max={59}
+                onChange={(n) => onUpdate({ delayMinutes: Math.max(0, Math.min(59, n)) })}
+                unit="minutes"
               />
-              <span className="text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>minutes</span>
             </div>
             <p
               className="mt-1.5 text-[11px] text-slate-500"
               style={{ fontFamily: fontBody }}
             >
-              Combine days + minutes — e.g. <strong>0 days · 5 minutes</strong> for a same-day burst, or <strong>2 days · 0 minutes</strong> for a follow-up.
+              Combine days + hours + minutes — e.g. <strong>0d 2h 0m</strong> for two hours after the previous step, or <strong>1d 9h 0m</strong> for next morning.
+              The Projected schedule strip above the timeline shows the resulting date/time per step.
             </p>
           </Field>
         ) : null}
@@ -465,4 +447,39 @@ function inputClass(textarea = false) {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+// Compact day/hour/minute spinner — used inside the Wait + Delay-from-
+// previous fields so each unit is selectable without crowding the form.
+function DelayBox({
+  value,
+  max,
+  onChange,
+  unit,
+}: {
+  value: number;
+  max: number;
+  onChange: (n: number) => void;
+  unit: string;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1.5">
+      <input
+        type="number"
+        min={0}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value || 0))}
+        className="w-10 border-none bg-transparent p-0 text-center text-[12px] tabular-nums text-[#0F172A] outline-none"
+        style={{ fontFamily: fontBody }}
+        aria-label={unit}
+      />
+      <span
+        className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500"
+        style={{ fontFamily: fontDisplay }}
+      >
+        {unit}
+      </span>
+    </label>
+  );
 }

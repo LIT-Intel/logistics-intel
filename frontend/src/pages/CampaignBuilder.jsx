@@ -117,19 +117,22 @@ function dbStepToBuilder(row) {
     delayDays: 0,
     expanded: false,
   };
-  // delay_minutes is the sub-hour component on the DB; falls back to a
-  // minutes-from-hours computation if a row was written before the column
-  // existed.
+  // Surface days + hours + minutes from the DB. delay_hours is now an
+  // integer 0-23; delay_minutes 0-59. Older rows that were written
+  // before delay_minutes existed stored fractional hours; we still
+  // tolerate that by recovering the minutes component.
+  const rawHours = Number(row.delay_hours) || 0;
+  const wholeHours = Math.max(0, Math.min(23, Math.floor(rawHours)));
   const dbDelayMinutes =
     typeof row.delay_minutes === "number"
       ? Math.max(0, Math.min(59, row.delay_minutes))
-      : Math.max(0, Math.min(59, Math.round((Number(row.delay_hours) || 0) * 60)));
-  const minutesFromHours = dbDelayMinutes;
+      : Math.max(0, Math.min(59, Math.round((rawHours - wholeHours) * 60)));
   if (kind === "wait") {
     return {
       ...base,
       waitDays: Math.max(0, Number(row.delay_days) || 0),
-      waitMinutes: minutesFromHours,
+      waitHours: wholeHours,
+      waitMinutes: dbDelayMinutes,
     };
   }
   if (kind === "email") {
@@ -138,7 +141,8 @@ function dbStepToBuilder(row) {
       subject: row.subject || "",
       body: row.body || "",
       delayDays: Math.max(0, Number(row.delay_days) || 0),
-      delayMinutes: minutesFromHours,
+      delayHours: wholeHours,
+      delayMinutes: dbDelayMinutes,
     };
     if (row.subject_b !== undefined && row.subject_b !== null) {
       out.subject_b = row.subject_b;
@@ -150,7 +154,8 @@ function dbStepToBuilder(row) {
     title: row.subject || "",
     description: row.body || "",
     delayDays: Math.max(0, Number(row.delay_days) || 0),
-    delayMinutes: minutesFromHours,
+    delayHours: wholeHours,
+    delayMinutes: dbDelayMinutes,
   };
 }
 
@@ -171,6 +176,7 @@ function channelFor(kind) {
 }
 
 function persistPayloadFor(step, order, campaignId) {
+  const clampHours = (h) => Math.max(0, Math.min(23, Math.round(Number(h) || 0)));
   const clampMinutes = (m) => Math.max(0, Math.min(59, Math.round(Number(m) || 0)));
   if (step.kind === "wait") {
     return {
@@ -181,7 +187,7 @@ function persistPayloadFor(step, order, campaignId) {
       subject: null,
       body: null,
       delay_days: Math.max(0, Number(step.waitDays) || 0),
-      delay_hours: 0,
+      delay_hours: clampHours(step.waitHours),
       delay_minutes: clampMinutes(step.waitMinutes),
     };
   }
@@ -194,7 +200,7 @@ function persistPayloadFor(step, order, campaignId) {
       subject: step.subject?.trim() || null,
       body: step.body?.trim() || null,
       delay_days: Math.max(0, Number(step.delayDays) || 0),
-      delay_hours: 0,
+      delay_hours: clampHours(step.delayHours),
       delay_minutes: clampMinutes(step.delayMinutes),
     };
     if (step.subject_b !== undefined) {
@@ -210,7 +216,7 @@ function persistPayloadFor(step, order, campaignId) {
     subject: step.title?.trim() || null,
     body: step.description?.trim() || null,
     delay_days: Math.max(0, Number(step.delayDays) || 0),
-    delay_hours: 0,
+    delay_hours: clampHours(step.delayHours),
     delay_minutes: clampMinutes(step.delayMinutes),
   };
 }

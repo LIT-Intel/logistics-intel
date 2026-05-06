@@ -21,13 +21,12 @@ const TZ_LABEL = (() => {
 })();
 
 function fmtAbsolute(date: Date): string {
-  // e.g. "May 6, 9:00 AM"
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  // e.g. "Tue May 6 · 9:00 AM" — surfaces day-of-week so the cadence
+  // across a multi-day sequence is legible at a glance.
+  const dow = date.toLocaleString(undefined, { weekday: "short" });
+  const md = date.toLocaleString(undefined, { month: "short", day: "numeric" });
+  const t = date.toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `${dow} ${md} · ${t}`;
 }
 
 function fmtRelative(ms: number): string {
@@ -44,10 +43,13 @@ function fmtRelative(ms: number): string {
 
 function stepDelayMs(s: BuilderStep): number {
   const days = s.kind === "wait" ? Math.max(0, s.waitDays || 0) : Math.max(0, s.delayDays || 0);
+  const hours = s.kind === "wait"
+    ? Math.max(0, Math.min(23, s.waitHours || 0))
+    : Math.max(0, Math.min(23, s.delayHours || 0));
   const minutes = s.kind === "wait"
     ? Math.max(0, Math.min(59, s.waitMinutes || 0))
     : Math.max(0, Math.min(59, s.delayMinutes || 0));
-  return days * 86_400_000 + minutes * 60_000;
+  return days * 86_400_000 + hours * 3_600_000 + minutes * 60_000;
 }
 
 function channelLabel(kind: BuilderStep["kind"]): string {
