@@ -36,6 +36,7 @@ import {
   Users,
   Workflow,
   Activity,
+  Inbox,
   ServerCrash,
   Wrench,
   Bookmark,
@@ -47,8 +48,11 @@ import CDPSupplyChain from "@/components/company/CDPSupplyChain";
 import CDPContacts from "@/components/company/CDPContacts";
 import CDPResearch from "@/components/company/CDPResearch";
 import CDPActivity from "@/components/company/CDPActivity";
+import CompanyInboxTab from "@/components/company/CompanyInboxTab";
 import CompanyProfileGuard from "@/components/company/CompanyProfileGuard";
+import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
+import { useAuth } from "@/auth/AuthProvider";
 import { useCompanyProfile } from "@/hooks/useCompanyProfile";
 import {
   buildYearScopedProfile,
@@ -63,13 +67,14 @@ import {
 } from "@/lib/companyProfileFallback";
 import type { ProfileBundle } from "@/lib/companyProfile.types";
 
-type TabId = "supply-chain" | "contacts" | "pulse" | "activity";
+type TabId = "supply-chain" | "contacts" | "pulse" | "activity" | "inbox";
 
 const TABS: { id: TabId; label: string; icon: any }[] = [
   { id: "supply-chain", label: "Supply Chain", icon: Workflow },
   { id: "contacts", label: "Contacts", icon: Users },
   { id: "pulse", label: "Pulse AI", icon: Sparkles },
   { id: "activity", label: "Activity", icon: Activity },
+  { id: "inbox", label: "Inbox", icon: Inbox },
 ];
 
 // ---------- Error boundary ----------
@@ -142,12 +147,24 @@ function bundleToHeaderProps(bundle: ProfileBundle, profile: IyCompanyProfile | 
     },
     kpis: {
       shipments: p?.routeKpis?.shipmentsLast12m ?? p?.totalShipments ?? m.shipments_12m,
+      shipmentsAllTime: p?.totalShipmentsAllTime ?? null,
       teu: p?.routeKpis?.teuLast12m ?? p?.totalTeuAllTime ?? m.teu_12m,
       spend: p?.routeKpis?.estSpendUsd12m ?? p?.estSpendUsd12m ?? m.est_spend_12m,
+      spendAllTime: (p as any)?.estSpendAllTime ?? p?.estSpendUsd ?? null,
       lastShipment: p?.lastShipmentDate ?? m.last_shipment,
       topRoute: p?.routeKpis?.topRouteLast12m ?? m.top_route,
-      fclCount: p?.containers?.fclShipments12m ?? m.fcl_shipments_12m,
-      lclCount: p?.containers?.lclShipments12m ?? m.lcl_shipments_12m,
+      recentRoute: p?.routeKpis?.mostRecentRoute ?? null,
+      // Match legacy: prefer all-time FCL/LCL, fall back to 12m / saved-row.
+      fclCount:
+        p?.fcl_shipments_all_time ??
+        (p as any)?.fcl_count ??
+        p?.containers?.fclShipments12m ??
+        m.fcl_shipments_12m,
+      lclCount:
+        p?.lcl_shipments_all_time ??
+        (p as any)?.lcl_count ??
+        p?.containers?.lclShipments12m ??
+        m.lcl_shipments_12m,
       tradeLanes: Array.isArray(p?.topRoutes) ? p!.topRoutes!.length : null,
       contacts: c?.count ?? null,
       contactsVerified:
@@ -169,10 +186,33 @@ function deriveYears(profile: IyCompanyProfile | null): number[] {
 // ---------- Main panel ----------
 function ProfilePanel({ id }: { id: string }) {
   const navigate = useNavigate();
+  const auth = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>("supply-chain");
   const [panelOpen, setPanelOpen] = useState(true);
   const [savingStar, setSavingStar] = useState(false);
   const [campaignModalOpen, setCampaignModalOpen] = useState(false);
+
+  // Owner identity for the right-rail Account Details card. Mirrors
+  // legacy Company.jsx:715–730.
+  const ownerName = useMemo(() => {
+    const user: any = auth?.user;
+    return (
+      auth?.fullName ||
+      user?.user_metadata?.full_name ||
+      user?.user_metadata?.name ||
+      user?.email?.split?.("@")[0] ||
+      null
+    );
+  }, [auth]);
+  const ownerInitials = useMemo(() => {
+    if (!ownerName) return null;
+    return ownerName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part: string) => part.charAt(0).toUpperCase())
+      .join("");
+  }, [ownerName]);
 
   // Aggregator: identity + contacts + activity + pulse (NOT shipments).
   const {
@@ -192,7 +232,9 @@ function ProfilePanel({ id }: { id: string }) {
   const [snapshotIsStale, setSnapshotIsStale] = useState<boolean>(true);
   const [shipmentsLoading, setShipmentsLoading] = useState<boolean>(false);
   const [manualRefreshing, setManualRefreshing] = useState<boolean>(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshLimitState, setRefreshLimitState] = useState<{
+    feature: string | null;
     plan: string | null;
     used: number | null;
     limit: number | null;
@@ -343,6 +385,7 @@ function ProfilePanel({ id }: { id: string }) {
     if (!shipmentKey || manualRefreshing) return;
     setManualRefreshing(true);
     setRefreshLimitState(null);
+    setRefreshError(null);
     try {
       const fresh = await getSavedCompanyDetail(shipmentKey, undefined, {
         forceRefresh: true,
@@ -389,19 +432,29 @@ function ProfilePanel({ id }: { id: string }) {
       if (code === "LIMIT_EXCEEDED") {
         const gate = err?.gate || {};
         setRefreshLimitState({
+          feature: gate.feature ?? "company_profile_view",
           plan: gate.plan ?? null,
           used: gate.used ?? null,
           limit: gate.limit ?? null,
           reset_at: gate.reset_at ?? null,
           upgrade_url: gate.upgrade_url || "/app/billing",
         });
-        toast.warning("You've reached your refresh limit for this billing period.");
+        // Drop the inline banner so the premium quota card doesn't
+        // double-render alongside it.
+        setRefreshError(null);
       } else if (code === "COMPANY_PROFILE_FAILED" || code === "IY_API_KEY_MISSING") {
-        toast.error("Couldn't refresh trade intel — try again in a moment.");
+        const friendly =
+          "Couldn't refresh trade intel right now. The data provider is temporarily unavailable — please try again in a moment.";
+        setRefreshError(friendly);
+        toast.error(friendly);
       } else if (code === "UNAUTHORIZED") {
-        toast.error("Session expired. Please sign in again.");
+        const friendly = "Your session expired. Please sign in again.";
+        setRefreshError(friendly);
+        toast.error(friendly);
       } else {
-        toast.error(`Refresh failed: ${String(err?.message ?? err)}`);
+        const friendly = `Refresh failed: ${String(err?.message ?? err)}`;
+        setRefreshError(friendly);
+        toast.error(friendly);
       }
     } finally {
       setManualRefreshing(false);
@@ -550,25 +603,6 @@ function ProfilePanel({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {refreshLimitState ? (
-        <div className="bg-violet-50 border-b border-violet-200 text-violet-900 text-[12px] px-6 py-1.5 flex items-center justify-center gap-2 shrink-0">
-          <span>
-            Refresh limit reached
-            {refreshLimitState.used != null && refreshLimitState.limit != null
-              ? ` (${refreshLimitState.used}/${refreshLimitState.limit})`
-              : ""}
-            {refreshLimitState.plan ? ` on the ${refreshLimitState.plan} plan` : ""}.
-            Upgrade to refresh more profiles.
-          </span>
-          <Link
-            to={refreshLimitState.upgrade_url}
-            className="underline font-medium"
-          >
-            View plans
-          </Link>
-        </div>
-      ) : null}
-
       {/* Phase 3.2 — content shell capped at 1500px on large desktops while
           the outer bg stays full-bleed. Surface / laptop widths are below
           1500px so this is a no-op there; on 27"+ desktops the company
@@ -631,6 +665,27 @@ function ProfilePanel({ id }: { id: string }) {
         </div>
       </div>
 
+      {/* Premium Pulse Coach quota card — only renders when refresh hits a
+          plan cap. The plain refresh banner below covers all other failure
+          modes. Mirrors legacy Company.jsx:1213–1229. */}
+      {refreshLimitState ? (
+        <PulseCoachQuotaCard
+          plan={refreshLimitState.plan}
+          feature={refreshLimitState.feature}
+          used={refreshLimitState.used}
+          limit={refreshLimitState.limit}
+          reset_at={refreshLimitState.reset_at}
+          upgrade_url={refreshLimitState.upgrade_url}
+          onDismiss={() => setRefreshLimitState(null)}
+        />
+      ) : null}
+
+      {refreshError ? (
+        <div className="font-body shrink-0 border-b border-amber-100 bg-amber-50 px-6 py-2 text-[12px] text-amber-700">
+          {refreshError}
+        </div>
+      ) : null}
+
       {/* Body — full-bleed, matches legacy width. */}
       <div className="flex flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
         <div className="min-w-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
@@ -692,7 +747,14 @@ function ProfilePanel({ id }: { id: string }) {
           ) : null}
 
           {activeTab === "activity" ? (
-            <CDPActivity companyId={bundle.identity.id} />
+            <CDPActivity companyId={bundle.identity.id} ownerName={ownerName} />
+          ) : null}
+
+          {activeTab === "inbox" ? (
+            <CompanyInboxTab
+              companyId={bundle.identity.id}
+              navigate={navigate as any}
+            />
           ) : null}
         </div>
 
@@ -701,6 +763,12 @@ function ProfilePanel({ id }: { id: string }) {
             company={headerProps.company as any}
             kpis={headerProps.kpis as any}
             profile={(activeProfile ?? iyProfile) as any}
+            ownerName={ownerName}
+            ownerInitials={ownerInitials}
+            lists={null}
+            campaigns={null}
+            contacts={(bundle.contacts?.items ?? null) as any}
+            onOpenContactsTab={() => setActiveTab("contacts")}
             onRefresh={handleManualRefresh}
             refreshing={manualRefreshing}
             snapshotUpdatedAt={snapshotUpdatedAt}
