@@ -297,26 +297,72 @@ serve(async (req) => {
       }
 
       // 2f. Resolve sender mailbox.
+      //
+      // Priority:
+      //   1. metrics.sender_account_id — campaign-scoped override the
+      //      builder writes when the user picks a non-primary mailbox.
+      //   2. user's primary mailbox.
+      //   3. user's most recently connected mailbox.
+      //
+      // When the chosen account has provider='resend' we additionally
+      // gate the send through the super-admin allowlist server-side.
+      // Frontend visibility is just UX — this guard is the truth.
       const campaignKey = r.campaign_id;
       let sender = senderCache.get(campaignKey);
       if (sender === undefined) {
-        // Lookup campaign owner, then their primary inbox.
         const { data: camp } = await admin
           .from("lit_campaigns")
-          .select("user_id")
+          .select("user_id, metrics")
           .eq("id", r.campaign_id)
           .maybeSingle();
         if (!camp?.user_id) {
           senderCache.set(campaignKey, null);
         } else {
-          const { data: primary } = await admin
-            .from("lit_email_accounts")
-            .select("id, user_id, provider, email, display_name")
-            .eq("user_id", camp.user_id)
-            .eq("is_primary", true)
-            .eq("status", "connected")
-            .maybeSingle();
-          let chosen = (primary as Account | null) ?? null;
+          const overrideId = typeof (camp as any).metrics?.sender_account_id === "string"
+            ? (camp as any).metrics.sender_account_id
+            : null;
+          let chosen: Account | null = null;
+          if (overrideId) {
+            const { data: override } = await admin
+              .from("lit_email_accounts")
+              .select("id, user_id, provider, email, display_name")
+              .eq("id", overrideId)
+              .eq("user_id", camp.user_id)
+              .eq("status", "connected")
+              .maybeSingle();
+            chosen = (override as Account | null) ?? null;
+          }
+          if (!chosen) {
+            const { data: primary } = await admin
+              .from("lit_email_accounts")
+              .select("id, user_id, provider, email, display_name")
+              .eq("user_id", camp.user_id)
+              .eq("is_primary", true)
+              .eq("status", "connected")
+              .maybeSingle();
+            chosen = (primary as Account | null) ?? null;
+          }
+          // Super-admin gate for Resend. Reject silently (per-recipient
+          // skip) if the campaign owner is not on the allowlist.
+          if (chosen?.provider === "resend") {
+            const allowlist = new Set([
+              "vraymond@sparkfusiondigital.com",
+              "support@logisticintel.com",
+            ]);
+            try {
+              const { data: ownerUser } = await admin.auth.admin.getUserById(camp.user_id);
+              const ownerEmail = String(ownerUser?.user?.email || "").toLowerCase();
+              if (!allowlist.has(ownerEmail)) {
+                console.warn("[send-campaign-email] resend send blocked for non-superadmin", camp.user_id);
+                chosen = null;
+              }
+            } catch (e) {
+              console.error("[send-campaign-email] resend gate lookup failed", e);
+              chosen = null;
+            }
+          }
+          // Final fallback: most recently connected mailbox if neither
+          // override nor primary resolved.
           if (!chosen) {
             const { data: fallback } = await admin
               .from("lit_email_accounts")
@@ -438,15 +484,21 @@ serve(async (req) => {
       }
 
       // 2h. Refresh + send.
-      const tokenRes = await getAccessToken(admin, sender);
-      if (!tokenRes.ok) {
-        await fail(admin, r, `token:${tokenRes.error}`);
-        summary.failed += 1;
-        continue;
+      // Resend doesn't use OAuth — the API key is set as an Edge
+      // Function env. For Gmail / Outlook we still refresh as before.
+      let accessToken = "";
+      if (sender.provider !== "resend") {
+        const tokenRes = await getAccessToken(admin, sender);
+        if (!tokenRes.ok) {
+          await fail(admin, r, `token:${tokenRes.error}`);
+          summary.failed += 1;
+          continue;
+        }
+        accessToken = tokenRes.accessToken;
       }
       const sendRes = await sendEmail({
         provider: sender.provider,
-        accessToken: tokenRes.accessToken,
+        accessToken,
         from: sender,
         to: r.email,
         subject,
@@ -692,16 +744,59 @@ async function sendEmail(args: {
   body: string;
 }): Promise<{ ok: true; messageId: string | null } | { ok: false; error: string }> {
   const { provider, accessToken, from, to, subject, body } = args;
+  if (provider === "resend") {
+    const apiKey = Deno.env.get("LIT_RESEND_API_KEY");
+    if (!apiKey) return { ok: false, error: "resend_api_key_missing" };
+    const fromLine = from.display_name
+      ? `${from.display_name} <${from.email}>`
+      : from.email;
+    // Body may already be HTML (from the composer) or plaintext (from
+    // the simple textarea). Detect to send the right shape so Outlook
+    // and Gmail render branded emails as designed.
+    const isHtml = /^<[a-z!]/i.test(body.trim()) || /<table|<div|<p[\s>]/i.test(body);
+    const payload: Record<string, unknown> = {
+      from: fromLine,
+      to: [to],
+      subject,
+      reply_to: from.email,
+    };
+    if (isHtml) payload.html = body;
+    else payload.text = body;
+    try {
+      const resp = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const respJson: any = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        return {
+          ok: false,
+          error: `resend_${resp.status}:${respJson?.message || respJson?.name || ""}`.slice(0, 500),
+        };
+      }
+      return { ok: true, messageId: respJson?.id ?? null };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "resend_threw" };
+    }
+  }
   if (provider === "gmail") {
     const fromLine = from.display_name
       ? `"${from.display_name}" <${from.email}>`
       : from.email;
+    // Detect HTML so composer-authored branded emails render correctly
+    // through the user's Gmail mailbox. Plaintext bodies still ship as
+    // text/plain to avoid the spam-flag bump from unnecessary HTML.
+    const isHtml = /^<[a-z!]/i.test(body.trim()) || /<table|<div|<p[\s>]/i.test(body);
     const raw = [
       `From: ${fromLine}`,
       `To: ${to}`,
       `Subject: ${subject}`,
       `MIME-Version: 1.0`,
-      `Content-Type: text/plain; charset=UTF-8`,
+      `Content-Type: ${isHtml ? "text/html" : "text/plain"}; charset=UTF-8`,
       ``,
       body,
     ].join("\r\n");
@@ -730,6 +825,7 @@ async function sendEmail(args: {
     }
   }
   // Outlook / Microsoft Graph
+  const outlookIsHtml = /^<[a-z!]/i.test(body.trim()) || /<table|<div|<p[\s>]/i.test(body);
   try {
     const resp = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
       method: "POST",
@@ -740,7 +836,7 @@ async function sendEmail(args: {
       body: JSON.stringify({
         message: {
           subject,
-          body: { contentType: "Text", content: body },
+          body: { contentType: outlookIsHtml ? "HTML" : "Text", content: body },
           toRecipients: [{ emailAddress: { address: to } }],
         },
         saveToSentItems: true,

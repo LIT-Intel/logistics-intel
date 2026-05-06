@@ -15,6 +15,7 @@ import {
   upsertCampaignStep,
   launchCampaign,
   sendTestEmail,
+  listEmailAccounts,
 } from "@/lib/api";
 import { applyMergeVars, buildMergeContext } from "@/lib/mergeVars";
 
@@ -43,6 +44,17 @@ import {
   deleteCampaignStepsFrom,
 } from "@/features/outbound/api/campaignActions";
 import { listPulseLists, getListCompanies } from "@/features/pulse/pulseListsApi";
+
+function labelFor(acc) {
+  const provider = String(acc?.provider || "").toLowerCase();
+  const name = acc?.display_name || acc?.email || "Mailbox";
+  const tag =
+    provider === "gmail" ? "Gmail" :
+    provider === "outlook" ? "Outlook" :
+    provider === "resend" ? "Resend (LIT marketing)" :
+    provider || "Mailbox";
+  return `${name} — ${tag}`;
+}
 
 // /app/campaigns/new — create flow
 // /app/campaigns/new?edit=:id — edit flow (loads existing campaign)
@@ -248,6 +260,23 @@ export default function CampaignBuilder() {
   const [audiencePulseListId, setAudiencePulseListId] = useState(null);
   const [audiencePulseListName, setAudiencePulseListName] = useState("");
 
+  // Sender accounts. The dispatcher reads metrics.sender_account_id and
+  // falls back to the user's primary mailbox if null. Resend appears
+  // here only for super-admin users; the server enforces the gate.
+  const [senderAccounts, setSenderAccounts] = useState([]);
+  const [senderAccountId, setSenderAccountId] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    listEmailAccounts()
+      .then((rows) => {
+        if (cancelled) return;
+        const connected = (rows || []).filter((r) => r.status === "connected");
+        setSenderAccounts(connected);
+      })
+      .catch(() => { /* surface via primaryEmail nag instead */ });
+    return () => { cancelled = true; };
+  }, []);
+
   // Load existing campaign when in edit mode.
   const { details, loading: campaignLoading, error: campaignError } =
     useCampaign(editId);
@@ -315,6 +344,10 @@ export default function CampaignBuilder() {
         if (found) setAudiencePulseListName(found.name || "");
       });
     }
+    const persistedSenderId = typeof details.metrics?.sender_account_id === "string"
+      ? details.metrics.sender_account_id
+      : null;
+    if (persistedSenderId) setSenderAccountId(persistedSenderId);
     // Pull persisted manual recipients (added in a previous Launch). The
     // edge function persists them on lit_campaigns.metrics.manual_recipients
     // when Launch runs, so re-launching keeps them.
@@ -506,6 +539,10 @@ export default function CampaignBuilder() {
       // Persist the bound Pulse List id so queue-campaign-recipients can
       // sync new list members on every run. null clears the binding.
       metricsExtras.audience_pulse_list_id = audiencePulseListId || null;
+      // Persist the sender override so the dispatcher uses the picked
+      // mailbox (or null = primary). The server-side super-admin gate
+      // enforces Resend access; this is just UX sticky state.
+      metricsExtras.sender_account_id = senderAccountId || null;
       // Preserve any pre-existing metrics keys (description, etc.) when editing.
       const mergedMetrics = isEditMode
         ? { ...(details?.metrics ?? {}), ...metricsExtras }
@@ -886,6 +923,42 @@ export default function CampaignBuilder() {
       </div>
 
       <ForecastStrip audienceCount={selectedIds.size} />
+      {senderAccounts.length > 0 ? (
+        <div
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-1.5 text-[11px] text-slate-700"
+          style={{ fontFamily: fontBody }}
+        >
+          <span className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-white">
+            SENDER
+          </span>
+          <label
+            className="text-[11px] text-slate-500"
+            htmlFor="sender-account-select"
+            style={{ fontFamily: fontDisplay }}
+          >
+            Send via:
+          </label>
+          <select
+            id="sender-account-select"
+            value={senderAccountId || ""}
+            onChange={(e) => setSenderAccountId(e.target.value || null)}
+            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11.5px] font-semibold text-slate-900 outline-none focus:border-blue-300"
+            style={{ fontFamily: fontDisplay }}
+          >
+            <option value="">Primary mailbox (auto)</option>
+            {senderAccounts.map((acc) => (
+              <option key={acc.id} value={acc.id}>
+                {labelFor(acc)}
+              </option>
+            ))}
+          </select>
+          {senderAccountId && senderAccounts.find((a) => a.id === senderAccountId)?.provider === "resend" ? (
+            <span className="inline-flex items-center gap-1 rounded-md border border-purple-300 bg-purple-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-purple-700">
+              Resend · super-admin
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {audiencePulseListId ? (
         <div
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-blue-200 bg-blue-50 px-3 py-1.5 text-[11px] text-blue-900"
