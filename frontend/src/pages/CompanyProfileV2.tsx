@@ -534,9 +534,9 @@ function ProfilePanel({ id }: { id: string }) {
     bundle.identity.sources.directory.present === true;
 
   return (
-    <div className="flex h-full min-h-screen flex-col bg-slate-50">
+    <div className="flex min-h-screen flex-col bg-[#F8FAFC]">
       {usedFallback ? (
-        <div className="bg-amber-50 border-b border-amber-200 text-amber-800 text-xs px-4 py-2 flex items-center justify-center">
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-800 text-[12px] px-6 py-1.5 flex items-center justify-center shrink-0">
           <span>
             Identity aggregator unreachable — using in-browser resolver fallback.
             Shipment, contact, and activity data still load via direct queries.{" "}
@@ -551,7 +551,7 @@ function ProfilePanel({ id }: { id: string }) {
       ) : null}
 
       {refreshLimitState ? (
-        <div className="bg-violet-50 border-b border-violet-200 text-violet-900 text-xs px-4 py-2 flex items-center justify-center gap-2">
+        <div className="bg-violet-50 border-b border-violet-200 text-violet-900 text-[12px] px-6 py-1.5 flex items-center justify-center gap-2 shrink-0">
           <span>
             Refresh limit reached
             {refreshLimitState.used != null && refreshLimitState.limit != null
@@ -587,34 +587,41 @@ function ProfilePanel({ id }: { id: string }) {
         snapshotUpdatedAt={snapshotUpdatedAt}
       />
 
-      <div className="border-b border-slate-200 bg-white">
-        <div className="px-4 md:px-6 flex items-center gap-1">
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            const isActive = activeTab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  isActive
-                    ? "border-blue-600 text-blue-600"
-                    : "border-transparent text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {t.label}
-              </button>
-            );
-          })}
-          <div className="ml-auto text-xs text-slate-400">
-            <Link
-              to={`/app/companies/${encodeURIComponent(id)}/legacy`}
-              className="hover:text-slate-600 underline-offset-2 hover:underline"
+      {/* Tab bar — matches legacy density (px-6, h-3 w-3 icons, 12.5px font). */}
+      <div
+        role="tablist"
+        aria-label="Company sections"
+        className="flex shrink-0 items-center gap-0 border-b border-slate-200 bg-white px-6"
+      >
+        {TABS.map((t) => {
+          const Icon = t.icon;
+          const isActive = activeTab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setActiveTab(t.id)}
+              className={[
+                "font-display -mb-px inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-[12.5px] font-semibold transition-colors",
+                isActive
+                  ? "border-blue-500 text-blue-700"
+                  : "border-transparent text-slate-500 hover:text-slate-700",
+              ].join(" ")}
             >
-              Legacy view
-            </Link>
-          </div>
+              <Icon className="h-3 w-3" />
+              {t.label}
+            </button>
+          );
+        })}
+        <div className="ml-auto text-[11px] text-slate-400">
+          <Link
+            to={`/app/companies/${encodeURIComponent(id)}/legacy`}
+            className="hover:text-slate-600 underline-offset-2 hover:underline"
+          >
+            Legacy view
+          </Link>
         </div>
       </div>
 
@@ -684,16 +691,14 @@ function ProfilePanel({ id }: { id: string }) {
         </div>
 
         {panelOpen ? (
-          <div className="lg:w-[360px] lg:flex-shrink-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l border-slate-200 bg-white">
-            <CDPDetailsPanel
-              company={headerProps.company as any}
-              kpis={headerProps.kpis as any}
-              profile={(activeProfile ?? iyProfile) as any}
-              onRefresh={handleManualRefresh}
-              refreshing={manualRefreshing}
-              snapshotUpdatedAt={snapshotUpdatedAt}
-            />
-          </div>
+          <CDPDetailsPanel
+            company={headerProps.company as any}
+            kpis={headerProps.kpis as any}
+            profile={(activeProfile ?? iyProfile) as any}
+            onRefresh={handleManualRefresh}
+            refreshing={manualRefreshing}
+            snapshotUpdatedAt={snapshotUpdatedAt}
+          />
         ) : null}
       </div>
 
