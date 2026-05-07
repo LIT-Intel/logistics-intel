@@ -68,7 +68,14 @@ export default function ContactsPage() {
           return;
         }
         // 2. Hydrate company metadata + contacts in parallel.
-        const [{ data: companyRows }, { data: contactRows }] = await Promise.all([
+        // NOTE: lit_contacts schema does NOT have a `source_provider`
+        // column — it only has `source`. Including the non-existent
+        // column made PostgREST return a 400, which the outer catch
+        // block silently swallowed and the page rendered as "0 contacts"
+        // even when the user's saved companies had verified Apollo
+        // contacts on file. The error is now surfaced explicitly so a
+        // future schema drift won't hide behind an empty success state.
+        const [companyRes, contactRes] = await Promise.all([
           supabase
             .from("lit_companies")
             .select("id, name, source_company_key, domain")
@@ -76,12 +83,26 @@ export default function ContactsPage() {
           supabase
             .from("lit_contacts")
             .select(
-              "id, company_id, full_name, first_name, last_name, title, department, email, phone, linkedin_url, source, source_provider, verified_by_provider, email_verified, email_verification_status, updated_at, created_at",
+              "id, company_id, full_name, first_name, last_name, title, department, seniority, email, phone, linkedin_url, source, verified_by_provider, email_verified, email_verification_status, updated_at, created_at",
             )
             .in("company_id", companyIds)
             .order("updated_at", { ascending: false })
             .limit(250),
         ]);
+        if (companyRes.error) {
+          console.error(
+            "[contacts page] lit_companies query failed:",
+            companyRes.error,
+          );
+        }
+        if (contactRes.error) {
+          console.error(
+            "[contacts page] lit_contacts query failed:",
+            contactRes.error,
+          );
+        }
+        const companyRows = companyRes.data;
+        const contactRows = contactRes.data;
         if (cancelled) return;
         const companyMap = new Map();
         for (const co of companyRows || []) {
