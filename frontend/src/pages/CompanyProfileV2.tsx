@@ -39,6 +39,7 @@ import {
   Inbox,
   Wrench,
   Bookmark,
+  Anchor,
 } from "lucide-react";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import {
@@ -58,6 +59,7 @@ import CDPSupplyChain from "@/components/company/CDPSupplyChain";
 import CDPContacts from "@/components/company/CDPContacts";
 import CDPResearch from "@/components/company/CDPResearch";
 import CDPActivity from "@/components/company/CDPActivity";
+import CDPRateBenchmark from "@/components/company/CDPRateBenchmark";
 import CompanyInboxTab from "@/components/company/CompanyInboxTab";
 import CompanyProfileGuard from "@/components/company/CompanyProfileGuard";
 import { useCompanyProfile } from "@/hooks/useCompanyProfile";
@@ -258,6 +260,7 @@ function buildShellCompany(companyId: string | null, stored: any): any {
 
 const TABS = [
   { id: "supply", label: "Supply Chain", Icon: Workflow },
+  { id: "rates", label: "Rate Benchmark", Icon: Anchor },
   { id: "contacts", label: "Contacts", Icon: Users },
   { id: "research", label: "Pulse AI", Icon: Sparkles },
   { id: "activity", label: "Activity", Icon: Activity },
@@ -402,7 +405,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   const [searchParams] = useSearchParams();
   const initialTab: TabId = (() => {
     const t = String(searchParams?.get("tab") || "").toLowerCase();
-    return (["supply", "contacts", "research", "activity", "inbox"] as const).includes(
+    return (["supply", "rates", "contacts", "research", "activity", "inbox"] as const).includes(
       t as TabId,
     )
       ? (t as TabId)
@@ -412,7 +415,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   useEffect(() => {
     const t = String(searchParams?.get("tab") || "").toLowerCase();
     if (
-      (["supply", "contacts", "research", "activity", "inbox"] as const).includes(
+      (["supply", "rates", "contacts", "research", "activity", "inbox"] as const).includes(
         t as TabId,
       )
     ) {
@@ -1402,6 +1405,45 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 onSelectYear={setSelectedYear}
               />
             )
+          )}
+          {tab === "rates" && (
+            <CDPRateBenchmark
+              companyName={companyName}
+              topRoute={
+                activeRouteKpis?.topRouteLast12m ||
+                activeProfile?.topRoutes?.[0]?.route ||
+                activeProfile?.top_routes?.[0]?.route ||
+                shellCompany?.kpis?.topRoute ||
+                null
+              }
+              teu12m={
+                activeRouteKpis?.teuLast12m ??
+                activeProfile?.teuLast12m ??
+                shellCompany?.kpis?.teu ??
+                null
+              }
+              fcl12m={
+                activeProfile?.containers?.fclShipments12m ??
+                activeProfile?.fcl_count ??
+                null
+              }
+              lcl12m={
+                activeProfile?.containers?.lclShipments12m ??
+                activeProfile?.lcl_count ??
+                null
+              }
+              ships12m={
+                activeRouteKpis?.shipmentsLast12m ??
+                activeProfile?.totalShipments ??
+                shellCompany?.kpis?.shipments ??
+                null
+              }
+              importyetiReportedSpend={
+                activeProfile?.estSpendUsd ??
+                (shellCompany as any)?.kpis?.spend ??
+                null
+              }
+            />
           )}
           {tab === "contacts" && (
             <CDPContacts
