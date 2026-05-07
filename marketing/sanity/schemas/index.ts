@@ -20,6 +20,9 @@ import { comparison } from "./comparison";
 import { integration } from "./integration";
 import { freeTool } from "./freeTool";
 import { page } from "./page";
+import { testimonial } from "./testimonial";
+import { feature } from "./feature";
+import { faq } from "./faq";
 import { seoFields } from "./objects/seoFields";
 import { kpi } from "./objects/kpi";
 import { faqItem } from "./objects/faqItem";
@@ -38,6 +41,10 @@ export const schemaTypes = [
   glossaryTerm,
   caseStudy,
   customerLogo,
+  testimonial,
+  // platform
+  feature,
+  faq,
   // programmatic
   tradeLane,
   port,

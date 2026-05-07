@@ -15,6 +15,9 @@ import {
   User,
   Folder,
   Tag as TagIcon,
+  Quote,
+  Sparkles,
+  HelpCircle,
 } from "lucide-react";
 
 /**
@@ -42,9 +45,21 @@ export const structure = (S: StructureBuilder) =>
               S.listItem().title("Glossary").icon(BookOpen).schemaType("glossaryTerm").child(S.documentTypeList("glossaryTerm").title("Glossary")),
               S.listItem().title("Case studies").icon(Trophy).schemaType("caseStudy").child(S.documentTypeList("caseStudy").title("Case studies")),
               S.listItem().title("Customer logos").icon(Building2).schemaType("customerLogo").child(S.documentTypeList("customerLogo").title("Customer logos")),
+              S.listItem().title("Testimonials").icon(Quote).schemaType("testimonial").child(S.documentTypeList("testimonial").title("Testimonials")),
               S.listItem().title("Authors").icon(User).schemaType("author").child(S.documentTypeList("author").title("Authors")),
               S.listItem().title("Categories").icon(Folder).schemaType("category").child(S.documentTypeList("category").title("Categories")),
               S.listItem().title("Tags").icon(TagIcon).schemaType("tag").child(S.documentTypeList("tag").title("Tags")),
+            ]),
+        ),
+
+      S.listItem()
+        .title("Platform")
+        .child(
+          S.list()
+            .title("Platform")
+            .items([
+              S.listItem().title("Features").icon(Sparkles).schemaType("feature").child(S.documentTypeList("feature").title("Features")),
+              S.listItem().title("FAQs").icon(HelpCircle).schemaType("faq").child(S.documentTypeList("faq").title("FAQs")),
             ]),
         ),
 
