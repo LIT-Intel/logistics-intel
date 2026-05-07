@@ -271,10 +271,10 @@ export default async function ComparisonPage({ params }: { params: { slug: strin
                   <Calendar className="h-4 w-4" /> Book switch call
                 </Link>
                 <Link
-                  href="/pricing"
+                  href="/features"
                   className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-6 text-[15px] font-semibold text-white hover:bg-white/10"
                 >
-                  See pricing <ArrowRight className="h-4 w-4" />
+                  See features <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
             </div>

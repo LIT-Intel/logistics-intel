@@ -37,7 +37,8 @@ Freight Revenue Intelligence
 ## Core product pages
 
 - Homepage: https://www.logisticintel.com/
-- Pricing: https://www.logisticintel.com/pricing
+- Features: https://www.logisticintel.com/features
+- Solutions: https://www.logisticintel.com/solutions
 - Comparisons: https://www.logisticintel.com/vs
 - Glossary: https://www.logisticintel.com/glossary
 - Trade lanes: https://www.logisticintel.com/lanes

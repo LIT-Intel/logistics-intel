@@ -136,7 +136,7 @@ export default async function CustomersPage() {
         title="See what LIT could do for your team."
         subtitle="A 30-min walkthrough with the team. We'll load your accounts, your lanes, and your industry."
         primaryCta={{ label: "Book a demo", href: "/demo", icon: "calendar" }}
-        secondaryCta={{ label: "View pricing", href: "/pricing" }}
+        secondaryCta={{ label: "See features", href: "/features" }}
       />
 
       <script

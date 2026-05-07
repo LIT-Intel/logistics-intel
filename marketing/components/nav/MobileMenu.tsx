@@ -14,7 +14,6 @@ const NAV_GROUPS: {
   {
     heading: "Product",
     links: [
-      { label: "Platform overview", href: "/products" },
       { label: "All features", href: "/features" },
       { label: "Pulse AI", href: "/pulse" },
       { label: "Company Intelligence", href: "/company-intelligence" },
@@ -56,10 +55,10 @@ const NAV_GROUPS: {
   {
     heading: "Company",
     links: [
-      { label: "Pricing", href: "/pricing" },
-      { label: "Integrations", href: "/integrations" },
+      { label: "About us", href: "/about" },
+      { label: "Careers", href: "/careers" },
       { label: "Security", href: "/security" },
-      { label: "About", href: "/about" },
+      { label: "Integrations", href: "/integrations" },
       { label: "Contact", href: "/contact" },
     ],
   },

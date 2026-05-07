@@ -3,6 +3,7 @@ import { LitLogoMark } from "../seo/LitLogoMark";
 import { APP_LOGIN_URL } from "@/lib/app-urls";
 import { MobileMenu } from "./MobileMenu";
 import { ProductDropdown } from "./ProductDropdown.client";
+import { CompanyDropdown } from "./CompanyDropdown.client";
 import { Calendar } from "lucide-react";
 
 /**
@@ -33,9 +34,8 @@ export function Nav() {
           <ProductDropdown />
           <NavLink href="/solutions">Solutions</NavLink>
           <NavLink href="/customers">Customers</NavLink>
-          <NavLink href="/pricing">Pricing</NavLink>
-          <NavLink href="/resources">Resources</NavLink>
           <NavLink href="/vs">Compare</NavLink>
+          <CompanyDropdown />
         </div>
 
         <div className="ml-auto flex items-center gap-2 sm:gap-2.5">

@@ -9,8 +9,10 @@ import { Section } from "@/components/sections/Section";
 import { HubCard, HubCardGrid, HubEmptyState } from "@/components/sections/HubCard";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
+import { LaneFlags } from "@/components/sections/Flag";
 import { buildMetadata } from "@/lib/seo";
 import { buildCollectionPage } from "@/lib/jsonLd";
+import { portISO } from "@/lib/countries";
 import { groq } from "next-sanity";
 import { ArrowRight } from "lucide-react";
 
@@ -64,25 +66,30 @@ export default async function LanesIndexPage() {
           </HubEmptyState>
         ) : (
           <HubCardGrid>
-            {lanes.map((l) => (
-              <HubCard key={l._id} href={`/lanes/${l.slug?.current}`}>
-                <div className="font-display flex items-center gap-2 text-[14px] font-semibold text-ink-900">
-                  <span>{l.originPort?.name || "—"}</span>
-                  <ArrowRight className="h-3.5 w-3.5 text-brand-blue" />
-                  <span>{l.destinationPort?.name || "—"}</span>
-                </div>
-                {l.kpis?.[0]?.value && (
-                  <div className="mt-4 flex items-baseline gap-2">
-                    <span className="font-mono text-[22px] font-semibold tracking-[-0.01em] text-brand-blue-700">
-                      {l.kpis[0].value}
-                    </span>
-                    <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink-500">
-                      {l.kpis[0].label}
-                    </span>
+            {lanes.map((l) => {
+              const oIso = portISO(l.originPort);
+              const dIso = portISO(l.destinationPort);
+              return (
+                <HubCard key={l._id} href={`/lanes/${l.slug?.current}`}>
+                  <LaneFlags originIso={oIso} destIso={dIso} size="sm" />
+                  <div className="font-display mt-3 flex items-center gap-2 text-[15px] font-semibold text-ink-900">
+                    <span className="truncate">{l.originPort?.name || "—"}</span>
+                    <ArrowRight className="h-3.5 w-3.5 shrink-0 text-brand-blue" />
+                    <span className="truncate">{l.destinationPort?.name || "—"}</span>
                   </div>
-                )}
-              </HubCard>
-            ))}
+                  {l.kpis?.[0]?.value && (
+                    <div className="mt-4 flex items-baseline gap-2">
+                      <span className="font-mono text-[22px] font-semibold tracking-[-0.01em] text-brand-blue-700">
+                        {l.kpis[0].value}
+                      </span>
+                      <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink-500">
+                        {l.kpis[0].label}
+                      </span>
+                    </div>
+                  )}
+                </HubCard>
+              );
+            })}
           </HubCardGrid>
         )}
       </Section>

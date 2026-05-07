@@ -32,7 +32,7 @@ export default function TermsPage() {
             us if you suspect unauthorized access.
           </Section>
           <Section title="3. Subscription, billing, and trials">
-            Plans, prices, and limits are listed at logisticintel.com/pricing and the order form, if any.
+            Plans, prices, and limits are provided in the order form or in writing at signup.
             We bill in advance — monthly or annually. Annual plans renew unless cancelled before renewal.
             Free trials end automatically and convert only when you provide payment details.
           </Section>

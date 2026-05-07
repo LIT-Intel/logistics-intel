@@ -136,7 +136,7 @@ export default async function IntegrationsPage() {
         title="API + webhooks for the rest."
         subtitle="On Scale and Enterprise plans you get full API access plus webhook events for every signal, save, reveal, and campaign event."
         primaryCta={{ label: "Talk to sales", href: "/demo", icon: "calendar" }}
-        secondaryCta={{ label: "View pricing", href: "/pricing" }}
+        secondaryCta={{ label: "Read docs", href: "/contact" }}
       />
 
       <script

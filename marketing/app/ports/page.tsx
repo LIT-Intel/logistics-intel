@@ -8,7 +8,9 @@ import { PageHero } from "@/components/sections/PageHero";
 import { Section } from "@/components/sections/Section";
 import { HubCard, HubCardGrid, HubEmptyState } from "@/components/sections/HubCard";
 import { CtaBanner } from "@/components/sections/CtaBanner";
+import { Flag } from "@/components/sections/Flag";
 import { buildMetadata } from "@/lib/seo";
+import { portISO, toCountryISO } from "@/lib/countries";
 import { Anchor } from "lucide-react";
 
 export const revalidate = 1800;
@@ -59,9 +61,12 @@ export default async function PortsIndexPage() {
           </HubEmptyState>
         ) : (
           <div className="space-y-12 sm:space-y-16">
-            {countries.map((country) => (
+            {countries.map((country) => {
+              const iso = toCountryISO(country);
+              return (
               <div key={country}>
                 <div className="font-display mb-5 flex items-center gap-3">
+                  <Flag iso={iso} size="md" title={country} />
                   <span className="text-[22px] sm:text-[26px] font-semibold tracking-[-0.015em] text-ink-900">{country}</span>
                   <span className="h-px flex-1 bg-ink-100" />
                   <span className="font-mono text-[12px] text-ink-200">{grouped[country].length}</span>
@@ -70,14 +75,17 @@ export default async function PortsIndexPage() {
                   {grouped[country].map((p) => (
                     <HubCard key={p._id} href={`/ports/${p.slug?.current}`}>
                       <div className="flex items-start gap-3">
-                        <div
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-                          style={{
-                            background: "rgba(37,99,235,0.08)",
-                            boxShadow: "inset 0 0 0 1px rgba(37,99,235,0.15)",
-                          }}
-                        >
-                          <Anchor className="h-4 w-4 text-brand-blue" />
+                        <div className="flex flex-col items-center gap-1.5">
+                          <Flag iso={portISO(p)} size="md" title={p.country || country} />
+                          <div
+                            className="flex h-7 w-7 items-center justify-center rounded-md"
+                            style={{
+                              background: "rgba(37,99,235,0.08)",
+                              boxShadow: "inset 0 0 0 1px rgba(37,99,235,0.15)",
+                            }}
+                          >
+                            <Anchor className="h-3.5 w-3.5 text-brand-blue" />
+                          </div>
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="font-display truncate text-[15px] font-semibold text-ink-900 group-hover:text-brand-blue-700">
@@ -102,7 +110,8 @@ export default async function PortsIndexPage() {
                   ))}
                 </HubCardGrid>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Section>

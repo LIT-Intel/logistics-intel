@@ -5,7 +5,6 @@ const FOOTER_COLS: Array<{ heading: string; links: { label: string; href: string
   {
     heading: "Platform",
     links: [
-      { label: "Platform overview", href: "/products" },
       { label: "All features", href: "/features" },
       { label: "Pulse AI", href: "/pulse" },
       { label: "Company Intelligence", href: "/company-intelligence" },
@@ -44,11 +43,10 @@ const FOOTER_COLS: Array<{ heading: string; links: { label: string; href: string
     heading: "Company",
     links: [
       { label: "About", href: "/about" },
-      { label: "Pricing", href: "/pricing" },
+      { label: "Careers", href: "/careers" },
       { label: "Security", href: "/security" },
       { label: "Contact", href: "/contact" },
       { label: "Affiliate program", href: "/partners" },
-      { label: "Careers", href: "/careers" },
     ],
   },
 ];

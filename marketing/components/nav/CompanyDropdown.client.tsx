@@ -2,71 +2,49 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  ChevronDown,
-  Sparkles,
-  Building2,
-  Users,
-  Globe2,
-  Send,
-  Search,
-} from "lucide-react";
+import { ChevronDown, Building2, Briefcase, Mail, Lock } from "lucide-react";
 
 /**
- * Desktop-only "Product" dropdown that consolidates the seven product
- * routes under one nav item. Mobile users see the same items grouped in
- * the drawer (see MobileMenu.tsx). Click-toggle + hover-open + outside-
- * click-close + Esc-close so it works for keyboard, touch, and pointer.
+ * Desktop "Company" dropdown — siblings with the Product dropdown.
+ * Surfaces About / Careers / Security / Contact in one menu so the top
+ * nav stays at five items. Mobile counterparts live in MobileMenu.
  */
-const PRODUCT_LINKS: {
+const COMPANY_LINKS: {
   label: string;
   description: string;
   href: string;
-  icon: typeof Sparkles;
+  icon: typeof Building2;
 }[] = [
   {
-    label: "Pulse AI",
-    description: "Natural-language intelligence + briefs",
-    href: "/pulse",
-    icon: Sparkles,
-  },
-  {
-    label: "Company Intelligence",
-    description: "Live trade picture on every account",
-    href: "/company-intelligence",
+    label: "About us",
+    description: "The team and the operator-grade thesis behind LIT",
+    href: "/about",
     icon: Building2,
   },
   {
-    label: "Contact Intelligence",
-    description: "The right buyers — title-, dept-, lane-filtered",
-    href: "/contact-intelligence",
-    icon: Users,
+    label: "Careers",
+    description: "Join the LIT team — open roles + culture",
+    href: "/careers",
+    icon: Briefcase,
   },
   {
-    label: "Trade Intelligence",
-    description: "Live origin × destination signals",
-    href: "/trade-intelligence",
-    icon: Globe2,
+    label: "Security",
+    description: "How we handle your data, customers, and contacts",
+    href: "/security",
+    icon: Lock,
   },
   {
-    label: "Command Center (CRM)",
-    description: "CRM with shipment context built in",
-    href: "/command-center",
-    icon: Search,
-  },
-  {
-    label: "Outbound Engine",
-    description: "Multichannel sequences seeded by signal",
-    href: "/outbound-engine",
-    icon: Send,
+    label: "Contact",
+    description: "Talk to sales, support, or partnerships",
+    href: "/contact",
+    icon: Mail,
   },
 ];
 
-export function ProductDropdown() {
+export function CompanyDropdown() {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click + Escape
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -99,7 +77,7 @@ export function ProductDropdown() {
           open ? "bg-ink-50 text-ink-900" : "text-ink-500 hover:bg-ink-50 hover:text-ink-900"
         }`}
       >
-        Product
+        Company
         <ChevronDown
           className={`h-3.5 w-3.5 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
           aria-hidden
@@ -109,9 +87,9 @@ export function ProductDropdown() {
       {open && (
         <div
           role="menu"
-          className="absolute left-0 top-full z-50 mt-1.5 w-[440px] overflow-hidden rounded-xl border border-ink-100 bg-white p-2 shadow-[0_30px_80px_-20px_rgba(15,23,42,0.22)]"
+          className="absolute left-0 top-full z-50 mt-1.5 w-[380px] overflow-hidden rounded-xl border border-ink-100 bg-white p-2 shadow-[0_30px_80px_-20px_rgba(15,23,42,0.22)]"
         >
-          {PRODUCT_LINKS.map((link) => {
+          {COMPANY_LINKS.map((link) => {
             const Icon = link.icon;
             return (
               <Link
