@@ -491,6 +491,10 @@ export default function Company() {
       new Set([sourceKey, `company/${bareSlug}`, bareSlug].filter(Boolean)),
     );
 
+    // Phase 4: do NOT write `est_spend_12m` from this legacy autoHeal.
+    // The IY `total_shipping_cost` value is structurally low; only the V2
+    // `marketSpendWriteback` effect (which uses lane-matched market rates)
+    // is allowed to write this column going forward.
     const update = {
       shipments_12m:
         profile.routeKpis?.shipmentsLast12m ??
@@ -499,10 +503,6 @@ export default function Company() {
       teu_12m: profile.routeKpis?.teuLast12m ?? null,
       fcl_shipments_12m: profile.containers?.fclShipments12m ?? null,
       lcl_shipments_12m: profile.containers?.lclShipments12m ?? null,
-      est_spend_12m:
-        profile.routeKpis?.estSpendUsd12m ??
-        profile.estSpendUsd12m ??
-        null,
       most_recent_shipment_date: profile.lastShipmentDate ?? null,
       top_route_12m: profile.routeKpis?.topRouteLast12m ?? null,
       recent_route: profile.routeKpis?.mostRecentRoute ?? null,

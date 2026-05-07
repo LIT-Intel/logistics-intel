@@ -625,14 +625,17 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       new Set([sourceKey, `company/${bareSlug}`, bareSlug].filter(Boolean)),
     );
 
+    // NOTE: `est_spend_12m` is intentionally written by a separate effect
+    // (`marketSpendWriteback` below) that runs after the lane-matched
+    // market-rate calc has resolved. Writing the raw IY total_shipping_cost
+    // here would have Command Center / Dashboard list cards showing the
+    // structurally-low importer figure for any company viewed in V2.
     const update: Record<string, any> = {
       shipments_12m:
         profile.routeKpis?.shipmentsLast12m ?? profile.totalShipments ?? null,
       teu_12m: profile.routeKpis?.teuLast12m ?? null,
       fcl_shipments_12m: profile.containers?.fclShipments12m ?? null,
       lcl_shipments_12m: profile.containers?.lclShipments12m ?? null,
-      est_spend_12m:
-        profile.routeKpis?.estSpendUsd12m ?? profile.estSpendUsd12m ?? null,
       most_recent_shipment_date: profile.lastShipmentDate ?? null,
       top_route_12m: profile.routeKpis?.topRouteLast12m ?? null,
       recent_route: profile.routeKpis?.mostRecentRoute ?? null,
@@ -804,6 +807,48 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     const total = matches.reduce((s, m) => s + (m.marketSpend || 0), 0);
     return total > 0 ? total : null;
   }, [benchmarkLanes, activeRouteKpis?.topRoutesLast12m, activeProfile?.topRoutes, activeProfile?.top_routes]);
+
+  // Phase 4 — refresh-proof market-rate writeback. Persists the lane-matched
+  // spend to `lit_companies.est_spend_12m` so Command Center / Dashboard list
+  // cards stop showing the IY total_shipping_cost. Runs once per company,
+  // gated on benchmarkLanes being loaded so we never write the broken value.
+  const marketSpendWrittenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!profile || !companyId) return;
+    if (!benchmarkLanes.length) return;
+    if (marketSpendBreakdown == null || marketSpendBreakdown <= 0) return;
+    const hasSnapshotData =
+      Array.isArray(profile?.recentBols) && profile.recentBols.length > 0;
+    if (!hasSnapshotData) return;
+    if (marketSpendWrittenRef.current === companyId) return;
+    marketSpendWrittenRef.current = companyId;
+
+    const sourceKey =
+      profile.key ||
+      profile.companyId ||
+      `company/${String(companyId).replace(/^company\//, "")}`;
+    const bareSlug = String(sourceKey).replace(/^company\//, "");
+    const candidates = Array.from(
+      new Set([sourceKey, `company/${bareSlug}`, bareSlug].filter(Boolean)),
+    );
+
+    (async () => {
+      try {
+        const { error } = await supabase
+          .from("lit_companies")
+          .update({ est_spend_12m: Math.round(marketSpendBreakdown) })
+          .in("source_company_key", candidates);
+        if (error) {
+          console.warn(
+            "[CompanyProfileV2] market-spend writeback failed",
+            error,
+          );
+        }
+      } catch (err) {
+        console.warn("[CompanyProfileV2] market-spend writeback threw", err);
+      }
+    })();
+  }, [profile, companyId, benchmarkLanes.length, marketSpendBreakdown]);
 
   // Header KPIs — verbatim from Company.jsx 628–713 (with marketSpend override).
   const headerKpis = useMemo(() => {
