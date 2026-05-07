@@ -912,30 +912,17 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       shellCompany?.kpis?.teu ??
       null;
 
-    const explicitSpend =
-      activeRouteKpis?.estSpendUsd12m ??
-      activeProfile?.estSpendUsd12m ??
-      activeProfile?.marketSpend ??
-      shellCompany?.kpis?.spend ??
-      null;
-
-    const allTimeSpend =
-      activeProfile?.estSpendAllTime ??
-      activeProfile?.estSpendUsd ??
-      null;
-
-    // Phase 4: prefer the client-side market-rate calculation (from
-    // benchmark lanes × actual TEU + LCL-bounded math). Falls back to
-    // the database est_spend (importer-reported) only when no benchmark
-    // match can be made.
+    // Phase 4: the EST Spend KPI is now strictly the lane-matched market
+    // rate. We deliberately do NOT fall back to ImportYeti's reported
+    // `total_shipping_cost` — that's the customs-disclosed value which
+    // structurally undervalues high-TEU lanes (e.g. Old Navy showing $82K
+    // on 27,918 shipments). When `marketSpendBreakdown` hasn't resolved
+    // yet (benchmarks loading, or company has zero TEU) we show "—" rather
+    // than a misleading number.
     const spend =
       marketSpendBreakdown != null && marketSpendBreakdown > 0
         ? marketSpendBreakdown
-        : explicitSpend != null && Number(explicitSpend) > 0
-          ? Number(explicitSpend)
-          : allTimeSpend != null && Number(allTimeSpend) > 0
-            ? Number(allTimeSpend)
-            : null;
+        : null;
 
     const profileLatest = getLatestShipmentFromProfile(activeProfile);
     const shellLatest = capDateAtToday(
