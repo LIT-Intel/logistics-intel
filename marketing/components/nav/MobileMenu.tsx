@@ -5,21 +5,54 @@ import Link from "next/link";
 import { Menu, X, ArrowRight, Calendar } from "lucide-react";
 import { APP_LOGIN_URL } from "@/lib/app-urls";
 
-const NAV_LINKS = [
-  { label: "Platform overview", href: "/products" },
-  { label: "Pulse AI", href: "/pulse" },
-  { label: "Company Intelligence", href: "/company-intelligence" },
-  { label: "Contact Intelligence", href: "/contact-intelligence" },
-  { label: "Command Center (CRM)", href: "/command-center" },
-  { label: "Outbound Engine", href: "/outbound-engine" },
-  { label: "Trade Intelligence", href: "/trade-intelligence" },
-  { label: "Solutions", href: "/use-cases" },
-  { label: "Customers", href: "/customers" },
-  { label: "Pricing", href: "/pricing" },
-  { label: "Resources", href: "/blog" },
-  { label: "Integrations", href: "/integrations" },
-  { label: "Security", href: "/security" },
-  { label: "Contact", href: "/contact" },
+/** Grouped to mirror the desktop "Product" dropdown so the mobile drawer
+ *  reads as the same information architecture, not a flat dump. */
+const NAV_GROUPS: {
+  heading: string;
+  links: { label: string; href: string }[];
+}[] = [
+  {
+    heading: "Product",
+    links: [
+      { label: "Platform overview", href: "/products" },
+      { label: "Pulse AI", href: "/pulse" },
+      { label: "Company Intelligence", href: "/company-intelligence" },
+      { label: "Contact Intelligence", href: "/contact-intelligence" },
+      { label: "Trade Intelligence", href: "/trade-intelligence" },
+      { label: "Command Center (CRM)", href: "/command-center" },
+      { label: "Outbound Engine", href: "/outbound-engine" },
+    ],
+  },
+  {
+    heading: "Solutions",
+    links: [
+      { label: "Use cases", href: "/use-cases" },
+      { label: "Industries", href: "/industries" },
+      { label: "Customers", href: "/customers" },
+      { label: "Comparisons", href: "/vs" },
+    ],
+  },
+  {
+    heading: "Resources",
+    links: [
+      { label: "Resources hub", href: "/resources" },
+      { label: "Blog", href: "/blog" },
+      { label: "Glossary", href: "/glossary" },
+      { label: "Trade lanes", href: "/lanes" },
+      { label: "Free tools", href: "/tools" },
+      { label: "FAQ", href: "/faq" },
+    ],
+  },
+  {
+    heading: "Company",
+    links: [
+      { label: "Pricing", href: "/pricing" },
+      { label: "Integrations", href: "/integrations" },
+      { label: "Security", href: "/security" },
+      { label: "About", href: "/about" },
+      { label: "Contact", href: "/contact" },
+    ],
+  },
 ];
 
 /**
@@ -96,19 +129,26 @@ export function MobileMenu() {
             </div>
 
             <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-              <ul className="space-y-0.5">
-                {NAV_LINKS.map((l) => (
-                  <li key={l.href}>
-                    <Link
-                      href={l.href}
-                      onClick={() => setOpen(false)}
-                      className="font-display block rounded-md px-3 py-2.5 text-[15px] font-medium text-ink-900 transition hover:bg-ink-25"
-                    >
-                      {l.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              {NAV_GROUPS.map((group) => (
+                <div key={group.heading} className="mb-4 last:mb-0">
+                  <div className="font-display px-3 pb-1.5 text-[10.5px] font-bold uppercase tracking-[0.12em] text-ink-200">
+                    {group.heading}
+                  </div>
+                  <ul className="space-y-0.5">
+                    {group.links.map((l) => (
+                      <li key={l.href}>
+                        <Link
+                          href={l.href}
+                          onClick={() => setOpen(false)}
+                          className="font-display block rounded-md px-3 py-2 text-[14.5px] font-medium text-ink-900 transition hover:bg-ink-25"
+                        >
+                          {l.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </nav>
 
             <div className="shrink-0 space-y-2 border-t border-ink-100 px-5 py-4">

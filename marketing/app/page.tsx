@@ -204,7 +204,10 @@ function Hero({ hero }: { hero: any }) {
           ) : null}
         </div>
 
-        <div className="relative">
+        <div
+          className="relative min-h-[520px] sm:min-h-[540px] lg:min-h-0"
+          style={{ contain: "layout paint" }}
+        >
           <HeroSearchDemo />
         </div>
       </div>
@@ -320,7 +323,10 @@ function CompanyIntelShowcase() {
               </li>
             </ul>
           </div>
-          <div className="lg:order-2">
+          <div
+            className="min-h-[640px] sm:min-h-[600px] lg:order-2 lg:min-h-0"
+            style={{ contain: "layout paint" }}
+          >
             <CompanyIntelMock />
           </div>
         </div>
@@ -359,7 +365,10 @@ function PulseBriefShowcase() {
               </li>
             </ul>
           </div>
-          <div>
+          <div
+            className="min-h-[640px] sm:min-h-[600px] lg:min-h-0"
+            style={{ contain: "layout paint" }}
+          >
             <PulseBriefMock />
           </div>
         </div>
@@ -373,7 +382,10 @@ function ContactDiscoveryShowcase() {
     <section className="px-5 py-16 sm:px-8 sm:py-20">
       <div className="mx-auto max-w-container">
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-          <div className="lg:order-1">
+          <div
+            className="min-h-[600px] sm:min-h-[560px] lg:order-1 lg:min-h-0"
+            style={{ contain: "layout paint" }}
+          >
             <ContactDiscoveryMock />
           </div>
           <div className="lg:order-2">
@@ -436,7 +448,10 @@ function SequenceBuilderShowcase() {
               </li>
             </ul>
           </div>
-          <div>
+          <div
+            className="min-h-[640px] sm:min-h-[600px] lg:min-h-0"
+            style={{ contain: "layout paint" }}
+          >
             <SequenceBuilderMock />
           </div>
         </div>
