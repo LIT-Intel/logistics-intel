@@ -120,7 +120,19 @@ export const ALL_PAGE_SLUGS = groq`*[_type == "page" && defined(slug.current) &&
 
 /** Homepage feature data — pulled together in one round-trip. */
 export const HOMEPAGE_QUERY = groq`{
-  "settings": *[_type == "siteSettings"][0]{ homepageHero, ctaCopy },
+  "settings": *[_type == "siteSettings"][0]{
+    homepageHero {
+      pillText,
+      headline,
+      headlineHighlight,
+      subhead,
+      noteBelow,
+      badges[]{ label, tone, icon },
+      kpis[]{ value, label, trend, tone },
+      trialNote
+    },
+    ctaCopy
+  },
   "featuredCaseStudies": *[_type == "caseStudy" && featuredOnHomepage == true] | order(_updatedAt desc)[0...3]{
     customer, slug, headline, kpis, logo, "industry": industry->{name}
   },

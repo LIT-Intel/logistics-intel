@@ -24,11 +24,37 @@ const FALLBACK_HERO = {
   headlineSuffix: "",
   subhead:
     "LIT helps freight forwarders, brokers, and logistics sales teams find active shippers, understand their trade activity, enrich the right contacts, and launch outreach from one connected workspace.",
+  noteBelow:
+    "Built for logistics teams that need better prospects, better timing, and better context before the first email goes out.",
+  badges: [
+    { label: "60+ countries tracked", tone: "cyan", icon: "MapPin" },
+    { label: "Refreshed daily", tone: "blue", icon: "RefreshCcw" },
+    { label: "SOC 2 · GDPR · CCPA", tone: "emerald", icon: "ShieldCheck" },
+  ],
   kpis: [
     { value: "Find", label: "Active shippers" },
     { value: "Understand", label: "The freight" },
     { value: "Reach", label: "The right people" },
   ],
+  trialNote: "14-day free trial · Full feature access · Cancel anytime",
+};
+
+/** Badge tone → Tailwind utility group. Keep in sync with the homepageHero
+ *  Sanity schema's tone option list. */
+const HERO_BADGE_TONES: Record<string, string> = {
+  cyan: "border-cyan-200 bg-cyan-50 text-cyan-700",
+  blue: "border-blue-200 bg-blue-50 text-brand-blue-700",
+  emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  violet: "border-violet-200 bg-violet-50 text-violet-700",
+  amber: "border-amber-200 bg-amber-50 text-amber-700",
+};
+
+/** Lucide icon name → component. Whitelist what hero badges can render. */
+const HERO_BADGE_ICONS: Record<string, React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>> = {
+  MapPin,
+  RefreshCcw,
+  ShieldCheck,
+  CheckCircle2,
 };
 
 export const metadata: Metadata = {
@@ -113,22 +139,29 @@ function Hero({ hero }: { hero: any }) {
             {hero.headlineSuffix ? <> {hero.headlineSuffix}</> : null}
           </h1>
           <p className="lead mt-6 max-w-[560px]">{hero.subhead}</p>
-          <div className="font-body mt-3 max-w-[520px] text-[13.5px] leading-snug text-ink-500">
-            Built for logistics teams that need better prospects, better timing, and better context
-            before the first email goes out.
-          </div>
-          {/* Trust badges — design-pack hero-badge-row */}
-          <div className="mt-5 flex flex-wrap gap-2">
-            <span className="font-display inline-flex items-center gap-1.5 rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold text-cyan-700">
-              <MapPin className="h-3.5 w-3.5" aria-hidden /> 60+ countries tracked
-            </span>
-            <span className="font-display inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-brand-blue-700">
-              <RefreshCcw className="h-3.5 w-3.5" aria-hidden /> Refreshed daily
-            </span>
-            <span className="font-display inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-              <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> SOC 2 · GDPR · CCPA
-            </span>
-          </div>
+          {hero.noteBelow ? (
+            <div className="font-body mt-3 max-w-[520px] text-[13.5px] leading-snug text-ink-500">
+              {hero.noteBelow}
+            </div>
+          ) : null}
+          {/* Trust badges — Sanity-driven, falls back to FALLBACK_HERO.badges */}
+          {hero.badges?.length ? (
+            <div className="mt-5 flex flex-wrap gap-2">
+              {hero.badges.map((b: any, i: number) => {
+                const Icon = b.icon ? HERO_BADGE_ICONS[b.icon] : null;
+                const tone = HERO_BADGE_TONES[b.tone] ?? HERO_BADGE_TONES.cyan;
+                return (
+                  <span
+                    key={`${b.label}-${i}`}
+                    className={`font-display inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone}`}
+                  >
+                    {Icon ? <Icon className="h-3.5 w-3.5" aria-hidden /> : null}
+                    {b.label}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
           <div className="mt-7 flex flex-wrap gap-3">
             <Link
               href={APP_SIGNUP_URL}
@@ -144,11 +177,13 @@ function Hero({ hero }: { hero: any }) {
               <Calendar className="h-4 w-4" /> Book a Demo
             </Link>
           </div>
-          {/* Trial reassurance microcopy */}
-          <div className="font-display mt-4 inline-flex items-center gap-1.5 text-[12.5px] text-ink-500">
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
-            14-day free trial · Full feature access · Cancel anytime
-          </div>
+          {/* Trial reassurance microcopy — Sanity-driven */}
+          {hero.trialNote ? (
+            <div className="font-display mt-4 inline-flex items-center gap-1.5 text-[12.5px] text-ink-500">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+              {hero.trialNote}
+            </div>
+          ) : null}
           <div className="mt-9 flex flex-wrap items-center gap-7">
             {hero.kpis?.map((k: any) => (
               <div key={k.label}>

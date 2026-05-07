@@ -28,10 +28,19 @@ export const structure = (S: StructureBuilder) =>
   S.list()
     .title("LIT Marketing")
     .items([
+      // Singleton-by-type — picks the first siteSettings doc rather than
+      // pinning a hardcoded ID. The doc was bootstrapped via Sanity MCP
+      // with an auto-assigned UUID; this lets marketing edit it without
+      // having to know the ID, and keeps working if it's ever recreated.
       S.listItem()
         .title("Site settings")
         .icon(Settings)
-        .child(S.editor().id("siteSettings").schemaType("siteSettings").documentId("siteSettings")),
+        .child(
+          S.documentList()
+            .title("Site settings")
+            .filter('_type == "siteSettings"')
+            .child((id) => S.editor().id(id).documentId(id).schemaType("siteSettings")),
+        ),
 
       S.divider(),
 
