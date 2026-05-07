@@ -4,7 +4,7 @@ import { sanityClient } from "@/sanity/lib/client";
 import { HOMEPAGE_QUERY } from "@/sanity/lib/queries";
 import { Nav } from "@/components/nav/Nav";
 import { Footer } from "@/components/nav/Footer";
-import { ArrowRight, Calendar, CheckCircle2, MapPin, RefreshCcw, ShieldCheck } from "lucide-react";
+import { ArrowRight, Calendar, CheckCircle2, MapPin, RefreshCcw, ShieldCheck, type LucideIcon } from "lucide-react";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import { HeroSearchDemo } from "@/components/sections/HeroSearchDemo";
 import { CompanyIntelMock } from "@/components/sections/CompanyIntelMock";
@@ -50,7 +50,7 @@ const HERO_BADGE_TONES: Record<string, string> = {
 };
 
 /** Lucide icon name → component. Whitelist what hero badges can render. */
-const HERO_BADGE_ICONS: Record<string, React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>> = {
+const HERO_BADGE_ICONS: Record<string, LucideIcon> = {
   MapPin,
   RefreshCcw,
   ShieldCheck,
