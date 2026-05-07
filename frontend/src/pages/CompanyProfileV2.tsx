@@ -306,12 +306,13 @@ class V2ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
               {String(this.state.error?.message ?? this.state.error)}
             </p>
             <div className="flex items-center justify-center gap-3">
-              <Link
-                to={`/app/companies/${encodeURIComponent(this.props.rawId)}/legacy`}
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800"
               >
-                Open legacy page
-              </Link>
+                Reload page
+              </button>
               <Link
                 to="/app/command-center"
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
@@ -1594,14 +1595,6 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             </button>
           );
         })}
-        <div className="ml-auto text-[11px] text-slate-400">
-          <Link
-            to={`/app/companies/${encodeURIComponent(rawId)}/legacy`}
-            className="hover:text-slate-600 underline-offset-2 hover:underline"
-          >
-            Legacy view
-          </Link>
-        </div>
       </div>
 
       {refreshLimitState && (

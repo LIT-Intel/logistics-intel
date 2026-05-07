@@ -40,7 +40,6 @@ const AdminAgent = lazy(() => import("@/pages/AdminAgent"));
 const SearchPanel = lazy(() => import("@/pages/SearchPanel"));
 const Transactions = lazy(() => import("@/pages/Transactions"));
 const Widgets = lazy(() => import("@/pages/Widgets"));
-const Company = lazy(() => import("@/pages/Company"));
 const CompanyProfileV2 = lazy(() => import("@/pages/CompanyProfileV2"));
 const CommandCenterPage = lazy(() => import("@/components/command-center/CommandCenter"));
 const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
@@ -283,22 +282,8 @@ export default function App() {
           }
         />
 
-        {/* Phase 2 — explicit fallback to the legacy Company.jsx page.
-            Always available for emergency rollback or comparison. */}
-        <Route
-          path="/app/companies/:id/legacy"
-          element={
-            <RequireAuth>
-              <LITPage>
-                <Company />
-              </LITPage>
-            </RequireAuth>
-          }
-        />
-
-        {/* Phase 1 alias — Phase 2 promoted CompanyProfileV2 to the
-            canonical route below, but /preview stays alive so any
-            bookmarks or QA scripts targeting it keep working. */}
+        {/* Phase 1 alias — /preview stays alive so any bookmarks or QA
+            scripts targeting it keep working. Same component as canonical. */}
         <Route
           path="/app/companies/:id/preview"
           element={
@@ -310,9 +295,8 @@ export default function App() {
           }
         />
 
-        {/* Phase 2 — canonical company profile now rendered by the new
-            CDP shell + useCompanyProfile aggregator. The legacy view is
-            still available at /app/companies/:id/legacy. */}
+        {/* Canonical company profile — Phase 4 retired the legacy
+            Company.jsx page. CompanyProfileV2 is now the only view. */}
         <Route
           path="/app/companies/:id"
           element={
