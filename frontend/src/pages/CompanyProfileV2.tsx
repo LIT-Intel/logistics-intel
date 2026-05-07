@@ -799,6 +799,16 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   // Market-rate spend computed client-side from teu_12m + lcl_shipments
   // + matched lane rates. Overrides the database est_spend (which is
   // ImportYeti's structurally-undervalued total_shipping_cost).
+  //
+  // Two-tier sizing:
+  //   1. Top-route match → sum(per-lane TEU × matched FBX $/TEU + LCL bench)
+  //      — high accuracy when ImportYeti gave us route-level TEU.
+  //   2. TEU-only fallback → total_TEU × global FBX average $/TEU + LCL bench
+  //      — kicks in when top_routes is empty OR every route fails to match
+  //      (large catch-all importers like Old Navy whose top_routes list is
+  //      sparse). Without this fallback the header was reverting to
+  //      ImportYeti's customs-disclosed total_shipping_cost (~$82K for Old
+  //      Navy on 27.9K shipments — clearly wrong).
   const marketSpendBreakdown = useMemo(() => {
     if (!benchmarkLanes.length) return null;
     const topRoutesArr =
@@ -810,11 +820,47 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           : Array.isArray(activeProfile?.top_routes)
             ? activeProfile.top_routes
             : []) as any[];
-    if (topRoutesArr.length === 0) return null;
-    const matches = matchAllRoutesForCompany(topRoutesArr, benchmarkLanes);
-    const total = matches.reduce((s, m) => s + (m.marketSpend || 0), 0);
+    if (topRoutesArr.length > 0) {
+      const matches = matchAllRoutesForCompany(topRoutesArr, benchmarkLanes);
+      const total = matches.reduce((s, m) => s + (m.marketSpend || 0), 0);
+      if (total > 0) return total;
+    }
+    // Tier 2 — TEU-only fallback. Use the global FBX average $/TEU because
+    // we can't tell which lane the volume actually moved on.
+    const teu = Number(
+      activeRouteKpis?.teuLast12m ??
+        activeProfile?.teuLast12m ??
+        activeProfile?.totalTeu ??
+        0,
+    );
+    if (!Number.isFinite(teu) || teu <= 0) return null;
+    const lcl = Number(
+      activeProfile?.containers?.lclShipments12m ??
+        activeProfile?.lcl_count ??
+        0,
+    );
+    const avgPerTeu =
+      benchmarkLanes.reduce(
+        (s, l) => s + (Number(l.rate_usd_per_teu) || 0),
+        0,
+      ) / benchmarkLanes.length;
+    if (avgPerTeu <= 0) return null;
+    // Apply the same LCL-bounded TEU split: lcl_teu = min(lcl_ships, teu*0.15).
+    const lclTeu = Math.min(Math.max(0, Math.round(lcl)), teu * 0.15);
+    const fclTeu = Math.max(0, teu - lclTeu);
+    const total = Math.round(fclTeu * avgPerTeu + lclTeu * 850);
     return total > 0 ? total : null;
-  }, [benchmarkLanes, activeRouteKpis?.topRoutesLast12m, activeProfile?.topRoutes, activeProfile?.top_routes]);
+  }, [
+    benchmarkLanes,
+    activeRouteKpis?.topRoutesLast12m,
+    activeRouteKpis?.teuLast12m,
+    activeProfile?.topRoutes,
+    activeProfile?.top_routes,
+    activeProfile?.teuLast12m,
+    activeProfile?.totalTeu,
+    activeProfile?.containers?.lclShipments12m,
+    activeProfile?.lcl_count,
+  ]);
 
   // Phase 4 — refresh-proof market-rate writeback. Persists the lane-matched
   // spend to `lit_companies.est_spend_12m` so Command Center / Dashboard list
