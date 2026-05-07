@@ -309,6 +309,115 @@ export default async function TradeLanePage({ params }: { params: { slug: string
         </div>
       </Section>
 
+      {/* How sales teams use lane data — gives the page a sales-thesis spine
+          that doesn't depend on Sanity having full shippers/carrier data. */}
+      <Section top="md" bottom="md" tone="soft-blue">
+        <div className="max-w-[680px]">
+          <div className="eyebrow">How sales teams use lane data</div>
+          <h2 className="display-md space-eyebrow-h1">
+            Three plays freight reps run on{" "}
+            <span className="grad-text">{originName} → {destName}.</span>
+          </h2>
+        </div>
+        <div className="mt-10 grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-3">
+          {[
+            {
+              num: "01",
+              title: "Prospect by corridor fit",
+              body:
+                "Save the lane as your ICP. New importers shipping " +
+                originName +
+                " → " +
+                destName +
+                " feed your queue automatically. Reach them with shipment-grounded outreach in days, not months.",
+            },
+            {
+              num: "02",
+              title: "Time outreach to volume shifts",
+              body:
+                "Pulse Coach pings you when an account's TEU on this lane jumps >15% or a top shipper drops a carrier. That's your buying-signal moment — not a quarterly QBR.",
+            },
+            {
+              num: "03",
+              title: "Compete on carrier displacement",
+              body:
+                "Watch carrier mix changes. When a BCO swaps a 2M+ carrier off this lane, it's often because the relationship cracked. Be the second call they take.",
+            },
+          ].map((p) => (
+            <div
+              key={p.num}
+              className="relative rounded-2xl border border-ink-100 bg-white p-7 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <div className="font-mono text-[10.5px] font-bold uppercase tracking-[0.18em] text-brand-blue">
+                Play {p.num}
+              </div>
+              <h3 className="display-sm mt-3 leading-tight">{p.title}</h3>
+              <p className="font-body mt-3 text-[14px] leading-relaxed text-ink-500">{p.body}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* Related features rail — pulls visitors from the lane page back
+          into the product narrative instead of dead-ending on a CTA. */}
+      <Section top="md" bottom="md">
+        <div className="mb-6 max-w-[640px]">
+          <div className="eyebrow">In the platform</div>
+          <h2 className="display-md space-eyebrow-h1">Lane data, end to end.</h2>
+          <p className="font-body mt-3 text-[15px] leading-relaxed text-ink-500">
+            Trade lane intelligence is one slice of the LIT graph. Same data shows up in shipment
+            search, company profiles, rate benchmarks, and outbound sequences.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
+          {[
+            {
+              href: "/features/trade-lane-intelligence",
+              eyebrow: "Intelligence",
+              title: "Trade lane intelligence",
+              body: "Live volume, top shippers, carrier mix on every major corridor.",
+            },
+            {
+              href: "/features/shipment-intelligence",
+              eyebrow: "Intelligence",
+              title: "Shipment intelligence",
+              body: "Every BOL joined to importer + contact data, refreshed weekly.",
+            },
+            {
+              href: "/rate-benchmark",
+              eyebrow: "Product",
+              title: "Rate Benchmark",
+              body: "Live FBX12 rates inside every account profile.",
+            },
+            {
+              href: "/features/shipper-lead-generation",
+              eyebrow: "Lead generation",
+              title: "Shipper lead generation",
+              body: "ICP-scored leads from live BOL data, with verified contacts.",
+            },
+          ].map((f) => (
+            <Link
+              key={f.href}
+              href={f.href}
+              className="group block rounded-2xl border border-ink-100 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg"
+            >
+              <div className="font-display text-[10.5px] font-bold uppercase tracking-[0.12em] text-brand-blue">
+                {f.eyebrow}
+              </div>
+              <div className="font-display mt-2 text-[15.5px] font-semibold text-ink-900 group-hover:text-brand-blue-700">
+                {f.title}
+              </div>
+              <p className="font-body mt-2 text-[13px] leading-relaxed text-ink-500 line-clamp-3">
+                {f.body}
+              </p>
+              <div className="font-display mt-4 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-brand-blue group-hover:text-brand-blue-700">
+                Learn more <ArrowRight className="h-3.5 w-3.5" />
+              </div>
+            </Link>
+          ))}
+        </div>
+      </Section>
+
       {Array.isArray(lane.relatedLanes) && lane.relatedLanes.length > 0 && (
         <Section top="md" bottom="lg">
           <div className="mb-5">

@@ -112,7 +112,7 @@ export default async function VsHubPage() {
         secondaryCta={{ label: "Start free", href: "https://app.logisticintel.com/signup" }}
       />
 
-      <Section bottom="lg">
+      <Section bottom="lg" width="container">
         {items.length === 0 ? (
           <HubEmptyState title="Comparisons publishing soon">
             The Comparison Refresher agent runs weekly. Want to see LIT vs a tool not listed

@@ -106,7 +106,6 @@ export default async function HomePage() {
             { domain: "dbschenker.com", name: "DB Schenker" },
           ]}
         />
-        <PillarsTrustBar />
         <CompanyIntelShowcase />
         <PulseBriefShowcase />
         <ContactDiscoveryShowcase />

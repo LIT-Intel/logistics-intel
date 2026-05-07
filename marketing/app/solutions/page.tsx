@@ -65,7 +65,7 @@ export default function SolutionsHubPage() {
 
       {/* Audience selector — gives the hub a buyer-first narrative
           before showing the grid. Each chip jumps to its group. */}
-      <Section top="md" bottom="md" tone="soft-blue">
+      <Section top="md" bottom="md" tone="soft-blue" width="container">
         <div className="mx-auto max-w-[640px] text-center">
           <div className="eyebrow">Which team are you?</div>
           <h2 className="display-md space-eyebrow-h1">
@@ -86,7 +86,7 @@ export default function SolutionsHubPage() {
         </div>
       </Section>
 
-      <Section top="lg" bottom="lg">
+      <Section top="lg" bottom="lg" width="container">
         <div className="space-y-14 sm:space-y-20">
           {sections.map((g) => (
             <div

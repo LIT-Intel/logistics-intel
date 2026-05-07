@@ -172,8 +172,63 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
         )}
       </article>
 
+      {/* Try this in LIT — every blog post pulls visitors back into the
+          product narrative. Curated to the three features readers most
+          often jump to from a content read. */}
+      <section className="px-5 sm:px-8 py-12 sm:py-20" style={{ background: "rgba(15,23,42,0.025)" }}>
+        <div className="mx-auto max-w-container">
+          <div className="mb-8 max-w-[640px]">
+            <div className="eyebrow">Try this in LIT</div>
+            <h2 className="display-md space-eyebrow-h1">From the read to the workflow.</h2>
+            <p className="font-body mt-3 text-[15px] leading-relaxed text-ink-500">
+              The patterns above are how operators run. Here&apos;s how they wire up inside the
+              platform.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            {[
+              {
+                eyebrow: "Search",
+                title: "Bill of Lading search",
+                body: "124M+ filings, filterable by importer, exporter, HS, lane, carrier.",
+                href: "/features/bill-of-lading-search",
+              },
+              {
+                eyebrow: "Intelligence",
+                title: "Company intelligence",
+                body: "One-screen account profiles with shipment cadence, lanes, and verified buyer contacts.",
+                href: "/features/company-intelligence",
+              },
+              {
+                eyebrow: "Product",
+                title: "Revenue Opportunity",
+                body: "Quantify the freight wallet on every account across six service lines.",
+                href: "/revenue-opportunity",
+              },
+            ].map((f) => (
+              <Link
+                key={f.href}
+                href={f.href}
+                className="group block rounded-2xl border border-ink-100 bg-white p-7 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg"
+              >
+                <div className="font-display text-[10.5px] font-bold uppercase tracking-[0.12em] text-brand-blue">
+                  {f.eyebrow}
+                </div>
+                <div className="display-sm mt-2">{f.title}</div>
+                <p className="font-body mt-3 text-[14px] leading-relaxed text-ink-500">
+                  {f.body}
+                </p>
+                <div className="font-display mt-4 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-brand-blue group-hover:text-brand-blue-700">
+                  Open feature →
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {post.relatedPosts?.length > 0 && (
-        <section className="px-8 py-16">
+        <section className="px-5 sm:px-8 py-12 sm:py-20">
           <div className="mx-auto max-w-container">
             <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
               Keep reading

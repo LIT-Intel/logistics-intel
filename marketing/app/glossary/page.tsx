@@ -10,6 +10,7 @@ import { HubCard, HubEmptyState } from "@/components/sections/HubCard";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
 import { buildCollectionPage } from "@/lib/jsonLd";
+import { Search, Database, FileSearch, ArrowRight } from "lucide-react";
 
 export const revalidate = 600;
 
@@ -55,6 +56,77 @@ export default async function GlossaryIndexPage() {
         subtitle="The vocabulary you'll hear on every customer call, in every CRM, and across every shipping doc — defined without jargon."
         align="center"
       />
+
+      {/* Product tie-in band — turns the glossary from a directory into
+          something with a sales thesis. Three product hooks tie the most
+          looked-up term categories back into LIT capabilities. */}
+      {letters.length > 0 && (
+        <Section top="md" bottom="md" tone="soft-blue" width="container">
+          <div className="mx-auto max-w-[640px] text-center">
+            <div className="eyebrow">From definition to action</div>
+            <h2 className="display-md space-eyebrow-h1">
+              Every term here <span className="grad-text">does something</span> inside LIT.
+            </h2>
+          </div>
+          <div className="mt-10 grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-3">
+            {[
+              {
+                icon: FileSearch,
+                eyebrow: "BOL · Bill of Lading",
+                title: "becomes a search.",
+                body: "124M+ filings indexed. Filter by importer, exporter, HS, lane, carrier — and reach the buyer-side contact the same day.",
+                href: "/features/bill-of-lading-search",
+                cta: "See BOL search",
+              },
+              {
+                icon: Database,
+                eyebrow: "HS code · Tariff classification",
+                title: "becomes a tariff calc.",
+                body: "Plug an HS code + origin country into the calculator and get landed cost with MFN, FTA, Section 301, and AD/CVD math.",
+                href: "/features/tariff-calculator",
+                cta: "See tariff calc",
+              },
+              {
+                icon: Search,
+                eyebrow: "TEU · Twenty-foot equivalent",
+                title: "becomes a benchmark.",
+                body: "TEU 12m × FBX12 lane rate gives a defensible market-rate spend number on every account profile — not a guess.",
+                href: "/rate-benchmark",
+                cta: "See Rate Benchmark",
+              },
+            ].map((tie) => {
+              const Icon = tie.icon;
+              return (
+                <Link
+                  key={tie.href}
+                  href={tie.href}
+                  className="group relative block rounded-2xl border border-ink-100 bg-white p-7 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-md"
+                >
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-lg"
+                    style={{
+                      background: "rgba(37,99,235,0.08)",
+                      boxShadow: "inset 0 0 0 1px rgba(37,99,235,0.15)",
+                    }}
+                  >
+                    <Icon className="h-5 w-5 text-brand-blue" aria-hidden />
+                  </div>
+                  <div className="font-display mt-4 text-[10.5px] font-bold uppercase tracking-[0.12em] text-brand-blue">
+                    {tie.eyebrow}
+                  </div>
+                  <h3 className="display-sm mt-1.5 leading-tight">{tie.title}</h3>
+                  <p className="font-body mt-3 text-[13.5px] leading-relaxed text-ink-500">
+                    {tie.body}
+                  </p>
+                  <div className="font-display mt-4 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-brand-blue group-hover:text-brand-blue-700">
+                    {tie.cta} <ArrowRight className="h-3.5 w-3.5" />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </Section>
+      )}
 
       {letters.length === 0 ? (
         <Section bottom="lg">

@@ -23,16 +23,21 @@ body {
   background: #fbfbf9;
 }
 
-/* The "light but not plain" page background — same recipe as the design files. */
+/* Site-wide ambient backdrop. The radial pools live behind every page so
+   the off-white never reads as sterile — and at large widths (1920+) the
+   gutters carry color rather than feel stranded. The gradients are
+   intentionally weak (0.04-0.08 opacity) so they read as light, not as
+   "design noise." */
 .lit-page {
   position: relative;
   min-height: 100vh;
   overflow-x: clip;
   background:
-    radial-gradient(1200px 600px at 85% -10%, rgba(0,240,255,0.07), transparent 60%),
-    radial-gradient(1000px 500px at -10% 40%, rgba(59,130,246,0.06), transparent 60%),
-    radial-gradient(800px 400px at 50% 110%, rgba(139,92,246,0.05), transparent 60%),
-    linear-gradient(180deg, #fbfcfe 0%, #f6f8fc 100%);
+    radial-gradient(1400px 700px at 90% -8%, rgba(0,240,255,0.08), transparent 62%),
+    radial-gradient(1200px 600px at -10% 30%, rgba(59,130,246,0.07), transparent 62%),
+    radial-gradient(900px 480px at 110% 55%, rgba(139,92,246,0.05), transparent 60%),
+    radial-gradient(900px 460px at 50% 110%, rgba(0,240,255,0.04), transparent 60%),
+    linear-gradient(180deg, #fbfaf6 0%, #f3f5fb 100%);
 }
 /* Decorative grid overlay. Pinned to the viewport (position: fixed) rather
    than stretched to document height — on tall mobile pages the document-

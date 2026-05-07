@@ -43,7 +43,7 @@ export default function AlternativesHubPage() {
         align="center"
       />
 
-      <Section bottom="lg">
+      <Section bottom="lg" width="container">
         <div className="space-y-12 sm:space-y-16">
           {sections.map((s) => (
             <div key={s.label}>

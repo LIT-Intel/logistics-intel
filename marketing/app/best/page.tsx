@@ -35,7 +35,7 @@ export default function BestHubPage() {
         align="center"
       />
 
-      <Section bottom="lg">
+      <Section bottom="lg" width="container">
         <HubCardGrid cols={2}>
           {BEST_LIST_PAGES.map((b) => (
             <HubCard key={b.slug} href={`/best/${b.slug}`} className="flex flex-col gap-3">

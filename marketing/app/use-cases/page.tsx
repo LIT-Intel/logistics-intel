@@ -4,8 +4,11 @@ import { sanityClient } from "@/sanity/lib/client";
 import { groq } from "next-sanity";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
+import { Section } from "@/components/sections/Section";
+import { HubCard, HubCardGrid, HubEmptyState } from "@/components/sections/HubCard";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
+import { ArrowRight } from "lucide-react";
 
 export const revalidate = 1800;
 
@@ -34,51 +37,55 @@ export default async function UseCasesPage() {
         align="center"
       />
 
-      {items.length === 0 ? (
-        <section className="px-8 pb-20">
-          <div className="mx-auto max-w-container">
-            <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
-              <div className="font-display text-[18px] font-semibold text-ink-900">No use cases yet</div>
-              <p className="font-body mx-auto mt-2 max-w-[440px] text-[14px] leading-relaxed text-ink-500">
-                Add use cases from <code className="font-mono">/studio</code>.
-              </p>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="px-8 pb-20">
-          <div className="mx-auto max-w-container">
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-              {items.map((u) => (
-                <Link
-                  key={u._id}
-                  href={`/use-cases/${u.slug?.current}`}
-                  className="group flex flex-col rounded-2xl border border-ink-100 bg-white p-7 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg"
-                >
-                  <div className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-brand-blue">
-                    For {u.persona}
+      <Section bottom="lg" width="container">
+        {items.length === 0 ? (
+          <HubEmptyState title="Use cases publishing soon">
+            Specific workflows are seeded from{" "}
+            <Link href="/solutions" className="text-brand-blue-700 underline">
+              the solutions hub
+            </Link>{" "}
+            while this index publishes.
+          </HubEmptyState>
+        ) : (
+          <HubCardGrid>
+            {items.map((u) => (
+              <HubCard
+                key={u._id}
+                href={`/use-cases/${u.slug?.current}`}
+                className="flex flex-col gap-3"
+              >
+                <div className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-brand-blue">
+                  For {u.persona}
+                </div>
+                <h3 className="display-sm">
+                  {u.headline}{" "}
+                  {u.headlineHighlight && (
+                    <span className="grad-text">{u.headlineHighlight}</span>
+                  )}
+                </h3>
+                {u.subhead && (
+                  <p className="font-body flex-1 text-[14px] leading-relaxed text-ink-500 line-clamp-3">
+                    {u.subhead}
+                  </p>
+                )}
+                {u.kpis?.[0]?.value && (
+                  <div className="font-body rounded-lg bg-ink-25 px-3 py-2 text-[12.5px] text-ink-700">
+                    <span className="font-display font-bold uppercase tracking-wider text-ink-500">
+                      {u.kpis[0].label}:
+                    </span>{" "}
+                    <span className="font-mono font-semibold text-brand-blue-700">
+                      {u.kpis[0].value}
+                    </span>
                   </div>
-                  <h3 className="display-sm mt-2">
-                    {u.headline}{" "}
-                    {u.headlineHighlight && <span className="grad-text">{u.headlineHighlight}</span>}
-                  </h3>
-                  {u.subhead && (
-                    <p className="font-body mt-2 flex-1 text-[14px] leading-relaxed text-ink-500 line-clamp-3">
-                      {u.subhead}
-                    </p>
-                  )}
-                  {u.kpis?.[0]?.value && (
-                    <div className="font-body mt-4 rounded-lg bg-ink-25 px-3 py-2 text-[12.5px] text-ink-700">
-                      <span className="font-display font-bold uppercase tracking-wider text-ink-500">{u.kpis[0].label}:</span>{" "}
-                      <span className="font-mono font-semibold text-brand-blue-700">{u.kpis[0].value}</span>
-                    </div>
-                  )}
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
+                )}
+                <div className="font-display mt-auto inline-flex items-center gap-1.5 text-[13px] font-semibold text-brand-blue group-hover:text-brand-blue-700">
+                  See the workflow <ArrowRight className="h-3.5 w-3.5" />
+                </div>
+              </HubCard>
+            ))}
+          </HubCardGrid>
+        )}
+      </Section>
 
       <CtaBanner
         eyebrow="See it in your stack"

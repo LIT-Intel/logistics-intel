@@ -87,7 +87,7 @@ export default function FeaturesHubPage() {
 
       {/* "How the platform works" — gives the hub a narrative spine
           before dumping into the alphabet of feature cards. */}
-      <Section top="md" bottom="md" tone="soft-blue">
+      <Section top="md" bottom="md" tone="soft-blue" width="container">
         <div className="mx-auto max-w-[680px] text-center">
           <div className="eyebrow">How the platform works</div>
           <h2 className="display-md space-eyebrow-h1">
@@ -128,7 +128,7 @@ export default function FeaturesHubPage() {
         </div>
       </Section>
 
-      <Section top="lg" bottom="lg">
+      <Section top="lg" bottom="lg" width="container">
         <div className="mb-10 sm:mb-14 max-w-[680px]">
           <div className="flex items-center gap-2 text-ink-500">
             <Layers className="h-4 w-4" aria-hidden />
