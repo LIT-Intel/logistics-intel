@@ -28,12 +28,14 @@ const FOOTER_COLS: Array<{ heading: string; links: { label: string; href: string
   {
     heading: "Resources",
     links: [
+      { label: "Resources hub", href: "/resources" },
       { label: "Blog", href: "/blog" },
       { label: "Glossary", href: "/glossary" },
       { label: "Customers", href: "/customers" },
       { label: "Trade lanes", href: "/lanes" },
       { label: "Industries", href: "/industries" },
       { label: "Comparisons", href: "/vs" },
+      { label: "FAQ", href: "/faq" },
     ],
   },
   {
