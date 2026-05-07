@@ -71,6 +71,21 @@ body {
   }
 }
 
+/* Customer-logo marquee. Container holds the logo list duplicated twice;
+   translating -50% lands exactly on the seam between the two copies, so
+   the loop is invisible. Pause on hover (desktop only). */
+@keyframes lit-marquee {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+.lit-marquee {
+  animation: lit-marquee 45s linear infinite;
+  will-change: transform;
+}
+@media (hover: hover) {
+  .lit-marquee:hover { animation-play-state: paused; }
+}
+
 /* Pulse Coach dark surface — used for sidebar / mobile menu / upgrade
    modals / final CTA banner. Same canonical brand surface as the in-app. */
 .pulse-coach-surface {

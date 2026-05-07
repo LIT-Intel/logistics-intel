@@ -31,13 +31,25 @@ const FALLBACK_HERO = {
     { label: "Refreshed daily", tone: "blue", icon: "RefreshCcw" },
     { label: "SOC 2 · GDPR · CCPA", tone: "emerald", icon: "ShieldCheck" },
   ],
+  /** 4-card hero stats strip — design-pack treatment. `trend` is rendered
+   *  as the freshness indicator under the value+label pair. */
   kpis: [
-    { value: "Find", label: "Active shippers" },
-    { value: "Understand", label: "The freight" },
-    { value: "Reach", label: "The right people" },
+    { value: "124M+", label: "Bills of Lading", trend: "Updated today" },
+    { value: "524K+", label: "Active importers", trend: "Refreshed daily" },
+    { value: "42M+", label: "Verified contacts", trend: "95%+ deliverability" },
+    { value: "60+", label: "Countries tracked", trend: "Customs sources" },
   ],
   trialNote: "14-day free trial · Full feature access · Cancel anytime",
 };
+
+/** Static trust badges shown in the slim strip below the hero. Brand
+ *  claims, not Sanity-driven (they don't change without a redeploy). */
+const TRUST_BADGES = [
+  { abbr: "SOC", label: "SOC 2 Type II" },
+  { abbr: "GDR", label: "GDPR compliant" },
+  { abbr: "CCP", label: "CCPA compliant" },
+  { abbr: "256", label: "AES-256 encryption" },
+];
 
 /** Badge tone → Tailwind utility group. Keep in sync with the homepageHero
  *  Sanity schema's tone option list. */
@@ -65,13 +77,21 @@ export const metadata: Metadata = {
 
 export default async function HomePage() {
   const data: any = await sanityClient.fetch(HOMEPAGE_QUERY).catch(() => null);
-  const hero = data?.settings?.homepageHero ?? FALLBACK_HERO;
+  const sanityHero = data?.settings?.homepageHero;
+  // Merge Sanity over fallback, but force the design-pack numeric KPI strip
+  // until the Sanity doc is patched (the bootstrapped doc has the old
+  // text KPIs and `sanity schema deploy` is blocked locally). Once the
+  // doc is patched in Studio, drop the explicit kpis override.
+  const hero = sanityHero
+    ? { ...FALLBACK_HERO, ...sanityHero, kpis: FALLBACK_HERO.kpis }
+    : FALLBACK_HERO;
 
   return (
     <>
       <Nav />
       <main>
         <Hero hero={hero} />
+        <TrustStrip />
         <CustomerLogosRail
           eyebrow="Built for the revenue teams running freight at companies like"
           logos={[
@@ -184,25 +204,90 @@ function Hero({ hero }: { hero: any }) {
               {hero.trialNote}
             </div>
           ) : null}
-          <div className="mt-9 flex flex-wrap items-center gap-7">
-            {hero.kpis?.map((k: any) => (
-              <div key={k.label}>
-                <div
-                  className="font-mono text-[22px] font-semibold tracking-[-0.01em] text-brand-blue-700"
-                >
-                  {k.value}
-                </div>
-                <div className="font-display mt-0.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-200">
-                  {k.label}
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
 
         <div className="relative">
           <HeroSearchDemo />
         </div>
+      </div>
+
+      {/* 4-card stats strip — design-pack hero-stats treatment. */}
+      {hero.kpis?.length ? (
+        <div className="mx-auto mt-10 max-w-container">
+          <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-ink-100 bg-white/80 shadow-sm backdrop-blur md:grid-cols-4">
+            {hero.kpis.map((k: any, i: number) => (
+              <div
+                key={k.label}
+                className={`px-5 py-5 sm:px-6 ${
+                  i % 2 === 0
+                    ? "border-b border-ink-100 md:border-b-0"
+                    : "border-b border-ink-100 md:border-b-0"
+                } ${i < hero.kpis.length - 1 ? "md:border-r md:border-ink-100" : ""}`}
+              >
+                <div className="font-mono text-[22px] font-bold leading-none tracking-[-0.02em] text-ink-900 sm:text-[26px]">
+                  {k.value}
+                </div>
+                <div className="font-display mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-200">
+                  {k.label}
+                </div>
+                {k.trend && (
+                  <div className="font-mono mt-1.5 inline-flex items-center gap-1.5 text-[10px] text-emerald-600">
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+                      aria-hidden
+                      style={{ boxShadow: "0 0 0 3px rgba(16,185,129,0.18)" }}
+                    />
+                    {k.trend}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** Slim compliance + uptime strip directly below the hero. Static — these
+ *  brand claims don't change without a redeploy. */
+function TrustStrip() {
+  return (
+    <section
+      aria-label="Compliance and security"
+      className="border-y border-ink-100 bg-white/60 backdrop-blur"
+    >
+      <div className="mx-auto flex max-w-container flex-wrap items-center justify-center gap-x-7 gap-y-3 px-5 py-3.5 sm:px-8">
+        {TRUST_BADGES.map((b) => (
+          <span
+            key={b.abbr}
+            className="font-display inline-flex items-center gap-2 text-[12px] font-medium text-ink-500"
+          >
+            <span
+              className="font-mono inline-flex h-5 w-5 items-center justify-center rounded-md text-[8.5px] font-bold tracking-tighter"
+              style={{
+                background: "linear-gradient(180deg, #0f172a, #020617)",
+                color: "#00F0FF",
+                boxShadow:
+                  "0 0 0 1px rgba(0,240,255,0.22), 0 0 8px rgba(0,240,255,0.18)",
+              }}
+            >
+              {b.abbr}
+            </span>
+            {b.label}
+          </span>
+        ))}
+        <span className="font-display inline-flex items-center gap-1.5 text-[12px] font-medium text-emerald-700">
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+            aria-hidden
+            style={{
+              boxShadow: "0 0 0 3px rgba(16,185,129,0.18)",
+              animation: "pulse-dot 2.4s infinite",
+            }}
+          />
+          99.98% uptime · last 90 days
+        </span>
       </div>
     </section>
   );
@@ -437,18 +522,39 @@ function ProblemSection() {
 
 function SignalToPipelineSection() {
   return (
-    <section className="px-5 py-16 sm:px-8 sm:py-24">
-      <div className="mx-auto max-w-container">
+    <section
+      className="relative overflow-hidden px-5 py-16 sm:px-8 sm:py-24"
+      style={{
+        background:
+          "linear-gradient(180deg, #020617 0%, #081225 100%)",
+      }}
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-32 left-1/2 h-80 w-[800px] -translate-x-1/2 rounded-full opacity-50"
+        style={{
+          background:
+            "radial-gradient(ellipse, rgba(0,240,255,0.12), transparent 70%)",
+        }}
+      />
+      <div className="relative mx-auto max-w-container">
         <div className="mx-auto max-w-[780px] text-center">
-          <div className="eyebrow">Signal → Pipeline</div>
-          <h2 className="display-lg mt-3">Five steps from question to closed deal.</h2>
-          <p className="lead mx-auto mt-3 max-w-[640px]">
+          <div
+            className="font-display text-[12px] font-semibold uppercase tracking-[0.12em]"
+            style={{ color: "#00F0FF", textShadow: "0 0 12px rgba(0,240,255,0.3)" }}
+          >
+            Signal → Pipeline
+          </div>
+          <h2 className="display-lg mt-3 text-white">
+            Five steps from question to closed deal.
+          </h2>
+          <p className="lead mx-auto mt-3 max-w-[640px] text-ink-150">
             LIT collapses what was a five-tool, five-day workflow into a single board you finish in 20
             minutes.
           </p>
         </div>
         <div className="mt-14">
-          <WorkflowMotion />
+          <WorkflowMotion dark />
         </div>
       </div>
     </section>
