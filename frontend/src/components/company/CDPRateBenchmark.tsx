@@ -338,16 +338,26 @@ export default function CDPRateBenchmark({
             <div className="text-[12px] text-slate-500">Loading reference rates…</div>
           ) : err ? (
             <div className="text-[12px] text-rose-700">{err}</div>
-          ) : !spend ? (
+          ) : allRouteMatches.length === 0 && !spend ? (
             <div className="text-[12px] text-slate-500">
               Not enough trade data to compute a market-rate estimate yet.
             </div>
           ) : (
             <>
+              {/* When the per-route table has matches (allRouteMatches.length
+                  > 0), the hero ALWAYS uses the table's sum — it's the only
+                  number that aggregates across every lane the company ships
+                  on. Falling through to spend.totalSpend (single primary
+                  lane) was the bug that made Old Navy show $82K in the hero
+                  while the table footer correctly showed $46.4M. */}
               <div className="text-[28px] font-bold text-[#0F172A] leading-tight">
-                {fmtUsd(totalMarketSpendByLanes > 0 ? totalMarketSpendByLanes : spend.totalSpend)}
+                {fmtUsd(
+                  allRouteMatches.length > 0
+                    ? totalMarketSpendByLanes
+                    : spend?.totalSpend ?? null,
+                )}
               </div>
-              {totalMarketSpendByLanes > 0 ? (
+              {allRouteMatches.length > 0 ? (
                 <div className="text-[10px] uppercase tracking-wide text-blue-600 font-semibold mt-0.5">
                   Sum of {allRouteMatches.length} matched lane{allRouteMatches.length === 1 ? "" : "s"}
                 </div>
