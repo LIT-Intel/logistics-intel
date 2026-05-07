@@ -265,15 +265,29 @@ export default function CampaignBuilder() {
   // here only for super-admin users; the server enforces the gate.
   const [senderAccounts, setSenderAccounts] = useState([]);
   const [senderAccountId, setSenderAccountId] = useState(null);
+  // Surface fetch failures so the user knows WHY the sender dropdown is
+  // empty (auth expired, RPC down, etc.) instead of silently rendering
+  // "no senders" with no path forward.
+  const [senderLoadError, setSenderLoadError] = useState(null);
   useEffect(() => {
     let cancelled = false;
+    setSenderLoadError(null);
     listEmailAccounts()
       .then((rows) => {
         if (cancelled) return;
         const connected = (rows || []).filter((r) => r.status === "connected");
         setSenderAccounts(connected);
       })
-      .catch(() => { /* surface via primaryEmail nag instead */ });
+      .catch((err) => {
+        if (cancelled) return;
+        const msg =
+          err?.message ||
+          err?.error ||
+          "Couldn't load email senders. Check Settings → Email accounts.";
+        console.warn("[CampaignBuilder] listEmailAccounts failed:", err);
+        setSenderLoadError(msg);
+        setSenderAccounts([]);
+      });
     return () => { cancelled = true; };
   }, []);
 
@@ -923,6 +937,23 @@ export default function CampaignBuilder() {
       </div>
 
       <ForecastStrip audienceCount={selectedIds.size} />
+      {senderLoadError ? (
+        <div
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800"
+          style={{ fontFamily: fontBody }}
+        >
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-white">
+            SENDER
+          </span>
+          <span>Couldn't load email senders: {senderLoadError}</span>
+          <a
+            href="/app/settings?tab=email"
+            className="font-semibold underline-offset-2 hover:underline"
+          >
+            Open Email accounts
+          </a>
+        </div>
+      ) : null}
       {senderAccounts.length > 0 ? (
         <div
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-1.5 text-[11px] text-slate-700"

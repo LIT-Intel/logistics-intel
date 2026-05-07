@@ -127,6 +127,10 @@ type Step = {
   body: string | null;
   delay_days: number;
   delay_hours: number;
+  delay_minutes: number;
+  /** Append the sender's saved signature to the body when true. Default true
+   *  for legacy rows that pre-date the column (NULL is treated as true). */
+  include_signature: boolean | null;
 };
 
 type Account = {
@@ -198,6 +202,10 @@ serve(async (req) => {
   const companyCache = new Map<string, { name?: string | null; domain?: string | null; website?: string | null; country_code?: string | null } | null>();
   // Cache keyed by sender email_account_id for the daily-cap gate.
   const capCache = new Map<string, { sentToday: number; dailyCap: number }>();
+  // Cache keyed by user_id — saved sender signature pulled from
+  // lit_user_preferences. Loaded lazily the first time we encounter a
+  // step with include_signature !== false.
+  const signatureCache = new Map<string, { html: string | null; text: string | null }>();
 
   // ─── 2. Process each recipient ───────────────────────────────────────────
   for (const r of recipients) {
@@ -207,7 +215,7 @@ serve(async (req) => {
       if (!steps) {
         const { data: stepRows, error: stepErr } = await admin
           .from("lit_campaign_steps")
-          .select("id, campaign_id, step_order, channel, step_type, subject, subject_b, body, delay_days, delay_hours")
+          .select("id, campaign_id, step_order, channel, step_type, subject, subject_b, body, delay_days, delay_hours, delay_minutes, include_signature")
           .eq("campaign_id", r.campaign_id)
           .order("step_order", { ascending: true });
         if (stepErr) {
@@ -343,21 +351,57 @@ serve(async (req) => {
             chosen = (primary as Account | null) ?? null;
           }
           // Super-admin gate for Resend. Reject silently (per-recipient
-          // skip) if the campaign owner is not on the allowlist.
+          // skip) if the campaign owner is not authorized.
+          // Authorization sources, in priority order:
+          //   1. platform_admins row for camp.user_id
+          //   2. app_metadata.is_super_admin / app_metadata.role
+          //      (service-role-only writable, can't be spoofed)
+          //   3. SUPER_ADMIN_EMAILS env-var allowlist (comma-separated)
+          //   4. legacy hardcoded duo (kept as a safety floor — vraymond@,
+          //      support@) so a misconfigured env doesn't lock everyone out
           if (chosen?.provider === "resend") {
-            const allowlist = new Set([
-              "vraymond@sparkfusiondigital.com",
-              "support@logisticintel.com",
-            ]);
+            let allowed = false;
             try {
-              const { data: ownerUser } = await admin.auth.admin.getUserById(camp.user_id);
-              const ownerEmail = String(ownerUser?.user?.email || "").toLowerCase();
-              if (!allowlist.has(ownerEmail)) {
-                console.warn("[send-campaign-email] resend send blocked for non-superadmin", camp.user_id);
-                chosen = null;
+              const { data: adminRow } = await admin
+                .from("platform_admins")
+                .select("user_id")
+                .eq("user_id", camp.user_id)
+                .maybeSingle();
+              if (adminRow?.user_id) allowed = true;
+            } catch {
+              // table may not exist — fall through
+            }
+            if (!allowed) {
+              try {
+                const { data: ownerUser } = await admin.auth.admin.getUserById(camp.user_id);
+                const ownerEmail = String(ownerUser?.user?.email || "").toLowerCase();
+                const appMeta = (ownerUser?.user?.app_metadata ?? {}) as Record<string, unknown>;
+                if (appMeta.is_super_admin === true) {
+                  allowed = true;
+                } else {
+                  const role = String(appMeta.role || "").toLowerCase();
+                  if (role === "super_admin" || role === "platform_admin") allowed = true;
+                }
+                if (!allowed && ownerEmail) {
+                  const envList = (Deno.env.get("SUPER_ADMIN_EMAILS") || "")
+                    .split(",")
+                    .map((s) => s.trim().toLowerCase())
+                    .filter(Boolean);
+                  if (envList.includes(ownerEmail)) allowed = true;
+                  // Legacy duo (safety floor; remove once env is confirmed
+                  // populated in every environment).
+                  const legacy = new Set([
+                    "vraymond@sparkfusiondigital.com",
+                    "support@logisticintel.com",
+                  ]);
+                  if (!allowed && legacy.has(ownerEmail)) allowed = true;
+                }
+              } catch (e) {
+                console.error("[send-campaign-email] resend gate lookup failed", e);
               }
-            } catch (e) {
-              console.error("[send-campaign-email] resend gate lookup failed", e);
+            }
+            if (!allowed) {
+              console.warn("[send-campaign-email] resend send blocked for non-superadmin", camp.user_id);
               chosen = null;
             }
           }
@@ -475,7 +519,36 @@ serve(async (req) => {
         sender: { email: sender.email, display_name: sender.display_name },
       });
       const subject = applyMergeVars(chosenSubjectRaw, ctx, { onMissing: "blank" });
-      const body = applyMergeVars(trackedBody, ctx, { onMissing: "blank" });
+      let body = applyMergeVars(trackedBody, ctx, { onMissing: "blank" });
+
+      // Append the sender's saved signature when the step opts in.
+      // include_signature is treated as boolean-with-NULL-as-true so legacy
+      // rows that pre-date the column still get signatures appended.
+      const wantsSignature = step.include_signature !== false;
+      if (wantsSignature && body) {
+        let sig = signatureCache.get(r.user_id);
+        if (!sig) {
+          const { data: prefs } = await admin
+            .from("lit_user_preferences")
+            .select("signature_html, signature_text")
+            .eq("user_id", r.user_id)
+            .maybeSingle();
+          sig = {
+            html: (prefs?.signature_html ?? null) || null,
+            text: (prefs?.signature_text ?? null) || null,
+          };
+          signatureCache.set(r.user_id, sig);
+        }
+        const looksHtml = /<\/?[a-z][^>]*>/i.test(body);
+        const sigPart = looksHtml
+          ? sig.html || (sig.text ? `<br/><br/>${sig.text.replace(/\n/g, "<br/>")}` : "")
+          : sig.text || (sig.html ? sig.html.replace(/<[^>]+>/g, "") : "");
+        if (sigPart) {
+          body = looksHtml
+            ? `${body}<br/><br/>${sigPart}`
+            : `${body}\n\n${sigPart}`;
+        }
+      }
 
       if (!subject && !body) {
         await fail(admin, r, "empty_template");
@@ -579,9 +652,13 @@ async function advance(
   // step itself, so we use the current step there.
   const isWait = step.channel === "wait" || step.step_type === "wait";
   const ref = isWait ? step : nextStep;
+  // delay_minutes was schema-added but never read by the dispatcher.
+  // Without this term a "30-min wait" step computed 0ms and the next
+  // email sent immediately. Now: total delay = days + hours + minutes.
   const delayMs = ref
-    ? Math.max(0, ref.delay_days) * 86_400_000 +
-      Math.max(0, ref.delay_hours) * 3_600_000
+    ? Math.max(0, ref.delay_days ?? 0) * 86_400_000 +
+      Math.max(0, ref.delay_hours ?? 0) * 3_600_000 +
+      Math.max(0, ref.delay_minutes ?? 0) * 60_000
     : 0;
   const nextSendAt = new Date(Date.now() + delayMs).toISOString();
 
