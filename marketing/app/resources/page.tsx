@@ -9,6 +9,7 @@ import { CtaBanner } from "@/components/sections/CtaBanner";
 import { BlogCard } from "@/components/sections/BlogCard";
 import { ArrowRight, Route, BookOpen, Newspaper, HelpCircle } from "lucide-react";
 import { buildMetadata } from "@/lib/seo";
+import { buildBreadcrumbList, buildCollectionPage } from "@/lib/jsonLd";
 
 export const revalidate = 600; // ISR — refresh every 10 min
 
@@ -74,6 +75,31 @@ export default async function ResourcesPage() {
         subtitle="30-minute demo. We'll pull up your top 5 target accounts and show which are actively shipping right now."
         primaryCta={{ label: "Book a demo", href: "/demo", icon: "calendar" }}
         secondaryCta={{ label: "Start free", href: "https://app.logisticintel.com/signup" }}
+      />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(
+            buildBreadcrumbList([
+              { label: "Home", href: "/" },
+              { label: "Resources" },
+            ]),
+          ),
+        }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(
+            buildCollectionPage({
+              name: "Resources hub",
+              description:
+                "Operator playbooks, live trade-lane intelligence, customer stories, and a freight glossary — every page built for the questions revenue teams actually ask.",
+              path: "/resources",
+            }),
+          ),
+        }}
       />
     </PageShell>
   );

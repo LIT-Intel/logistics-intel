@@ -4,8 +4,10 @@ import { sanityClient } from "@/sanity/lib/client";
 import { GLOSSARY_INDEX_QUERY } from "@/sanity/lib/queries";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
+import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
+import { buildCollectionPage } from "@/lib/jsonLd";
 
 export const revalidate = 600;
 
@@ -39,6 +41,12 @@ export default async function GlossaryIndexPage() {
 
   return (
     <PageShell>
+      <BreadcrumbBar
+        crumbs={[
+          { label: "Home", href: "/" },
+          { label: "Glossary" },
+        ]}
+      />
       <PageHero
         eyebrow="Glossary"
         title="Logistics, trade, and GTM terms"
@@ -121,6 +129,27 @@ export default async function GlossaryIndexPage() {
         subtitle="LIT joins this vocabulary to your real accounts — so 'BOL' becomes a list of 8 importers shipping from Vietnam this week."
         primaryCta={{ label: "Book a demo", href: "/demo", icon: "calendar" }}
         secondaryCta={{ label: "Read the blog", href: "/blog" }}
+      />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(
+            buildCollectionPage({
+              name: "Freight & GTM glossary",
+              description:
+                "Plain-English definitions for the terms revenue and logistics teams hit every day — TEU, BOL, HS code, ICP, intent data, ABM, and more. Updated weekly by the Glossary Expander agent.",
+              path: "/glossary",
+              type: "DefinedTerm",
+              items: terms
+                .filter((t) => t?.slug?.current && t?.term)
+                .map((t) => ({
+                  name: t.term,
+                  url: `/glossary/${t.slug.current}`,
+                })),
+            }),
+          ),
+        }}
       />
     </PageShell>
   );

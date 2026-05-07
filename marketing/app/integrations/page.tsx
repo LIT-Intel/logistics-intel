@@ -5,8 +5,10 @@ import { sanityClient } from "@/sanity/lib/client";
 import { INTEGRATIONS_INDEX_QUERY } from "@/sanity/lib/queries";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
+import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
+import { buildCollectionPage } from "@/lib/jsonLd";
 import { resolveLogoUrl } from "@/lib/sanityImage";
 
 export const revalidate = 600;
@@ -55,6 +57,12 @@ export default async function IntegrationsPage() {
 
   return (
     <PageShell>
+      <BreadcrumbBar
+        crumbs={[
+          { label: "Home", href: "/" },
+          { label: "Integrations" },
+        ]}
+      />
       <PageHero
         eyebrow="Integrations"
         title="LIT plugs into the"
@@ -129,6 +137,26 @@ export default async function IntegrationsPage() {
         subtitle="On Scale and Enterprise plans you get full API access plus webhook events for every signal, save, reveal, and campaign event."
         primaryCta={{ label: "Talk to sales", href: "/demo", icon: "calendar" }}
         secondaryCta={{ label: "View pricing", href: "/pricing" }}
+      />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(
+            buildCollectionPage({
+              name: "LIT integrations",
+              description:
+                "Two-way sync with HubSpot, Salesforce, Outreach, Apollo, Slack, and Zapier. Push enriched accounts, pull pipeline, trigger campaigns on shipment signals.",
+              path: "/integrations",
+              items: list
+                .filter((i) => i?.slug?.current && i?.name)
+                .map((i) => ({
+                  name: i.name,
+                  url: `/integrations/${i.slug!.current}`,
+                })),
+            }),
+          ),
+        }}
       />
     </PageShell>
   );

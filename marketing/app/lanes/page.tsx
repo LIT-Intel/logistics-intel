@@ -4,9 +4,11 @@ import Link from "next/link";
 import { sanityClient } from "@/sanity/lib/client";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
+import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
 import { buildMetadata } from "@/lib/seo";
+import { buildCollectionPage } from "@/lib/jsonLd";
 import { groq } from "next-sanity";
 import { ArrowRight } from "lucide-react";
 
@@ -29,6 +31,12 @@ export default async function LanesIndexPage() {
 
   return (
     <PageShell>
+      <BreadcrumbBar
+        crumbs={[
+          { label: "Home", href: "/" },
+          { label: "Trade lanes" },
+        ]}
+      />
       <PageHero
         eyebrow="Trade lanes"
         title="Live trade-lane"
@@ -96,6 +104,26 @@ export default async function LanesIndexPage() {
         subtitle="Save lanes to your watchlist and Pulse Coach pings you when volume, carriers, or shippers shift."
         primaryCta={{ label: "Try free", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
+      />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(
+            buildCollectionPage({
+              name: "Trade lane intelligence",
+              description:
+                "Live KPIs, top shippers, carrier mix, and 12-month trends for every major ocean and air trade lane. Updated daily.",
+              path: "/lanes",
+              items: lanes
+                .filter((l: any) => l?.slug?.current && l?.title)
+                .map((l: any) => ({
+                  name: l.title,
+                  url: `/lanes/${l.slug.current}`,
+                })),
+            }),
+          ),
+        }}
       />
     </PageShell>
   );
