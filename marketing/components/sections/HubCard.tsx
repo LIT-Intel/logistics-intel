@@ -2,10 +2,12 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 /**
- * Canonical hub card — used by /tools, /lanes, /ports, /hs, /glossary,
- * /vs, /resources, /features, /solutions, /alternatives, /best.
- * Identical chrome (radius, border, shadow, hover lift) across every hub
- * so the site reads as one product, not eleven independent SEO templates.
+ * Canonical hub card. Single source of truth for card chrome on every
+ * hub: features, solutions, lanes, ports, glossary, vs, alternatives,
+ * best-of, blog, customers.
+ *
+ * Padding scale matches the design-system spec — 24px (compact) or
+ * 32px (default). No other padding values for cards anywhere.
  */
 export function HubCard({
   href,
@@ -24,7 +26,7 @@ export function HubCard({
       className={cn(
         "group block rounded-2xl border border-ink-100 bg-white shadow-sm transition-all",
         "hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg",
-        variant === "compact" ? "p-5" : "p-6 sm:p-7",
+        variant === "compact" ? "p-6" : "p-8",
         className,
       )}
     >
@@ -34,8 +36,8 @@ export function HubCard({
 }
 
 /**
- * 1 / 2 / 3-column responsive grid that all hubs share. Standard 16px gap
- * on mobile, 24px on tablet+ — same vertical rhythm everywhere.
+ * 1 / 2 / 3-column responsive grid that all hubs share. Card gap
+ * matches the design-system spec — 24px on mobile, 32px on tablet+.
  */
 export function HubCardGrid({
   children,
@@ -49,7 +51,7 @@ export function HubCardGrid({
   return (
     <div
       className={cn(
-        "grid grid-cols-1 gap-4 sm:gap-6",
+        "grid grid-cols-1 gap-6 sm:gap-8",
         cols === 2 ? "md:grid-cols-2" : "md:grid-cols-2 lg:grid-cols-3",
         className,
       )}
@@ -72,7 +74,7 @@ export function HubEmptyState({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-6 py-14 text-center sm:px-8 sm:py-20">
+    <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-8 py-16 text-center sm:py-20">
       <div className="font-display text-[18px] font-semibold text-ink-900">{title}</div>
       <p className="font-body mx-auto mt-2 max-w-[520px] text-[14px] leading-relaxed text-ink-500">
         {children}

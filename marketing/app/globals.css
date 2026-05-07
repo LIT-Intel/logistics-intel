@@ -18,7 +18,9 @@ html {
 body {
   font-family: var(--font-body);
   color: theme('colors.ink.500');
-  background: theme('colors.ink.25');
+  /* Warm site base — the radial tints in `.lit-page` overlay this near
+     the top of every page. Avoids the cold sterile white feel. */
+  background: #fbfbf9;
 }
 
 /* The "light but not plain" page background — same recipe as the design files. */
@@ -109,13 +111,59 @@ body {
   color: transparent;
 }
 
-/* Display typography classes mirroring the design files. */
-.display-xl { font-family: var(--font-display); font-weight: 700; font-size: clamp(40px, 5.2vw, 72px); line-height: 1.02; letter-spacing: -0.035em; color: theme('colors.ink.900'); text-wrap: balance; }
-.display-lg { font-family: var(--font-display); font-weight: 700; font-size: clamp(32px, 4vw, 52px); line-height: 1.06; letter-spacing: -0.03em; color: theme('colors.ink.900'); text-wrap: balance; }
-.display-md { font-family: var(--font-display); font-weight: 700; font-size: clamp(28px, 3vw, 40px); line-height: 1.1; letter-spacing: -0.025em; color: theme('colors.ink.900'); text-wrap: balance; }
-.display-sm { font-family: var(--font-display); font-weight: 600; font-size: 22px; line-height: 1.25; letter-spacing: -0.015em; color: theme('colors.ink.900'); }
-.lead { font-family: var(--font-body); font-size: 19px; line-height: 1.55; color: theme('colors.ink.500'); text-wrap: pretty; }
-.eyebrow { font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: theme('colors.brand.blue'); }
+/* ---------------------------------------------------------------
+   Public marketing site typography scale. Calibrated for the
+   design-system spec:
+   - homepage hero H1: 60-64px desktop  (.display-xl)
+   - inner page H1:    48-56px desktop  (.display-lg)
+   - section H2:       36-42px desktop  (.display-md)
+   - card title:       20-22px          (.display-sm)
+   - body lead:        18px             (.lead)
+   - eyebrow / pill:   12px             (.eyebrow / .lit-pill)
+   Sizes use clamp() so mobile feels right without manual breakpoints.
+   --------------------------------------------------------------- */
+.display-xl { font-family: var(--font-display); font-weight: 700; font-size: clamp(40px, 5.2vw, 64px); line-height: 1.04; letter-spacing: -0.032em; color: theme('colors.ink.900'); text-wrap: balance; }
+.display-lg { font-family: var(--font-display); font-weight: 700; font-size: clamp(34px, 4.4vw, 56px); line-height: 1.06; letter-spacing: -0.028em; color: theme('colors.ink.900'); text-wrap: balance; }
+.display-md { font-family: var(--font-display); font-weight: 700; font-size: clamp(28px, 3vw, 42px); line-height: 1.1; letter-spacing: -0.024em; color: theme('colors.ink.900'); text-wrap: balance; }
+.display-sm { font-family: var(--font-display); font-weight: 600; font-size: clamp(18px, 1.6vw, 22px); line-height: 1.25; letter-spacing: -0.015em; color: theme('colors.ink.900'); }
+.lead { font-family: var(--font-body); font-size: clamp(16px, 1.4vw, 18px); line-height: 1.6; color: theme('colors.ink.500'); text-wrap: pretty; }
+.eyebrow { font-family: var(--font-display); font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: theme('colors.brand.blue'); }
+
+/* ---------------------------------------------------------------
+   Spacing system. Use these utility classes anywhere a one-off
+   numeric value would otherwise leak in. Eyebrow→H1, H1→intro,
+   intro→CTA are the three transitions every hero uses; locking
+   them prevents per-page drift.
+   --------------------------------------------------------------- */
+.space-eyebrow-h1 { margin-top: 16px; }
+.space-h1-intro   { margin-top: 20px; }
+.space-intro-cta  { margin-top: 32px; }
+
+/* Section background system. Apply via class on the <section> wrapper.
+   `bg-section`           — the warm off-white default (matches body)
+   `bg-section-tint`      — slightly cooler tint, used to alternate
+   `bg-section-dark`      — full-bleed dark navy band for product modules
+   `bg-section-soft-blue` — pale blue tint for product/data sections
+   --------------------------------------------------------------- */
+.bg-section          { background-color: transparent; }
+.bg-section-tint     { background-color: rgba(15, 23, 42, 0.025); }
+.bg-section-soft-blue {
+  background:
+    radial-gradient(800px 320px at 50% 0%, rgba(59,130,246,0.06), transparent 70%),
+    rgba(241, 245, 252, 0.55);
+}
+.bg-section-dark {
+  background: linear-gradient(160deg, #0F172A 0%, #1E293B 100%);
+  color: #cfd7e6;
+}
+.bg-section-dark .display-md,
+.bg-section-dark .display-lg,
+.bg-section-dark .display-xl,
+.bg-section-dark .display-sm {
+  color: #ffffff;
+}
+.bg-section-dark .lead { color: #cfd7e6; }
+.bg-section-dark .eyebrow { color: #00F0FF; }
 
 /* Section pill (used in heroes). */
 .lit-pill {

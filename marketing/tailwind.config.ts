@@ -95,8 +95,13 @@ const config: Config = {
         caret: "caret 1s steps(2) infinite",
       },
       maxWidth: {
+        // Public marketing site — canonical widths. `content` is the
+        // default Section width; `container` for wider product/data
+        // sections; `container-narrow` and `prose` for long-form copy.
+        content: "1120px",
         container: "1240px",
         "container-narrow": "960px",
+        prose: "780px",
       },
     },
   },

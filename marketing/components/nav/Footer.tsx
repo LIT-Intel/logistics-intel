@@ -9,9 +9,10 @@ const FOOTER_COLS: Array<{ heading: string; links: { label: string; href: string
       { label: "Pulse AI", href: "/pulse" },
       { label: "Company Intelligence", href: "/company-intelligence" },
       { label: "Contact Intelligence", href: "/contact-intelligence" },
+      { label: "Rate Benchmark", href: "/rate-benchmark" },
+      { label: "Revenue Opportunity", href: "/revenue-opportunity" },
       { label: "Command Center (CRM)", href: "/command-center" },
       { label: "Outbound Engine", href: "/outbound-engine" },
-      { label: "Free tools", href: "/tools" },
     ],
   },
   {

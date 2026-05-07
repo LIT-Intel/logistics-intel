@@ -44,9 +44,62 @@ type Comparison = {
   lastReviewedAt?: string;
 };
 
+/**
+ * Decision-center categories — buyers comparing tools think in terms
+ * of "which category is this against," not alphabetical name. Mapping
+ * lives here so we can keep Sanity comparison docs flat and still
+ * render a categorized hub.
+ */
+const CATEGORIES: { label: string; description: string; slugs: string[] }[] = [
+  {
+    label: "Trade data",
+    description: "Bill of Lading + customs intelligence — the data spine.",
+    slugs: ["importyeti", "importgenius", "panjiva", "datamyne", "tradeatlas"],
+  },
+  {
+    label: "Contact + sales intelligence",
+    description: "Decision-maker contacts, firmographics, intent.",
+    slugs: ["zoominfo", "apollo"],
+  },
+  {
+    label: "CRM + sales engagement",
+    description: "Pipeline, sequences, outreach — the action layer.",
+    slugs: ["hubspot", "salesforce", "outreach", "salesloft"],
+  },
+  {
+    label: "Freight-specific platforms",
+    description: "Tools built for the freight motion specifically.",
+    slugs: ["revenue-vessel", "optimus", "magaya"],
+  },
+];
+
 export default async function VsHubPage() {
   const items =
     (await sanityClient.fetch<Comparison[]>(VS_HUB_QUERY).catch(() => [])) || [];
+
+  // Build a slug → comparison map for O(1) lookup, then bucket. Anything
+  // unmapped falls into "Other" so we don't lose comparisons.
+  const bySlug = new Map(items.map((i) => [i.slug, i]));
+  const seenSlugs = new Set<string>();
+  const grouped = CATEGORIES.map((cat) => ({
+    ...cat,
+    items: cat.slugs
+      .map((s) => {
+        const item = bySlug.get(s);
+        if (item) seenSlugs.add(s);
+        return item;
+      })
+      .filter((c): c is Comparison => Boolean(c)),
+  })).filter((c) => c.items.length > 0);
+  const unmapped = items.filter((c) => !seenSlugs.has(c.slug));
+  if (unmapped.length > 0) {
+    grouped.push({
+      label: "Other",
+      description: "Comparisons not yet categorized.",
+      slugs: unmapped.map((u) => u.slug),
+      items: unmapped,
+    });
+  }
 
   return (
     <PageShell>
@@ -70,52 +123,65 @@ export default async function VsHubPage() {
             .
           </HubEmptyState>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
-            {items.map((c) => {
-              const logoSrc = resolveLogoUrl(
-                {
-                  logo: c.competitorLogo,
-                  domain: c.competitorUrl?.replace(/^https?:\/\//, "").replace(/\/$/, ""),
-                },
-                96,
-              );
-              const teaser = c.tldr || c.subhead;
-              return (
-                <HubCard key={c._id} href={`/vs/${c.slug}`} className="flex flex-col gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="font-display text-[18px] sm:text-[20px] font-bold tracking-[-0.02em]">
-                      <span className="grad-text">LIT</span>
-                      <span className="px-2 text-ink-200" aria-hidden>
-                        vs
-                      </span>
-                      <span className="text-ink-900">{c.competitorName}</span>
-                    </div>
-                    {logoSrc && (
-                      <div className="relative ml-auto h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-ink-100 bg-white">
-                        <Image
-                          src={logoSrc}
-                          alt={c.competitorName}
-                          fill
-                          sizes="36px"
-                          className="object-contain p-1"
-                          unoptimized={logoSrc.includes("img.logo.dev")}
-                        />
-                      </div>
-                    )}
-                  </div>
+          <div className="space-y-12 sm:space-y-20">
+            {grouped.map((cat) => (
+              <div key={cat.label}>
+                <div className="mb-6 max-w-[640px]">
+                  <div className="eyebrow">Category</div>
+                  <h2 className="display-md space-eyebrow-h1">{cat.label}</h2>
+                  <p className="font-body mt-3 text-[15px] leading-relaxed text-ink-500">
+                    {cat.description}
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-2">
+                  {cat.items.map((c) => {
+                    const logoSrc = resolveLogoUrl(
+                      {
+                        logo: c.competitorLogo,
+                        domain: c.competitorUrl?.replace(/^https?:\/\//, "").replace(/\/$/, ""),
+                      },
+                      96,
+                    );
+                    const teaser = c.tldr || c.subhead;
+                    return (
+                      <HubCard key={c._id} href={`/vs/${c.slug}`} className="flex flex-col gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="font-display text-[18px] sm:text-[20px] font-bold tracking-[-0.02em]">
+                            <span className="grad-text">LIT</span>
+                            <span className="px-2 text-ink-200" aria-hidden>
+                              vs
+                            </span>
+                            <span className="text-ink-900">{c.competitorName}</span>
+                          </div>
+                          {logoSrc && (
+                            <div className="relative ml-auto h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-ink-100 bg-white">
+                              <Image
+                                src={logoSrc}
+                                alt={c.competitorName}
+                                fill
+                                sizes="36px"
+                                className="object-contain p-1"
+                                unoptimized={logoSrc.includes("img.logo.dev")}
+                              />
+                            </div>
+                          )}
+                        </div>
 
-                  {teaser && (
-                    <p className="font-body text-[14px] leading-relaxed text-ink-500 line-clamp-3">
-                      {teaser}
-                    </p>
-                  )}
+                        {teaser && (
+                          <p className="font-body text-[14px] leading-relaxed text-ink-500 line-clamp-3">
+                            {teaser}
+                          </p>
+                        )}
 
-                  <div className="font-display mt-auto inline-flex items-center gap-1.5 text-[13px] font-semibold text-brand-blue group-hover:text-brand-blue-700">
-                    Read full comparison <ArrowRight className="h-3.5 w-3.5" />
-                  </div>
-                </HubCard>
-              );
-            })}
+                        <div className="font-display mt-auto inline-flex items-center gap-1.5 text-[13px] font-semibold text-brand-blue group-hover:text-brand-blue-700">
+                          Read full comparison <ArrowRight className="h-3.5 w-3.5" />
+                        </div>
+                      </HubCard>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </Section>

@@ -10,6 +10,8 @@ import {
   Globe2,
   Send,
   Search,
+  BarChart3,
+  TrendingUp,
 } from "lucide-react";
 
 /**
@@ -47,6 +49,18 @@ const PRODUCT_LINKS: {
     description: "Live origin × destination signals",
     href: "/trade-intelligence",
     icon: Globe2,
+  },
+  {
+    label: "Rate Benchmark",
+    description: "Live FBX12 rates inside every account",
+    href: "/rate-benchmark",
+    icon: BarChart3,
+  },
+  {
+    label: "Revenue Opportunity",
+    description: "Sized freight wallet across six service lines",
+    href: "/revenue-opportunity",
+    icon: TrendingUp,
   },
   {
     label: "Command Center (CRM)",
