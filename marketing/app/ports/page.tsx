@@ -5,8 +5,12 @@ import { sanityClient } from "@/sanity/lib/client";
 import { PORTS_INDEX_QUERY } from "@/sanity/lib/queries";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
+import { Section } from "@/components/sections/Section";
+import { HubCard, HubCardGrid, HubEmptyState } from "@/components/sections/HubCard";
 import { CtaBanner } from "@/components/sections/CtaBanner";
+import { Flag } from "@/components/sections/Flag";
 import { buildMetadata } from "@/lib/seo";
+import { portISO, toCountryISO } from "@/lib/countries";
 import { Anchor } from "lucide-react";
 
 export const revalidate = 1800;
@@ -22,7 +26,6 @@ export const metadata: Metadata = buildMetadata({
 export default async function PortsIndexPage() {
   const ports = (await sanityClient.fetch<any[]>(PORTS_INDEX_QUERY).catch(() => [])) || [];
 
-  // Group by country for navigability
   const grouped = ports.reduce<Record<string, any[]>>((acc, p) => {
     const k = p.country || "Other";
     (acc[k] = acc[k] || []).push(p);
@@ -41,44 +44,48 @@ export default async function PortsIndexPage() {
         align="center"
       />
 
-      {ports.length === 0 ? (
-        <section className="px-8 pb-20">
-          <div className="mx-auto max-w-container">
-            <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
-              <div className="font-display text-[18px] font-semibold text-ink-900">Port data warming up</div>
-              <p className="font-body mx-auto mt-2 max-w-[480px] text-[14px] leading-relaxed text-ink-500">
-                The TradeLane Refresher agent populates this index from the live shipment graph. Once the
-                Phase 4 agent fleet is wired, ports populate automatically.
-              </p>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="px-8 pb-20">
-          <div className="mx-auto max-w-container space-y-12">
-            {countries.map((country) => (
+      <Section bottom="lg">
+        {ports.length === 0 ? (
+          <HubEmptyState title="Port-level intelligence — rolling out">
+            Port pages cover 800+ global seaports with live trailing-12m volume, top importers and
+            exporters, dominant carriers, and cross-references to major trade lanes. While this index
+            is publishing,{" "}
+            <Link href="/lanes" className="text-brand-blue-700 underline">
+              browse trade lanes →
+            </Link>
+            {" "}or{" "}
+            <Link href="/demo" className="text-brand-blue-700 underline">
+              book a demo
+            </Link>
+            {" "}to query any port inside LIT directly.
+          </HubEmptyState>
+        ) : (
+          <div className="space-y-12 sm:space-y-16">
+            {countries.map((country) => {
+              const iso = toCountryISO(country);
+              return (
               <div key={country}>
                 <div className="font-display mb-5 flex items-center gap-3">
-                  <span className="text-[26px] font-semibold tracking-[-0.015em] text-ink-900">{country}</span>
+                  <Flag iso={iso} size="md" title={country} />
+                  <span className="text-[22px] sm:text-[26px] font-semibold tracking-[-0.015em] text-ink-900">{country}</span>
                   <span className="h-px flex-1 bg-ink-100" />
                   <span className="font-mono text-[12px] text-ink-200">{grouped[country].length}</span>
                 </div>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <HubCardGrid>
                   {grouped[country].map((p) => (
-                    <Link
-                      key={p._id}
-                      href={`/ports/${p.slug?.current}`}
-                      className="group rounded-2xl border border-ink-100 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg"
-                    >
+                    <HubCard key={p._id} href={`/ports/${p.slug?.current}`}>
                       <div className="flex items-start gap-3">
-                        <div
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-                          style={{
-                            background: "rgba(37,99,235,0.08)",
-                            boxShadow: "inset 0 0 0 1px rgba(37,99,235,0.15)",
-                          }}
-                        >
-                          <Anchor className="h-4 w-4 text-brand-blue" />
+                        <div className="flex flex-col items-center gap-1.5">
+                          <Flag iso={portISO(p)} size="md" title={p.country || country} />
+                          <div
+                            className="flex h-7 w-7 items-center justify-center rounded-md"
+                            style={{
+                              background: "rgba(37,99,235,0.08)",
+                              boxShadow: "inset 0 0 0 1px rgba(37,99,235,0.15)",
+                            }}
+                          >
+                            <Anchor className="h-3.5 w-3.5 text-brand-blue" />
+                          </div>
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="font-display truncate text-[15px] font-semibold text-ink-900 group-hover:text-brand-blue-700">
@@ -99,14 +106,15 @@ export default async function PortsIndexPage() {
                           </span>
                         </div>
                       )}
-                    </Link>
+                    </HubCard>
                   ))}
-                </div>
+                </HubCardGrid>
               </div>
-            ))}
+              );
+            })}
           </div>
-        </section>
-      )}
+        )}
+      </Section>
 
       <CtaBanner
         eyebrow="Watch a port"

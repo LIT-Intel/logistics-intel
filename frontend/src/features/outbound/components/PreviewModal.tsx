@@ -1,8 +1,9 @@
 import React from "react";
-import { X } from "lucide-react";
+import { X, AlertTriangle } from "lucide-react";
 import { CHANNEL, fontDisplay, fontBody, fontMono } from "../tokens";
 import { ChannelIcon } from "./ChannelChip";
 import { applyVariables } from "../data/templates";
+import { listMissingVars } from "@/lib/mergeVars";
 import type { BuilderStep } from "../types";
 
 // Renders the sequence as a sample contact would receive it. Variable
@@ -10,7 +11,11 @@ import type { BuilderStep } from "../types";
 // (subject lines, lane data, names). Real send-time resolution will swap
 // these for the actual recipient when the dispatcher ships.
 
-const SAMPLE_VARS: Record<string, string> = {
+// Sample values used to render the preview. Recipient-side values stay
+// generic (Linh / NorthBay) because the preview shows what the recipient
+// sees. Sender-side values come in via props from the live campaign so
+// the From line matches the actual mailbox the dispatcher will send from.
+const RECIPIENT_SAMPLE: Record<string, string> = {
   first_name: "Linh",
   last_name: "Pham",
   company_name: "NorthBay Furniture",
@@ -23,7 +28,6 @@ const SAMPLE_VARS: Record<string, string> = {
   tariff_event: "Section 201 update",
   pct: "18%",
   teu_growth: "+22%",
-  sender_name: "Valesco",
 };
 
 function dayLabelFor(steps: BuilderStep[], index: number): number {
@@ -45,13 +49,53 @@ export function PreviewModal({
   open,
   steps,
   onClose,
+  senderEmail,
+  senderName,
+  sampleRecipient,
+  signatureHtml,
 }: {
   open: boolean;
   steps: BuilderStep[];
   onClose: () => void;
+  senderEmail?: string | null;
+  senderName?: string | null;
+  sampleRecipient?: {
+    email?: string;
+    first_name?: string;
+    last_name?: string;
+    company_name?: string;
+  } | null;
+  /** Sanitized HTML signature loaded from lit_user_preferences. Rendered
+   *  after each email step's body when the step has includeSignature on
+   *  (default). Server-side sanitization happened at save-time, so it's
+   *  safe to inject here. */
+  signatureHtml?: string | null;
 }) {
   if (!open) return null;
   const sendable = steps.filter((s) => s.kind !== "wait");
+  // Build the live merge context: recipient sample + actual sender from
+  // the connected mailbox. Falls back to placeholder hints when no inbox
+  // is connected so the preview still renders.
+  const resolvedSenderEmail =
+    senderEmail || "no-inbox-connected@logisticintel.com";
+  const resolvedSenderName =
+    senderName ||
+    (senderEmail ? senderEmail.split("@")[0] : "Your name");
+  // When a real recipient is supplied (e.g. first manual email), prefer
+  // their values for the preview. Otherwise fall back to the deterministic
+  // sample so the preview always renders something.
+  const recipientFirstName = sampleRecipient?.first_name?.trim() || RECIPIENT_SAMPLE.first_name;
+  const recipientLastName = sampleRecipient?.last_name?.trim() || RECIPIENT_SAMPLE.last_name;
+  const recipientCompany = sampleRecipient?.company_name?.trim() || RECIPIENT_SAMPLE.company_name;
+  const recipientEmail = sampleRecipient?.email?.trim() || `${recipientFirstName.toLowerCase()}@northbay.example`;
+  const SAMPLE_VARS: Record<string, string> = {
+    ...RECIPIENT_SAMPLE,
+    first_name: recipientFirstName,
+    last_name: recipientLastName,
+    company_name: recipientCompany,
+    sender_name: resolvedSenderName,
+    sender_email: resolvedSenderEmail,
+  };
 
   return (
     <>
@@ -73,7 +117,7 @@ export function PreviewModal({
               className="text-[11px] text-slate-500"
               style={{ fontFamily: fontBody }}
             >
-              Sample variables resolved · {SAMPLE_VARS.first_name} at {SAMPLE_VARS.company_name} · {SAMPLE_VARS.top_lane}
+              {sampleRecipient?.email ? "Recipient" : "Sample recipient"} · {recipientFirstName} at {recipientCompany} · sending from {resolvedSenderEmail}
             </div>
           </div>
           <button
@@ -114,6 +158,14 @@ export function PreviewModal({
                 if (s.kind === "email") {
                   const subject = applyVariables(s.subject, SAMPLE_VARS);
                   const body = applyVariables(s.body, SAMPLE_VARS);
+                  // Variables a real recipient might not have. Sample
+                  // context is generous so anything missing here means
+                  // the template references a token outside the standard
+                  // recipient/company/sender set — flag it so the user
+                  // can decide before launch.
+                  const missingSubject = listMissingVars(s.subject, SAMPLE_VARS);
+                  const missingBody = listMissingVars(s.body, SAMPLE_VARS);
+                  const missing = Array.from(new Set([...missingSubject, ...missingBody]));
                   return (
                     <article
                       key={s.localId}
@@ -136,13 +188,13 @@ export function PreviewModal({
                           className="truncate text-[12px] text-slate-700"
                           style={{ fontFamily: fontBody }}
                         >
-                          From: {SAMPLE_VARS.sender_name}@logisticintel.com
+                          From: {resolvedSenderEmail}
                         </span>
                         <span
                           className="ml-auto text-[10px] text-slate-400"
                           style={{ fontFamily: fontMono }}
                         >
-                          to {SAMPLE_VARS.first_name.toLowerCase()}@northbay.example
+                          to {recipientEmail}
                         </span>
                       </header>
                       <div className="px-3 py-2.5">
@@ -162,6 +214,28 @@ export function PreviewModal({
                             <span className="text-slate-400">(empty body)</span>
                           )}
                         </pre>
+                        {signatureHtml && s.includeSignature !== false ? (
+                          <div
+                            className="mt-3 border-t border-slate-100 pt-3 text-[12px] text-slate-600"
+                            style={{ fontFamily: fontBody }}
+                            dangerouslySetInnerHTML={{ __html: signatureHtml }}
+                          />
+                        ) : null}
+                        {missing.length > 0 && (
+                          <div
+                            className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10.5px] text-[#B45309]"
+                            style={{ fontFamily: fontBody }}
+                          >
+                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                            <span>
+                              <strong>Unknown variable{missing.length === 1 ? "" : "s"}:</strong>{" "}
+                              <span style={{ fontFamily: fontMono }}>
+                                {missing.map((m) => `{{${m}}}`).join(", ")}
+                              </span>{" "}
+                              — won't resolve at send time. Remove or define before launch.
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </article>
                   );

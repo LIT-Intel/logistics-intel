@@ -594,6 +594,21 @@ export default function SettingsPage() {
   const onInviteMember = async (email: string, role: string) => {
     if (!orgId) return { error: "No organization found for this user" };
 
+    // Seat capacity check — counts only confirmed members, not pending
+    // invites (per spec: "Seat count is based on actual users that have
+    // confirmed their account with the invitation link"). Enterprise
+    // plans have NULL included_seats and skip this check.
+    const ownerSubPlan = subscription?.plan_code || profile?.plan || "free_trial";
+    const planRow = plans.find((p: any) => p?.code === ownerSubPlan);
+    const includedSeats: number | null =
+      typeof planRow?.included_seats === "number" ? planRow.included_seats : null;
+    const confirmedSeats = orgMembers.length;
+    if (includedSeats !== null && confirmedSeats >= includedSeats) {
+      return {
+        error: `Seat limit reached (${confirmedSeats}/${includedSeats}) on the ${ownerSubPlan} plan. Upgrade or remove a member before inviting another.`,
+      };
+    }
+
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 

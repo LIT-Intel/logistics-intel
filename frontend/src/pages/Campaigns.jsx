@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Filter,
   Grid,
+  Inbox,
   Plus,
   RefreshCw,
   Send,
@@ -63,7 +64,7 @@ function applyFilter(campaigns, filter) {
   return campaigns.filter((c) => c.status === filter);
 }
 
-function PageHeader({ onNewCampaign, onOpenAnalytics }) {
+function PageHeader({ onNewCampaign, onOpenAnalytics, onOpenInbox }) {
   return (
     <header className="mb-3 flex flex-wrap items-start justify-between gap-2">
       <div className="min-w-0">
@@ -89,6 +90,16 @@ function PageHeader({ onNewCampaign, onOpenAnalytics }) {
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onOpenInbox}
+          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+          style={{ fontFamily: fontDisplay }}
+          title="Open the campaign inbox to read replies and continue conversations"
+        >
+          <Inbox className="h-2.5 w-2.5" />
+          Inbox
+        </button>
         <button
           type="button"
           onClick={onOpenAnalytics}
@@ -240,7 +251,11 @@ export default function CampaignsPage() {
   );
 
   const handleOpenAnalytics = useCallback(() => {
-    navigate("/app/diagnostic");
+    navigate("/app/campaigns/analytics");
+  }, [navigate]);
+
+  const handleOpenInbox = useCallback(() => {
+    navigate("/app/inbox");
   }, [navigate]);
 
   const handleOpenCampaign = useCallback(
@@ -318,10 +333,11 @@ export default function CampaignsPage() {
 
   return (
     <div className="min-h-full bg-[#F8FAFC]">
-      <div className="mx-auto w-full max-w-[1200px] px-3 py-3 md:px-5 md:py-4">
+      <div className="mx-auto w-full max-w-[1500px] px-3 py-3 md:px-5 md:py-4">
         <PageHeader
           onNewCampaign={() => handleNewCampaign(null)}
           onOpenAnalytics={handleOpenAnalytics}
+          onOpenInbox={handleOpenInbox}
         />
 
         {loading ? (

@@ -30,7 +30,8 @@ import {
   WifiOff,
 } from "lucide-react";
 import { PLAN_LIMITS, normalizePlan as normalizePlanCode } from "@/lib/planLimits";
-import { listEmailAccounts, startGmailOAuth, startOutlookOAuth, sendTestEmail } from "@/lib/api";
+import { listEmailAccounts, startGmailOAuth, startOutlookOAuth, sendTestEmail, disconnectEmailAccount } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
 import type { LitEmailAccountRow } from "@/types/lit-outbound";
 import { useAuth } from "@/auth/AuthProvider";
@@ -1312,25 +1313,39 @@ function IntegrationCard({
   description,
   connected,
   account,
+  accountId,
   cardState,
   onConnect,
   connecting,
   localSetupRequired,
   connectError,
   onRefresh,
+  onDisconnect,
 }: {
   name: string;
   category: string;
   description: string;
   connected: boolean;
   account?: string | null;
+  accountId?: string | null;
   cardState: ProviderCardState;
   onConnect: () => void;
   connecting: boolean;
   localSetupRequired: boolean;
   connectError: string | null;
   onRefresh: () => void;
+  onDisconnect?: (id: string) => Promise<void> | void;
 }) {
+  const [disconnecting, setDisconnecting] = useState(false);
+  async function handleDisconnect() {
+    if (!onDisconnect || !accountId || disconnecting) return;
+    setDisconnecting(true);
+    try {
+      await onDisconnect(accountId);
+    } finally {
+      setDisconnecting(false);
+    }
+  }
   return (
     <div style={{
       background: "#fff",
@@ -1394,11 +1409,15 @@ function IntegrationCard({
       <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
         {connected ? (
           <>
-            <button style={{ ...sBtnGhost, flex: 1, justifyContent: "center" }} onClick={onConnect} disabled={connecting}>
+            <button style={{ ...sBtnGhost, flex: 1, justifyContent: "center" }} onClick={onConnect} disabled={connecting || disconnecting}>
               {connecting ? <><RefreshCw size={12} /> Reconnecting…</> : <><RefreshCw size={12} /> Reconnect</>}
             </button>
-            <button style={{ ...sBtnDanger, flex: 1, justifyContent: "center" }} disabled>
-              Disconnect · setup required
+            <button
+              style={{ ...sBtnDanger, flex: 1, justifyContent: "center", opacity: disconnecting ? 0.6 : 1 }}
+              onClick={handleDisconnect}
+              disabled={disconnecting || connecting || !onDisconnect || !accountId}
+            >
+              {disconnecting ? <><RefreshCw size={12} /> Disconnecting…</> : "Disconnect"}
             </button>
           </>
         ) : localSetupRequired ? (
@@ -1428,10 +1447,12 @@ function GmailCard({
   accounts,
   loadingAccounts,
   onRefresh,
+  onDisconnect,
 }: {
   accounts: LitEmailAccountRow[];
   loadingAccounts: boolean;
   onRefresh: () => void;
+  onDisconnect: (id: string) => Promise<void> | void;
 }) {
   const { orgId } = useAuth();
   const [connecting, setConnecting] = useState(false);
@@ -1462,12 +1483,14 @@ function GmailCard({
       description="Send outbound directly from your Gmail account. LIT never exposes OAuth tokens in the browser."
       connected={cardState === "connected"}
       account={gmailAccount?.email ?? null}
+      accountId={gmailAccount?.id ?? null}
       cardState={cardState}
       onConnect={handleConnect}
       connecting={connecting}
       localSetupRequired={localSetupRequired}
       connectError={connectError}
       onRefresh={onRefresh}
+      onDisconnect={onDisconnect}
     />
   );
 }
@@ -1476,10 +1499,12 @@ function OutlookCard({
   accounts,
   loadingAccounts,
   onRefresh,
+  onDisconnect,
 }: {
   accounts: LitEmailAccountRow[];
   loadingAccounts: boolean;
   onRefresh: () => void;
+  onDisconnect: (id: string) => Promise<void> | void;
 }) {
   const { orgId } = useAuth();
   const [connecting, setConnecting] = useState(false);
@@ -1507,12 +1532,14 @@ function OutlookCard({
       description="Send outbound from your Microsoft 365 / Outlook account. Recommended for freight forwarders and enterprise teams."
       connected={connected}
       account={outlookAccount?.email ?? null}
+      accountId={outlookAccount?.id ?? null}
       cardState={cardState}
       onConnect={handleConnect}
       connecting={connecting}
       localSetupRequired={localSetupRequired}
       connectError={connectError}
       onRefresh={onRefresh}
+      onDisconnect={onDisconnect}
     />
   );
 }
@@ -1645,6 +1672,11 @@ function EmailReadinessPanel({
 }
 
 // ─── EmailAccountsSection ─────────────────────────────────────────────────────
+type OAuthBanner =
+  | { kind: "success"; provider: string; email?: string }
+  | { kind: "error"; provider: string; reason: string }
+  | null;
+
 export function EmailAccountsSection({
   integrations,
   onDisconnect,
@@ -1654,6 +1686,7 @@ export function EmailAccountsSection({
 }) {
   const [accounts, setAccounts] = useState<LitEmailAccountRow[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [banner, setBanner] = useState<OAuthBanner>(null);
   const { primaryEmail, known, loading: inboxLoading, refresh: refreshInbox } = useInboxStatus();
 
   const refreshAccounts = async () => {
@@ -1667,14 +1700,122 @@ export function EmailAccountsSection({
 
   useEffect(() => { void refreshAccounts(); }, []);
 
+  // Read ?email_connect=success|error&provider=...&reason=... that the
+  // Supabase OAuth callback redirects with, surface as a banner, then scrub
+  // the params from the URL so a refresh doesn't re-fire the toast.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("email_connect");
+    if (!status) return;
+    const provider = params.get("provider") || "email";
+    if (status === "success") {
+      setBanner({ kind: "success", provider });
+    } else if (status === "error") {
+      setBanner({ kind: "error", provider, reason: params.get("reason") || "unknown" });
+    }
+    // Scrub
+    params.delete("email_connect");
+    params.delete("provider");
+    params.delete("reason");
+    const search = params.toString();
+    const next = window.location.pathname + (search ? `?${search}` : "") + window.location.hash;
+    window.history.replaceState({}, "", next);
+  }, []);
+
   const handleRefresh = async () => {
     await Promise.all([refreshAccounts(), refreshInbox()]);
+  };
+
+  const handleDisconnect = async (accountId: string) => {
+    if (!accountId) return;
+    if (typeof window !== "undefined" && !window.confirm("Disconnect this mailbox? Active campaigns using it will fail until you reconnect.")) {
+      return;
+    }
+    const res = await disconnectEmailAccount(accountId);
+    if (res.ok) {
+      setBanner({ kind: "success", provider: "disconnect" });
+      await handleRefresh();
+    } else {
+      setBanner({ kind: "error", provider: "disconnect", reason: res.error });
+    }
   };
 
   const noInbox = !loadingAccounts && accounts.filter((a) => a.status === "connected").length === 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* OAuth callback banner — fires once after the Supabase callback
+          redirects back with ?email_connect=success|error. */}
+      {banner && (
+        <div
+          role="status"
+          style={{
+            background: banner.kind === "success"
+              ? "linear-gradient(180deg,#ECFDF5,#F0FDF4)"
+              : "linear-gradient(180deg,#FEF2F2,#FFFBFA)",
+            border: banner.kind === "success" ? "1px solid #BBF7D0" : "1px solid #FECACA",
+            borderRadius: 12,
+            padding: "12px 16px",
+            display: "flex",
+            gap: 12,
+            alignItems: "flex-start",
+          }}
+        >
+          <div style={{
+            width: 28, height: 28, borderRadius: 8,
+            background: banner.kind === "success" ? "#D1FAE5" : "#FEE2E2",
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>
+            {banner.kind === "success"
+              ? <CheckCircle2 size={14} color="#15803d" />
+              : <AlertTriangle size={14} color="#b91c1c" />}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontFamily: "Space Grotesk,sans-serif",
+              fontSize: 13,
+              fontWeight: 700,
+              color: banner.kind === "success" ? "#065f46" : "#7f1d1d",
+            }}>
+              {banner.kind === "success"
+                ? banner.provider === "disconnect"
+                  ? "Mailbox disconnected"
+                  : `${banner.provider === "gmail" ? "Gmail" : banner.provider === "outlook" ? "Outlook" : "Mailbox"} connected`
+                : banner.provider === "disconnect"
+                  ? "Disconnect failed"
+                  : `${banner.provider === "gmail" ? "Gmail" : banner.provider === "outlook" ? "Outlook" : "Mailbox"} connect failed`}
+            </div>
+            {banner.kind === "error" && (
+              <div style={{
+                fontFamily: "JetBrains Mono,monospace",
+                fontSize: 11.5,
+                color: "#991b1b",
+                marginTop: 3,
+                wordBreak: "break-all",
+              }}>
+                {banner.reason}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setBanner(null)}
+            aria-label="Dismiss"
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontSize: 14,
+              color: banner.kind === "success" ? "#065f46" : "#7f1d1d",
+              padding: 4,
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Critical red banner if no inbox connected */}
       {noInbox && (
         <div style={{
@@ -1697,9 +1838,13 @@ export function EmailAccountsSection({
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(420px,1fr))", gap: 14 }}>
-        <GmailCard accounts={accounts} loadingAccounts={loadingAccounts} onRefresh={handleRefresh} />
-        <OutlookCard accounts={accounts} loadingAccounts={loadingAccounts} onRefresh={handleRefresh} />
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,420px),1fr))",
+        gap: 14,
+      }}>
+        <GmailCard accounts={accounts} loadingAccounts={loadingAccounts} onRefresh={handleRefresh} onDisconnect={handleDisconnect} />
+        <OutlookCard accounts={accounts} loadingAccounts={loadingAccounts} onRefresh={handleRefresh} onDisconnect={handleDisconnect} />
       </div>
 
       <EmailReadinessPanel
@@ -1860,19 +2005,18 @@ export function PreferencesSection(props: {
         </div>
       </SCard>
 
-      <SCard title="Email signature" subtitle="Appended to every outbound campaign email.">
-        <STextarea
-          rows={4}
-          value={sig}
-          onChange={(e) => setSig(e.target.value)}
-          placeholder={"— Jane Smith\nLogistic Intel\nyour-email@company.com"}
+      <SCard title="Email signature" subtitle="Auto-appended to every outbound campaign email — sanitized server-side before save.">
+        <SignatureEditor
+          initialHtml={props.emailSignature || ""}
+          onSaved={(html) => {
+            setSig(html);
+            setSigMsg("Saved.");
+            setTimeout(() => setSigMsg(null), 2500);
+          }}
         />
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
-          <button onClick={saveSig} disabled={savingSig} style={sBtnPrimary}>
-            {savingSig ? "Saving…" : "Save signature"}
-          </button>
-          {sigMsg && <span style={{ fontFamily: "DM Sans,sans-serif", fontSize: 12, color: "#64748b" }}>{sigMsg}</span>}
-        </div>
+        {sigMsg && (
+          <div style={{ marginTop: 8, fontFamily: "DM Sans,sans-serif", fontSize: 12, color: "#64748b" }}>{sigMsg}</div>
+        )}
       </SCard>
 
       {/* Coming soon card */}
@@ -1888,6 +2032,208 @@ export function PreferencesSection(props: {
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── SignatureEditor ────────────────────────────────────────────────────────
+// Rich-but-email-safe signature editor. contenteditable HTML with a tiny
+// toolbar (Bold / Italic / Underline / Link / Image-by-URL / Clear). On
+// save we POST to save-signature which is the AUTHORITATIVE sanitizer —
+// the server is the source of truth, NOT the browser. The function
+// returns the cleaned HTML which we render back into the editor.
+function SignatureEditor({ initialHtml, onSaved }: { initialHtml: string; onSaved: (html: string) => void }) {
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const [hydratedHtml, setHydratedHtml] = useState<string>(initialHtml || "");
+  const [textFallback, setTextFallback] = useState<string>("");
+  const [showText, setShowText] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  // Hydrate from lit_user_preferences on mount. Falls back to the legacy
+  // user_preferences.email_signature plain-text column if the new row
+  // doesn't exist yet.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: u } = await supabase.auth.getUser();
+        const uid = u?.user?.id;
+        if (!uid) { setHasLoaded(true); return; }
+        const { data } = await supabase
+          .from("lit_user_preferences")
+          .select("signature_html, signature_text")
+          .eq("user_id", uid)
+          .maybeSingle();
+        if (cancelled) return;
+        if (data?.signature_html) {
+          setHydratedHtml(data.signature_html);
+          if (editorRef.current) editorRef.current.innerHTML = data.signature_html;
+          setTextFallback(data.signature_text || "");
+        } else if (initialHtml) {
+          // Legacy fallback — render the plain-text into the editor as <br/> lines
+          const asHtml = String(initialHtml).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br/>");
+          setHydratedHtml(asHtml);
+          if (editorRef.current) editorRef.current.innerHTML = asHtml;
+        }
+      } finally {
+        if (!cancelled) setHasLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  function exec(cmd: string, value?: string) {
+    document.execCommand(cmd, false, value);
+    editorRef.current?.focus();
+  }
+
+  function handleLink() {
+    const url = window.prompt("Link URL (https:// or mailto:)");
+    if (!url) return;
+    if (!/^(https?:|mailto:|tel:)/i.test(url)) {
+      setError("Only https://, mailto:, and tel: links are allowed.");
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+    exec("createLink", url);
+  }
+
+  function handleImage() {
+    const url = window.prompt("Image URL (https://… or pasted data:image/…)");
+    if (!url) return;
+    if (!/^(https?:\/\/|data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,)/i.test(url)) {
+      setError("Only https:// images or pasted data:image/* uploads are allowed.");
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+    exec("insertHTML", `<img src="${url.replace(/"/g, "&quot;")}" alt="" style="max-width:200px;height:auto;display:block;" />`);
+  }
+
+  async function save() {
+    if (!editorRef.current) return;
+    setSaving(true); setError(null);
+    try {
+      const html = editorRef.current.innerHTML;
+      const { data, error } = await supabase.functions.invoke("save-signature", {
+        body: { signature_html: html, signature_text: textFallback || null },
+      });
+      if (error) throw new Error(error.message || "save_failed");
+      if ((data as any)?.ok === false) throw new Error((data as any)?.error || "save_failed");
+      const cleanHtml = (data as any)?.signature_html || "";
+      const cleanText = (data as any)?.signature_text || "";
+      setHydratedHtml(cleanHtml);
+      setTextFallback(cleanText);
+      if (editorRef.current) editorRef.current.innerHTML = cleanHtml;
+      onSaved(cleanHtml);
+    } catch (e: any) {
+      setError(e?.message || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* Toolbar */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+        <SigToolbarBtn onClick={() => exec("bold")} title="Bold (Ctrl+B)"><strong>B</strong></SigToolbarBtn>
+        <SigToolbarBtn onClick={() => exec("italic")} title="Italic (Ctrl+I)"><em>I</em></SigToolbarBtn>
+        <SigToolbarBtn onClick={() => exec("underline")} title="Underline"><span style={{ textDecoration: "underline" }}>U</span></SigToolbarBtn>
+        <span style={{ width: 1, height: 18, background: "#E2E8F0", margin: "0 4px" }} />
+        <SigToolbarBtn onClick={handleLink} title="Insert link">🔗</SigToolbarBtn>
+        <SigToolbarBtn onClick={handleImage} title="Insert image (URL)">🖼</SigToolbarBtn>
+        <span style={{ width: 1, height: 18, background: "#E2E8F0", margin: "0 4px" }} />
+        <SigToolbarBtn onClick={() => exec("removeFormat")} title="Clear formatting">⌫</SigToolbarBtn>
+        <span style={{ marginLeft: "auto", fontFamily: "DM Sans,sans-serif", fontSize: 11, color: "#94A3B8" }}>Sanitized server-side</span>
+      </div>
+
+      {/* Editor */}
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        onPaste={(e) => {
+          // Strip styles on paste so users dragging from Word/Gmail don't
+          // import bloat that the sanitizer would just nuke. We let them
+          // re-format using the toolbar.
+          e.preventDefault();
+          const text = e.clipboardData.getData("text/plain");
+          document.execCommand("insertText", false, text);
+        }}
+        style={{
+          minHeight: 140,
+          padding: "12px 14px",
+          border: "1px solid #E2E8F0",
+          borderRadius: 8,
+          background: "#fff",
+          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: 13,
+          color: "#0F172A",
+          outline: "none",
+          lineHeight: 1.55,
+        }}
+      />
+
+      {/* Live HTML preview */}
+      <div>
+        <div style={{ fontFamily: "Space Grotesk,sans-serif", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#64748B", marginBottom: 4 }}>Preview (as recipients will see)</div>
+        <div
+          style={{ padding: "12px 14px", border: "1px dashed #CBD5E1", borderRadius: 8, background: "#F8FAFC", fontFamily: "Arial, Helvetica, sans-serif", fontSize: 13, color: "#0F172A", lineHeight: 1.55 }}
+          dangerouslySetInnerHTML={{ __html: hydratedHtml || "<em style='color:#94A3B8'>Empty signature</em>" }}
+        />
+      </div>
+
+      {/* Plain-text fallback (collapsed by default) */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowText((v) => !v)}
+          style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontFamily: "DM Sans,sans-serif", fontSize: 12, color: "#3B82F6", fontWeight: 600 }}
+        >
+          {showText ? "Hide" : "Customize"} plain-text fallback
+        </button>
+        {showText ? (
+          <div style={{ marginTop: 6 }}>
+            <STextarea
+              rows={3}
+              value={textFallback}
+              onChange={(e) => setTextFallback(e.target.value)}
+              placeholder={"— Valesco Raymond\nLogistic Intel\nvaleso@logisticintel.com"}
+            />
+            <div style={{ marginTop: 4, fontFamily: "DM Sans,sans-serif", fontSize: 11, color: "#94A3B8" }}>
+              Used in the text/plain alternative for clients that don't render HTML. Leave blank to auto-derive from your HTML.
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+        <button onClick={save} disabled={saving || !hasLoaded} style={sBtnPrimary}>
+          {saving ? "Saving…" : "Save signature"}
+        </button>
+        {error && <span style={{ fontFamily: "DM Sans,sans-serif", fontSize: 12, color: "#DC2626" }}>{error}</span>}
+      </div>
+    </div>
+  );
+}
+
+function SigToolbarBtn({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()} // keep editor focus
+      onClick={onClick}
+      title={title}
+      style={{
+        height: 26, minWidth: 26, padding: "0 8px",
+        border: "1px solid #E2E8F0", borderRadius: 6, background: "#fff",
+        fontFamily: "DM Sans,sans-serif", fontSize: 12, color: "#0F172A",
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

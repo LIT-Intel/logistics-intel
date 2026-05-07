@@ -203,6 +203,126 @@ export async function addCompanyToList(listId, companyId, note) {
   }
 }
 
+/** Add a single enriched contact (lit_contacts.id) to a list.
+ *  Optionally adds the parent company to pulse_list_companies in the
+ *  same call so the list view always shows the company card. */
+export async function addContactToList(listId, contactId, { companyId, note } = {}) {
+  if (!listId || !contactId) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'List + contact are required.' };
+  }
+  try {
+    const { data: userResp } = await supabase.auth.getUser();
+    const addedBy = userResp?.user?.id || null;
+
+    if (companyId) {
+      // Best-effort — if the company is already in the list, the upsert
+      // is a no-op. We don't fail the contact add on company-add errors.
+      await supabase
+        .from('pulse_list_companies')
+        .upsert(
+          { list_id: listId, company_id: companyId, added_by: addedBy },
+          { onConflict: 'list_id,company_id' },
+        );
+    }
+
+    const { error } = await supabase
+      .from('pulse_list_contacts')
+      .upsert(
+        {
+          list_id: listId,
+          contact_id: contactId,
+          added_by: addedBy,
+          note: note ? String(note).slice(0, 500) : null,
+        },
+        { onConflict: 'list_id,contact_id' },
+      );
+    if (error) {
+      return { ok: false, code: classifyError(error), message: error.message };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
+  }
+}
+
+/** Remove a contact from a list. */
+export async function removeContactFromList(listId, contactId) {
+  try {
+    const { error } = await supabase
+      .from('pulse_list_contacts')
+      .delete()
+      .eq('list_id', listId)
+      .eq('contact_id', contactId);
+    if (error) return { ok: false, code: classifyError(error), message: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
+  }
+}
+
+/** Get the explicit contacts in a list, joined to lit_contacts +
+ *  parent company name. Used by the campaign audience picker so it
+ *  can show "12 explicit contacts + 47 from company membership" and
+ *  by the Lists page when surfacing per-contact rows. */
+export async function getListContacts(listId) {
+  if (!listId) return { ok: false, code: 'INVALID_INPUT', rows: [] };
+  try {
+    const { data, error } = await supabase
+      .from('pulse_list_contacts')
+      .select(`
+        added_at,
+        note,
+        lit_contacts!inner (
+          id,
+          company_id,
+          full_name,
+          first_name,
+          last_name,
+          title,
+          email,
+          email_verified,
+          email_verification_status,
+          linkedin_url,
+          city,
+          state,
+          country_code
+        )
+      `)
+      .eq('list_id', listId)
+      .order('added_at', { ascending: false })
+      .limit(1000);
+    if (error) {
+      return { ok: false, code: classifyError(error), message: error.message, rows: [] };
+    }
+    const rows = (data || [])
+      .map((row) => {
+        const c = row.lit_contacts;
+        if (!c) return null;
+        return {
+          id: c.id,
+          company_id: c.company_id,
+          full_name: c.full_name || [c.first_name, c.last_name].filter(Boolean).join(' '),
+          first_name: c.first_name || null,
+          last_name: c.last_name || null,
+          title: c.title || null,
+          email: c.email || null,
+          email_verified: !!c.email_verified,
+          email_verification_status: c.email_verification_status || null,
+          linkedin_url: c.linkedin_url || null,
+          city: c.city || null,
+          state: c.state || null,
+          country: c.country_code || null,
+          added_at: row.added_at,
+          note: row.note,
+        };
+      })
+      .filter(Boolean);
+    return { ok: true, rows };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message, rows: [] };
+  }
+}
+
 /** Remove a company from a list. */
 export async function removeCompanyFromList(listId, companyId) {
   try {

@@ -85,7 +85,7 @@ export default async function UseCasesPage() {
         title="Pick a use case, see it live."
         subtitle="In a 30-min demo we walk through the use case that maps to your team — with your data, your accounts, your lanes."
         primaryCta={{ label: "Book a demo", href: "/demo", icon: "calendar" }}
-        secondaryCta={{ label: "View pricing", href: "/pricing" }}
+        secondaryCta={{ label: "Browse solutions", href: "/solutions" }}
       />
     </PageShell>
   );

@@ -1,19 +1,15 @@
 /**
  * APP_ORIGIN — where the auth + workspace UI is actually reachable.
  *
- * Defaults to the always-working Vercel preview URL because
- * `app.logisticintel.com` is not yet attached to the `logistics-intel`
- * Vercel project at the time of writing. If we proxied to
- * app.logisticintel.com, requests fell back to the marketing project
- * (this one), re-fired this rewrite, and Vercel returned 508
- * INFINITE_LOOP_DETECTED.
+ * Default is `https://app.logisticintel.com` (the canonical workspace
+ * domain). Override with NEXT_PUBLIC_APP_ORIGIN on the lit-marketing
+ * Vercel project if the workspace ever moves.
  *
- * Once `app.logisticintel.com` is attached to the logistics-intel
- * project (Vercel → logistics-intel → Settings → Domains → Add),
- * set NEXT_PUBLIC_APP_ORIGIN=https://app.logisticintel.com on the
- * lit-marketing Vercel project to flip back. No code change required.
+ * Do NOT default to logistics-intel.vercel.app — that hostname is on
+ * Chrome's Safe Browsing list and breaks OAuth callback returns when
+ * marketing's /app/* redirect proxies through it.
  */
-const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_ORIGIN || "https://logistics-intel.vercel.app";
+const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_ORIGIN || "https://app.logisticintel.com";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -65,17 +61,28 @@ const nextConfig = {
     //
     // /assets/* is also proxied so the Vite app's static bundle resolves
     // when /login + /signup pages are rendered through this rewrite.
+    //
+    // Host-scoped to apex/www only — without this, when APP_ORIGIN points
+    // at a domain attached to *this same Vercel project* the rewrite
+    // re-fires on every hop and Vercel returns 508 INFINITE_LOOP_DETECTED.
+    const APEX_HOSTS = ["logisticintel.com", "www.logisticintel.com"];
+    const authRules = [
+      { source: "/login", destination: `${APP_ORIGIN}/login` },
+      { source: "/signup", destination: `${APP_ORIGIN}/signup` },
+      { source: "/auth/:path*", destination: `${APP_ORIGIN}/auth/:path*` },
+      { source: "/reset-password", destination: `${APP_ORIGIN}/reset-password` },
+      // Vite app static asset paths — required so the rewritten pages
+      // above can load CSS / JS bundles. Marketing uses /_next/* for
+      // its own bundles so there is no conflict.
+      { source: "/assets/:path*", destination: `${APP_ORIGIN}/assets/:path*` },
+    ];
     return {
-      beforeFiles: [
-        { source: "/login", destination: `${APP_ORIGIN}/login` },
-        { source: "/signup", destination: `${APP_ORIGIN}/signup` },
-        { source: "/auth/:path*", destination: `${APP_ORIGIN}/auth/:path*` },
-        { source: "/reset-password", destination: `${APP_ORIGIN}/reset-password` },
-        // Vite app static asset paths — required so the rewritten pages
-        // above can load CSS / JS bundles. Marketing uses /_next/* for
-        // its own bundles so there is no conflict.
-        { source: "/assets/:path*", destination: `${APP_ORIGIN}/assets/:path*` },
-      ],
+      beforeFiles: APEX_HOSTS.flatMap((value) =>
+        authRules.map((rule) => ({
+          ...rule,
+          has: [{ type: "host", value }],
+        })),
+      ),
     };
   },
   async headers() {

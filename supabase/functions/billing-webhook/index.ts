@@ -233,6 +233,20 @@ async function resolveUserId(sub: Stripe.Subscription): Promise<string | null> {
 // way a user lands on a paid plan_code is via a Stripe price id we
 // recognize in the plans table.
 // ─────────────────────────────────────────────────────────────────────
+/**
+ * Sum of all subscription items' quantity fields. Stripe models
+ * per-seat add-ons as additional line items; the sum represents total
+ * billed seats. For our current flat-package plans this is always 1,
+ * but persisting it now means the seat-cap layer in Settings + the
+ * accept-workspace-invite gate can read the truth as soon as add-ons
+ * ship.
+ */
+function getSubscriptionSeatQuantity(sub: Stripe.Subscription): number | null {
+  const items = (sub as any).items?.data;
+  if (!Array.isArray(items) || items.length === 0) return null;
+  return items.reduce((acc: number, item: any) => acc + (item?.quantity ?? 1), 0);
+}
+
 async function handleSubscriptionEvent(sub: Stripe.Subscription, eventLabel: string) {
   const userId = await resolveUserId(sub);
   if (!userId) {
@@ -260,6 +274,18 @@ async function handleSubscriptionEvent(sub: Stripe.Subscription, eventLabel: str
   const periodEnd = (sub as any).current_period_end;
   if (periodStart) update.current_period_start = new Date(periodStart * 1000).toISOString();
   if (periodEnd) update.current_period_end = new Date(periodEnd * 1000).toISOString();
+
+  // Stripe-native trial: trial_end is unix seconds when set.
+  const trialEnd = (sub as any).trial_end;
+  if (trialEnd) {
+    update.trial_ends_at = new Date(trialEnd * 1000).toISOString();
+  }
+
+  // Per-item quantity sum — drives the seat cap once add-ons ship.
+  const seatQuantity = getSubscriptionSeatQuantity(sub);
+  if (seatQuantity !== null) {
+    update.seat_quantity = seatQuantity;
+  }
 
   await upsertSubscription(userId, update);
 
@@ -334,14 +360,19 @@ serve(async (req) => {
         let periodStart: string | null = null;
         let periodEnd: string | null = null;
         let stripePriceId: string | null = null;
+        let trialEndsAt: string | null = null;
+        let seatQuantity: number | null = null;
         if (stripeSubscriptionId) {
           const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
           stripePriceId = getSubscriptionPriceId(sub);
           planCode = await getPlanCodeForPrice(stripePriceId);
           const ps = (sub as any).current_period_start;
           const pe = (sub as any).current_period_end;
+          const tEnd = (sub as any).trial_end;
           if (ps) periodStart = new Date(ps * 1000).toISOString();
           if (pe) periodEnd = new Date(pe * 1000).toISOString();
+          if (tEnd) trialEndsAt = new Date(tEnd * 1000).toISOString();
+          seatQuantity = getSubscriptionSeatQuantity(sub);
         }
 
         if (!planCode) {
@@ -357,6 +388,8 @@ serve(async (req) => {
             current_period_start: periodStart,
             current_period_end: periodEnd,
             cancel_at_period_end: false,
+            ...(trialEndsAt ? { trial_ends_at: trialEndsAt } : {}),
+            ...(seatQuantity !== null ? { seat_quantity: seatQuantity } : {}),
           });
           await updateUserMetadata(userId, {
             stripe_customer_id: stripeCustomerId,
@@ -374,6 +407,8 @@ serve(async (req) => {
           current_period_start: periodStart,
           current_period_end: periodEnd,
           cancel_at_period_end: false,
+          ...(trialEndsAt ? { trial_ends_at: trialEndsAt } : {}),
+          ...(seatQuantity !== null ? { seat_quantity: seatQuantity } : {}),
         });
 
         await updateUserMetadata(userId, {

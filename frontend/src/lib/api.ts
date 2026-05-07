@@ -5802,7 +5802,7 @@ export async function listCampaignSteps(
 }
 
 export async function upsertCampaignStep(
-  input: LitCampaignStepInput,
+  input: LitCampaignStepInput & { subject_b?: string | null },
 ): Promise<LitCampaignStepRow> {
   const userId = await getCurrentUserIdOrThrow();
   const payload: Record<string, unknown> = {
@@ -5818,6 +5818,11 @@ export async function upsertCampaignStep(
     delay_hours: input.delay_hours ?? 0,
     metadata: input.metadata ?? {},
   };
+  // A/B variant — only set when caller passes the field. Pass null to
+  // explicitly clear an existing variant.
+  if (Object.prototype.hasOwnProperty.call(input, "subject_b")) {
+    payload.subject_b = input.subject_b ?? null;
+  }
   if (input.id) payload.id = input.id;
 
   const { data, error } = await supabase
@@ -5883,6 +5888,90 @@ export async function getPrimaryEmailAccount(): Promise<LitEmailAccountRow | nul
     .maybeSingle();
   if (error) throw error;
   return (data as LitEmailAccountRow) ?? null;
+}
+
+export type ManualRecipientInput = {
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  company_name?: string;
+};
+
+/**
+ * launchCampaign — invoke the queue-campaign-recipients edge function.
+ *
+ * Builds the recipient roster from:
+ *   1. enriched contacts attached to the campaign's companies, AND
+ *   2. any manualEmails passed in (typed in the audience picker)
+ *
+ * The function dedupes both sources, upserts into lit_campaign_contacts
+ * (status='pending', next_send_at=now()), persists manualEmails to
+ * lit_campaigns.metrics.manual_recipients so re-launch keeps them, and
+ * flips status='active'. Dispatcher's next tick picks them up.
+ */
+export async function launchCampaign(
+  campaignId: string,
+  manualEmails: ManualRecipientInput[] = [],
+): Promise<
+  | { ok: true; queued: number; skipped: number }
+  | { ok: false; error: string }
+> {
+  if (!campaignId) return { ok: false, error: "missing_campaign_id" };
+  try {
+    const { data, error } = await supabase.functions.invoke("queue-campaign-recipients", {
+      body: { campaign_id: campaignId, manual_emails: manualEmails },
+    });
+    if (error) return { ok: false, error: error.message || "invoke_failed" };
+    if (data?.ok) {
+      return {
+        ok: true,
+        queued: Number(data.queued ?? 0),
+        skipped: Number(data.skipped ?? 0),
+      };
+    }
+    return { ok: false, error: String(data?.error || "launch_failed") };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "launch_threw" };
+  }
+}
+
+/**
+ * disconnectEmailAccount — soft-disconnect a Gmail/Outlook mailbox.
+ *
+ * Marks the account as disconnected (preserves audit trail) and drops the
+ * stored OAuth tokens so no further sends can use this account. The user
+ * can reconnect later, which re-runs the OAuth flow and writes fresh
+ * tokens.
+ *
+ * RLS lets the user touch only their own rows.
+ */
+export async function disconnectEmailAccount(
+  accountId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!accountId) return { ok: false, error: "missing_account_id" };
+  try {
+    // Drop tokens first so the row's tokens are revoked even if the
+    // status update later fails for any reason.
+    const { error: tokErr } = await supabase
+      .from("lit_oauth_tokens")
+      .delete()
+      .eq("email_account_id", accountId);
+    if (tokErr) return { ok: false, error: tokErr.message };
+
+    const { error: acctErr } = await supabase
+      .from("lit_email_accounts")
+      .update({
+        status: "disconnected",
+        is_primary: false,
+        error_message: "disconnected by user",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", accountId);
+    if (acctErr) return { ok: false, error: acctErr.message };
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "disconnect_failed" };
+  }
 }
 
 // ---------------- Campaign readiness (computed) ----------------
@@ -6291,7 +6380,12 @@ export async function startOutlookOAuth(
  * sendTestEmail — invoke the send-test-email Edge Function.
  * Sends a test email from the user's primary connected mailbox.
  */
-export async function sendTestEmail(toEmail: string): Promise<
+export async function sendTestEmail(
+  toEmail: string,
+  subject?: string,
+  body?: string,
+  includeSignature?: boolean,
+): Promise<
   | { ok: true; messageId: string | null; provider: string; from: string; to: string }
   | { setupRequired: true }
   | { configError: true }
@@ -6308,7 +6402,7 @@ export async function sendTestEmail(toEmail: string): Promise<
 
   try {
     const { data, error } = await supabase.functions.invoke("send-test-email", {
-      body: { toEmail },
+      body: { toEmail, subject, body, includeSignature },
     });
 
     if (error) {

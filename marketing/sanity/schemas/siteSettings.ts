@@ -133,10 +133,59 @@ export const siteSettings = defineType({
         { name: "headlineHighlight", type: "string", description: "The phrase wrapped in the gradient effect." },
         { name: "subhead", type: "text", rows: 3 },
         {
+          name: "noteBelow",
+          title: "Sub-note below subhead",
+          type: "text",
+          rows: 2,
+          description: "Smaller secondary line under the subhead. Optional.",
+        },
+        {
+          name: "badges",
+          title: "Trust badges",
+          description: "Small colored pills below the subhead. Three is the sweet spot.",
+          type: "array",
+          of: [
+            {
+              type: "object",
+              name: "heroBadge",
+              fields: [
+                { name: "label", type: "string", validation: (R) => R.required() },
+                {
+                  name: "tone",
+                  type: "string",
+                  options: {
+                    list: [
+                      { title: "Cyan", value: "cyan" },
+                      { title: "Blue", value: "blue" },
+                      { title: "Emerald", value: "emerald" },
+                      { title: "Violet", value: "violet" },
+                      { title: "Amber", value: "amber" },
+                    ],
+                  },
+                  initialValue: "cyan",
+                },
+                {
+                  name: "icon",
+                  type: "string",
+                  description: "Lucide icon name. Examples: MapPin, RefreshCcw, ShieldCheck.",
+                },
+              ],
+              preview: { select: { title: "label", subtitle: "tone" } },
+            },
+          ],
+          validation: (R) => R.max(4),
+        },
+        {
           name: "kpis",
           type: "array",
           of: [{ type: "kpi" }],
           validation: (R) => R.max(4),
+        },
+        {
+          name: "trialNote",
+          title: "Trial reassurance microcopy",
+          type: "string",
+          description: 'Below the CTAs. Defaults to "14-day free trial · Full feature access · Cancel anytime".',
         },
       ],
     }),

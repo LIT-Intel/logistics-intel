@@ -32,18 +32,58 @@ body {
     radial-gradient(800px 400px at 50% 110%, rgba(139,92,246,0.05), transparent 60%),
     linear-gradient(180deg, #fbfcfe 0%, #f6f8fc 100%);
 }
+/* Decorative grid overlay. Pinned to the viewport (position: fixed) rather
+   than stretched to document height — on tall mobile pages the document-
+   sized version would repaint with every scroll, locking the screen. The
+   mask is also gated to >=768px so phones avoid the compositor cost. */
 .lit-page::before {
   content: '';
-  position: absolute;
-  inset: 0;
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 100vh;
   background-image:
     linear-gradient(to right, rgba(15,23,42,0.035) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(15,23,42,0.035) 1px, transparent 1px);
   background-size: 56px 56px;
-  mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, black 30%, transparent 75%);
-  -webkit-mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, black 30%, transparent 75%);
   pointer-events: none;
   z-index: 0;
+  will-change: transform;
+  contain: strict;
+  display: none;
+}
+@media (min-width: 768px) {
+  .lit-page::before {
+    display: block;
+    mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, black 30%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, black 30%, transparent 75%);
+  }
+}
+
+/* Global motion safety — respect user OS preference. Components that drive
+   their own animation loops should also branch on framer-motion's
+   useReducedMotion() so they paint a final state instead of looping. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Customer-logo marquee. Container holds the logo list duplicated twice;
+   translating -50% lands exactly on the seam between the two copies, so
+   the loop is invisible. Pause on hover (desktop only). */
+@keyframes lit-marquee {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+.lit-marquee {
+  animation: lit-marquee 45s linear infinite;
+  will-change: transform;
+}
+@media (hover: hover) {
+  .lit-marquee:hover { animation-play-state: paused; }
 }
 
 /* Pulse Coach dark surface — used for sidebar / mobile menu / upgrade

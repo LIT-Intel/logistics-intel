@@ -49,14 +49,28 @@ export interface BuilderStep {
   kind: StepKind;
   // email
   subject: string;
+  // Optional alternate subject for A/B testing. When present at send
+  // time, the dispatcher picks A or B uniformly per recipient.
+  subject_b?: string;
   body: string;
   // linkedin / call
   title: string;
   description: string;
   // wait
   waitDays: number;
+  /** Optional sub-day component for wait steps. 0–23 hours. */
+  waitHours?: number;
+  /** Optional sub-hour component for wait steps. 0–59 minutes. */
+  waitMinutes?: number;
   // shared
   delayDays: number;
+  /** Optional sub-day component for the delay before this step. 0–23 hours. */
+  delayHours?: number;
+  /** Optional sub-hour component for the delay before this step. 0–59 minutes. */
+  delayMinutes?: number;
+  /** Whether the dispatcher should append the sender's signature to this
+   *  step's body. Defaults to true. */
+  includeSignature?: boolean;
   expanded: boolean;
 }
 

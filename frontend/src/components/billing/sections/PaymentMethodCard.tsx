@@ -1,27 +1,63 @@
-// Payment method card. Real PM data is not surfaced in our app today —
-// we only know whether a Stripe customer exists. So the card has two
-// states: "on file" (managed in Stripe portal) and "not on file"
-// (upgrade flow). Never renders raw card-collection inputs.
+// Payment method card. Truth is the `hasPaymentMethod` flag from
+// get-billing-status (which queries Stripe for the customer's real
+// default payment method). `hasStripeCustomer` is kept for the meta
+// copy but is NEVER used to render a "card on file" state.
+//
+// Three render states:
+//   1. PM exists in Stripe          -> show brand + last4 + expiry, "Manage" button
+//   2. Customer exists, no PM yet   -> "No card on file", "Add payment method" CTA
+//   3. No Stripe customer at all    -> "No card on file", "Start a paid plan" CTA
 
 import { CreditCard, ExternalLink, Plus } from 'lucide-react';
 
 interface Props {
   hasStripeCustomer: boolean;
+  hasPaymentMethod?: boolean;
+  cardBrand?: string | null;
+  cardLast4?: string | null;
+  cardExpMonth?: number | null;
+  cardExpYear?: number | null;
   billingEmail: string | null;
   canManage: boolean;
   onManagePortal: () => void;
-  onAddPayment: () => void; // typically same as onUpgrade -> opens checkout
+  onAddPayment: () => void;
   isLoading?: boolean;
+}
+
+function brandLabel(brand?: string | null) {
+  if (!brand) return 'Card';
+  return brand.charAt(0).toUpperCase() + brand.slice(1);
 }
 
 export function PaymentMethodCard({
   hasStripeCustomer,
+  hasPaymentMethod = false,
+  cardBrand = null,
+  cardLast4 = null,
+  cardExpMonth = null,
+  cardExpYear = null,
   billingEmail,
   canManage,
   onManagePortal,
   onAddPayment,
   isLoading,
 }: Props) {
+  const numberDisplay = hasPaymentMethod && cardLast4
+    ? `•••• •••• •••• ${cardLast4}`
+    : hasPaymentMethod
+      ? '•••• •••• •••• ••••'
+      : 'No card on file';
+
+  const expiryDisplay = hasPaymentMethod && cardExpMonth && cardExpYear
+    ? `${String(cardExpMonth).padStart(2, '0')}/${String(cardExpYear).slice(-2)}`
+    : null;
+
+  const statusDisplay = hasPaymentMethod
+    ? 'On file'
+    : hasStripeCustomer
+      ? 'Required'
+      : 'None';
+
   return (
     <div className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6 lg:grid-cols-[1.1fr_1fr]">
       {/* Visual card */}
@@ -29,12 +65,12 @@ export function PaymentMethodCard({
         <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-cyan-300/20 blur-2xl" />
         <div className="relative flex items-center justify-between">
           <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-cyan-300">
-            Payment method
+            {hasPaymentMethod ? brandLabel(cardBrand) : 'Payment method'}
           </span>
           <CreditCard className="h-5 w-5 text-white/70" />
         </div>
         <div className="relative mt-10 text-2xl font-semibold tracking-[0.18em] text-white">
-          {hasStripeCustomer ? '•••• •••• •••• ••••' : 'No card on file'}
+          {numberDisplay}
         </div>
         <div className="relative mt-6 flex items-end justify-between">
           <div>
@@ -44,9 +80,11 @@ export function PaymentMethodCard({
             </div>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wide text-white/50">Status</div>
+            <div className="text-[10px] uppercase tracking-wide text-white/50">
+              {expiryDisplay ? 'Expires' : 'Status'}
+            </div>
             <div className="mt-0.5 text-sm font-medium text-cyan-300">
-              {hasStripeCustomer ? 'On file' : 'None'}
+              {expiryDisplay || statusDisplay}
             </div>
           </div>
         </div>
@@ -59,12 +97,14 @@ export function PaymentMethodCard({
             Billing details
           </span>
           <h3 className="mt-1.5 text-lg font-semibold tracking-tight text-slate-950">
-            {hasStripeCustomer ? 'Manage payment method' : 'Add payment method'}
+            {hasPaymentMethod ? 'Manage payment method' : 'Add payment method'}
           </h3>
           <p className="mt-1 text-sm text-slate-600">
-            {hasStripeCustomer
+            {hasPaymentMethod
               ? 'Card details, billing address, and tax info are managed securely in your Stripe Customer Portal.'
-              : 'Start a paid plan to add a payment method. Your card and billing data are stored only in Stripe.'}
+              : hasStripeCustomer
+                ? 'No card on file yet. Add one to activate or keep your subscription.'
+                : 'Start a paid plan to add a payment method. Your card and billing data are stored only in Stripe.'}
           </p>
           {billingEmail ? (
             <p className="mt-3 text-sm text-slate-600">
@@ -75,7 +115,7 @@ export function PaymentMethodCard({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {hasStripeCustomer ? (
+          {hasPaymentMethod ? (
             <button
               type="button"
               onClick={onManagePortal}

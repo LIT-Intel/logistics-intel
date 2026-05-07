@@ -5,9 +5,11 @@ import { sanityClient } from "@/sanity/lib/client";
 import { CUSTOMERS_INDEX_QUERY } from "@/sanity/lib/queries";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
+import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { LogoRail } from "@/components/sections/LogoRail";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
+import { buildCollectionPage } from "@/lib/jsonLd";
 import { resolveLogoUrl } from "@/lib/sanityImage";
 
 export const revalidate = 600;
@@ -27,6 +29,12 @@ export default async function CustomersPage() {
 
   return (
     <PageShell>
+      <BreadcrumbBar
+        crumbs={[
+          { label: "Home", href: "/" },
+          { label: "Customers" },
+        ]}
+      />
       <PageHero
         eyebrow="Customers"
         title="Revenue teams"
@@ -128,7 +136,27 @@ export default async function CustomersPage() {
         title="See what LIT could do for your team."
         subtitle="A 30-min walkthrough with the team. We'll load your accounts, your lanes, and your industry."
         primaryCta={{ label: "Book a demo", href: "/demo", icon: "calendar" }}
-        secondaryCta={{ label: "View pricing", href: "/pricing" }}
+        secondaryCta={{ label: "See features", href: "/features" }}
+      />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(
+            buildCollectionPage({
+              name: "LIT customer stories",
+              description:
+                "How real revenue teams use LIT to outpace competitors. Case studies, results, and the playbooks behind them.",
+              path: "/customers",
+              items: caseStudies
+                .filter((c: any) => c?.slug?.current && c?.customer)
+                .map((c: any) => ({
+                  name: c.customer,
+                  url: `/customers/${c.slug.current}`,
+                })),
+            }),
+          ),
+        }}
       />
     </PageShell>
   );

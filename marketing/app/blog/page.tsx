@@ -4,8 +4,10 @@ import { BLOG_INDEX_QUERY } from "@/sanity/lib/queries";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
 import { BlogCard } from "@/components/sections/BlogCard";
+import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
+import { buildCollectionPage } from "@/lib/jsonLd";
 
 export const revalidate = 600;
 
@@ -23,6 +25,12 @@ export default async function BlogIndexPage() {
 
   return (
     <PageShell>
+      <BreadcrumbBar
+        crumbs={[
+          { label: "Home", href: "/" },
+          { label: "Blog" },
+        ]}
+      />
       <PageHero
         eyebrow="Field notes"
         title="Operator-grade"
@@ -76,6 +84,26 @@ export default async function BlogIndexPage() {
         subtitle="A weekly five-minute read on what's moving in trade, GTM tooling, and what we're shipping next."
         primaryCta={{ label: "Subscribe", href: "/contact", icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
+      />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(
+            buildCollectionPage({
+              name: "LIT Blog — operator-grade GTM playbooks",
+              description:
+                "Long-form playbooks, trade-data analysis, and field notes from teams running outbound on signal — not lists.",
+              path: "/blog",
+              items: posts
+                .filter((p: any) => p?.slug?.current && p?.title)
+                .map((p: any) => ({
+                  name: p.title,
+                  url: `/blog/${p.slug.current}`,
+                })),
+            }),
+          ),
+        }}
       />
     </PageShell>
   );

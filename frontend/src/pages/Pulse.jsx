@@ -49,7 +49,7 @@ import {
   ErrorBanner,
   PermissionIssueState,
 } from '@/features/pulse/PulseResults';
-import { searchLocalCompanies, mergeResults } from '@/features/pulse/pulseLocalSearch';
+import { searchLocalCompanies, mergeResults, LOCAL_RICH_THRESHOLD } from '@/features/pulse/pulseLocalSearch';
 import PulseQuickCard from '@/features/pulse/PulseQuickCard';
 import PulseLibrary from '@/features/pulse/PulseLibrary';
 import AddToListPicker from '@/features/pulse/AddToListPicker';
@@ -263,17 +263,28 @@ export default function Pulse() {
       const submittedEntities = parsedQuery?.source === 'llm' && parsedQuery?.raw === trimmed
         ? parsedQuery
         : parsedAtSubmit;
-      const localPromise = searchLocalCompanies(trimmed, 12, recipe);
-      const remotePromise = searchPulse({
-        query: trimmed,
-        ui_mode: 'auto',
-        entities: submittedEntities?.hasAny ? submittedEntities : undefined,
-      });
-
-      const [localOut, remote] = await Promise.allSettled([localPromise, remotePromise]);
-      let localRows = localOut.status === 'fulfilled' ? localOut.value.rows : [];
-      const remoteResp = remote.status === 'fulfilled' ? remote.value : null;
-      const remoteRows = Array.isArray(remoteResp?.data?.results) ? remoteResp.data.results : [];
+      // Local-first routing: await the local cascade before deciding
+      // whether the remote provider is worth calling. The local query
+      // hits lit_companies + lit_company_directory (joined with shipment
+      // metrics) — both are <12K row tables, sub-second on a normal
+      // connection. If we already have LOCAL_RICH_THRESHOLD rows, we
+      // skip the paid remote search entirely.
+      const localOut = await searchLocalCompanies(trimmed, 12, recipe).catch(() => null);
+      let localRows = localOut?.rows ?? [];
+      let remoteResp = null;
+      let remoteRows = [];
+      let remoteSkipped = false;
+      if (localRows.length >= LOCAL_RICH_THRESHOLD) {
+        remoteSkipped = true;
+      } else {
+        const remote = await searchPulse({
+          query: trimmed,
+          ui_mode: 'auto',
+          entities: submittedEntities?.hasAny ? submittedEntities : undefined,
+        }).catch((err) => ({ ok: false, error: err?.message || 'remote_failed' }));
+        remoteResp = remote || null;
+        remoteRows = Array.isArray(remoteResp?.data?.results) ? remoteResp.data.results : [];
+      }
 
       // Cascade fallback — if the recipe-narrowed local search returned
       // 0 AND the remote also returned 0, retry the local lookup
@@ -300,17 +311,22 @@ export default function Pulse() {
       setResults(merged);
       setResultMode(remoteResp?.mode || (localRows.length ? 'companies' : null));
       setMeta(remoteResp?.meta || null);
-      setApiStatus(remoteResp?.ok && !remoteResp?.error ? 'connected' : remoteResp ? 'error' : 'unknown');
+      setApiStatus(
+        remoteSkipped
+          ? 'connected' // local-only path, no remote dependency to report
+          : remoteResp?.ok && !remoteResp?.error
+          ? 'connected'
+          : remoteResp
+          ? 'error'
+          : 'unknown',
+      );
       setSubmittedQuery(trimmed);
       setSearchPerformed(true);
 
-      if (remote.status === 'rejected') {
-        // Local-only fallback — still useful, don't surface the remote err
-        if (!localRows.length) {
-          setErrorMessage('Search service is unavailable right now. Please try again in a moment.');
-        }
-      } else if (remoteResp?.error) {
-        if (!localRows.length) setErrorMessage(remoteResp.error);
+      if (!remoteSkipped && remoteResp && remoteResp.ok === false && !localRows.length) {
+        setErrorMessage(remoteResp?.error || 'Search service is unavailable right now. Please try again in a moment.');
+      } else if (remoteResp?.error && !localRows.length) {
+        setErrorMessage(remoteResp.error);
       } else if (!merged.length) {
         // Build a specific empty-state message that names what the
         // parser actually tried — much more useful than generic copy.
@@ -709,7 +725,9 @@ export default function Pulse() {
             {searchPerformed ? (
               <span>
                 {resultCount} result{resultCount === 1 ? '' : 's'}
-                {localCount ? ` · ${localCount} from your database` : ''}
+                {localCount > 0
+                  ? ` · ${localCount} from your shipment database · ${Math.max(0, resultCount - localCount)} prospect${(resultCount - localCount) === 1 ? '' : 's'}`
+                  : ` · 0 in your shipment database (showing prospects only)`}
               </span>
             ) : null}
           </div>

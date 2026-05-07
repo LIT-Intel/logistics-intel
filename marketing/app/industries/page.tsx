@@ -4,8 +4,10 @@ import { sanityClient } from "@/sanity/lib/client";
 import { groq } from "next-sanity";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
+import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
+import { buildCollectionPage } from "@/lib/jsonLd";
 
 export const revalidate = 1800;
 
@@ -26,6 +28,12 @@ export default async function IndustriesPage() {
 
   return (
     <PageShell>
+      <BreadcrumbBar
+        crumbs={[
+          { label: "Home", href: "/" },
+          { label: "Industries" },
+        ]}
+      />
       <PageHero
         eyebrow="Industries"
         title="Vertical-specific playbooks"
@@ -76,6 +84,26 @@ export default async function IndustriesPage() {
         subtitle="LIT covers 200+ industries with verified ICPs and lane mappings. Tell us yours and we'll show you the data."
         primaryCta={{ label: "Talk to us", href: "/demo", icon: "calendar" }}
         secondaryCta={{ label: "Contact sales", href: "/contact" }}
+      />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(
+            buildCollectionPage({
+              name: "Industries we serve",
+              description:
+                "How LIT works for furniture importers, machinery, automotive, apparel, electronics, and more. Each industry has its own ICP, lanes, and outbound playbook.",
+              path: "/industries",
+              items: industries
+                .filter((i: any) => i?.slug?.current && i?.name)
+                .map((i: any) => ({
+                  name: i.name,
+                  url: `/industries/${i.slug.current}`,
+                })),
+            }),
+          ),
+        }}
       />
     </PageShell>
   );

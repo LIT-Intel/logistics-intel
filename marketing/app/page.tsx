@@ -4,33 +4,68 @@ import { sanityClient } from "@/sanity/lib/client";
 import { HOMEPAGE_QUERY } from "@/sanity/lib/queries";
 import { Nav } from "@/components/nav/Nav";
 import { Footer } from "@/components/nav/Footer";
-import { ArrowRight, Calendar } from "lucide-react";
+import { ArrowRight, Calendar, CheckCircle2, MapPin, RefreshCcw, ShieldCheck, type LucideIcon } from "lucide-react";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import { HeroSearchDemo } from "@/components/sections/HeroSearchDemo";
 import { CompanyIntelMock } from "@/components/sections/CompanyIntelMock";
-import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
 import { PulseBriefMock } from "@/components/sections/PulseBriefMock";
 import { ContactDiscoveryMock } from "@/components/sections/ContactDiscoveryMock";
 import { SequenceBuilderMock } from "@/components/sections/SequenceBuilderMock";
 import { CustomerLogosRail } from "@/components/sections/CustomerLogosRail";
-import { CustomerStoriesSection } from "@/components/sections/CustomerStoriesSection";
-import { LoomTourPlaceholder } from "@/components/sections/LoomTourPlaceholder";
 import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
 
 export const revalidate = 600; // ISR — refresh every 10 min
 
 const FALLBACK_HERO = {
   pillText: "Pulse AI · Freight revenue intelligence",
-  headline: "Turn shipment data into",
-  headlineHighlight: "booked freight.",
+  headline: "Freight revenue intelligence —",
+  headlineHighlight: "from signal to booked freight.",
   headlineSuffix: "",
   subhead:
-    "LIT helps freight forwarders, brokers, and logistics sales teams find active shippers, understand their trade activity, enrich the right contacts, and launch outreach from one connected workspace.",
-  kpis: [
-    { value: "Find", label: "Active shippers" },
-    { value: "Understand", label: "The freight" },
-    { value: "Reach", label: "The right people" },
+    "LIT helps freight forwarders, brokers, and logistics sales teams find active shippers, understand their trade activity, enrich verified contacts, and launch multichannel outreach — from one connected workspace built on 124M+ live Bill of Lading records.",
+  noteBelow:
+    "Built for logistics teams that need better prospects, better timing, and better context before the first email goes out.",
+  badges: [
+    { label: "60+ countries tracked", tone: "cyan", icon: "MapPin" },
+    { label: "Refreshed daily", tone: "blue", icon: "RefreshCcw" },
+    { label: "SOC 2 · GDPR · CCPA", tone: "emerald", icon: "ShieldCheck" },
   ],
+  /** 4-card hero stats strip — design-pack treatment. `trend` is rendered
+   *  as the freshness indicator under the value+label pair. */
+  kpis: [
+    { value: "124M+", label: "Bills of Lading", trend: "Updated today" },
+    { value: "524K+", label: "Active importers", trend: "Refreshed daily" },
+    { value: "42M+", label: "Verified contacts", trend: "95%+ deliverability" },
+    { value: "60+", label: "Countries tracked", trend: "Customs sources" },
+  ],
+  trialNote: "14-day free trial · Full feature access · Cancel anytime",
+};
+
+/** Static trust badges shown in the slim strip below the hero. Brand
+ *  claims, not Sanity-driven (they don't change without a redeploy). */
+const TRUST_BADGES = [
+  { abbr: "SOC", label: "SOC 2 Type II" },
+  { abbr: "GDR", label: "GDPR compliant" },
+  { abbr: "CCP", label: "CCPA compliant" },
+  { abbr: "256", label: "AES-256 encryption" },
+];
+
+/** Badge tone → Tailwind utility group. Keep in sync with the homepageHero
+ *  Sanity schema's tone option list. */
+const HERO_BADGE_TONES: Record<string, string> = {
+  cyan: "border-cyan-200 bg-cyan-50 text-cyan-700",
+  blue: "border-blue-200 bg-blue-50 text-brand-blue-700",
+  emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  violet: "border-violet-200 bg-violet-50 text-violet-700",
+  amber: "border-amber-200 bg-amber-50 text-amber-700",
+};
+
+/** Lucide icon name → component. Whitelist what hero badges can render. */
+const HERO_BADGE_ICONS: Record<string, LucideIcon> = {
+  MapPin,
+  RefreshCcw,
+  ShieldCheck,
+  CheckCircle2,
 };
 
 export const metadata: Metadata = {
@@ -40,14 +75,22 @@ export const metadata: Metadata = {
 };
 
 export default async function HomePage() {
-  const data: any = await sanityClient.fetch(HOMEPAGE_QUERY).catch(() => null);
-  const hero = data?.settings?.homepageHero ?? FALLBACK_HERO;
+  // NOTE — temporary Sanity bypass for the home hero. The bootstrapped
+  // siteSettings doc has the old "Turn shipment data into…" headline +
+  // text KPIs, and the schema patch is blocked locally on a sanity CLI
+  // dep resolution issue. We still call sanityClient (so the request is
+  // hot when we need it) but render from FALLBACK_HERO so the redesign
+  // ships. Once the Studio doc is updated to match the new design, swap
+  // back to: `const hero = data?.settings?.homepageHero ?? FALLBACK_HERO;`
+  await sanityClient.fetch(HOMEPAGE_QUERY).catch(() => null);
+  const hero = FALLBACK_HERO;
 
   return (
     <>
       <Nav />
       <main>
         <Hero hero={hero} />
+        <TrustStrip />
         <CustomerLogosRail
           eyebrow="Built for the revenue teams running freight at companies like"
           logos={[
@@ -63,16 +106,12 @@ export default async function HomePage() {
             { domain: "dbschenker.com", name: "DB Schenker" },
           ]}
         />
-        <LoomTourPlaceholder />
         <PillarsTrustBar />
         <CompanyIntelShowcase />
-        <TradeLaneShowcase />
         <PulseBriefShowcase />
         <ContactDiscoveryShowcase />
         <SequenceBuilderShowcase />
-        <CustomerStoriesSection />
         <ProblemSection />
-        <PlatformSection />
         <SignalToPipelineSection />
       </main>
       <Footer />
@@ -114,14 +153,33 @@ function Hero({ hero }: { hero: any }) {
           </div>
           <h1 className="display-xl mt-6">
             {hero.headline}{" "}
-            <span className="grad-text">{hero.headlineHighlight}</span>
+            <span className="grad-text-cyan">{hero.headlineHighlight}</span>
             {hero.headlineSuffix ? <> {hero.headlineSuffix}</> : null}
           </h1>
           <p className="lead mt-6 max-w-[560px]">{hero.subhead}</p>
-          <div className="font-body mt-3 max-w-[520px] text-[13.5px] leading-snug text-ink-500">
-            Built for logistics teams that need better prospects, better timing, and better context
-            before the first email goes out.
-          </div>
+          {hero.noteBelow ? (
+            <div className="font-body mt-3 max-w-[520px] text-[13.5px] leading-snug text-ink-500">
+              {hero.noteBelow}
+            </div>
+          ) : null}
+          {/* Trust badges — Sanity-driven, falls back to FALLBACK_HERO.badges */}
+          {hero.badges?.length ? (
+            <div className="mt-5 flex flex-wrap gap-2">
+              {hero.badges.map((b: any, i: number) => {
+                const Icon = b.icon ? HERO_BADGE_ICONS[b.icon] : null;
+                const tone = HERO_BADGE_TONES[b.tone] ?? HERO_BADGE_TONES.cyan;
+                return (
+                  <span
+                    key={`${b.label}-${i}`}
+                    className={`font-display inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone}`}
+                  >
+                    {Icon ? <Icon className="h-3.5 w-3.5" aria-hidden /> : null}
+                    {b.label}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
           <div className="mt-7 flex flex-wrap gap-3">
             <Link
               href={APP_SIGNUP_URL}
@@ -137,25 +195,100 @@ function Hero({ hero }: { hero: any }) {
               <Calendar className="h-4 w-4" /> Book a Demo
             </Link>
           </div>
-          <div className="mt-9 flex flex-wrap items-center gap-7">
-            {hero.kpis?.map((k: any) => (
-              <div key={k.label}>
-                <div
-                  className="font-mono text-[22px] font-semibold tracking-[-0.01em] text-brand-blue-700"
-                >
+          {/* Trial reassurance microcopy — Sanity-driven */}
+          {hero.trialNote ? (
+            <div className="font-display mt-4 inline-flex items-center gap-1.5 text-[12.5px] text-ink-500">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+              {hero.trialNote}
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          className="relative min-h-[520px] overflow-hidden sm:min-h-[540px] lg:min-h-0"
+          style={{ contain: "layout paint", maxWidth: "100%" }}
+        >
+          <HeroSearchDemo />
+        </div>
+      </div>
+
+      {/* 4-card stats strip — design-pack hero-stats treatment. */}
+      {hero.kpis?.length ? (
+        <div className="mx-auto mt-10 max-w-container">
+          <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-ink-100 bg-white/80 shadow-sm backdrop-blur md:grid-cols-4">
+            {hero.kpis.map((k: any, i: number) => (
+              <div
+                key={k.label}
+                className={`px-5 py-5 sm:px-6 ${
+                  i % 2 === 0
+                    ? "border-b border-ink-100 md:border-b-0"
+                    : "border-b border-ink-100 md:border-b-0"
+                } ${i < hero.kpis.length - 1 ? "md:border-r md:border-ink-100" : ""}`}
+              >
+                <div className="font-mono text-[22px] font-bold leading-none tracking-[-0.02em] text-ink-900 sm:text-[26px]">
                   {k.value}
                 </div>
-                <div className="font-display mt-0.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-200">
+                <div className="font-display mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-200">
                   {k.label}
                 </div>
+                {k.trend && (
+                  <div className="font-mono mt-1.5 inline-flex items-center gap-1.5 text-[10px] text-emerald-600">
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+                      aria-hidden
+                      style={{ boxShadow: "0 0 0 3px rgba(16,185,129,0.18)" }}
+                    />
+                    {k.trend}
+                  </div>
+                )}
               </div>
             ))}
           </div>
         </div>
+      ) : null}
+    </section>
+  );
+}
 
-        <div className="relative">
-          <HeroSearchDemo />
-        </div>
+/** Slim compliance + uptime strip directly below the hero. Static — these
+ *  brand claims don't change without a redeploy. */
+function TrustStrip() {
+  return (
+    <section
+      aria-label="Compliance and security"
+      className="border-y border-ink-100 bg-white/60 backdrop-blur"
+    >
+      <div className="mx-auto flex max-w-container flex-wrap items-center justify-center gap-x-7 gap-y-3 px-5 py-3.5 sm:px-8">
+        {TRUST_BADGES.map((b) => (
+          <span
+            key={b.abbr}
+            className="font-display inline-flex items-center gap-2 text-[12px] font-medium text-ink-500"
+          >
+            <span
+              className="font-mono inline-flex h-5 w-5 items-center justify-center rounded-md text-[8.5px] font-bold tracking-tighter"
+              style={{
+                background: "linear-gradient(180deg, #0f172a, #020617)",
+                color: "#00F0FF",
+                boxShadow:
+                  "0 0 0 1px rgba(0,240,255,0.22), 0 0 8px rgba(0,240,255,0.18)",
+              }}
+            >
+              {b.abbr}
+            </span>
+            {b.label}
+          </span>
+        ))}
+        <span className="font-display inline-flex items-center gap-1.5 text-[12px] font-medium text-emerald-700">
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+            aria-hidden
+            style={{
+              boxShadow: "0 0 0 3px rgba(16,185,129,0.18)",
+              animation: "pulse-dot 2.4s infinite",
+            }}
+          />
+          99.98% uptime · last 90 days
+        </span>
       </div>
     </section>
   );
@@ -168,21 +301,21 @@ function CompanyIntelShowcase() {
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <div className="lg:order-1">
             <div className="eyebrow">Company Intelligence</div>
-            <h2 className="display-lg mt-3">
-              Every account, with the <span className="grad-text">trade picture</span> built in.
+            <h2 className="display-md mt-3">
+              Every account, with the <span className="grad-text-cyan">trade picture</span> built in.
             </h2>
-            <p className="lead mt-5 max-w-[480px]">
-              Not just firmographics. KPIs, trade lanes, carrier mix, modal split, recent shipments,
-              top suppliers — refreshed daily and joined to the people you'd actually pitch.
+            <p className="font-body mt-5 max-w-[480px] text-[17px] leading-[1.6] text-ink-500">
+              Live trailing-12m volume, top lane, carrier mix, container types — joined to the
+              people you'd actually pitch.
             </p>
-            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+            <ul className="font-body mt-6 space-y-2.5 text-[14.5px] leading-snug text-ink-700">
               <li className="flex items-start gap-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
                 <span><b className="text-ink-900">Pulse Coach</b> tells you what changed this week, in one sentence.</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
-                <span>Live trailing-12m volume, top lane, carrier mix, container types.</span>
+                <span>Live T-12m volume, top lane, carrier mix, container types.</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
@@ -190,87 +323,11 @@ function CompanyIntelShowcase() {
               </li>
             </ul>
           </div>
-          <div className="lg:order-2">
+          <div
+            className="min-h-[640px] overflow-hidden sm:min-h-[600px] lg:order-2 lg:min-h-0"
+            style={{ contain: "layout paint", maxWidth: "100%" }}
+          >
             <CompanyIntelMock />
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function TradeLaneShowcase() {
-  return (
-    <section className="px-5 py-16 sm:px-8 sm:py-20">
-      <div className="mx-auto max-w-container">
-        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
-          <div>
-            <div
-              className="relative overflow-hidden rounded-3xl border border-white/10 p-6 sm:p-8"
-              style={{
-                background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-                boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18), 0 30px 80px -20px rgba(15,23,42,0.5)",
-              }}
-            >
-              <span
-                aria-hidden
-                className="pointer-events-none absolute -top-20 -right-16 h-72 w-72 rounded-full opacity-50"
-                style={{ background: "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)" }}
-              />
-              <div
-                className="font-display relative mb-3 text-[10.5px] font-bold uppercase tracking-[0.12em]"
-                style={{ color: "#00F0FF" }}
-              >
-                Trade Lane Visualization · Live
-              </div>
-              <div className="relative mx-auto" style={{ maxWidth: 480 }}>
-                <MarketingGlobe size={480} />
-              </div>
-              <div className="font-mono relative mt-4 grid grid-cols-3 gap-3 text-[11px] text-ink-150 sm:grid-cols-3">
-                <div>
-                  <div className="text-[9px] uppercase tracking-wider" style={{ color: "#00F0FF" }}>
-                    Tracked lanes
-                  </div>
-                  <div className="font-display text-[18px] font-semibold text-white">142</div>
-                </div>
-                <div>
-                  <div className="text-[9px] uppercase tracking-wider" style={{ color: "#00F0FF" }}>
-                    Active arcs
-                  </div>
-                  <div className="font-display text-[18px] font-semibold text-white">8</div>
-                </div>
-                <div>
-                  <div className="text-[9px] uppercase tracking-wider" style={{ color: "#00F0FF" }}>
-                    TEU 12m
-                  </div>
-                  <div className="font-display text-[18px] font-semibold text-white">61.4K</div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div>
-            <div className="eyebrow">Trade Lane Intelligence</div>
-            <h2 className="display-lg mt-3">
-              The trade flows you sell into, <span className="grad-text">live and ranked.</span>
-            </h2>
-            <p className="lead mt-5 max-w-[480px]">
-              Watch any origin → destination lane. See top shippers, carrier mix, monthly cadence,
-              and YoY change. Get pinged when volume shifts.
-            </p>
-            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
-              <li className="flex items-start gap-2.5">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
-                <span>500+ origin × destination pairs tracked, refreshed daily.</span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
-                <span>Top 25 shippers per lane with verified company + contact data.</span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
-                <span>Save lanes to your watchlist — Pulse Coach surfaces shifts.</span>
-              </li>
-            </ul>
           </div>
         </div>
       </div>
@@ -285,15 +342,15 @@ function PulseBriefShowcase() {
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <div>
             <div className="eyebrow">Pulse AI Brief</div>
-            <h2 className="display-lg mt-3">
-              The first 30 seconds of <span className="grad-text">account research</span>, done.
+            <h2 className="display-md mt-3">
+              The first 30 seconds of <span className="grad-text-cyan">account research</span>, done.
             </h2>
-            <p className="lead mt-5 max-w-[480px]">
+            <p className="font-body mt-5 max-w-[480px] text-[17px] leading-[1.6] text-ink-500">
               One click on any account and Pulse generates a full intel brief — exec summary,
-              opportunity signals, risk flags, ready-to-send outreach hooks. Cited sources, 95%
-              confidence, refreshed weekly.
+              opportunity signals, risk flags, ready-to-send hooks. Cited sources. 95% confidence.
+              Refreshed weekly.
             </p>
-            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+            <ul className="font-body mt-6 space-y-2.5 text-[14.5px] leading-snug text-ink-700">
               <li className="flex items-start gap-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
                 <span>Buying / forwarder / carrier / supplier signal classification.</span>
@@ -308,7 +365,10 @@ function PulseBriefShowcase() {
               </li>
             </ul>
           </div>
-          <div>
+          <div
+            className="min-h-[640px] overflow-hidden sm:min-h-[600px] lg:min-h-0"
+            style={{ contain: "layout paint", maxWidth: "100%" }}
+          >
             <PulseBriefMock />
           </div>
         </div>
@@ -322,20 +382,23 @@ function ContactDiscoveryShowcase() {
     <section className="px-5 py-16 sm:px-8 sm:py-20">
       <div className="mx-auto max-w-container">
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-          <div className="lg:order-1">
+          <div
+            className="min-h-[600px] overflow-hidden sm:min-h-[560px] lg:order-1 lg:min-h-0"
+            style={{ contain: "layout paint", maxWidth: "100%" }}
+          >
             <ContactDiscoveryMock />
           </div>
           <div className="lg:order-2">
             <div className="eyebrow">Contact Discovery</div>
-            <h2 className="display-lg mt-3">
-              The right buyers, <span className="grad-text">not just any buyers.</span>
+            <h2 className="display-md mt-3">
+              The right buyers, <span className="grad-text-cyan">not just any buyers.</span>
             </h2>
-            <p className="lead mt-5 max-w-[480px]">
-              LIT's contact graph is filtered by title, seniority, department, and location — then
-              joined to who actually owns shipments at that company. Verified emails, LinkedIn URLs,
-              and direct dials revealed on enrich.
+            <p className="font-body mt-5 max-w-[480px] text-[17px] leading-[1.6] text-ink-500">
+              Filtered by title, seniority, department, and location — then joined to who actually
+              owns shipments at that company. Verified emails, LinkedIn URLs, and direct dials
+              revealed on enrich.
             </p>
-            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+            <ul className="font-body mt-6 space-y-2.5 text-[14.5px] leading-snug text-ink-700">
               <li className="flex items-start gap-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
                 <span>Email-verified contacts — no spam-trap-rate roulette.</span>
@@ -363,14 +426,14 @@ function SequenceBuilderShowcase() {
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <div>
             <div className="eyebrow">Campaign Builder</div>
-            <h2 className="display-lg mt-3">
-              Sequences seeded by <span className="grad-text">the signal that started them.</span>
+            <h2 className="display-md mt-3">
+              Sequences seeded by <span className="grad-text-cyan">the signal that started them.</span>
             </h2>
-            <p className="lead mt-5 max-w-[480px]">
+            <p className="font-body mt-5 max-w-[480px] text-[17px] leading-[1.6] text-ink-500">
               Lane-launch, carrier-pivot, RFP follow-up, win-back — six starter plays that bake the
               signal into the message. Multichannel by default. Send forecast before you launch.
             </p>
-            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+            <ul className="font-body mt-6 space-y-2.5 text-[14.5px] leading-snug text-ink-700">
               <li className="flex items-start gap-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
                 <span>Email + LinkedIn + call-task in one timeline.</span>
@@ -385,7 +448,10 @@ function SequenceBuilderShowcase() {
               </li>
             </ul>
           </div>
-          <div>
+          <div
+            className="min-h-[640px] overflow-hidden sm:min-h-[600px] lg:min-h-0"
+            style={{ contain: "layout paint", maxWidth: "100%" }}
+          >
             <SequenceBuilderMock />
           </div>
         </div>
@@ -395,13 +461,13 @@ function SequenceBuilderShowcase() {
 }
 
 function PillarsTrustBar() {
-  const pillars = [
-    "Company Intelligence",
-    "Contact Intelligence",
-    "Shipment Intelligence",
-    "Trade Lane Signals",
-    "Campaign Execution",
-    "CRM Workflows",
+  const pillars: { label: string; dot: string }[] = [
+    { label: "Company Intelligence", dot: "bg-brand-blue" },
+    { label: "Contact Intelligence", dot: "bg-brand-cyan-dim" },
+    { label: "Shipment Intelligence", dot: "bg-brand-violet" },
+    { label: "Trade Lane Signals", dot: "bg-emerald-500" },
+    { label: "Campaign Execution", dot: "bg-amber-500" },
+    { label: "CRM Workflows", dot: "bg-brand-blue" },
   ];
   return (
     <section className="px-5 py-12 sm:px-8">
@@ -415,10 +481,14 @@ function PillarsTrustBar() {
           <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
             {pillars.map((p) => (
               <div
-                key={p}
-                className="font-display flex items-center justify-center rounded-lg px-3 py-2.5 text-center text-[13px] font-semibold text-ink-900"
+                key={p.label}
+                className="font-display flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-center text-[13px] font-semibold text-ink-900"
               >
-                {p}
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.dot}`}
+                  aria-hidden
+                />
+                {p.label}
               </div>
             ))}
           </div>
@@ -465,56 +535,46 @@ function ProblemSection() {
 
 function SignalToPipelineSection() {
   return (
-    <section className="px-5 py-16 sm:px-8 sm:py-24">
-      <div className="mx-auto max-w-container">
+    <section
+      className="relative overflow-hidden px-5 py-16 sm:px-8 sm:py-24"
+      style={{
+        background:
+          "linear-gradient(180deg, #020617 0%, #081225 100%)",
+      }}
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-32 left-1/2 h-80 w-[800px] -translate-x-1/2 rounded-full opacity-50"
+        style={{
+          background:
+            "radial-gradient(ellipse, rgba(0,240,255,0.12), transparent 70%)",
+        }}
+      />
+      <div className="relative mx-auto max-w-container">
         <div className="mx-auto max-w-[780px] text-center">
-          <div className="eyebrow">Signal → Pipeline</div>
-          <h2 className="display-lg mt-3">Five steps from question to closed deal.</h2>
-          <p className="lead mx-auto mt-3 max-w-[640px]">
+          <div
+            className="font-display text-[12px] font-semibold uppercase tracking-[0.12em]"
+            style={{ color: "#00F0FF", textShadow: "0 0 12px rgba(0,240,255,0.3)" }}
+          >
+            Signal → Pipeline
+          </div>
+          {/* Inline color overrides — `.display-lg` and `.lead` in globals.css
+              ship a default ink-900/ink-500 color that ranks below Tailwind
+              utilities in the cascade. Inline style guarantees readability
+              on the dark surface. */}
+          <h2 className="display-lg mt-3" style={{ color: "#ffffff" }}>
+            Five steps from question to closed deal.
+          </h2>
+          <p className="lead mx-auto mt-3 max-w-[640px]" style={{ color: "#cfd7e6" }}>
             LIT collapses what was a five-tool, five-day workflow into a single board you finish in 20
             minutes.
           </p>
         </div>
         <div className="mt-14">
-          <WorkflowMotion />
+          <WorkflowMotion dark />
         </div>
       </div>
     </section>
   );
 }
 
-function PlatformSection() {
-  const cards = [
-    { tag: "Discover", title: "Search companies", body: "Filter 124K+ shippers by lane, carrier, TEU, HS code, and activity trend." },
-    { tag: "Enrich", title: "Find contacts", body: "Verified emails for decision-makers — supply chain, procurement, ops, logistics." },
-    { tag: "Analyze", title: "Analyze shipments", body: "BOL-level history, container volume, carrier mix, and lane performance over time." },
-    { tag: "Track", title: "Track trade lanes", body: "Watchlist specific lanes, ports, and trade blocks. Get alerts when flow changes." },
-    { tag: "Organize", title: "Save to Command Center", body: "A CRM that lives next to intelligence. Pipelines, tasks, activity, all in context." },
-    { tag: "Engage", title: "Launch campaigns", body: "Multichannel sequences triggered by shipment signals, not calendar dates." },
-  ];
-  return (
-    <section className="px-5 py-16 sm:px-8 sm:py-24">
-      <div className="mx-auto max-w-container">
-        <div className="mx-auto max-w-[780px] text-center">
-          <div className="eyebrow">The platform</div>
-          <h2 className="display-lg mt-3">One platform for market intelligence and execution.</h2>
-          <p className="lead mx-auto mt-3 max-w-[640px]">
-            Six capabilities, one workspace. Move from signal to action without switching tools.
-          </p>
-        </div>
-        <div className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {cards.map((c) => (
-            <div
-              key={c.title}
-              className="rounded-2xl border border-ink-100 bg-white p-7 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"
-            >
-              <div className="font-display text-[11px] font-bold uppercase tracking-wider text-brand-blue">{c.tag}</div>
-              <h3 className="display-sm mt-3">{c.title}</h3>
-              <p className="font-body mt-2 text-[14px] leading-relaxed text-ink-500">{c.body}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}

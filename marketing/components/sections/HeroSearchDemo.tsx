@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Sparkles, ArrowRight, BookmarkPlus, Building2 } from "lucide-react";
 
 /**
@@ -89,6 +89,7 @@ const PHASE_DURATION = {
 };
 
 export function HeroSearchDemo({ className = "" }: { className?: string }) {
+  const prefersReducedMotion = useReducedMotion();
   const [sceneIdx, setSceneIdx] = useState(0);
   const [typed, setTyped] = useState("");
   const [phase, setPhase] = useState<"typing" | "intent" | "chips" | "results" | "exit">("typing");
@@ -103,8 +104,20 @@ export function HeroSearchDemo({ className = "" }: { className?: string }) {
     };
   }, []);
 
+  // Reduced motion: paint the final results state of scene 0 and skip the
+  // typing/chip-stagger/exit loop. The visual stays informative without
+  // any continuous animation.
+  useEffect(() => {
+    if (!prefersReducedMotion) return;
+    if (timer.current) clearTimeout(timer.current);
+    setTyped(SCENES[0].query);
+    setChipsShown(SCENES[0].chips.length);
+    setPhase("results");
+  }, [prefersReducedMotion]);
+
   // Drive the state machine
   useEffect(() => {
+    if (prefersReducedMotion) return;
     if (timer.current) clearTimeout(timer.current);
 
     if (phase === "typing") {
@@ -137,7 +150,7 @@ export function HeroSearchDemo({ className = "" }: { className?: string }) {
         setPhase("typing");
       }, 400);
     }
-  }, [phase, typed, chipsShown, scene]);
+  }, [phase, typed, chipsShown, scene, prefersReducedMotion]);
 
   return (
     <div

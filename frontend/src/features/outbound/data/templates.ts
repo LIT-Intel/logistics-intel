@@ -24,28 +24,225 @@ import type { OutreachTemplate } from "../types";
 // merge engine leaves unresolved tokens visible (no crash, no silent blanks)
 // per CLAUDE.md spec.
 
+/** Industries the campaign builder lets users pick from. */
+export const INDUSTRY_OPTIONS = [
+  { id: "any",            label: "Any / general" },
+  { id: "logistics",      label: "Logistics & freight" },
+  { id: "saas",           label: "SaaS / software" },
+  { id: "finance",        label: "Finance & fintech" },
+  { id: "professional",   label: "Professional services" },
+  { id: "manufacturing",  label: "Manufacturing" },
+  { id: "retail",         label: "Retail / e-commerce" },
+  { id: "healthcare",     label: "Healthcare / medtech" },
+  { id: "construction",   label: "Construction & real estate" },
+  { id: "automotive",     label: "Automotive" },
+  { id: "electronics",    label: "Electronics" },
+  { id: "apparel",        label: "Apparel & fashion" },
+  { id: "food_beverage",  label: "Food & beverage" },
+  { id: "energy",         label: "Energy & utilities" },
+  { id: "media",          label: "Media & marketing" },
+  { id: "education",      label: "Education" },
+] as const;
+export type Industry = (typeof INDUSTRY_OPTIONS)[number]["id"];
+
+/** Pitch styles the user can adopt. Drives template filtering + suggested copy. */
+export const TONE_OPTIONS = [
+  { id: "consultative", label: "Consultative",
+    helper: "Ask questions, share insight. Soft ask, builds trust." },
+  { id: "direct", label: "Direct",
+    helper: "Get to the point. Clear ask in the first line." },
+  { id: "curious", label: "Curious",
+    helper: "Provoke thought. Lean on a noticed pattern or signal." },
+  { id: "friendly", label: "Friendly",
+    helper: "Warm, peer-to-peer tone. Low pressure." },
+  { id: "educational", label: "Educational",
+    helper: "Share something useful. No ask in the first message." },
+] as const;
+export type Tone = (typeof TONE_OPTIONS)[number]["id"];
+
 export interface StarterTemplate extends OutreachTemplate {
-  industry:
-    | "automotive"
-    | "electronics"
-    | "solar"
-    | "data_centers"
-    | "manufacturing"
-    | "apparel"
-    | "pharma"
-    | "food_beverage"
-    | "chemicals"
-    | "cpg"
-    | "any";
+  /** Optional industry tag — surfaced in the picker as a filter chip. */
+  industry: Industry;
   /** "opener" = first-touch · "bump" = step 2/3 follow-up · "breakup" = exit step */
   intent: "opener" | "bump" | "breakup";
   /** Step kind this template is shaped for. Email is the default. */
   channel: "email" | "linkedin_invite" | "linkedin_message" | "call";
+  /** Pitch style. Optional — defaults to "consultative" when missing. */
+  tone?: Tone;
   /** Short reason a campaign builder should pick this. */
   hook: string;
 }
 
 export const STARTER_TEMPLATES: StarterTemplate[] = [
+  // ─── Universal templates (any industry, tone-tagged) ──────────────────────
+  // Eight short, human, low-pressure starters that work across software,
+  // services, finance, manufacturing, etc. They lean on a specific signal
+  // ({{role}}, {{company_name}}, custom merge_vars set on the recipient)
+  // rather than a generic pitch — the consultative defaults the user asked
+  // for. Replace {{my_thing}} with the user's offering when picking these
+  // up; the merge engine leaves unresolved tokens visible so it's obvious.
+
+  {
+    id: "tpl-universal-consultative-opener",
+    name: "Consultative · Opener (any industry)",
+    industry: "any",
+    intent: "opener",
+    channel: "email",
+    tone: "consultative",
+    persona_id: null,
+    hook: "Soft ask. Frames the conversation as comparing notes, not selling.",
+    subject: "Quick question on how {{company_name}} handles {{topic}}",
+    body: `Hi {{first_name}},
+
+Quick one — I've been talking with a few folks at companies your size about how they handle {{topic}}, and {{company_name}} keeps coming up as one of the teams getting it right.
+
+I'd value a 15-minute trade — what's working for you vs. what I'm seeing across the cohort. No deck, no pitch. If timing's wrong, just say "later" and I'll circle back next quarter.
+
+— {{sender_name}}`,
+  },
+  {
+    id: "tpl-universal-direct-opener",
+    name: "Direct · Opener (any industry)",
+    industry: "any",
+    intent: "opener",
+    channel: "email",
+    tone: "direct",
+    persona_id: null,
+    hook: "First line is the ask. For audiences that respond to brevity.",
+    subject: "15 min on {{topic}}?",
+    body: `Hi {{first_name}},
+
+Direct ask: 15 minutes on how {{company_name}} approaches {{topic}}.
+
+Reason — we built something for teams in your spot, and I'd rather hear how you think about it before I describe it.
+
+If yes, here's my calendar: {{calendar_link}}
+If no, no problem. Reply "skip" and you won't hear from me again.
+
+— {{sender_name}}`,
+  },
+  {
+    id: "tpl-universal-curious-opener",
+    name: "Curious · Opener (any industry)",
+    industry: "any",
+    intent: "opener",
+    channel: "email",
+    tone: "curious",
+    persona_id: null,
+    hook: "Provokes thought with a noticed pattern. Light reach, no ask.",
+    subject: "Noticed something about {{company_name}} — worth a quick chat?",
+    body: `Hi {{first_name}},
+
+Noticed {{company_name}} {{signal}} — that's a pattern I've been seeing in maybe 1 in 10 teams I track, and the ones who lean into it tend to pull ahead within a quarter or two.
+
+Curious whether that was deliberate on your end or just where the data took you. Either way, I'd love to swap notes.
+
+— {{sender_name}}`,
+  },
+  {
+    id: "tpl-universal-friendly-opener",
+    name: "Friendly · Opener (any industry)",
+    industry: "any",
+    intent: "opener",
+    channel: "email",
+    tone: "friendly",
+    persona_id: null,
+    hook: "Peer-to-peer warmth. Works for SMB / founder-led targets.",
+    subject: "{{first_name}} — small intro",
+    body: `Hey {{first_name}},
+
+Don't think we've crossed paths — I lead {{my_role}} at {{my_company}}, and I came across {{company_name}} when {{how_we_found_you}}.
+
+I'm not going to dress this up: I think there might be a useful overlap between what your team's doing and what we work on. Worth a 15-minute chat to find out, and I promise to make it easy to say no.
+
+Either way, nice to meet you over email.
+
+— {{sender_name}}`,
+  },
+  {
+    id: "tpl-universal-educational-opener",
+    name: "Educational · Opener (no ask)",
+    industry: "any",
+    intent: "opener",
+    channel: "email",
+    tone: "educational",
+    persona_id: null,
+    hook: "Pure value drop. No meeting ask. Builds permission for the bump.",
+    subject: "Three things I noticed about {{topic}} this quarter",
+    body: `Hi {{first_name}},
+
+I run a small newsletter for {{role_or_industry}} leaders and put together a short read on {{topic}} that I think would be useful for {{company_name}}. Three takeaways:
+
+1. {{takeaway_1}}
+2. {{takeaway_2}}
+3. {{takeaway_3}}
+
+That's it — nothing to book, nothing to buy. If any of these spark a question, reply and I'll dig in. If not, no harm done.
+
+— {{sender_name}}`,
+  },
+  {
+    id: "tpl-universal-consultative-bump",
+    name: "Consultative · Day-3 bump",
+    industry: "any",
+    intent: "bump",
+    channel: "email",
+    tone: "consultative",
+    persona_id: null,
+    hook: "Short, specific re-ping. Reaffirms the soft ask without escalating.",
+    subject: "re: {{topic}} — small bump",
+    body: `Hi {{first_name}},
+
+Following the earlier note. To save you the search:
+
+I'm comparing how {{role_or_industry}} teams approach {{topic}}, and your perspective would help me ground what I'm seeing across the cohort.
+
+15 minutes, you talk most of the time, I share what I've found. Worth doing? Easy "no" works too.
+
+— {{sender_name}}`,
+  },
+  {
+    id: "tpl-universal-friendly-bump",
+    name: "Friendly · Day-5 nudge",
+    industry: "any",
+    intent: "bump",
+    channel: "email",
+    tone: "friendly",
+    persona_id: null,
+    hook: "Light touch. Acknowledges silence, doesn't guilt-trip.",
+    subject: "{{first_name}} — last try",
+    body: `Hey {{first_name}},
+
+Inboxes are brutal — totally fair if mine landed at the wrong time.
+
+If {{topic}} is on your mind in the next month or two, I'd still love to compare notes. If not, I'll move on, no offense taken.
+
+Thanks for the time either way.
+
+— {{sender_name}}`,
+  },
+  {
+    id: "tpl-universal-breakup",
+    name: "Break-up · Kind close",
+    industry: "any",
+    intent: "breakup",
+    channel: "email",
+    tone: "friendly",
+    persona_id: null,
+    hook: "Final note. No guilt, leaves the door open, asks for a redirect.",
+    subject: "Closing the loop on {{topic}}",
+    body: `Hi {{first_name}},
+
+I'll stop the follow-ups here — last thing I want is to add to your inbox load.
+
+If {{topic}} ever moves up the priority list at {{company_name}}, my door's open. If someone else on your team would be the right person, I'd be grateful for a redirect.
+
+Either way — wishing you a good rest of the quarter.
+
+— {{sender_name}}`,
+  },
+
+  // ─── Industry-specific templates (logistics / freight intelligence) ───────
   {
     id: "tpl-auto-tier1",
     name: "Automotive · Tier-1 lane shift",
@@ -290,14 +487,19 @@ Wishing you a clean Q ahead.
   },
 ];
 
+// Back-compat wrapper. New call sites should import from "@/lib/mergeVars"
+// directly so they get listVars / listMissingVars too. Kept here so the
+// large surface of existing imports continues to work.
+//
+// Note the shared implementation also accepts dot paths ({{company.name}})
+// and is whitespace-tolerant ({{ first_name }}), which the old regex was
+// not — both extensions are backwards-compatible since old templates
+// don't use those forms.
+import { applyMergeVars } from "@/lib/mergeVars";
+
 export function applyVariables(
   text: string | null | undefined,
   vars: Record<string, string | undefined | null>,
 ): string {
-  if (!text) return "";
-  return text.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-    const v = vars[key];
-    if (v === undefined || v === null || v === "") return match;
-    return String(v);
-  });
+  return applyMergeVars(text, vars as Record<string, unknown>);
 }

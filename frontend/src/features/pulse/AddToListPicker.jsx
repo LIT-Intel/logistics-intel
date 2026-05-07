@@ -10,6 +10,7 @@ import {
   listPulseLists,
   createPulseList,
   addCompanyToList,
+  addContactToList,
 } from '@/features/pulse/pulseListsApi';
 
 export default function AddToListPicker({
@@ -19,7 +20,12 @@ export default function AddToListPicker({
   companyName,
   contextQuery,      // current Pulse search query — auto-populates new lists
   onSaved,           // callback fired after a successful add
+  // Contact mode — when contactId is set, the picker adds the contact
+  // (and the parent companyId, if provided) instead of just the company.
+  contactId,
+  contactName,
 }) {
+  const mode = contactId ? 'contact' : 'company';
   const [lists, setLists] = useState([]);
   const [loading, setLoading] = useState(false);
   const [tablesPending, setTablesPending] = useState(false);
@@ -66,13 +72,20 @@ export default function AddToListPicker({
     : lists;
 
   async function handlePick(list) {
-    if (!companyId) {
+    if (mode === 'contact') {
+      if (!contactId) {
+        setError('Missing contact id.');
+        return;
+      }
+    } else if (!companyId) {
       setError('Save the company first so it has a database id.');
       return;
     }
     setBusyListId(list.id);
     setError(null);
-    const res = await addCompanyToList(list.id, companyId);
+    const res = mode === 'contact'
+      ? await addContactToList(list.id, contactId, { companyId })
+      : await addCompanyToList(list.id, companyId);
     setBusyListId(null);
     if (!res.ok) {
       setError(res.message || 'Failed to add to list.');
@@ -98,8 +111,15 @@ export default function AddToListPicker({
       setError(created.message || 'Failed to create list.');
       return;
     }
-    // Auto-add the current company to the new list
-    if (companyId) {
+    // Auto-add the current target to the new list
+    if (mode === 'contact' && contactId) {
+      const add = await addContactToList(created.list.id, contactId, { companyId });
+      if (!add.ok) {
+        setBusyListId(null);
+        setError(add.message || 'List created, but adding contact failed.');
+        return;
+      }
+    } else if (companyId) {
       const add = await addCompanyToList(created.list.id, companyId);
       if (!add.ok) {
         setBusyListId(null);
@@ -136,7 +156,9 @@ export default function AddToListPicker({
               Add to a Saved List
             </div>
             <div className="font-body truncate text-[11px] text-slate-500">
-              {companyName ? `Adding ${companyName}` : 'Pick a list'}
+              {mode === 'contact'
+                ? (contactName ? `Adding ${contactName}` : 'Adding contact')
+                : (companyName ? `Adding ${companyName}` : 'Pick a list')}
             </div>
           </div>
           <button

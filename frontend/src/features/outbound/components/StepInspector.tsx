@@ -1,6 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
+import { Code } from "lucide-react";
 import { CHANNEL, fontDisplay, fontBody, fontMono } from "../tokens";
 import { ChannelIcon } from "./ChannelChip";
+import EmailComposerModal from "./EmailComposerModal";
 import type { BuilderStep, OutreachTemplate } from "../types";
 
 const VARIABLES = [
@@ -33,6 +35,7 @@ export function StepInspector({
   onTestSend,
   onSaveAsTemplate,
 }: Props) {
+  const [composerOpen, setComposerOpen] = useState(false);
   if (!step) {
     return (
       <div className="flex h-full items-center justify-center border-l border-slate-200 bg-white px-6 text-center">
@@ -114,25 +117,32 @@ export function StepInspector({
 
       <div className="flex-1 overflow-y-auto px-4 py-3.5">
         {isWait ? (
-          <Field label="Wait days">
-            <input
-              type="number"
-              min={0}
-              max={60}
-              value={step.waitDays}
-              onChange={(e) =>
-                onUpdate({
-                  waitDays: Math.max(0, Number(e.target.value || 0)),
-                })
-              }
-              className={inputClass()}
-              style={{ fontFamily: fontBody }}
-            />
+          <Field label="Wait">
+            <div className="flex flex-wrap items-center gap-2">
+              <DelayBox
+                value={step.waitDays ?? 0}
+                max={60}
+                onChange={(n) => onUpdate({ waitDays: Math.max(0, n) })}
+                unit="days"
+              />
+              <DelayBox
+                value={step.waitHours ?? 0}
+                max={23}
+                onChange={(n) => onUpdate({ waitHours: Math.max(0, Math.min(23, n)) })}
+                unit="hours"
+              />
+              <DelayBox
+                value={step.waitMinutes ?? 0}
+                max={59}
+                onChange={(n) => onUpdate({ waitMinutes: Math.max(0, Math.min(59, n)) })}
+                unit="minutes"
+              />
+            </div>
             <p
               className="mt-1.5 text-[11px] text-slate-500"
               style={{ fontFamily: fontBody }}
             >
-              How long to pause before the next step.
+              How long to pause before the next step. Use hours/minutes for sub-day pacing.
             </p>
           </Field>
         ) : null}
@@ -173,7 +183,22 @@ export function StepInspector({
               </div>
             </Field>
 
-            <Field label="Subject">
+            <Field
+              label={step.subject_b !== undefined ? "Subject A" : "Subject"}
+              right={
+                step.subject_b === undefined ? (
+                  <button
+                    type="button"
+                    onClick={() => onUpdate({ subject_b: "" })}
+                    className="text-[10px] font-semibold text-[#3B82F6]"
+                    style={{ fontFamily: fontDisplay }}
+                    title="Add an alternate subject. Each recipient sees A or B 50/50 at send time."
+                  >
+                    + A/B test variant
+                  </button>
+                ) : null
+              }
+            >
               <input
                 value={step.subject}
                 onChange={(e) => onUpdate({ subject: e.target.value })}
@@ -183,7 +208,56 @@ export function StepInspector({
               />
             </Field>
 
+            {step.subject_b !== undefined && (
+              <Field
+                label="Subject B"
+                right={
+                  <button
+                    type="button"
+                    onClick={() => onUpdate({ subject_b: undefined })}
+                    className="text-[10px] font-semibold text-rose-500"
+                    style={{ fontFamily: fontDisplay }}
+                    title="Remove the A/B variant — every recipient gets Subject A"
+                  >
+                    Remove variant
+                  </button>
+                }
+              >
+                <input
+                  value={step.subject_b}
+                  onChange={(e) => onUpdate({ subject_b: e.target.value })}
+                  placeholder="Alternate subject (50/50 split per recipient)"
+                  className={inputClass()}
+                  style={{ fontFamily: fontBody }}
+                />
+                <p
+                  className="mt-1 text-[10.5px] text-slate-400"
+                  style={{ fontFamily: fontBody }}
+                >
+                  Dispatcher picks A or B uniformly per recipient. Per-variant open / click / reply rates appear in Analytics once sends accumulate.
+                </p>
+              </Field>
+            )}
+
             <Field label="Body">
+              <div className="flex items-center justify-between gap-2 pb-1.5">
+                <p
+                  className="text-[11px] text-slate-500"
+                  style={{ fontFamily: fontBody }}
+                >
+                  Plain text or HTML. Tokens resolve at send time.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setComposerOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[0.04em] text-blue-700 hover:bg-blue-100"
+                  style={{ fontFamily: fontDisplay }}
+                  title="Open the full HTML composer with live preview, sanitizer, and test send"
+                >
+                  <Code className="h-3 w-3" />
+                  Open Composer
+                </button>
+              </div>
               <textarea
                 rows={8}
                 value={step.body}
@@ -193,12 +267,6 @@ export function StepInspector({
                 style={{ fontFamily: fontBody, lineHeight: 1.55 }}
               />
               <VariableChips onInsert={insertVariable} />
-              <p
-                className="mt-1.5 text-[11px] text-slate-400"
-                style={{ fontFamily: fontBody }}
-              >
-                Plain text. Variables resolve at send time once the dispatcher ships.
-              </p>
             </Field>
           </>
         ) : null}
@@ -242,21 +310,56 @@ export function StepInspector({
           </>
         ) : null}
 
-        {!isWait ? (
-          <Field label="Delay from previous (days)">
-            <input
-              type="number"
-              min={0}
-              max={60}
-              value={step.delayDays}
-              onChange={(e) =>
-                onUpdate({
-                  delayDays: Math.max(0, Number(e.target.value || 0)),
-                })
-              }
-              className={inputClass()}
+        {isEmail ? (
+          <Field label="Email signature">
+            <label
+              className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2"
               style={{ fontFamily: fontBody }}
-            />
+            >
+              <input
+                type="checkbox"
+                checked={step.includeSignature !== false}
+                onChange={(e) => onUpdate({ includeSignature: e.target.checked })}
+              />
+              <span className="text-[12px] font-semibold text-[#0F172A]">
+                Append my email signature
+              </span>
+              <span className="ml-auto text-[10.5px] text-slate-500">
+                Edit in Settings → Preferences
+              </span>
+            </label>
+          </Field>
+        ) : null}
+
+        {!isWait ? (
+          <Field label="Delay from previous step">
+            <div className="flex flex-wrap items-center gap-2">
+              <DelayBox
+                value={step.delayDays ?? 0}
+                max={60}
+                onChange={(n) => onUpdate({ delayDays: Math.max(0, n) })}
+                unit="days"
+              />
+              <DelayBox
+                value={step.delayHours ?? 0}
+                max={23}
+                onChange={(n) => onUpdate({ delayHours: Math.max(0, Math.min(23, n)) })}
+                unit="hours"
+              />
+              <DelayBox
+                value={step.delayMinutes ?? 0}
+                max={59}
+                onChange={(n) => onUpdate({ delayMinutes: Math.max(0, Math.min(59, n)) })}
+                unit="minutes"
+              />
+            </div>
+            <p
+              className="mt-1.5 text-[11px] text-slate-500"
+              style={{ fontFamily: fontBody }}
+            >
+              Combine days + hours + minutes — e.g. <strong>0d 2h 0m</strong> for two hours after the previous step, or <strong>1d 9h 0m</strong> for next morning.
+              The Projected schedule strip above the timeline shows the resulting date/time per step.
+            </p>
           </Field>
         ) : null}
 
@@ -312,14 +415,29 @@ export function StepInspector({
           <button
             type="button"
             onClick={onTestSend}
-            disabled
-            title="Test send ships with the dispatcher in a follow-up phase."
-            className="ml-auto rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-400"
+            disabled={!primaryInboxEmail}
+            title={
+              primaryInboxEmail
+                ? "Send this step to your inbox (or the first manual recipient if added) with sample variables."
+                : "Connect a Gmail or Outlook mailbox in Settings first."
+            }
+            className="ml-auto rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
             style={{ fontFamily: fontDisplay }}
           >
-            Test send · setup required
+            Test send
           </button>
         </div>
+      ) : null}
+      {isEmail ? (
+        <EmailComposerModal
+          open={composerOpen}
+          onClose={() => setComposerOpen(false)}
+          initialSubject={step.subject || ""}
+          initialBody={step.body || ""}
+          fromName={undefined}
+          fromEmail={primaryInboxEmail || undefined}
+          onSave={(next) => onUpdate({ subject: next.subject, body: next.body })}
+        />
       ) : null}
     </div>
   );
@@ -327,18 +445,23 @@ export function StepInspector({
 
 function Field({
   label,
+  right,
   children,
 }: {
   label: string;
+  right?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="mb-3.5">
-      <div
-        className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400"
-        style={{ fontFamily: fontDisplay }}
-      >
-        {label}
+      <div className="mb-1.5 flex items-center justify-between">
+        <div
+          className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400"
+          style={{ fontFamily: fontDisplay }}
+        >
+          {label}
+        </div>
+        {right ? <div className="flex items-center">{right}</div> : null}
       </div>
       {children}
     </div>
@@ -371,4 +494,39 @@ function inputClass(textarea = false) {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+// Compact day/hour/minute spinner — used inside the Wait + Delay-from-
+// previous fields so each unit is selectable without crowding the form.
+function DelayBox({
+  value,
+  max,
+  onChange,
+  unit,
+}: {
+  value: number;
+  max: number;
+  onChange: (n: number) => void;
+  unit: string;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1.5">
+      <input
+        type="number"
+        min={0}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value || 0))}
+        className="w-10 border-none bg-transparent p-0 text-center text-[12px] tabular-nums text-[#0F172A] outline-none"
+        style={{ fontFamily: fontBody }}
+        aria-label={unit}
+      />
+      <span
+        className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500"
+        style={{ fontFamily: fontDisplay }}
+      >
+        {unit}
+      </span>
+    </label>
+  );
 }

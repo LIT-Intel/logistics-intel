@@ -134,14 +134,19 @@ function parseImportYetiDate(value: unknown): Date | null {
     if (!validMmdd && validDdmm) return validDdmm;
 
     // Both interpretations are valid calendar dates.
-    // Prefer the one that is past-or-today; if both are past or both are future,
-    // keep the legacy MM/DD bias.
+    // Prefer the one that is past-or-today; if both are past or both are
+    // future, prefer DD/MM/YYYY — that's the format ImportYeti's payload
+    // uses (verified against `date_range.end_date` matching real shipment
+    // dates and against multi-year `time_series` keys collapsing into
+    // YYYY-01 buckets when MM/DD was used). Fixes the bug where every
+    // monthly bucket Feb–Dec landed in January because the day prefix is
+    // always `01` for time_series keys.
     const mmddPast = isPastOrToday(validMmdd);
     const ddmmPast = isPastOrToday(validDdmm);
 
     if (mmddPast && !ddmmPast) return validMmdd;
     if (ddmmPast && !mmddPast) return validDdmm;
-    return validMmdd;
+    return validDdmm;
   }
 
   const parsed = new Date(trimmed);
@@ -1597,6 +1602,187 @@ async function handleCompanyProfileAction(
   }
 }
 
+// Phase 4 hotfix — admin-gated backfill that re-parses every saved
+// `lit_importyeti_company_snapshot.raw_payload` through the corrected
+// `buildSnapshotFromCompanyData` and writes back `parsed_summary` plus
+// `lit_companies` KPI columns. Zero upstream ImportYeti calls. Used to
+// repair the universal MM/DD-vs-DD/MM bug that collapsed every monthly
+// bucket Feb–Dec into January.
+//
+// Auth: super-admin email allowlist (mirrors admin-marketing-api). Body
+// `{ action: "reparseAll", limit?: number, only_company_id?: string }`.
+const REPARSE_ADMIN_EMAILS = new Set([
+  "vraymond@sparkfusiondigital.com",
+  "support@logisticintel.com",
+]);
+
+async function handleReparseAll(
+  supabase: any,
+  body: any,
+  requestId: string,
+  userId: string | null,
+): Promise<Response> {
+  // Verify caller is allowlisted super-admin.
+  if (!userId) {
+    return jsonResponse({ ok: false, error: "Unauthorized", code: "UNAUTHORIZED" }, 401);
+  }
+  let callerEmail: string | null = null;
+  try {
+    const { data: u } = await supabase.auth.admin.getUserById(userId);
+    callerEmail = u?.user?.email ?? null;
+  } catch (e) {
+    console.warn("[reparseAll] auth.admin lookup failed", e);
+  }
+  if (!callerEmail || !REPARSE_ADMIN_EMAILS.has(callerEmail.toLowerCase())) {
+    return jsonResponse(
+      { ok: false, error: "Forbidden — admin only", code: "FORBIDDEN" },
+      403,
+    );
+  }
+
+  const onlyCompanyId =
+    typeof body?.only_company_id === "string" && body.only_company_id.trim()
+      ? normalizeCompanyKey(body.only_company_id)
+      : null;
+  const limit =
+    typeof body?.limit === "number" && body.limit > 0 ? Math.min(body.limit, 5000) : 5000;
+
+  console.log("🔧 reparseAll begin", { requestId, onlyCompanyId, limit });
+
+  let query = supabase
+    .from("lit_importyeti_company_snapshot")
+    .select("company_id, raw_payload")
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+  if (onlyCompanyId) query = query.eq("company_id", onlyCompanyId);
+
+  const { data: rows, error: readErr } = await query;
+  if (readErr) {
+    console.error("[reparseAll] read failed", readErr);
+    return jsonResponse(
+      { ok: false, error: readErr.message, code: "READ_FAILED" },
+      500,
+    );
+  }
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return jsonResponse({ ok: true, processed: 0, updated: 0, errors: [] });
+  }
+
+  const errors: Array<{ company_id: string; error: string }> = [];
+  let updated = 0;
+  let companiesUpdated = 0;
+  const sample: Array<{
+    company_id: string;
+    shipments_last_12m: number | null;
+    teu_last_12m: number | null;
+    monthly_buckets: number;
+    last_shipment_date: string | null;
+  }> = [];
+
+  for (const row of rows as Array<{ company_id: string; raw_payload: any }>) {
+    try {
+      const rawData = row?.raw_payload?.data ?? row?.raw_payload ?? {};
+      if (!rawData || typeof rawData !== "object") {
+        errors.push({ company_id: row.company_id, error: "missing raw_payload.data" });
+        continue;
+      }
+
+      const reparsed = buildSnapshotFromCompanyData(row.company_id, rawData);
+      const now = new Date().toISOString();
+
+      const { error: snapErr } = await supabase
+        .from("lit_importyeti_company_snapshot")
+        .update({ parsed_summary: reparsed, updated_at: now })
+        .eq("company_id", row.company_id);
+
+      if (snapErr) {
+        errors.push({ company_id: row.company_id, error: snapErr.message });
+        continue;
+      }
+      updated++;
+      if (sample.length < 10) {
+        const monthlyBuckets =
+          reparsed?.monthly_volumes && typeof reparsed.monthly_volumes === "object"
+            ? Object.keys(reparsed.monthly_volumes).length
+            : 0;
+        sample.push({
+          company_id: row.company_id,
+          shipments_last_12m: reparsed?.shipments_last_12m ?? null,
+          teu_last_12m: reparsed?.route_kpis?.teuLast12m ?? null,
+          monthly_buckets: monthlyBuckets,
+          last_shipment_date: reparsed?.last_shipment_date ?? null,
+        });
+      }
+
+      // Propagate corrected KPIs into lit_companies so Command Center +
+      // dashboard see them without users opening each profile.
+      const slug = String(row.company_id);
+      const candidates = Array.from(
+        new Set([
+          slug,
+          `company/${slug}`,
+          slug.replace(/^company\//, ""),
+        ].filter(Boolean)),
+      );
+      const companyUpdate: Record<string, any> = {
+        shipments_12m:
+          reparsed?.route_kpis?.shipmentsLast12m ??
+          reparsed?.shipments_last_12m ??
+          null,
+        teu_12m: reparsed?.route_kpis?.teuLast12m ?? reparsed?.total_teu ?? null,
+        fcl_shipments_12m: reparsed?.fcl_count ?? null,
+        lcl_shipments_12m: reparsed?.lcl_count ?? null,
+        est_spend_12m:
+          reparsed?.route_kpis?.estSpendUsd12m ?? reparsed?.est_spend ?? null,
+        most_recent_shipment_date: normalizeDateForPg(
+          reparsed?.last_shipment_date,
+        ),
+        top_route_12m: reparsed?.route_kpis?.topRouteLast12m ?? null,
+        recent_route: reparsed?.route_kpis?.mostRecentRoute ?? null,
+      };
+      const cleaned = Object.fromEntries(
+        Object.entries(companyUpdate).filter(
+          ([, v]) => v !== null && v !== undefined,
+        ),
+      );
+      if (Object.keys(cleaned).length > 0) {
+        const { error: companyErr, count } = await supabase
+          .from("lit_companies")
+          .update(cleaned, { count: "exact" })
+          .in("source_company_key", candidates);
+        if (companyErr) {
+          console.warn(
+            "[reparseAll] lit_companies update failed",
+            row.company_id,
+            companyErr.message,
+          );
+        } else if ((count ?? 0) > 0) {
+          companiesUpdated += count ?? 0;
+        }
+      }
+    } catch (e: any) {
+      errors.push({ company_id: row.company_id, error: String(e?.message ?? e) });
+    }
+  }
+
+  console.log("🔧 reparseAll complete", {
+    requestId,
+    processed: rows.length,
+    snapshots_updated: updated,
+    companies_updated: companiesUpdated,
+    errors: errors.length,
+  });
+
+  return jsonResponse({
+    ok: true,
+    processed: rows.length,
+    snapshots_updated: updated,
+    companies_updated: companiesUpdated,
+    errors,
+    sample,
+  });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -1732,6 +1918,16 @@ Deno.serve(async (req: Request) => {
 
     if (resolvedAction === "companyBols") {
       return await handleCompanyBolsAction(supabase, requestedCompanyId, requestId);
+    }
+
+    if (resolvedAction === "reparseAll" || resolvedAction === "reparse") {
+      // Admin-gated backfill. Re-runs `buildSnapshotFromCompanyData`
+      // against every existing snapshot's `raw_payload` and writes the
+      // corrected `parsed_summary` back. Also propagates the corrected
+      // KPI columns into `lit_companies` so Command Center / dashboard
+      // see right numbers without each user clicking Refresh.
+      // No upstream ImportYeti calls. No quota burn.
+      return await handleReparseAll(supabase, body, requestId, userId);
     }
 
     if (

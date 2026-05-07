@@ -97,10 +97,14 @@ export function GlobeViz({ size = 480 }: { size?: number }) {
 
   useEffect(() => {
     if (!ref.current) return;
-    // Auto-rotate — slow, ZoomInfo-grade
     const controls = ref.current.controls?.();
     if (controls) {
-      controls.autoRotate = true;
+      // Honor OS-level reduced-motion preference — paint the globe
+      // statically rather than drifting.
+      const reduced =
+        typeof window !== "undefined" &&
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      controls.autoRotate = !reduced;
       controls.autoRotateSpeed = 0.4;
       controls.enableZoom = false;
     }

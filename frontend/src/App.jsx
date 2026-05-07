@@ -20,6 +20,8 @@ const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailM
 const Companies = lazy(() => import("@/pages/companies/index"));
 const Campaigns = lazy(() => import("@/pages/Campaigns"));
 const CampaignBuilder = lazy(() => import("@/pages/CampaignBuilder"));
+const CampaignAnalyticsPage = lazy(() => import("@/pages/CampaignAnalyticsPage"));
+const InboxPage = lazy(() => import("@/pages/InboxPage"));
 const EmailCenter = lazy(() => import("@/pages/EmailCenter"));
 const RFPStudio = lazy(() => import("@/pages/RFPStudio"));
 const Settings = lazy(() => import("@/pages/SettingsPage"));
@@ -31,13 +33,14 @@ const AdminPartnerProgram = lazy(() => import("@/pages/AdminPartnerProgram"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
 const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
 const Pulse = lazy(() => import("@/pages/Pulse"));
+const Lists = lazy(() => import("@/pages/Lists"));
 const CMSManager = lazy(() => import("@/pages/CMSManager"));
 const Diagnostic = lazy(() => import("@/pages/Diagnostic"));
 const AdminAgent = lazy(() => import("@/pages/AdminAgent"));
 const SearchPanel = lazy(() => import("@/pages/SearchPanel"));
 const Transactions = lazy(() => import("@/pages/Transactions"));
 const Widgets = lazy(() => import("@/pages/Widgets"));
-const Company = lazy(() => import("@/pages/Company"));
+const CompanyProfileV2 = lazy(() => import("@/pages/CompanyProfileV2"));
 const CommandCenterPage = lazy(() => import("@/components/command-center/CommandCenter"));
 const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany = lazy(() => import("@/pages/demo/company"));
@@ -46,7 +49,7 @@ const OnboardingFlow = lazy(() => import("@/pages/OnboardingFlow"));
 const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
-
+const SectorLandingPage = lazy(() => import("@/pages/landing/SectorLandingPage"));
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
@@ -143,13 +146,11 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
 
+        {/* /company/:id was the legacy public route. Redirect to the
+            canonical CDP profile so any external links keep working. */}
         <Route
           path="/company/:id"
-          element={
-            <Layout currentPageName="Company">
-              <Company />
-            </Layout>
-          }
+          element={<LegacyCompanyRedirect />}
         />
 
         <Route
@@ -198,6 +199,13 @@ export default function App() {
         />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
+        <Route path="/l/:sector" element={<SectorLandingPage />} />
+
+        {/* /admin/marketing retired — LIT marketing now ships through
+            /app/campaigns with provider=resend gated server-side to the
+            super-admin allowlist. The standalone admin console lived in
+            frontend/src/pages/admin/LitMarketingAdmin.tsx; deleted in
+            this commit. */}
 
         <Route
           path="/app/dashboard"
@@ -272,12 +280,27 @@ export default function App() {
           }
         />
 
+        {/* Phase 1 alias — /preview stays alive so any bookmarks or QA
+            scripts targeting it keep working. Same component as canonical. */}
+        <Route
+          path="/app/companies/:id/preview"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <CompanyProfileV2 />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+
+        {/* Canonical company profile — Phase 4 retired the legacy
+            Company.jsx page. CompanyProfileV2 is now the only view. */}
         <Route
           path="/app/companies/:id"
           element={
             <RequireAuth>
               <LITPage>
-                <Company />
+                <CompanyProfileV2 />
               </LITPage>
             </RequireAuth>
           }
@@ -312,6 +335,54 @@ export default function App() {
                 <CampaignBuilder />
               </LITPage>
             </RequirePlan>
+          }
+        />
+
+        <Route
+          path="/app/campaigns/analytics"
+          element={
+            <RequirePlan
+              feature="campaign_builder"
+              featureName="Campaign Builder"
+              description="Build and run outreach campaigns targeting freight shippers and logistics prospects. Available on Growth and above."
+              requiredPlan="growth"
+            >
+              <LITPage>
+                <CampaignAnalyticsPage />
+              </LITPage>
+            </RequirePlan>
+          }
+        />
+
+        <Route
+          path="/app/inbox"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <InboxPage />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+
+        <Route
+          path="/app/lists"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <Lists />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/lists/:listId"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <Lists />
+              </LITPage>
+            </RequireAuth>
           }
         />
 
@@ -520,4 +591,13 @@ function CompanyDrawerRoute() {
       />
     </Layout>
   );
+}
+
+// Redirect /company/:id (legacy public route) to /app/companies/:id (the
+// canonical CDP profile). Preserves any query string the caller passed.
+function LegacyCompanyRedirect() {
+  const { id } = useParams();
+  const location = useLocation();
+  const target = `/app/companies/${encodeURIComponent(id ?? "")}${location.search || ""}`;
+  return <Navigate to={target} replace />;
 }

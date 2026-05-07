@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
-import { createStripeCheckout, createStripePortalSession, listStripeInvoices } from '@/api/functions';
+import { createStripeCheckout, createStripePortalSession, listStripeInvoices, getBillingStatus } from '@/api/functions';
 import type { InvoiceRow } from '@/components/billing/sections/BillingInvoices';
 import { supabase } from '@/lib/supabase';
 import {
@@ -67,6 +67,20 @@ export default function Billing() {
   const [searchParams] = useSearchParams();
 
   const [subscription, setSubscription] = useState<any>(null);
+  // Authoritative billing-status snapshot from get-billing-status edge fn.
+  // Drives REAL payment-method state (not inferred from stripe_customer_id)
+  // and the trial_ends_at value used by the trial countdown card.
+  const [billingStatus, setBillingStatus] = useState<{
+    payment_method: {
+      hasPaymentMethod: boolean;
+      brand: string | null;
+      last4: string | null;
+      expMonth: number | null;
+      expYear: number | null;
+    };
+    subscription: { trial_ends_at: string | null };
+    seats: { included: number | null; used: number };
+  } | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [err, setErr] = useState('');
@@ -106,15 +120,26 @@ export default function Billing() {
     loadSubscription();
     loadOrgSeatCount();
     loadInvoices();
+    loadBillingStatus();
     if (checkoutSuccess) {
       const t = setTimeout(() => {
         loadSubscription();
         loadOrgSeatCount();
         loadInvoices();
+        loadBillingStatus();
       }, 3500);
       return () => clearTimeout(t);
     }
   }, [user, checkoutSuccess]);
+
+  async function loadBillingStatus() {
+    try {
+      const result: any = await getBillingStatus();
+      if (result?.ok) setBillingStatus(result);
+    } catch (e) {
+      console.warn('[BillingNew] loadBillingStatus failed:', e);
+    }
+  }
 
   async function loadInvoices() {
     setInvoicesLoading(true);
@@ -349,7 +374,24 @@ export default function Billing() {
   const renewalDate = formatDate(subscription?.current_period_end);
   const daysUntilRenewal = daysUntil(subscription?.current_period_end);
   const billingEmail = (user as any)?.email || null;
-  const paymentMethodLabel = stripeCustomerId ? 'On file in Stripe' : 'Not on file';
+
+  // REAL payment-method truth from Stripe (via get-billing-status). Falls
+  // back to a conservative "Not on file" until the snapshot loads —
+  // never claims a card exists from stripe_customer_id alone.
+  const realPaymentMethod = billingStatus?.payment_method ?? null;
+  const hasPaymentMethod = Boolean(realPaymentMethod?.hasPaymentMethod);
+  const paymentMethodLabel = hasPaymentMethod
+    ? realPaymentMethod?.brand && realPaymentMethod?.last4
+      ? `${realPaymentMethod.brand.toUpperCase()} •••• ${realPaymentMethod.last4}`
+      : 'On file in Stripe'
+    : 'Not on file';
+
+  // Trial countdown source. For true free_trial users the
+  // subscriptions row has no current_period_end, so we use trial_ends_at
+  // (server-derived from auth.users.created_at + plan.trial_days).
+  const trialEndsAtIso = billingStatus?.subscription.trial_ends_at ?? null;
+  const trialEndDate = trialEndsAtIso ? formatDate(trialEndsAtIso) : renewalDate;
+  const trialDaysLeft = trialEndsAtIso ? daysUntil(trialEndsAtIso) : daysUntilRenewal;
 
   // Hero CTA labels per canonical state
   const heroCtas = useMemo(() => {
@@ -401,10 +443,12 @@ export default function Billing() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canonicalState, currentPlanCode]);
 
-  // Cycle toggle: hide for canceled / enterprise / pastdue (no active
-  // checkout flow that benefits from the toggle in those states). Keep
-  // for free / trial / active.
-  const showCycleToggle = canonicalState === 'free' || canonicalState === 'trial' || canonicalState === 'active';
+  // Cycle toggle: hide only for enterprise (custom pricing). Every other
+  // state — free, trial, active, pastdue, canceled — benefits from being
+  // able to switch between monthly and annual when picking a plan below.
+  // Previously hidden for pastdue/canceled which made annual unreachable
+  // when reactivating, the bug users reported.
+  const showCycleToggle = canonicalState !== 'enterprise';
 
   // Build real usage meters from useEntitlements snapshot. Single source
   // of truth — get-entitlements is canonical, so we no longer maintain a
@@ -491,8 +535,8 @@ export default function Billing() {
         {canonicalState === 'trial' ? (
           <div className="mb-5">
             <TrialCountdownCard
-              daysLeft={daysUntilRenewal}
-              endDate={renewalDate}
+              daysLeft={trialDaysLeft}
+              endDate={trialEndDate}
               meters={usageMeters}
               onUpgrade={() => handleCheckout('starter')}
               onCompare={scrollToPlans}
@@ -599,6 +643,11 @@ export default function Billing() {
         <div className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
           <PaymentMethodCard
             hasStripeCustomer={Boolean(stripeCustomerId)}
+            hasPaymentMethod={hasPaymentMethod}
+            cardBrand={realPaymentMethod?.brand ?? null}
+            cardLast4={realPaymentMethod?.last4 ?? null}
+            cardExpMonth={realPaymentMethod?.expMonth ?? null}
+            cardExpYear={realPaymentMethod?.expYear ?? null}
             billingEmail={billingEmail}
             canManage={canManage}
             onManagePortal={handlePortal}

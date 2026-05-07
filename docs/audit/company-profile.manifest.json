@@ -1,0 +1,251 @@
+{
+  "audit": {
+    "feature": "company-profile",
+    "phase": 1,
+    "branch": "claude/review-dashboard-deploy-3AmMD",
+    "date": "2026-05-06",
+    "code_changes": true,
+    "migrations_added": false,
+    "deployed": false,
+    "phase_0_5_corrections": {
+      "tables_verified_present_in_live_db": [
+        { "name": "lit_company_directory", "rows": 12749 },
+        { "name": "lit_company_source_metrics", "rows": 20000 },
+        { "name": "lit_company_index", "rows": 1179 },
+        { "name": "lit_company_search_results", "rows": 1179 },
+        { "name": "lit_company_contact_previews", "rows": 18 }
+      ],
+      "cdp_components_already_mounted_in_company_jsx": true,
+      "framework": "Vite + React Router v7 (not Next.js)"
+    }
+  },
+  "routes": {
+    "active": [
+      { "path": "/company/[company_id]", "file": "frontend/src/pages/company/[company_id].tsx", "status": "legacy" },
+      { "path": "/companies", "file": "frontend/src/pages/companies/index.tsx", "status": "active" },
+      { "path": "/command-center", "file": "frontend/src/app/command-center/page.tsx", "status": "active" },
+      { "path": "/app/search", "file": "frontend/src/pages/Search.tsx", "status": "active" }
+    ],
+    "missing": [
+      { "path": "/app/companies/[id]", "navigated_from": "frontend/src/pages/Search.tsx:660", "impact": "404 today, must be created in Phase 1" }
+    ]
+  },
+  "components": {
+    "wired": [
+      "frontend/src/components/company/CompanyDrawer.tsx",
+      "frontend/src/components/company/PreCallBriefing.tsx",
+      "frontend/src/components/company/Workspace.tsx",
+      "frontend/src/components/company/CompanyHeader.tsx"
+    ],
+    "orphaned_cdp_shell": [
+      "frontend/src/components/company/CDPHeader.tsx",
+      "frontend/src/components/company/CDPSupplyChain.tsx",
+      "frontend/src/components/company/CDPContacts.tsx",
+      "frontend/src/components/company/CDPResearch.tsx",
+      "frontend/src/components/company/CDPActivity.tsx",
+      "frontend/src/components/company/CDPDetailsPanel.tsx"
+    ]
+  },
+  "tables": {
+    "exist_and_used": [
+      { "name": "lit_importyeti_company_snapshot", "role": "shipment system-of-record" },
+      { "name": "lit_companies", "role": "identity + KPI cache + slug resolution target" },
+      { "name": "lit_company_index", "role": "search only" },
+      { "name": "lit_saved_companies", "role": "per-user CRM record; holds gemini_brief Pulse cache" },
+      { "name": "lit_contacts", "role": "canonical contact store" },
+      { "name": "lit_saved_contacts", "role": "per-user saved contact list" },
+      { "name": "lit_activity_events", "role": "unified activity timeline" },
+      { "name": "lit_email_threads", "role": "email outreach (replaces spec lit_outreach_history)" },
+      { "name": "lit_email_messages", "role": "email outreach detail" },
+      { "name": "lit_campaigns", "role": "campaigns" },
+      { "name": "lit_campaign_companies", "role": "campaign N:M companies" },
+      { "name": "campaign_contacts", "role": "campaign N:M contacts (note: missing lit_ prefix)" }
+    ],
+    "spec_missing_from_db": [
+      { "name": "lit_company_directory", "phase1_action": "no migration; map to lit_companies + snapshot" },
+      { "name": "lit_company_source_metrics", "phase1_action": "no migration; KPIs in snapshot.parsed_summary JSONB" },
+      { "name": "lit_company_search_results", "phase1_action": "defer; not blocking profile" },
+      { "name": "lit_company_contact_previews", "phase1_action": "no migration; previews stay ephemeral client state" },
+      { "name": "lit_outreach_history", "phase1_action": "use lit_email_threads + lit_email_messages" }
+    ],
+    "marketing_audience_isolation": "verified absent — no lit_marketing_audience_* tables exist"
+  },
+  "resolver": {
+    "current": {
+      "function": "resolveCompanyUuid",
+      "file": "frontend/src/lib/api.ts",
+      "lines": "4423-4462",
+      "matches_by": ["uuid", "source_company_key"],
+      "returns": "{ id, name?, domain?, website? }"
+    },
+    "phase1_proposal": {
+      "function": "resolveCompany",
+      "new_file": "frontend/src/lib/companyResolver.ts",
+      "matches_by_priority": [
+        "uuid",
+        "company_key",
+        "canonical_domain",
+        "name+city+state",
+        "name+country"
+      ],
+      "returns_shape": "CompanyEntity { id, key, name, domain, display, sources: { saved, importyeti, metrics, contacts }, resolved_via }"
+    }
+  },
+  "aggregator": {
+    "phase1_proposal": {
+      "endpoint": "GET /api/companies/[id]/profile",
+      "new_file": "frontend/src/app/api/companies/[id]/profile/route.ts",
+      "include_default": ["identity", "shipments", "contacts", "activity"],
+      "include_optional": ["pulse"],
+      "client_hook": "frontend/src/hooks/useCompanyProfile.ts"
+    }
+  },
+  "override_store": {
+    "exists": false,
+    "phase1_action": "do not create; surface as gap; propose lit_company_overrides if/when UI flow requires it"
+  },
+  "pulse_cache": {
+    "current_location": "lit_saved_companies.gemini_brief (JSONB) + gemini_brief_updated_at",
+    "limitations": [
+      "only present for saved companies",
+      "CDPResearch.tsx does not read it before calling pulse-ai-enrich"
+    ],
+    "phase4_action": "read cache first; LLM only on explicit Generate/Refresh"
+  },
+  "entitlements": {
+    "available": true,
+    "files": {
+      "client_hook": "frontend/src/hooks/useEntitlements.ts",
+      "client_lib": "frontend/src/lib/entitlements.ts",
+      "server_lib": "frontend/src/lib/serverEntitlements.ts",
+      "plan_config": "frontend/src/lib/planLimits.ts",
+      "plan_def": "frontend/src/lib/plan.ts",
+      "usage_lib": "frontend/src/lib/usage.ts",
+      "usage_hook": "frontend/src/hooks/useUsageSummary.ts",
+      "access_lib": "frontend/src/lib/access.ts",
+      "ui_gate": "frontend/src/components/common/UpgradeGate.tsx",
+      "edge_fn_check": "supabase/functions/check-entitlements/index.ts",
+      "edge_fn_get": "supabase/functions/get-entitlements/index.ts",
+      "migration": "supabase/migrations/20260427100000_usage_enforcement.sql"
+    },
+    "feature_keys_relevant": [
+      "profile_access",
+      "contact_enrichment_access",
+      "ai_brief_access",
+      "export_pdf_access",
+      "similar_companies_access",
+      "credit_rating_access",
+      "command_center_access"
+    ],
+    "phase1_action": "consume only; do not modify"
+  },
+  "telemetry": {
+    "available": false,
+    "found": [
+      { "file": "supabase/migrations/20260504230000_phase4_click_tracking_and_phase5_ab.sql", "scope": "campaign click tracking only" },
+      { "file": "frontend/src/components/campaigns/CampaignAnalytics.jsx", "scope": "campaign-specific" }
+    ],
+    "gap": "no general-purpose product telemetry helper",
+    "decision_needed": "add lib/telemetry.ts shim as side phase, or defer through Phase 5",
+    "proposed_events": [
+      "profile.tab_view",
+      "profile.refresh_clicked",
+      "profile.contact_enrich_clicked",
+      "profile.pulse_generated",
+      "profile.outreach_started"
+    ]
+  },
+  "apollo_relabel_scope": {
+    "total_references": 115,
+    "files_affected": 30,
+    "categories": {
+      "ui_strings_to_relabel": {
+        "count_approx": 30,
+        "key_files": [
+          "frontend/src/components/company/CDPContacts.tsx",
+          "frontend/src/pages/LeadProspecting.jsx",
+          "frontend/src/pages/Pulse.jsx",
+          "frontend/src/features/pulse/PulseResults.jsx",
+          "frontend/src/pages/AdminSettings.jsx",
+          "frontend/src/components/company/SavedCompaniesPicker.tsx",
+          "frontend/src/components/settings/SettingsSections.tsx"
+        ]
+      },
+      "code_identifiers_keep": {
+        "count_approx": 50,
+        "examples": ["apolloOpen", "apolloResults", "ApolloContactPreview", "searchApolloContacts"]
+      },
+      "comments_keep": { "count_approx": 20 },
+      "backend_keep": {
+        "edge_functions": ["apollo-contact-search", "apollo-contact-enrich"]
+      }
+    },
+    "replacement_terms": {
+      "Apollo": "LIT",
+      "Apollo Company Match": "LIT match",
+      "Apollo Preview": "LIT preview",
+      "Apollo enrichment": "LIT enrichment",
+      "Find contacts with Apollo": "Find contacts with LIT",
+      "Apollo contact search": "LIT contact search"
+    }
+  },
+  "bugs": [
+    { "id": 1, "title": "first-name-only fallback", "file": "frontend/src/components/company/CDPContacts.tsx", "lines": "1007-1013", "severity": "M", "phase": 3 },
+    { "id": 2, "title": "enrichment overwrites contacts on refetch", "file": "frontend/src/components/company/CDPContacts.tsx", "lines": "465-556", "severity": "M", "phase": 3 },
+    { "id": 3, "title": "Apollo branding in UI", "files_count": 30, "severity": "H", "phase": 3 },
+    { "id": 4, "title": "non-UUID input falls through silently", "file": "frontend/src/pages/company/[company_id].tsx", "lines": "10-11", "severity": "M", "phase": 1 },
+    { "id": 5, "title": "refresh burns API without enrichment_status check", "file": "frontend/src/components/company/Workspace.tsx", "lines": "328-333", "severity": "M", "phase": 3 },
+    { "id": 6, "title": "TEU/lanes/last-shipment missing when backend omits", "file": "frontend/src/components/company/CDPSupplyChain.tsx", "lines": "1916-1986", "severity": "L", "phase": 3 },
+    { "id": 7, "title": "saved companies don't embed contacts", "file": "frontend/src/lib/api.ts", "lines": "3934-3957", "severity": "L", "phase": 3 },
+    { "id": 8, "title": "marketing-audience leakage risk", "status": "verified-absent", "phase": null },
+    { "id": 9, "title": "Pulse always hits LLM on tab view", "file": "frontend/src/components/company/CDPResearch.tsx", "severity": "M", "phase": 4 },
+    { "id": 10, "title": "no dedupe across saved/local/external", "severity": "M", "phase": 1 },
+    { "id": 11, "title": "local Panjiva tables don't exist", "status": "spec-aspirational", "phase": null }
+  ],
+  "phase1_files": {
+    "new": [
+      "frontend/src/app/companies/[id]/page.tsx",
+      "frontend/src/app/api/companies/[id]/profile/route.ts",
+      "frontend/src/lib/companyResolver.ts",
+      "frontend/src/hooks/useCompanyProfile.ts",
+      "frontend/src/lib/companyProfile.types.ts"
+    ],
+    "modified": [
+      "frontend/src/pages/company/[company_id].tsx",
+      "frontend/src/pages/Search.tsx"
+    ],
+    "imported_unchanged": [
+      "frontend/src/components/company/CDPHeader.tsx",
+      "frontend/src/components/company/CDPSupplyChain.tsx",
+      "frontend/src/components/company/CDPContacts.tsx",
+      "frontend/src/components/company/CDPResearch.tsx",
+      "frontend/src/components/company/CDPActivity.tsx",
+      "frontend/src/components/company/CDPDetailsPanel.tsx"
+    ],
+    "do_not_touch": [
+      "supabase/functions/apollo-*",
+      "supabase/functions/save-company",
+      "any billing / stripe / resend code",
+      "frontend/src/lib/entitlements.ts",
+      "frontend/src/lib/planLimits.ts",
+      "frontend/src/hooks/useEntitlements.ts",
+      "marketing-audience tables and functions",
+      "supabase/migrations/*"
+    ]
+  },
+  "risks_and_blockers": [
+    "three spec tables (lit_company_directory, lit_company_source_metrics, lit_company_contact_previews) do not exist; Phase 1 maps to existing tables, no migrations",
+    "no general-purpose telemetry helper — decision needed",
+    "no override table — surface as gap; do not create in Phase 1",
+    "/app/companies/{slug} is a 404 today despite Search.tsx navigating there — Phase 1 creates the route",
+    "legacy /company/[id] needs redirect strategy",
+    "gemini_brief Pulse cache only exists for saved companies — Phase 4 either gates Pulse to saved-only or adds a non-user-scoped cache",
+    "resolveCompanyUuid runs in browser via Supabase client — Phase 1 should move resolver server-side"
+  ],
+  "open_questions_for_user": [
+    "Add lib/telemetry.ts shim as a side phase, or defer through Phase 5?",
+    "Phase 4: gate Pulse to saved companies only, or add a non-user-scoped cache table?",
+    "Permanently redirect /company/[id] in Phase 1 or keep both routes?",
+    "Confirm /app/companies/[id] as the new container route path?"
+  ]
+}

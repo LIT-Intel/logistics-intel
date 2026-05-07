@@ -1,14 +1,18 @@
 import React from 'react';
-import { Mail, Phone, LinkedinIcon, MapPin, Briefcase, Award } from 'lucide-react';
+import { Mail, Phone, LinkedinIcon, MapPin, Briefcase, Award, Database } from 'lucide-react';
 import { motion } from 'framer-motion';
 import ContactAvatar from '@/components/command-center/ContactAvatar';
+import AddToListPicker from '@/features/pulse/AddToListPicker';
 import type { ContactCore } from '@/types/contacts';
 
 interface ContactCardProps {
-  contact: ContactCore;
+  contact: ContactCore & { company_id?: string };
   onViewProfile?: (contact: ContactCore) => void;
   onEnrich?: (contact: ContactCore) => void;
   index?: number;
+  // Optional override for the parent company id, used when the contact
+  // shape doesn't carry it (e.g. legacy panels that pass a stripped row).
+  companyId?: string;
 }
 
 const getEnrichmentStatusColor = (status?: string) => {
@@ -38,9 +42,13 @@ export default function ContactCard({
   onViewProfile,
   onEnrich,
   index = 0,
+  companyId,
 }: ContactCardProps) {
   const [isHovered, setIsHovered] = React.useState(false);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
   const needsEnrichment = contact.enrichment_status !== 'complete';
+  const resolvedCompanyId = companyId || contact.company_id || undefined;
+  const canAddToList = Boolean(contact.id);
 
   return (
     <motion.div
@@ -157,8 +165,26 @@ export default function ContactCard({
               Enrich with Lusha
             </motion.button>
           )}
+          {canAddToList && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setPickerOpen(true); }}
+              title="Add this contact to a List"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+            >
+              <Database className="h-3.5 w-3.5 text-slate-500" />
+              List
+            </button>
+          )}
         </div>
       </div>
+      <AddToListPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        contactId={contact.id}
+        contactName={(contact as any).name || (contact as any).fullName}
+        companyId={resolvedCompanyId}
+      />
     </motion.div>
   );
 }
