@@ -811,31 +811,58 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   //      Navy on 27.9K shipments — clearly wrong).
   const marketSpendBreakdown = useMemo(() => {
     if (!benchmarkLanes.length) return null;
-    const topRoutesArr =
+
+    // CRITICAL: `buildYearScopedProfile` returns a routeKpis with all-zero
+    // teu/topRoutes when the profile has no timeSeries (companies without
+    // a snapshot — Old Navy, Tesla, Flexport, etc.). Trusting those zeros
+    // collapses spend to $0 → fallback chain shows the broken IY value.
+    // Always prefer the BASE profile data over year-scoped zeros for spend
+    // sizing — year scoping is a display filter, not the source of truth.
+    const baseTopRoutes =
+      (Array.isArray((profile as any)?.routeKpis?.topRoutesLast12m) &&
+      (profile as any).routeKpis.topRoutesLast12m.length > 0
+        ? (profile as any).routeKpis.topRoutesLast12m
+        : Array.isArray((profile as any)?.topRoutes) &&
+            (profile as any).topRoutes.length > 0
+          ? (profile as any).topRoutes
+          : Array.isArray((profile as any)?.top_routes) &&
+              (profile as any).top_routes.length > 0
+            ? (profile as any).top_routes
+            : []) as any[];
+
+    const yearTopRoutes =
       (Array.isArray(activeRouteKpis?.topRoutesLast12m) &&
       activeRouteKpis.topRoutesLast12m.length > 0
         ? activeRouteKpis.topRoutesLast12m
-        : Array.isArray(activeProfile?.topRoutes)
-          ? activeProfile.topRoutes
-          : Array.isArray(activeProfile?.top_routes)
-            ? activeProfile.top_routes
-            : []) as any[];
+        : []) as any[];
+
+    // Use whichever has more route data. Year-scoped wins only if it
+    // actually has routes; otherwise base.
+    const topRoutesArr =
+      yearTopRoutes.length > 0 ? yearTopRoutes : baseTopRoutes;
+
     if (topRoutesArr.length > 0) {
       const matches = matchAllRoutesForCompany(topRoutesArr, benchmarkLanes);
       const total = matches.reduce((s, m) => s + (m.marketSpend || 0), 0);
       if (total > 0) return total;
     }
-    // Tier 2 — TEU-only fallback. Use the global FBX average $/TEU because
-    // we can't tell which lane the volume actually moved on.
-    const teu = Number(
-      activeRouteKpis?.teuLast12m ??
-        activeProfile?.teuLast12m ??
-        activeProfile?.totalTeu ??
+
+    // Tier 2 — TEU-only fallback. Same anti-zero rule: prefer base profile
+    // teu over year-scoped zero.
+    const baseTeu = Number(
+      (profile as any)?.routeKpis?.teuLast12m ??
+        (profile as any)?.teuLast12m ??
+        (profile as any)?.totalTeu ??
         0,
     );
+    const yearTeu = Number(activeRouteKpis?.teuLast12m ?? 0);
+    const teu = yearTeu > 0 ? yearTeu : baseTeu;
     if (!Number.isFinite(teu) || teu <= 0) return null;
+
     const lcl = Number(
-      activeProfile?.containers?.lclShipments12m ??
+      (profile as any)?.containers?.lclShipments12m ??
+        (profile as any)?.lcl_count ??
+        activeProfile?.containers?.lclShipments12m ??
         activeProfile?.lcl_count ??
         0,
     );
@@ -845,19 +872,15 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         0,
       ) / benchmarkLanes.length;
     if (avgPerTeu <= 0) return null;
-    // Apply the same LCL-bounded TEU split: lcl_teu = min(lcl_ships, teu*0.15).
     const lclTeu = Math.min(Math.max(0, Math.round(lcl)), teu * 0.15);
     const fclTeu = Math.max(0, teu - lclTeu);
     const total = Math.round(fclTeu * avgPerTeu + lclTeu * 850);
     return total > 0 ? total : null;
   }, [
     benchmarkLanes,
+    profile,
     activeRouteKpis?.topRoutesLast12m,
     activeRouteKpis?.teuLast12m,
-    activeProfile?.topRoutes,
-    activeProfile?.top_routes,
-    activeProfile?.teuLast12m,
-    activeProfile?.totalTeu,
     activeProfile?.containers?.lclShipments12m,
     activeProfile?.lcl_count,
   ]);
