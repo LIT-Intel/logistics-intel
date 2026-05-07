@@ -206,6 +206,22 @@ export default function CDPRateBenchmark({
     [allRouteMatches],
   );
 
+  // Coverage gate — same idea as V2's marketSpendBreakdown. When per-route
+  // TEU sums to less than 70% of company total TEU, the snapshot's
+  // top_routes is too sparse to project total spend from (Old Navy: top
+  // 10 routes = 0.05% of total TEU). In that case, the hero falls back to
+  // the single-lane calc (spend.totalSpend) which uses the full company
+  // TEU × matched primary lane rate.
+  const perRouteTeuSum = useMemo(
+    () => allRouteMatches.reduce((s, m) => s + (Number(m.ourTeu) || 0), 0),
+    [allRouteMatches],
+  );
+  const teuCoverageOk = useMemo(() => {
+    const total = Number(teu12m) || 0;
+    if (total <= 0) return true; // no reference total — trust per-route
+    return perRouteTeuSum >= total * 0.7;
+  }, [perRouteTeuSum, teu12m]);
+
   // Auto-select matched lane on load.
   useEffect(() => {
     if (matched && matched.lane.lane_code !== "AVG" && !primaryLane) {
@@ -344,22 +360,28 @@ export default function CDPRateBenchmark({
             </div>
           ) : (
             <>
-              {/* When the per-route table has matches (allRouteMatches.length
-                  > 0), the hero ALWAYS uses the table's sum — it's the only
-                  number that aggregates across every lane the company ships
-                  on. Falling through to spend.totalSpend (single primary
-                  lane) was the bug that made Old Navy show $82K in the hero
-                  while the table footer correctly showed $46.4M. */}
+              {/* Hero priority:
+                  1. Per-route lane sum — only if coverage ≥70% of total TEU
+                     (catch-all importers like Old Navy fail this gate; the
+                     top 10 routes captured 0.05% of their actual volume).
+                  2. Single-lane spend.totalSpend = total TEU × primary lane
+                     rate — uses the full company TEU even when per-route is
+                     sparse.
+                  3. Null when neither has data. */}
               <div className="text-[28px] font-bold text-[#0F172A] leading-tight">
                 {fmtUsd(
-                  allRouteMatches.length > 0
+                  allRouteMatches.length > 0 && teuCoverageOk
                     ? totalMarketSpendByLanes
                     : spend?.totalSpend ?? null,
                 )}
               </div>
-              {allRouteMatches.length > 0 ? (
+              {allRouteMatches.length > 0 && teuCoverageOk ? (
                 <div className="text-[10px] uppercase tracking-wide text-blue-600 font-semibold mt-0.5">
                   Sum of {allRouteMatches.length} matched lane{allRouteMatches.length === 1 ? "" : "s"}
+                </div>
+              ) : allRouteMatches.length > 0 && !teuCoverageOk ? (
+                <div className="text-[10px] uppercase tracking-wide text-amber-700 font-semibold mt-0.5">
+                  TEU-based · top routes captured {Math.round((perRouteTeuSum / Math.max(1, Number(teu12m) || 1)) * 100)}% of total volume
                 </div>
               ) : null}
               <div className="text-[11px] text-slate-500">
