@@ -841,10 +841,31 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     const topRoutesArr =
       yearTopRoutes.length > 0 ? yearTopRoutes : baseTopRoutes;
 
+    // Tier-1 lane-matched calc — high accuracy ONLY when per-route TEU
+    // covers most of the company's actual volume. For catch-all importers
+    // (Old Navy, Tesla, Flexport) the snapshot's top_routes captures
+    // <0.1% of total TEU, producing wildly low spend ($82K on 106K TEU).
+    // We compute the lane match but only TRUST it when per-route TEU
+    // covers ≥70% of total TEU.
+    const baseTeuTotal = Number(
+      (profile as any)?.routeKpis?.teuLast12m ??
+        (profile as any)?.teuLast12m ??
+        (profile as any)?.totalTeu ??
+        0,
+    );
     if (topRoutesArr.length > 0) {
       const matches = matchAllRoutesForCompany(topRoutesArr, benchmarkLanes);
+      const matchedTeuSum = matches.reduce(
+        (s, m) => s + (Number(m.ourTeu) || 0),
+        0,
+      );
       const total = matches.reduce((s, m) => s + (m.marketSpend || 0), 0);
-      if (total > 0) return total;
+      // Coverage gate: top_routes must explain ≥70% of total TEU OR we
+      // have no total_teu reference to compare against (small importer
+      // with comprehensive routes).
+      const coverageOk =
+        baseTeuTotal <= 0 || matchedTeuSum >= baseTeuTotal * 0.7;
+      if (total > 0 && coverageOk) return total;
     }
 
     // Tier 2 — TEU-only fallback. Same anti-zero rule: prefer base profile
