@@ -48,7 +48,7 @@ export default async function ComparisonPage({ params }: { params: { slug: strin
       <BreadcrumbBar
         crumbs={[
           { label: "Home", href: "/" },
-          { label: "Comparisons", href: "/" },
+          { label: "Comparisons", href: "/vs" },
           { label: `LIT vs ${c.competitorName}` },
         ]}
       />
