@@ -40,6 +40,7 @@ import {
   Wrench,
   Bookmark,
   Anchor,
+  TrendingUp,
 } from "lucide-react";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import AddToListPicker from "@/features/pulse/AddToListPicker";
@@ -61,6 +62,7 @@ import CDPContacts from "@/components/company/CDPContacts";
 import CDPResearch from "@/components/company/CDPResearch";
 import CDPActivity from "@/components/company/CDPActivity";
 import CDPRateBenchmark from "@/components/company/CDPRateBenchmark";
+import CDPRevenueOpportunity from "@/components/company/CDPRevenueOpportunity";
 import CompanyInboxTab from "@/components/company/CompanyInboxTab";
 import CompanyProfileGuard from "@/components/company/CompanyProfileGuard";
 import { useCompanyProfile } from "@/hooks/useCompanyProfile";
@@ -269,6 +271,7 @@ const TABS = [
   { id: "rates", label: "Rate Benchmark", Icon: Anchor },
   { id: "contacts", label: "Contacts", Icon: Users },
   { id: "research", label: "Pulse AI", Icon: Sparkles },
+  { id: "revenue", label: "Revenue Opportunity", Icon: TrendingUp },
   { id: "activity", label: "Activity", Icon: Activity },
   { id: "inbox", label: "Inbox", Icon: Inbox },
 ] as const;
@@ -1695,6 +1698,65 @@ function ProfilePanel({ rawId }: { rawId: string }) {
               shareLoading={shareLoading}
               exportLoading={exportLoading}
               navigate={navigate}
+            />
+          )}
+          {tab === "revenue" && (
+            <CDPRevenueOpportunity
+              companyName={companyName}
+              shipments12m={
+                activeRouteKpis?.shipmentsLast12m ??
+                activeProfile?.totalShipments ??
+                shellCompany?.kpis?.shipments ??
+                null
+              }
+              teu12m={
+                activeRouteKpis?.teuLast12m ??
+                activeProfile?.teuLast12m ??
+                shellCompany?.kpis?.teu ??
+                null
+              }
+              fclShipments12m={
+                (activeProfile as any)?.containers?.fclShipments12m ??
+                (activeProfile as any)?.fcl_count ??
+                null
+              }
+              lclShipments12m={
+                (activeProfile as any)?.containers?.lclShipments12m ??
+                (activeProfile as any)?.lcl_count ??
+                null
+              }
+              topRoutes={
+                (Array.isArray(activeRouteKpis?.topRoutesLast12m) &&
+                activeRouteKpis.topRoutesLast12m.length > 0
+                  ? activeRouteKpis.topRoutesLast12m
+                  : Array.isArray((activeProfile as any)?.topRoutes)
+                    ? (activeProfile as any).topRoutes
+                    : Array.isArray((activeProfile as any)?.top_routes)
+                      ? (activeProfile as any).top_routes
+                      : []) as any[]
+              }
+              benchmarkLanes={benchmarkLanes}
+              hsProfile={
+                (activeProfile as any)?.hsProfile ??
+                (activeProfile as any)?.hs_profile ??
+                (activeProfile as any)?.topProducts ??
+                (activeProfile as any)?.top_products ??
+                null
+              }
+              carrierMix={
+                (activeProfile as any)?.carrierMix ??
+                (activeProfile as any)?.carrier_mix ??
+                (activeProfile as any)?.topCarriers ??
+                (activeProfile as any)?.top_carriers ??
+                null
+              }
+              importerSelfReportedSpend12m={
+                Number(
+                  (activeRouteKpis as any)?.estSpendUsd12m ??
+                    (activeProfile as any)?.estSpendUsd12m ??
+                    null,
+                ) || null
+              }
             />
           )}
           {tab === "activity" && (
