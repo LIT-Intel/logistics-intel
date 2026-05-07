@@ -8,6 +8,7 @@ type PulseAiRequest = {
   source_company_key?: string | null;
   mode?: PulseAiMode;
   force_refresh?: boolean;
+  freight_market_intelligence?: Record<string, any> | null;
 };
 
 type JsonRecord = Record<string, any>;
@@ -826,6 +827,16 @@ Hard rules:
 - Prioritize why this company is worth contacting now.
 - Identify carrier concentration, forwarder displacement, container mix, FCL/LCL opportunities, lane changes, supplier signals, and suggested outreach angles.
 - Return only valid JSON matching the schema.
+
+Freight market intelligence rules:
+- When the payload contains a freight_market_intelligence block, treat its lane_matches list as ground-truth current spend per lane. The numbers were computed from the FBX (Freightos Baltic Index) plus LIT-extended reference rates at the as_of_date shown.
+- Use those numbers naturally in sales_angle, why_now, lane_insights, and company_summary. Do not paste them verbatim like a stat dump.
+- Use the per-lane market_spend_usd to anchor revenue-opportunity language. Example phrasing (do NOT copy verbatim — match the actual data):
+  - "On Italy → US East Coast, they move ~1,881 TEU a year. At today's $1,100/TEU benchmark, that's roughly $2.07M of ocean spend you could compete for."
+  - "Their carrier reports ~$330K in customs value on this lane, but the actual freight market value is closer to $2.07M — a 6× gap that usually means they're under-disclosing or working with a heavy NVOCC."
+- When the total_market_spend_usd is materially larger than the snapshot's est_spend_12m, you may flag it as a buying signal: it usually means the buyer is consolidating or under-disclosing, both of which are useful angles.
+- Keep tone like a senior account manager talking to another rep — confident, specific, never salesy.
+- Never round below the nearest $10K when the value is over $1M; never invent a number that isn't in lane_matches.
 `;
 }
 
@@ -1029,6 +1040,16 @@ serve(async (req) => {
 
     const forceRefresh = body.force_refresh === true;
 
+    // Phase 4 — caller-supplied lane-matched freight market intelligence.
+    // Computed by the Company Profile UI from lit_freight_rate_benchmarks +
+    // the company's top routes, using the LCL-bounded TEU split. Optional;
+    // when absent the model falls back to the snapshot's importer-reported
+    // total_shipping_cost (which structurally undervalues high-TEU lanes).
+    const freightMarketIntelligence =
+      body && typeof body.freight_market_intelligence === "object"
+        ? body.freight_market_intelligence
+        : null;
+
     if (!companyId && !sourceCompanyKey) {
       return jsonResponse(
         {
@@ -1132,10 +1153,17 @@ serve(async (req) => {
       );
     }
 
+    // Inject the caller-supplied freight market intelligence into the
+    // context the model sees, so sales_angle / why_now / lane_insights /
+    // company_summary can ground spend talk in current FBX rates.
+    const enrichedContext = freightMarketIntelligence
+      ? { ...loaded.context, freight_market_intelligence: freightMarketIntelligence }
+      : loaded.context;
+
     const { report, response } = await callOpenAi({
       companyName: loaded.companyName,
       mode,
-      context: loaded.context,
+      context: enrichedContext,
     });
 
     const tokenUsage = response?.usage ?? null;

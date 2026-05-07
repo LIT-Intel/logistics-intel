@@ -15,10 +15,10 @@ const NAV_GROUPS: {
     heading: "Product",
     links: [
       { label: "Platform overview", href: "/products" },
+      { label: "All features", href: "/features" },
       { label: "Pulse AI", href: "/pulse" },
       { label: "Company Intelligence", href: "/company-intelligence" },
       { label: "Contact Intelligence", href: "/contact-intelligence" },
-      { label: "Trade Intelligence", href: "/trade-intelligence" },
       { label: "Command Center (CRM)", href: "/command-center" },
       { label: "Outbound Engine", href: "/outbound-engine" },
     ],
@@ -26,10 +26,20 @@ const NAV_GROUPS: {
   {
     heading: "Solutions",
     links: [
-      { label: "Use cases", href: "/use-cases" },
-      { label: "Industries", href: "/industries" },
+      { label: "All solutions", href: "/solutions" },
+      { label: "Freight forwarders", href: "/solutions/freight-forwarders" },
+      { label: "Freight brokers", href: "/solutions/freight-brokers" },
+      { label: "3PL sales", href: "/solutions/3pl-sales" },
+      { label: "Customs brokers", href: "/solutions/customs-brokers" },
       { label: "Customers", href: "/customers" },
-      { label: "Comparisons", href: "/vs" },
+    ],
+  },
+  {
+    heading: "Compare",
+    links: [
+      { label: "All comparisons", href: "/vs" },
+      { label: "Alternatives", href: "/alternatives" },
+      { label: "Best of rankings", href: "/best" },
     ],
   },
   {

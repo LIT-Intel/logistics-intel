@@ -5,6 +5,8 @@ import { GLOSSARY_INDEX_QUERY } from "@/sanity/lib/queries";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
 import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
+import { Section } from "@/components/sections/Section";
+import { HubCard, HubEmptyState } from "@/components/sections/HubCard";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
 import { buildCollectionPage } from "@/lib/jsonLd";
@@ -31,7 +33,6 @@ type Term = {
 export default async function GlossaryIndexPage() {
   const terms = (await sanityClient.fetch<Term[]>(GLOSSARY_INDEX_QUERY).catch(() => [])) || [];
 
-  // Group alphabetically
   const grouped = terms.reduce<Record<string, Term[]>>((acc, t) => {
     const letter = (t.term?.[0] || "#").toUpperCase();
     (acc[letter] = acc[letter] || []).push(t);
@@ -56,57 +57,46 @@ export default async function GlossaryIndexPage() {
       />
 
       {letters.length === 0 ? (
-        <section className="px-8 pb-20">
-          <div className="mx-auto max-w-container">
-            <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
-              <div className="font-display text-[18px] font-semibold text-ink-900">The freight glossary — publishing</div>
-              <p className="font-body mx-auto mt-2 max-w-[520px] text-[14px] leading-relaxed text-ink-500">
-                Plain-English definitions for the terms freight forwarders, brokers, and customs operators
-                use every day — from{" "}
-                <span className="font-mono text-ink-700">Bill of Lading</span> and{" "}
-                <span className="font-mono text-ink-700">TEU</span> through{" "}
-                <span className="font-mono text-ink-700">Incoterms</span> and HS classification.{" "}
-                <a href="/demo" className="text-brand-blue-700 underline">
-                  Book a demo
-                </a>
-                {" "}to see how these concepts power live shipper intelligence.
-              </p>
-            </div>
-          </div>
-        </section>
+        <Section bottom="lg">
+          <HubEmptyState title="The freight glossary — publishing">
+            Plain-English definitions for the terms freight forwarders, brokers, and customs operators
+            use every day — from{" "}
+            <span className="font-mono text-ink-700">Bill of Lading</span> and{" "}
+            <span className="font-mono text-ink-700">TEU</span> through{" "}
+            <span className="font-mono text-ink-700">Incoterms</span> and HS classification.{" "}
+            <Link href="/demo" className="text-brand-blue-700 underline">
+              Book a demo
+            </Link>
+            {" "}to see how these concepts power live shipper intelligence.
+          </HubEmptyState>
+        </Section>
       ) : (
         <>
-          <section className="px-8 pb-6">
-            <div className="mx-auto max-w-container">
-              <div className="flex flex-wrap gap-1.5 rounded-2xl border border-ink-100 bg-white px-3 py-2 shadow-sm">
-                {letters.map((l) => (
-                  <a
-                    key={l}
-                    href={`#${l}`}
-                    className="font-display flex h-8 w-8 items-center justify-center rounded-md text-[12px] font-semibold text-ink-700 transition hover:bg-ink-25 hover:text-brand-blue"
-                  >
-                    {l}
-                  </a>
-                ))}
-              </div>
+          <Section top="none" bottom="sm">
+            <div className="flex flex-wrap gap-1.5 rounded-2xl border border-ink-100 bg-white px-3 py-2 shadow-sm">
+              {letters.map((l) => (
+                <a
+                  key={l}
+                  href={`#${l}`}
+                  className="font-display flex h-8 w-8 items-center justify-center rounded-md text-[12px] font-semibold text-ink-700 transition hover:bg-ink-25 hover:text-brand-blue"
+                >
+                  {l}
+                </a>
+              ))}
             </div>
-          </section>
+          </Section>
 
-          <section className="px-8 pb-20">
-            <div className="mx-auto max-w-container space-y-12">
+          <Section top="sm" bottom="lg">
+            <div className="space-y-12 sm:space-y-16">
               {letters.map((l) => (
                 <div key={l} id={l} className="scroll-mt-24">
-                  <div className="font-display mb-4 flex items-center gap-3">
-                    <span className="text-[44px] font-semibold tracking-[-0.02em] text-brand-blue">{l}</span>
+                  <div className="font-display mb-5 flex items-center gap-3">
+                    <span className="text-[36px] sm:text-[44px] font-semibold tracking-[-0.02em] text-brand-blue">{l}</span>
                     <span className="h-px flex-1 bg-ink-100" />
                   </div>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {grouped[l].map((t) => (
-                      <Link
-                        key={t._id}
-                        href={`/glossary/${t.slug.current}`}
-                        className="group rounded-xl border border-ink-100 bg-white p-4 transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-sm"
-                      >
+                      <HubCard key={t._id} href={`/glossary/${t.slug.current}`} variant="compact">
                         <div className="font-display text-[15px] font-semibold text-ink-900 group-hover:text-brand-blue-700">
                           {t.term}
                           {t.abbreviation && (
@@ -120,13 +110,13 @@ export default async function GlossaryIndexPage() {
                             {t.shortDefinition}
                           </div>
                         )}
-                      </Link>
+                      </HubCard>
                     ))}
                   </div>
                 </div>
               ))}
             </div>
-          </section>
+          </Section>
         </>
       )}
 

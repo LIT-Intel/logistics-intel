@@ -42,6 +42,7 @@ import {
   Anchor,
 } from "lucide-react";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
+import AddToListPicker from "@/features/pulse/AddToListPicker";
 import {
   getSavedCompanyDetail,
   getSavedCompanyShellOnly,
@@ -433,6 +434,10 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   const [savingStar, setSavingStar] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [campaignModalOpen, setCampaignModalOpen] = useState(false);
+  // Universal Saved Lists picker — shared with Pulse / Pulse Library / Campaigns.
+  // Distinct from the campaign modal (which is for outreach send), so users can
+  // organize companies into lists without committing to a campaign.
+  const [addToListOpen, setAddToListOpen] = useState(false);
 
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -1001,6 +1006,64 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         setPulseLoading(false);
         return;
       }
+      // Phase 4 — pass lane-matched freight market intelligence to Pulse AI
+      // so the brief grounds spend talk in current FBX rates (e.g. "EAE moves
+      // ~1,881 TEU/yr on Med→US East Coast — $2.1M at current rates").
+      // Computed client-side because the matching logic lives in
+      // freightRateBenchmark.ts and we already have it loaded for the
+      // benchmark tab.
+      let freightMarketIntelligence: any = null;
+      try {
+        if (benchmarkLanes.length > 0) {
+          const topRoutesArr =
+            (Array.isArray(activeRouteKpis?.topRoutesLast12m) &&
+            activeRouteKpis.topRoutesLast12m.length > 0
+              ? activeRouteKpis.topRoutesLast12m
+              : Array.isArray(activeProfile?.topRoutes)
+                ? activeProfile.topRoutes
+                : Array.isArray(activeProfile?.top_routes)
+                  ? activeProfile.top_routes
+                  : []) as any[];
+          if (topRoutesArr.length > 0) {
+            const matches = matchAllRoutesForCompany(topRoutesArr, benchmarkLanes);
+            const total = matches.reduce(
+              (s, m) => s + (m.marketSpend || 0),
+              0,
+            );
+            if (total > 0) {
+              freightMarketIntelligence = {
+                source: "FBX_LIT_extended",
+                as_of_date:
+                  benchmarkLanes[0]?.as_of_date ??
+                  benchmarkLanes[0]?.fetched_at?.slice(0, 10) ??
+                  null,
+                total_market_spend_usd: Math.round(total),
+                methodology:
+                  "Lane spend = (FCL TEU × matched lane $/TEU) + (LCL TEU × $850 LCL benchmark). LCL TEU is bounded at min(LCL ships × 1, total TEU × 0.15). Honest, refresh-proof.",
+                lane_matches: matches.map((m) => ({
+                  route: m.route,
+                  our_shipments_12m: m.ourShipments,
+                  our_teu_12m: Math.round(m.ourTeu),
+                  our_fcl_12m: m.ourFcl,
+                  our_lcl_12m: m.ourLcl,
+                  matched_lane_code: m.matched?.lane.lane_code ?? null,
+                  matched_lane_label: m.matched?.lane.lane_label ?? null,
+                  match_confidence: m.matched?.confidence ?? null,
+                  rate_usd_per_teu: m.matched?.lane.rate_usd_per_teu ?? null,
+                  rate_usd_per_40ft: m.matched?.lane.rate_usd_per_40ft ?? null,
+                  market_spend_usd: m.marketSpend,
+                })),
+              };
+            }
+          }
+        }
+      } catch (mErr) {
+        console.warn(
+          "[CompanyProfileV2] freightMarketIntelligence build failed",
+          mErr,
+        );
+      }
+
       const { data, error: invokeError } = await supabase.functions.invoke(
         "pulse-ai-enrich",
         {
@@ -1009,6 +1072,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             ...(sourceKey ? { source_company_key: sourceKey } : {}),
             mode: "company_profile",
             force_refresh: forceRefresh,
+            ...(freightMarketIntelligence
+              ? { freight_market_intelligence: freightMarketIntelligence }
+              : {}),
           },
         },
       );
@@ -1409,7 +1475,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         onBack={() => navigate("/app/command-center")}
         onShare={handleShareHtmlClick}
         onExportPdf={handleExportPdfClick}
-        onAddToList={() => setCampaignModalOpen(true)}
+        onAddToList={() => setAddToListOpen(true)}
         onStartOutreach={() => setCampaignModalOpen(true)}
         onPulse={handlePulseClick}
         onRefresh={handleManualRefreshClick}
@@ -1695,6 +1761,25 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         company={{
           company_id: bundle?.identity?.id ?? companyId,
           name: companyName,
+        }}
+      />
+
+      <AddToListPicker
+        open={addToListOpen}
+        onClose={() => setAddToListOpen(false)}
+        companyId={bundle?.identity?.id ?? null}
+        companyName={companyName}
+        contextQuery={
+          (typeof headerKpis?.topRoute === "string"
+            ? headerKpis.topRoute
+            : null) || companyName || null
+        }
+        onSaved={(list: { name: string }) => {
+          setShareToast({
+            tone: "success",
+            message: `Added ${companyName} to "${list.name}"`,
+          });
+          setTimeout(() => setShareToast(null), 3500);
         }}
       />
     </div>

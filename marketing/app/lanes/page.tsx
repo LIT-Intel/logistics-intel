@@ -5,6 +5,8 @@ import { sanityClient } from "@/sanity/lib/client";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
 import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
+import { Section } from "@/components/sections/Section";
+import { HubCard, HubCardGrid, HubEmptyState } from "@/components/sections/HubCard";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
 import { buildMetadata } from "@/lib/seo";
@@ -46,62 +48,44 @@ export default async function LanesIndexPage() {
         align="center"
       />
 
-      <section className="px-8 pb-10">
-        <div className="mx-auto max-w-[520px]">
-          <MarketingGlobe />
-        </div>
-      </section>
+      <Section top="none" bottom="md" innerClassName="max-w-[520px]">
+        <MarketingGlobe />
+      </Section>
 
-      {lanes.length === 0 ? (
-        <section className="px-8 pb-20">
-          <div className="mx-auto max-w-container">
-            <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
-              <div className="font-display text-[18px] font-semibold text-ink-900">
-                500+ trade lanes — refreshing now
-              </div>
-              <p className="font-body mx-auto mt-2 max-w-[520px] text-[14px] leading-relaxed text-ink-500">
-                Trade-lane intelligence is aggregated from live customs filings across 60+ countries. New
-                lane pages publish daily with top shippers, carrier mix, port pairs, and YoY volume change.
-                {" "}
-                <Link href="/demo" className="text-brand-blue-700 underline">
-                  Book a demo
-                </Link>
-                {" "}to see your specific lane right now.
-              </p>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="px-8 pb-20">
-          <div className="mx-auto max-w-container">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {lanes.map((l) => (
-                <Link
-                  key={l._id}
-                  href={`/lanes/${l.slug?.current}`}
-                  className="group rounded-2xl border border-ink-100 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg"
-                >
-                  <div className="font-display flex items-center gap-2 text-[14px] font-semibold text-ink-900">
-                    <span>{l.originPort?.name || "—"}</span>
-                    <ArrowRight className="h-3.5 w-3.5 text-brand-blue" />
-                    <span>{l.destinationPort?.name || "—"}</span>
+      <Section top="sm" bottom="lg">
+        {lanes.length === 0 ? (
+          <HubEmptyState title="500+ trade lanes — refreshing now">
+            Trade-lane intelligence is aggregated from live customs filings across 60+ countries. New
+            lane pages publish daily with top shippers, carrier mix, port pairs, and YoY volume change.{" "}
+            <Link href="/demo" className="text-brand-blue-700 underline">
+              Book a demo
+            </Link>
+            {" "}to see your specific lane right now.
+          </HubEmptyState>
+        ) : (
+          <HubCardGrid>
+            {lanes.map((l) => (
+              <HubCard key={l._id} href={`/lanes/${l.slug?.current}`}>
+                <div className="font-display flex items-center gap-2 text-[14px] font-semibold text-ink-900">
+                  <span>{l.originPort?.name || "—"}</span>
+                  <ArrowRight className="h-3.5 w-3.5 text-brand-blue" />
+                  <span>{l.destinationPort?.name || "—"}</span>
+                </div>
+                {l.kpis?.[0]?.value && (
+                  <div className="mt-4 flex items-baseline gap-2">
+                    <span className="font-mono text-[22px] font-semibold tracking-[-0.01em] text-brand-blue-700">
+                      {l.kpis[0].value}
+                    </span>
+                    <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink-500">
+                      {l.kpis[0].label}
+                    </span>
                   </div>
-                  {l.kpis?.[0]?.value && (
-                    <div className="mt-4 flex items-baseline gap-2">
-                      <span className="font-mono text-[22px] font-semibold tracking-[-0.01em] text-brand-blue-700">
-                        {l.kpis[0].value}
-                      </span>
-                      <span className="font-display text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink-500">
-                        {l.kpis[0].label}
-                      </span>
-                    </div>
-                  )}
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
+                )}
+              </HubCard>
+            ))}
+          </HubCardGrid>
+        )}
+      </Section>
 
       <CtaBanner
         eyebrow="Watch your lanes"

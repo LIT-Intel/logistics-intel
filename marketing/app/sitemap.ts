@@ -1,6 +1,10 @@
 import type { MetadataRoute } from "next";
 import { sanityClient } from "@/sanity/lib/client";
 import { SITEMAP_QUERY } from "@/sanity/lib/queries";
+import { FEATURE_PAGES } from "./features/_data";
+import { SOLUTION_PAGES } from "./solutions/_data";
+import { ALTERNATIVE_PAGES } from "./alternatives/_data";
+import { BEST_LIST_PAGES } from "./best/_data";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://logisticintel.com";
 
@@ -46,6 +50,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/resources`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: `${SITE_URL}/faq`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: `${SITE_URL}/vs`, lastModified: now, changeFrequency: "weekly", priority: 0.85 },
+    { url: `${SITE_URL}/features`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${SITE_URL}/solutions`, lastModified: now, changeFrequency: "weekly", priority: 0.85 },
+    { url: `${SITE_URL}/alternatives`, lastModified: now, changeFrequency: "weekly", priority: 0.85 },
+    { url: `${SITE_URL}/best`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
+    ...FEATURE_PAGES.map((f) => ({
+      url: `${SITE_URL}/features/${f.slug}`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
+    })),
+    ...SOLUTION_PAGES.map((s) => ({
+      url: `${SITE_URL}/solutions/${s.slug}`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
+    })),
+    ...ALTERNATIVE_PAGES.map((a) => ({
+      url: `${SITE_URL}/alternatives/${a.slug}`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.75,
+    })),
+    ...BEST_LIST_PAGES.map((b) => ({
+      url: `${SITE_URL}/best/${b.slug}`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.75,
+    })),
     { url: `${SITE_URL}/glossary`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: `${SITE_URL}/use-cases`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${SITE_URL}/lanes`, lastModified: now, changeFrequency: "daily", priority: 0.7 },

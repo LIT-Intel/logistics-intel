@@ -31,10 +31,11 @@ export function Nav() {
 
         <div className="hidden items-center gap-1 md:flex">
           <ProductDropdown />
-          <NavLink href="/use-cases">Solutions</NavLink>
+          <NavLink href="/solutions">Solutions</NavLink>
           <NavLink href="/customers">Customers</NavLink>
           <NavLink href="/pricing">Pricing</NavLink>
           <NavLink href="/resources">Resources</NavLink>
+          <NavLink href="/vs">Compare</NavLink>
         </div>
 
         <div className="ml-auto flex items-center gap-2 sm:gap-2.5">

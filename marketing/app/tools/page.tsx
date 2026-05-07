@@ -5,6 +5,8 @@ import { sanityClient } from "@/sanity/lib/client";
 import { groq } from "next-sanity";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
+import { Section } from "@/components/sections/Section";
+import { HubCard, HubCardGrid, HubEmptyState } from "@/components/sections/HubCard";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
 
@@ -35,49 +37,34 @@ export default async function ToolsPage() {
         align="center"
       />
 
-      {tools.length === 0 ? (
-        <section className="px-8 pb-20">
-          <div className="mx-auto max-w-container">
-            <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
-              <div className="font-display text-[18px] font-semibold text-ink-900">
-                Free freight tools — launching this month
-              </div>
-              <p className="font-body mx-auto mt-2 max-w-[480px] text-[14px] leading-relaxed text-ink-500">
-                Lane volume estimator, HS code lookup, TEU calculator, and shipper search — built on
-                live trade data. In the meantime,{" "}
-                <Link href="/demo" className="text-brand-blue-700 underline">
-                  book a demo
-                </Link>
-                {" "}to use these directly inside the LIT platform.
-              </p>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="px-8 pb-20">
-          <div className="mx-auto max-w-container">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {tools.map((t) => (
-                <Link
-                  key={t._id}
-                  href={`/tools/${t.slug?.current}`}
-                  className="group rounded-2xl border border-ink-100 bg-white p-7 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg"
-                >
-                  {t.category && (
-                    <div className="font-display text-[11px] font-bold uppercase tracking-wider text-brand-blue">
-                      {t.category}
-                    </div>
-                  )}
-                  <h3 className="display-sm mt-2">{t.name}</h3>
-                  {t.tagline && (
-                    <p className="font-body mt-2 text-[14px] leading-relaxed text-ink-500">{t.tagline}</p>
-                  )}
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
+      <Section bottom="lg">
+        {tools.length === 0 ? (
+          <HubEmptyState title="Free freight tools — launching this month">
+            Lane volume estimator, HS code lookup, TEU calculator, and shipper search — built on
+            live trade data. In the meantime,{" "}
+            <Link href="/demo" className="text-brand-blue-700 underline">
+              book a demo
+            </Link>
+            {" "}to use these directly inside the LIT platform.
+          </HubEmptyState>
+        ) : (
+          <HubCardGrid>
+            {tools.map((t) => (
+              <HubCard key={t._id} href={`/tools/${t.slug?.current}`}>
+                {t.category && (
+                  <div className="font-display text-[11px] font-bold uppercase tracking-wider text-brand-blue">
+                    {t.category}
+                  </div>
+                )}
+                <h3 className="display-sm mt-2">{t.name}</h3>
+                {t.tagline && (
+                  <p className="font-body mt-2 text-[14px] leading-relaxed text-ink-500">{t.tagline}</p>
+                )}
+              </HubCard>
+            ))}
+          </HubCardGrid>
+        )}
+      </Section>
 
       <CtaBanner
         eyebrow="Need more"

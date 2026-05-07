@@ -645,28 +645,106 @@ export default function CDPRateBenchmark({
           </div>
         </div>
 
-        {/* Globe — same trade theme as Supply Chain */}
+        {/* Globe — same trade theme as Supply Chain. Tracks user's selected
+            primaryLane (clicking a lane in the trade-lanes table or comparison
+            row updates the globe focus) and shows country flag-pins at the
+            arc endpoints, matching CDPSupplyChain's behavior exactly. */}
         <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
           <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
             <Globe2 className="h-4 w-4 text-blue-600" />
-            <div>
+            <div className="min-w-0 flex-1">
               <div className="text-[13px] font-bold text-[#0F172A]">
                 Global Lane Map
               </div>
-              <div className="text-[11px] text-slate-500">
-                12 reference lanes. Matched lane highlighted.
+              <div className="text-[11px] text-slate-500 truncate">
+                {primaryLane
+                  ? `${primaryLane} highlighted · click another lane to refocus`
+                  : "12 reference lanes. Pick a lane to focus."}
               </div>
             </div>
           </div>
-          <div className="px-2 py-2">
-            <div className="aspect-square w-full max-h-[340px] mx-auto">
-              <GlobeCanvas
-                lanes={globeLanes}
-                selectedLane={matched?.lane?.lane_code ?? null}
-                theme="trade"
-              />
-            </div>
+          <div className="flex items-center justify-center bg-slate-50 px-3 py-3">
+            <GlobeCanvas
+              lanes={globeLanes}
+              selectedLane={primaryLane}
+              size={260}
+              theme="trade"
+              showFlagPins
+            />
           </div>
+          {/* Selected-lane summary — reads from allRouteMatches when this is
+              one of the company's lanes, else falls back to reference-only
+              data so the panel is always populated. */}
+          {(() => {
+            if (!primaryLane) return null;
+            const refLane = lanes.find((l) => l.lane_code === primaryLane);
+            if (!refLane) return null;
+            const ownMatch = allRouteMatches.find(
+              (m) => m.matched?.lane.lane_code === primaryLane,
+            );
+            const totalMs = totalMarketSpendByLanes;
+            const sharePct =
+              ownMatch && totalMs > 0
+                ? Math.round((ownMatch.marketSpend / totalMs) * 100)
+                : null;
+            return (
+              <div className="border-t border-slate-100 px-4 py-3">
+                <div className="text-[10px] uppercase tracking-wide font-semibold text-slate-500 mb-1.5">
+                  Lane summary
+                </div>
+                <div className="text-[12.5px] font-bold text-[#0F172A] mb-0.5 truncate">
+                  {refLane.lane_label}
+                </div>
+                <div className="text-[10.5px] text-slate-500 mb-3">
+                  {refLane.lane_code} · current ${" "}
+                  {fmtUsd(Math.round(refLane.rate_usd_per_teu))}/TEU ·{" "}
+                  {fmtUsd(Math.round(refLane.rate_usd_per_40ft))}/40ft
+                </div>
+                {ownMatch ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-md bg-slate-50 px-2.5 py-1.5">
+                      <div className="text-[9.5px] uppercase tracking-wide font-semibold text-slate-500">
+                        Your shipments
+                      </div>
+                      <div className="text-[12.5px] font-bold text-[#0F172A] tabular-nums">
+                        {ownMatch.ourShipments.toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="rounded-md bg-slate-50 px-2.5 py-1.5">
+                      <div className="text-[9.5px] uppercase tracking-wide font-semibold text-slate-500">
+                        Your TEU
+                      </div>
+                      <div className="text-[12.5px] font-bold text-[#0F172A] tabular-nums">
+                        {Math.round(ownMatch.ourTeu).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="rounded-md bg-blue-50 px-2.5 py-1.5">
+                      <div className="text-[9.5px] uppercase tracking-wide font-semibold text-blue-700">
+                        Lane spend
+                      </div>
+                      <div className="text-[12.5px] font-bold text-blue-900 tabular-nums">
+                        {fmtUsd(ownMatch.marketSpend)}
+                      </div>
+                    </div>
+                    <div className="rounded-md bg-blue-50 px-2.5 py-1.5">
+                      <div className="text-[9.5px] uppercase tracking-wide font-semibold text-blue-700">
+                        % of total spend
+                      </div>
+                      <div className="text-[12.5px] font-bold text-blue-900 tabular-nums">
+                        {sharePct != null ? `${sharePct}%` : "—"}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-md bg-amber-50 border border-amber-100 px-2.5 py-2 text-[11px] text-amber-800">
+                    Reference lane shown — this company doesn't ship on it.
+                    Pick one of {companyName ? `${companyName}'s` : "your"}{" "}
+                    lanes below to see your spend.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
