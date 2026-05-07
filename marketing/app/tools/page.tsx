@@ -39,10 +39,16 @@ export default async function ToolsPage() {
         <section className="px-8 pb-20">
           <div className="mx-auto max-w-container">
             <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
-              <div className="font-display text-[18px] font-semibold text-ink-900">Tools coming soon</div>
-              <p className="font-body mx-auto mt-2 max-w-[440px] text-[14px] leading-relaxed text-ink-500">
-                We're shipping the first batch of free tools next month — HS code lookup, TEU calculator, ICP
-                scorer, and lane volume estimator.
+              <div className="font-display text-[18px] font-semibold text-ink-900">
+                Free freight tools — launching this month
+              </div>
+              <p className="font-body mx-auto mt-2 max-w-[480px] text-[14px] leading-relaxed text-ink-500">
+                Lane volume estimator, HS code lookup, TEU calculator, and shipper search — built on
+                live trade data. In the meantime,{" "}
+                <Link href="/demo" className="text-brand-blue-700 underline">
+                  book a demo
+                </Link>
+                {" "}to use these directly inside the LIT platform.
               </p>
             </div>
           </div>

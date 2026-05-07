@@ -59,10 +59,17 @@ export default async function GlossaryIndexPage() {
         <section className="px-8 pb-20">
           <div className="mx-auto max-w-container">
             <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
-              <div className="font-display text-[18px] font-semibold text-ink-900">No terms yet</div>
-              <p className="font-body mx-auto mt-2 max-w-[440px] text-[14px] leading-relaxed text-ink-500">
-                Run <code className="font-mono">tsx marketing/scripts/seed.ts</code> to seed the 60-term
-                starter set, or wait for the Glossary Expander agent to populate this index.
+              <div className="font-display text-[18px] font-semibold text-ink-900">The freight glossary — publishing</div>
+              <p className="font-body mx-auto mt-2 max-w-[520px] text-[14px] leading-relaxed text-ink-500">
+                Plain-English definitions for the terms freight forwarders, brokers, and customs operators
+                use every day — from{" "}
+                <span className="font-mono text-ink-700">Bill of Lading</span> and{" "}
+                <span className="font-mono text-ink-700">TEU</span> through{" "}
+                <span className="font-mono text-ink-700">Incoterms</span> and HS classification.{" "}
+                <a href="/demo" className="text-brand-blue-700 underline">
+                  Book a demo
+                </a>
+                {" "}to see how these concepts power live shipper intelligence.
               </p>
             </div>
           </div>

@@ -52,10 +52,16 @@ export default async function HsCodeIndexPage() {
         <section className="px-8 pb-20">
           <div className="mx-auto max-w-container">
             <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
-              <div className="font-display text-[18px] font-semibold text-ink-900">HS data warming up</div>
-              <p className="font-body mx-auto mt-2 max-w-[480px] text-[14px] leading-relaxed text-ink-500">
-                The Glossary Expander agent populates this index with the 200+ HS codes we want to rank for.
-                Once the Phase 4 agent fleet is wired, codes appear automatically.
+              <div className="font-display text-[18px] font-semibold text-ink-900">
+                HS code intelligence — publishing
+              </div>
+              <p className="font-body mx-auto mt-2 max-w-[520px] text-[14px] leading-relaxed text-ink-500">
+                Pages for 5,000+ Harmonized System tariff classifications are rolling out. Each surfaces
+                top US importers of that HS code, dominant origin countries, and tariff treatment notes
+                for customs and freight teams.{" "}
+                <Link href="/glossary" className="text-brand-blue-700 underline">
+                  Browse the glossary →
+                </Link>
               </p>
             </div>
           </div>

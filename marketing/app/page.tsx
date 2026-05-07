@@ -205,8 +205,8 @@ function Hero({ hero }: { hero: any }) {
         </div>
 
         <div
-          className="relative min-h-[520px] sm:min-h-[540px] lg:min-h-0"
-          style={{ contain: "layout paint" }}
+          className="relative min-h-[520px] overflow-hidden sm:min-h-[540px] lg:min-h-0"
+          style={{ contain: "layout paint", maxWidth: "100%" }}
         >
           <HeroSearchDemo />
         </div>
@@ -324,8 +324,8 @@ function CompanyIntelShowcase() {
             </ul>
           </div>
           <div
-            className="min-h-[640px] sm:min-h-[600px] lg:order-2 lg:min-h-0"
-            style={{ contain: "layout paint" }}
+            className="min-h-[640px] overflow-hidden sm:min-h-[600px] lg:order-2 lg:min-h-0"
+            style={{ contain: "layout paint", maxWidth: "100%" }}
           >
             <CompanyIntelMock />
           </div>
@@ -366,8 +366,8 @@ function PulseBriefShowcase() {
             </ul>
           </div>
           <div
-            className="min-h-[640px] sm:min-h-[600px] lg:min-h-0"
-            style={{ contain: "layout paint" }}
+            className="min-h-[640px] overflow-hidden sm:min-h-[600px] lg:min-h-0"
+            style={{ contain: "layout paint", maxWidth: "100%" }}
           >
             <PulseBriefMock />
           </div>
@@ -383,8 +383,8 @@ function ContactDiscoveryShowcase() {
       <div className="mx-auto max-w-container">
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
           <div
-            className="min-h-[600px] sm:min-h-[560px] lg:order-1 lg:min-h-0"
-            style={{ contain: "layout paint" }}
+            className="min-h-[600px] overflow-hidden sm:min-h-[560px] lg:order-1 lg:min-h-0"
+            style={{ contain: "layout paint", maxWidth: "100%" }}
           >
             <ContactDiscoveryMock />
           </div>
@@ -449,8 +449,8 @@ function SequenceBuilderShowcase() {
             </ul>
           </div>
           <div
-            className="min-h-[640px] sm:min-h-[600px] lg:min-h-0"
-            style={{ contain: "layout paint" }}
+            className="min-h-[640px] overflow-hidden sm:min-h-[600px] lg:min-h-0"
+            style={{ contain: "layout paint", maxWidth: "100%" }}
           >
             <SequenceBuilderMock />
           </div>

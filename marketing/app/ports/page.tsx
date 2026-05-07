@@ -45,10 +45,21 @@ export default async function PortsIndexPage() {
         <section className="px-8 pb-20">
           <div className="mx-auto max-w-container">
             <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
-              <div className="font-display text-[18px] font-semibold text-ink-900">Port data warming up</div>
-              <p className="font-body mx-auto mt-2 max-w-[480px] text-[14px] leading-relaxed text-ink-500">
-                The TradeLane Refresher agent populates this index from the live shipment graph. Once the
-                Phase 4 agent fleet is wired, ports populate automatically.
+              <div className="font-display text-[18px] font-semibold text-ink-900">
+                Port-level intelligence — rolling out
+              </div>
+              <p className="font-body mx-auto mt-2 max-w-[520px] text-[14px] leading-relaxed text-ink-500">
+                Port pages cover 800+ global seaports with live trailing-12m volume, top importers and
+                exporters, dominant carriers, and cross-references to major trade lanes. While this index
+                is publishing,{" "}
+                <Link href="/lanes" className="text-brand-blue-700 underline">
+                  browse trade lanes →
+                </Link>
+                {" "}or{" "}
+                <Link href="/demo" className="text-brand-blue-700 underline">
+                  book a demo
+                </Link>
+                {" "}to query any port inside LIT directly.
               </p>
             </div>
           </div>

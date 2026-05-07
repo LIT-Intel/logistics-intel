@@ -52,12 +52,19 @@ export function Nav() {
             Book a demo
           </Link>
 
-          {/* Mobile-only primary CTA — keeps a one-tap path to /demo
-              without opening the drawer. Sign in stays inside the drawer. */}
+          {/* Mobile-only Sign in — compact ghost button, sits beside Demo */}
+          <a
+            href={APP_LOGIN_URL}
+            aria-label="Sign in"
+            className="font-display inline-flex h-9 items-center rounded-md border border-ink-100 bg-white/70 px-2.5 text-[12.5px] font-semibold text-ink-700 backdrop-blur transition hover:bg-white md:hidden"
+          >
+            Sign in
+          </a>
+          {/* Mobile-only primary CTA — one-tap /demo without opening the drawer */}
           <Link
             href="/demo"
             aria-label="Book a demo"
-            className="font-display inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-semibold text-white shadow-[0_4px_14px_rgba(37,99,235,0.32)] md:hidden"
+            className="font-display inline-flex h-9 items-center gap-1 rounded-md px-2.5 text-[12.5px] font-semibold text-white shadow-[0_4px_14px_rgba(37,99,235,0.32)] md:hidden"
             style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
           >
             <Calendar className="h-3.5 w-3.5" aria-hidden />

@@ -57,11 +57,16 @@ export default async function LanesIndexPage() {
           <div className="mx-auto max-w-container">
             <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
               <div className="font-display text-[18px] font-semibold text-ink-900">
-                Lane data warming up
+                500+ trade lanes — refreshing now
               </div>
-              <p className="font-body mx-auto mt-2 max-w-[480px] text-[14px] leading-relaxed text-ink-500">
-                The TradeLane Refresher agent populates this index from your live shipment data. First run is
-                scheduled for 02:00 UTC daily — check back tomorrow or trigger manually from <code className="font-mono">/api/cron/trade-lane-refresh</code>.
+              <p className="font-body mx-auto mt-2 max-w-[520px] text-[14px] leading-relaxed text-ink-500">
+                Trade-lane intelligence is aggregated from live customs filings across 60+ countries. New
+                lane pages publish daily with top shippers, carrier mix, port pairs, and YoY volume change.
+                {" "}
+                <Link href="/demo" className="text-brand-blue-700 underline">
+                  Book a demo
+                </Link>
+                {" "}to see your specific lane right now.
               </p>
             </div>
           </div>
