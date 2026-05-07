@@ -7,63 +7,65 @@ import { supabase } from "@/lib/supabase";
 
 // ---------------------------------------------------------- Status actions
 
-export async function archiveCampaign(campaignId: string): Promise<void> {
-  if (!campaignId) throw new Error("archiveCampaign: campaignId required");
-  const { error } = await supabase
+// Each status mutation chains `.select("id")` so the response carries the
+// affected rows. RLS silently strips rows the user can't see, which used
+// to mean: error=null + 0 rows = "success" toast for an action that never
+// happened. Now we treat empty result as "not-found-or-forbidden" and
+// throw, so Campaigns.jsx's catch fires the danger toast.
+
+async function runStatusMutation(
+  campaignId: string,
+  fn: string,
+  status: string,
+): Promise<void> {
+  if (!campaignId) throw new Error(`${fn}: campaignId required`);
+  const { data, error } = await supabase
     .from("lit_campaigns")
-    .update({ status: "archived" })
-    .eq("id", campaignId);
+    .update({ status })
+    .eq("id", campaignId)
+    .select("id");
   if (error) {
     const code = error.code ? ` ${error.code}` : "";
-    throw new Error(`archiveCampaign${code}: ${error.message}`);
+    throw new Error(`${fn}${code}: ${error.message}`);
   }
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error(`${fn}: not found or you don't have permission to change it.`);
+  }
+}
+
+export async function archiveCampaign(campaignId: string): Promise<void> {
+  return runStatusMutation(campaignId, "archiveCampaign", "archived");
 }
 
 export async function unarchiveCampaign(campaignId: string): Promise<void> {
-  if (!campaignId) throw new Error("unarchiveCampaign: campaignId required");
-  const { error } = await supabase
-    .from("lit_campaigns")
-    .update({ status: "draft" })
-    .eq("id", campaignId);
-  if (error) {
-    const code = error.code ? ` ${error.code}` : "";
-    throw new Error(`unarchiveCampaign${code}: ${error.message}`);
-  }
+  return runStatusMutation(campaignId, "unarchiveCampaign", "draft");
 }
 
 export async function pauseCampaign(campaignId: string): Promise<void> {
-  if (!campaignId) throw new Error("pauseCampaign: campaignId required");
-  const { error } = await supabase
-    .from("lit_campaigns")
-    .update({ status: "paused" })
-    .eq("id", campaignId);
-  if (error) {
-    const code = error.code ? ` ${error.code}` : "";
-    throw new Error(`pauseCampaign${code}: ${error.message}`);
-  }
+  return runStatusMutation(campaignId, "pauseCampaign", "paused");
 }
 
 export async function resumeCampaign(campaignId: string): Promise<void> {
-  if (!campaignId) throw new Error("resumeCampaign: campaignId required");
-  const { error } = await supabase
-    .from("lit_campaigns")
-    .update({ status: "active" })
-    .eq("id", campaignId);
-  if (error) {
-    const code = error.code ? ` ${error.code}` : "";
-    throw new Error(`resumeCampaign${code}: ${error.message}`);
-  }
+  return runStatusMutation(campaignId, "resumeCampaign", "active");
 }
 
 export async function deleteCampaign(campaignId: string): Promise<void> {
   if (!campaignId) throw new Error("deleteCampaign: campaignId required");
-  const { error } = await supabase
+  // .select("id") on a delete returns the rows that were deleted. Same
+  // anti-silent-success guard as the status mutations above.
+  const { data, error } = await supabase
     .from("lit_campaigns")
     .delete()
-    .eq("id", campaignId);
+    .eq("id", campaignId)
+    .select("id");
   if (error) {
     const code = error.code ? ` ${error.code}` : "";
     throw new Error(`deleteCampaign${code}: ${error.message}`);
+  }
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error(
+      "deleteCampaign: not found or you don't have permission to delete it.",
+    );
   }
 }
 

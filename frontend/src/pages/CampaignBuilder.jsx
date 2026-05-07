@@ -725,10 +725,37 @@ export default function CampaignBuilder() {
     setError(null);
     setSuccess(null);
     try {
-      const res = await launchCampaign(editId, manualEmails);
+      // Validate manual recipients before queueing. Without this, malformed
+      // entries (no `email` field, junk text in the email field) used to
+      // hit the queue-campaign-recipients edge fn which silently skipped
+      // them — the user got "0 queued" with no idea why.
+      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const validManual = [];
+      const rejectedManual = [];
+      for (const m of manualEmails) {
+        const email = String(m?.email || "").trim().toLowerCase();
+        if (!email || !EMAIL_RE.test(email)) {
+          rejectedManual.push(m);
+          continue;
+        }
+        validManual.push({
+          email,
+          first_name: typeof m?.first_name === "string" ? m.first_name : null,
+          last_name: typeof m?.last_name === "string" ? m.last_name : null,
+          company_name: typeof m?.company_name === "string" ? m.company_name : null,
+        });
+      }
+      if (rejectedManual.length > 0) {
+        console.warn(
+          "[CampaignBuilder] manual recipients rejected (no/invalid email):",
+          rejectedManual,
+        );
+      }
+      const res = await launchCampaign(editId, validManual);
       if (res.ok) {
+        const skippedTotal = (res.skipped ?? 0) + rejectedManual.length;
         setSuccess(
-          `Launched · ${res.queued} recipient${res.queued === 1 ? "" : "s"} queued${res.skipped ? ` (${res.skipped} skipped)` : ""}.`,
+          `Launched · ${res.queued} recipient${res.queued === 1 ? "" : "s"} queued${skippedTotal ? ` (${skippedTotal} skipped${rejectedManual.length ? `, ${rejectedManual.length} from invalid manual emails` : ""})` : ""}.`,
         );
         setTimeout(() => navigate("/app/campaigns/analytics"), 800);
       } else {
