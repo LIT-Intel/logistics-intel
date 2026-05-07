@@ -32,6 +32,7 @@ const PartnersApply = lazy(() => import("@/pages/PartnersApply"));
 const AdminPartnerProgram = lazy(() => import("@/pages/AdminPartnerProgram"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
 const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
+const AdminDemoRequests = lazy(() => import("@/pages/AdminDemoRequests"));
 const Pulse = lazy(() => import("@/pages/Pulse"));
 const Lists = lazy(() => import("@/pages/Lists"));
 const CMSManager = lazy(() => import("@/pages/CMSManager"));
@@ -511,6 +512,17 @@ export default function App() {
                 <AdminPartnerProgram />
               </LITPage>
             </RequireSuperAdmin>
+          }
+        />
+
+        <Route
+          path="/app/admin/demo-requests"
+          element={
+            <RequireAdmin>
+              <LITPage>
+                <AdminDemoRequests />
+              </LITPage>
+            </RequireAdmin>
           }
         />
 

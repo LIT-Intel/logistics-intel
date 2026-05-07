@@ -10,6 +10,7 @@ import {
   Shield,
   Lock,
   Users,
+  Inbox,
 } from "lucide-react";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 import { useAuth } from "@/auth/AuthProvider";
@@ -97,6 +98,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
             title: "Admin",
             items: [
               { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
+              { label: "Demo requests", href: "/app/admin/demo-requests", icon: Inbox },
               { label: "Partner program", href: "/app/admin/partner-program", icon: Users },
               { label: "Team", href: "/app/settings?tab=team", icon: Users },
             ],
