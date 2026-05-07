@@ -12,18 +12,17 @@ import { PulseBriefMock } from "@/components/sections/PulseBriefMock";
 import { ContactDiscoveryMock } from "@/components/sections/ContactDiscoveryMock";
 import { SequenceBuilderMock } from "@/components/sections/SequenceBuilderMock";
 import { CustomerLogosRail } from "@/components/sections/CustomerLogosRail";
-import { LoomTourPlaceholder } from "@/components/sections/LoomTourPlaceholder";
 import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
 
 export const revalidate = 600; // ISR — refresh every 10 min
 
 const FALLBACK_HERO = {
   pillText: "Pulse AI · Freight revenue intelligence",
-  headline: "Turn shipment data into",
-  headlineHighlight: "booked freight.",
+  headline: "Freight revenue intelligence —",
+  headlineHighlight: "from signal to booked freight.",
   headlineSuffix: "",
   subhead:
-    "LIT helps freight forwarders, brokers, and logistics sales teams find active shippers, understand their trade activity, enrich the right contacts, and launch outreach from one connected workspace.",
+    "LIT helps freight forwarders, brokers, and logistics sales teams find active shippers, understand their trade activity, enrich verified contacts, and launch multichannel outreach — from one connected workspace built on 124M+ live Bill of Lading records.",
   noteBelow:
     "Built for logistics teams that need better prospects, better timing, and better context before the first email goes out.",
   badges: [
@@ -107,7 +106,6 @@ export default async function HomePage() {
             { domain: "dbschenker.com", name: "DB Schenker" },
           ]}
         />
-        <LoomTourPlaceholder />
         <PillarsTrustBar />
         <CompanyIntelShowcase />
         <PulseBriefShowcase />
@@ -155,7 +153,7 @@ function Hero({ hero }: { hero: any }) {
           </div>
           <h1 className="display-xl mt-6">
             {hero.headline}{" "}
-            <span className="grad-text">{hero.headlineHighlight}</span>
+            <span className="grad-text-cyan">{hero.headlineHighlight}</span>
             {hero.headlineSuffix ? <> {hero.headlineSuffix}</> : null}
           </h1>
           <p className="lead mt-6 max-w-[560px]">{hero.subhead}</p>
@@ -300,21 +298,21 @@ function CompanyIntelShowcase() {
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <div className="lg:order-1">
             <div className="eyebrow">Company Intelligence</div>
-            <h2 className="display-lg mt-3">
-              Every account, with the <span className="grad-text">trade picture</span> built in.
+            <h2 className="display-md mt-3">
+              Every account, with the <span className="grad-text-cyan">trade picture</span> built in.
             </h2>
-            <p className="lead mt-5 max-w-[480px]">
-              Not just firmographics. KPIs, trade lanes, carrier mix, modal split, recent shipments,
-              top suppliers — refreshed daily and joined to the people you'd actually pitch.
+            <p className="font-body mt-5 max-w-[480px] text-[17px] leading-[1.6] text-ink-500">
+              Live trailing-12m volume, top lane, carrier mix, container types — joined to the
+              people you'd actually pitch.
             </p>
-            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+            <ul className="font-body mt-6 space-y-2.5 text-[14.5px] leading-snug text-ink-700">
               <li className="flex items-start gap-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
                 <span><b className="text-ink-900">Pulse Coach</b> tells you what changed this week, in one sentence.</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
-                <span>Live trailing-12m volume, top lane, carrier mix, container types.</span>
+                <span>Live T-12m volume, top lane, carrier mix, container types.</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
@@ -338,15 +336,15 @@ function PulseBriefShowcase() {
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <div>
             <div className="eyebrow">Pulse AI Brief</div>
-            <h2 className="display-lg mt-3">
-              The first 30 seconds of <span className="grad-text">account research</span>, done.
+            <h2 className="display-md mt-3">
+              The first 30 seconds of <span className="grad-text-cyan">account research</span>, done.
             </h2>
-            <p className="lead mt-5 max-w-[480px]">
+            <p className="font-body mt-5 max-w-[480px] text-[17px] leading-[1.6] text-ink-500">
               One click on any account and Pulse generates a full intel brief — exec summary,
-              opportunity signals, risk flags, ready-to-send outreach hooks. Cited sources, 95%
-              confidence, refreshed weekly.
+              opportunity signals, risk flags, ready-to-send hooks. Cited sources. 95% confidence.
+              Refreshed weekly.
             </p>
-            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+            <ul className="font-body mt-6 space-y-2.5 text-[14.5px] leading-snug text-ink-700">
               <li className="flex items-start gap-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
                 <span>Buying / forwarder / carrier / supplier signal classification.</span>
@@ -380,15 +378,15 @@ function ContactDiscoveryShowcase() {
           </div>
           <div className="lg:order-2">
             <div className="eyebrow">Contact Discovery</div>
-            <h2 className="display-lg mt-3">
-              The right buyers, <span className="grad-text">not just any buyers.</span>
+            <h2 className="display-md mt-3">
+              The right buyers, <span className="grad-text-cyan">not just any buyers.</span>
             </h2>
-            <p className="lead mt-5 max-w-[480px]">
-              LIT's contact graph is filtered by title, seniority, department, and location — then
-              joined to who actually owns shipments at that company. Verified emails, LinkedIn URLs,
-              and direct dials revealed on enrich.
+            <p className="font-body mt-5 max-w-[480px] text-[17px] leading-[1.6] text-ink-500">
+              Filtered by title, seniority, department, and location — then joined to who actually
+              owns shipments at that company. Verified emails, LinkedIn URLs, and direct dials
+              revealed on enrich.
             </p>
-            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+            <ul className="font-body mt-6 space-y-2.5 text-[14.5px] leading-snug text-ink-700">
               <li className="flex items-start gap-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
                 <span>Email-verified contacts — no spam-trap-rate roulette.</span>
@@ -416,14 +414,14 @@ function SequenceBuilderShowcase() {
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <div>
             <div className="eyebrow">Campaign Builder</div>
-            <h2 className="display-lg mt-3">
-              Sequences seeded by <span className="grad-text">the signal that started them.</span>
+            <h2 className="display-md mt-3">
+              Sequences seeded by <span className="grad-text-cyan">the signal that started them.</span>
             </h2>
-            <p className="lead mt-5 max-w-[480px]">
+            <p className="font-body mt-5 max-w-[480px] text-[17px] leading-[1.6] text-ink-500">
               Lane-launch, carrier-pivot, RFP follow-up, win-back — six starter plays that bake the
               signal into the message. Multichannel by default. Send forecast before you launch.
             </p>
-            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
+            <ul className="font-body mt-6 space-y-2.5 text-[14.5px] leading-snug text-ink-700">
               <li className="flex items-start gap-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
                 <span>Email + LinkedIn + call-task in one timeline.</span>
@@ -545,10 +543,14 @@ function SignalToPipelineSection() {
           >
             Signal → Pipeline
           </div>
-          <h2 className="display-lg mt-3 text-white">
+          {/* Inline color overrides — `.display-lg` and `.lead` in globals.css
+              ship a default ink-900/ink-500 color that ranks below Tailwind
+              utilities in the cascade. Inline style guarantees readability
+              on the dark surface. */}
+          <h2 className="display-lg mt-3" style={{ color: "#ffffff" }}>
             Five steps from question to closed deal.
           </h2>
-          <p className="lead mx-auto mt-3 max-w-[640px] text-ink-150">
+          <p className="lead mx-auto mt-3 max-w-[640px]" style={{ color: "#cfd7e6" }}>
             LIT collapses what was a five-tool, five-day workflow into a single board you finish in 20
             minutes.
           </p>

@@ -59,22 +59,89 @@ export function WorkflowMotion({
     ? "font-body text-[12.5px] leading-snug text-ink-150"
     : "font-body text-[12.5px] leading-snug text-ink-500";
 
+  // Race-effect timing (dark variant only).
+  // Runner travels 5% → 95% over RACE_S; brief PAUSE_S at each end keeps
+  // the race readable. Each card's number badge pulses at delay = i * (RACE_S / 5)
+  // so the pulse "runs through" the cards in sequence.
+  const RACE_S = 5;
+  const PAUSE_S = 0.6;
+  const CYCLE_S = RACE_S + PAUSE_S;
+  const PULSE_S = 0.55;
+
   return (
     <div className={`relative grid grid-cols-1 gap-3 md:grid-cols-5 ${className}`}>
-      {/* Connecting gradient line behind the cards on desktop. */}
       {dark && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute left-[5%] right-[5%] top-7 hidden h-px md:block"
-          style={{
-            background:
-              "linear-gradient(90deg, transparent, rgba(0,240,255,0.4), rgba(59,130,246,0.4), transparent)",
-          }}
-        />
+        <>
+          {/* Dim base track */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute left-[5%] right-[5%] top-7 hidden h-px md:block"
+            style={{
+              background:
+                "linear-gradient(90deg, transparent, rgba(0,240,255,0.22), rgba(59,130,246,0.22), transparent)",
+            }}
+          />
+          {/* Racing fill — bright cyan growing 0% → 90% width on loop */}
+          <motion.span
+            aria-hidden
+            className="pointer-events-none absolute left-[5%] top-7 hidden h-[2px] md:block"
+            style={{
+              background:
+                "linear-gradient(90deg, rgba(0,240,255,0.95), rgba(59,130,246,0.7))",
+              boxShadow: "0 0 8px rgba(0,240,255,0.5)",
+            }}
+            initial={{ width: "0%" }}
+            animate={
+              prefersReducedMotion
+                ? { width: "90%" }
+                : { width: ["0%", "0%", "90%", "90%"] }
+            }
+            transition={
+              prefersReducedMotion
+                ? undefined
+                : {
+                    duration: CYCLE_S,
+                    times: [0, PAUSE_S / CYCLE_S / 2, RACE_S / CYCLE_S, 1],
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }
+            }
+          />
+          {/* Leading runner dot — racing across the line */}
+          <motion.span
+            aria-hidden
+            className="pointer-events-none absolute top-7 hidden h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full md:block"
+            style={{
+              background: "#00F0FF",
+              boxShadow:
+                "0 0 14px 4px rgba(0,240,255,0.7), 0 0 28px 10px rgba(0,240,255,0.35)",
+            }}
+            initial={{ left: "5%" }}
+            animate={
+              prefersReducedMotion
+                ? undefined
+                : { left: ["5%", "5%", "95%", "95%"] }
+            }
+            transition={
+              prefersReducedMotion
+                ? undefined
+                : {
+                    duration: CYCLE_S,
+                    times: [0, PAUSE_S / CYCLE_S / 2, RACE_S / CYCLE_S, 1],
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }
+            }
+          />
+        </>
       )}
       {STEPS.map((s, i) => {
         const Icon = s.icon;
         const isLast = i === STEPS.length - 1;
+        // Each card pulses when the runner is at its position. Card i peak
+        // delay is i * (RACE_S / 4) so card 0 pulses at the start of the race
+        // and card 4 pulses just before the end.
+        const pulseDelay = (i * RACE_S) / (STEPS.length - 1);
         return (
           <motion.div
             key={s.label}
@@ -86,13 +153,41 @@ export function WorkflowMotion({
             style={cardStyle}
           >
             <div className="flex items-center gap-2.5">
-              <div className={numCls} style={numStyle}>
-                {dark ? (
-                  String(i + 1).padStart(2, "0")
-                ) : (
+              {dark ? (
+                <motion.div
+                  className={numCls}
+                  style={numStyle}
+                  animate={
+                    prefersReducedMotion
+                      ? undefined
+                      : {
+                          scale: [1, 1.18, 1],
+                          boxShadow: [
+                            "0 0 0 1px rgba(0,240,255,0.4), 0 0 12px rgba(0,240,255,0.2)",
+                            "0 0 0 2px rgba(0,240,255,0.95), 0 0 28px 6px rgba(0,240,255,0.65)",
+                            "0 0 0 1px rgba(0,240,255,0.4), 0 0 12px rgba(0,240,255,0.2)",
+                          ],
+                        }
+                  }
+                  transition={
+                    prefersReducedMotion
+                      ? undefined
+                      : {
+                          duration: PULSE_S,
+                          delay: pulseDelay,
+                          repeat: Infinity,
+                          repeatDelay: CYCLE_S - PULSE_S,
+                          ease: "easeInOut",
+                        }
+                  }
+                >
+                  {String(i + 1).padStart(2, "0")}
+                </motion.div>
+              ) : (
+                <div className={numCls} style={numStyle}>
                   <Icon className="h-4 w-4 text-brand-blue" />
-                )}
-              </div>
+                </div>
+              )}
               <div className={stepLblCls} style={stepLblStyle}>
                 {dark ? (
                   <Icon className="h-3.5 w-3.5 inline-block align-[-2px]" />
