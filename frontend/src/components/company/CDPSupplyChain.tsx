@@ -52,11 +52,26 @@ export default function CDPSupplyChain({
   const [sub, setSub] = useState<SubTabId>("summary");
 
   // ── Aggregates ───────────────────────────────────────────────────────
-  const canonicalLanes = useMemo(() => {
+  // canonicalizeLanes returns two buckets:
+  //   - canonical: pairs where BOTH endpoints resolved to coordinates
+  //     (needed by the globe's great-circle arcs).
+  //   - nonCanonical: routes where origin OR destination didn't resolve
+  //     (Morocco/Guatemala/Jordan/etc when they're not in the geocoder).
+  // For Old Navy this dropped 7 of 10 routes — the count surface was
+  // showing "3 active lanes / 35 shipments" while the snapshot has 10
+  // routes / 43 shipments.
+  // Fix: keep canonical for the globe, but use the FULL set
+  // (canonical + nonCanonical) for the count + ranked-list display.
+  const { canonicalLanes, allLanes } = useMemo(() => {
     const raw = readTopRoutes(profile, routeKpis);
-    if (!raw.length) return [];
-    const { canonical } = canonicalizeLanes(raw);
-    return canonical;
+    if (!raw.length) return { canonicalLanes: [], allLanes: [] };
+    const { canonical, nonCanonical } = canonicalizeLanes(raw);
+    const merged = [...canonical, ...nonCanonical].sort(
+      (a: any, b: any) =>
+        (Number(b.shipments) || 0) - (Number(a.shipments) || 0) ||
+        (Number(b.teu) || 0) - (Number(a.teu) || 0),
+    );
+    return { canonicalLanes: canonical, allLanes: merged };
   }, [profile, routeKpis]);
 
   const recentBols = useMemo(() => {
@@ -84,21 +99,29 @@ export default function CDPSupplyChain({
   const cadence = useMemo(() => deriveCadence(profile), [profile]);
 
   const briefHeadline = useMemo(() => {
-    if (canonicalLanes.length === 0) return null;
-    const top = canonicalLanes[0];
-    const total = canonicalLanes.reduce(
+    if (allLanes.length === 0) return null;
+    const top: any = allLanes[0];
+    const total = allLanes.reduce(
       (sum: number, l: any) => sum + (Number(l.shipments) || 0),
       0,
     );
     const share =
       total > 0 ? Math.round((Number(top.shipments) / total) * 100) : null;
-    const fromName = top.fromMeta?.countryName || top.fromMeta?.label || "Origin";
-    const toName = top.toMeta?.countryName || top.toMeta?.label || "Destination";
+    const fromName =
+      top.fromMeta?.countryName ||
+      top.fromMeta?.label ||
+      (top.displayLabel ? String(top.displayLabel).split(/→|->|>/)[0]?.trim() : null) ||
+      "Origin";
+    const toName =
+      top.toMeta?.countryName ||
+      top.toMeta?.label ||
+      (top.displayLabel ? String(top.displayLabel).split(/→|->|>/).slice(1).join(" → ").trim() : null) ||
+      "Destination";
     if (share != null) {
       return `${fromName} → ${toName} carries ${share}% of trailing-12m volume.`;
     }
     return `${fromName} → ${toName} is the dominant lane.`;
-  }, [canonicalLanes]);
+  }, [allLanes]);
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -138,7 +161,7 @@ export default function CDPSupplyChain({
       <StrategicBriefBanner
         headline={briefHeadline}
         recentBols={recentBols}
-        canonicalLanes={canonicalLanes}
+        canonicalLanes={allLanes}
       />
 
       {/* Sub-tab content */}
@@ -149,12 +172,14 @@ export default function CDPSupplyChain({
           containerProfile={containerProfile}
           recentBols={recentBols}
           suppliers={suppliers}
-          canonicalLanes={canonicalLanes}
+          canonicalLanes={allLanes}
+          globeLanes={canonicalLanes}
         />
       )}
       {sub === "lanes" && (
         <LanesView
-          canonicalLanes={canonicalLanes}
+          canonicalLanes={allLanes}
+          globeLanes={canonicalLanes}
           carriers={carriers}
           forwarders={forwarders}
           containerProfile={containerProfile}
@@ -256,6 +281,7 @@ function SummaryView({
   recentBols,
   suppliers,
   canonicalLanes,
+  globeLanes,
 }: {
   cadence: CadencePoint[];
   modes: ModeSlice[];
@@ -263,11 +289,12 @@ function SummaryView({
   recentBols: any[];
   suppliers: SupplierRow[];
   canonicalLanes: any[];
+  globeLanes: any[];
 }) {
   return (
     <>
       <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1.3fr_1fr]">
-        <TopLanesCard canonicalLanes={canonicalLanes} />
+        <TopLanesCard canonicalLanes={canonicalLanes} globeLanes={globeLanes} />
         <ImportsByModeCard modes={modes} cadence={cadence} />
       </div>
 
@@ -285,12 +312,14 @@ function SummaryView({
 
 function LanesView({
   canonicalLanes,
+  globeLanes: _globeLanes,
   carriers,
   forwarders,
   containerProfile,
   recentBols,
 }: {
   canonicalLanes: any[];
+  globeLanes?: any[];
   carriers: CarrierRow[];
   forwarders: ForwarderRow[];
   containerProfile: ContainerProfile;
@@ -727,7 +756,13 @@ function ContainerProfileCard({ profile }: { profile: ContainerProfile }) {
   );
 }
 
-function TopLanesCard({ canonicalLanes }: { canonicalLanes: any[] }) {
+function TopLanesCard({
+  canonicalLanes,
+  globeLanes: globeOnlyLanes,
+}: {
+  canonicalLanes: any[];
+  globeLanes?: any[];
+}) {
   if (canonicalLanes.length === 0) {
     return (
       <LitSectionCard
@@ -738,7 +773,12 @@ function TopLanesCard({ canonicalLanes }: { canonicalLanes: any[] }) {
       </LitSectionCard>
     );
   }
-  const globeLanes: GlobeLane[] = canonicalLanes.slice(0, 6).map((l: any) => ({
+  // Globe needs resolved coordinates; fall back to filtering canonicalLanes
+  // for backwards compatibility when globeLanes prop isn't passed.
+  const sourceForGlobe = (Array.isArray(globeOnlyLanes) && globeOnlyLanes.length > 0
+    ? globeOnlyLanes
+    : canonicalLanes.filter((l: any) => l.fromMeta?.coords && l.toMeta?.coords));
+  const globeLanes: GlobeLane[] = sourceForGlobe.slice(0, 6).map((l: any) => ({
     id: l.displayLabel,
     from: l.fromMeta.canonicalKey,
     to: l.toMeta.canonicalKey,
@@ -869,6 +909,15 @@ function CombinedLaneIntelligenceTable({
                 laneStats.dominantContainer || globalDominantContainer || "—";
               const fclLcl = laneStats.fclLcl || globalFclLcl || "—";
               const lastDate = laneStats.lastDate;
+              // Non-canonical lanes (no resolved meta) — parse displayLabel
+              // for the from/to text fallback so the row still renders.
+              const dl = String(lane?.displayLabel || "").trim();
+              const dlParts = dl.split(/→|->|>/).map((s) => s.trim()).filter(Boolean);
+              const fromText = laneEndpointLabel(lane.fromMeta, dlParts[0]);
+              const toText = laneEndpointLabel(
+                lane.toMeta,
+                dlParts.slice(1).join(" → "),
+              );
               return (
                 <tr
                   key={lane.displayLabel}
@@ -885,7 +934,7 @@ function CombinedLaneIntelligenceTable({
                         label={lane.fromMeta?.countryName}
                       />
                       <span className="font-mono text-[11px] font-semibold text-slate-900">
-                        {laneEndpointLabel(lane.fromMeta)}
+                        {fromText}
                       </span>
                       <ArrowRight
                         aria-hidden
@@ -897,7 +946,7 @@ function CombinedLaneIntelligenceTable({
                         label={lane.toMeta?.countryName}
                       />
                       <span className="font-mono text-[11px] font-semibold text-slate-900">
-                        {laneEndpointLabel(lane.toMeta)}
+                        {toText}
                       </span>
                     </span>
                   </td>
@@ -1662,6 +1711,20 @@ function LaneRowInner({
   index: number;
   highlight: boolean;
 }) {
+  // Non-canonical lanes (resolved endpoint missing) carry a displayLabel
+  // like "Morocco → United States of America". Parse it for fallback
+  // rendering so we still show the lane text with arrow even when the
+  // geocoder didn't recognize the country.
+  const displayLabel = String(lane?.displayLabel || "").trim();
+  const labelParts = displayLabel.split(/→|->|>/).map((s) => s.trim()).filter(Boolean);
+  const fromText =
+    laneEndpointLabel(lane.fromMeta, labelParts[0]) ||
+    labelParts[0] ||
+    "—";
+  const toText =
+    laneEndpointLabel(lane.toMeta, labelParts.slice(1).join(" → ")) ||
+    labelParts.slice(1).join(" → ") ||
+    "—";
   return (
     <>
       <span
@@ -1685,7 +1748,7 @@ function LaneRowInner({
               highlight ? "text-blue-700" : "text-slate-700",
             ].join(" ")}
           >
-            {laneEndpointLabel(lane.fromMeta)}
+            {fromText}
           </span>
           <ArrowRight className="h-2 w-2 text-slate-300" aria-hidden />
           <LitFlag
@@ -1699,7 +1762,7 @@ function LaneRowInner({
               highlight ? "text-blue-700" : "text-slate-700",
             ].join(" ")}
           >
-            {laneEndpointLabel(lane.toMeta)}
+            {toText}
           </span>
           {index === 0 && <LitPill tone="blue">Primary</LitPill>}
         </div>
