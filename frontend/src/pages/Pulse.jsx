@@ -441,16 +441,28 @@ export default function Pulse() {
       if (!saved?.id) throw new Error('Failed to save parent company.');
 
       try {
+        // Column names must match the lit_contacts schema exactly.
+        // Earlier rev wrote `dept` / `linkedin` / `verified` which are
+        // not columns on the table — PostgREST returned 400 and the
+        // try/catch swallowed it, so contacts added via "Add to
+        // Campaign" from Pulse never persisted.
+        const fullName =
+          contact.full_name ||
+          [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim() ||
+          contact.name ||
+          null;
         await supabase.from('lit_contacts').insert({
           company_id: saved.id,
-          full_name: contact.full_name || null,
+          full_name: fullName,
+          first_name: contact.first_name || null,
+          last_name: contact.last_name || null,
           title: contact.title || null,
-          dept: contact.department || null,
+          department: contact.department || null,
           email: contact.email || null,
           phone: contact.phone || null,
-          linkedin: contact.linkedin_url || null,
+          linkedin_url: contact.linkedin_url || null,
           source: 'pulse',
-          verified: Boolean(contact.email || contact.phone),
+          verified_by_provider: Boolean(contact.email || contact.phone),
         });
       } catch (contactErr) {
         console.warn('[Pulse] save decision-maker contact failed:', contactErr);
@@ -655,24 +667,80 @@ export default function Pulse() {
   }
 
   async function enrichContact(contact) {
-    if (!contact?.prospect_id) {
-      setErrorMessage('This contact does not have a prospect_id and cannot be enriched.');
-      return;
-    }
+    if (!contact) return;
     setIsEnriching(true);
     setErrorMessage('');
     try {
-      const { data, error } = await supabase.functions.invoke('searchLeads', {
-        body: { action: 'enrich_contact', prospect_id: contact.prospect_id },
-      });
+      // The old `searchLeads { action: 'enrich_contact' }` path was a
+      // server-side stub that returned "not implemented" — Pulse-side
+      // enrichment has been silently no-oping. Route through the same
+      // edge function the Profile page uses (apollo-contact-enrich), so
+      // enrichment hits Apollo, persists to lit_contacts, AND auto-saves
+      // the parent company so the contact lands under
+      // /app/contacts → Saved Companies → Contacts.
+      const company = activeCompany || {};
+      const targetCompanyId =
+        company.company_id ||
+        company.id ||
+        company.uuid ||
+        null;
+      const targetDomain =
+        company.domain ||
+        company.website ||
+        contact.organization_domain ||
+        null;
+      const targetCompanyName =
+        company.name ||
+        company.company_name ||
+        contact.organization_name ||
+        null;
+
+      const target = {
+        first_name: contact.first_name || null,
+        last_name: contact.last_name || null,
+        full_name: contact.full_name || contact.name || null,
+        name: contact.full_name || contact.name || null,
+        title: contact.title || null,
+        email: contact.email || null,
+        linkedin_url: contact.linkedin_url || null,
+        domain: targetDomain,
+        organization_name: targetCompanyName,
+        apollo_person_id: contact.apollo_person_id || contact.prospect_id || null,
+      };
+
+      const { data, error } = await supabase.functions.invoke(
+        'apollo-contact-enrich',
+        {
+          body: {
+            contacts: [target],
+            ...(targetCompanyId ? { company_id: targetCompanyId } : {}),
+            ...(targetDomain ? { domain: targetDomain } : {}),
+            ...(targetCompanyName ? { company_name: targetCompanyName } : {}),
+            reveal_personal_emails: true,
+            reveal_phone_number: true,
+          },
+        },
+      );
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      const enrichment = data?.data?.contact || {};
+      if (data && data.ok === false) {
+        throw new Error(data.error || data.message || 'Enrichment failed.');
+      }
+      const enriched =
+        data?.contacts?.[0] ||
+        data?.contact ||
+        data?.results?.[0] ||
+        {};
       setActiveContact({
         ...contact,
-        email: enrichment?.email || contact.email,
-        phone: enrichment?.phone || contact.phone,
-        linkedin_url: enrichment?.linkedin_url || contact.linkedin_url,
+        email: enriched.email || contact.email,
+        phone: enriched.phone || contact.phone,
+        linkedin_url: enriched.linkedin_url || contact.linkedin_url,
+        title: enriched.title || contact.title,
+        full_name:
+          enriched.full_name ||
+          contact.full_name ||
+          [enriched.first_name, enriched.last_name].filter(Boolean).join(' ') ||
+          contact.name,
       });
     } catch (error) {
       console.error('[Pulse] enrich contact failed:', error);
