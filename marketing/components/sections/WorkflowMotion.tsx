@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { Sparkles, Search, Zap, Send, CheckCircle2 } from "lucide-react";
 
 const STEPS = [
@@ -17,6 +17,7 @@ const STEPS = [
  * needing a video.
  */
 export function WorkflowMotion({ className = "" }: { className?: string }) {
+  const prefersReducedMotion = useReducedMotion();
   return (
     <div className={`grid grid-cols-1 gap-3 md:grid-cols-5 ${className}`}>
       {STEPS.map((s, i) => {
@@ -24,8 +25,8 @@ export function WorkflowMotion({ className = "" }: { className?: string }) {
         return (
           <motion.div
             key={s.label}
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
+            whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-80px" }}
             transition={{ delay: i * 0.12, duration: 0.4, ease: "easeOut" }}
             className="relative flex flex-col gap-3 rounded-2xl border border-ink-100 bg-white p-5 shadow-sm"
@@ -57,8 +58,16 @@ export function WorkflowMotion({ className = "" }: { className?: string }) {
                 boxShadow: "0 0 12px rgba(0,240,255,0.6)",
                 opacity: i === STEPS.length - 1 ? 0 : 1,
               }}
-              animate={{ scale: [1, 1.4, 1], opacity: [0.6, 1, 0.6] }}
-              transition={{ delay: i * 0.4, duration: 1.6, repeat: Infinity }}
+              animate={
+                prefersReducedMotion
+                  ? undefined
+                  : { scale: [1, 1.4, 1], opacity: [0.6, 1, 0.6] }
+              }
+              transition={
+                prefersReducedMotion
+                  ? undefined
+                  : { delay: i * 0.4, duration: 1.6, repeat: Infinity }
+              }
             />
           </motion.div>
         );
