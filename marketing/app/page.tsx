@@ -75,15 +75,15 @@ export const metadata: Metadata = {
 };
 
 export default async function HomePage() {
-  const data: any = await sanityClient.fetch(HOMEPAGE_QUERY).catch(() => null);
-  const sanityHero = data?.settings?.homepageHero;
-  // Merge Sanity over fallback, but force the design-pack numeric KPI strip
-  // until the Sanity doc is patched (the bootstrapped doc has the old
-  // text KPIs and `sanity schema deploy` is blocked locally). Once the
-  // doc is patched in Studio, drop the explicit kpis override.
-  const hero = sanityHero
-    ? { ...FALLBACK_HERO, ...sanityHero, kpis: FALLBACK_HERO.kpis }
-    : FALLBACK_HERO;
+  // NOTE — temporary Sanity bypass for the home hero. The bootstrapped
+  // siteSettings doc has the old "Turn shipment data into…" headline +
+  // text KPIs, and the schema patch is blocked locally on a sanity CLI
+  // dep resolution issue. We still call sanityClient (so the request is
+  // hot when we need it) but render from FALLBACK_HERO so the redesign
+  // ships. Once the Studio doc is updated to match the new design, swap
+  // back to: `const hero = data?.settings?.homepageHero ?? FALLBACK_HERO;`
+  await sanityClient.fetch(HOMEPAGE_QUERY).catch(() => null);
+  const hero = FALLBACK_HERO;
 
   return (
     <>
