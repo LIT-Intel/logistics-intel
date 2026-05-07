@@ -6,17 +6,31 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/demo-request — accepts the live demo form submission,
- * validates required fields, and:
+ * validates required fields, and fans out:
  *
- *   1. Writes a `demoRequest` doc to Sanity (source of truth — visible
- *      in Studio under "Inbox → Demo requests").
- *   2. Sends a confirmation email to the prospect via Resend.
- *   3. Sends an alert email to sales@logisticintel.com with the details.
- *   4. Optional: if DEMO_REQUEST_WEBHOOK is set, POSTs the payload there
- *      too (Slack incoming webhook, Zapier, n8n, etc.).
+ *   1. Sanity write → `demoRequest` doc (source of truth, visible in
+ *      Studio under "Inbox → Demo requests"). This is the only step
+ *      that blocks the response.
+ *   2. Resend email to the prospect (confirmation).
+ *   3. Resend email to SALES_INBOX_EMAIL (sales alert).
+ *   4. Webhook POST to DEMO_REQUEST_WEBHOOK if set. Slack incoming-
+ *      webhook URLs (https://hooks.slack.com/...) get a properly
+ *      formatted Block Kit message; everything else gets the raw doc.
+ *   5. Supabase row in `public.lit_demo_requests` if
+ *      SUPABASE_SERVICE_ROLE_KEY is set. Lets you query history via
+ *      SQL or subscribe via Realtime.
  *
- * Email sends + webhook are concurrent and best-effort — failure of any
- * doesn't affect the Sanity write or the prospect's success state.
+ * Steps 2-5 are concurrent and best-effort — any failure is logged but
+ * doesn't affect the prospect's success state. The Sanity row remains
+ * the recoverable source of truth no matter what fails.
+ *
+ * Required env (production):
+ *   SANITY_API_WRITE_TOKEN   — already set
+ * Optional env:
+ *   RESEND_API_KEY, RESEND_FROM_EMAIL, SALES_INBOX_EMAIL  (emails)
+ *   DEMO_REQUEST_WEBHOOK     (Slack/Discord/Zapier ping)
+ *   SUPABASE_SERVICE_ROLE_KEY  (Supabase row insert)
+ *   NEXT_PUBLIC_SUPABASE_URL or VITE_SUPABASE_URL  (Supabase project URL)
  */
 const REQUIRED = ["name", "email"] as const;
 
@@ -78,23 +92,15 @@ export async function POST(req: NextRequest) {
     return json({ ok: false, error: "store_failed" }, 500);
   }
 
-  // Fan out emails + optional webhook in parallel — best-effort. Failures
-  // are logged but don't fail the request; the prospect still sees success
-  // and the Sanity row is the recoverable source of truth.
+  // Fan out emails + webhook + Supabase row in parallel — all best-effort.
+  // Failures log but don't fail the request; the Sanity write above is
+  // the recoverable source of truth.
   const fanOut: Promise<unknown>[] = [
     sendProspectConfirmation(doc),
     sendSalesAlert(doc, sanityId),
+    sendWebhook(doc, sanityId),
+    writeSupabaseRow(doc, sanityId),
   ];
-  const hook = process.env.DEMO_REQUEST_WEBHOOK;
-  if (hook) {
-    fanOut.push(
-      fetch(hook, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...doc, sanityId }),
-      }).catch(() => null),
-    );
-  }
   // Don't block the response — fan-out completes in the background.
   Promise.allSettled(fanOut);
 
@@ -216,4 +222,140 @@ function json(body: any, status = 200) {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+/**
+ * Webhook fan-out — Slack URLs get a properly formatted Block Kit
+ * message; everything else (Zapier, n8n, custom) gets raw JSON.
+ *
+ * Slack detection: any URL hosted on hooks.slack.com or a Slack-
+ * compatible relay (Mattermost copies the API). One signal we recognize:
+ * the URL pattern `/services/T.../B.../...`.
+ */
+async function sendWebhook(d: Doc, sanityId: string): Promise<void> {
+  const hook = process.env.DEMO_REQUEST_WEBHOOK;
+  if (!hook) return;
+
+  const isSlack = /^https:\/\/hooks\.slack\.com\//.test(hook);
+  const studioUrl = `https://logisticintel.com/studio/desk/demoRequest;${sanityId}`;
+
+  const payload = isSlack ? buildSlackBlocks(d, studioUrl) : { ...d, sanityId, studioUrl };
+
+  try {
+    const r = await fetch(hook, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => "");
+      console.error("[demo-request] webhook non-2xx", r.status, text.slice(0, 300));
+    }
+  } catch (e: any) {
+    console.error("[demo-request] webhook threw", e?.message || e);
+  }
+}
+
+/** Build a Slack Block Kit message from a demo doc. Renders as a card
+ *  with name + company in the header, a fields table for the metadata,
+ *  and an "Open in Studio" button at the bottom. */
+function buildSlackBlocks(d: Doc, studioUrl: string) {
+  const headline = d.company ? `${d.name} · ${d.company}` : d.name;
+  const fallback = `New demo request — ${headline}`;
+
+  // Slack supports up to 10 fields per section. Build only the rows we have.
+  const fields: { type: string; text: string }[] = [
+    { type: "mrkdwn", text: `*Email*\n<mailto:${d.email}|${d.email}>` },
+  ];
+  if (d.useCase) fields.push({ type: "mrkdwn", text: `*Use case*\n${d.useCase}` });
+  if (d.teamSize) fields.push({ type: "mrkdwn", text: `*Team size*\n${d.teamSize}` });
+  if (d.domain) fields.push({ type: "mrkdwn", text: `*Domain*\n${d.domain}` });
+  if (d.phone) fields.push({ type: "mrkdwn", text: `*Phone*\n${d.phone}` });
+  if (d.source) fields.push({ type: "mrkdwn", text: `*Source*\n${d.source}` });
+
+  const blocks: any[] = [
+    {
+      type: "header",
+      text: { type: "plain_text", text: "🚀 New demo request", emoji: true },
+    },
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: `*${headline}*` },
+    },
+    { type: "section", fields },
+  ];
+
+  if (d.primaryGoal) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: `*What they're hoping LIT will help with:*\n>${d.primaryGoal}` },
+    });
+  }
+
+  blocks.push({
+    type: "actions",
+    elements: [
+      {
+        type: "button",
+        text: { type: "plain_text", text: "Open in Studio", emoji: true },
+        url: studioUrl,
+        style: "primary",
+      },
+      {
+        type: "button",
+        text: { type: "plain_text", text: "Reply via email", emoji: true },
+        url: `mailto:${d.email}?subject=Re: ${encodeURIComponent("Logistic Intel demo")}`,
+      },
+    ],
+  });
+
+  return { text: fallback, blocks };
+}
+
+/**
+ * Mirror the demo doc into `public.lit_demo_requests` so the user can
+ * subscribe to inserts via Supabase Realtime, query history with SQL,
+ * or feed the row into downstream automation. Best-effort — silently
+ * skips if env or table is missing.
+ *
+ * Required env: SUPABASE_SERVICE_ROLE_KEY + (NEXT_PUBLIC_SUPABASE_URL or
+ * VITE_SUPABASE_URL). Migration SQL lives in
+ * supabase/migrations/<timestamp>_create_lit_demo_requests.sql — run it
+ * once before this path can write.
+ */
+async function writeSupabaseRow(d: Doc, sanityId: string): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return;
+
+  try {
+    const r = await fetch(`${url}/rest/v1/lit_demo_requests`, {
+      method: "POST",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "content-type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        sanity_id: sanityId,
+        name: d.name,
+        email: d.email,
+        company: d.company ?? null,
+        domain: d.domain ?? null,
+        phone: d.phone ?? null,
+        use_case: d.useCase ?? null,
+        team_size: d.teamSize ?? null,
+        primary_goal: d.primaryGoal ?? null,
+        source: d.source ?? null,
+        submitted_at: d.submittedAt,
+      }),
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => "");
+      console.error("[demo-request] supabase non-2xx", r.status, text.slice(0, 300));
+    }
+  } catch (e: any) {
+    console.error("[demo-request] supabase threw", e?.message || e);
+  }
 }
