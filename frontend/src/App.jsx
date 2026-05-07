@@ -146,13 +146,11 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
 
+        {/* /company/:id was the legacy public route. Redirect to the
+            canonical CDP profile so any external links keep working. */}
         <Route
           path="/company/:id"
-          element={
-            <Layout currentPageName="Company">
-              <Company />
-            </Layout>
-          }
+          element={<LegacyCompanyRedirect />}
         />
 
         <Route
@@ -593,4 +591,13 @@ function CompanyDrawerRoute() {
       />
     </Layout>
   );
+}
+
+// Redirect /company/:id (legacy public route) to /app/companies/:id (the
+// canonical CDP profile). Preserves any query string the caller passed.
+function LegacyCompanyRedirect() {
+  const { id } = useParams();
+  const location = useLocation();
+  const target = `/app/companies/${encodeURIComponent(id ?? "")}${location.search || ""}`;
+  return <Navigate to={target} replace />;
 }
