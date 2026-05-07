@@ -1416,6 +1416,16 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 shellCompany?.kpis?.topRoute ||
                 null
               }
+              topRoutes={
+                (Array.isArray(activeRouteKpis?.topRoutesLast12m) &&
+                activeRouteKpis.topRoutesLast12m.length > 0
+                  ? activeRouteKpis.topRoutesLast12m
+                  : Array.isArray(activeProfile?.topRoutes)
+                    ? activeProfile.topRoutes
+                    : Array.isArray(activeProfile?.top_routes)
+                      ? activeProfile.top_routes
+                      : []) as any[]
+              }
               teu12m={
                 activeRouteKpis?.teuLast12m ??
                 activeProfile?.teuLast12m ??

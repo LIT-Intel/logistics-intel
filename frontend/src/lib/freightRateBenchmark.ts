@@ -49,7 +49,9 @@ type Region =
   | "North Europe"
   | "Mediterranean"
   | "South America East Coast"
-  | "Europe";
+  | "Europe"
+  | "Australia"
+  | "India/Middle East";
 
 type Pattern = { region: Region; tokens: string[] };
 
@@ -144,6 +146,22 @@ const PATTERNS: Pattern[] = [
   {
     region: "Europe",
     tokens: ["europe", "european union", "eu"],
+  },
+  {
+    region: "Australia",
+    tokens: [
+      "australia", "sydney", "melbourne", "brisbane", "perth", "adelaide",
+      "fremantle", "new zealand", "auckland", "wellington",
+    ],
+  },
+  {
+    region: "India/Middle East",
+    tokens: [
+      "india", "mumbai", "nhava sheva", "chennai", "kolkata", "mundra",
+      "pakistan", "karachi", "bangladesh", "chittagong", "sri lanka",
+      "colombo", "uae", "dubai", "jebel ali", "saudi arabia", "jeddah",
+      "qatar", "doha", "kuwait", "iran", "iraq", "oman",
+    ],
   },
 ];
 
@@ -410,4 +428,71 @@ export const FBX_LANE_COORDS: Record<string, LaneCoord> = {
   FBX10: { laneCode: "FBX10", fromLabel: "Hamburg",   fromCoords: [   9.9937, 53.5511], toLabel: "Santos",     toCoords: [ -46.3344, -23.9619] },
   FBX11: { laneCode: "FBX11", fromLabel: "New York",  fromCoords: [ -74.0060, 40.7128], toLabel: "Rotterdam",  toCoords: [   4.4777,  51.9244] },
   FBX12: { laneCode: "FBX12", fromLabel: "Rotterdam", fromCoords: [   4.4777, 51.9244], toLabel: "New York",   toCoords: [ -74.0060,  40.7128] },
+  // Extended LIT-maintained lanes covering routes outside the standard FBX12.
+  "LIT-MED-NAEC":   { laneCode: "LIT-MED-NAEC",   fromLabel: "Genoa",      fromCoords: [   8.9463, 44.4056], toLabel: "Savannah",  toCoords: [ -81.0998,  32.0809] },
+  "LIT-NAEC-MED":   { laneCode: "LIT-NAEC-MED",   fromLabel: "New York",   fromCoords: [ -74.0060, 40.7128], toLabel: "Genoa",     toCoords: [   8.9463,  44.4056] },
+  "LIT-ASIA-AUS":   { laneCode: "LIT-ASIA-AUS",   fromLabel: "Shanghai",   fromCoords: [ 121.4737, 31.2304], toLabel: "Sydney",    toCoords: [ 151.2093, -33.8688] },
+  "LIT-NEU-NAWC":   { laneCode: "LIT-NEU-NAWC",   fromLabel: "Rotterdam",  fromCoords: [   4.4777, 51.9244], toLabel: "Long Beach",toCoords: [-118.1937,  33.7701] },
+  "LIT-NAWC-NEU":   { laneCode: "LIT-NAWC-NEU",   fromLabel: "Long Beach", fromCoords: [-118.1937, 33.7701], toLabel: "Rotterdam", toCoords: [   4.4777,  51.9244] },
+  "LIT-ASIA-INDIA": { laneCode: "LIT-ASIA-INDIA", fromLabel: "Shanghai",   fromCoords: [ 121.4737, 31.2304], toLabel: "Mumbai",    toCoords: [  72.8777,  19.0760] },
 };
+
+// Match every top-route a company has against the reference lanes,
+// computing per-route market spend. Lanes without a clean origin OR
+// destination match get a "fallback" tag so the UI can flag them
+// honestly. Returns sorted by market_spend descending.
+export type TopRouteMatch = {
+  route: string;
+  ourShipments: number;
+  ourTeu: number;
+  ourFcl: number;
+  ourLcl: number;
+  matched: MatchedLane | null;
+  marketSpend: number;
+};
+
+export function matchAllRoutesForCompany(
+  topRoutes: any[] | null | undefined,
+  lanes: FreightLane[],
+): TopRouteMatch[] {
+  if (!Array.isArray(topRoutes) || topRoutes.length === 0 || lanes.length === 0) {
+    return [];
+  }
+  const result: TopRouteMatch[] = [];
+  for (const r of topRoutes) {
+    const routeLabel: string =
+      r?.route ||
+      [r?.origin, r?.destination].filter(Boolean).join(" → ") ||
+      "";
+    if (!routeLabel) continue;
+    const matched = matchLaneForRoute(routeLabel, lanes);
+    const ships = Number(r?.shipments) || 0;
+    const teu = Number(r?.teu) || 0;
+    const fcl = Number(r?.fclShipments ?? r?.fcl_shipments) || 0;
+    const lcl = Number(r?.lclShipments ?? r?.lcl_shipments) || 0;
+    // Per-lane market spend: prefer fcl_containers × rate_per_40ft;
+    // fall back to teu × rate_per_teu when fcl count missing.
+    let marketSpend = 0;
+    if (matched?.lane) {
+      const ratePer40 = Number(matched.lane.rate_usd_per_40ft) || 0;
+      const ratePerTeu = Number(matched.lane.rate_usd_per_teu) || 0;
+      if (fcl > 0) {
+        marketSpend = Math.round(fcl * ratePer40 + Math.max(0, teu - fcl * 2) * 850);
+      } else if (teu > 0) {
+        marketSpend = Math.round(teu * ratePerTeu);
+      } else if (ships > 0) {
+        marketSpend = Math.round(ships * ratePer40);
+      }
+    }
+    result.push({
+      route: routeLabel,
+      ourShipments: ships,
+      ourTeu: teu,
+      ourFcl: fcl,
+      ourLcl: lcl,
+      matched,
+      marketSpend,
+    });
+  }
+  return result.sort((a, b) => b.marketSpend - a.marketSpend);
+}

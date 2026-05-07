@@ -45,15 +45,18 @@ import { supabase } from "@/lib/supabase";
 import {
   loadLatestBenchmarks,
   matchLaneForRoute,
+  matchAllRoutesForCompany,
   computeMarketRateSpend,
   FBX_LANE_COORDS,
   type FreightLane,
   type MatchedLane,
+  type TopRouteMatch,
 } from "@/lib/freightRateBenchmark";
 
 type Props = {
   companyName: string;
   topRoute: string | null;
+  topRoutes?: any[];
   teu12m: number | null;
   fcl12m: number | null;
   lcl12m: number | null;
@@ -135,6 +138,7 @@ function ratioToCoords(coords: [number, number]): [number, number] {
 export default function CDPRateBenchmark({
   companyName,
   topRoute,
+  topRoutes,
   teu12m,
   fcl12m,
   lcl12m,
@@ -186,6 +190,20 @@ export default function CDPRateBenchmark({
   const matched: MatchedLane | null = useMemo(
     () => (lanes.length ? matchLaneForRoute(topRoute, lanes) : null),
     [lanes, topRoute],
+  );
+
+  // Match every top-route the company has (from Supply Chain). Used by
+  // the "Your Trade Lanes" section to show per-lane rate + spend, and
+  // to compute the rolled-up market spend across all real lanes — not
+  // just the single matched representative.
+  const allRouteMatches: TopRouteMatch[] = useMemo(
+    () => matchAllRoutesForCompany(topRoutes ?? null, lanes),
+    [topRoutes, lanes],
+  );
+
+  const totalMarketSpendByLanes = useMemo(
+    () => allRouteMatches.reduce((s, m) => s + (m.marketSpend || 0), 0),
+    [allRouteMatches],
   );
 
   // Auto-select matched lane on load.
@@ -322,8 +340,13 @@ export default function CDPRateBenchmark({
           ) : (
             <>
               <div className="text-[28px] font-bold text-[#0F172A] leading-tight">
-                {fmtUsd(spend.totalSpend)}
+                {fmtUsd(totalMarketSpendByLanes > 0 ? totalMarketSpendByLanes : spend.totalSpend)}
               </div>
+              {totalMarketSpendByLanes > 0 ? (
+                <div className="text-[10px] uppercase tracking-wide text-blue-600 font-semibold mt-0.5">
+                  Sum of {allRouteMatches.length} matched lane{allRouteMatches.length === 1 ? "" : "s"}
+                </div>
+              ) : null}
               <div className="text-[11px] text-slate-500">
                 {fmtNum(ships12m)} shipments · {fmtNum(teu12m)} TEU · trailing 12 months
               </div>
@@ -641,6 +664,91 @@ export default function CDPRateBenchmark({
           </div>
         </div>
       </div>
+
+      {/* Your Trade Lanes — per-route benchmark for THIS company */}
+      {allRouteMatches.length > 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white">
+          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+            <Ship className="h-4 w-4 text-blue-600" />
+            <div>
+              <div className="text-[13px] font-bold text-[#0F172A]">
+                {companyName ? `${companyName}'s Trade Lanes` : "Trade Lanes"}
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Each lane matched to its closest reference rate. Market spend = your TEU × current reference + LCL benchmark.
+              </div>
+            </div>
+            <div className="ml-auto text-right">
+              <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">
+                Total
+              </div>
+              <div className="text-[14px] font-bold text-[#0F172A] tabular-nums">
+                {fmtUsd(totalMarketSpendByLanes)}
+              </div>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="bg-slate-50 text-left">
+                  <th className="px-4 py-2 font-semibold text-slate-600">Your Lane</th>
+                  <th className="px-4 py-2 font-semibold text-slate-600">Matched Reference</th>
+                  <th className="px-4 py-2 font-semibold text-slate-600 text-right tabular-nums">Shipments</th>
+                  <th className="px-4 py-2 font-semibold text-slate-600 text-right tabular-nums">TEU</th>
+                  <th className="px-4 py-2 font-semibold text-slate-600 text-right tabular-nums">$/40ft</th>
+                  <th className="px-4 py-2 font-semibold text-slate-600 text-right tabular-nums">Spend</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allRouteMatches.map((m, idx) => (
+                  <tr
+                    key={`${m.route}-${idx}`}
+                    onClick={() => m.matched?.lane.lane_code && setPrimaryLane(m.matched.lane.lane_code)}
+                    className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+                  >
+                    <td className="px-4 py-2 text-slate-800 max-w-[280px] truncate" title={m.route}>
+                      {m.route}
+                    </td>
+                    <td className="px-4 py-2">
+                      {m.matched ? (
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                            {m.matched.lane.lane_code}
+                          </span>
+                          <span
+                            className={`text-[10px] uppercase tracking-wide font-semibold ${
+                              m.matched.confidence === "exact"
+                                ? "text-emerald-600"
+                                : m.matched.confidence === "partial"
+                                  ? "text-amber-600"
+                                  : "text-slate-400"
+                            }`}
+                          >
+                            {m.matched.confidence}
+                          </span>
+                          <span className="text-slate-500 truncate" title={m.matched.lane.lane_label}>
+                            {m.matched.lane.lane_label}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-slate-700">{fmtNum(m.ourShipments)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-slate-700">{fmtNum(Math.round(m.ourTeu))}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-slate-700">
+                      {m.matched ? fmtUsd(m.matched.lane.rate_usd_per_40ft) : "—"}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-[#0F172A]">
+                      {fmtUsd(m.marketSpend)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       {/* Full FBX12 reference table */}
       <div className="rounded-xl border border-slate-200 bg-white">
