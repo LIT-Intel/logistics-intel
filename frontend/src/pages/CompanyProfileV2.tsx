@@ -64,6 +64,11 @@ import CompanyInboxTab from "@/components/company/CompanyInboxTab";
 import CompanyProfileGuard from "@/components/company/CompanyProfileGuard";
 import { useCompanyProfile } from "@/hooks/useCompanyProfile";
 import { loadSyntheticProfile } from "@/lib/companyProfileFallback";
+import {
+  loadLatestBenchmarks,
+  matchAllRoutesForCompany,
+  type FreightLane,
+} from "@/lib/freightRateBenchmark";
 
 // =============================================================================
 // Constants & helpers — verbatim from Company.jsx 51–209.
@@ -766,7 +771,41 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     ).sort((a: any, b: any) => b - a) as number[];
   }, [profile]);
 
-  // Header KPIs — verbatim from Company.jsx 628–713.
+  // Benchmark lanes — used to compute a market-rate spend override that
+  // refresh-write can't revert. Loaded once on mount.
+  const [benchmarkLanes, setBenchmarkLanes] = useState<FreightLane[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const rows = await loadLatestBenchmarks();
+      if (!cancelled) setBenchmarkLanes(rows);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Market-rate spend computed client-side from teu_12m + lcl_shipments
+  // + matched lane rates. Overrides the database est_spend (which is
+  // ImportYeti's structurally-undervalued total_shipping_cost).
+  const marketSpendBreakdown = useMemo(() => {
+    if (!benchmarkLanes.length) return null;
+    const topRoutesArr =
+      (Array.isArray(activeRouteKpis?.topRoutesLast12m) &&
+      activeRouteKpis.topRoutesLast12m.length > 0
+        ? activeRouteKpis.topRoutesLast12m
+        : Array.isArray(activeProfile?.topRoutes)
+          ? activeProfile.topRoutes
+          : Array.isArray(activeProfile?.top_routes)
+            ? activeProfile.top_routes
+            : []) as any[];
+    if (topRoutesArr.length === 0) return null;
+    const matches = matchAllRoutesForCompany(topRoutesArr, benchmarkLanes);
+    const total = matches.reduce((s, m) => s + (m.marketSpend || 0), 0);
+    return total > 0 ? total : null;
+  }, [benchmarkLanes, activeRouteKpis?.topRoutesLast12m, activeProfile?.topRoutes, activeProfile?.top_routes]);
+
+  // Header KPIs — verbatim from Company.jsx 628–713 (with marketSpend override).
   const headerKpis = useMemo(() => {
     const teu =
       activeRouteKpis?.teuLast12m ??
@@ -786,12 +825,18 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       activeProfile?.estSpendUsd ??
       null;
 
+    // Phase 4: prefer the client-side market-rate calculation (from
+    // benchmark lanes × actual TEU + LCL-bounded math). Falls back to
+    // the database est_spend (importer-reported) only when no benchmark
+    // match can be made.
     const spend =
-      explicitSpend != null && Number(explicitSpend) > 0
-        ? Number(explicitSpend)
-        : allTimeSpend != null && Number(allTimeSpend) > 0
-          ? Number(allTimeSpend)
-          : null;
+      marketSpendBreakdown != null && marketSpendBreakdown > 0
+        ? marketSpendBreakdown
+        : explicitSpend != null && Number(explicitSpend) > 0
+          ? Number(explicitSpend)
+          : allTimeSpend != null && Number(allTimeSpend) > 0
+            ? Number(allTimeSpend)
+            : null;
 
     const profileLatest = getLatestShipmentFromProfile(activeProfile);
     const shellLatest = capDateAtToday(
@@ -847,7 +892,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       contactsVerified:
         bundle?.contacts?.items.filter((x) => x.is_verified).length ?? null,
     };
-  }, [activeProfile, activeRouteKpis, shellCompany, bundle]);
+  }, [activeProfile, activeRouteKpis, shellCompany, bundle, marketSpendBreakdown]);
 
   const ownerName =
     fullName ||

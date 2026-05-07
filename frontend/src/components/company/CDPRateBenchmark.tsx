@@ -266,16 +266,21 @@ export default function CDPRateBenchmark({
     };
   }, [history, primaryLane]);
 
-  // Spend calculation with corrected FCL=2 TEU math.
+  // Spend calculation with LCL-bounded math: lclTeu = min(lclShips × 1,
+  // teu × 0.15), fclTeu = residual, fclSpend = fclTeu × lane $/TEU. This
+  // handles non-2-TEU containers correctly (45ft, 53ft, multi-container
+  // BOLs). EAE Usa was the canonical bug case — avg 7.31 TEU/shipment
+  // would have falsely attributed ~1400 TEU to LCL with the old algo.
   const spend = useMemo(
     () =>
       computeMarketRateSpend(
         teu12m,
-        fcl12m, // explicit FCL container count
+        fcl12m,
         ships12m,
         matched,
+        lcl12m, // LCL shipment count drives the bounded LCL TEU cap
       ),
-    [teu12m, fcl12m, ships12m, matched],
+    [teu12m, fcl12m, lcl12m, ships12m, matched],
   );
 
   // Globe lanes — all 12 lanes as great-circle arcs.

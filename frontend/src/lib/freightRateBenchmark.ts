@@ -31,6 +31,8 @@ export type FreightLane = {
 };
 
 const LCL_PER_TEU_DEFAULT = 850;
+const LCL_TEU_PER_SHIPMENT_CAP = 1.0; // industry hard cap (LCL ships rarely exceed 1 TEU)
+const LCL_TEU_TOTAL_CAP_FRACTION = 0.15; // LCL never >15% of total TEU
 
 // ---------- Region detection ---------------------------------------------
 // Comprehensive US state + city map so destinations like "Atlanta, United
@@ -354,47 +356,68 @@ export type SpendBreakdown = {
   matched: MatchedLane | null;
 };
 
+/**
+ * Compute market-rate spend with the CORRECTED FCL/LCL TEU split.
+ *
+ * Old algorithm assumed 1 FCL = 2 TEU. That breaks for importers using
+ * 45ft/53ft containers or multi-container BOLs (e.g. EAE Usa with avg
+ * 7.31 TEU/shipment). The residual (totalTeu − fclShips × 2) was
+ * massively over-attributed to LCL even when LCL share is <2%.
+ *
+ * New algorithm derives LCL TEU from actual LCL shipment count, capped
+ * by industry-realistic bounds:
+ *   lclTeu = min(lclShips × 1.0,  totalTeu × 0.15)
+ *   fclTeu = totalTeu − lclTeu       // residual is always FCL
+ *   fclSpend = fclTeu × lane $/TEU   // TEU-weighted handles 20/40/45ft mix
+ *   lclSpend = lclTeu × $850/TEU
+ */
 export function computeMarketRateSpend(
   teu12m: number | null | undefined,
   fclShipments: number | null | undefined,
   totalShipments: number | null | undefined,
   matched: MatchedLane | null,
+  lclShipments?: number | null,
 ): SpendBreakdown | null {
   const teu = Number(teu12m);
   if (!Number.isFinite(teu) || teu <= 0) return null;
 
-  // Prefer explicit FCL shipment count. Fall back to fcl_pct × total
-  // shipments when only the percentage is implied.
+  // Prefer explicit LCL shipment count. Fall back to 0 (assume all FCL
+  // when LCL count missing — overstates FCL slightly but honest).
+  const lclShips = Number.isFinite(Number(lclShipments))
+    ? Math.max(0, Math.round(Number(lclShipments)))
+    : 0;
+
+  // LCL TEU = lclShips × 1 TEU/ship, hard-capped at 15% of total. This
+  // prevents the false residual blow-up when FCL containers are >2 TEU.
+  const lclTeu = Math.min(
+    lclShips * LCL_TEU_PER_SHIPMENT_CAP,
+    teu * LCL_TEU_TOTAL_CAP_FRACTION,
+  );
+  const fclTeu = Math.max(0, teu - lclTeu);
+
+  // FCL container count for display (informational — not used in spend
+  // because TEU-weighted is more accurate when container sizes vary).
   let fclContainers = Number.isFinite(Number(fclShipments))
     ? Math.max(0, Math.round(Number(fclShipments)))
     : 0;
   if (!fclContainers && Number.isFinite(Number(totalShipments))) {
-    // No FCL count? Treat all shipments as FCL — ImportYeti's containers_load
-    // typically reports FCL > 90% for containerized importers anyway.
-    fclContainers = Math.max(0, Math.round(Number(totalShipments)));
+    fclContainers = Math.max(0, Math.round(Number(totalShipments)) - lclShips);
   }
-
-  // 1 FCL = 2 TEU. Cap so FCL never exceeds reported total TEU (handles
-  // mixed 20ft/40ft FCL when totalTeu < shipments × 2).
-  const fclTeu = Math.min(fclContainers * 2, teu);
-  const lclTeu = Math.max(0, teu - fclTeu);
 
   const laneRate40 = Number(matched?.lane?.rate_usd_per_40ft ?? 1850 * 2);
   const laneRateTeu = Number(matched?.lane?.rate_usd_per_teu ?? laneRate40 / 2);
   const lclRate = LCL_PER_TEU_DEFAULT;
 
-  // FCL spend uses container count × 40ft rate (more accurate than
-  // multiplying TEU by per-TEU rate when FCL share is high).
-  const fclSpend = Math.round(fclContainers * laneRate40 * (fclTeu / Math.max(1, fclContainers * 2)));
-  // The factor (fclTeu / (containers × 2)) collapses to 1 when no cap was
-  // applied. When the cap reduced fclTeu below containers × 2, the spend
-  // scales proportionally so we never over-attribute to FCL.
+  // FCL spend = FCL TEU × lane per-TEU rate (TEU-weighted is correct
+  // regardless of whether containers are 20/40/45/53ft — TEU is the
+  // canonical normalizer the FBX index uses internally).
+  const fclSpend = Math.round(fclTeu * laneRateTeu);
   const lclSpend = Math.round(lclTeu * lclRate);
 
   return {
     fclContainers,
-    fclTeu,
-    lclTeu,
+    fclTeu: Math.round(fclTeu),
+    lclTeu: Math.round(lclTeu),
     fclSpend,
     lclSpend,
     totalSpend: fclSpend + lclSpend,
@@ -470,19 +493,20 @@ export function matchAllRoutesForCompany(
     const teu = Number(r?.teu) || 0;
     const fcl = Number(r?.fclShipments ?? r?.fcl_shipments) || 0;
     const lcl = Number(r?.lclShipments ?? r?.lcl_shipments) || 0;
-    // Per-lane market spend: prefer fcl_containers × rate_per_40ft;
-    // fall back to teu × rate_per_teu when fcl count missing.
+    // Per-lane market spend using the CORRECTED LCL-bounded algorithm.
+    // LCL TEU is min(lclShips × 1, teu × 0.15); FCL is the residual.
     let marketSpend = 0;
-    if (matched?.lane) {
-      const ratePer40 = Number(matched.lane.rate_usd_per_40ft) || 0;
+    if (matched?.lane && teu > 0) {
       const ratePerTeu = Number(matched.lane.rate_usd_per_teu) || 0;
-      if (fcl > 0) {
-        marketSpend = Math.round(fcl * ratePer40 + Math.max(0, teu - fcl * 2) * 850);
-      } else if (teu > 0) {
-        marketSpend = Math.round(teu * ratePerTeu);
-      } else if (ships > 0) {
-        marketSpend = Math.round(ships * ratePer40);
-      }
+      const lclTeu = Math.min(
+        lcl * LCL_TEU_PER_SHIPMENT_CAP,
+        teu * LCL_TEU_TOTAL_CAP_FRACTION,
+      );
+      const fclTeu = Math.max(0, teu - lclTeu);
+      marketSpend = Math.round(fclTeu * ratePerTeu + lclTeu * LCL_PER_TEU_DEFAULT);
+    } else if (matched?.lane && ships > 0) {
+      // No TEU at all — fall back to per-ship × per-40ft rate.
+      marketSpend = Math.round(ships * Number(matched.lane.rate_usd_per_40ft) || 0);
     }
     result.push({
       route: routeLabel,
