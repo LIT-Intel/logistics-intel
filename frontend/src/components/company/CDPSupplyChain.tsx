@@ -52,27 +52,60 @@ export default function CDPSupplyChain({
   const [sub, setSub] = useState<SubTabId>("summary");
 
   // ── Aggregates ───────────────────────────────────────────────────────
-  // canonicalizeLanes returns two buckets:
-  //   - canonical: pairs where BOTH endpoints resolved to coordinates
-  //     (needed by the globe's great-circle arcs).
-  //   - nonCanonical: routes where origin OR destination didn't resolve
-  //     (Morocco/Guatemala/Jordan/etc when they're not in the geocoder).
-  // For Old Navy this dropped 7 of 10 routes — the count surface was
-  // showing "3 active lanes / 35 shipments" while the snapshot has 10
-  // routes / 43 shipments.
-  // Fix: keep canonical for the globe, but use the FULL set
-  // (canonical + nonCanonical) for the count + ranked-list display.
-  const { canonicalLanes, allLanes } = useMemo(() => {
+  // Two views of the company's routes:
+  //
+  //   - `allLanes`: every distinct route from the snapshot, kept at the
+  //     same granularity the snapshot stored them. For Home Depot that's
+  //     10 city-pair routes (8 China origins to Atlanta + 1 USVI + 1
+  //     Vietnam). For Old Navy it's 10 routes (Morocco, Guatemala,
+  //     Vietnam cities, Cambodia cities, Jordan). Used for the count
+  //     badge, ranked-list display, and intelligence table — what the
+  //     user expects when they read "top trade lanes".
+  //
+  //   - `globeLanes`: same routes after canonicalizeLanes() collapses
+  //     them by country pair AND resolves endpoints to coordinates. Used
+  //     by the great-circle arc renderer because the globe needs (lat,
+  //     lng) and benefits from de-duping eight "Various China city →
+  //     Atlanta" arcs into one "China → US" arc.
+  //
+  // Earlier revs of this file showed canonicalLanes (3 country pairs for
+  // Home Depot) which read as "3 trade lanes" and felt wrong because the
+  // snapshot has 10 distinct routes. The granular count is the honest
+  // one to surface.
+  const { allLanes, globeLanes } = useMemo(() => {
     const raw = readTopRoutes(profile, routeKpis);
-    if (!raw.length) return { canonicalLanes: [], allLanes: [] };
-    const { canonical, nonCanonical } = canonicalizeLanes(raw);
-    const merged = [...canonical, ...nonCanonical].sort(
-      (a: any, b: any) =>
-        (Number(b.shipments) || 0) - (Number(a.shipments) || 0) ||
-        (Number(b.teu) || 0) - (Number(a.teu) || 0),
-    );
-    return { canonicalLanes: canonical, allLanes: merged };
+    if (!raw.length) return { allLanes: [], globeLanes: [] };
+
+    // allLanes = raw routes shaped to match the canonical row contract
+    // so LaneRowInner / intelligence table render them without changes.
+    const allLanesList = raw
+      .map((r: any) => {
+        const dl = String(r?.lane || "").trim();
+        const parts = dl.split(/→|->|>/).map((s) => s.trim()).filter(Boolean);
+        return {
+          displayLabel: dl,
+          fromMeta: null,
+          toMeta: null,
+          shipments: Number(r?.shipments) || 0,
+          teu: Number(r?.teu) || 0,
+          spend: null,
+          rawFrom: parts[0] ?? null,
+          rawTo: parts.slice(1).join(" → ") || null,
+        };
+      })
+      .sort(
+        (a: any, b: any) =>
+          (Number(b.shipments) || 0) - (Number(a.shipments) || 0) ||
+          (Number(b.teu) || 0) - (Number(a.teu) || 0),
+      );
+
+    const { canonical } = canonicalizeLanes(raw);
+    return { allLanes: allLanesList, globeLanes: canonical };
   }, [profile, routeKpis]);
+  // Back-compat alias for downstream readers that still call this
+  // `canonicalLanes` (TopLanesCard / table); semantically it now holds
+  // the granular per-route list.
+  const canonicalLanes = allLanes;
 
   const recentBols = useMemo(() => {
     const items =
@@ -173,13 +206,13 @@ export default function CDPSupplyChain({
           recentBols={recentBols}
           suppliers={suppliers}
           canonicalLanes={allLanes}
-          globeLanes={canonicalLanes}
+          globeLanes={globeLanes}
         />
       )}
       {sub === "lanes" && (
         <LanesView
           canonicalLanes={allLanes}
-          globeLanes={canonicalLanes}
+          globeLanes={globeLanes}
           carriers={carriers}
           forwarders={forwarders}
           containerProfile={containerProfile}
