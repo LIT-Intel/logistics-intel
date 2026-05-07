@@ -4,16 +4,14 @@ import { sanityClient } from "@/sanity/lib/client";
 import { HOMEPAGE_QUERY } from "@/sanity/lib/queries";
 import { Nav } from "@/components/nav/Nav";
 import { Footer } from "@/components/nav/Footer";
-import { ArrowRight, Calendar } from "lucide-react";
+import { ArrowRight, Calendar, CheckCircle2, MapPin, RefreshCcw, ShieldCheck } from "lucide-react";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import { HeroSearchDemo } from "@/components/sections/HeroSearchDemo";
 import { CompanyIntelMock } from "@/components/sections/CompanyIntelMock";
-import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
 import { PulseBriefMock } from "@/components/sections/PulseBriefMock";
 import { ContactDiscoveryMock } from "@/components/sections/ContactDiscoveryMock";
 import { SequenceBuilderMock } from "@/components/sections/SequenceBuilderMock";
 import { CustomerLogosRail } from "@/components/sections/CustomerLogosRail";
-import { CustomerStoriesSection } from "@/components/sections/CustomerStoriesSection";
 import { LoomTourPlaceholder } from "@/components/sections/LoomTourPlaceholder";
 import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
 
@@ -66,13 +64,10 @@ export default async function HomePage() {
         <LoomTourPlaceholder />
         <PillarsTrustBar />
         <CompanyIntelShowcase />
-        <TradeLaneShowcase />
         <PulseBriefShowcase />
         <ContactDiscoveryShowcase />
         <SequenceBuilderShowcase />
-        <CustomerStoriesSection />
         <ProblemSection />
-        <PlatformSection />
         <SignalToPipelineSection />
       </main>
       <Footer />
@@ -122,6 +117,18 @@ function Hero({ hero }: { hero: any }) {
             Built for logistics teams that need better prospects, better timing, and better context
             before the first email goes out.
           </div>
+          {/* Trust badges — design-pack hero-badge-row */}
+          <div className="mt-5 flex flex-wrap gap-2">
+            <span className="font-display inline-flex items-center gap-1.5 rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold text-cyan-700">
+              <MapPin className="h-3.5 w-3.5" aria-hidden /> 60+ countries tracked
+            </span>
+            <span className="font-display inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-brand-blue-700">
+              <RefreshCcw className="h-3.5 w-3.5" aria-hidden /> Refreshed daily
+            </span>
+            <span className="font-display inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+              <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> SOC 2 · GDPR · CCPA
+            </span>
+          </div>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link
               href={APP_SIGNUP_URL}
@@ -136,6 +143,11 @@ function Hero({ hero }: { hero: any }) {
             >
               <Calendar className="h-4 w-4" /> Book a Demo
             </Link>
+          </div>
+          {/* Trial reassurance microcopy */}
+          <div className="font-display mt-4 inline-flex items-center gap-1.5 text-[12.5px] text-ink-500">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+            14-day free trial · Full feature access · Cancel anytime
           </div>
           <div className="mt-9 flex flex-wrap items-center gap-7">
             {hero.kpis?.map((k: any) => (
@@ -192,85 +204,6 @@ function CompanyIntelShowcase() {
           </div>
           <div className="lg:order-2">
             <CompanyIntelMock />
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function TradeLaneShowcase() {
-  return (
-    <section className="px-5 py-16 sm:px-8 sm:py-20">
-      <div className="mx-auto max-w-container">
-        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
-          <div>
-            <div
-              className="relative overflow-hidden rounded-3xl border border-white/10 p-6 sm:p-8"
-              style={{
-                background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-                boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18), 0 30px 80px -20px rgba(15,23,42,0.5)",
-              }}
-            >
-              <span
-                aria-hidden
-                className="pointer-events-none absolute -top-20 -right-16 h-72 w-72 rounded-full opacity-50"
-                style={{ background: "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)" }}
-              />
-              <div
-                className="font-display relative mb-3 text-[10.5px] font-bold uppercase tracking-[0.12em]"
-                style={{ color: "#00F0FF" }}
-              >
-                Trade Lane Visualization · Live
-              </div>
-              <div className="relative mx-auto" style={{ maxWidth: 480 }}>
-                <MarketingGlobe size={480} />
-              </div>
-              <div className="font-mono relative mt-4 grid grid-cols-3 gap-3 text-[11px] text-ink-150 sm:grid-cols-3">
-                <div>
-                  <div className="text-[9px] uppercase tracking-wider" style={{ color: "#00F0FF" }}>
-                    Tracked lanes
-                  </div>
-                  <div className="font-display text-[18px] font-semibold text-white">142</div>
-                </div>
-                <div>
-                  <div className="text-[9px] uppercase tracking-wider" style={{ color: "#00F0FF" }}>
-                    Active arcs
-                  </div>
-                  <div className="font-display text-[18px] font-semibold text-white">8</div>
-                </div>
-                <div>
-                  <div className="text-[9px] uppercase tracking-wider" style={{ color: "#00F0FF" }}>
-                    TEU 12m
-                  </div>
-                  <div className="font-display text-[18px] font-semibold text-white">61.4K</div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div>
-            <div className="eyebrow">Trade Lane Intelligence</div>
-            <h2 className="display-lg mt-3">
-              The trade flows you sell into, <span className="grad-text">live and ranked.</span>
-            </h2>
-            <p className="lead mt-5 max-w-[480px]">
-              Watch any origin → destination lane. See top shippers, carrier mix, monthly cadence,
-              and YoY change. Get pinged when volume shifts.
-            </p>
-            <ul className="font-body mt-6 space-y-2.5 text-[14px] leading-snug text-ink-700">
-              <li className="flex items-start gap-2.5">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
-                <span>500+ origin × destination pairs tracked, refreshed daily.</span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
-                <span>Top 25 shippers per lane with verified company + contact data.</span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
-                <span>Save lanes to your watchlist — Pulse Coach surfaces shifts.</span>
-              </li>
-            </ul>
           </div>
         </div>
       </div>
@@ -395,13 +328,13 @@ function SequenceBuilderShowcase() {
 }
 
 function PillarsTrustBar() {
-  const pillars = [
-    "Company Intelligence",
-    "Contact Intelligence",
-    "Shipment Intelligence",
-    "Trade Lane Signals",
-    "Campaign Execution",
-    "CRM Workflows",
+  const pillars: { label: string; dot: string }[] = [
+    { label: "Company Intelligence", dot: "bg-brand-blue" },
+    { label: "Contact Intelligence", dot: "bg-brand-cyan-dim" },
+    { label: "Shipment Intelligence", dot: "bg-brand-violet" },
+    { label: "Trade Lane Signals", dot: "bg-emerald-500" },
+    { label: "Campaign Execution", dot: "bg-amber-500" },
+    { label: "CRM Workflows", dot: "bg-brand-blue" },
   ];
   return (
     <section className="px-5 py-12 sm:px-8">
@@ -415,10 +348,14 @@ function PillarsTrustBar() {
           <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
             {pillars.map((p) => (
               <div
-                key={p}
-                className="font-display flex items-center justify-center rounded-lg px-3 py-2.5 text-center text-[13px] font-semibold text-ink-900"
+                key={p.label}
+                className="font-display flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-center text-[13px] font-semibold text-ink-900"
               >
-                {p}
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.dot}`}
+                  aria-hidden
+                />
+                {p.label}
               </div>
             ))}
           </div>
@@ -483,38 +420,3 @@ function SignalToPipelineSection() {
   );
 }
 
-function PlatformSection() {
-  const cards = [
-    { tag: "Discover", title: "Search companies", body: "Filter 124K+ shippers by lane, carrier, TEU, HS code, and activity trend." },
-    { tag: "Enrich", title: "Find contacts", body: "Verified emails for decision-makers — supply chain, procurement, ops, logistics." },
-    { tag: "Analyze", title: "Analyze shipments", body: "BOL-level history, container volume, carrier mix, and lane performance over time." },
-    { tag: "Track", title: "Track trade lanes", body: "Watchlist specific lanes, ports, and trade blocks. Get alerts when flow changes." },
-    { tag: "Organize", title: "Save to Command Center", body: "A CRM that lives next to intelligence. Pipelines, tasks, activity, all in context." },
-    { tag: "Engage", title: "Launch campaigns", body: "Multichannel sequences triggered by shipment signals, not calendar dates." },
-  ];
-  return (
-    <section className="px-5 py-16 sm:px-8 sm:py-24">
-      <div className="mx-auto max-w-container">
-        <div className="mx-auto max-w-[780px] text-center">
-          <div className="eyebrow">The platform</div>
-          <h2 className="display-lg mt-3">One platform for market intelligence and execution.</h2>
-          <p className="lead mx-auto mt-3 max-w-[640px]">
-            Six capabilities, one workspace. Move from signal to action without switching tools.
-          </p>
-        </div>
-        <div className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {cards.map((c) => (
-            <div
-              key={c.title}
-              className="rounded-2xl border border-ink-100 bg-white p-7 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"
-            >
-              <div className="font-display text-[11px] font-bold uppercase tracking-wider text-brand-blue">{c.tag}</div>
-              <h3 className="display-sm mt-3">{c.title}</h3>
-              <p className="font-body mt-2 text-[14px] leading-relaxed text-ink-500">{c.body}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
