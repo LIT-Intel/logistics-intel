@@ -1,8 +1,25 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Check, Mail, Plus, Search, Users, X, AlertCircle, UserCheck } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  Loader2,
+  Mail,
+  Plus,
+  Search,
+  Tag,
+  Users,
+  X,
+  AlertCircle,
+  UserCheck,
+} from "lucide-react";
 import { fontDisplay, fontBody, fontMono } from "../tokens";
 import { supabase } from "@/lib/supabase";
 import type { SavedCompanyLite } from "../hooks/useSavedCompanies";
+import {
+  listPulseLists,
+  getListCompanies,
+  getListContacts,
+} from "@/features/pulse/pulseListsApi";
 
 export type ManualRecipient = {
   email: string;
@@ -23,6 +40,19 @@ interface Props {
   onClearAll: () => void;
   onChangeManualEmails: (next: ManualRecipient[]) => void;
   onOpenCommandCenter: () => void;
+  // Bulk-add path used by the "From a list" tab — adds a whole list's
+  // company membership in a single state update.
+  onBulkAddCompanies?: (companyIds: string[]) => void;
+}
+
+interface PulseListRow {
+  id: string;
+  name: string;
+  description: string | null;
+  company_count: number;
+  is_owner: boolean;
+  owner: { name: string } | null;
+  updated_at: string;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -84,12 +114,24 @@ export function AudiencePickerDrawer({
   onClearAll,
   onChangeManualEmails,
   onOpenCommandCenter,
+  onBulkAddCompanies,
 }: Props) {
   const [filter, setFilter] = useState("");
-  const [tab, setTab] = useState<"companies" | "manual">("companies");
+  const [tab, setTab] = useState<"companies" | "lists" | "manual">("companies");
   const [manualBlob, setManualBlob] = useState<string>("");
   const [manualError, setManualError] = useState<string | null>(null);
   const [enrichedCounts, setEnrichedCounts] = useState<Record<string, number>>({});
+
+  // Lists tab state — fetched once when the drawer opens. Per-list
+  // "applying" flag drives the spinner on the row that's mid-bulk-add.
+  const [pulseLists, setPulseLists] = useState<PulseListRow[]>([]);
+  const [listsLoading, setListsLoading] = useState(false);
+  const [listsError, setListsError] = useState<string | null>(null);
+  const [applyingListId, setApplyingListId] = useState<string | null>(null);
+  // Lists the user already pulled in this session — used to flag rows
+  // as "Already added" so a double-click doesn't re-merge the same set.
+  const [appliedListIds, setAppliedListIds] = useState<Set<string>>(new Set());
+  const [listFilter, setListFilter] = useState("");
 
   // Initialize the textarea ONCE per drawer open. Don't re-sync on every
   // manualEmails change — that clobbered users typing a second email
@@ -136,6 +178,97 @@ export function AudiencePickerDrawer({
       cancelled = true;
     };
   }, [open, companies]);
+
+  // Fetch the user's saved lists when the drawer opens. RLS on
+  // pulse_lists scopes to current user + shared org lists, so we don't
+  // need to pass user_id explicitly. Reset the applied-set on each
+  // open so the user's previous-session merges don't show as locked.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setListsLoading(true);
+    setListsError(null);
+    setAppliedListIds(new Set());
+    listPulseLists()
+      .then((res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          setListsError(
+            res.code === "TABLES_PENDING"
+              ? "Saved Lists isn't set up yet on this workspace."
+              : res.message || "Couldn't load lists.",
+          );
+          setPulseLists([]);
+          return;
+        }
+        setPulseLists((res.rows as PulseListRow[]) || []);
+      })
+      .finally(() => {
+        if (!cancelled) setListsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  // Add ALL companies + (optionally) explicit contacts from a list to
+  // the campaign audience. Companies merge into selectedIds, list
+  // contacts that have an email merge into manualEmails.
+  async function applyList(listId: string, includeContacts: boolean) {
+    if (!listId || applyingListId) return;
+    setApplyingListId(listId);
+    try {
+      const compRes = await getListCompanies(listId);
+      if (compRes.ok && Array.isArray(compRes.rows)) {
+        const ids = (compRes.rows as Array<{ id?: string }>).map(
+          (r) => String(r?.id || ""),
+        ).filter(Boolean);
+        if (ids.length && onBulkAddCompanies) {
+          onBulkAddCompanies(ids);
+        } else if (ids.length) {
+          // Fallback: parent didn't pass onBulkAddCompanies — toggle
+          // each individually so we still mutate state correctly.
+          for (const id of ids) onToggle(id);
+        }
+      }
+      if (includeContacts) {
+        const ctRes = await getListContacts(listId);
+        if (ctRes.ok && Array.isArray(ctRes.rows)) {
+          // Merge by email so duplicates don't double-up. Existing
+          // manual entries win when the same email is in both.
+          const merged = new Map<string, ManualRecipient>();
+          for (const m of manualEmails) merged.set(m.email, m);
+          for (const c of (ctRes.rows as any[]) || []) {
+            const email = String(c?.email || "").toLowerCase().trim();
+            if (!email || !EMAIL_RE.test(email)) continue;
+            if (merged.has(email)) continue;
+            merged.set(email, {
+              email,
+              first_name: c?.first_name || undefined,
+              last_name: c?.last_name || undefined,
+              company_name: c?.company_name || undefined,
+            });
+          }
+          onChangeManualEmails([...merged.values()]);
+        }
+      }
+      setAppliedListIds((prev) => {
+        const next = new Set(prev);
+        next.add(listId);
+        return next;
+      });
+    } finally {
+      setApplyingListId(null);
+    }
+  }
+
+  const filteredLists = useMemo(() => {
+    if (!listFilter.trim()) return pulseLists;
+    const q = listFilter.trim().toLowerCase();
+    return pulseLists.filter((l) =>
+      `${l.name} ${l.description || ""}`.toLowerCase().includes(q),
+    );
+  }, [pulseLists, listFilter]);
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return companies;
@@ -209,7 +342,7 @@ export function AudiencePickerDrawer({
               className="text-[11px] text-slate-500"
               style={{ fontFamily: fontBody }}
             >
-              Saved companies (only enriched contacts get emailed) plus any manual emails you add.
+              Saved companies, a curated list, or manual emails. Only enriched contacts get queued.
             </div>
           </div>
           <button
@@ -226,10 +359,19 @@ export function AudiencePickerDrawer({
         <div className="flex shrink-0 items-center gap-1 border-b border-slate-200 bg-slate-50 px-5">
           <TabButton active={tab === "companies"} onClick={() => setTab("companies")}>
             <Users className="h-3 w-3" />
-            From saved companies
+            Saved companies
             <span className="ml-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[9.5px] font-bold text-blue-700">
               {selectedCount}
             </span>
+          </TabButton>
+          <TabButton active={tab === "lists"} onClick={() => setTab("lists")}>
+            <Tag className="h-3 w-3" />
+            From a list
+            {appliedListIds.size > 0 ? (
+              <span className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9.5px] font-bold text-emerald-700">
+                {appliedListIds.size}
+              </span>
+            ) : null}
           </TabButton>
           <TabButton active={tab === "manual"} onClick={() => setTab("manual")}>
             <Mail className="h-3 w-3" />
@@ -240,7 +382,19 @@ export function AudiencePickerDrawer({
           </TabButton>
         </div>
 
-        {tab === "companies" ? (
+        {tab === "lists" ? (
+          <ListsTab
+            loading={listsLoading}
+            error={listsError}
+            lists={filteredLists}
+            allCount={pulseLists.length}
+            filter={listFilter}
+            onFilter={setListFilter}
+            onApply={applyList}
+            applyingListId={applyingListId}
+            appliedListIds={appliedListIds}
+          />
+        ) : tab === "companies" ? (
           <>
             <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3">
               <div className="relative min-w-0 flex-1">
@@ -507,6 +661,187 @@ export function AudiencePickerDrawer({
             Done
           </button>
         </div>
+      </div>
+    </>
+  );
+}
+
+// "From a list" tab body. Shows the user's saved lists with company
+// counts; clicking a row pulls the whole list's company membership
+// (and optionally its explicit contacts) into the campaign audience.
+// This is how users segment campaigns by industry — they curate
+// per-industry lists in /app/lists, then attach a list per campaign.
+function ListsTab({
+  loading,
+  error,
+  lists,
+  allCount,
+  filter,
+  onFilter,
+  onApply,
+  applyingListId,
+  appliedListIds,
+}: {
+  loading: boolean;
+  error: string | null;
+  lists: PulseListRow[];
+  allCount: number;
+  filter: string;
+  onFilter: (v: string) => void;
+  onApply: (listId: string, includeContacts: boolean) => void;
+  applyingListId: string | null;
+  appliedListIds: Set<string>;
+}) {
+  // Per-list "include explicit contacts" toggle. Default ON because
+  // most users curating a contact list want those exact emails sent
+  // (overrides the per-company contact pool).
+  const [includeContacts, setIncludeContacts] = useState<Record<string, boolean>>({});
+
+  return (
+    <>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3">
+        <div className="relative min-w-0 flex-1">
+          <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400" />
+          <input
+            value={filter}
+            onChange={(e) => onFilter(e.target.value)}
+            placeholder="Filter lists by name"
+            className="w-full rounded-md border border-slate-200 bg-white py-1.5 pl-7 pr-3 text-xs text-[#0F172A] focus:border-[#3B82F6] focus:outline-none focus:ring-2 focus:ring-blue-100"
+            style={{ fontFamily: fontBody }}
+          />
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto px-5 py-3">
+        {loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-16 animate-pulse rounded-md bg-slate-100" />
+            ))}
+          </div>
+        ) : error ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-6 text-center">
+            <AlertCircle className="mx-auto mb-1.5 h-4 w-4 text-amber-600" />
+            <div
+              className="text-[11.5px] text-amber-800"
+              style={{ fontFamily: fontBody }}
+            >
+              {error}
+            </div>
+          </div>
+        ) : allCount === 0 ? (
+          <div className="rounded-md border border-dashed border-slate-200 bg-white px-4 py-8 text-center">
+            <Tag className="mx-auto mb-2 h-4 w-4 text-slate-400" />
+            <div
+              className="text-xs font-semibold text-[#0F172A]"
+              style={{ fontFamily: fontDisplay }}
+            >
+              No saved lists yet
+            </div>
+            <div
+              className="mt-1 text-[11px] text-slate-500"
+              style={{ fontFamily: fontBody }}
+            >
+              Curate industry-segmented lists in Pulse → Lists, then come back to attach one.
+            </div>
+            <a
+              href="/app/lists"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+              style={{ fontFamily: fontDisplay }}
+            >
+              Open Lists
+              <ArrowRight className="h-2.5 w-2.5" />
+            </a>
+          </div>
+        ) : lists.length === 0 ? (
+          <div
+            className="rounded-md border border-dashed border-slate-200 px-4 py-6 text-center text-xs text-slate-500"
+            style={{ fontFamily: fontBody }}
+          >
+            No lists match "{filter}".
+          </div>
+        ) : (
+          lists.map((l) => {
+            const applied = appliedListIds.has(l.id);
+            const busy = applyingListId === l.id;
+            const inc = includeContacts[l.id] !== false; // default true
+            return (
+              <div
+                key={l.id}
+                className="mb-2 rounded-[10px] border bg-white p-3"
+                style={{
+                  borderColor: applied ? "#A7F3D0" : "#E5E7EB",
+                  background: applied ? "#F0FDF4" : "#fff",
+                }}
+              >
+                <div className="flex items-start gap-2">
+                  <Tag
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                    style={{ color: applied ? "#059669" : "#3B82F6" }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className="truncate text-xs font-semibold text-[#0F172A]"
+                      style={{ fontFamily: fontDisplay }}
+                    >
+                      {l.name}
+                    </div>
+                    <div
+                      className="mt-0.5 truncate text-[11px] text-slate-500"
+                      style={{ fontFamily: fontBody }}
+                    >
+                      {l.description || (l.is_owner ? "Your list" : `Shared by ${l.owner?.name || "team"}`)}
+                    </div>
+                    <div
+                      className="mt-1 flex items-center gap-2 text-[10.5px] text-slate-500"
+                      style={{ fontFamily: fontBody }}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <Users className="h-2.5 w-2.5" />
+                        {l.company_count} compan{l.company_count === 1 ? "y" : "ies"}
+                      </span>
+                      {!l.is_owner ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-semibold text-slate-600">
+                          Shared
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onApply(l.id, inc)}
+                    disabled={busy || applied}
+                    className="inline-flex items-center gap-1 rounded-md bg-[#0F172A] px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+                    style={{ fontFamily: fontDisplay }}
+                  >
+                    {busy ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : applied ? (
+                      <Check className="h-3 w-3" />
+                    ) : (
+                      <Plus className="h-3 w-3" />
+                    )}
+                    {applied ? "Added" : busy ? "Adding…" : "Add list"}
+                  </button>
+                </div>
+                <label
+                  className="mt-2 flex cursor-pointer items-center gap-1.5 text-[10.5px] text-slate-600"
+                  style={{ fontFamily: fontBody }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={inc}
+                    onChange={(e) =>
+                      setIncludeContacts((prev) => ({ ...prev, [l.id]: e.target.checked }))
+                    }
+                    disabled={busy || applied}
+                    className="h-3 w-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Also add this list's individual saved contacts as recipients
+                </label>
+              </div>
+            );
+          })
+        )}
       </div>
     </>
   );

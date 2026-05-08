@@ -525,6 +525,19 @@ export default function CampaignBuilder() {
   const handleClearAll = useCallback(() => {
     setSelectedIds(new Set());
   }, []);
+  // Bulk-add path used by "From a list" tab — drops a whole list's
+  // company membership into selectedIds in a single state update so a
+  // 500-row list doesn't trigger 500 re-renders.
+  const handleBulkAddCompanies = useCallback((ids) => {
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (id) next.add(id);
+      }
+      return next;
+    });
+  }, []);
 
   // ---- Save flow (create + edit) ----
   const handleSave = useCallback(async () => {
@@ -1149,6 +1162,7 @@ export default function CampaignBuilder() {
         onClearAll={handleClearAll}
         onChangeManualEmails={setManualEmails}
         onOpenCommandCenter={() => navigate("/app/command-center")}
+        onBulkAddCompanies={handleBulkAddCompanies}
       />
 
       <TemplatesDrawer
