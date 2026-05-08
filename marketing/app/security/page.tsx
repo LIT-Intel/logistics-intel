@@ -109,6 +109,52 @@ export default function SecurityPage() {
         align="center"
       />
 
+      {/* Compliance badge strip — moved off the homepage and onto the
+          Security page where it belongs. Standards / claims / uptime
+          stay close to the deeper detail in the pillar cards below. */}
+      <section aria-label="Compliance and certifications" className="px-5 sm:px-8 pb-2">
+        <div className="mx-auto max-w-content">
+          <div className="rounded-2xl border border-ink-100 bg-white px-5 py-4 shadow-sm sm:px-7">
+            <div className="flex flex-wrap items-center justify-center gap-x-7 gap-y-3 sm:justify-between">
+              {[
+                { abbr: "SOC", label: "SOC 2 Type II program" },
+                { abbr: "GDR", label: "GDPR compliant" },
+                { abbr: "CCP", label: "CCPA compliant" },
+                { abbr: "256", label: "AES-256 encryption" },
+              ].map((b) => (
+                <span
+                  key={b.abbr}
+                  className="font-display inline-flex items-center gap-2 text-[12.5px] font-medium text-ink-500"
+                >
+                  <span
+                    className="font-mono inline-flex h-6 w-6 items-center justify-center rounded-md text-[9px] font-bold tracking-tighter"
+                    style={{
+                      background: "linear-gradient(180deg, #0f172a, #020617)",
+                      color: "#00F0FF",
+                      boxShadow: "0 0 0 1px rgba(0,240,255,0.22), 0 0 8px rgba(0,240,255,0.18)",
+                    }}
+                  >
+                    {b.abbr}
+                  </span>
+                  {b.label}
+                </span>
+              ))}
+              <span className="font-display inline-flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-700">
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+                  aria-hidden
+                  style={{
+                    boxShadow: "0 0 0 3px rgba(16,185,129,0.18)",
+                    animation: "pulse-dot 2.4s infinite",
+                  }}
+                />
+                99.98% uptime · last 90 days
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <FeatureGrid features={PILLARS} cols={3} />
 
       <section className="px-5 sm:px-8 py-12">

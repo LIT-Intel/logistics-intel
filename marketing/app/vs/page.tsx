@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
 import { groq } from "next-sanity";
 import { sanityClient } from "@/sanity/lib/client";
 import { resolveLogoUrl } from "@/lib/sanityImage";
@@ -8,6 +7,7 @@ import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
 import { Section } from "@/components/sections/Section";
 import { HubCard, HubEmptyState } from "@/components/sections/HubCard";
+import { CustomerLogoTile } from "@/components/sections/CustomerLogoTile";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { ArrowRight } from "lucide-react";
 import { buildMetadata, siteUrl } from "@/lib/seo";
@@ -135,11 +135,11 @@ export default async function VsHubPage() {
                 </div>
                 <div className="grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-2">
                   {cat.items.map((c) => {
+                    const competitorDomain = c.competitorUrl
+                      ?.replace(/^https?:\/\//, "")
+                      .replace(/\/$/, "");
                     const logoSrc = resolveLogoUrl(
-                      {
-                        logo: c.competitorLogo,
-                        domain: c.competitorUrl?.replace(/^https?:\/\//, "").replace(/\/$/, ""),
-                      },
+                      { logo: c.competitorLogo, domain: competitorDomain },
                       96,
                     );
                     const teaser = c.tldr || c.subhead;
@@ -153,18 +153,17 @@ export default async function VsHubPage() {
                             </span>
                             <span className="text-ink-900">{c.competitorName}</span>
                           </div>
-                          {logoSrc && (
-                            <div className="relative ml-auto h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-ink-100 bg-white">
-                              <Image
-                                src={logoSrc}
-                                alt={c.competitorName}
-                                fill
-                                sizes="36px"
-                                className="object-contain p-1"
-                                unoptimized={logoSrc.includes("img.logo.dev")}
-                              />
-                            </div>
-                          )}
+                          {/* Use CustomerLogoTile (resilient monogram + image
+                              fade-in) so logo.dev failures never leave a
+                              blank box on the hub. Same pattern as /vs/[slug]
+                              detail. */}
+                          <span className="ml-auto">
+                            <CustomerLogoTile
+                              name={c.competitorName}
+                              src={logoSrc}
+                              domain={competitorDomain}
+                            />
+                          </span>
                         </div>
 
                         {teaser && (

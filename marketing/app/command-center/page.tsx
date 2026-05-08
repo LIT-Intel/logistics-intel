@@ -87,7 +87,7 @@ function PipelineMock() {
         <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-500">
           Q2 Outreach · 57 saved accounts
         </span>
-        <span className="font-mono text-[10.5px] text-ink-200">Owner: V. Raymond</span>
+        <span className="font-mono text-[10.5px] text-ink-200">Owner: Gabriel K.</span>
       </div>
       <div className="mt-4 grid grid-cols-5 gap-1.5">
         {PIPELINE_STAGES.map((s) => (

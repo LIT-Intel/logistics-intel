@@ -55,6 +55,7 @@ export default async function ResourcesPage() {
         title="Built for the freight teams"
         titleHighlight="running outbound on signal."
         subtitle="Live trade-lane intelligence, customer stories, operator playbooks, and a 200-term freight glossary — every page indexed for the questions your buyers actually ask."
+        align="center"
       />
 
       <ResourceTopicNav />

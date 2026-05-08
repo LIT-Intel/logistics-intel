@@ -8,7 +8,6 @@ import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { Section } from "@/components/sections/Section";
 import { HubCard, HubCardGrid, HubEmptyState } from "@/components/sections/HubCard";
 import { CtaBanner } from "@/components/sections/CtaBanner";
-import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
 import { LaneFlags } from "@/components/sections/Flag";
 import { buildMetadata } from "@/lib/seo";
 import { buildCollectionPage } from "@/lib/jsonLd";
@@ -50,11 +49,7 @@ export default async function LanesIndexPage() {
         align="center"
       />
 
-      <Section top="none" bottom="md" innerClassName="max-w-[520px]">
-        <MarketingGlobe />
-      </Section>
-
-      <Section top="sm" bottom="lg">
+      <Section top="none" bottom="lg">
         {lanes.length === 0 ? (
           <HubEmptyState title="500+ trade lanes — refreshing now">
             Trade-lane intelligence is aggregated from live customs filings across 60+ countries. New

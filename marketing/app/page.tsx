@@ -90,7 +90,6 @@ export default async function HomePage() {
       <Nav />
       <main>
         <Hero hero={hero} />
-        <TrustStrip />
         <CustomerLogosRail
           eyebrow="Built for the revenue teams running freight at companies like"
           logos={[

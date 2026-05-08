@@ -1,9 +1,9 @@
 import Link from "next/link";
-import Image from "next/image";
 import { sanityClient } from "@/sanity/lib/client";
 import { groq } from "next-sanity";
 import { resolveLogoUrl } from "@/lib/sanityImage";
 import { ArrowRight } from "lucide-react";
+import { CustomerLogoTile } from "./CustomerLogoTile";
 
 export const revalidate = 600;
 
@@ -26,11 +26,11 @@ export async function CustomerStoriesSection() {
   if (!cases.length) return null;
 
   return (
-    <section className="px-8 py-20">
+    <section className="px-5 sm:px-8 py-16 sm:py-20">
       <div className="mx-auto max-w-container">
         <div className="mx-auto mb-12 max-w-[680px] text-center">
           <div className="eyebrow">Customer stories</div>
-          <h2 className="display-lg mt-3">
+          <h2 className="display-md mt-3">
             Real results from <span className="grad-text">freight teams</span> on LIT.
           </h2>
           <p className="lead mx-auto mt-4 max-w-[560px]">
@@ -50,22 +50,7 @@ export async function CustomerStoriesSection() {
               >
                 <div className="px-7 pt-7">
                   <div className="flex items-center gap-3">
-                    <div className="relative h-9 w-9 overflow-hidden rounded-lg border border-ink-100 bg-white">
-                      {logoSrc ? (
-                        <Image
-                          src={logoSrc}
-                          alt={c.customer}
-                          fill
-                          sizes="36px"
-                          className="object-contain p-1"
-                          unoptimized={logoSrc.includes("img.logo.dev")}
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-ink-25 text-[13px] font-bold text-ink-500">
-                          {c.customer?.[0]}
-                        </div>
-                      )}
-                    </div>
+                    <CustomerLogoTile name={c.customer} src={logoSrc} domain={c.domain} />
                     <div className="min-w-0 flex-1">
                       <div className="font-display truncate text-[15px] font-semibold text-ink-900">
                         {c.customer}

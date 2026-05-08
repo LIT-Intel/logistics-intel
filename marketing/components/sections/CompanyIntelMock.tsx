@@ -194,7 +194,7 @@ export function CompanyIntelMock({ className = "" }: { className?: string }) {
         {/* Sidebar */}
         <div className="hidden flex-col gap-3 lg:flex">
           <SidebarCard title="Account details">
-            <SidebarRow label="Owner" value="V. Raymond" />
+            <SidebarRow label="Owner" value="Gabriel K." />
             <SidebarRow label="Last activity" value="23 days ago" />
             <SidebarRow label="CRM stage" value="Active" tone="emerald" />
           </SidebarCard>
