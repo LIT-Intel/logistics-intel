@@ -39,7 +39,7 @@ export interface Play {
   desc: string;
   channels: ChannelKind[];
   steps: number;
-  badge?: "Top performer" | "Best reply rate" | "Highest meeting rate";
+  badge?: "Top performer" | "Best reply rate" | "Highest meeting rate" | "Best multichannel reply rate";
 }
 
 export type StepKind = ChannelKind;

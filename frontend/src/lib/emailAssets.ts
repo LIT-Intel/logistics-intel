@@ -39,6 +39,8 @@ const ASSET_PATHS: Record<EmailAssetKey, string> = {
   pulse_ai: "/email-assets/pulse-ai-brief.svg",
   campaign_builder: "/email-assets/campaign-builder.svg",
   rate_benchmark: "/email-assets/rate-benchmark.svg",
+  pulse_workflow: "/email-assets/pulse-workflow.svg",
+  lane_signals: "/email-assets/lane-signals.svg",
 };
 
 export type EmailAssetKey =
@@ -46,7 +48,9 @@ export type EmailAssetKey =
   | "contact_discovery"
   | "pulse_ai"
   | "campaign_builder"
-  | "rate_benchmark";
+  | "rate_benchmark"
+  | "pulse_workflow"
+  | "lane_signals";
 
 /** Absolute https:// URL for a given asset key. */
 export function emailAssetUrl(key: EmailAssetKey): string {
@@ -60,4 +64,6 @@ export const EMAIL_ASSETS: Record<EmailAssetKey, string> = {
   pulse_ai: emailAssetUrl("pulse_ai"),
   campaign_builder: emailAssetUrl("campaign_builder"),
   rate_benchmark: emailAssetUrl("rate_benchmark"),
+  pulse_workflow: emailAssetUrl("pulse_workflow"),
+  lane_signals: emailAssetUrl("lane_signals"),
 };

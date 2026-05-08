@@ -36,6 +36,10 @@ import { PreviewModal } from "@/features/outbound/components/PreviewModal";
 import { CreateTemplateModal } from "@/features/outbound/components/CreateTemplateModal";
 import { CreatePersonaModal } from "@/features/outbound/components/CreatePersonaModal";
 import { findPlay } from "@/features/outbound/data/plays";
+import {
+  applyLitMarketingSequenceToBuilder,
+  resolveEmailTemplateHtml,
+} from "@/lib/campaignEmailTemplates";
 import { INDUSTRY_OPTIONS, TONE_OPTIONS } from "@/features/outbound/data/templates";
 import { fontDisplay, fontBody } from "@/features/outbound/tokens";
 import {
@@ -299,7 +303,18 @@ export default function CampaignBuilder() {
   const [name, setName] = useState(() =>
     seedPlay ? `${seedPlay.name} — draft` : "Untitled campaign",
   );
-  const [steps, setSteps] = useState(() => seedStepsFromPlay(seedPlay));
+  const [steps, setSteps] = useState(() => {
+    // When the LIT Marketing 14-touch play is selected, seed steps with
+    // pre-filled copy (subject, body, title, description, delayDays) so
+    // the builder opens ready-to-use rather than with empty step shells.
+    if (seedPlay && seedPlay.id === "lit-marketing-14") {
+      const litSteps = applyLitMarketingSequenceToBuilder(resolveEmailTemplateHtml);
+      // Expand the first step so the inspector shows content immediately.
+      if (litSteps.length > 0) litSteps[0].expanded = true;
+      return litSteps;
+    }
+    return seedStepsFromPlay(seedPlay);
+  });
   const [selectedStepId, setSelectedStepId] = useState(
     () => steps[0]?.localId ?? null,
   );

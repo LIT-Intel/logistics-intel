@@ -1,25 +1,23 @@
-// LIT Marketing campaign templates — the 8-email first wave for two
-// audiences (freight brokers, small forwarders).
+// LIT Marketing campaign templates.
 //
-// Design intent: founder/operator-style intros, NOT generic SaaS copy.
-// Each sequence is 4 steps mixing one product visual + plain-text
-// follow-ups. Visuals come from the marketing site's public email-assets
-// folder (see frontend/src/lib/emailAssets.ts) so they render in every
-// email client without hashed build URLs or broken paths.
+// The 8-template registry (freightBrokerTemplates + smallForwarderTemplates)
+// is preserved as re-export shims for backwards compatibility. New sequences
+// should use LIT_MARKETING_14_TOUCH from litMarketingSequence.ts.
 //
 // Token contract:
 //   {{first_name}}    — recipient first name (resolved at send time)
 //   {{company_name}}  — recipient company    (resolved at send time)
 //   {{top_lane}}      — top trade lane       (resolved at send time)
 //   {{sender_name}}   — sender's first name  (resolved at send time)
+//   {{phone}}         — sender phone         (resolved at send time)
 //
 //   {{company_intelligence_public_url}}  ─┐
 //   {{contact_discovery_public_url}}     ─├─ resolved at INSERT time
-//   {{pulse_ai_public_url}}              ─┘  by resolveEmailTemplateHtml
+//   {{pulse_ai_public_url}}              ─┤  by resolveEmailTemplateHtml
+//   {{pulse_workflow_public_url}}        ─┤
+//   {{lane_signals_public_url}}          ─┘
 //
-// The send-time tokens (first_name, etc.) are left untouched by
-// resolveEmailTemplateHtml — they get substituted by the dispatcher's
-// applyMergeVars helper later, the same way they do for any template.
+// Send-time tokens pass through resolveEmailTemplateHtml unchanged.
 
 import { EMAIL_ASSETS, type EmailAssetKey } from "./emailAssets";
 
@@ -403,7 +401,11 @@ export function resolveEmailTemplateHtml(templateHtml: string): string {
     .split("{{campaign_builder_public_url}}")
     .join(EMAIL_ASSETS.campaign_builder)
     .split("{{rate_benchmark_public_url}}")
-    .join(EMAIL_ASSETS.rate_benchmark);
+    .join(EMAIL_ASSETS.rate_benchmark)
+    .split("{{pulse_workflow_public_url}}")
+    .join(EMAIL_ASSETS.pulse_workflow)
+    .split("{{lane_signals_public_url}}")
+    .join(EMAIL_ASSETS.lane_signals);
 }
 
 export type EmailHtmlValidationIssue = {
@@ -478,3 +480,10 @@ export function asOutreachTemplate(t: CampaignEmailTemplate): {
     persona_id: null,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 14-touch sequence adapter — re-exported from litMarketingSequence.ts
+// ─────────────────────────────────────────────────────────────────────────────
+
+export { applyLitMarketingSequenceToBuilder } from "./litMarketingSequence";
+export type { LitMarketingTouch, LitTouchKind, LitBuilderStep } from "./litMarketingSequence";

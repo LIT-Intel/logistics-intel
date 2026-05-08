@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" role="img" aria-label="LIT lane signals — origin-to-destination freight patterns for broker prospecting">
+  <defs>
+    <linearGradient id="ls-bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#FFFFFF"/>
+    </linearGradient>
+    <linearGradient id="ls-hero" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="ls-accent" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="ls-lane1" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#60A5FA" stop-opacity="0.4"/>
+    </linearGradient>
+    <linearGradient id="ls-lane2" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#A78BFA" stop-opacity="0.4"/>
+    </linearGradient>
+    <linearGradient id="ls-lane3" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#34D399" stop-opacity="0.4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="720" fill="url(#ls-bg)"/>
+  <rect x="40" y="40" width="1120" height="640" rx="20" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+
+  <!-- Header strip -->
+  <rect x="40" y="40" width="1120" height="110" rx="20" fill="url(#ls-hero)"/>
+  <rect x="40" y="130" width="1120" height="20" fill="#1E293B"/>
+
+  <!-- Header -->
+  <rect x="72" y="66" width="44" height="44" rx="10" fill="#2563EB"/>
+  <text x="94" y="95" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="20">⊕</text>
+  <text x="132" y="88" fill="#FFFFFF" font-family="Georgia,serif" font-weight="700" font-size="20">LIT Lane Signals · Active Freight Lanes by Broker Target</text>
+  <text x="132" y="112" fill="#94A3B8" font-family="Arial,sans-serif" font-size="13">Origin → destination patterns, TEU volume, and cadence signals from live Bill of Lading data</text>
+
+  <!-- Abstract globe / map area (simplified world outline) -->
+  <!-- Globe circle -->
+  <ellipse cx="430" cy="390" rx="240" ry="200" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+  <!-- Latitude lines (abstract) -->
+  <ellipse cx="430" cy="390" rx="240" ry="60" fill="none" stroke="#DBEAFE" stroke-width="1"/>
+  <ellipse cx="430" cy="390" rx="240" ry="120" fill="none" stroke="#DBEAFE" stroke-width="1"/>
+  <ellipse cx="430" cy="340" rx="220" ry="50" fill="none" stroke="#DBEAFE" stroke-width="0.8"/>
+  <!-- Longitude lines -->
+  <line x1="430" y1="190" x2="430" y2="590" stroke="#DBEAFE" stroke-width="1"/>
+  <line x1="310" y1="210" x2="310" y2="570" stroke="#DBEAFE" stroke-width="0.8"/>
+  <line x1="550" y1="210" x2="550" y2="570" stroke="#DBEAFE" stroke-width="0.8"/>
+  <!-- Globe outline -->
+  <ellipse cx="430" cy="390" rx="240" ry="200" fill="none" stroke="#93C5FD" stroke-width="2"/>
+
+  <!-- Simplified continent blobs (abstract) -->
+  <!-- Asia blob -->
+  <ellipse cx="520" cy="330" rx="70" ry="45" fill="#BFDBFE" opacity="0.7"/>
+  <!-- Americas blob -->
+  <ellipse cx="310" cy="380" rx="50" ry="70" fill="#BFDBFE" opacity="0.5"/>
+  <!-- Europe blob -->
+  <ellipse cx="440" cy="300" rx="40" ry="30" fill="#BFDBFE" opacity="0.6"/>
+  <!-- Africa blob -->
+  <ellipse cx="450" cy="410" rx="35" ry="50" fill="#BFDBFE" opacity="0.5"/>
+
+  <!-- Origin nodes (departure ports) -->
+  <!-- Shanghai -->
+  <circle cx="545" cy="318" r="10" fill="#2563EB"/>
+  <text x="562" y="315" fill="#1D4ED8" font-family="Arial,sans-serif" font-size="10" font-weight="700">Shanghai</text>
+  <!-- Ho Chi Minh / Vietnam -->
+  <circle cx="538" cy="360" r="8" fill="#2563EB"/>
+  <text x="552" y="357" fill="#1D4ED8" font-family="Arial,sans-serif" font-size="10" font-weight="700">HCMC</text>
+  <!-- Nhava Sheva (India) -->
+  <circle cx="505" cy="345" r="7" fill="#8B5CF6"/>
+  <text x="516" y="342" fill="#6D28D9" font-family="Arial,sans-serif" font-size="10" font-weight="700">INNSA</text>
+
+  <!-- Destination nodes (US ports) -->
+  <!-- Los Angeles -->
+  <circle cx="272" cy="355" r="10" fill="#10B981"/>
+  <text x="245" y="350" fill="#065F46" font-family="Arial,sans-serif" font-size="10" font-weight="700" text-anchor="end">Los Angeles</text>
+  <!-- Savannah -->
+  <circle cx="302" cy="375" r="8" fill="#10B981"/>
+  <text x="278" y="370" fill="#065F46" font-family="Arial,sans-serif" font-size="10" font-weight="700" text-anchor="end">Savannah</text>
+  <!-- New York -->
+  <circle cx="305" cy="330" r="7" fill="#F59E0B"/>
+  <text x="280" y="325" fill="#92400E" font-family="Arial,sans-serif" font-size="10" font-weight="700" text-anchor="end">New York</text>
+
+  <!-- Lane arcs (curved paths representing trade routes) -->
+  <!-- Shanghai → Los Angeles (blue, main) -->
+  <path d="M545,318 Q430,220 272,355" fill="none" stroke="url(#ls-lane1)" stroke-width="4" stroke-linecap="round" opacity="0.85"/>
+  <!-- HCMC → Savannah (purple) -->
+  <path d="M538,360 Q430,270 302,375" fill="none" stroke="url(#ls-lane2)" stroke-width="3" stroke-linecap="round" opacity="0.75"/>
+  <!-- INNSA → New York (green) -->
+  <path d="M505,345 Q430,250 305,330" fill="none" stroke="url(#ls-lane3)" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- Direction arrows on lanes -->
+  <!-- Arrow on lane 1 midpoint -->
+  <circle cx="430" cy="255" r="5" fill="#3B82F6"/>
+  <polygon points="426,252 434,252 430,258" fill="#3B82F6"/>
+  <!-- Arrow on lane 2 midpoint -->
+  <circle cx="430" cy="292" r="4" fill="#8B5CF6"/>
+  <polygon points="426,290 434,290 430,296" fill="#8B5CF6"/>
+
+  <!-- Right panel: lane signal cards -->
+  <!-- Card 1 -->
+  <rect x="710" y="170" width="400" height="110" rx="12" fill="#EFF6FF" stroke="#93C5FD"/>
+  <rect x="710" y="170" width="6" height="110" rx="3" fill="#3B82F6"/>
+  <text x="730" y="198" fill="#1D4ED8" font-family="Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="0.5">LANE SIGNAL · HIGH ACTIVITY</text>
+  <text x="730" y="218" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="13">Shanghai → Los Angeles</text>
+  <text x="730" y="238" fill="#334155" font-family="Arial,sans-serif" font-size="11.5">142 active shippers · 40ft dry / 20ft reefer mix</text>
+  <text x="730" y="256" fill="#334155" font-family="Arial,sans-serif" font-size="11.5">Volume up 18% MoM · carriers: COSCO, MSC, CMA</text>
+  <rect x="730" y="262" width="130" height="10" rx="4" fill="#BFDBFE"/>
+  <rect x="730" y="262" width="104" height="10" rx="4" fill="#2563EB"/>
+  <text x="872" y="271" fill="#1D4ED8" font-family="Arial,sans-serif" font-size="10" font-weight="700">73%</text>
+
+  <!-- Card 2 -->
+  <rect x="710" y="294" width="400" height="110" rx="12" fill="#FAF5FF" stroke="#C4B5FD"/>
+  <rect x="710" y="294" width="6" height="110" rx="3" fill="#8B5CF6"/>
+  <text x="730" y="322" fill="#6D28D9" font-family="Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="0.5">LANE SIGNAL · GROWING</text>
+  <text x="730" y="342" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="13">Vietnam → Savannah</text>
+  <text x="730" y="362" fill="#334155" font-family="Arial,sans-serif" font-size="11.5">68 active shippers · furniture, apparel, electronics</text>
+  <text x="730" y="380" fill="#334155" font-family="Arial,sans-serif" font-size="11.5">Volume up 31% YoY · new shippers added Q4</text>
+  <rect x="730" y="386" width="130" height="10" rx="4" fill="#DDD6FE"/>
+  <rect x="730" y="386" width="78" height="10" rx="4" fill="#8B5CF6"/>
+  <text x="872" y="395" fill="#6D28D9" font-family="Arial,sans-serif" font-size="10" font-weight="700">60%</text>
+
+  <!-- Card 3 -->
+  <rect x="710" y="418" width="400" height="110" rx="12" fill="#F0FDF4" stroke="#BBF7D0"/>
+  <rect x="710" y="418" width="6" height="110" rx="3" fill="#10B981"/>
+  <text x="730" y="446" fill="#065F46" font-family="Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="0.5">LANE SIGNAL · EMERGING</text>
+  <text x="730" y="466" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="13">India (JNPT) → New York</text>
+  <text x="730" y="486" fill="#334155" font-family="Arial,sans-serif" font-size="11.5">29 active shippers · pharma, textiles, engineering</text>
+  <text x="730" y="504" fill="#334155" font-family="Arial,sans-serif" font-size="11.5">First-time shippers: 8 new accounts in 60 days</text>
+  <rect x="730" y="510" width="130" height="10" rx="4" fill="#BBF7D0"/>
+  <rect x="730" y="510" width="46" height="10" rx="4" fill="#10B981"/>
+  <text x="872" y="519" fill="#065F46" font-family="Arial,sans-serif" font-size="10" font-weight="700">35%</text>
+
+  <!-- Bottom summary bar -->
+  <rect x="60" y="550" width="1080" height="75" rx="12" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <text x="600" y="578" text-anchor="middle" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="13">LIT lane signals show which trade routes have active freight, growing volume, or new shipper activity</text>
+  <text x="600" y="599" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="12">Brokers use lane signals to prioritize accounts that fit their capacity — and to reach shippers with a real reason to call.</text>
+  <text x="600" y="616" text-anchor="middle" fill="#2563EB" font-family="Arial,sans-serif" font-size="11" font-weight="700">Search by lane · filter by commodity · see BOL activity per shipper</text>
+
+  <!-- Footer brand badge -->
+  <rect x="60" y="642" width="200" height="30" rx="8" fill="url(#ls-accent)"/>
+  <text x="160" y="662" text-anchor="middle" fill="#FFFFFF" font-family="Georgia,serif" font-size="13" font-weight="700">LIT · Lane Signals</text>
+</svg>
