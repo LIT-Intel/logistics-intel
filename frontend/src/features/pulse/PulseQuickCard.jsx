@@ -231,6 +231,13 @@ export default function PulseQuickCard({
           contact.id ||
           null,
       };
+      // NOTE: reveal_phone_number is intentionally NOT set. When true,
+      // Apollo's people/match pivots to async phone enrichment and
+      // returns a request_id WITHOUT the person record — which means
+      // the email never comes back either. The Command Center
+      // CDPContacts path also omits this flag and works correctly.
+      // Phone numbers Apollo already has on file come through
+      // phone_numbers[] regardless.
       const { data, error } = await supabase.functions.invoke(
         'apollo-contact-enrich',
         {
@@ -240,7 +247,6 @@ export default function PulseQuickCard({
             ...(resolvedDomain ? { domain: resolvedDomain } : {}),
             ...(resolvedCompanyName ? { company_name: resolvedCompanyName } : {}),
             reveal_personal_emails: true,
-            reveal_phone_number: true,
           },
         },
       );
