@@ -32,7 +32,7 @@ export default function DpaPage() {
         subtitle={`Last updated · ${LAST_UPDATED}`}
       />
 
-      <section className="px-8 pb-12">
+      <section className="px-5 sm:px-8 pb-12">
         <article className="mx-auto max-w-[760px] space-y-5 font-body text-[16px] leading-[1.7] text-ink-700">
           <p>
             We sign DPAs as standard. To execute LIT's standard DPA, email{" "}
@@ -49,7 +49,7 @@ export default function DpaPage() {
         </article>
       </section>
 
-      <section className="px-8 pb-20">
+      <section className="px-5 sm:px-8 pb-20">
         <div className="mx-auto max-w-[820px]">
           <h2 className="display-lg">Sub-processors</h2>
           <p className="font-body mt-3 text-[15px] leading-relaxed text-ink-500">

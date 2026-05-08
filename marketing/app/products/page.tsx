@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { ArrowRight, Calendar } from "lucide-react";
 import { PageShell } from "@/components/sections/PageShell";
+import { ProductHero } from "@/components/sections/ProductHero";
 import { FeatureGrid } from "@/components/sections/FeatureGrid";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { CompanyIntelMock } from "@/components/sections/CompanyIntelMock";
@@ -32,48 +31,18 @@ const FEATURES = [
 export default function ProductsPage() {
   return (
     <PageShell>
-      <section className="relative px-5 pt-[72px] pb-12 sm:px-8">
-        <div className="mx-auto grid max-w-container gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center">
-          <div className="min-w-0">
-            <div className="lit-pill">
-              <span className="dot" />
-              The Logistic Intel platform
-            </div>
-            <h1 className="display-xl mt-5">
-              The connected revenue workspace{" "}
-              <span className="grad-text">for logistics sales.</span>
-            </h1>
-            <p className="lead mt-5 max-w-[560px]">
-              Logistic Intel brings the core tools your sales team needs into one platform: company
-              discovery, shipment intelligence, contact enrichment, CRM workflows, and outbound
-              campaigns. From search to outreach in one clean workflow.
-            </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Link
-                href={APP_SIGNUP_URL}
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
-                style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
-              >
-                Start Prospecting <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/demo"
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white/80 px-6 text-[15px] font-semibold text-ink-900 backdrop-blur transition hover:bg-white"
-              >
-                <Calendar className="h-4 w-4" /> Book a Demo
-              </Link>
-            </div>
-          </div>
-          <div className="relative">
-            <DashboardMock />
-          </div>
-        </div>
-      </section>
+      <ProductHero
+        eyebrow="The Logistic Intel platform"
+        title="The connected revenue workspace"
+        titleHighlight="for logistics sales."
+        subtitle="Logistic Intel brings the core tools your sales team needs into one platform: company discovery, shipment intelligence, contact enrichment, CRM workflows, and outbound campaigns. From search to outreach in one clean workflow."
+        visual={<DashboardMock />}
+      />
 
       <FeatureGrid features={FEATURES} cols={3} />
 
       {/* Company Intelligence */}
-      <section className="px-8 py-20">
+      <section className="px-5 sm:px-8 py-20">
         <div className="mx-auto max-w-container">
           <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
             <div>
@@ -93,7 +62,7 @@ export default function ProductsPage() {
       </section>
 
       {/* Pulse Brief */}
-      <section className="px-8 py-20">
+      <section className="px-5 sm:px-8 py-20">
         <div className="mx-auto max-w-container">
           <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
             <div className="lg:order-1"><PulseBriefMock /></div>
@@ -113,7 +82,7 @@ export default function ProductsPage() {
       </section>
 
       {/* Contacts */}
-      <section className="px-8 py-20">
+      <section className="px-5 sm:px-8 py-20">
         <div className="mx-auto max-w-container">
           <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
             <div>
@@ -133,7 +102,7 @@ export default function ProductsPage() {
       </section>
 
       {/* Outbound */}
-      <section className="px-8 py-20">
+      <section className="px-5 sm:px-8 py-20">
         <div className="mx-auto max-w-container">
           <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
             <div className="lg:order-1"><SequenceBuilderMock /></div>

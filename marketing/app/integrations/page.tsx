@@ -74,7 +74,7 @@ export default async function IntegrationsPage() {
       />
 
       {Object.entries(grouped).map(([category, items]) => (
-        <section key={category} className="px-8 py-10">
+        <section key={category} className="px-5 sm:px-8 py-10">
           <div className="mx-auto max-w-container">
             <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
               {category}

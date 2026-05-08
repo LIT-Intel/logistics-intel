@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import Link from "next/link";
 import { PageShell } from "@/components/sections/PageShell";
-import { PageHero } from "@/components/sections/PageHero";
+import { ProductHero } from "@/components/sections/ProductHero";
 import { FeatureGrid } from "@/components/sections/FeatureGrid";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { MarketingGlobe } from "@/components/sections/MarketingGlobe";
@@ -28,16 +28,14 @@ const FEATURES = [
 export default function TradeIntelligencePage() {
   return (
     <PageShell>
-      <PageHero
+      <ProductHero
         eyebrow="Trade intelligence"
         title="Find prospects based on"
         titleHighlight="how freight actually moves."
         subtitle="LIT helps logistics teams search companies by trade activity, not guesswork. Find importers, exporters, lanes, suppliers, shipment volume, and account patterns that point to real opportunity."
-        primaryCta={{ label: "Start Prospecting", href: APP_SIGNUP_URL, icon: "arrow" }}
-        secondaryCta={{ label: "Explore Pulse", href: "/pulse" }}
       />
 
-      <section className="px-8 pb-12">
+      <section className="px-5 sm:px-8 pb-12">
         <div className="mx-auto max-w-container">
           <div
             className="relative overflow-hidden rounded-3xl border border-white/10 px-8 py-10"

@@ -54,7 +54,7 @@ export default async function GlossaryTermPage({ params }: { params: { slug: str
       />
 
       <article>
-        <header className="px-8 pt-6 pb-10">
+        <header className="px-5 sm:px-8 pt-6 pb-10">
           <div className="mx-auto max-w-[760px]">
             <div className="lit-pill">
               <span className="dot" />
@@ -75,7 +75,7 @@ export default async function GlossaryTermPage({ params }: { params: { slug: str
         {term.body && <ProseShell value={term.body} />}
 
         {term.alsoKnownAs?.length > 0 && (
-          <section className="px-8 py-6">
+          <section className="px-5 sm:px-8 py-6">
             <div className="mx-auto max-w-[760px]">
               <div className="rounded-xl border border-ink-100 bg-ink-25 px-5 py-4">
                 <div className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink-500">
@@ -90,7 +90,7 @@ export default async function GlossaryTermPage({ params }: { params: { slug: str
         )}
 
         {term.relatedTerms?.length > 0 && (
-          <section className="px-8 py-10">
+          <section className="px-5 sm:px-8 py-10">
             <div className="mx-auto max-w-[760px]">
               <div className="font-display mb-4 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-500">
                 Related terms
@@ -116,7 +116,7 @@ export default async function GlossaryTermPage({ params }: { params: { slug: str
         )}
 
         {term.relatedPosts?.length > 0 && (
-          <section className="px-8 py-10">
+          <section className="px-5 sm:px-8 py-10">
             <div className="mx-auto max-w-[760px]">
               <div className="font-display mb-4 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-500">
                 Related reading

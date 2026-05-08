@@ -48,7 +48,7 @@ export default async function CaseStudyPage({ params }: { params: { slug: string
         ]}
       />
 
-      <header className="px-8 pt-6 pb-12">
+      <header className="px-5 sm:px-8 pt-6 pb-12">
         <div className="mx-auto max-w-[820px]">
           <div className="flex items-center gap-4">
             {logoSrc && (
@@ -76,7 +76,7 @@ export default async function CaseStudyPage({ params }: { params: { slug: string
       </header>
 
       {cs.kpis?.length > 0 && (
-        <section className="px-8 pb-12">
+        <section className="px-5 sm:px-8 pb-12">
           <div className="mx-auto max-w-[820px]">
             <div className="grid grid-cols-2 gap-x-6 gap-y-5 rounded-3xl border border-ink-100 bg-white px-7 py-6 shadow-sm md:grid-cols-4">
               {cs.kpis.map((k: any, i: number) => (
@@ -95,7 +95,7 @@ export default async function CaseStudyPage({ params }: { params: { slug: string
       )}
 
       {cs.quote?.text && (
-        <section className="px-8 pb-12">
+        <section className="px-5 sm:px-8 pb-12">
           <div className="mx-auto max-w-[820px]">
             <blockquote
               className="relative rounded-3xl px-8 py-7 text-white"

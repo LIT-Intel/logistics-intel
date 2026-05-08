@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { ArrowRight, Calendar } from "lucide-react";
 import { PageShell } from "@/components/sections/PageShell";
+import { ProductHero } from "@/components/sections/ProductHero";
 import { FeatureGrid } from "@/components/sections/FeatureGrid";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { SequenceBuilderMock } from "@/components/sections/SequenceBuilderMock";
@@ -46,44 +45,13 @@ const SECTIONS = [
 export default function OutboundEnginePage() {
   return (
     <PageShell>
-      <section className="relative px-5 pt-[72px] pb-12 sm:px-8">
-        <div className="mx-auto grid max-w-container gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center">
-          <div>
-            <div className="lit-pill">
-              <span className="dot" />
-              Outbound Engine
-            </div>
-            <h1 className="display-xl mt-5">
-              Send outreach with{" "}
-              <span className="grad-text">a reason to reach out.</span>
-            </h1>
-            <p className="lead mt-5 max-w-[560px]">
-              Logistic Intel helps logistics teams build campaigns around real account context.
-              Use shipment activity, trade lanes, buying signals, and enriched contacts to create
-              outreach that feels relevant from the first message.
-            </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Link
-                href={APP_SIGNUP_URL}
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
-                style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
-              >
-                Start Prospecting <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/demo"
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white/80 px-6 text-[15px] font-semibold text-ink-900 backdrop-blur transition hover:bg-white"
-              >
-                <Calendar className="h-4 w-4" /> Book a Demo
-              </Link>
-            </div>
-          </div>
-
-          <div className="relative">
-            <SequenceBuilderMock />
-          </div>
-        </div>
-      </section>
+      <ProductHero
+        eyebrow="Outbound Engine"
+        title="Send outreach with"
+        titleHighlight="a reason to reach out."
+        subtitle="Logistic Intel helps logistics teams build campaigns around real account context. Use shipment activity, trade lanes, buying signals, and enriched contacts to create outreach that feels relevant from the first message."
+        visual={<SequenceBuilderMock />}
+      />
 
       <FeatureGrid
         eyebrow="What the Outbound Engine does"

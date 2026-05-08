@@ -17,7 +17,7 @@ export default function PrivacyPage() {
     <PageShell>
       <PageHero eyebrow="Legal" title="Privacy policy" subtitle={`Last updated · ${LAST_UPDATED}`} />
 
-      <section className="px-8 pb-20">
+      <section className="px-5 sm:px-8 pb-20">
         <article className="mx-auto max-w-[760px] space-y-6 font-body text-[16px] leading-[1.7] text-ink-700">
           <p>
             This is a placeholder privacy policy. Before launching, replace this content with your

@@ -64,7 +64,7 @@ export default async function UseCasePage({ params }: { params: { slug: string }
       {u.kpis?.length > 0 && <KpiStrip kpis={u.kpis} />}
 
       {u.painPoints?.length > 0 && (
-        <section className="px-8 py-16">
+        <section className="px-5 sm:px-8 py-16">
           <div className="mx-auto max-w-container">
             <div className="mx-auto max-w-[680px] text-center">
               <div className="eyebrow">The pain</div>
@@ -100,7 +100,7 @@ export default async function UseCasePage({ params }: { params: { slug: string }
       )}
 
       {u.plays?.length > 0 && (
-        <section className="px-8 py-16">
+        <section className="px-5 sm:px-8 py-16">
           <div className="mx-auto max-w-container">
             <div className="mx-auto max-w-[680px] text-center">
               <div className="eyebrow">Plays we power</div>
@@ -148,7 +148,7 @@ export default async function UseCasePage({ params }: { params: { slug: string }
       )}
 
       {cs && (
-        <section className="px-8 py-16">
+        <section className="px-5 sm:px-8 py-16">
           <div className="mx-auto max-w-container">
             <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
               Featured customer

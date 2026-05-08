@@ -47,7 +47,7 @@ export default async function CustomersPage() {
       {logos.length > 0 && <LogoRail eyebrow="Trusted by" logos={logos} />}
 
       {caseStudies.length === 0 ? (
-        <section className="px-8 pb-20">
+        <section className="px-5 sm:px-8 pb-20">
           <div className="mx-auto max-w-container">
             <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
               <div className="font-display text-[18px] font-semibold text-ink-900">No case studies yet</div>
@@ -59,7 +59,7 @@ export default async function CustomersPage() {
           </div>
         </section>
       ) : (
-        <section className="px-8 pb-20">
+        <section className="px-5 sm:px-8 pb-20">
           <div className="mx-auto max-w-container">
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               {caseStudies.map((c: any) => {

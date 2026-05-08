@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PageShell } from "@/components/sections/PageShell";
+import { ProductHero } from "@/components/sections/ProductHero";
 import { FeatureGrid } from "@/components/sections/FeatureGrid";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { ContactDiscoveryMock } from "@/components/sections/ContactDiscoveryMock";
@@ -44,42 +45,13 @@ const SECTIONS = [
 export default function ContactIntelligencePage() {
   return (
     <PageShell>
-      <section className="relative px-5 pt-[72px] pb-12 sm:px-8">
-        <div className="mx-auto grid max-w-container gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center">
-          <div>
-            <div className="lit-pill">
-              <span className="dot" />
-              Contact Intelligence
-            </div>
-            <h1 className="display-xl mt-5">
-              Find the people <span className="grad-text">behind the freight.</span>
-            </h1>
-            <p className="lead mt-5 max-w-[560px]">
-              Logistic Intel helps your team move from company intelligence to the right decision
-              makers. Search by title, department, seniority, and location. Enrich only the
-              contacts your team is ready to work — not every name in the database.
-            </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <a
-                href={APP_SIGNUP_URL}
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
-                style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
-              >
-                Start Prospecting
-              </a>
-              <a
-                href="/demo"
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white/80 px-6 text-[15px] font-semibold text-ink-900 backdrop-blur transition hover:bg-white"
-              >
-                Book a Demo
-              </a>
-            </div>
-          </div>
-          <div className="relative">
-            <ContactDiscoveryMock />
-          </div>
-        </div>
-      </section>
+      <ProductHero
+        eyebrow="Contact Intelligence"
+        title="Find the people"
+        titleHighlight="behind the freight."
+        subtitle="Logistic Intel helps your team move from company intelligence to the right decision makers. Search by title, department, seniority, and location. Enrich only the contacts your team is ready to work — not every name in the database."
+        visual={<ContactDiscoveryMock />}
+      />
 
       <FeatureGrid
         eyebrow="What's inside contact intelligence"

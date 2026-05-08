@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Calendar } from "lucide-react";
 import { PageShell } from "@/components/sections/PageShell";
+import { ProductHero } from "@/components/sections/ProductHero";
 import { FeatureGrid } from "@/components/sections/FeatureGrid";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { FaqSection } from "@/components/sections/FaqSection";
@@ -98,58 +98,29 @@ const FAQS = [
 export default function PulsePage() {
   return (
     <PageShell>
-      <section className="relative px-5 pt-[72px] pb-12 sm:px-8">
-        <div className="mx-auto grid max-w-container gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center">
-          <div className="min-w-0">
-            <div className="lit-pill">
-              <span className="dot" />
-              Pulse AI · Freight prospecting + account intelligence
-            </div>
-            <h1 className="display-xl mt-5">
-              Ask better questions.{" "}
-              <span className="grad-text">Find better freight opportunities.</span>
-            </h1>
-            <p className="lead mt-5 max-w-[560px]">
-              Pulse is the intelligence layer inside Logistic Intel. Ask in plain English and get
-              useful answers across companies, contacts, trade lanes, industries, and locations —
-              with reasoning chips that show how it interpreted your prompt.
-            </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Link
-                href={APP_SIGNUP_URL}
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
-                style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
-              >
-                Try Pulse free <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/demo"
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white/80 px-6 text-[15px] font-semibold text-ink-900 backdrop-blur transition hover:bg-white"
-              >
-                <Calendar className="h-4 w-4" /> Book a Demo
-              </Link>
-            </div>
+      <ProductHero
+        eyebrow="Pulse AI · Freight prospecting + account intelligence"
+        title="Ask better questions."
+        titleHighlight="Find better freight opportunities."
+        subtitle="Pulse is the intelligence layer inside Logistic Intel. Ask in plain English and get useful answers across companies, contacts, trade lanes, industries, and locations — with reasoning chips that show how it interpreted your prompt."
+        visual={<HeroSearchDemo />}
+      />
 
-            <div className="mt-9">
-              <div className="font-display mb-2 text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-200">
-                Try asking Pulse
-              </div>
-              <ul className="space-y-1.5">
-                {SEARCH_EXAMPLES.slice(0, 3).map((q) => (
-                  <li
-                    key={q}
-                    className="font-body rounded-lg border border-ink-100 bg-white px-3 py-2 text-[13px] leading-snug text-ink-700"
-                  >
-                    "{q}"
-                  </li>
-                ))}
-              </ul>
-            </div>
+      <section className="px-5 pb-8 sm:px-8">
+        <div className="mx-auto max-w-content">
+          <div className="font-display mb-2 text-[10.5px] font-bold uppercase tracking-[0.1em] text-ink-200">
+            Try asking Pulse
           </div>
-
-          <div className="relative">
-            <HeroSearchDemo />
-          </div>
+          <ul className="grid gap-1.5 sm:grid-cols-3">
+            {SEARCH_EXAMPLES.slice(0, 3).map((q) => (
+              <li
+                key={q}
+                className="font-body rounded-lg border border-ink-100 bg-white px-3 py-2 text-[13px] leading-snug text-ink-700"
+              >
+                &quot;{q}&quot;
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 

@@ -47,7 +47,7 @@ export default async function PortPage({ params }: { params: { slug: string } })
         ]}
       />
 
-      <header className="px-8 pt-6 pb-10">
+      <header className="px-5 sm:px-8 pt-6 pb-10">
         <div className="mx-auto max-w-container">
           <div className="lit-pill">
             <span className="dot" />
@@ -82,7 +82,7 @@ export default async function PortPage({ params }: { params: { slug: string } })
       )}
 
       {port.topLanes?.length > 0 && (
-        <section className="px-8 py-10">
+        <section className="px-5 sm:px-8 py-10">
           <div className="mx-auto max-w-container">
             <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
               Top lanes through {port.name}
@@ -137,7 +137,7 @@ export default async function PortPage({ params }: { params: { slug: string } })
 
 function ShipperTable({ title, rows }: { title: string; rows: any[] }) {
   return (
-    <section className="px-8 py-10">
+    <section className="px-5 sm:px-8 py-10">
       <div className="mx-auto max-w-container">
         <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
           {title}

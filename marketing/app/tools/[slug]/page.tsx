@@ -49,7 +49,7 @@ export default async function FreeToolPage({ params }: { params: { slug: string 
         subtitle={t.tagline}
       />
 
-      <section className="px-8 pb-12">
+      <section className="px-5 sm:px-8 pb-12">
         <div className="mx-auto max-w-[820px]">
           <div className="rounded-3xl border border-dashed border-ink-100 bg-white p-2">
             <div className="rounded-2xl bg-ink-25 px-8 py-16 text-center">

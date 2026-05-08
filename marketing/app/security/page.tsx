@@ -111,7 +111,7 @@ export default function SecurityPage() {
 
       <FeatureGrid features={PILLARS} cols={3} />
 
-      <section className="px-8 py-12">
+      <section className="px-5 sm:px-8 py-12">
         <div className="mx-auto max-w-container">
           <div className="rounded-2xl border border-ink-100 bg-white px-7 py-6 shadow-sm">
             <div className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink-200">

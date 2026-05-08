@@ -22,7 +22,7 @@ export default function GlobalError({
     <>
       <Nav />
       <main>
-        <section className="px-8 pt-20 pb-32">
+        <section className="px-5 sm:px-8 pt-20 pb-32">
           <div className="mx-auto max-w-[640px] text-center">
             <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50">
               <AlertTriangle className="h-6 w-6 text-amber-600" />

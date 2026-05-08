@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { PageShell } from "@/components/sections/PageShell";
+import { ProductHero } from "@/components/sections/ProductHero";
 import { FeatureGrid } from "@/components/sections/FeatureGrid";
 import { Section } from "@/components/sections/Section";
 import { CtaBanner } from "@/components/sections/CtaBanner";
@@ -47,43 +48,13 @@ const SECTIONS = [
 export default function RevenueOpportunityPage() {
   return (
     <PageShell>
-      <section className="relative px-5 pt-14 pb-12 sm:px-8 sm:pt-24">
-        <div className="mx-auto grid max-w-content gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center">
-          <div>
-            <div className="lit-pill">
-              <span className="dot" />
-              Revenue Opportunity
-            </div>
-            <h1 className="display-xl space-eyebrow-h1 max-w-[640px]">
-              Quantify the wallet{" "}
-              <span className="grad-text">behind every account.</span>
-            </h1>
-            <p className="lead space-h1-intro max-w-[560px]">
-              Size the freight spend opportunity on any importer across six service lines, with
-              confidence ratings and win-rate scenarios. Move from qualitative "why now" to a
-              defensible dollar number — on every profile, automatically.
-            </p>
-            <div className="space-intro-cta flex flex-wrap gap-3">
-              <Link
-                href={APP_SIGNUP_URL}
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)] transition hover:shadow-[0_10px_24px_rgba(37,99,235,0.45)]"
-                style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
-              >
-                Start Prospecting
-              </Link>
-              <Link
-                href="/demo"
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white/80 px-6 text-[15px] font-semibold text-ink-900 backdrop-blur transition hover:bg-white"
-              >
-                Book a demo <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </div>
-          <div className="relative">
-            <RevenueOpportunityMock />
-          </div>
-        </div>
-      </section>
+      <ProductHero
+        eyebrow="Revenue Opportunity"
+        title="Quantify the wallet"
+        titleHighlight="behind every account."
+        subtitle="Size the freight spend opportunity on any importer across six service lines, with confidence ratings and win-rate scenarios. Move from qualitative ‘why now’ to a defensible dollar number — on every profile, automatically."
+        visual={<RevenueOpportunityMock />}
+      />
 
       <FeatureGrid
         eyebrow="Inside Revenue Opportunity"

@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import Image from "next/image";
 import { Check, X, Minus, ArrowRight, Calendar } from "lucide-react";
 import Link from "next/link";
 import { sanityClient } from "@/sanity/lib/client";
 import { COMPARISON_QUERY, ALL_COMPARISON_SLUGS } from "@/sanity/lib/queries";
 import { PageShell } from "@/components/sections/PageShell";
 import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
+import { Section } from "@/components/sections/Section";
 import { FaqSection } from "@/components/sections/FaqSection";
 import { CtaBanner } from "@/components/sections/CtaBanner";
+import { BrandTile } from "@/components/sections/BrandTile";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import { buildMetadata, siteUrl } from "@/lib/seo";
 import { resolveLogoUrl } from "@/lib/sanityImage";
 
@@ -35,11 +37,9 @@ export default async function ComparisonPage({ params }: { params: { slug: strin
   const c = await sanityClient.fetch<any>(COMPARISON_QUERY, { slug: params.slug }).catch(() => null);
   if (!c) notFound();
 
+  const competitorDomain = c.competitorUrl?.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const competitorLogo = resolveLogoUrl(
-    {
-      logo: c.competitorLogo,
-      domain: c.competitorUrl?.replace(/^https?:\/\//, "").replace(/\/$/, ""),
-    },
+    { logo: c.competitorLogo, domain: competitorDomain },
     96,
   );
 
@@ -53,51 +53,76 @@ export default async function ComparisonPage({ params }: { params: { slug: strin
         ]}
       />
 
-      <header className="px-8 pt-6 pb-10">
-        <div className="mx-auto max-w-container">
-          <div className="lit-pill">
-            <span className="dot" />
-            Honest comparison · {c.lastReviewedAt ? "kept current" : "Updated regularly"}
-          </div>
-          <div className="mt-6 flex flex-wrap items-center gap-6">
-            <h1 className="display-xl">
-              LIT <span className="text-ink-200">vs</span>{" "}
-              <span className="grad-text">{c.competitorName}</span>
-            </h1>
-            {competitorLogo && (
-              <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-ink-100 bg-white">
-                <Image
-                  src={competitorLogo}
-                  alt={c.competitorName}
-                  fill
-                  sizes="48px"
-                  className="object-contain p-1.5"
-                  unoptimized={competitorLogo.includes("img.logo.dev")}
-                />
-              </div>
-            )}
-          </div>
-          {c.subhead && <p className="lead mt-5 max-w-[760px]">{c.subhead}</p>}
+      {/* Hero — branded "LIT vs Competitor" duel. LIT brand mark renders
+          via LitLogoMark; the competitor logo renders via LogoImage which
+          guarantees a visible monogram fallback when logo.dev is null,
+          fails to authenticate, or 404s. Both tiles are the same size so
+          neither side dominates visually. */}
+      <Section top="md" bottom="md">
+        <div className="lit-pill">
+          <span className="dot" />
+          Honest comparison · {c.lastReviewedAt ? "kept current" : "Updated regularly"}
         </div>
-      </header>
+
+        <div className="space-eyebrow-h1 flex flex-wrap items-center gap-4 sm:gap-6">
+          <BrandTile name="LIT" tone="brand" />
+          <span className="font-display text-[28px] sm:text-[36px] font-light text-ink-200" aria-hidden>
+            vs
+          </span>
+          <BrandTile
+            name={c.competitorName}
+            domain={competitorDomain}
+            logoSrc={competitorLogo}
+            tone="neutral"
+          />
+        </div>
+
+        <h1 className="display-xl space-h1-intro max-w-[760px]">
+          LIT <span className="text-ink-200">vs</span>{" "}
+          <span className="grad-text">{c.competitorName}</span>
+        </h1>
+        {c.subhead && <p className="lead space-h1-intro max-w-[680px]">{c.subhead}</p>}
+
+        <div className="space-intro-cta flex flex-wrap gap-3">
+          <Link
+            href={APP_SIGNUP_URL}
+            className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)] transition hover:shadow-[0_10px_24px_rgba(37,99,235,0.45)]"
+            style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
+          >
+            Start Prospecting <ArrowRight className="h-4 w-4" />
+          </Link>
+          <Link
+            href="/demo"
+            className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white/80 px-6 text-[15px] font-semibold text-ink-900 backdrop-blur transition hover:bg-white"
+          >
+            <Calendar className="h-4 w-4" /> Book a demo
+          </Link>
+        </div>
+      </Section>
 
       {c.tldr && (
-        <section className="px-8 py-6">
-          <div className="mx-auto max-w-container">
-            <div className="rounded-3xl border border-ink-100 bg-ink-25 px-7 py-6">
-              <div className="font-display text-[11px] font-bold uppercase tracking-[0.1em] text-ink-500">
-                TL;DR
-              </div>
-              <p className="font-body mt-2 max-w-[760px] text-[16px] leading-relaxed text-ink-900">{c.tldr}</p>
+        <Section top="none" bottom="md">
+          <div className="rounded-3xl border border-ink-100 bg-white p-7 sm:p-8 shadow-sm">
+            <div className="font-display text-[11px] font-bold uppercase tracking-[0.12em] text-brand-blue">
+              TL;DR
             </div>
+            <p className="font-body mt-3 max-w-[760px] text-[16.5px] leading-relaxed text-ink-900">
+              {c.tldr}
+            </p>
           </div>
-        </section>
+        </Section>
       )}
 
       {c.comparisonTable?.length > 0 && (
-        <section className="px-8 py-12">
-          <div className="mx-auto max-w-container">
-            <div className="overflow-x-auto rounded-2xl border border-ink-100 bg-white shadow-sm">
+        <Section top="md" bottom="md" width="container">
+          <div className="mb-6 max-w-[640px]">
+            <div className="eyebrow">Side-by-side</div>
+            <h2 className="display-md space-eyebrow-h1">
+              Where LIT and {c.competitorName} differ.
+            </h2>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-sm">
+            <div className="overflow-x-auto">
               {c.comparisonTable.map((section: any, si: number) => (
                 <div key={si} className="min-w-[640px]">
                   {section.section && (
@@ -160,15 +185,21 @@ export default async function ComparisonPage({ params }: { params: { slug: strin
               ))}
             </div>
           </div>
-        </section>
+        </Section>
       )}
 
       {(c.whenToChooseLit?.length > 0 || c.whenToChooseCompetitor?.length > 0) && (
-        <section className="px-8 py-12">
-          <div className="mx-auto grid max-w-container gap-5 md:grid-cols-2">
+        <Section top="md" bottom="md">
+          <div className="mb-6 max-w-[640px]">
+            <div className="eyebrow">Decision guide</div>
+            <h2 className="display-md space-eyebrow-h1">
+              When each tool wins.
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {c.whenToChooseLit?.length > 0 && (
               <div className="rounded-2xl border border-brand-blue/30 bg-white p-7 shadow-sm">
-                <div className="font-display text-[11px] font-bold uppercase tracking-[0.1em] text-brand-blue">
+                <div className="font-display text-[11px] font-bold uppercase tracking-[0.12em] text-brand-blue">
                   When to choose LIT
                 </div>
                 <ul className="mt-4 space-y-3">
@@ -183,7 +214,7 @@ export default async function ComparisonPage({ params }: { params: { slug: strin
             )}
             {c.whenToChooseCompetitor?.length > 0 && (
               <div className="rounded-2xl border border-ink-100 bg-white p-7 shadow-sm">
-                <div className="font-display text-[11px] font-bold uppercase tracking-[0.1em] text-ink-500">
+                <div className="font-display text-[11px] font-bold uppercase tracking-[0.12em] text-ink-500">
                   When to choose {c.competitorName}
                 </div>
                 <ul className="mt-4 space-y-3">
@@ -194,39 +225,41 @@ export default async function ComparisonPage({ params }: { params: { slug: strin
                     </li>
                   ))}
                 </ul>
-                <div className="font-body mt-5 rounded-lg bg-ink-25 px-3 py-2 text-[12px] text-ink-500">
-                  We're honest because every team's stack is different. If {c.competitorName} fits better,
-                  use it.
+                <div className="font-body mt-5 rounded-lg bg-ink-25 px-3 py-2 text-[12.5px] text-ink-500">
+                  We&apos;re honest because every team&apos;s stack is different. If{" "}
+                  {c.competitorName} fits better, use it.
                 </div>
               </div>
             )}
           </div>
-        </section>
+        </Section>
       )}
 
       {c.customerQuote?.text && (
-        <section className="px-8 py-12">
-          <div className="mx-auto max-w-[820px]">
-            <blockquote
-              className="relative rounded-3xl px-8 py-7 text-white"
-              style={{
-                background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-                boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
-              }}
+        <Section top="md" bottom="md" width="narrow">
+          <blockquote
+            className="relative overflow-hidden rounded-3xl px-8 py-7 sm:px-10 sm:py-9 text-white"
+            style={{
+              background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+              boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
+            }}
+          >
+            <span
+              aria-hidden
+              className="absolute -top-2 left-7 text-5xl leading-none"
+              style={{ color: "#00F0FF" }}
             >
-              <span aria-hidden className="absolute -top-2 left-7 text-5xl leading-none" style={{ color: "#00F0FF" }}>
-                "
-              </span>
-              <p className="font-display text-[20px] font-medium leading-[1.4] tracking-[-0.01em]">
-                {c.customerQuote.text}
-              </p>
-              <div className="font-body mt-5 text-[13px] text-ink-150">
-                {c.customerQuote.name}
-                {c.customerQuote.role ? ` · ${c.customerQuote.role}` : ""}
-              </div>
-            </blockquote>
-          </div>
-        </section>
+              &ldquo;
+            </span>
+            <p className="font-display text-[19px] sm:text-[22px] font-medium leading-[1.4] tracking-[-0.01em]">
+              {c.customerQuote.text}
+            </p>
+            <div className="font-body mt-5 text-[13px] text-ink-150">
+              {c.customerQuote.name}
+              {c.customerQuote.role ? ` · ${c.customerQuote.role}` : ""}
+            </div>
+          </blockquote>
+        </Section>
       )}
 
       {c.faq?.length > 0 && (
@@ -237,50 +270,53 @@ export default async function ComparisonPage({ params }: { params: { slug: strin
         />
       )}
 
-      <section className="px-8 py-16">
-        <div className="mx-auto max-w-container">
-          <div
-            className="relative overflow-hidden rounded-3xl border border-white/10 px-10 py-12 text-white"
-            style={{
-              background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-              boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
-            }}
-          >
-            <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-center">
-              <div>
-                <div
-                  className="font-display text-[11px] font-bold uppercase tracking-[0.12em]"
-                  style={{ color: "#00F0FF" }}
-                >
-                  Switching from {c.competitorName}?
-                </div>
-                <div className="font-display mt-2 text-[26px] font-semibold tracking-[-0.015em]">
-                  Free migration. Full data import.
-                </div>
-                <p className="font-body mt-2 max-w-[640px] text-[15px] leading-relaxed text-ink-150">
-                  Our team handles the import — accounts, contacts, lists, sequences. You keep your existing
-                  contract until renewal.
-                </p>
+      <Section top="md" bottom="lg" width="container">
+        <div
+          className="relative overflow-hidden rounded-3xl border border-white/10 px-8 py-12 sm:px-12 sm:py-14 text-white"
+          style={{
+            background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+            boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
+          }}
+        >
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -top-20 -right-16 h-72 w-72 rounded-full opacity-50"
+            style={{ background: "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)" }}
+          />
+          <div className="relative grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
+            <div className="max-w-[680px]">
+              <div
+                className="font-display text-[11px] font-bold uppercase tracking-[0.12em]"
+                style={{ color: "#00F0FF" }}
+              >
+                Switching from {c.competitorName}?
               </div>
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href="/demo"
-                  className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.45)] transition hover:shadow-[0_10px_24px_rgba(37,99,235,0.55)]"
-                  style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
-                >
-                  <Calendar className="h-4 w-4" /> Book switch call
-                </Link>
-                <Link
-                  href="/features"
-                  className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-6 text-[15px] font-semibold text-white hover:bg-white/10"
-                >
-                  See features <ArrowRight className="h-4 w-4" />
-                </Link>
+              <div className="font-display mt-2 text-[26px] sm:text-[32px] font-semibold tracking-[-0.015em] text-white">
+                Free migration. Full data import.
               </div>
+              <p className="font-body mt-3 text-[15.5px] leading-relaxed text-ink-150">
+                Our team handles the import — accounts, contacts, lists, sequences. You keep your
+                existing contract until renewal.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/demo"
+                className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.45)] transition hover:shadow-[0_10px_24px_rgba(37,99,235,0.55)]"
+                style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
+              >
+                <Calendar className="h-4 w-4" /> Book switch call
+              </Link>
+              <Link
+                href="/features"
+                className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-6 text-[15px] font-semibold text-white hover:bg-white/10"
+              >
+                See features <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
           </div>
         </div>
-      </section>
+      </Section>
 
       <CtaBanner />
 
@@ -317,3 +353,4 @@ export default async function ComparisonPage({ params }: { params: { slug: strin
     </PageShell>
   );
 }
+

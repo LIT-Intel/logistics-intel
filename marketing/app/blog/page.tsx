@@ -39,7 +39,7 @@ export default async function BlogIndexPage() {
       />
 
       {posts.length === 0 && (
-        <section className="px-8 pb-20">
+        <section className="px-5 sm:px-8 pb-20">
           <div className="mx-auto max-w-container">
             <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
               <div className="font-display text-[18px] font-semibold text-ink-900">No posts yet</div>
@@ -53,7 +53,7 @@ export default async function BlogIndexPage() {
       )}
 
       {featured && (
-        <section className="px-8 pb-10">
+        <section className="px-5 sm:px-8 pb-10">
           <div className="mx-auto max-w-container">
             <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
               Featured
@@ -64,7 +64,7 @@ export default async function BlogIndexPage() {
       )}
 
       {rest.length > 0 && (
-        <section className="px-8 pb-20">
+        <section className="px-5 sm:px-8 pb-20">
           <div className="mx-auto max-w-container">
             <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
               Latest

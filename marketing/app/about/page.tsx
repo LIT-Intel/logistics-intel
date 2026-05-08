@@ -48,7 +48,7 @@ export default function AboutPage() {
         align="center"
       />
 
-      <section className="px-8 py-16">
+      <section className="px-5 sm:px-8 py-16">
         <div className="mx-auto max-w-[820px]">
           <div className="eyebrow text-center">Our story</div>
           <h2 className="display-lg mt-3 text-center">From frustrated operators to a real platform.</h2>
@@ -73,7 +73,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      <section className="px-8 py-16">
+      <section className="px-5 sm:px-8 py-16">
         <div className="mx-auto max-w-container">
           <div className="mx-auto max-w-[680px] text-center">
             <div className="eyebrow">Principles</div>
@@ -93,7 +93,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      <section className="px-8 py-16">
+      <section className="px-5 sm:px-8 py-16">
         <div className="mx-auto max-w-[820px]">
           <div className="eyebrow text-center">Where we're going</div>
           <h2 className="display-lg mt-3 text-center">Boring goals, ambitious software.</h2>

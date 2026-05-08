@@ -55,7 +55,7 @@ export default function ContactPage() {
         align="center"
       />
 
-      <section className="px-8 pb-20">
+      <section className="px-5 sm:px-8 pb-20">
         <div className="mx-auto grid max-w-container grid-cols-1 gap-5 md:grid-cols-2">
           {CHANNELS.map((c) => {
             const Icon = c.icon;
@@ -85,7 +85,7 @@ export default function ContactPage() {
         </div>
       </section>
 
-      <section className="px-8 pb-24">
+      <section className="px-5 sm:px-8 pb-24">
         <div className="mx-auto max-w-container">
           <div
             className="rounded-3xl border border-white/10 px-10 py-10 text-white"

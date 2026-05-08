@@ -9,6 +9,7 @@ import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { ProseShell } from "@/components/sections/ProseShell";
 import { BlogCard } from "@/components/sections/BlogCard";
 import { CtaBanner } from "@/components/sections/CtaBanner";
+import { SocialShare } from "@/components/sections/SocialShare";
 import { buildMetadata, siteUrl } from "@/lib/seo";
 import { imgUrl } from "@/lib/sanityImage";
 import { formatDate } from "@/lib/format";
@@ -125,6 +126,16 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
                 </>
               )}
             </div>
+
+            {/* Top-of-article share row — same component renders again at
+                the bottom of the article so readers can share without
+                scrolling back up. */}
+            <div className="mt-7 border-t border-ink-100 pt-6">
+              <SocialShare
+                url={siteUrl(`/blog/${params.slug}`)}
+                title={post.title}
+              />
+            </div>
           </div>
         </header>
 
@@ -145,8 +156,20 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
 
         <ProseShell value={post.body} />
 
+        {/* Bottom-of-article share row — same component as the top-
+            of-article placement so readers can share without scrolling
+            back up. */}
+        <section className="px-5 sm:px-8 py-8">
+          <div className="mx-auto max-w-[760px] border-t border-ink-100 pt-6">
+            <SocialShare
+              url={siteUrl(`/blog/${params.slug}`)}
+              title={post.title}
+            />
+          </div>
+        </section>
+
         {post.relatedGlossary?.length > 0 && (
-          <section className="px-8 py-10">
+          <section className="px-5 sm:px-8 py-10">
             <div className="mx-auto max-w-[760px]">
               <div className="font-display mb-4 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-500">
                 Related glossary

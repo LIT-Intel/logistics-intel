@@ -60,7 +60,7 @@ export default async function IndustryPage({ params }: { params: { slug: string 
       {item.body && <ProseShell value={item.body} />}
 
       {item.topLanes?.length > 0 && (
-        <section className="px-8 py-10">
+        <section className="px-5 sm:px-8 py-10">
           <div className="mx-auto max-w-container">
             <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
               Top lanes for {item.name}
@@ -91,7 +91,7 @@ export default async function IndustryPage({ params }: { params: { slug: string 
       )}
 
       {item.relatedCaseStudies?.length > 0 && (
-        <section className="px-8 py-10">
+        <section className="px-5 sm:px-8 py-10">
           <div className="mx-auto max-w-container">
             <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
               Customer stories

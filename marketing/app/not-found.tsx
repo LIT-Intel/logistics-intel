@@ -5,7 +5,7 @@ import { PageShell } from "@/components/sections/PageShell";
 export default function NotFound() {
   return (
     <PageShell>
-      <section className="px-8 pt-20 pb-32">
+      <section className="px-5 sm:px-8 pt-20 pb-32">
         <div className="mx-auto max-w-[640px] text-center">
           <div className="lit-pill mx-auto inline-flex">
             <span className="dot" />
