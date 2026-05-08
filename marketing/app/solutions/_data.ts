@@ -191,7 +191,7 @@ export const SOLUTION_PAGES: SolutionPage[] = [
     ],
     related: [
       { label: "HS code lookup", href: "/hs" },
-      { label: "Tariff calculator", href: "/features/tariff-calculator" },
+      { label: "Tariff calculator", href: "/tools/tariff-calculator" },
       { label: "Quote generator", href: "/features/quote-generator" },
     ],
     faqs: [

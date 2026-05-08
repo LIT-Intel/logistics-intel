@@ -83,7 +83,7 @@ export default async function GlossaryIndexPage() {
                 eyebrow: "HS code · Tariff classification",
                 title: "becomes a tariff calc.",
                 body: "Plug an HS code + origin country into the calculator and get landed cost with MFN, FTA, Section 301, and AD/CVD math.",
-                href: "/features/tariff-calculator",
+                href: "/tools/tariff-calculator",
                 cta: "See tariff calc",
               },
               {

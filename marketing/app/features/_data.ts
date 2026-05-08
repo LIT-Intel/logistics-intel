@@ -434,7 +434,7 @@ export const FEATURE_PAGES: FeaturePage[] = [
     related: [
       { label: "Trade lane intelligence", href: "/features/trade-lane-intelligence" },
       { label: "Quote generator", href: "/features/quote-generator" },
-      { label: "Tariff calculator", href: "/features/tariff-calculator" },
+      { label: "Tariff calculator", href: "/tools/tariff-calculator" },
     ],
     faqs: [
       { q: "How are rates sourced?", a: "Declared BOL values, carrier filings, and aggregated forwarder partner data — all normalized and de-duplicated. Methodology is published per benchmark." },
@@ -649,7 +649,7 @@ export const FEATURE_PAGES: FeaturePage[] = [
     ],
     related: [
       { label: "Market rate benchmarking", href: "/features/market-rate-benchmarking" },
-      { label: "Tariff calculator", href: "/features/tariff-calculator" },
+      { label: "Tariff calculator", href: "/tools/tariff-calculator" },
       { label: "Freight sales CRM", href: "/features/freight-sales-crm" },
     ],
     faqs: [
