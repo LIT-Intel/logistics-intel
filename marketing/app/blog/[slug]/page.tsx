@@ -49,7 +49,15 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
   const post = await sanityClient.fetch<any>(BLOG_POST_QUERY, { slug: params.slug }).catch(() => null);
   if (!post) notFound();
 
-  const heroSrc = imgUrl(post.heroImage, { width: 1600 }) || post.heroImageUrl || null;
+  // Hero image resolution: prefer Sanity-uploaded asset, then any
+  // explicit heroImageUrl from the doc, then the dynamic OG image
+  // generator as a guaranteed-render fallback. Posts without a Sanity
+  // image now get a branded slate+cyan card with the title rendered —
+  // never the broken-image gap users were seeing on some posts.
+  const heroSrc =
+    imgUrl(post.heroImage, { width: 1600 }) ||
+    post.heroImageUrl ||
+    `/api/og?title=${encodeURIComponent(post.title)}&eyebrow=${encodeURIComponent(post.categories?.[0]?.title || "Blog")}`;
   const heroAlt = post.heroImage?.alt || post.heroImageAlt || post.title;
   const author = post.author;
   const authorAvatar = imgUrl(author?.avatar, { width: 96 });
@@ -65,72 +73,79 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
       />
 
       <article>
-        <header className="px-5 pt-6 pb-10 sm:px-8">
-          <div className="mx-auto max-w-[760px]">
+        {/* Header — loosened from the previous "boxed-in" 760px column.
+            Now uses max-w-[880px], drops the heavy border-on-share-row
+            framing, and reduces the vertical pt/pb so the breadcrumb
+            above + the hero image below provide most of the spacing
+            rhythm. Reads more like an editorial article, less like a
+            CMS page card. */}
+        <header className="px-5 sm:px-8 pt-4 pb-8 sm:pt-8 sm:pb-10">
+          <div className="mx-auto max-w-[880px]">
             {post.categories?.[0]?.title && (
               <div className="lit-pill">
                 <span className="dot" />
                 {post.categories[0].title}
               </div>
             )}
-            <h1 className="display-xl mt-5">{post.title}</h1>
-            {post.excerpt && <p className="lead mt-5">{post.excerpt}</p>}
-            <div className="mt-7 flex flex-wrap items-center gap-4">
-              {author && (
-                <div className="flex items-center gap-3">
-                  {authorAvatar ? (
-                    <Image
-                      src={authorAvatar}
-                      alt={author.name}
-                      width={36}
-                      height={36}
-                      className="rounded-full border border-ink-100"
-                    />
-                  ) : (
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full border border-ink-100 bg-ink-25 text-[13px] font-semibold text-ink-700">
-                      {author.name?.[0] || "?"}
-                    </div>
-                  )}
-                  <div>
-                    <div className="font-display text-[14px] font-semibold text-ink-900">
+            <h1 className="display-xl space-eyebrow-h1">{post.title}</h1>
+            {post.excerpt && (
+              <p className="lead space-h1-intro max-w-[720px]">{post.excerpt}</p>
+            )}
+
+            {/* Byline + meta + share, on one line at desktop, stacked
+                on mobile. No top border — the heavy framing was making
+                the header feel boxed in. */}
+            <div className="mt-7 flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                {author && (
+                  <div className="flex items-center gap-2.5">
+                    {authorAvatar ? (
+                      <Image
+                        src={authorAvatar}
+                        alt={author.name}
+                        width={32}
+                        height={32}
+                        className="rounded-full border border-ink-100"
+                      />
+                    ) : (
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full border border-ink-100 bg-ink-25 text-[12px] font-semibold text-ink-700">
+                        {author.name?.[0] || "?"}
+                      </div>
+                    )}
+                    <div className="font-display text-[13.5px] font-semibold text-ink-900">
                       {author.name}
                       {author.isAiAgent && (
                         <span
-                          className="font-mono ml-2 inline-flex items-center rounded border px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider"
+                          className="font-mono ml-2 inline-flex items-center rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
                           style={{
                             color: "#00F0FF",
                             borderColor: "rgba(0,240,255,0.35)",
                             background: "rgba(0,240,255,0.08)",
                           }}
                         >
-                          AI Agent
+                          AI
                         </span>
                       )}
                     </div>
-                    {author.role && (
-                      <div className="font-body text-[12px] text-ink-500">{author.role}</div>
-                    )}
                   </div>
-                </div>
-              )}
-              {post.publishedAt && (
-                <>
-                  <span className="font-body text-[12px] text-ink-200" aria-hidden>·</span>
-                  <span className="font-body text-[13px] text-ink-500">{formatDate(post.publishedAt)}</span>
-                </>
-              )}
-              {post.readingTime && (
-                <>
-                  <span className="font-body text-[12px] text-ink-200" aria-hidden>·</span>
-                  <span className="font-body text-[13px] text-ink-500">{post.readingTime} min read</span>
-                </>
-              )}
-            </div>
-
-            {/* Top-of-article share row — same component renders again at
-                the bottom of the article so readers can share without
-                scrolling back up. */}
-            <div className="mt-7 border-t border-ink-100 pt-6">
+                )}
+                {post.publishedAt && (
+                  <>
+                    <span className="font-body text-[12px] text-ink-200" aria-hidden>·</span>
+                    <span className="font-body text-[12.5px] text-ink-500">
+                      {formatDate(post.publishedAt)}
+                    </span>
+                  </>
+                )}
+                {post.readingTime && (
+                  <>
+                    <span className="font-body text-[12px] text-ink-200" aria-hidden>·</span>
+                    <span className="font-body text-[12.5px] text-ink-500">
+                      {post.readingTime} min read
+                    </span>
+                  </>
+                )}
+              </div>
               <SocialShare
                 url={siteUrl(`/blog/${params.slug}`)}
                 title={post.title}
