@@ -10,7 +10,11 @@ const MIN_QUERY_LENGTH = 3;
 const MAX_QUERY_LENGTH = 500;
 const ALLOWED_UI_MODES = ['auto', 'companies', 'people'];
 const RESULT_MODES = ['companies', 'people', 'hybrid_people_over_company'];
-const DEFAULT_PAGE_SIZE = 25;
+// Page size doubled from 25 → 50 per product call. Pulse is the
+// freight-broker / freight-forwarder lead-gen surface; users want a
+// fuller initial result set per request. Anything past the first page
+// flows through `page=2`, `page=3`, … via the existing pagination metadata.
+const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
 const PROVIDER_NAME = 'apollo';
 const APOLLO_LOCKED_EMAIL_MARKER = 'email_not_unlocked@';
@@ -282,34 +286,99 @@ function buildLocationsArray(entities: ParsedEntities): string[] {
   return out;
 }
 
+// Freight-industry vocabulary the deterministic parser misses. Pulse is
+// the freight-broker / freight-forwarder lead-gen surface, so when the
+// raw query mentions any of these, inject the right Apollo keyword tags
+// AND keep the verbatim phrase in q_keywords so name/website matches
+// (e.g. "ABC Freight Brokerage") still surface even when categorization
+// is patchy.
+const FREIGHT_INDUSTRY_DETECTORS: Array<{
+  rx: RegExp;
+  tags: string[];
+}> = [
+  {
+    rx: /\b(freight\s+brokers?|truck\s+brokers?|load\s+brokers?)\b/i,
+    tags: ['logistics', 'transportation', 'freight'],
+  },
+  {
+    rx: /\b(freight\s+forwarders?|forwarders?|nvocc|ocean\s+forwarder|air\s+forwarder)\b/i,
+    tags: ['freight forwarder', 'logistics', 'transportation'],
+  },
+  {
+    rx: /\b(3pl|third[\s-]?party\s+logistics|fourth[\s-]?party\s+logistics|4pl)\b/i,
+    tags: ['third-party logistics', 'logistics', 'supply chain'],
+  },
+  {
+    rx: /\b(customs\s+brokers?|customs\s+brokerage|customs\s+clearance|licensed\s+broker)\b/i,
+    tags: ['customs brokerage', 'customs', 'trade compliance'],
+  },
+  {
+    rx: /\b(drayage|cartage|port\s+drayage|container\s+trucking)\b/i,
+    tags: ['drayage', 'trucking', 'logistics'],
+  },
+  {
+    rx: /\b(warehouse|warehousing|3pl\s+warehouse|distribution\s+center|fulfillment)\b/i,
+    tags: ['warehousing', 'logistics', 'distribution'],
+  },
+  {
+    rx: /\b(logistics\s+provider|logistics\s+companies|supply\s+chain\s+companies|supply\s+chain\s+management)\b/i,
+    tags: ['logistics', 'supply chain'],
+  },
+  {
+    rx: /\b(shipper|shippers|importers?|exporters?)\b/i,
+    tags: ['logistics', 'supply chain', 'trade'],
+  },
+];
+
+function detectFreightIndustryTags(rawQuery: string): string[] {
+  if (!rawQuery) return [];
+  const tags = new Set<string>();
+  for (const { rx, tags: t } of FREIGHT_INDUSTRY_DETECTORS) {
+    if (rx.test(rawQuery)) {
+      for (const tag of t) tags.add(tag);
+    }
+  }
+  return Array.from(tags);
+}
+
 function buildApolloCompaniesBody(
   query: string,
   entities: ParsedEntities | undefined,
 ): Record<string, unknown> {
-  // No entities → fall back to keyword text. This is honest behavior
-  // for prompts the classifier couldn't extract anything from.
-  if (!entities) return { q_keywords: query };
-
   // Lookalike intent → Apollo can search by company name fragment.
-  if (entities.similarTo) {
+  if (entities?.similarTo) {
     return { q_organization_name: entities.similarTo };
   }
 
   const body: Record<string, unknown> = {};
 
-  const locations = buildLocationsArray(entities);
+  const locations = entities ? buildLocationsArray(entities) : [];
   if (locations.length) body.organization_locations = locations;
 
-  if (Array.isArray(entities.industries) && entities.industries.length) {
-    body.q_organization_keyword_tags = entities.industries;
+  // Merge structured industries (from classifier) with freight-vocabulary
+  // tags detected directly from the raw prompt. This is what makes
+  // "freight brokers in Atlanta Georgia" actually filter to brokers
+  // instead of every Atlanta company.
+  const freightTags = detectFreightIndustryTags(query);
+  const industryTags = Array.isArray(entities?.industries) ? entities!.industries : [];
+  const allTags = Array.from(new Set([...industryTags, ...freightTags]));
+  if (allTags.length) {
+    body.q_organization_keyword_tags = allTags;
   }
 
-  // Products go into q_keywords (Apollo has no product taxonomy).
-  // If no products, residual q_keywords falls through to the raw
-  // prompt so Apollo still has a text signal.
-  const kw = (entities.products || []).join(' ').trim();
-  if (kw) body.q_keywords = kw;
-  else if (!locations.length && !body.q_organization_keyword_tags) {
+  // Products go into q_keywords (Apollo has no product taxonomy). When
+  // the user query already has freight-vocabulary terms, ALSO pass the
+  // raw query through as q_keywords so company names containing
+  // "freight" / "brokerage" / "forwarder" still match by text. Apollo
+  // ANDs structured filters with the keyword text — so a richer keyword
+  // signal narrows results, it doesn't broaden them.
+  const productKw = (entities?.products || []).join(' ').trim();
+  const includeRawAsKeywords = freightTags.length > 0 && !productKw;
+  if (productKw) {
+    body.q_keywords = productKw;
+  } else if (includeRawAsKeywords) {
+    body.q_keywords = query;
+  } else if (!locations.length && !body.q_organization_keyword_tags) {
     // No structured filter at all — keep the keyword fallback so we
     // don't hand Apollo an empty search.
     body.q_keywords = query;
@@ -343,26 +412,35 @@ function buildApolloPeopleBody(
   query: string,
   entities: ParsedEntities | undefined,
 ): Record<string, unknown> {
-  if (!entities) return { q_keywords: query };
-
   const body: Record<string, unknown> = {};
 
-  const locations = buildLocationsArray(entities);
+  const locations = entities ? buildLocationsArray(entities) : [];
   if (locations.length) body.organization_locations = locations;
 
-  if (Array.isArray(entities.industries) && entities.industries.length) {
-    body.q_organization_keyword_tags = entities.industries;
+  // Same freight-vocabulary detection as the company body so people
+  // queries like "supply chain managers at freight brokers in Atlanta"
+  // narrow to broker employees, not every Atlanta supply-chain manager.
+  const freightTags = detectFreightIndustryTags(query);
+  const industryTags = Array.isArray(entities?.industries) ? entities!.industries : [];
+  const allTags = Array.from(new Set([...industryTags, ...freightTags]));
+  if (allTags.length) {
+    body.q_organization_keyword_tags = allTags;
   }
 
-  if (Array.isArray(entities.roles) && entities.roles.length) {
-    body.person_titles = entities.roles;
-    const seniorities = rolesToSeniorities(entities.roles);
+  if (Array.isArray(entities?.roles) && entities!.roles.length) {
+    body.person_titles = entities!.roles;
+    const seniorities = rolesToSeniorities(entities!.roles);
     if (seniorities.length) body.person_seniorities = seniorities;
   }
 
-  const kw = (entities.products || []).join(' ').trim();
-  if (kw) body.q_keywords = kw;
-  else if (!locations.length && !body.person_titles && !body.q_organization_keyword_tags) {
+  const productKw = (entities?.products || []).join(' ').trim();
+  if (productKw) {
+    body.q_keywords = productKw;
+  } else if (
+    !locations.length &&
+    !body.person_titles &&
+    !body.q_organization_keyword_tags
+  ) {
     body.q_keywords = query;
   }
 

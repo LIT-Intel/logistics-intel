@@ -151,6 +151,8 @@ export default function Pulse() {
   const [query, setQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
   const [results, setResults] = useState([]);
+  // Pagination state — `Load more` button appends additional pages to results.
+  const [loadingMore, setLoadingMore] = useState(false);
   const [resultMode, setResultMode] = useState(null);
   const [meta, setMeta] = useState(null);
   const [apiStatus, setApiStatus] = useState('unknown');
@@ -269,7 +271,7 @@ export default function Pulse() {
       // metrics) — both are <12K row tables, sub-second on a normal
       // connection. If we already have LOCAL_RICH_THRESHOLD rows, we
       // skip the paid remote search entirely.
-      const localOut = await searchLocalCompanies(trimmed, 12, recipe).catch(() => null);
+      const localOut = await searchLocalCompanies(trimmed, 50, recipe).catch(() => null);
       let localRows = localOut?.rows ?? [];
       let remoteResp = null;
       let remoteRows = [];
@@ -295,7 +297,7 @@ export default function Pulse() {
       let usedFallback = false;
       if (recipe && !localRows.length && !remoteRows.length) {
         try {
-          const retried = await searchLocalCompanies(trimmed, 12, null);
+          const retried = await searchLocalCompanies(trimmed, 50, null);
           if (retried.rows.length) {
             localRows = retried.rows;
             usedFallback = true;
@@ -977,6 +979,55 @@ export default function Pulse() {
                 />
               ))}
             </div>
+            {/* Pagination — page size is 50; show "Load more" when the
+                upstream meta reports a higher total than what's
+                rendered. Each click fires page+1 via searchPulse and
+                appends the new rows to results. Local-only result sets
+                cap at 50 (the lit_company_directory cascade already
+                returns its full match window in one query) so the
+                button hides when remoteRows didn't contribute. */}
+            {(() => {
+              const total = Number(meta?.total) || 0;
+              const pageSize = Number(meta?.pageSize) || 50;
+              const currentPage = Number(meta?.page) || 1;
+              const hasMore = total > resultCount && total > currentPage * pageSize;
+              if (!hasMore) return null;
+              return (
+                <div className="mt-4 flex items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (loadingMore) return;
+                      setLoadingMore(true);
+                      try {
+                        const nextPage = currentPage + 1;
+                        const nextResp = await searchPulse({
+                          query: submittedQuery,
+                          ui_mode: 'auto',
+                          entities: parsedQuery?.hasAny ? parsedQuery : undefined,
+                          page: nextPage,
+                        }).catch(() => null);
+                        const moreRows = Array.isArray(nextResp?.data?.results)
+                          ? nextResp.data.results
+                          : [];
+                        if (moreRows.length > 0) {
+                          setResults((prev) => [...prev, ...moreRows]);
+                          if (nextResp?.meta) setMeta(nextResp.meta);
+                        }
+                      } finally {
+                        setLoadingMore(false);
+                      }
+                    }}
+                    disabled={loadingMore}
+                    className="font-display rounded-lg border border-slate-200 bg-white px-4 py-2 text-[12.5px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {loadingMore
+                      ? 'Loading…'
+                      : `Load more · showing ${resultCount} of ${total}`}
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         ) : null}
 
