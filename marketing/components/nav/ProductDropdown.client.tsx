@@ -79,34 +79,69 @@ const PRODUCT_LINKS: {
 export function ProductDropdown() {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Close on outside click + Escape
+  // Close on outside pointerdown + Escape. pointerdown (not mousedown)
+  // catches both touch + mouse cleanly so the dropdown closes when a
+  // user taps anywhere outside on iPad / iPhone.
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: PointerEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
-    document.addEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
     window.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("pointerdown", onDown);
       window.removeEventListener("keydown", onKey);
+      if (closeTimer.current) clearTimeout(closeTimer.current);
     };
   }, [open]);
+
+  // Hover open with a small grace period on leave so the user can move
+  // their pointer from the trigger button into the dropdown panel
+  // without the menu collapsing on the gap.
+  function cancelClose() {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }
+  function scheduleClose() {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
+  }
 
   return (
     <div
       ref={wrapRef}
       className="relative"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onPointerEnter={(e) => {
+        // Only open on hover for fine pointers (mouse, trackpad). On
+        // touch devices `pointerType` is "touch" and we want the click
+        // handler below to be the single source of open/close instead
+        // of fighting with synthetic hover events.
+        if (e.pointerType === "mouse") {
+          cancelClose();
+          setOpen(true);
+        }
+      }}
+      onPointerLeave={(e) => {
+        if (e.pointerType === "mouse") scheduleClose();
+      }}
     >
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        // Click ALWAYS opens — never toggles. The only ways to close
+        // are: click outside, press Escape, click a menu item, or
+        // (mouse only) move the pointer off the wrapper. Toggling on
+        // click was the source of the "opens then immediately closes"
+        // bug on hover-capable devices: hover would set open=true,
+        // then click would flip it back to false in the same tick.
+        onClick={() => setOpen(true)}
         aria-expanded={open}
         aria-haspopup="menu"
         className={`font-display inline-flex items-center gap-1 rounded-md px-3 py-2 text-[14px] font-medium transition-colors ${
