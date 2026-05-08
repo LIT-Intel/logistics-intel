@@ -533,6 +533,36 @@ export default function CampaignBuilder() {
     setError(null);
     setSuccess(null);
     try {
+      // Validate every email-step body BEFORE persisting. Catches
+      //   - {{*_public_url}} placeholders that escaped resolveEmailTemplateHtml
+      //   - <img src="…"> values that aren't public https:// URLs
+      // (relative paths, blob:, data:, /mnt/, localhost, leftover {{ tokens).
+      // Surfaces as a warning the user can act on, not a hard block — the
+      // save still proceeds so a typo doesn't trap their work, but they
+      // know which step's image won't render in inbox previews.
+      try {
+        const { validateEmailHtml } = await import("@/lib/campaignEmailTemplates");
+        const allIssues = [];
+        for (let i = 0; i < steps.length; i++) {
+          const s = steps[i];
+          if (s.kind !== "email" || !s.body) continue;
+          const issues = validateEmailHtml(s.body);
+          for (const issue of issues) {
+            allIssues.push(`Step ${i + 1}: ${issue.detail}`);
+          }
+        }
+        if (allIssues.length > 0) {
+          // Warn, don't block. The first issue is enough to flag.
+          console.warn("[CampaignBuilder] email-html validation warnings:", allIssues);
+          setError(
+            `Heads-up — image won't render: ${allIssues[0]}${allIssues.length > 1 ? ` (+${allIssues.length - 1} more)` : ""}. Saving anyway.`,
+          );
+        }
+      } catch (validationErr) {
+        // Validator is best-effort; never block save on its own failure.
+        console.warn("[CampaignBuilder] validation threw", validationErr);
+      }
+
       const baseChannel = "email";
       const metricsExtras = {};
       if (selectedPersonaId) metricsExtras.persona_id = selectedPersonaId;

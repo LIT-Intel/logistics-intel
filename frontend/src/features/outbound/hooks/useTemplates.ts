@@ -7,6 +7,10 @@ import type {
   PersonasResult,
 } from "../types";
 import { STARTER_TEMPLATES, type StarterTemplate } from "../data/templates";
+import {
+  LIT_MARKETING_TEMPLATES,
+  asOutreachTemplate as asOutreachFromLitMarketing,
+} from "@/lib/campaignEmailTemplates";
 
 // lit_outreach_templates schema (verified via Supabase introspection):
 //   id uuid · org_id uuid · persona_id uuid · mode text · channel text
@@ -72,7 +76,19 @@ export function useTemplates(): {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const starterRows = STARTER_TEMPLATES as OutreachTemplate[];
+    // LIT Marketing campaigns (4-touch broker + 4-touch forwarder
+    // sequences) live as pre-resolved OutreachTemplate rows so the
+    // existing picker + apply path renders them without any new UI.
+    // Resolving the asset URLs HERE means the composer's body surface
+    // is already final HTML — no {{*_public_url}} placeholders ever
+    // reach lit_campaign_steps.body or the dispatcher.
+    const litMarketingRows: OutreachTemplate[] = LIT_MARKETING_TEMPLATES.map(
+      (t) => asOutreachFromLitMarketing(t),
+    );
+    const starterRows = [
+      ...litMarketingRows,
+      ...(STARTER_TEMPLATES as OutreachTemplate[]),
+    ];
     try {
       const { data, error } = await supabase
         .from("lit_outreach_templates")

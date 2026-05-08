@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" role="img" aria-label="LIT Pulse AI Brief — account intelligence for freight sales">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#FFFFFF"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <rect x="40" y="40" width="1120" height="640" rx="20" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+
+  <!-- Pulse hero strip -->
+  <rect x="40" y="40" width="1120" height="120" rx="20" fill="url(#hero)"/>
+  <rect x="40" y="140" width="1120" height="20" fill="#1E293B"/>
+  <g>
+    <circle cx="92" cy="100" r="22" fill="#7C3AED"/>
+    <text x="92" y="107" text-anchor="middle" fill="#FFF" font-family="Georgia,serif" font-weight="700" font-size="20">⚡</text>
+    <text x="128" y="92" fill="#FFFFFF" font-family="Georgia,serif" font-weight="700" font-size="20">Pulse AI Brief · NorthBay Furniture</text>
+    <text x="128" y="116" fill="#94A3B8" font-family="Arial,sans-serif" font-size="13">Generated just now · grounded in shipment data + current FBX rates · 92% confidence</text>
+    <rect x="1010" y="84" width="120" height="32" rx="8" fill="#7C3AED"/>
+    <text x="1070" y="104" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="12">Refresh brief</text>
+  </g>
+
+  <!-- WHY NOW card -->
+  <g>
+    <rect x="80" y="190" width="510" height="200" rx="12" fill="#FAF5FF" stroke="#C4B5FD"/>
+    <text x="100" y="220" fill="#6D28D9" font-family="Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1">WHY NOW · 30-DAY SIGNAL</text>
+    <text x="100" y="252" fill="#0F172A" font-family="Arial,sans-serif" font-size="14" font-weight="700">Volume on Vietnam → Savannah is up 22% MoM.</text>
+    <text x="100" y="278" fill="#334155" font-family="Arial,sans-serif" font-size="12.5">Cambodia origin showed up for the first time in</text>
+    <text x="100" y="296" fill="#334155" font-family="Arial,sans-serif" font-size="12.5">August — supplier diversification is active.</text>
+    <text x="100" y="322" fill="#334155" font-family="Arial,sans-serif" font-size="12.5">Carrier mix narrowed to 2 lines (CMA + ONE) which</text>
+    <text x="100" y="340" fill="#334155" font-family="Arial,sans-serif" font-size="12.5">means rate exposure is consolidated.</text>
+    <text x="100" y="370" fill="#7C3AED" font-family="Arial,sans-serif" font-size="11" font-weight="700">→ Lead with consolidation + rate-protection angle</text>
+  </g>
+
+  <!-- SALES ANGLE card -->
+  <g>
+    <rect x="610" y="190" width="510" height="200" rx="12" fill="#EFF6FF" stroke="#93C5FD"/>
+    <text x="630" y="220" fill="#1D4ED8" font-family="Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1">SALES ANGLE · MARKET-RATE FRAMING</text>
+    <text x="630" y="252" fill="#0F172A" font-family="Arial,sans-serif" font-size="14" font-weight="700">$5.3M annual ocean spend at current FBX rates.</text>
+    <text x="630" y="278" fill="#334155" font-family="Arial,sans-serif" font-size="12.5">Customs reports $1.1M — a 4.8× gap that usually</text>
+    <text x="630" y="296" fill="#334155" font-family="Arial,sans-serif" font-size="12.5">means heavy NVOCC margin to win back.</text>
+    <text x="630" y="322" fill="#334155" font-family="Arial,sans-serif" font-size="12.5">Their primary lane (VN→Savannah) prices at</text>
+    <text x="630" y="340" fill="#334155" font-family="Arial,sans-serif" font-size="12.5">$2,100/40ft this week — 8% under quarterly avg.</text>
+    <text x="630" y="370" fill="#1D4ED8" font-family="Arial,sans-serif" font-size="11" font-weight="700">→ Open with rate trend + lane-specific savings</text>
+  </g>
+
+  <!-- BUYING SIGNALS list -->
+  <g>
+    <rect x="80" y="410" width="1040" height="180" rx="12" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="100" y="440" fill="#0F172A" font-family="Arial,sans-serif" font-size="13" font-weight="700">Buying signals · ranked by relevance</text>
+
+    <g font-family="Arial,sans-serif" font-size="12">
+      <circle cx="110" cy="468" r="4" fill="#16A34A"/>
+      <text x="124" y="472" fill="#0F172A">Multi-lane importer (4 origins) — strong consolidation play</text>
+
+      <circle cx="110" cy="498" r="4" fill="#16A34A"/>
+      <text x="124" y="502" fill="#0F172A">Recent supplier diversification (added Cambodia in Aug)</text>
+
+      <circle cx="110" cy="528" r="4" fill="#F59E0B"/>
+      <text x="124" y="532" fill="#0F172A">Single-NVOCC dependency (Bay Marine handles 78% of bookings)</text>
+
+      <circle cx="110" cy="558" r="4" fill="#16A34A"/>
+      <text x="124" y="562" fill="#0F172A">No verified procurement contact yet — opening for outreach</text>
+
+      <text x="700" y="472" fill="#1D4ED8" font-weight="700">→ Recommended opener: rate visibility</text>
+      <text x="700" y="502" fill="#1D4ED8" font-weight="700">→ Persona: VP Logistics + Director Supply Chain</text>
+      <text x="700" y="532" fill="#1D4ED8" font-weight="700">→ Cadence: 4-touch over 14 days</text>
+    </g>
+  </g>
+
+  <!-- Footer brand badge -->
+  <g>
+    <rect x="80" y="620" width="200" height="32" rx="8" fill="url(#accent)"/>
+    <text x="180" y="641" text-anchor="middle" fill="#FFFFFF" font-family="Georgia,serif" font-size="13" font-weight="700">LIT · Pulse AI Brief</text>
+  </g>
+</svg>

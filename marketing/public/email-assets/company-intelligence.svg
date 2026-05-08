@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" role="img" aria-label="LIT Company Intelligence — account profile preview">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#FFFFFF"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <rect x="40" y="40" width="1120" height="640" rx="20" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+
+  <!-- Header strip -->
+  <rect x="40" y="40" width="1120" height="84" rx="20" fill="#0F172A"/>
+  <rect x="40" y="104" width="1120" height="20" fill="#0F172A"/>
+  <circle cx="92" cy="82" r="22" fill="#2563EB"/>
+  <text x="92" y="89" text-anchor="middle" fill="#FFF" font-family="Georgia,serif" font-weight="700" font-size="20">N</text>
+  <text x="128" y="76" fill="#FFFFFF" font-family="Georgia,serif" font-weight="700" font-size="20">NorthBay Furniture, LLC</text>
+  <text x="128" y="100" fill="#94A3B8" font-family="Arial,sans-serif" font-size="13">Atlanta, GA · Furniture importer · 12-month TEU 4,820</text>
+  <rect x="1020" y="64" width="120" height="32" rx="8" fill="#3B82F6"/>
+  <text x="1080" y="84" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="12">Save to CRM</text>
+
+  <!-- KPI strip -->
+  <g font-family="Arial,sans-serif">
+    <rect x="80" y="160" width="240" height="92" rx="12" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="100" y="186" fill="#64748B" font-size="11" font-weight="700" letter-spacing="1">SHIPMENTS · 12M</text>
+    <text x="100" y="222" fill="#0F172A" font-size="32" font-weight="700">2,418</text>
+    <text x="100" y="242" fill="#16A34A" font-size="12" font-weight="600">↑ 14% vs prior 12m</text>
+
+    <rect x="340" y="160" width="240" height="92" rx="12" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="360" y="186" fill="#64748B" font-size="11" font-weight="700" letter-spacing="1">TEU · 12M</text>
+    <text x="360" y="222" fill="#0F172A" font-size="32" font-weight="700">4,820</text>
+    <text x="360" y="242" fill="#64748B" font-size="12">avg 2.0 TEU/shipment</text>
+
+    <rect x="600" y="160" width="240" height="92" rx="12" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="620" y="186" fill="#64748B" font-size="11" font-weight="700" letter-spacing="1">EST. SPEND · 12M</text>
+    <text x="620" y="222" fill="#0F172A" font-size="32" font-weight="700">$5.3M</text>
+    <text x="620" y="242" fill="#64748B" font-size="12">market-rate · FBX-matched</text>
+
+    <rect x="860" y="160" width="240" height="92" rx="12" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="880" y="186" fill="#64748B" font-size="11" font-weight="700" letter-spacing="1">PRIMARY LANE</text>
+    <text x="880" y="216" fill="#0F172A" font-size="18" font-weight="700">Vietnam → Savannah</text>
+    <text x="880" y="240" fill="#64748B" font-size="12">52% of 12m volume</text>
+  </g>
+
+  <!-- Tabs -->
+  <g font-family="Arial,sans-serif" font-size="13" font-weight="700">
+    <rect x="80" y="284" width="120" height="36" rx="8" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.5"/>
+    <text x="140" y="307" text-anchor="middle" fill="#1D4ED8">Supply Chain</text>
+    <text x="240" y="307" fill="#64748B">Rate Benchmark</text>
+    <text x="380" y="307" fill="#64748B">Contacts</text>
+    <text x="470" y="307" fill="#64748B">Pulse AI</text>
+    <text x="555" y="307" fill="#64748B">Revenue Opportunity</text>
+    <text x="730" y="307" fill="#64748B">Activity</text>
+    <line x1="80" y1="332" x2="1120" y2="332" stroke="#E2E8F0"/>
+  </g>
+
+  <!-- Body: chart + lane list -->
+  <g>
+    <rect x="80" y="360" width="600" height="280" rx="12" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="100" y="392" fill="#0F172A" font-family="Arial,sans-serif" font-size="13" font-weight="700">Monthly TEU · trailing 12 months</text>
+    <text x="100" y="412" fill="#64748B" font-family="Arial,sans-serif" font-size="11">Driven by Vietnam &amp; Cambodia origins · peak Aug–Oct</text>
+    <!-- Bars -->
+    <g>
+      <rect x="120" y="540" width="32" height="60" fill="#3B82F6" opacity="0.85"/>
+      <rect x="160" y="520" width="32" height="80" fill="#3B82F6" opacity="0.85"/>
+      <rect x="200" y="500" width="32" height="100" fill="#3B82F6" opacity="0.85"/>
+      <rect x="240" y="490" width="32" height="110" fill="#3B82F6" opacity="0.85"/>
+      <rect x="280" y="480" width="32" height="120" fill="#3B82F6" opacity="0.85"/>
+      <rect x="320" y="470" width="32" height="130" fill="#3B82F6" opacity="0.85"/>
+      <rect x="360" y="445" width="32" height="155" fill="#7C3AED"/>
+      <rect x="400" y="430" width="32" height="170" fill="#7C3AED"/>
+      <rect x="440" y="438" width="32" height="162" fill="#7C3AED"/>
+      <rect x="480" y="460" width="32" height="140" fill="#3B82F6" opacity="0.85"/>
+      <rect x="520" y="478" width="32" height="122" fill="#3B82F6" opacity="0.85"/>
+      <rect x="560" y="495" width="32" height="105" fill="#3B82F6" opacity="0.85"/>
+    </g>
+    <line x1="120" y1="600" x2="600" y2="600" stroke="#CBD5E1"/>
+    <text x="125" y="620" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">JAN</text>
+    <text x="395" y="620" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">AUG</text>
+    <text x="575" y="620" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">DEC</text>
+
+    <!-- Top lanes side panel -->
+    <rect x="700" y="360" width="400" height="280" rx="12" fill="#F8FAFC" stroke="#E2E8F0"/>
+    <text x="720" y="392" fill="#0F172A" font-family="Arial,sans-serif" font-size="13" font-weight="700">Top trade lanes</text>
+    <g font-family="Arial,sans-serif" font-size="12" fill="#0F172A">
+      <text x="720" y="426" font-weight="700">🇻🇳 Vietnam → 🇺🇸 Savannah</text>
+      <text x="720" y="446" fill="#64748B" font-size="11">1,257 ships · 2,506 TEU · 52%</text>
+
+      <text x="720" y="478" font-weight="700">🇰🇭 Cambodia → 🇺🇸 Savannah</text>
+      <text x="720" y="498" fill="#64748B" font-size="11">624 ships · 1,247 TEU · 26%</text>
+
+      <text x="720" y="530" font-weight="700">🇨🇳 China → 🇺🇸 Long Beach</text>
+      <text x="720" y="550" fill="#64748B" font-size="11">312 ships · 624 TEU · 13%</text>
+
+      <text x="720" y="582" font-weight="700">🇲🇽 Mexico → 🇺🇸 Houston (truck)</text>
+      <text x="720" y="602" fill="#64748B" font-size="11">225 ships · 443 TEU · 9%</text>
+    </g>
+  </g>
+
+  <!-- Footer brand badge -->
+  <g>
+    <rect x="80" y="660" width="200" height="32" rx="8" fill="url(#accent)"/>
+    <text x="180" y="681" text-anchor="middle" fill="#FFFFFF" font-family="Georgia,serif" font-size="13" font-weight="700">LIT · Company Intelligence</text>
+  </g>
+</svg>
