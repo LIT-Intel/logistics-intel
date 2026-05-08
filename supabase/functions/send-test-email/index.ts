@@ -184,32 +184,47 @@ serve(async (req) => {
     return json({ error: "no_connected_mailbox" }, 400);
   }
 
-  // ── 5. Fetch token (service-role bypasses RLS) ─────────────────────────────
-  const { data: tokenRow, error: tokenFetchErr } = await admin
-    .from("lit_oauth_tokens")
-    .select("id, access_token, refresh_token, expires_at, provider")
-    .eq("email_account_id", account.id)
-    .maybeSingle();
+  // Resend doesn't use OAuth — it ships through an env-scoped API key
+  // (LIT_RESEND_API_KEY), the same one send-campaign-email uses for
+  // production sends. Skip the token fetch + refresh dance entirely
+  // when the chosen account is the LIT Marketing Resend mailbox.
+  const isResendAccount = account.provider === "resend";
 
-  if (tokenFetchErr || !tokenRow) {
-    console.warn("[send-test-email] no token found for account", account.id);
-    await writeTestRow(account.id, account.provider, account.email, "failed", {
-      error_code: "no_token",
-      error_message: "No OAuth token found for this mailbox",
-    });
-    return json({ error: "no_token_found" }, 400);
+  // ── 5. Fetch token (service-role bypasses RLS) ─────────────────────────────
+  // Skipped for Resend — see comment above.
+  let tokenRow:
+    | { id: string; access_token: string; refresh_token: string | null; expires_at: string | null; provider: string }
+    | null = null;
+  if (!isResendAccount) {
+    const { data, error: tokenFetchErr } = await admin
+      .from("lit_oauth_tokens")
+      .select("id, access_token, refresh_token, expires_at, provider")
+      .eq("email_account_id", account.id)
+      .maybeSingle();
+
+    if (tokenFetchErr || !data) {
+      console.warn("[send-test-email] no token found for account", account.id);
+      await writeTestRow(account.id, account.provider, account.email, "failed", {
+        error_code: "no_token",
+        error_message: "No OAuth token found for this mailbox",
+      });
+      return json({ error: "no_token_found" }, 400);
+    }
+    tokenRow = data as typeof tokenRow;
   }
 
   // ── 6. Refresh token if expired (or expiring within 60s) ──────────────────
-  let accessToken = tokenRow.access_token as string;
-  const expiresAt = tokenRow.expires_at
-    ? new Date(tokenRow.expires_at as string).getTime()
-    : 0;
+  // Resend has no OAuth token to refresh — its API key is server-side env.
+  let accessToken = isResendAccount ? "" : ((tokenRow as any).access_token as string);
+  const expiresAt =
+    !isResendAccount && (tokenRow as any).expires_at
+      ? new Date((tokenRow as any).expires_at as string).getTime()
+      : 0;
   const nowMs = Date.now();
-  const needsRefresh = expiresAt - nowMs < 60_000;
+  const needsRefresh = !isResendAccount && expiresAt - nowMs < 60_000;
 
-  if (needsRefresh && tokenRow.refresh_token) {
-    const refreshToken = tokenRow.refresh_token as string;
+  if (needsRefresh && (tokenRow as any).refresh_token) {
+    const refreshToken = (tokenRow as any).refresh_token as string;
 
     let refreshResp: Response;
     let refreshJson: any;
@@ -303,7 +318,7 @@ serve(async (req) => {
         expires_at: newExpiresAt,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", tokenRow.id);
+      .eq("id", (tokenRow as any).id);
   }
 
   // ── 7. Send the email ──────────────────────────────────────────────────────
@@ -312,7 +327,55 @@ serve(async (req) => {
   let sendErrorCode: string | null = null;
   let sendErrorMessage: string | null = null;
 
-  if (account.provider === "gmail") {
+  if (isResendAccount) {
+    // LIT Marketing mailbox — Resend HTTP API, env-scoped key.
+    const resendKey = Deno.env.get("LIT_RESEND_API_KEY");
+    if (!resendKey) {
+      sendErrorCode = "resend_api_key_missing";
+      sendErrorMessage = "LIT_RESEND_API_KEY env var is not configured";
+      console.warn("[send-test-email] LIT_RESEND_API_KEY missing");
+    } else {
+      const fromLine = account.display_name
+        ? `${account.display_name} <${account.email}>`
+        : account.email;
+      // Body may already be HTML (composer-authored) or plain text. Detect
+      // so the recipient renders branded markup correctly.
+      const isHtml = /^<[a-z!]/i.test(body.trim()) || /<table|<div|<p[\s>]/i.test(body);
+      const payload: Record<string, unknown> = {
+        from: fromLine,
+        to: [toEmail],
+        subject,
+        reply_to: account.email,
+      };
+      if (isHtml) payload.html = body;
+      else payload.text = body;
+      try {
+        const resp = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${resendKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        const respJson: any = await resp.json().catch(() => ({}));
+        if (resp.ok) {
+          messageId = (respJson?.id as string | null) ?? null;
+          sendOk = true;
+        } else {
+          sendErrorCode = String(resp.status);
+          sendErrorMessage = String(
+            respJson?.message || respJson?.name || respJson?.error || "",
+          ).slice(0, 500);
+          console.warn("[send-test-email] Resend send failed", resp.status, sendErrorMessage);
+        }
+      } catch (e) {
+        sendErrorCode = "network_error";
+        sendErrorMessage = e instanceof Error ? e.message.slice(0, 500) : String(e).slice(0, 500);
+        console.error("[send-test-email] Resend send threw", e);
+      }
+    }
+  } else if (account.provider === "gmail") {
     const fromLine = account.display_name
       ? `"${account.display_name}" <${account.email}>`
       : account.email;
