@@ -215,6 +215,20 @@ export default function PulseQuickCard({
         company?.id ||
         company?.uuid ||
         null;
+      // CRITICAL: Apollo's people/match unlocks emails reliably ONLY
+      // when given the person id. apollo-contact-search stores the
+      // Apollo person id in `source_contact_key` (legacy contract);
+      // older callers also put it in `apollo_person_id`/`apollo_id`/`id`.
+      // Read all of them so the strongest identifier wins. Without
+      // this fallback the request drops to fuzzy name+domain matching
+      // and Apollo returns the locked-email marker even when credits
+      // are available.
+      const apolloPersonId =
+        contact.apollo_person_id ||
+        contact.apollo_id ||
+        contact.id ||
+        contact.source_contact_key ||
+        null;
       const target = {
         first_name: contact.first_name || null,
         last_name: contact.last_name || null,
@@ -225,11 +239,8 @@ export default function PulseQuickCard({
         linkedin_url: contact.linkedin_url || null,
         domain: resolvedDomain,
         organization_name: resolvedCompanyName,
-        apollo_person_id:
-          contact.apollo_person_id ||
-          contact.apollo_id ||
-          contact.id ||
-          null,
+        apollo_person_id: apolloPersonId,
+        id: apolloPersonId,
       };
       // NOTE: reveal_phone_number is intentionally NOT set. When true,
       // Apollo's people/match pivots to async phone enrichment and

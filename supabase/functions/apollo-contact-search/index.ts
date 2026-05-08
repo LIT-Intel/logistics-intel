@@ -59,6 +59,13 @@ type MatchMode =
 interface NormalizedContact {
   source: "apollo";
   source_contact_key: string;
+  // Apollo person id surfaced explicitly so downstream enrich calls
+  // can pass it as `id`. Without this, callers were forced to derive
+  // it from source_contact_key (which they often missed), and the
+  // enrich request fell back to fuzzy name+domain matching — Apollo
+  // returns email_not_unlocked@... in that mode even when credits
+  // are available.
+  apollo_person_id: string | null;
   full_name: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -77,6 +84,15 @@ interface NormalizedContact {
   raw_payload: Record<string, unknown>;
 }
 
+// Apollo returns the locked-email marker with the actual company
+// domain on some plan tiers (`email_not_unlocked@odfl.com`) and the
+// literal "domain.com" string on others. Match the prefix only.
+const APOLLO_LOCKED_EMAIL_PREFIX = "email_not_unlocked@";
+function isLockedEmail(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  return value.startsWith(APOLLO_LOCKED_EMAIL_PREFIX);
+}
+
 function normalizeApolloPerson(p: Record<string, any>): NormalizedContact {
   const firstName = p.first_name || null;
   const lastName = p.last_name || null;
@@ -86,18 +102,22 @@ function normalizeApolloPerson(p: Record<string, any>): NormalizedContact {
     null;
   const org = p.organization || {};
   const domain = org.primary_domain || org.website_url || null;
+  const apolloId = p.id || p.person_id || null;
+  const rawEmail = p.email;
+  const lockedEmail = isLockedEmail(rawEmail);
 
   return {
     source: "apollo",
-    source_contact_key: String(p.id || p.person_id || `${fullName}-${domain || ""}`),
+    apollo_person_id: apolloId ? String(apolloId) : null,
+    source_contact_key: String(apolloId || `${fullName}-${domain || ""}`),
     full_name: fullName,
     first_name: firstName,
     last_name: lastName,
     title: p.title || null,
     department: Array.isArray(p.departments) ? p.departments[0] : p.departments || null,
     seniority: p.seniority || null,
-    email: p.email && p.email !== "email_not_unlocked@domain.com" ? p.email : null,
-    email_status: p.email_status || null,
+    email: rawEmail && !lockedEmail ? rawEmail : null,
+    email_status: lockedEmail ? "locked" : (p.email_status || null),
     phone:
       (Array.isArray(p.phone_numbers) && p.phone_numbers[0]?.sanitized_number) ||
       p.phone || null,
