@@ -166,6 +166,10 @@ export default function Pulse() {
   const [activeContact, setActiveContact] = useState(null);
   const [campaignTarget, setCampaignTarget] = useState(null);
   const [isEnriching, setIsEnriching] = useState(false);
+  // Per-contact "Add to List" target — opens the universal AddToListPicker
+  // popover (shared with Profile + Campaign builder). Carries the saved
+  // contact_id + company_id so the picker can write the membership row.
+  const [contactListTarget, setContactListTarget] = useState(null);
   // Coach insight cache, keyed per-company so reopening the Quick Card
   // for the same company returns the cached brief instantly.
   const [insightMap, setInsightMap] = useState({});      // id → { report, generatedAt, cached, plan, limit, used }
@@ -478,6 +482,61 @@ export default function Pulse() {
         setErrorMessage(error.message + ' Upgrade at /app/billing.');
       } else {
         setErrorMessage(error?.message || 'Failed to add contact to campaign.');
+      }
+    }
+  }
+
+  // "Add to List" for a discovered Apollo contact. Mirrors
+  // handleAddContactToCampaign — saves the parent company first,
+  // upserts the contact (so the picker has a real contact_id to bind),
+  // then opens the universal AddToListPicker keyed to that contact.
+  async function handleAddContactToList(contact) {
+    if (!contact) return;
+    setErrorMessage('');
+    try {
+      const company = activeCompany;
+      if (!company) throw new Error('No active company.');
+      const saved = await upsertCompanyFromResult(company);
+      if (!saved?.id) throw new Error('Failed to save parent company.');
+
+      const fullName =
+        contact.full_name ||
+        [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim() ||
+        contact.name ||
+        null;
+      // Insert + return so we have the lit_contacts.id to pass to the picker.
+      const { data: inserted, error: insertErr } = await supabase
+        .from('lit_contacts')
+        .insert({
+          company_id: saved.id,
+          full_name: fullName,
+          first_name: contact.first_name || null,
+          last_name: contact.last_name || null,
+          title: contact.title || null,
+          department: contact.department || null,
+          email: contact.email || null,
+          phone: contact.phone || null,
+          linkedin_url: contact.linkedin_url || null,
+          source: 'pulse',
+          verified_by_provider: Boolean(contact.email || contact.phone),
+        })
+        .select('id')
+        .single();
+      if (insertErr) {
+        console.warn('[Pulse] save contact for list-add failed:', insertErr);
+      }
+      setLibraryRefreshKey((k) => k + 1);
+      setContactListTarget({
+        contactId: inserted?.id ?? null,
+        contactName: fullName || 'Contact',
+        companyId: saved.id,
+      });
+    } catch (error) {
+      console.error('[Pulse] add contact to list failed:', error);
+      if (error instanceof LimitExceededError) {
+        setErrorMessage(error.message + ' Upgrade at /app/billing.');
+      } else {
+        setErrorMessage(error?.message || 'Failed to add contact to list.');
       }
     }
   }
@@ -1045,6 +1104,7 @@ export default function Pulse() {
         onSaveToLibrary={handleSaveToLibrary}
         onSaveToList={handleSaveToList}
         onAddContactToCampaign={handleAddContactToCampaign}
+        onAddContactToList={handleAddContactToList}
         onGenerateInsight={handleGenerateInsight}
         saveToLibraryPending={saveLibraryPendingId === (activeCompany?.id || activeCompany?.name)}
         isInDatabase={activeCompany?.provenance === 'database' || activeCompany?.alsoLive}
@@ -1083,6 +1143,18 @@ export default function Pulse() {
         onClose={() => setListPicker(null)}
         companyId={listPicker?.companyId || null}
         companyName={listPicker?.companyName || ''}
+        contextQuery={submittedQuery || query || null}
+        onSaved={() => setLibraryRefreshKey((k) => k + 1)}
+      />
+      {/* Per-contact "Add to List" — uses the same picker, but bound to
+          the contact_id from lit_contacts so it inserts the membership
+          row into pulse_list_contacts (not pulse_list_companies). */}
+      <AddToListPicker
+        open={Boolean(contactListTarget)}
+        onClose={() => setContactListTarget(null)}
+        contactId={contactListTarget?.contactId || null}
+        contactName={contactListTarget?.contactName || ''}
+        companyId={contactListTarget?.companyId || null}
         contextQuery={submittedQuery || query || null}
         onSaved={() => setLibraryRefreshKey((k) => k + 1)}
       />

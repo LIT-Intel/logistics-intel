@@ -243,13 +243,24 @@ function normalizeCompanyRow(row) {
 
 function normalizeDirectoryRow(row, metrics) {
   const name = row.canonical_name || row.company_name || row.normalized_name || 'Unknown Company';
-  const domain = (row.canonical_domain || row.domain || '').replace(/^www\./, '');
+  // Pull domain from canonical_domain → domain → parsed website. Only
+  // 534/26,787 directory rows have any domain field populated, but those
+  // 534 should at least get logo.dev results. The remaining rows render
+  // the gradient initials avatar. Returning null (not '') so the
+  // CompanyAvatar `domain ?? logoUrl ?? null` chain fires correctly —
+  // empty string is truthy under ??, blocking the fallback.
+  let domain = (row.canonical_domain || row.domain || '').replace(/^www\./i, '').toLowerCase().trim();
+  if (!domain && row.website) {
+    const url = String(row.website).trim();
+    const match = url.match(/^(?:https?:\/\/)?(?:www\.)?([a-z0-9.-]+\.[a-z]{2,})/i);
+    if (match) domain = match[1].toLowerCase();
+  }
   return {
     id: row.id,
     type: 'company',
     business_id: row.company_key || row.id,
     name,
-    domain,
+    domain: domain || null,
     website: row.website || '',
     phone: row.phone || '',
     city: row.city || '',

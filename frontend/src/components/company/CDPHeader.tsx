@@ -19,6 +19,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
+import LitFlag from "@/components/ui/LitFlag";
 import LitHeaderIconBtn from "@/components/ui/LitHeaderIconBtn";
 import LitKpiStrip from "@/components/ui/LitKpiStrip";
 import LitPill from "@/components/ui/LitPill";
@@ -250,7 +251,10 @@ export default function CDPHeader({
               </LitPill>
             )}
             {company.countryCode && (
-              <LitPill tone="slate" icon={<Building2 className="h-2.5 w-2.5" />}>
+              <LitPill
+                tone="slate"
+                icon={<LitFlag code={company.countryCode} size={11} />}
+              >
                 {company.countryName || company.countryCode}
               </LitPill>
             )}

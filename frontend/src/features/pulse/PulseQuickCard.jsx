@@ -49,6 +49,14 @@ import {
 import BrandIcon from '@/features/pulse/BrandIcon';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
 import { extractDomain } from '@/lib/logo';
+import { supabase } from '@/lib/supabase';
+
+// Stable cache key for a discovered contact. Mirrors the {key} used by
+// the per-row render below so toggleReveal can find the row in
+// decisionMakers state when the user clicks Reveal.
+function contactKey(c) {
+  return c.source_contact_key || `${c.full_name}-${c.title}`;
+}
 import {
   computeVolumeSignal,
   fetchDecisionMakers,
@@ -67,6 +75,7 @@ export default function PulseQuickCard({
   onSaveToLibrary,        // NEW: save to All-saves without opening list picker
   onSaveToList,           // existing: save + open named-list picker
   onAddContactToCampaign, // optional: add a discovered Apollo contact to campaign
+  onAddContactToList,     // optional: add a discovered Apollo contact to a saved list
   onGenerateInsight,
   isInDatabase,
   saveToLibraryPending,
@@ -159,13 +168,125 @@ export default function PulseQuickCard({
     setDecisionMakers(res.contacts);
   }
 
-  function toggleReveal(key) {
+  // Per-contact in-flight tracking for the Reveal-as-Enrich flow below.
+  const [enrichingKeys, setEnrichingKeys] = useState(new Set());
+
+  /**
+   * Reveal-as-Enrich. The Apollo people-SEARCH endpoint returns locked
+   * email markers (email_not_unlocked@…) which apollo-contact-search
+   * normalizes to null — so the contact card showed "No email on file"
+   * forever and the standalone Enrich button was easy to miss. This
+   * function now does both jobs:
+   *   1. Toggle the reveal state (so a second click hides the row).
+   *   2. If the contact's email is null, fire apollo-contact-enrich
+   *      (people/match endpoint with reveal_personal_emails=true) to
+   *      actually unlock + persist the email. Result merges back into
+   *      decisionMakers state so the row updates in place.
+   */
+  async function toggleReveal(key) {
+    const wasRevealed = revealedContactKeys.has(key);
     setRevealedContactKeys((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
+    if (wasRevealed) return; // collapsing — no API call
+
+    const contact = (decisionMakers || []).find((c) => contactKey(c) === key);
+    if (!contact) return;
+    if (contact.email) return; // already unlocked
+
+    if (enrichingKeys.has(key)) return;
+    setEnrichingKeys((prev) => new Set(prev).add(key));
+    try {
+      const resolvedDomain =
+        company?.domain ||
+        company?.website ||
+        contact.organization_domain ||
+        null;
+      const resolvedCompanyName =
+        company?.name ||
+        company?.company_name ||
+        contact.organization_name ||
+        null;
+      const resolvedCompanyId =
+        company?.company_id ||
+        company?.id ||
+        company?.uuid ||
+        null;
+      const target = {
+        first_name: contact.first_name || null,
+        last_name: contact.last_name || null,
+        full_name: contact.full_name || contact.name || null,
+        name: contact.full_name || contact.name || null,
+        title: contact.title || null,
+        email: contact.email || null,
+        linkedin_url: contact.linkedin_url || null,
+        domain: resolvedDomain,
+        organization_name: resolvedCompanyName,
+        apollo_person_id:
+          contact.apollo_person_id ||
+          contact.apollo_id ||
+          contact.id ||
+          null,
+      };
+      const { data, error } = await supabase.functions.invoke(
+        'apollo-contact-enrich',
+        {
+          body: {
+            contacts: [target],
+            ...(resolvedCompanyId ? { company_id: resolvedCompanyId } : {}),
+            ...(resolvedDomain ? { domain: resolvedDomain } : {}),
+            ...(resolvedCompanyName ? { company_name: resolvedCompanyName } : {}),
+            reveal_personal_emails: true,
+            reveal_phone_number: true,
+          },
+        },
+      );
+      if (error) throw error;
+      if (data && data.ok === false) {
+        const code = data.code || 'ENRICH_FAILED';
+        // Surface specific Apollo error codes the user can act on.
+        const friendly =
+          code === 'APOLLO_NOT_CONFIGURED'
+            ? 'Apollo enrichment is not configured. Ask your admin to set APOLLO_API_KEY in Supabase secrets.'
+            : code === 'LIMIT_EXCEEDED'
+              ? 'Plan limit reached for contact enrichment. Upgrade at /app/billing.'
+              : data.message || data.error || 'Enrichment failed.';
+        setDmError(friendly);
+        return;
+      }
+      const enriched =
+        data?.contacts?.[0] ||
+        data?.contact ||
+        data?.results?.[0] ||
+        null;
+      if (enriched) {
+        setDecisionMakers((prev) =>
+          (prev || []).map((c) =>
+            contactKey(c) === key
+              ? {
+                  ...c,
+                  email: enriched.email || c.email,
+                  email_status: enriched.email_status || c.email_status,
+                  phone: enriched.phone || c.phone,
+                  linkedin_url: enriched.linkedin_url || c.linkedin_url,
+                }
+              : c,
+          ),
+        );
+      }
+    } catch (err) {
+      console.error('[Pulse] reveal/enrich failed:', err);
+      setDmError(err?.message || 'Could not enrich contact.');
+    } finally {
+      setEnrichingKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
   }
 
   return (
@@ -339,6 +460,8 @@ export default function PulseQuickCard({
               revealedKeys={revealedContactKeys}
               onToggleReveal={toggleReveal}
               onAddContactToCampaign={onAddContactToCampaign}
+              onAddContactToList={onAddContactToList}
+              enrichingKeys={enrichingKeys}
             />
           </Section>
 
@@ -687,6 +810,8 @@ function DecisionMakersPanel({
   revealedKeys,
   onToggleReveal,
   onAddContactToCampaign,
+  onAddContactToList,
+  enrichingKeys,
 }) {
   // Idle — never fetched yet
   if (contacts == null && !loading && !error) {
@@ -851,10 +976,23 @@ function DecisionMakersPanel({
                 <button
                   type="button"
                   onClick={() => onToggleReveal(key)}
-                  title={revealed ? 'Hide details' : 'Reveal email + phone'}
-                  className="font-display inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[9.5px] font-semibold text-slate-700 hover:bg-slate-50"
+                  disabled={enrichingKeys?.has?.(key)}
+                  title={
+                    enrichingKeys?.has?.(key)
+                      ? 'Enriching…'
+                      : revealed
+                        ? 'Hide details'
+                        : c.email
+                          ? 'Reveal email + phone'
+                          : 'Reveal email + phone (uses 1 enrichment credit)'
+                  }
+                  className="font-display inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[9.5px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                 >
-                  {revealed ? 'Hide' : 'Reveal'}
+                  {enrichingKeys?.has?.(key)
+                    ? 'Enriching…'
+                    : revealed
+                      ? 'Hide'
+                      : 'Reveal'}
                 </button>
                 {c.linkedin_url ? (
                   <a
@@ -869,16 +1007,30 @@ function DecisionMakersPanel({
                 ) : null}
               </div>
             </div>
-            {onAddContactToCampaign ? (
-              <div className="mt-1.5 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => onAddContactToCampaign(c)}
-                  className="font-display inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
-                >
-                  <Target className="h-2.5 w-2.5" />
-                  Add to Campaign
-                </button>
+            {(onAddContactToList || onAddContactToCampaign) ? (
+              <div className="mt-1.5 flex flex-wrap justify-end gap-1">
+                {onAddContactToList ? (
+                  <button
+                    type="button"
+                    onClick={() => onAddContactToList(c)}
+                    className="font-display inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-200"
+                    title="Add this contact to a saved list"
+                  >
+                    <Bookmark className="h-2.5 w-2.5" />
+                    Add to List
+                  </button>
+                ) : null}
+                {onAddContactToCampaign ? (
+                  <button
+                    type="button"
+                    onClick={() => onAddContactToCampaign(c)}
+                    className="font-display inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+                    title="Add this contact to a campaign"
+                  >
+                    <Target className="h-2.5 w-2.5" />
+                    Add to Campaign
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>
