@@ -110,6 +110,52 @@ interface DiscoverRequest {
   persist?: boolean;
 }
 
+// Freight-relevance gate. When the user query is freight/lane-themed
+// (most of Pulse), only persist L3 candidates whose title/snippet hints
+// at logistics, freight, supply chain, or trade. Without this, Tavily
+// happily returns BBB.org pages for any Atlanta company with a tangent
+// mention of "India" — banner printers, gift shops, t-shirt vendors.
+const FREIGHT_RELEVANCE_TERMS = [
+  "logistics", "freight", "forwarder", "forwarding", "shipping",
+  "shipment", "supply chain", "3pl", "third-party logistics", "4pl",
+  "import", "imports", "importer", "importing",
+  "export", "exports", "exporter", "exporting",
+  "customs", "broker", "brokerage", "drayage", "cartage",
+  "trucking", "warehouse", "warehousing", "distribution",
+  "container", "ocean freight", "air freight", "air cargo",
+  "intermodal", "nvocc", "trade", "carrier", "consolidator",
+  "fulfillment", "transload", "ltl", "ftl",
+];
+
+function isFreightThemedQuery(rawQuery: string): boolean {
+  const q = rawQuery.toLowerCase();
+  return FREIGHT_RELEVANCE_TERMS.some((t) => q.includes(t)) ||
+    /\b(from\s+\w+.+?\s+to\s+\w+|importing|exporting|shipping)\b/i.test(q);
+}
+
+function hasFreightSignal(title: string, snippet: string): boolean {
+  const blob = `${title || ""} ${snippet || ""}`.toLowerCase();
+  return FREIGHT_RELEVANCE_TERMS.some((t) => blob.includes(t));
+}
+
+// Names that are clearly directory/brand pages, not company candidates.
+// Tavily occasionally returns "BBB.org" or "ZoomInfo Search Results" as
+// the title's leading segment when the company name is buried.
+const NON_COMPANY_NAME_BLOCKLIST = new Set([
+  "bbb", "bbb.org", "better business bureau",
+  "zoominfo", "linkedin", "crunchbase", "rocketreach",
+  "manta", "thomasnet", "buzzfile", "dnb",
+  "google", "bing", "yahoo", "yelp", "wikipedia",
+]);
+
+function isBlockedCompanyName(name: string): boolean {
+  const lc = name.toLowerCase().trim();
+  if (NON_COMPANY_NAME_BLOCKLIST.has(lc)) return true;
+  // Pure-TLD names ("bbb.org", "zoominfo.com") — not real companies.
+  if (/^[a-z0-9-]+\.[a-z]{2,}$/i.test(lc)) return true;
+  return false;
+}
+
 interface TavilyResult {
   title: string;
   url: string;
@@ -366,6 +412,13 @@ serve(async (req) => {
   const candidates: DiscoveredCompany[] = [];
   const seenDomains = new Set<string>();
   const seenNames = new Set<string>();
+  // Apply freight-relevance gate when the user's query is freight-themed.
+  // Non-freight queries (rare in Pulse) skip the gate so a generic
+  // "fortune 500 in georgia" search still returns useful candidates.
+  const requireFreight = isFreightThemedQuery(rawQuery);
+  let droppedNonFreight = 0;
+  let droppedBlockedName = 0;
+
   for (const r of tavilyResp.results) {
     const url = String(r.url || "").trim();
     if (!url) continue;
@@ -377,6 +430,23 @@ serve(async (req) => {
     const isDirectoryHost = INCLUDE_DOMAINS.some((d) => host.includes(d.split("/")[0]));
     const companyName = extractCompanyNameFromTitle(r.title, host);
     if (!companyName) continue;
+
+    // Drop directory-brand names like "BBB", "ZoomInfo", or pure TLDs
+    // that occasionally leak through title parsing.
+    if (isBlockedCompanyName(companyName)) {
+      droppedBlockedName++;
+      continue;
+    }
+
+    // Freight-relevance gate. Drop candidates whose title+snippet shows
+    // no logistics/freight/trade signal at all. Banner printers and
+    // gift shops in Atlanta no longer pollute lane-query results.
+    const snippetText = r.content?.slice(0, 240) || "";
+    if (requireFreight && !hasFreightSignal(r.title, snippetText)) {
+      droppedNonFreight++;
+      continue;
+    }
+
     const normalized = normalizeCompanyName(companyName);
     if (!normalized || seenNames.has(normalized)) continue;
     seenNames.add(normalized);
@@ -393,7 +463,7 @@ serve(async (req) => {
       domain: cleanDomain,
       website: cleanDomain ? `https://${cleanDomain}` : url,
       title: r.title,
-      snippet: r.content?.slice(0, 240) || "",
+      snippet: snippetText,
       provenance: "web",
       directory_id: null,
       inferred_industry: null,
@@ -401,6 +471,10 @@ serve(async (req) => {
     });
     if (candidates.length >= limit) break;
   }
+
+  console.log(
+    `[pulse-web-discover] tavily=${tavilyResp.results.length} kept=${candidates.length} dropped_non_freight=${droppedNonFreight} dropped_blocked_name=${droppedBlockedName} freight_gate=${requireFreight}`,
+  );
 
   if (candidates.length === 0) {
     return jsonResponse({
@@ -549,6 +623,9 @@ serve(async (req) => {
       total: candidates.length,
       persisted: persistedCount,
       deduped_against_directory: dedupedCount,
+      dropped_non_freight: droppedNonFreight,
+      dropped_blocked_name: droppedBlockedName,
+      freight_gate: requireFreight,
       provider: "tavily",
       search_query: tavilyQuery,
       credits_used: 1,

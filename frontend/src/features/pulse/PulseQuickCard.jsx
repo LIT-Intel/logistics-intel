@@ -954,6 +954,13 @@ function DecisionMakersPanel({
                         <Mail className="h-2.5 w-2.5 shrink-0" />
                         {c.email}
                       </a>
+                    ) : c.email_status === 'locked' ? (
+                      <span
+                        className="font-body text-[10.5px] italic text-amber-600"
+                        title="Apollo found this contact but their email is gated behind a paid unlock credit."
+                      >
+                        Email locked — Apollo plan limit
+                      </span>
                     ) : (
                       <span className="font-body text-[10.5px] italic text-slate-400">
                         No email on file

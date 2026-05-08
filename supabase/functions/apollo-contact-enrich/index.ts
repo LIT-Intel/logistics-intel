@@ -98,6 +98,16 @@ function deriveFullName(p: Record<string, any>): string | null {
   return candidate || null;
 }
 
+// Apollo returns locked-email markers with the literal "domain.com"
+// suffix on free/older plans, but the actual company domain
+// substituted on others — e.g. `email_not_unlocked@olddominion.com`.
+// Match the prefix only so we never store a fake email.
+const APOLLO_LOCKED_EMAIL_PREFIX = "email_not_unlocked@";
+function isLockedEmail(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  return value.startsWith(APOLLO_LOCKED_EMAIL_PREFIX);
+}
+
 function normalizeApolloPerson(p: Record<string, any>): NormalizedContact {
   const firstName = p.first_name || p.firstName || null;
   const lastName = p.last_name || p.lastName || null;
@@ -105,6 +115,8 @@ function normalizeApolloPerson(p: Record<string, any>): NormalizedContact {
   const org = p.organization || {};
   const domain = normalizeDomain(org.primary_domain || org.website_url || null);
   const apolloId = p.id || p.person_id || null;
+  const rawEmail = p.email;
+  const lockedEmail = isLockedEmail(rawEmail);
   return {
     source: "apollo",
     apollo_person_id: apolloId ? String(apolloId) : null,
@@ -115,9 +127,8 @@ function normalizeApolloPerson(p: Record<string, any>): NormalizedContact {
     title: p.title || null,
     department: Array.isArray(p.departments) ? p.departments[0] : p.departments || null,
     seniority: p.seniority || null,
-    email:
-      p.email && p.email !== "email_not_unlocked@domain.com" ? p.email : null,
-    email_status: p.email_status || null,
+    email: rawEmail && !lockedEmail ? rawEmail : null,
+    email_status: lockedEmail ? "locked" : (p.email_status || null),
     phone:
       (Array.isArray(p.phone_numbers) && p.phone_numbers[0]?.sanitized_number) ||
       p.phone || null,
