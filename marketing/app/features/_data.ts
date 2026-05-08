@@ -611,11 +611,13 @@ export const FEATURE_PAGES: FeaturePage[] = [
       "Trade compliance teams validating quoted duty rates.",
     ],
     related: [
+      { label: "Try the live calculator", href: "/tools/tariff-calculator" },
       { label: "HS code lookup", href: "/hs" },
       { label: "Quote generator", href: "/features/quote-generator" },
       { label: "Market rate benchmarking", href: "/features/market-rate-benchmarking" },
     ],
     faqs: [
+      { q: "Is there a free version I can try right now?", a: "Yes — the public calculator at /tools/tariff-calculator pulls live MFN rates from the USITC HTSUS REST API and applies Section 232 / 301 / 122 overlays. Use it to spot-check a single line. The in-app version runs the same math against your full import history with shipment-by-shipment exposure modeling." },
       { q: "How current are the rates?", a: "USTR rulings are reflected within 48 hours of publication. CBP HTSUS revisions are reflected within 7 days." },
     ],
   },
