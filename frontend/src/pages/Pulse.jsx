@@ -275,21 +275,88 @@ export default function Pulse() {
       // metrics) — both are <12K row tables, sub-second on a normal
       // connection. If we already have LOCAL_RICH_THRESHOLD rows, we
       // skip the paid remote search entirely.
+      // Cascade order (Pulse search policy):
+      //   L1+L2: searchLocalCompanies (lit_companies + lit_company_directory
+      //          + lit_company_source_metrics)                — free, instant
+      //   L3:    pulse-web-discover (Tavily-backed)            — cheap, fresh
+      //          surfaces real company names from public web
+      //          and persists them to lit_company_directory so
+      //          tomorrow's same query hits L2.
+      //   L4:    searchLeads (Apollo)                          — expensive
+      //          last resort for fully unindexed lookups.
       const localOut = await searchLocalCompanies(trimmed, 50, recipe).catch(() => null);
       let localRows = localOut?.rows ?? [];
+      let webRows = [];
+      let webSkipped = false;
       let remoteResp = null;
       let remoteRows = [];
       let remoteSkipped = false;
-      if (localRows.length >= LOCAL_RICH_THRESHOLD) {
+
+      const enoughLocally = localRows.length >= LOCAL_RICH_THRESHOLD;
+
+      if (enoughLocally) {
+        // L1+L2 covered it — skip both L3 and L4.
+        webSkipped = true;
         remoteSkipped = true;
       } else {
-        const remote = await searchPulse({
-          query: trimmed,
-          ui_mode: 'auto',
-          entities: submittedEntities?.hasAny ? submittedEntities : undefined,
-        }).catch((err) => ({ ok: false, error: err?.message || 'remote_failed' }));
-        remoteResp = remote || null;
-        remoteRows = Array.isArray(remoteResp?.data?.results) ? remoteResp.data.results : [];
+        // L3: try web discovery before paying for Apollo. Persists new
+        // companies to lit_company_directory for next-time hits.
+        try {
+          const { data: webData, error: webErr } = await supabase.functions.invoke(
+            'pulse-web-discover',
+            {
+              body: {
+                query: trimmed,
+                entities: submittedEntities?.hasAny ? submittedEntities : undefined,
+                limit: 12,
+                persist: true,
+              },
+            },
+          );
+          if (!webErr && webData?.ok && Array.isArray(webData.results)) {
+            // Map L3 results into the same shape the rest of the pipeline
+            // expects. provenance='web' so the UI can badge them.
+            webRows = webData.results.map((r) => ({
+              id: r.directory_id || `web:${r.name}`,
+              type: 'company',
+              business_id: r.directory_id || null,
+              name: r.name,
+              domain: r.domain || null,
+              website: r.website || '',
+              city: r.inferred_location?.city || '',
+              state: r.inferred_location?.state || '',
+              country: r.inferred_location?.country || '',
+              industry: r.inferred_industry || '',
+              summary: r.snippet || '',
+              status: r.provenance === 'directory_existing'
+                ? 'In directory'
+                : 'Web discovered',
+              provenance: r.provenance === 'directory_existing' ? 'directory' : 'web',
+              kpis: {
+                shipments_12m: null, teu_12m: null,
+                fcl_shipments_12m: null, lcl_shipments_12m: null,
+                est_spend_12m: null, top_route_12m: null,
+                recent_route: null, most_recent_shipment_date: null,
+                sources: ['web_discovery'],
+              },
+            }));
+          }
+        } catch (webDiscoverErr) {
+          console.warn('[Pulse] web discovery failed:', webDiscoverErr);
+        }
+
+        // L4: Apollo. Skip when L1+L2+L3 collectively returned enough.
+        if (localRows.length + webRows.length >= LOCAL_RICH_THRESHOLD) {
+          remoteSkipped = true;
+        } else {
+          const remote = await searchPulse({
+            query: trimmed,
+            ui_mode: 'auto',
+            entities: submittedEntities?.hasAny ? submittedEntities : undefined,
+          }).catch((err) => ({ ok: false, error: err?.message || 'remote_failed' }));
+          remoteResp = remote || null;
+          remoteRows = Array.isArray(remoteResp?.data?.results) ? remoteResp.data.results : [];
+        }
       }
 
       // Cascade fallback — if the recipe-narrowed local search returned
@@ -311,7 +378,12 @@ export default function Pulse() {
         }
       }
 
-      const merged = mergeResults(localRows, remoteRows);
+      // Three-way merge: local hits first (richest data), web discoveries
+      // second (real names but limited firmographics), Apollo last (deepest
+      // but most expensive). mergeResults dedupes on domain across the
+      // sources, so a company already in our directory won't appear
+      // twice when the web layer also surfaced it.
+      const merged = mergeResults([...localRows, ...webRows], remoteRows);
 
       setLocalCount(localRows.length);
       setResults(merged);

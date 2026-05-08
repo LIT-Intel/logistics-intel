@@ -114,6 +114,57 @@ async function queryLitCompanies(tokens, recipe, limit) {
   }
 }
 
+// ISO-2 → directory.country full-name map. lit_company_directory stores
+// "United States" (not "US") in its `country` column, so naively filtering
+// in('country', ['US']) matched zero rows and the keyword OR fell through
+// to noisy text matches (e.g. "delta" appearing in unrelated descriptions).
+const ISO_TO_COUNTRY_NAME = {
+  US: ['United States', 'USA', 'U.S.', 'U.S.A.'],
+  CA: ['Canada'],
+  MX: ['Mexico'],
+  CN: ['China', 'P.R. China', "People's Republic of China"],
+  IN: ['India'],
+  VN: ['Vietnam', 'Viet Nam'],
+  KH: ['Cambodia'],
+  TH: ['Thailand'],
+  KR: ['South Korea', 'Korea, Republic of', 'Korea'],
+  JP: ['Japan'],
+  TW: ['Taiwan', 'Taiwan, Province of China'],
+  SG: ['Singapore'],
+  MY: ['Malaysia'],
+  ID: ['Indonesia'],
+  PH: ['Philippines'],
+  TR: ['Turkey', 'Türkiye', 'Turkiye'],
+  IT: ['Italy'],
+  DE: ['Germany'],
+  FR: ['France'],
+  ES: ['Spain'],
+  GB: ['United Kingdom', 'UK', 'Britain'],
+  NL: ['Netherlands', 'The Netherlands'],
+  BE: ['Belgium'],
+  GR: ['Greece'],
+  PT: ['Portugal'],
+  EG: ['Egypt'],
+  MA: ['Morocco'],
+  IL: ['Israel'],
+  BR: ['Brazil'],
+  AR: ['Argentina'],
+  CL: ['Chile'],
+  AU: ['Australia'],
+  NZ: ['New Zealand'],
+};
+
+function expandCountryFilter(isoCodes) {
+  if (!Array.isArray(isoCodes) || isoCodes.length === 0) return null;
+  const names = [];
+  for (const iso of isoCodes) {
+    const arr = ISO_TO_COUNTRY_NAME[String(iso).toUpperCase()];
+    if (arr) names.push(...arr);
+    else names.push(iso); // pass through unknown codes as a last-resort
+  }
+  return Array.from(new Set(names));
+}
+
 async function queryDirectoryWithMetrics(tokens, recipe, limit) {
   // Directory is a U.S. shipper / importer index — `industry` is null on
   // every row and `country` is always 'United States'. Filter only on
@@ -141,8 +192,14 @@ async function queryDirectoryWithMetrics(tokens, recipe, limit) {
         linkedin_url, description, is_enriched
       `)
       .or(orFilter);
+    // Translate ISO codes → full country names since the directory
+    // column stores "United States" not "US". Without this the country
+    // filter silently matched zero rows and the broader keyword OR
+    // returned noise (CNN, Delta, etc. matching token "delta" / "cnn"
+    // in unrelated descriptions).
     if (recipe?.countries?.length) {
-      q = q.in('country', recipe.countries);
+      const expanded = expandCountryFilter(recipe.countries);
+      if (expanded?.length) q = q.in('country', expanded);
     }
     if (recipe?.states?.length) {
       q = q.in('state', recipe.states);

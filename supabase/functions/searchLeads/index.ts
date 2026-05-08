@@ -341,6 +341,31 @@ function detectFreightIndustryTags(rawQuery: string): string[] {
   return Array.from(tags);
 }
 
+/**
+ * Detect lane-query intent. A lane query is one where the user names
+ * BOTH a sourcing origin and a destination — e.g. "companies importing
+ * from India to Georgia" — and is asking about a trade flow, not a
+ * single-location match. Apollo can't filter by trade lane (it only
+ * filters by company HQ), so when we detect this we inject freight
+ * vocabulary aggressively to keep the result quality from collapsing
+ * into "any company in Georgia whose description mentions India".
+ */
+function isLaneQuery(
+  query: string,
+  entities: ParsedEntities | undefined,
+): boolean {
+  if (!entities) return false;
+  const hasOrigin =
+    Array.isArray(entities.origins) && entities.origins.length > 0;
+  const hasDest =
+    Array.isArray(entities.destinations) && entities.destinations.length > 0;
+  if (hasOrigin && hasDest) return true;
+  // Fall back to text patterns: "X to Y" or "from X to Y" or "X-to-Y"
+  return /\b(?:from\s+\w+.+?\s+to\s+\w+|importing\s+from\s+\w+|exporting\s+to\s+\w+)\b/i.test(
+    query,
+  );
+}
+
 function buildApolloCompaniesBody(
   query: string,
   entities: ParsedEntities | undefined,
@@ -361,26 +386,49 @@ function buildApolloCompaniesBody(
   // instead of every Atlanta company.
   const freightTags = detectFreightIndustryTags(query);
   const industryTags = Array.isArray(entities?.industries) ? entities!.industries : [];
-  const allTags = Array.from(new Set([...industryTags, ...freightTags]));
-  if (allTags.length) {
-    body.q_organization_keyword_tags = allTags;
+  const allTags = new Set<string>([...industryTags, ...freightTags]);
+
+  // Lane queries: when user says "importing from X to Y" the target is
+  // ALWAYS an importer, even if they didn't say the word "importer".
+  // Without this, Apollo at the Georgia HQ filter returned things like
+  // CNN / Delta / Geek+ whose corporate keywords matched "import" in
+  // unrelated contexts. Force-inject importer/logistics tags so the
+  // results actually narrow.
+  const lane = isLaneQuery(query, entities);
+  if (lane) {
+    allTags.add('logistics');
+    allTags.add('supply chain');
+    allTags.add('trade');
+    if ((entities?.intent || '').toLowerCase().includes('import')) {
+      allTags.add('importer');
+    }
+    if ((entities?.intent || '').toLowerCase().includes('export')) {
+      allTags.add('exporter');
+    }
   }
 
-  // Products go into q_keywords (Apollo has no product taxonomy). When
-  // the user query already has freight-vocabulary terms, ALSO pass the
-  // raw query through as q_keywords so company names containing
-  // "freight" / "brokerage" / "forwarder" still match by text. Apollo
-  // ANDs structured filters with the keyword text — so a richer keyword
-  // signal narrows results, it doesn't broaden them.
+  if (allTags.size) {
+    body.q_organization_keyword_tags = Array.from(allTags);
+  }
+
+  // Build q_keywords. Lane queries ALSO need the origin country in the
+  // keyword text so Apollo's ranking biases toward companies that
+  // mention the origin in their descriptions (suppliers, partners,
+  // etc.) — narrows the set further without adding a filter Apollo
+  // doesn't actually support.
   const productKw = (entities?.products || []).join(' ').trim();
+  const originHint = lane && Array.isArray(entities?.origins) && entities!.origins.length
+    ? entities!.origins.map((o) => o.name).join(' ')
+    : '';
   const includeRawAsKeywords = freightTags.length > 0 && !productKw;
   if (productKw) {
-    body.q_keywords = productKw;
+    body.q_keywords = [productKw, originHint].filter(Boolean).join(' ').trim();
+  } else if (originHint) {
+    // Lane query — keyword bias to the origin country.
+    body.q_keywords = `importer ${originHint}`.trim();
   } else if (includeRawAsKeywords) {
     body.q_keywords = query;
   } else if (!locations.length && !body.q_organization_keyword_tags) {
-    // No structured filter at all — keep the keyword fallback so we
-    // don't hand Apollo an empty search.
     body.q_keywords = query;
   }
 
