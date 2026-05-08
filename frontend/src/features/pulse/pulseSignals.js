@@ -185,23 +185,55 @@ function writeDmCache(company, contacts) {
   }
 }
 
+// Default decision-maker seniority scope. Caller can override via
+// options.seniorities to broaden ("manager") or narrow ("c_suite").
+export const DEFAULT_DM_SENIORITIES = [
+  'c_suite', 'founder', 'owner', 'partner', 'vp', 'head', 'director',
+];
+
 /**
  * Find decision makers AT a company via Apollo's contact search.
- * Pre-filters seniorities to c-suite + VP + Director so the rail
- * doesn't get flooded with low-signal hits. Cached per-company for
- * 6h — repeat opens of the same Quick Card don't burn credits.
+ * Pre-filters seniorities to c-suite + VP + Director by default so the
+ * rail doesn't get flooded with low-signal hits. Cached per-company
+ * for 6h — repeat opens of the same Quick Card don't burn credits.
+ *
+ * options:
+ *   force        — bypass localStorage cache (true on user "Re-fetch")
+ *   titles       — exact-or-similar job titles to require
+ *   seniorities  — override default scope (e.g. add 'manager')
+ *   departments  — narrow by department (e.g. ['supply_chain'])
+ *
+ * When ANY of titles/seniorities/departments differs from defaults,
+ * cache is bypassed entirely (filtered queries shouldn't share cache
+ * with the default-scope query).
  *
  * Returns:
  *   { ok: true, contacts: [...], cached: bool }
  *   { ok: false, code, message }
  */
-export async function fetchDecisionMakers(company) {
+export async function fetchDecisionMakers(company, options = {}) {
   if (!company?.domain && !company?.name) {
     return { ok: false, code: 'INVALID_INPUT', message: 'Need a domain or name.' };
   }
+  const { force = false } = options;
+  const titles = Array.isArray(options.titles) ? options.titles.filter(Boolean) : [];
+  const seniorities = Array.isArray(options.seniorities) && options.seniorities.length
+    ? options.seniorities
+    : DEFAULT_DM_SENIORITIES;
+  const departments = Array.isArray(options.departments)
+    ? options.departments.filter(Boolean)
+    : [];
+  const useDefaultScope =
+    titles.length === 0 &&
+    departments.length === 0 &&
+    seniorities === DEFAULT_DM_SENIORITIES;
 
-  const cached = readDmCache(company);
-  if (cached) return { ok: true, cached: true, contacts: cached };
+  // Cache only the default-scope query. Custom-filter queries always
+  // hit Apollo so the user gets fresh results matching their filters.
+  if (!force && useDefaultScope) {
+    const cached = readDmCache(company);
+    if (cached) return { ok: true, cached: true, contacts: cached };
+  }
 
   try {
     const { data, error } = await supabase.functions.invoke('apollo-contact-search', {
@@ -211,8 +243,9 @@ export async function fetchDecisionMakers(company) {
         city: company.city || undefined,
         state: company.state || undefined,
         country: company.country || undefined,
-        // Decision-maker scope
-        seniorities: ['c_suite', 'founder', 'owner', 'partner', 'vp', 'head', 'director'],
+        seniorities,
+        ...(titles.length ? { titles, include_similar_titles: true } : {}),
+        ...(departments.length ? { departments } : {}),
         // Reasonable page size — we only render top ~10 in the rail
         per_page: 25,
         page: 1,
@@ -238,7 +271,9 @@ export async function fetchDecisionMakers(company) {
       };
     }
     const contacts = Array.isArray(data.contacts) ? data.contacts : [];
-    writeDmCache(company, contacts);
+    // Only cache the default-scope query so custom-filter queries
+    // don't pollute the cache key for the next default open.
+    if (useDefaultScope) writeDmCache(company, contacts);
     return { ok: true, cached: false, contacts };
   } catch (err) {
     return {

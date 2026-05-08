@@ -59,10 +59,38 @@ function contactKey(c) {
 }
 import {
   computeVolumeSignal,
+  DEFAULT_DM_SENIORITIES,
   fetchDecisionMakers,
   fetchHiringSignal,
   summarizeHiring,
 } from '@/features/pulse/pulseSignals';
+
+// Seniority chips the user can toggle. Apollo's documented values.
+const SENIORITY_OPTIONS = [
+  { key: 'c_suite', label: 'C-suite' },
+  { key: 'founder', label: 'Founder' },
+  { key: 'owner', label: 'Owner' },
+  { key: 'partner', label: 'Partner' },
+  { key: 'vp', label: 'VP' },
+  { key: 'head', label: 'Head' },
+  { key: 'director', label: 'Director' },
+  { key: 'manager', label: 'Manager' },
+  { key: 'senior', label: 'Senior' },
+];
+
+// Common decision-maker title chips. Apollo accepts free-text titles
+// — these are quick presets for freight buyers. User can also paste
+// custom titles in the input.
+const TITLE_PRESETS = [
+  'Logistics Manager',
+  'Supply Chain Director',
+  'VP Operations',
+  'Procurement Manager',
+  'Transportation Manager',
+  'Head of Supply Chain',
+  'Import Manager',
+  'Export Manager',
+];
 
 const RAIL_BG = 'bg-white';
 
@@ -139,26 +167,51 @@ export default function PulseQuickCard({
   const [dmLoading, setDmLoading] = useState(false);
   const [dmError, setDmError] = useState(null);
   const [revealedContactKeys, setRevealedContactKeys] = useState(new Set());
+  // Filter UI state — collapsed by default, expanded by user click
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [titleInput, setTitleInput] = useState('');
+  const [selectedTitles, setSelectedTitles] = useState([]);
+  const [selectedSeniorities, setSelectedSeniorities] = useState(
+    DEFAULT_DM_SENIORITIES,
+  );
 
-  // Reset DM state on company change
+  // Reset DM + filter state on company change
   useEffect(() => {
     setDecisionMakers(null);
     setDmLoading(false);
     setDmError(null);
     setRevealedContactKeys(new Set());
+    setFiltersOpen(false);
+    setTitleInput('');
+    setSelectedTitles([]);
+    setSelectedSeniorities(DEFAULT_DM_SENIORITIES);
   }, [company.id]);
 
-  async function handleFindDecisionMakers() {
+  async function handleFindDecisionMakers(opts = {}) {
     if (dmLoading) return;
+    const { force = false, applyFilters = false } = opts;
     setDmLoading(true);
     setDmError(null);
-    const res = await fetchDecisionMakers({
-      domain,
-      name: company.name,
-      city: company.city,
-      state: company.state,
-      country: company.country,
-    });
+    // Build filter overrides only when the user explicitly chose them.
+    // Re-fetch (force) without applyFilters re-runs the SAME query.
+    const filterArgs = applyFilters
+      ? {
+          titles: selectedTitles,
+          seniorities: selectedSeniorities.length
+            ? selectedSeniorities
+            : DEFAULT_DM_SENIORITIES,
+        }
+      : {};
+    const res = await fetchDecisionMakers(
+      {
+        domain,
+        name: company.name,
+        city: company.city,
+        state: company.state,
+        country: company.country,
+      },
+      { force, ...filterArgs },
+    );
     setDmLoading(false);
     if (!res.ok) {
       setDmError(res.message || 'Could not load decision makers.');
@@ -166,6 +219,33 @@ export default function PulseQuickCard({
       return;
     }
     setDecisionMakers(res.contacts);
+  }
+
+  function toggleSeniority(key) {
+    setSelectedSeniorities((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  }
+
+  function toggleTitle(t) {
+    setSelectedTitles((prev) =>
+      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t],
+    );
+  }
+
+  function commitTitleInput() {
+    const v = titleInput.trim();
+    if (!v) return;
+    if (!selectedTitles.includes(v)) {
+      setSelectedTitles((prev) => [...prev, v]);
+    }
+    setTitleInput('');
+  }
+
+  function clearFilters() {
+    setSelectedTitles([]);
+    setSelectedSeniorities(DEFAULT_DM_SENIORITIES);
+    setTitleInput('');
   }
 
   // Per-contact in-flight tracking for the Reveal-as-Enrich flow below.
@@ -479,6 +559,16 @@ export default function PulseQuickCard({
               onAddContactToCampaign={onAddContactToCampaign}
               onAddContactToList={onAddContactToList}
               enrichingKeys={enrichingKeys}
+              filtersOpen={filtersOpen}
+              onToggleFilters={() => setFiltersOpen((v) => !v)}
+              titleInput={titleInput}
+              onTitleInputChange={setTitleInput}
+              onCommitTitleInput={commitTitleInput}
+              selectedTitles={selectedTitles}
+              onToggleTitle={toggleTitle}
+              selectedSeniorities={selectedSeniorities}
+              onToggleSeniority={toggleSeniority}
+              onClearFilters={clearFilters}
             />
           </Section>
 
@@ -829,77 +919,144 @@ function DecisionMakersPanel({
   onAddContactToCampaign,
   onAddContactToList,
   enrichingKeys,
+  filtersOpen,
+  onToggleFilters,
+  titleInput,
+  onTitleInputChange,
+  onCommitTitleInput,
+  selectedTitles,
+  onToggleTitle,
+  selectedSeniorities,
+  onToggleSeniority,
+  onClearFilters,
 }) {
+  const hasCustomFilters =
+    (selectedTitles?.length ?? 0) > 0 ||
+    (selectedSeniorities?.length !== DEFAULT_DM_SENIORITIES.length);
+
+  const filterPanel = (
+    <FilterPanel
+      open={filtersOpen}
+      onToggle={onToggleFilters}
+      titleInput={titleInput}
+      onTitleInputChange={onTitleInputChange}
+      onCommitTitleInput={onCommitTitleInput}
+      selectedTitles={selectedTitles || []}
+      onToggleTitle={onToggleTitle}
+      selectedSeniorities={selectedSeniorities || []}
+      onToggleSeniority={onToggleSeniority}
+      onApply={() => onFetch({ force: true, applyFilters: true })}
+      onClear={onClearFilters}
+      hasCustomFilters={hasCustomFilters}
+      busy={loading}
+    />
+  );
+
   // Idle — never fetched yet
   if (contacts == null && !loading && !error) {
     return (
-      <div className="flex items-start gap-2.5 py-2">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50">
-          <UserPlus className="h-3.5 w-3.5 text-blue-600" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="font-body text-[11.5px] leading-relaxed text-slate-600">
-            Pull verified buyers and decision-makers at this company —
-            VPs, Directors, and C-suite — with email + phone reveal.
+      <>
+        <div className="flex items-start gap-2.5 py-2">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50">
+            <UserPlus className="h-3.5 w-3.5 text-blue-600" />
           </div>
-          <button
-            type="button"
-            onClick={onFetch}
-            className="font-display mt-2 inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
-          >
-            <UserPlus className="h-3 w-3" />
-            Find decision makers
-          </button>
+          <div className="min-w-0 flex-1">
+            <div className="font-body text-[11.5px] leading-relaxed text-slate-600">
+              Pull verified buyers and decision-makers at this company —
+              VPs, Directors, and C-suite — with email + phone reveal.
+            </div>
+            <div className="mt-2 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => onFetch()}
+                className="font-display inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+              >
+                <UserPlus className="h-3 w-3" />
+                Find decision makers
+              </button>
+              <button
+                type="button"
+                onClick={onToggleFilters}
+                className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-600 hover:bg-slate-50"
+                title="Filter by title or seniority before searching"
+              >
+                <Search className="h-3 w-3" />
+                Filters
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+        {filterPanel}
+      </>
     );
   }
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-2">
-        <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
-        <span className="font-body text-[11.5px] text-slate-600">
-          Looking up decision makers…
-        </span>
-      </div>
+      <>
+        <div className="flex items-center gap-2 py-2">
+          <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
+          <span className="font-body text-[11.5px] text-slate-600">
+            Looking up decision makers…
+          </span>
+        </div>
+        {filterPanel}
+      </>
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-start gap-2 py-2">
-        <AlertCircle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
-        <div className="min-w-0 flex-1">
-          <div className="font-body text-[11.5px] text-amber-800">{error}</div>
-          <button
-            type="button"
-            onClick={onFetch}
-            className="font-display mt-1 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10.5px] font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            <RefreshCw className="h-2.5 w-2.5" />
-            Try again
-          </button>
+      <>
+        <div className="flex items-start gap-2 py-2">
+          <AlertCircle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
+          <div className="min-w-0 flex-1">
+            <div className="font-body text-[11.5px] text-amber-800">{error}</div>
+            <button
+              type="button"
+              onClick={() => onFetch({ force: true })}
+              className="font-display mt-1 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10.5px] font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <RefreshCw className="h-2.5 w-2.5" />
+              Try again
+            </button>
+          </div>
         </div>
-      </div>
+        {filterPanel}
+      </>
     );
   }
 
   if (!contacts.length) {
     return (
-      <div className="py-2 text-center">
-        <div className="font-body text-[11.5px] text-slate-500">
-          No decision-makers indexed for this company yet.
+      <>
+        <div className="py-2 text-center">
+          <div className="font-body text-[11.5px] text-slate-500">
+            {hasCustomFilters
+              ? 'No matches for these filters. Try broader titles or seniorities.'
+              : 'No decision-makers indexed for this company yet.'}
+          </div>
+          <div className="mt-1 inline-flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onFetch({ force: true, applyFilters: hasCustomFilters })}
+              className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10.5px] font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <RefreshCw className="h-2.5 w-2.5" />
+              Re-check
+            </button>
+            <button
+              type="button"
+              onClick={onToggleFilters}
+              className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10.5px] font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Search className="h-2.5 w-2.5" />
+              Filters
+            </button>
+          </div>
         </div>
-        <button
-          type="button"
-          onClick={onFetch}
-          className="font-display mt-1 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10.5px] font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <RefreshCw className="h-2.5 w-2.5" />
-          Re-check
-        </button>
-      </div>
+        {filterPanel}
+      </>
     );
   }
 
@@ -922,16 +1079,32 @@ function DecisionMakersPanel({
   return (
     <div className="flex flex-col gap-1.5 py-1">
       <div className="flex items-center justify-between text-[10.5px] text-slate-500">
-        <span className="font-body">{contacts.length} decision-maker{contacts.length === 1 ? '' : 's'} found</span>
-        <button
-          type="button"
-          onClick={onFetch}
-          className="font-display inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-700"
-        >
-          <RefreshCw className="h-2.5 w-2.5" />
-          Re-fetch
-        </button>
+        <span className="font-body">
+          {contacts.length} decision-maker{contacts.length === 1 ? '' : 's'} found
+          {hasCustomFilters ? ' · filtered' : ''}
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onToggleFilters}
+            className="font-display inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-700"
+            title="Filter by title or seniority"
+          >
+            <Search className="h-2.5 w-2.5" />
+            Filters
+          </button>
+          <button
+            type="button"
+            onClick={() => onFetch({ force: true, applyFilters: hasCustomFilters })}
+            className="font-display inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-700"
+            title="Bypass cache and re-query Apollo"
+          >
+            <RefreshCw className="h-2.5 w-2.5" />
+            Re-fetch
+          </button>
+        </div>
       </div>
+      {filterPanel}
       {visible.map((c) => {
         const key = c.source_contact_key || `${c.full_name}-${c.title}`;
         const revealed = revealedKeys.has(key);
@@ -1333,6 +1506,143 @@ function CoachInsightPanel({ insight, loading, error, onGenerate, onRefresh, com
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Collapsible filter panel — title chips, custom title input, and
+// seniority chips. Calls onApply with current filter selection (which
+// the Quick Card pipes into fetchDecisionMakers force-refetch). Keeps
+// itself out of the DOM when collapsed so the rail stays tight.
+function FilterPanel({
+  open,
+  onToggle: _onToggle,
+  titleInput,
+  onTitleInputChange,
+  onCommitTitleInput,
+  selectedTitles,
+  onToggleTitle,
+  selectedSeniorities,
+  onToggleSeniority,
+  onApply,
+  onClear,
+  hasCustomFilters,
+  busy,
+}) {
+  if (!open) return null;
+  return (
+    <div className="mt-1.5 rounded-md border border-slate-200 bg-slate-50 p-2.5">
+      <div className="font-display mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+        <span>Filter contacts</span>
+        {hasCustomFilters ? (
+          <button
+            type="button"
+            onClick={onClear}
+            className="font-display text-[9.5px] font-semibold text-slate-400 hover:text-slate-700"
+            title="Reset filters to default scope"
+          >
+            Reset
+          </button>
+        ) : null}
+      </div>
+
+      {/* Title chips + custom input */}
+      <div className="mb-2">
+        <div className="font-body mb-1 text-[10px] text-slate-500">Job titles</div>
+        <div className="flex flex-wrap gap-1">
+          {TITLE_PRESETS.map((t) => {
+            const active = selectedTitles.includes(t);
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => onToggleTitle(t)}
+                className={[
+                  'font-display rounded-full border px-2 py-0.5 text-[10px] font-semibold transition',
+                  active
+                    ? 'border-blue-300 bg-blue-100 text-blue-700'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100',
+                ].join(' ')}
+              >
+                {t}
+              </button>
+            );
+          })}
+          {/* Custom titles the user typed */}
+          {selectedTitles
+            .filter((t) => !TITLE_PRESETS.includes(t))
+            .map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => onToggleTitle(t)}
+                className="font-display inline-flex items-center gap-1 rounded-full border border-blue-300 bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700"
+                title="Click to remove"
+              >
+                {t}
+                <X className="h-2 w-2" />
+              </button>
+            ))}
+        </div>
+        <div className="mt-1.5 flex items-center gap-1">
+          <input
+            type="text"
+            value={titleInput}
+            onChange={(e) => onTitleInputChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                onCommitTitleInput();
+              }
+            }}
+            placeholder="Custom title (e.g. Buyer)"
+            className="font-body min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] text-slate-700 placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-1 focus:ring-blue-200"
+          />
+          <button
+            type="button"
+            onClick={onCommitTitleInput}
+            disabled={!titleInput.trim()}
+            className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/* Seniority chips */}
+      <div className="mb-2">
+        <div className="font-body mb-1 text-[10px] text-slate-500">Seniority</div>
+        <div className="flex flex-wrap gap-1">
+          {SENIORITY_OPTIONS.map((s) => {
+            const active = selectedSeniorities.includes(s.key);
+            return (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => onToggleSeniority(s.key)}
+                className={[
+                  'font-display rounded-full border px-2 py-0.5 text-[10px] font-semibold transition',
+                  active
+                    ? 'border-blue-300 bg-blue-100 text-blue-700'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100',
+                ].join(' ')}
+              >
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onApply}
+        disabled={busy}
+        className="font-display inline-flex w-full items-center justify-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+      >
+        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+        Apply filters
+      </button>
     </div>
   );
 }
