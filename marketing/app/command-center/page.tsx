@@ -5,6 +5,7 @@ import { ProductHero } from "@/components/sections/ProductHero";
 import { FeatureGrid } from "@/components/sections/FeatureGrid";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
 
 export const metadata: Metadata = buildMetadata({
   title: "Freight CRM and Command Center | Logistic Intel",
