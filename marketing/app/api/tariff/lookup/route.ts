@@ -46,44 +46,86 @@ async function fetchUsitc(query: string): Promise<HtsLine[]> {
 }
 
 /**
- * Resolve an HTS code to a usable rate. Walks up the parent codes if
- * the leaf has empty rates — HTSUS rates are inherited so 8501.10.40.20
- * uses the rate published at 8501.10.40.
+ * Format a numeric prefix into the dotted USITC search form.
+ * 4 digits  → "1234"
+ * 6 digits  → "1234.56"
+ * 8 digits  → "1234.56.78"
+ * 10 digits → "1234.56.78.90"
+ */
+function dotted(prefix: string): string {
+  const n = norm(prefix);
+  if (n.length <= 4) return n;
+  if (n.length <= 6) return `${n.slice(0, 4)}.${n.slice(4)}`;
+  if (n.length <= 8) return `${n.slice(0, 4)}.${n.slice(4, 6)}.${n.slice(6)}`;
+  return `${n.slice(0, 4)}.${n.slice(4, 6)}.${n.slice(6, 8)}.${n.slice(8, 10)}`;
+}
+
+/**
+ * Resolve an HTS code to a usable rate.
+ *
+ * USITC HTSUS rates live on the leaf lines (10-digit) and the parent
+ * subheading lines (8-digit). Many user-entered codes don't exist as
+ * exact strings — e.g. "7208.10.00" is invalid; real leaves are
+ * "7208.10.15.00", "7208.10.30.00", etc. with different rates.
+ *
+ * Strategy:
+ *   1. Try the user's exact input.
+ *   2. If empty, truncate to 8 digits, then 6, and re-query. Each
+ *      query returns the heading + its children.
+ *   3. Pick the most-specific line in the results whose `general`
+ *      rate is non-empty AND whose htsno is a prefix-match of the
+ *      user's input. If no prefix-matching leaf has a rate, fall
+ *      back to the first leaf with a rate (with a caveat surfaced
+ *      in the UI).
  */
 async function resolveHts(htsRaw: string): Promise<HtsLine | null> {
   const cleaned = norm(htsRaw);
   if (cleaned.length < 4) return null;
 
-  // First, search the full code as entered.
-  const lines = await fetchUsitc(htsRaw);
-  if (!lines.length) return null;
-
-  // Find the line that matches the requested code most closely.
-  const exactMatch = lines.find((l) => norm(l.htsno) === cleaned);
-  const candidates: HtsLine[] = exactMatch ? [exactMatch] : [];
-
-  // Walk up the digit hierarchy: 8501.10.40.20 → 8501.10.40 → 8501.10.
-  // Pick the most-specific line that has a non-empty `general` rate.
-  for (const l of lines) {
-    if (!candidates.includes(l)) candidates.push(l);
+  // Build prefix search list, longest first: input → 8d → 6d → 4d.
+  const seen = new Set<string>();
+  const queries: string[] = [];
+  for (const cut of [cleaned.length, 10, 8, 6, 4].filter((n) => n <= cleaned.length)) {
+    const dottedPrefix = dotted(cleaned.slice(0, cut));
+    if (!seen.has(dottedPrefix)) {
+      seen.add(dottedPrefix);
+      queries.push(dottedPrefix);
+    }
   }
 
-  // Sort by length descending — most specific first.
-  candidates.sort((a, b) => norm(b.htsno).length - norm(a.htsno).length);
+  for (const q of queries) {
+    let lines: HtsLine[];
+    try {
+      lines = await fetchUsitc(q);
+    } catch {
+      lines = [];
+    }
+    if (!lines.length) continue;
 
-  // First candidate whose `general` is non-empty wins.
-  const usable = candidates.find((c) => c.general && c.general.trim().length > 0);
-  if (usable) return usable;
+    // Filter to lines whose htsno is a prefix-match of the user's
+    // cleaned input (e.g. user "7208.10.00" → match "7208.10.15.00"
+    // since the first 6 digits agree).
+    const cuRaw = cleaned;
+    const matchPrefix = (l: HtsLine) => {
+      const ln = norm(l.htsno);
+      // Match if either side is a prefix of the other (forwards or
+      // backwards) — handles user typing too few or too many digits.
+      return ln.startsWith(cuRaw.slice(0, Math.min(ln.length, cuRaw.length))) ||
+        cuRaw.startsWith(ln.slice(0, Math.min(ln.length, cuRaw.length)));
+    };
 
-  // No general rate found in result set. As last resort, search shorter
-  // prefixes explicitly (USITC sometimes returns leaf-only on broad queries).
-  for (let cut = cleaned.length - 2; cut >= 4; cut -= 2) {
-    const prefix = cleaned.slice(0, cut);
-    const hierLines = await fetchUsitc(prefix);
-    const hit = hierLines.find(
-      (l) => norm(l.htsno) === prefix && l.general && l.general.trim().length > 0,
-    );
-    if (hit) return hit;
+    const prefixCandidates = lines
+      .filter((l) => matchPrefix(l) && l.general && l.general.trim().length > 0)
+      .sort((a, b) => norm(b.htsno).length - norm(a.htsno).length);
+    if (prefixCandidates.length > 0) return prefixCandidates[0];
+
+    // Fall back: any line with a non-empty rate (least-specific first
+    // so we land on the heading-level rate as the closest published
+    // value).
+    const anyCandidate = lines
+      .filter((l) => l.general && l.general.trim().length > 0)
+      .sort((a, b) => norm(a.htsno).length - norm(b.htsno).length);
+    if (anyCandidate.length > 0) return anyCandidate[0];
   }
 
   return null;
