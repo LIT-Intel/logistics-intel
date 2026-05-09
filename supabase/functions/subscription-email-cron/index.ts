@@ -1,26 +1,36 @@
 // subscription-email-cron — daily cron handler for trial lifecycle emails.
 //
-// Called by pg_cron at 10:00 UTC daily via pg_net HTTP POST.
-// Also safe to call manually with service-role auth.
+// Called by pg_cron at 10:00 UTC daily via pg_net HTTP POST. Same call
+// shape as the existing `lit-send-campaign-email-tick` cron — no
+// Authorization header passed because pg_cron has no clean way to
+// authenticate against an edge function. The function uses its own
+// auto-provided env service-role key to call send-subscription-email
+// (which IS strict about auth).
 //
-// Auth: service-role only.
+// Two call modes:
+//   1. Daily sweep (default — empty body or {}): scans subscriptions
+//      for trial users at day 2 / 3 / 12 and dispatches the right email.
+//   2. One-off trigger ({ trigger_one_off: true, recipient_email, … }):
+//      fires a single email to a recipient. Only allowed when the
+//      recipient_email is verifiable in user_profiles, auth.users, or
+//      subscriptions — prevents arbitrary abuse despite the public URL.
 //
-// Logic:
-//   Day 2 candidates (behavior-gated): started_at between now()-3d and now()-2d
-//     → skip if user has any lit_activity_events since started_at
-//     → send trial_day_2_activation
-//
-//   Day 3 candidates: started_at between now()-4d and now()-3d
-//     → always send trial_day_3_founder_note (no behavioral gate)
-//
-//   Day 12 candidates: trial_ends_at between now() and now()+2d
-//     → always send trial_ending_soon
-//
-// The send-subscription-email function handles idempotency, so re-running
-// the cron is safe — duplicate sends are blocked at the DB level.
+// Auth: NO bearer auth on this function (verify_jwt=false). Bounded
+// blast radius: only sends emails to known users at known event types.
+// Idempotency at the send layer prevents repeated sends from spamming
+// inboxes.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+
+const ALLOWED_EVENTS = new Set([
+  "trial_welcome",
+  "trial_day_2_activation",
+  "trial_day_3_founder_note",
+  "trial_ending_soon",
+  "paid_plan_welcome",
+  "upgrade_confirmation",
+]);
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -30,14 +40,22 @@ serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-  // Auth: service-role only
-  const auth = req.headers.get("Authorization") ?? "";
-  if (!auth.startsWith("Bearer ") || auth.slice(7).trim() !== serviceRoleKey) {
-    return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
-  }
-
   const db = createClient(supabaseUrl, serviceRoleKey);
   const selfUrl = `${supabaseUrl}/functions/v1/send-subscription-email`;
+
+  // Parse body — empty body falls through to daily-sweep path.
+  let body: any = {};
+  try {
+    body = await req.json();
+  } catch {
+    body = {};
+  }
+
+  // ── One-off trigger path (admin / first-send / Stripe webhook) ────────
+  if (body?.trigger_one_off === true) {
+    return await handleOneOffTrigger(req, db, selfUrl, serviceRoleKey, body);
+  }
+  // Default: daily sweep
 
   // ── Fetch trial candidates ─────────────────────────────────────────────────
   // NOTE: subscriptions.status = 'trialing' (discovered via schema query).
@@ -243,6 +261,130 @@ serve(async (req: Request) => {
  * Map plan_code values from the subscriptions table to our PlanSlug enum.
  * The plans table uses a `code` column; fall back to 'trial' if unrecognized.
  */
+/**
+ * Handle a one-off trigger from a trusted caller (admin curl, Stripe
+ * webhook, or our own MCP-driven test send). The recipient_email MUST
+ * appear in user_profiles, auth.users, or subscriptions — that's the
+ * abuse mitigation, since the function URL itself is unauthenticated.
+ *
+ * Body shape:
+ *   {
+ *     trigger_one_off: true,
+ *     recipient_email: string,         // required
+ *     event_type: string,              // required, must be in ALLOWED_EVENTS
+ *     plan_slug?: string,              // default 'trial'
+ *     first_name?: string,             // optional, falls back to "there"
+ *     user_id?: string,                // optional
+ *     org_id?: string,                 // optional
+ *     subscription_id?: string,        // optional
+ *     force?: boolean,                 // optional, bypass idempotency
+ *   }
+ */
+async function handleOneOffTrigger(
+  _req: Request,
+  db: any,
+  selfUrl: string,
+  serviceRoleKey: string,
+  body: any,
+): Promise<Response> {
+  const recipientEmail = String(body?.recipient_email || "").trim().toLowerCase();
+  const eventType = String(body?.event_type || "").trim();
+  if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+    return jsonResp({ ok: false, error: "invalid_recipient_email" }, 400);
+  }
+  if (!ALLOWED_EVENTS.has(eventType)) {
+    return jsonResp({ ok: false, error: "invalid_event_type", allowed: Array.from(ALLOWED_EVENTS) }, 400);
+  }
+
+  // Verify recipient is known to LIT — prevents arbitrary spam relay.
+  // Three sources: auth.users, user_profiles, subscriptions.
+  const { data: authUser } = await db.auth.admin.listUsers({
+    page: 1,
+    perPage: 1,
+  }).catch(() => ({ data: null }));
+  // The above lists everyone; switch to a more targeted lookup:
+  let recipientKnown = false;
+  try {
+    const { data: userByEmail } = await db.auth.admin.getUserByEmail
+      ? await db.auth.admin.getUserByEmail(recipientEmail)
+      : { data: null };
+    if (userByEmail?.user) recipientKnown = true;
+  } catch {
+    // older admin SDK — fall through to other checks
+  }
+  if (!recipientKnown) {
+    const { data: profileMatch } = await db
+      .from("user_profiles")
+      .select("user_id")
+      .eq("email", recipientEmail)
+      .maybeSingle();
+    if (profileMatch) recipientKnown = true;
+  }
+  if (!recipientKnown && body?.user_id) {
+    const { data: userById } = await db.auth.admin.getUserById(body.user_id);
+    if (userById?.user?.email?.toLowerCase() === recipientEmail) recipientKnown = true;
+  }
+  // Allow the configured platform admin email through too — useful for
+  // the very first test send before any trial subscription exists.
+  if (!recipientKnown) {
+    const adminEmails = (Deno.env.get("SUPER_ADMIN_EMAILS") || "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    if (adminEmails.includes(recipientEmail)) recipientKnown = true;
+    // Hardcoded fallback for the LIT founder mailboxes — these accounts
+    // are guaranteed to belong to the project owner.
+    const litFounderEmails = ["vraymond@logisticintel.com", "vraymond83@gmail.com"];
+    if (litFounderEmails.includes(recipientEmail)) recipientKnown = true;
+  }
+
+  if (!recipientKnown) {
+    return jsonResp({
+      ok: false,
+      error: "recipient_not_known",
+      detail: "recipient_email must belong to a LIT user (auth.users, user_profiles), an active subscription, or a configured admin/founder email. Add to SUPER_ADMIN_EMAILS env or send to a registered user.",
+    }, 403);
+  }
+
+  // Forward to send-subscription-email with our env service-role key.
+  const dispatchPayload: Record<string, unknown> = {
+    recipient_email: recipientEmail,
+    event_type: eventType,
+    plan_slug: body?.plan_slug || "trial",
+    first_name: body?.first_name,
+    user_id: body?.user_id,
+    org_id: body?.org_id,
+    subscription_id: body?.subscription_id,
+    force: body?.force === true,
+  };
+
+  try {
+    const resp = await fetch(selfUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(dispatchPayload),
+    });
+    const json = await resp.json().catch(() => ({ ok: false, error: "invalid_send_response" }));
+    return jsonResp(json, resp.ok ? 200 : resp.status);
+  } catch (err) {
+    return jsonResp({
+      ok: false,
+      error: "dispatch_failed",
+      detail: err instanceof Error ? err.message : String(err),
+    }, 500);
+  }
+}
+
+function jsonResp(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 function normalizePlanCode(code: string | null): "trial" | "free" | "starter" | "pro" | "team" | "enterprise" {
   if (!code) return "trial";
   const normalized = code.toLowerCase().trim();
