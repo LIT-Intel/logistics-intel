@@ -60,9 +60,8 @@ If you haven't already, the best first step is to run a Pulse search on your hig
 Questions about your plan or anything in LIT? Reply here and you'll reach our team directly.`;
 
   const { html, text } = renderEmailLayout({
-    heroImageUrl: ctx.heroImageUrl,
-    heroAlt: "LIT company intelligence — your freight prospecting workspace",
     headline: plan.headline,
+    subtitle: "Your freight intelligence workspace is live.",
     bodyHtml,
     bodyText,
     ctaText: plan.primaryCta,

@@ -54,6 +54,22 @@ async function fetchProfile(userId) {
   return data;
 }
 
+async function fetchSubscriptionStatus(userId) {
+  if (!userId) return null;
+  try {
+    const { data } = await supabase
+      .from('subscriptions')
+      .select('status')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.status ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchPlatformAdminStatus(userId) {
   if (!userId) return false;
 
@@ -158,6 +174,8 @@ export function AuthProvider({ children }) {
   const [membershipStatus, setMembershipStatus] = useState(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
+  const [subscriptionStatus, setSubscriptionStatus] = useState(null);
+
   const [authReady, setAuthReady] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [authError, setAuthError] = useState(null);
@@ -181,10 +199,11 @@ export function AuthProvider({ children }) {
       setAuthError(null);
 
       try {
-        const [profileData, platformAdmin, membership] = await Promise.all([
+        const [profileData, platformAdmin, membership, subStatus] = await Promise.all([
           fetchProfile(targetUserId),
           fetchPlatformAdminStatus(targetUserId),
           fetchPrimaryOrgMembership(targetUserId),
+          fetchSubscriptionStatus(targetUserId),
         ]);
 
         const resolvedOrgRole = membership?.orgRole || null;
@@ -202,6 +221,7 @@ export function AuthProvider({ children }) {
         setOrgRole(resolvedOrgRole);
         setMembershipStatus(membership?.membershipStatus || null);
         setIsSuperAdmin(Boolean(platformAdmin));
+        setSubscriptionStatus(subStatus);
 
         return profileData;
       } catch (error) {
@@ -215,6 +235,7 @@ export function AuthProvider({ children }) {
         setOrgRole(null);
         setMembershipStatus(null);
         setIsSuperAdmin(false);
+        setSubscriptionStatus(null);
 
         return null;
       } finally {
@@ -322,6 +343,7 @@ export function AuthProvider({ children }) {
     setOrgRole(null);
     setMembershipStatus(null);
     setIsSuperAdmin(false);
+    setSubscriptionStatus(null);
   }, []);
 
   const usage = useMemo(() => buildUsageFromProfile(profile), [profile]);
@@ -373,6 +395,7 @@ export function AuthProvider({ children }) {
       orgRole,
       orgId,
       membershipStatus,
+      subscriptionStatus,
     };
   }, [
     user,
@@ -390,6 +413,7 @@ export function AuthProvider({ children }) {
     orgRole,
     orgId,
     membershipStatus,
+    subscriptionStatus,
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

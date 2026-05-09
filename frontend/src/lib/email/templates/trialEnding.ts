@@ -61,9 +61,8 @@ Starter starts at $99/month and covers most solo prospecting workflows. Pro adds
 Not ready to commit? Reply and tell me what's holding you back — honest answers only, no sales pressure.`;
 
   const { html, text } = renderEmailLayout({
-    heroImageUrl: ctx.heroImageUrl,
-    heroAlt: "LIT company intelligence dashboard",
-    headline: "Your LIT trial is ending soon",
+    headline: "Your trial is ending soon.",
+    subtitle: "2 days left to keep your workspace.",
     bodyHtml,
     bodyText,
     ctaText: "Choose your plan",

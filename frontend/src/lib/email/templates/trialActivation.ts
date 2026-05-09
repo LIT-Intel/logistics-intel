@@ -75,13 +75,12 @@ Here's the workflow that gets to value fastest:
 That's it. Four steps, under 15 minutes. Most sales reps come away with at least one new prospect worth a real conversation.`;
 
   const { html, text } = renderEmailLayout({
-    heroImageUrl: ctx.heroImageUrl,
-    heroAlt: "LIT Pulse AI — buying signals and shipper intelligence",
-    headline: "The fastest way to test LIT",
+    headline: "Test LIT in 10 minutes.",
+    subtitle: "The workflow that gets to value fastest.",
     bodyHtml,
     bodyText,
-    ctaText: "Run a Pulse search",
-    ctaUrl: `${appUrl}/pulse`,
+    ctaText: "Open your dashboard",
+    ctaUrl: `${appUrl}/dashboard`,
     unsubscribeUrl: ctx.unsubscribeUrl,
     previewText,
   });

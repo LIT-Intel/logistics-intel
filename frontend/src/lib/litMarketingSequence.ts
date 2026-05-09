@@ -54,52 +54,102 @@ export interface LitMarketingTouch {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared HTML wrapper helpers
+// v7 design tokens — matches the deployed send-subscription-email layout.
+// These are USER-COMPOSED outbound emails, NOT LIT subscription emails.
+// The dark hero band uses {{sender_company_name}} as the wordmark so
+// recipients see the sender's company, not "Logistic Intel".
 // ─────────────────────────────────────────────────────────────────────────────
 
-function wrapWithImage(bodyHtml: string, imgPlaceholder: string, imgAlt: string): string {
-  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
-  <tr>
-    <td align="center" style="padding:24px 16px;">
-      <table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            ${bodyHtml}
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:24px 0 20px 0;">
-            <a href="https://www.logisticintel.com" target="_blank" style="text-decoration:none;">
-              <img src="${imgPlaceholder}" alt="${imgAlt}" width="600" style="width:100%;max-width:600px;height:auto;display:block;border:1px solid #E5E7EB;border-radius:14px;">
-            </a>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-top:22px;font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#64748B;">
-            Logistics Intel / LIT<br>
-            Shipment intelligence, contact discovery, and outreach for logistics sales teams
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`;
+const _MKT_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+const _MKT_LIT_ICON = "https://raw.githubusercontent.com/LIT-Intel/logistics-intel/main/frontend/public/icon_256.png";
+const _MKT_COLOR = {
+  text: "#0F172A", textSubtle: "#475569", textMuted: "#94A3B8",
+  divider: "#E2E8F0", ctaBg: "#2563EB", ctaBgDark: "#1E40AF", ctaText: "#FFFFFF",
+  bg: "#FFFFFF", pageBg: "#F1F5F9", heroBg: "#0A1024",
+  tipBg: "#EFF6FF", tipBorder: "#DBEAFE", tipLabel: "#1E40AF",
+};
+
+/**
+ * v7 layout for outbound marketing emails.
+ *
+ * The hero band displays `{{sender_company_name}}` as the wordmark so
+ * recipients see the sender's brand, not Logistic Intel. The LIT icon
+ * is included as a small badge (38×38) — reps can swap it out in the
+ * campaign builder by editing the HTML.
+ *
+ * Parameters:
+ *   bodyHtml   — pre-built HTML body content (paragraphs, lists, etc.)
+ *   ctaText    — button label
+ *   ctaUrl     — button URL (send-time token OK, e.g. "https://www.logisticintel.com")
+ *   previewText — inbox preview snippet (100 chars max)
+ *   subjectLine — used for <title> only
+ *   showProTip — wrap the last paragraph in the Pro Tip tinted card
+ */
+function wrapV7(opts: {
+  bodyHtml: string;
+  ctaText: string;
+  ctaUrl: string;
+  previewText: string;
+  subjectLine: string;
+  proTipHtml?: string;
+}): string {
+  const { bodyHtml, ctaText, ctaUrl, previewText, subjectLine, proTipHtml } = opts;
+
+  const previewBlock = `<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#FFFFFF;mso-hide:all;">${previewText}${"&nbsp;&#847;".repeat(60)}</div>`;
+
+  const heroBlock = `<tr><td bgcolor="${_MKT_COLOR.heroBg}" style="background-color:${_MKT_COLOR.heroBg};padding:28px 40px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr><td valign="middle" style="padding-right:12px;"><img src="${_MKT_LIT_ICON}" width="38" height="38" alt="" style="display:block;width:38px;height:38px;border-radius:8px;border:0;outline:none;" /></td><td valign="middle" style="font-family:${_MKT_FONT};font-size:20px;font-weight:700;color:#FFFFFF;letter-spacing:-0.01em;line-height:1;">{{sender_company_name}}</td></tr></table></td></tr>`;
+
+  const proTipBlock = proTipHtml
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate;margin:20px 0 0 0;width:100%;"><tr><td bgcolor="${_MKT_COLOR.tipBg}" style="background-color:${_MKT_COLOR.tipBg};border:1px solid ${_MKT_COLOR.tipBorder};border-radius:12px;padding:16px 20px;"><div style="font-family:${_MKT_FONT};font-size:11px;font-weight:700;color:${_MKT_COLOR.tipLabel};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Pro tip</div><div style="font-family:${_MKT_FONT};font-size:15px;line-height:1.55;color:${_MKT_COLOR.text};">${proTipHtml}</div></td></tr></table>`
+    : "";
+
+  const ctaBlock = `<tr><td style="padding:8px 40px 36px 40px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td bgcolor="${_MKT_COLOR.ctaBg}" valign="middle" style="background-color:${_MKT_COLOR.ctaBg};border-radius:10px;mso-padding-alt:14px 28px;border-bottom:2px solid ${_MKT_COLOR.ctaBgDark};"><a href="${ctaUrl}" target="_blank" style="display:inline-block;padding:14px 28px;font-family:${_MKT_FONT};font-size:15px;font-weight:600;color:${_MKT_COLOR.ctaText};text-decoration:none;border-radius:10px;letter-spacing:0.01em;line-height:1;">${ctaText} →</a></td></tr></table></td></tr>`;
+
+  return `<!DOCTYPE html><html lang="en" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="color-scheme" content="light only" /><meta name="supported-color-schemes" content="light only" /><title>${subjectLine}</title><!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]--></head><body style="margin:0;padding:0;background-color:${_MKT_COLOR.pageBg};color:${_MKT_COLOR.text};font-family:${_MKT_FONT};-webkit-font-smoothing:antialiased;">${previewBlock}<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="${_MKT_COLOR.pageBg}" style="background-color:${_MKT_COLOR.pageBg};border-collapse:collapse;"><tr><td align="center" valign="top" style="padding:40px 16px 56px 16px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" bgcolor="${_MKT_COLOR.bg}" style="max-width:600px;width:100%;background-color:${_MKT_COLOR.bg};border-radius:18px;border-collapse:separate;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.04),0 8px 24px rgba(15,23,42,0.06);">${heroBlock}<tr><td style="padding:28px 40px 8px 40px;font-family:${_MKT_FONT};font-size:16px;line-height:1.65;color:${_MKT_COLOR.text};text-align:left;">${bodyHtml}${proTipBlock}</td></tr>${ctaBlock}<tr><td style="padding:0 40px;"><div style="height:1px;background-color:${_MKT_COLOR.divider};font-size:0;line-height:0;">&nbsp;</div></td></tr><tr><td style="padding:20px 40px 28px 40px;font-family:${_MKT_FONT};font-size:13px;line-height:1.65;color:${_MKT_COLOR.textMuted};text-align:left;">{{sender_name}} · {{sender_company_name}}<br/>You received this because we thought our service might be a fit for {{company_name}}.</td></tr></table></td></tr></table></body></html>`;
 }
 
-function wrapPlainText(bodyHtml: string): string {
-  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
-  <tr>
-    <td align="center" style="padding:24px 16px;">
-      <table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            ${bodyHtml}
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`;
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared HTML wrapper helpers (v7 — replaces old wrapWithImage / wrapPlainText)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Touch email with v7 layout. The old `imgPlaceholder` parameter is
+ * removed — SVG hero images are replaced by the dark slate hero band.
+ * The `proTipHtml` parameter optionally renders a tinted Pro Tip card
+ * below the body paragraphs (used on touches 1, 3, 7).
+ * The `ctaText`/`ctaUrl` parameters are optional overrides — defaults
+ * to "Request a quick look" linking to logisticintel.com.
+ */
+function wrapWithImage(
+  bodyHtml: string,
+  _imgPlaceholder: string,
+  _imgAlt: string,
+  proTipHtml?: string,
+  ctaText?: string,
+  ctaUrl?: string,
+): string {
+  // imgPlaceholder / imgAlt parameters are kept in the signature for
+  // backward compatibility with the existing call sites but are no
+  // longer rendered — the v7 hero band replaces the SVG asset.
+  return wrapV7({
+    bodyHtml,
+    ctaText: ctaText ?? "Request a quick look",
+    ctaUrl: ctaUrl ?? "https://www.logisticintel.com",
+    previewText: "",
+    subjectLine: "",
+    proTipHtml,
+  });
+}
+
+function wrapPlainText(bodyHtml: string, proTipHtml?: string, ctaText?: string, ctaUrl?: string): string {
+  return wrapV7({
+    bodyHtml,
+    ctaText: ctaText ?? "See how it works",
+    ctaUrl: ctaUrl ?? "https://www.logisticintel.com",
+    previewText: "",
+    subjectLine: "",
+    proTipHtml,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -134,6 +184,7 @@ Would it be worth a quick look at how this works on a few lanes your team alread
 Best,<br>{{sender_name}}`,
       "{{company_intelligence_public_url}}",
       "LIT Company Intelligence — active shipper profile",
+      `The reps who book the most freight don't open with "any capacity?" — they open with a specific signal. "I saw your volume on {{top_lane}} shifted last quarter. We handle that lane." That's the conversation LIT makes possible.`,
     ),
   },
 
@@ -169,6 +220,7 @@ Logistic Intel was built specifically for logistics sales teams. Reps can identi
 That means fewer cold emails that sound like every other broker and more conversations based on real supply chain activity.<br><br>
 Open to seeing what this would show for your target lanes?<br><br>
 Best,<br>{{sender_name}}`,
+      `Freight sales timing matters more than list size. One rep who knows <em>when</em> a shipper is reviewing capacity beats ten reps who are guessing.`,
     ),
   },
 
@@ -253,6 +305,7 @@ Could I show you what this looks like for {{top_lane}} shippers?<br><br>
 Best,<br>{{sender_name}}`,
       "{{pulse_workflow_public_url}}",
       "LIT workflow: Search, Trade Picture, Contacts, Outreach, CRM handoff",
+      `Most reps open with "do you have any freight?" Top reps open with "I see you moved X containers on {{top_lane}} last quarter — here's what we can do with that." That second conversation starts differently.`,
     ),
   },
 

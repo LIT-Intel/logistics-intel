@@ -61,14 +61,12 @@ The quickest way to see value: pick a trade lane your team already works, run a 
 P.S. Need help? Just reply to this email — we read every one.`;
 
   const { html, text } = renderEmailLayout({
-    heroImageUrl: ctx.heroImageUrl,
-    heroAlt: "LIT company intelligence — shipment history and lane signals",
     headline: plan.headline,
+    subtitle: "Your trial is live for 14 days.",
     bodyHtml,
     bodyText,
     ctaText: plan.primaryCta,
     ctaUrl: `${appUrl}${plan.primaryPath}`,
-    footerNote: undefined,
     unsubscribeUrl: ctx.unsubscribeUrl,
     previewText,
   });

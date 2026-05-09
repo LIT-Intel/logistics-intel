@@ -49,15 +49,13 @@ If you're stuck or LIT isn't clicking, just hit reply. I read every one and I'm 
 Founder, Logistic Intel`;
 
   const { html, text } = renderEmailLayout({
-    // No heroImageUrl — plainTextOnly suppresses the hero block
-    heroImageUrl: undefined,
     headline: "How I'd use LIT if I were you",
     bodyHtml,
     bodyText,
     ctaText: "Open Pulse",
     ctaUrl: `${appUrl}/pulse`,
     unsubscribeUrl: ctx.unsubscribeUrl,
-    plainTextOnly: true,
+    showHeroBanner: false,
     previewText,
   });
 

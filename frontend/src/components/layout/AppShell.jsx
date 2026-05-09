@@ -21,6 +21,7 @@ import {
 import { useAuth } from "@/auth/AuthProvider";
 import { canAccessFeature } from "@/lib/planLimits";
 import { logout } from "@/auth/supabaseAuthClient";
+import { LockoutBanner } from "@/components/subscription/LockoutBanner";
 
 function SideLink({ to, icon: Icon, label, locked = false, onClick = null }) {
   const baseClass =
@@ -117,6 +118,7 @@ export default function AppShell({ currentPageName, children }) {
     canAccessAdmin,
     isOrgAdmin,
     isSuperAdmin,
+    subscriptionStatus,
   } = useAuth();
 
   const displayName = useMemo(() => getDisplayName(user, fullName), [user, fullName]);
@@ -281,6 +283,7 @@ export default function AppShell({ currentPageName, children }) {
         </aside>
 
         <main className="flex-1 min-w-0 flex flex-col">
+          <LockoutBanner subscriptionStatus={subscriptionStatus} billingPath="/app/billing" />
           <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 h-14 flex items-center justify-between px-4">
             <div className="flex items-center gap-3 min-w-0">
               <button

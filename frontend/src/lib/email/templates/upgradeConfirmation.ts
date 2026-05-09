@@ -63,9 +63,8 @@ Your existing data — saved companies, Pulse lists, contacts, and campaign hist
 If anything isn't working as expected, reply here and we'll sort it out.`;
 
   const { html, text } = renderEmailLayout({
-    heroImageUrl: ctx.heroImageUrl,
-    heroAlt: "LIT Pulse AI — upgraded shipper intelligence",
-    headline: `Your plan has been upgraded to ${plan.name}`,
+    headline: `You're now on ${plan.name}.`,
+    subtitle: "New features and limits are live.",
     bodyHtml,
     bodyText,
     ctaText: "Explore your new features",
