@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/components/auth/AuthProvider";
 import type {
   OutreachTemplate,
   Persona,
@@ -73,18 +74,17 @@ export function useTemplates(): {
 } {
   const [state, setState] = useState<TemplatesState | null>(null);
   const [loading, setLoading] = useState(true);
+  const { isSuperAdmin } = useAuth();
 
   const refresh = useCallback(async () => {
     setLoading(true);
     // LIT Marketing campaigns (4-touch broker + 4-touch forwarder
-    // sequences) live as pre-resolved OutreachTemplate rows so the
-    // existing picker + apply path renders them without any new UI.
-    // Resolving the asset URLs HERE means the composer's body surface
-    // is already final HTML — no {{*_public_url}} placeholders ever
-    // reach lit_campaign_steps.body or the dispatcher.
-    const litMarketingRows: OutreachTemplate[] = LIT_MARKETING_TEMPLATES.map(
-      (t) => asOutreachFromLitMarketing(t),
-    );
+    // sequences) pitch LIT itself — they are reserved for the founder
+    // org's own outbound and must never be exposed to subscribers.
+    // Surface them only when the viewer is a super-admin.
+    const litMarketingRows: OutreachTemplate[] = isSuperAdmin
+      ? LIT_MARKETING_TEMPLATES.map((t) => asOutreachFromLitMarketing(t))
+      : [];
     const starterRows = [
       ...litMarketingRows,
       ...(STARTER_TEMPLATES as OutreachTemplate[]),
@@ -136,7 +136,7 @@ export function useTemplates(): {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     void refresh();

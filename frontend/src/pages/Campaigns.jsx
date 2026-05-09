@@ -17,6 +17,7 @@ import { CampaignRow } from "@/features/outbound/components/CampaignRow";
 import { CoachCard } from "@/features/outbound/components/CoachCard";
 import { ConfirmDialog } from "@/features/outbound/components/ConfirmDialog";
 import { STARTER_PLAYS } from "@/features/outbound/data/plays";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { fontDisplay, fontBody } from "@/features/outbound/tokens";
 import {
   archiveCampaign,
@@ -235,7 +236,20 @@ function EmptyCampaigns({ onNewCampaign }) {
 export default function CampaignsPage() {
   const navigate = useNavigate();
   const { campaigns, loading, error, refresh } = useCampaigns();
+  const { isSuperAdmin } = useAuth();
   const [filter, setFilter] = useState("all");
+
+  // The LIT Marketing 14-touch sequence is internal — it pitches LIT itself
+  // and is reserved for the founder org's own outbound. Subscribers must
+  // never see it as a play option (or as a template; gated separately in
+  // useTemplates).
+  const visiblePlays = useMemo(
+    () =>
+      isSuperAdmin
+        ? STARTER_PLAYS
+        : STARTER_PLAYS.filter((p) => p.id !== "lit-marketing-14"),
+    [isSuperAdmin],
+  );
   const [pendingAction, setPendingAction] = useState(null); // { type, campaign }
   const [actionBusy, setActionBusy] = useState(false);
   const [toast, setToast] = useState(null);
@@ -354,7 +368,7 @@ export default function CampaignsPage() {
                 subtitle="Industry-aware sequences. Pick one to seed a new campaign."
               />
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {STARTER_PLAYS.map((p) => (
+                {visiblePlays.map((p) => (
                   <PlayCard
                     key={p.id}
                     play={p}
