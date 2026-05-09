@@ -17,7 +17,7 @@ import { CampaignRow } from "@/features/outbound/components/CampaignRow";
 import { CoachCard } from "@/features/outbound/components/CoachCard";
 import { ConfirmDialog } from "@/features/outbound/components/ConfirmDialog";
 import { STARTER_PLAYS } from "@/features/outbound/data/plays";
-import { useAuth } from "@/components/auth/AuthProvider";
+import { useAuth } from "@/auth/AuthProvider";
 import { fontDisplay, fontBody } from "@/features/outbound/tokens";
 import {
   archiveCampaign,

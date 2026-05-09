@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { useAuth } from "@/components/auth/AuthProvider";
+import { useAuth } from "@/auth/AuthProvider";
 import type {
   OutreachTemplate,
   Persona,
