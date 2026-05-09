@@ -20,6 +20,34 @@
 // Send-time tokens pass through resolveEmailTemplateHtml unchanged.
 
 import { EMAIL_ASSETS, type EmailAssetKey } from "./emailAssets";
+import { wrapV7 } from "./litMarketingSequence";
+
+// v7 design: dark slate hero band with LIT icon + sender_company_name
+// wordmark, sans-serif body, brand-blue CTA button with depth border,
+// optional Pro Tip tinted card. Replaces the old Georgia-serif +
+// inline-SVG layout. Same wrapper used by the 14-touch sequence so
+// every LIT-facing outbound email looks identical.
+//
+// Authoring note: pass in `bodyHtml` already shaped with <p>/<br> tags
+// for paragraph breaks, plus optional `proTipHtml` for the tinted
+// card. wrapV7 handles the hero, CTA, divider, and footer.
+function wrapBrokerEmail(
+  bodyHtml: string,
+  subject: string,
+  previewText: string,
+  proTipHtml?: string,
+  ctaText: string = "See a sample shipper profile",
+  ctaUrl: string = "https://www.logisticintel.com",
+): string {
+  return wrapV7({
+    bodyHtml,
+    ctaText,
+    ctaUrl,
+    previewText,
+    subjectLine: subject,
+    proTipHtml,
+  });
+}
 
 export type CampaignAudience = "freight_broker" | "small_forwarder";
 
@@ -55,43 +83,18 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
       "A better way to find active shippers using real shipment signals.",
     imageAssetKey: "company_intelligence",
     tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
-    description: "Founder-style intro with the Company Intelligence visual.",
-    html: `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
-  <tr>
-    <td align="center" style="padding:24px 16px;">
-      <table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            Hi {{first_name}},<br><br>
-            I built LIT because freight sales teams are still stuck jumping between shipment data, spreadsheets, CRMs, and contact tools just to figure out who is actually worth calling.<br><br>
-            LIT helps brokers find active shippers, understand trade activity, identify the right contacts, and start outreach from one workspace.
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:24px 0 20px 0;">
-            <a href="https://www.logisticintel.com" target="_blank" style="text-decoration:none;">
-              <img src="{{company_intelligence_public_url}}" alt="LIT Company Intelligence account profile" width="600" style="width:100%;max-width:600px;height:auto;display:block;border:1px solid #E5E7EB;border-radius:14px;">
-            </a>
-          </td>
-        </tr>
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            The goal is simple: help brokers spend less time guessing and more time targeting companies with real freight movement.<br><br>
-            If helpful, I can send over a sample shipper profile so you can see what it looks like.<br><br>
-            — {{sender_name}}
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-top:22px;font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#64748B;">
-            Logistics Intel / LIT<br>
-            Freight revenue intelligence for logistics sales teams
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`,
+    description: "Founder-style intro framed around freight signals.",
+    html: wrapBrokerEmail(
+      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
+<p style="margin:0 0 16px 0;">I built LIT because freight sales teams are still stuck jumping between shipment data, spreadsheets, CRMs, and contact tools just to figure out who's actually worth calling.</p>
+<p style="margin:0 0 16px 0;">LIT helps brokers find active shippers, understand trade activity, identify the right contacts, and start outreach from one workspace — using live shipment signals, not guesses.</p>
+<p style="margin:0 0 16px 0;">The goal is simple: help your team spend less time qualifying and more time selling into accounts with real freight movement.</p>
+<p style="margin:0 0 16px 0;">Happy to send over a sample shipper profile so you can see what it looks like for {{company_name}}.</p>
+<p style="margin:0;">— {{sender_name}}</p>`,
+      "Built this for freight sales teams",
+      "A better way to find active shippers using real shipment signals.",
+      `Reps who book the most freight don't ask "any capacity?" — they open with a specific signal: "I noticed your volume on this lane shifted last quarter." That's the conversation LIT makes possible.`,
+    ),
   },
   {
     id: "lit_marketing_broker_2_manual_pain",
@@ -102,29 +105,21 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
     previewText:
       "Who is shipping right now, and is there a real reason to reach out?",
     tokensUsed: ["{{first_name}}", "{{sender_name}}"],
-    description: "Plain-text follow-up — names the prospecting pain.",
-    html: `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
-  <tr>
-    <td align="center" style="padding:24px 16px;">
-      <table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            Hi {{first_name}},<br><br>
-            One of the reasons we built LIT is because freight prospecting still feels way too manual.<br><br>
-            Brokers are jumping between shipment databases, Google searches, spreadsheets, CRMs, contact tools, and campaign platforms just to answer a basic question:<br><br>
-            <strong>Who is shipping right now, and is there a real reason to reach out?</strong><br><br>
-            LIT is built to make that answer easier.<br><br>
-            You can look up a company, see shipment activity, understand top lanes, spot account-level signals, find contacts, and start outreach from the same workspace.<br><br>
-            It is not meant to replace the sales process. It is meant to give your team a better starting point.<br><br>
-            Worth a quick look?<br><br>
-            — {{sender_name}}
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`,
+    description: "Follow-up — names the prospecting pain.",
+    html: wrapBrokerEmail(
+      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
+<p style="margin:0 0 16px 0;">One of the reasons we built LIT is that freight prospecting still feels way too manual.</p>
+<p style="margin:0 0 16px 0;">Brokers are jumping between shipment databases, Google searches, spreadsheets, CRMs, contact tools, and campaign platforms — all to answer one basic question:</p>
+<p style="margin:0 0 16px 0;font-weight:600;">Who is shipping right now, and is there a real reason to reach out?</p>
+<p style="margin:0 0 16px 0;">LIT is built to make that answer fast. Look up a company, see shipment activity, understand top lanes, spot account-level signals, find contacts, and start outreach from the same workspace.</p>
+<p style="margin:0 0 16px 0;">It's not meant to replace the sales process. It's meant to give your team a better starting point.</p>
+<p style="margin:0 0 16px 0;">Worth a quick look on a few lanes {{company_name}} already sells?</p>
+<p style="margin:0;">— {{sender_name}}</p>`,
+      "Freight prospecting is too manual",
+      "Who is shipping right now, and is there a real reason to reach out?",
+      `Freight sales timing matters more than list size. One rep who knows <em>when</em> a shipper is reviewing capacity beats ten reps who are guessing.`,
+      "See it on your target lanes",
+    ),
   },
   {
     id: "lit_marketing_broker_3_contact_discovery",
@@ -136,43 +131,18 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
     imageAssetKey: "contact_discovery",
     tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
     description: "Frames Contact Discovery as the answer to who to call.",
-    html: `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
-  <tr>
-    <td align="center" style="padding:24px 16px;">
-      <table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            Hi {{first_name}},<br><br>
-            One thing we wanted to avoid with LIT was giving brokers another giant list of generic contacts.<br><br>
-            A good freight sales workflow needs context first: who is actually shipping, what lanes they use, and which people are likely connected to logistics, transportation, procurement, or supply chain.
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:24px 0 20px 0;">
-            <a href="https://www.logisticintel.com" target="_blank" style="text-decoration:none;">
-              <img src="{{contact_discovery_public_url}}" alt="LIT Contact Discovery for freight sales teams" width="600" style="width:100%;max-width:600px;height:auto;display:block;border:1px solid #E5E7EB;border-radius:14px;">
-            </a>
-          </td>
-        </tr>
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            That is why LIT connects company intelligence with contact discovery, so your team is not just chasing names. They are working from actual freight signals.<br><br>
-            If {{company_name}} is focused on shipper growth, I think this could be useful.<br><br>
-            Want me to send over a sample account profile?<br><br>
-            — {{sender_name}}
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-top:22px;font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#64748B;">
-            Logistics Intel / LIT<br>
-            Find active shippers. Understand trade activity. Launch outreach.
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`,
+    html: wrapBrokerEmail(
+      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
+<p style="margin:0 0 16px 0;">One thing we wanted to avoid with LIT was giving brokers another giant list of generic contacts.</p>
+<p style="margin:0 0 16px 0;">A good freight sales workflow needs context first: who is actually shipping, what lanes they use, and which people are likely connected to logistics, transportation, procurement, or supply chain.</p>
+<p style="margin:0 0 16px 0;">That's why LIT connects company intelligence with contact discovery — so your team isn't just chasing names, they're working from actual freight signals.</p>
+<p style="margin:0 0 16px 0;">If {{company_name}} is focused on shipper growth, this could be useful. Want me to send over a sample account profile?</p>
+<p style="margin:0;">— {{sender_name}}</p>`,
+      "Not just any contacts",
+      "Find the contacts behind the freight activity.",
+      `The right title with no shipment context is still a cold call. The right title <em>plus</em> "your volume on this lane changed in Q3" is a meeting.`,
+      "Send me a sample profile",
+    ),
   },
   {
     id: "lit_marketing_broker_4_breakup",
@@ -182,27 +152,19 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
     subject: "Should I close the loop?",
     previewText: "Last note on LIT for freight prospecting.",
     tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
-    description: "Plain-text breakup email.",
-    html: `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
-  <tr>
-    <td align="center" style="padding:24px 16px;">
-      <table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            Hi {{first_name}},<br><br>
-            I don't want to keep chasing you if this is not relevant, so I'll close the loop after this.<br><br>
-            We built LIT for freight teams that want a cleaner way to find active shippers, understand what they move, identify the right contacts, and turn that into outreach without bouncing between five different tools.<br><br>
-            If shipper prospecting is already handled well at {{company_name}}, no worries at all.<br><br>
-            But if your team is still relying on static lists, generic lead databases, or manual research, I think this could be useful.<br><br>
-            Should I send you a quick example of what a shipper profile looks like in LIT?<br><br>
-            — {{sender_name}}
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`,
+    description: "Breakup email — leaves the door open without pressure.",
+    html: wrapBrokerEmail(
+      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
+<p style="margin:0 0 16px 0;">I don't want to keep chasing you if this isn't relevant, so I'll close the loop after this.</p>
+<p style="margin:0 0 16px 0;">We built LIT for freight teams that want a cleaner way to find active shippers, understand what they move, identify the right contacts, and turn that into outreach — without bouncing between five tools.</p>
+<p style="margin:0 0 16px 0;">If shipper prospecting is already handled well at {{company_name}}, no worries.</p>
+<p style="margin:0 0 16px 0;">But if your team is still working from static lists, generic lead databases, or manual research, this could be useful. Want a quick example of what a shipper profile looks like in LIT?</p>
+<p style="margin:0;">— {{sender_name}}</p>`,
+      "Should I close the loop?",
+      "Last note on LIT for freight prospecting.",
+      undefined,
+      "Yes, send a sample",
+    ),
   },
 ];
 
@@ -220,44 +182,19 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
     previewText: "Shipment intelligence for smaller forwarders.",
     imageAssetKey: "company_intelligence",
     tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
-    description: "Founder-style intro with the Company Intelligence visual.",
-    html: `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
-  <tr>
-    <td align="center" style="padding:24px 16px;">
-      <table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            Hi {{first_name}},<br><br>
-            I built LIT because smaller freight forwarders need a better way to find and understand potential customers without adding more manual research to the sales process.<br><br>
-            Most teams do not have endless time to dig through shipment records, contact databases, spreadsheets, and CRMs just to figure out which accounts are worth pursuing.
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:24px 0 20px 0;">
-            <a href="https://www.logisticintel.com" target="_blank" style="text-decoration:none;">
-              <img src="{{company_intelligence_public_url}}" alt="LIT Company Intelligence account profile for freight forwarders" width="600" style="width:100%;max-width:600px;height:auto;display:block;border:1px solid #E5E7EB;border-radius:14px;">
-            </a>
-          </td>
-        </tr>
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            LIT helps forwarders see who is actively shipping, what lanes they use, how often they move freight, and who may be worth contacting.<br><br>
-            I thought {{company_name}} might find it useful as a way to build more targeted sales opportunities from real shipment activity.<br><br>
-            Want me to send over a sample profile?<br><br>
-            — {{sender_name}}
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-top:22px;font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#64748B;">
-            Logistics Intel / LIT<br>
-            Freight revenue intelligence for logistics sales teams
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`,
+    description: "Founder-style intro for forwarders.",
+    html: wrapBrokerEmail(
+      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
+<p style="margin:0 0 16px 0;">I built LIT because smaller freight forwarders need a better way to find and understand potential customers — without adding more manual research to the sales process.</p>
+<p style="margin:0 0 16px 0;">Most forwarder teams don't have endless time to dig through shipment records, contact databases, spreadsheets, and CRMs just to figure out which accounts are worth pursuing.</p>
+<p style="margin:0 0 16px 0;">LIT helps forwarders see who's actively shipping, what lanes they use, how often they move freight, and who may be worth contacting — all in one workspace.</p>
+<p style="margin:0 0 16px 0;">{{company_name}} might find it useful as a way to build more targeted sales opportunities from real shipment activity. Want me to send over a sample profile?</p>
+<p style="margin:0;">— {{sender_name}}</p>`,
+      "Built this for forwarder sales teams",
+      "Shipment intelligence built for smaller forwarders.",
+      `Smaller forwarder teams win when they pick the right 50 accounts and pursue them with context — not when they email 5,000 names with no signal. LIT is built to make picking those 50 fast.`,
+      "See a sample shipper profile",
+    ),
   },
   {
     id: "lit_marketing_forwarder_2_better_signals",
@@ -267,28 +204,20 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
     subject: "Forwarders need better signals",
     previewText: "Start sales conversations from actual shipment activity.",
     tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
-    description: "Plain-text follow-up on why shipment activity matters.",
-    html: `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
-  <tr>
-    <td align="center" style="padding:24px 16px;">
-      <table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            Hi {{first_name}},<br><br>
-            A lot of freight sales still starts with a weak signal: a company list, a cold contact, or a guess that someone might ship.<br><br>
-            We built LIT around a better signal: actual shipment activity.<br><br>
-            For forwarders, that means you can look at companies by trade activity, top lanes, shipment volume, mode indicators, and account-level patterns before deciding who to pursue.<br><br>
-            The goal is not to make sales robotic. It is to help your team start better conversations with better context.<br><br>
-            If {{company_name}} is trying to grow import or export accounts, LIT can help identify companies that are already moving freight and give your team a real reason to reach out.<br><br>
-            Want me to share what that looks like?<br><br>
-            — {{sender_name}}
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`,
+    description: "Follow-up on why shipment activity matters as a sales signal.",
+    html: wrapBrokerEmail(
+      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
+<p style="margin:0 0 16px 0;">A lot of freight sales still starts with a weak signal: a company list, a cold contact, or a guess that someone might ship.</p>
+<p style="margin:0 0 16px 0;">We built LIT around a stronger signal: actual shipment activity.</p>
+<p style="margin:0 0 16px 0;">For forwarders, that means looking at companies by trade activity, top lanes, shipment volume, mode indicators, and account-level patterns before deciding who to pursue.</p>
+<p style="margin:0 0 16px 0;">The goal isn't to make sales robotic — it's to help your team start better conversations with better context.</p>
+<p style="margin:0 0 16px 0;">If {{company_name}} is growing import or export accounts, LIT can identify companies already moving freight and give your team a real reason to reach out. Want me to show you?</p>
+<p style="margin:0;">— {{sender_name}}</p>`,
+      "Forwarders need better signals",
+      "Start sales conversations from actual shipment activity.",
+      `"Hope you're well, just checking in" reads the same to every shipper. "I noticed your import volume to LAX shifted in Q2" reads only to the one that's actually relevant. That's the difference shipment data makes.`,
+      "Show me what it looks like",
+    ),
   },
   {
     id: "lit_marketing_forwarder_3_pulse_ai",
@@ -299,44 +228,19 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
     previewText: "Pulse AI turns shipment activity into account briefs.",
     imageAssetKey: "pulse_ai",
     tokensUsed: ["{{first_name}}", "{{sender_name}}"],
-    description: "Frames Pulse AI as a research/time-saving tool.",
-    html: `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
-  <tr>
-    <td align="center" style="padding:24px 16px;">
-      <table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            Hi {{first_name}},<br><br>
-            One of the hardest parts of forwarder sales is doing enough research to make the outreach relevant, without spending 30 minutes on every account.<br><br>
-            That is why we added Pulse AI inside LIT.
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:24px 0 20px 0;">
-            <a href="https://www.logisticintel.com" target="_blank" style="text-decoration:none;">
-              <img src="{{pulse_ai_public_url}}" alt="LIT Pulse AI account intelligence brief" width="600" style="width:100%;max-width:600px;height:auto;display:block;border:1px solid #E5E7EB;border-radius:14px;">
-            </a>
-          </td>
-        </tr>
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            Pulse turns shipment activity into a quick account brief: what changed, where the opportunity might be, what risk signals are visible, and what kind of outreach angle may actually make sense.<br><br>
-            For smaller teams, the value is simple: less account research from scratch, more focused conversations.<br><br>
-            Want me to send a sample account brief?<br><br>
-            — {{sender_name}}
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-top:22px;font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#64748B;">
-            Logistics Intel / LIT<br>
-            Shipment intelligence, contact discovery, and outreach in one freight-focused workspace
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`,
+    description: "Frames Pulse AI as a research / time-saving tool.",
+    html: wrapBrokerEmail(
+      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
+<p style="margin:0 0 16px 0;">One of the hardest parts of forwarder sales is doing enough research to make the outreach relevant — without spending 30 minutes on every account.</p>
+<p style="margin:0 0 16px 0;">That's why we built Pulse AI inside LIT.</p>
+<p style="margin:0 0 16px 0;">Pulse turns shipment activity into a quick account brief: what changed, where the opportunity is, what risk signals are visible, and what outreach angle may actually make sense.</p>
+<p style="margin:0 0 16px 0;">For smaller teams, the value is simple: less account research from scratch, more focused conversations. Want me to send a sample brief?</p>
+<p style="margin:0;">— {{sender_name}}</p>`,
+      "The first 30 seconds of account research",
+      "Pulse AI turns shipment activity into account briefs.",
+      `Pulse AI is what reps use right before a call — 30 seconds in, you know cadence, top lanes, recent shifts, and what to lead with. The point isn't more data; it's the right data, fast.`,
+      "Send me a sample brief",
+    ),
   },
   {
     id: "lit_marketing_forwarder_4_breakup",
@@ -346,27 +250,19 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
     subject: "Useful or not a fit?",
     previewText: "Last note on LIT for forwarder prospecting.",
     tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
-    description: "Plain-text breakup email.",
-    html: `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
-  <tr>
-    <td align="center" style="padding:24px 16px;">
-      <table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
-        <tr>
-          <td style="font-family:Georgia,serif;font-size:18px;line-height:1.55;color:#0F172A;">
-            Hi {{first_name}},<br><br>
-            Last note from me here.<br><br>
-            LIT may not be for every forwarder. If your team already has a strong way to find active shippers, research accounts, enrich contacts, and manage outreach, then this probably is not urgent.<br><br>
-            But if prospecting still involves manual research, spreadsheets, disconnected tools, or generic lead lists, I think LIT could help.<br><br>
-            We built it to help forwarders turn shipment data into real sales opportunities, not just more records to sort through.<br><br>
-            Should I send you a sample account profile so you can decide if it is worth a closer look?<br><br>
-            — {{sender_name}}
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`,
+    description: "Breakup email — closes the loop with a clean ask.",
+    html: wrapBrokerEmail(
+      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
+<p style="margin:0 0 16px 0;">Last note from me.</p>
+<p style="margin:0 0 16px 0;">LIT isn't for every forwarder. If your team already has a strong way to find active shippers, research accounts, enrich contacts, and manage outreach, this probably isn't urgent.</p>
+<p style="margin:0 0 16px 0;">But if prospecting still involves manual research, spreadsheets, disconnected tools, or generic lead lists — I think LIT could help.</p>
+<p style="margin:0 0 16px 0;">We built it to help forwarders turn shipment data into real sales opportunities, not just more records to sort through. Want a sample account profile so you can decide?</p>
+<p style="margin:0;">— {{sender_name}}</p>`,
+      "Useful or not a fit?",
+      "Last note on LIT for forwarder prospecting.",
+      undefined,
+      "Send the sample profile",
+    ),
   },
 ];
 

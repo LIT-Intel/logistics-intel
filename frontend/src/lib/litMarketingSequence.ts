@@ -85,7 +85,7 @@ const _MKT_COLOR = {
  *   subjectLine — used for <title> only
  *   showProTip — wrap the last paragraph in the Pro Tip tinted card
  */
-function wrapV7(opts: {
+export function wrapV7(opts: {
   bodyHtml: string;
   ctaText: string;
   ctaUrl: string;
