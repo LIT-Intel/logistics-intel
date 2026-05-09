@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="LIT Pulse AI — why now, buying signals, and similar companies brief card">
+  <defs>
+    <linearGradient id="pa-bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#F0FDFA"/>
+      <stop offset="100%" stop-color="#F8FAFC"/>
+    </linearGradient>
+    <linearGradient id="pa-header" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#134E4A"/>
+    </linearGradient>
+    <linearGradient id="pa-card" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="pa-cyan" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Page background -->
+  <rect width="1200" height="630" fill="url(#pa-bg)"/>
+
+  <!-- Card frame -->
+  <rect x="36" y="32" width="1128" height="566" rx="18" fill="#FFFFFF" stroke="#CCFBF1" stroke-width="1.5"/>
+
+  <!-- Header strip -->
+  <rect x="36" y="32" width="1128" height="92" rx="18" fill="url(#pa-header)"/>
+  <rect x="36" y="104" width="1128" height="20" fill="#134E4A"/>
+
+  <!-- Pulse AI label -->
+  <rect x="68" y="54" width="80" height="26" rx="13" fill="#06B6D4"/>
+  <text x="108" y="71" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="12">Pulse AI</text>
+
+  <!-- Title -->
+  <text x="164" y="70" fill="#FFFFFF" font-family="Georgia,serif" font-weight="700" font-size="18">AI Brief — Coyote Logistics</text>
+  <text x="164" y="92" fill="#99F6E4" font-family="Arial,sans-serif" font-size="12">Generated 2 min ago · 3rd party logistics · Chicago, IL</text>
+
+  <!-- "Why Now" card -->
+  <rect x="60" y="148" width="340" height="410" rx="12" fill="url(#pa-card)" stroke="#1E293B" stroke-width="1"/>
+  <rect x="60" y="148" width="340" height="3" rx="2" fill="url(#pa-cyan)"/>
+  <text x="80" y="178" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="13">Why Now</text>
+  <rect x="80" y="188" width="300" height="1" fill="#334155"/>
+
+  <!-- Why now bullets -->
+  <circle cx="90" cy="210" r="4" fill="#06B6D4"/>
+  <text x="103" y="214" fill="#E2E8F0" font-family="Arial,sans-serif" font-size="11">Volume up 22% vs prior 6 months</text>
+  <circle cx="90" cy="234" r="4" fill="#06B6D4"/>
+  <text x="103" y="238" fill="#E2E8F0" font-family="Arial,sans-serif" font-size="11">New lane added: LA → Mexico City</text>
+  <circle cx="90" cy="258" r="4" fill="#06B6D4"/>
+  <text x="103" y="262" fill="#E2E8F0" font-family="Arial,sans-serif" font-size="11">Incumbent carrier contract ends Q1</text>
+  <circle cx="90" cy="282" r="4" fill="#FBBF24"/>
+  <text x="103" y="286" fill="#E2E8F0" font-family="Arial,sans-serif" font-size="11">Gap in USEC-to-NE corridor coverage</text>
+  <circle cx="90" cy="306" r="4" fill="#FBBF24"/>
+  <text x="103" y="310" fill="#E2E8F0" font-family="Arial,sans-serif" font-size="11">Competitor won 2 recent bids here</text>
+
+  <!-- Conversation starter -->
+  <rect x="74" y="330" width="312" height="80" rx="8" fill="#0F2836" stroke="#164E63" stroke-width="1"/>
+  <text x="88" y="350" fill="#99F6E4" font-family="Arial,sans-serif" font-weight="700" font-size="11">Suggested opener</text>
+  <text x="88" y="368" fill="#CBD5E1" font-family="Arial,sans-serif" font-size="10">"Noticed you added LA–MX in Q3 — we</text>
+  <text x="88" y="382" fill="#CBD5E1" font-family="Arial,sans-serif" font-size="10">run that lane with 98% on-time. Worth</text>
+  <text x="88" y="396" fill="#CBD5E1" font-family="Arial,sans-serif" font-size="10">a 15-min call this week?"</text>
+
+  <!-- Score badge -->
+  <rect x="74" y="430" width="312" height="50" rx="8" fill="#134E4A"/>
+  <text x="90" y="452" fill="#99F6E4" font-family="Arial,sans-serif" font-size="11">Opportunity score</text>
+  <text x="354" y="460" text-anchor="end" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="22">8.4</text>
+  <text x="354" y="474" text-anchor="end" fill="#99F6E4" font-family="Arial,sans-serif" font-size="10">/ 10</text>
+
+  <!-- Middle card: Buying signals breakdown -->
+  <rect x="416" y="148" width="360" height="410" rx="12" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+  <rect x="416" y="148" width="360" height="3" rx="2" fill="#2563EB"/>
+  <text x="436" y="178" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="13">Signal Breakdown</text>
+  <rect x="436" y="188" width="320" height="1" fill="#E2E8F0"/>
+
+  <!-- Signal categories -->
+  <!-- Volume signals -->
+  <text x="436" y="212" fill="#475569" font-family="Arial,sans-serif" font-size="11" font-weight="600">VOLUME</text>
+  <rect x="436" y="220" width="286" height="7" rx="3" fill="#E2E8F0"/>
+  <rect x="436" y="220" width="228" height="7" rx="3" fill="#2563EB"/>
+  <text x="728" y="228" text-anchor="end" fill="#1D4ED8" font-family="Arial,sans-serif" font-size="10" font-weight="700">80%</text>
+
+  <!-- Timing signals -->
+  <text x="436" y="250" fill="#475569" font-family="Arial,sans-serif" font-size="11" font-weight="600">TIMING</text>
+  <rect x="436" y="258" width="286" height="7" rx="3" fill="#E2E8F0"/>
+  <rect x="436" y="258" width="200" height="7" rx="3" fill="#06B6D4"/>
+  <text x="728" y="266" text-anchor="end" fill="#0E7490" font-family="Arial,sans-serif" font-size="10" font-weight="700">70%</text>
+
+  <!-- Lane fit -->
+  <text x="436" y="288" fill="#475569" font-family="Arial,sans-serif" font-size="11" font-weight="600">LANE FIT</text>
+  <rect x="436" y="296" width="286" height="7" rx="3" fill="#E2E8F0"/>
+  <rect x="436" y="296" width="245" height="7" rx="3" fill="#10B981"/>
+  <text x="728" y="304" text-anchor="end" fill="#065F46" font-family="Arial,sans-serif" font-size="10" font-weight="700">86%</text>
+
+  <!-- Competitor gap -->
+  <text x="436" y="326" fill="#475569" font-family="Arial,sans-serif" font-size="11" font-weight="600">COMPETITOR GAP</text>
+  <rect x="436" y="334" width="286" height="7" rx="3" fill="#E2E8F0"/>
+  <rect x="436" y="334" width="158" height="7" rx="3" fill="#F59E0B"/>
+  <text x="728" y="342" text-anchor="end" fill="#92400E" font-family="Arial,sans-serif" font-size="10" font-weight="700">55%</text>
+
+  <!-- Recent activity timeline -->
+  <text x="436" y="372" fill="#0F172A" font-family="Arial,sans-serif" font-weight="600" font-size="11">Recent activity</text>
+  <rect x="436" y="380" width="304" height="1" fill="#E2E8F0"/>
+  <circle cx="444" cy="400" r="4" fill="#2563EB"/>
+  <text x="456" y="404" fill="#0F172A" font-family="Arial,sans-serif" font-size="10">Oct 14 — 28 TEUs, LA to Shanghai</text>
+  <circle cx="444" cy="420" r="4" fill="#2563EB"/>
+  <text x="456" y="424" fill="#0F172A" font-family="Arial,sans-serif" font-size="10">Oct 8 — New MX lane first shipment</text>
+  <circle cx="444" cy="440" r="4" fill="#94A3B8"/>
+  <text x="456" y="444" fill="#475569" font-family="Arial,sans-serif" font-size="10">Sep 29 — 18 TEUs, Rotterdam to NY</text>
+  <circle cx="444" cy="460" r="4" fill="#94A3B8"/>
+  <text x="456" y="464" fill="#475569" font-family="Arial,sans-serif" font-size="10">Sep 22 — Volume spike flagged by AI</text>
+  <line x1="444" y1="405" x2="444" y2="416" stroke="#E2E8F0" stroke-width="1.5"/>
+  <line x1="444" y1="425" x2="444" y2="436" stroke="#E2E8F0" stroke-width="1.5"/>
+  <line x1="444" y1="445" x2="444" y2="456" stroke="#E2E8F0" stroke-width="1.5"/>
+
+  <!-- Right card: Similar companies -->
+  <rect x="792" y="148" width="372" height="410" rx="12" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+  <rect x="792" y="148" width="372" height="3" rx="2" fill="#8B5CF6"/>
+  <text x="812" y="178" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="13">Similar Companies</text>
+  <rect x="812" y="188" width="332" height="1" fill="#E2E8F0"/>
+
+  <!-- Company rows -->
+  <!-- Row 1 -->
+  <rect x="812" y="202" width="332" height="64" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+  <rect x="822" y="214" width="36" height="36" rx="8" fill="#EFF6FF"/>
+  <text x="840" y="237" text-anchor="middle" fill="#2563EB" font-family="Arial,sans-serif" font-weight="700" font-size="13">RX</text>
+  <text x="868" y="222" fill="#0F172A" font-family="Arial,sans-serif" font-weight="600" font-size="12">Ryder Logistics</text>
+  <text x="868" y="238" fill="#475569" font-family="Arial,sans-serif" font-size="10">312 shipments · Similar lane mix</text>
+  <rect x="1068" y="216" width="60" height="18" rx="9" fill="#DCFCE7"/>
+  <text x="1098" y="228" text-anchor="middle" fill="#15803D" font-family="Arial,sans-serif" font-size="9" font-weight="700">High fit</text>
+
+  <!-- Row 2 -->
+  <rect x="812" y="276" width="332" height="64" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+  <rect x="822" y="288" width="36" height="36" rx="8" fill="#F5F3FF"/>
+  <text x="840" y="311" text-anchor="middle" fill="#7C3AED" font-family="Arial,sans-serif" font-weight="700" font-size="13">TW</text>
+  <text x="868" y="296" fill="#0F172A" font-family="Arial,sans-serif" font-weight="600" font-size="12">TransWest Freight</text>
+  <text x="868" y="312" fill="#475569" font-family="Arial,sans-serif" font-size="10">228 shipments · Cross-border focus</text>
+  <rect x="1068" y="290" width="60" height="18" rx="9" fill="#DCFCE7"/>
+  <text x="1098" y="302" text-anchor="middle" fill="#15803D" font-family="Arial,sans-serif" font-size="9" font-weight="700">High fit</text>
+
+  <!-- Row 3 -->
+  <rect x="812" y="350" width="332" height="64" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+  <rect x="822" y="362" width="36" height="36" rx="8" fill="#FFF7ED"/>
+  <text x="840" y="385" text-anchor="middle" fill="#C2410C" font-family="Arial,sans-serif" font-weight="700" font-size="13">BL</text>
+  <text x="868" y="370" fill="#0F172A" font-family="Arial,sans-serif" font-weight="600" font-size="12">BlueLink Supply Co.</text>
+  <text x="868" y="386" fill="#475569" font-family="Arial,sans-serif" font-size="10">168 shipments · USEC corridor</text>
+  <rect x="1068" y="364" width="60" height="18" rx="9" fill="#FEF3C7"/>
+  <text x="1098" y="376" text-anchor="middle" fill="#92400E" font-family="Arial,sans-serif" font-size="9" font-weight="700">Medium</text>
+
+  <!-- Row 4 -->
+  <rect x="812" y="424" width="332" height="64" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+  <rect x="822" y="436" width="36" height="36" rx="8" fill="#F0FDF4"/>
+  <text x="840" y="459" text-anchor="middle" fill="#15803D" font-family="Arial,sans-serif" font-weight="700" font-size="13">NL</text>
+  <text x="868" y="444" fill="#0F172A" font-family="Arial,sans-serif" font-weight="600" font-size="12">Northline Carriers</text>
+  <text x="868" y="460" fill="#475569" font-family="Arial,sans-serif" font-size="10">89 shipments · Growing volume</text>
+  <rect x="1068" y="438" width="60" height="18" rx="9" fill="#FEF3C7"/>
+  <text x="1098" y="450" text-anchor="middle" fill="#92400E" font-family="Arial,sans-serif" font-size="9" font-weight="700">Medium</text>
+
+  <!-- Footer note -->
+  <text x="812" y="540" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">AI brief based on import records · Updated daily</text>
+</svg>

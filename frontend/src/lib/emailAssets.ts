@@ -41,6 +41,10 @@ const ASSET_PATHS: Record<EmailAssetKey, string> = {
   rate_benchmark: "/email-assets/rate-benchmark.svg",
   pulse_workflow: "/email-assets/pulse-workflow.svg",
   lane_signals: "/email-assets/lane-signals.svg",
+  // Lifecycle email heroes (swap .svg → .jpg when real screenshots ship)
+  email_hero_company_intelligence: "/email-assets/lit-email-hero-company-intelligence.svg",
+  email_hero_pulse_ai: "/email-assets/lit-email-hero-pulse-ai.svg",
+  email_hero_campaigns: "/email-assets/lit-email-hero-campaigns.svg",
 };
 
 export type EmailAssetKey =
@@ -50,7 +54,10 @@ export type EmailAssetKey =
   | "campaign_builder"
   | "rate_benchmark"
   | "pulse_workflow"
-  | "lane_signals";
+  | "lane_signals"
+  | "email_hero_company_intelligence"
+  | "email_hero_pulse_ai"
+  | "email_hero_campaigns";
 
 /** Absolute https:// URL for a given asset key. */
 export function emailAssetUrl(key: EmailAssetKey): string {
@@ -66,4 +73,7 @@ export const EMAIL_ASSETS: Record<EmailAssetKey, string> = {
   rate_benchmark: emailAssetUrl("rate_benchmark"),
   pulse_workflow: emailAssetUrl("pulse_workflow"),
   lane_signals: emailAssetUrl("lane_signals"),
+  email_hero_company_intelligence: emailAssetUrl("email_hero_company_intelligence"),
+  email_hero_pulse_ai: emailAssetUrl("email_hero_pulse_ai"),
+  email_hero_campaigns: emailAssetUrl("email_hero_campaigns"),
 };

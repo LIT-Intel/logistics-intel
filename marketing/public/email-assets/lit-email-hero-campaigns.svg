@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="LIT campaigns — multi-touch outreach timeline with email, LinkedIn, and call steps">
+  <defs>
+    <linearGradient id="cm-bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#FFFFFF"/>
+    </linearGradient>
+    <linearGradient id="cm-header" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="cm-accent" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="cm-linkedin" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#0A66C2"/>
+      <stop offset="100%" stop-color="#2D7DD2"/>
+    </linearGradient>
+    <linearGradient id="cm-green" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#34D399"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#cm-bg)"/>
+
+  <!-- Card frame -->
+  <rect x="36" y="32" width="1128" height="566" rx="18" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+
+  <!-- Header strip -->
+  <rect x="36" y="32" width="1128" height="92" rx="18" fill="url(#cm-header)"/>
+  <rect x="36" y="104" width="1128" height="20" fill="#1E293B"/>
+
+  <!-- Campaign label -->
+  <rect x="68" y="54" width="96" height="26" rx="13" fill="#2563EB"/>
+  <text x="116" y="71" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="12">Campaigns</text>
+
+  <!-- Title -->
+  <text x="180" y="70" fill="#FFFFFF" font-family="Georgia,serif" font-weight="700" font-size="18">Freight Broker 5-Touch Sequence</text>
+  <text x="180" y="92" fill="#94A3B8" font-family="Arial,sans-serif" font-size="12">42 active recipients · 38% open rate · 12% reply rate · Launched Oct 11</text>
+
+  <!-- Status pills -->
+  <rect x="830" y="56" width="80" height="22" rx="11" fill="#DCFCE7"/>
+  <text x="870" y="71" text-anchor="middle" fill="#15803D" font-family="Arial,sans-serif" font-size="11" font-weight="600">Active</text>
+  <rect x="920" y="56" width="100" height="22" rx="11" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="970" y="71" text-anchor="middle" fill="#CBD5E1" font-family="Arial,sans-serif" font-size="11">5 of 5 steps</text>
+  <rect x="1030" y="56" width="106" height="22" rx="11" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="1083" y="71" text-anchor="middle" fill="#CBD5E1" font-family="Arial,sans-serif" font-size="11">42 prospects</text>
+
+  <!-- Timeline track (horizontal line) -->
+  <line x1="100" y1="270" x2="1110" y2="270" stroke="#E2E8F0" stroke-width="2" stroke-dasharray="6,4"/>
+
+  <!-- === Step 1: Day 1 Email === -->
+  <circle cx="190" cy="270" r="22" fill="url(#cm-accent)" stroke="#FFFFFF" stroke-width="3"/>
+  <text x="190" y="276" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="14">✉</text>
+
+  <rect x="118" y="148" width="144" height="96" rx="10" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+  <text x="190" y="172" text-anchor="middle" fill="#1D4ED8" font-family="Arial,sans-serif" font-weight="700" font-size="11">Day 1</text>
+  <text x="190" y="190" text-anchor="middle" fill="#0F172A" font-family="Arial,sans-serif" font-weight="600" font-size="12">Intro Email</text>
+  <text x="190" y="208" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">Company intel</text>
+  <text x="190" y="224" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">angle + lane fit</text>
+
+  <!-- Sent badge -->
+  <rect x="148" y="298" width="84" height="20" rx="10" fill="#DCFCE7"/>
+  <text x="190" y="311" text-anchor="middle" fill="#15803D" font-family="Arial,sans-serif" font-size="10" font-weight="600">Sent · 42 / 42</text>
+
+  <!-- Open stat -->
+  <text x="190" y="335" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">38% opened</text>
+
+  <!-- === Step 2: Day 3 LinkedIn === -->
+  <circle cx="402" cy="270" r="22" fill="url(#cm-linkedin)" stroke="#FFFFFF" stroke-width="3"/>
+  <text x="402" y="276" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="12">in</text>
+
+  <rect x="330" y="148" width="144" height="96" rx="10" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+  <text x="402" y="172" text-anchor="middle" fill="#1D4ED8" font-family="Arial,sans-serif" font-weight="700" font-size="11">Day 3</text>
+  <text x="402" y="190" text-anchor="middle" fill="#0F172A" font-family="Arial,sans-serif" font-weight="600" font-size="12">LinkedIn Touch</text>
+  <text x="402" y="208" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">Connect + brief</text>
+  <text x="402" y="224" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">personalised note</text>
+
+  <rect x="356" y="298" width="92" height="20" rx="10" fill="#DCFCE7"/>
+  <text x="402" y="311" text-anchor="middle" fill="#15803D" font-family="Arial,sans-serif" font-size="10" font-weight="600">Sent · 38 / 42</text>
+
+  <text x="402" y="335" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">24% accepted</text>
+
+  <!-- === Step 3: Day 5 Follow-up === -->
+  <circle cx="614" cy="270" r="22" fill="url(#cm-accent)" stroke="#FFFFFF" stroke-width="3"/>
+  <text x="614" y="276" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="14">✉</text>
+
+  <rect x="542" y="148" width="144" height="96" rx="10" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+  <text x="614" y="172" text-anchor="middle" fill="#1D4ED8" font-family="Arial,sans-serif" font-weight="700" font-size="11">Day 5</text>
+  <text x="614" y="190" text-anchor="middle" fill="#0F172A" font-family="Arial,sans-serif" font-weight="600" font-size="12">Follow-up</text>
+  <text x="614" y="208" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">Value + social</text>
+  <text x="614" y="224" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">proof angle</text>
+
+  <rect x="568" y="298" width="92" height="20" rx="10" fill="#DCFCE7"/>
+  <text x="614" y="311" text-anchor="middle" fill="#15803D" font-family="Arial,sans-serif" font-size="10" font-weight="600">Sent · 36 / 42</text>
+
+  <text x="614" y="335" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">12% replied</text>
+
+  <!-- === Step 4: Day 8 Call === -->
+  <circle cx="826" cy="270" r="22" fill="url(#cm-green)" stroke="#FFFFFF" stroke-width="3"/>
+  <text x="826" y="276" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="13">☏</text>
+
+  <rect x="754" y="148" width="144" height="96" rx="10" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1.5"/>
+  <text x="826" y="172" text-anchor="middle" fill="#15803D" font-family="Arial,sans-serif" font-weight="700" font-size="11">Day 8</text>
+  <text x="826" y="190" text-anchor="middle" fill="#0F172A" font-family="Arial,sans-serif" font-weight="600" font-size="12">Call Prompt</text>
+  <text x="826" y="208" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">Outbound call</text>
+  <text x="826" y="224" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">with LIT brief</text>
+
+  <rect x="776" y="298" width="100" height="20" rx="10" fill="#FEF3C7"/>
+  <text x="826" y="311" text-anchor="middle" fill="#92400E" font-family="Arial,sans-serif" font-size="10" font-weight="600">Queued · 28 / 42</text>
+
+  <text x="826" y="335" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">4 meetings set</text>
+
+  <!-- === Step 5: Day 12 Last touch === -->
+  <circle cx="1030" cy="270" r="22" fill="url(#cm-accent)" stroke="#FFFFFF" stroke-width="3"/>
+  <text x="1030" y="276" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="14">✉</text>
+
+  <rect x="958" y="148" width="144" height="96" rx="10" fill="#F1F5F9" stroke="#E2E8F0" stroke-width="1.5"/>
+  <text x="1030" y="172" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-weight="700" font-size="11">Day 12</text>
+  <text x="1030" y="190" text-anchor="middle" fill="#0F172A" font-family="Arial,sans-serif" font-weight="600" font-size="12">Last Touch</text>
+  <text x="1030" y="208" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">Break-up + open</text>
+  <text x="1030" y="224" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="10">door message</text>
+
+  <rect x="974" y="298" width="112" height="20" rx="10" fill="#F1F5F9" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="1030" y="311" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10" font-weight="600">Pending · Day 12</text>
+
+  <text x="1030" y="335" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Scheduled</text>
+
+  <!-- Bottom stats bar -->
+  <rect x="60" y="390" width="1080" height="84" rx="10" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- Stat 1 -->
+  <text x="150" y="422" text-anchor="middle" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="22">38%</text>
+  <text x="150" y="444" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="11">Open rate</text>
+  <text x="150" y="462" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">+6pp vs avg</text>
+
+  <line x1="280" y1="404" x2="280" y2="462" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- Stat 2 -->
+  <text x="390" y="422" text-anchor="middle" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="22">12%</text>
+  <text x="390" y="444" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="11">Reply rate</text>
+  <text x="390" y="462" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">5 positive</text>
+
+  <line x1="520" y1="404" x2="520" y2="462" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- Stat 3 -->
+  <text x="640" y="422" text-anchor="middle" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="22">4</text>
+  <text x="640" y="444" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="11">Meetings booked</text>
+  <text x="640" y="462" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">via LIT outreach</text>
+
+  <line x1="770" y1="404" x2="770" y2="462" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- Stat 4 -->
+  <text x="900" y="422" text-anchor="middle" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="22">0</text>
+  <text x="900" y="444" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="11">Unsubscribes</text>
+  <text x="900" y="462" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Clean list</text>
+
+  <line x1="1010" y1="404" x2="1010" y2="462" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- Stat 5 -->
+  <text x="1092" y="422" text-anchor="middle" fill="#10B981" font-family="Arial,sans-serif" font-weight="700" font-size="22">Live</text>
+  <text x="1092" y="444" text-anchor="middle" fill="#475569" font-family="Arial,sans-serif" font-size="11">Status</text>
+  <text x="1092" y="462" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Day 6 of 12</text>
+</svg>

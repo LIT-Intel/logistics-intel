@@ -1,0 +1,160 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="LIT company intelligence — shipment timeline, lane chart, and buying signal pills">
+  <defs>
+    <linearGradient id="ci-bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#FFFFFF"/>
+    </linearGradient>
+    <linearGradient id="ci-header" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="ci-bar1" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="ci-bar2" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#2563EB" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0.7"/>
+    </linearGradient>
+    <linearGradient id="ci-bar3" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#2563EB" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0.45"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Page background -->
+  <rect width="1200" height="630" fill="url(#ci-bg)"/>
+
+  <!-- Card frame -->
+  <rect x="36" y="32" width="1128" height="566" rx="18" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+
+  <!-- Header strip -->
+  <rect x="36" y="32" width="1128" height="96" rx="18" fill="url(#ci-header)"/>
+  <rect x="36" y="108" width="1128" height="20" fill="#1E293B"/>
+
+  <!-- LIT badge -->
+  <rect x="68" y="56" width="44" height="28" rx="6" fill="#2563EB"/>
+  <text x="90" y="75" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="13">LIT</text>
+
+  <!-- Company name -->
+  <text x="128" y="72" fill="#FFFFFF" font-family="Georgia,serif" font-weight="700" font-size="19">Maersk Line North America</text>
+  <text x="128" y="93" fill="#94A3B8" font-family="Arial,sans-serif" font-size="12">Ocean carrier · Los Angeles, CA · 847 shipments / 12 months</text>
+
+  <!-- Signal pills row -->
+  <rect x="820" y="58" width="110" height="22" rx="11" fill="#DCFCE7"/>
+  <text x="875" y="73" text-anchor="middle" fill="#15803D" font-family="Arial,sans-serif" font-weight="600" font-size="11">Volume Up 18%</text>
+  <rect x="940" y="58" width="100" height="22" rx="11" fill="#DBEAFE"/>
+  <text x="990" y="73" text-anchor="middle" fill="#1D4ED8" font-family="Arial,sans-serif" font-weight="600" font-size="11">New Lane: MX</text>
+  <rect x="1050" y="58" width="96" height="22" rx="11" fill="#FEF3C7"/>
+  <text x="1098" y="73" text-anchor="middle" fill="#92400E" font-family="Arial,sans-serif" font-weight="600" font-size="11">RFP Window</text>
+
+  <!-- Left panel: Shipment timeline -->
+  <rect x="60" y="152" width="420" height="400" rx="12" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="80" y="180" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="13">Shipment Volume — Last 12 Months</text>
+
+  <!-- Bar chart bars -->
+  <!-- Jan -->
+  <rect x="82" y="320" width="24" height="80" rx="4" fill="url(#ci-bar2)"/>
+  <text x="94" y="414" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Jan</text>
+  <!-- Feb -->
+  <rect x="116" y="295" width="24" height="105" rx="4" fill="url(#ci-bar1)"/>
+  <text x="128" y="414" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Feb</text>
+  <!-- Mar -->
+  <rect x="150" y="280" width="24" height="120" rx="4" fill="url(#ci-bar1)"/>
+  <text x="162" y="414" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Mar</text>
+  <!-- Apr -->
+  <rect x="184" y="305" width="24" height="95" rx="4" fill="url(#ci-bar2)"/>
+  <text x="196" y="414" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Apr</text>
+  <!-- May -->
+  <rect x="218" y="260" width="24" height="140" rx="4" fill="url(#ci-bar1)"/>
+  <text x="230" y="414" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">May</text>
+  <!-- Jun -->
+  <rect x="252" y="270" width="24" height="130" rx="4" fill="url(#ci-bar1)"/>
+  <text x="264" y="414" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Jun</text>
+  <!-- Jul -->
+  <rect x="286" y="285" width="24" height="115" rx="4" fill="url(#ci-bar2)"/>
+  <text x="298" y="414" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Jul</text>
+  <!-- Aug -->
+  <rect x="320" y="245" width="24" height="155" rx="4" fill="url(#ci-bar1)"/>
+  <text x="332" y="414" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Aug</text>
+  <!-- Sep -->
+  <rect x="354" y="230" width="24" height="170" rx="4" fill="url(#ci-bar1)"/>
+  <text x="366" y="414" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Sep</text>
+  <!-- Oct -->
+  <rect x="388" y="215" width="24" height="185" rx="4" fill="url(#ci-bar1)"/>
+  <text x="400" y="414" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Oct</text>
+  <!-- Nov -->
+  <rect x="422" y="220" width="24" height="180" rx="4" fill="url(#ci-bar1)"/>
+  <text x="434" y="414" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="10">Nov</text>
+  <!-- Baseline -->
+  <line x1="76" y1="400" x2="458" y2="400" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- Volume callout -->
+  <rect x="340" y="192" width="120" height="30" rx="6" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1"/>
+  <text x="400" y="211" text-anchor="middle" fill="#1D4ED8" font-family="Arial,sans-serif" font-weight="700" font-size="11">847 shipments YTD</text>
+
+  <!-- Middle panel: Lane breakdown -->
+  <rect x="498" y="152" width="350" height="400" rx="12" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="518" y="180" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="13">Top Trade Lanes</text>
+
+  <!-- Lane rows -->
+  <!-- Lane 1 -->
+  <text x="518" y="218" fill="#0F172A" font-family="Arial,sans-serif" font-size="12">LA → Shanghai</text>
+  <rect x="518" y="224" width="280" height="8" rx="4" fill="#E2E8F0"/>
+  <rect x="518" y="224" width="238" height="8" rx="4" fill="url(#ci-bar1)"/>
+  <text x="804" y="232" text-anchor="end" fill="#475569" font-family="Arial,sans-serif" font-size="11">312</text>
+
+  <!-- Lane 2 -->
+  <text x="518" y="258" fill="#0F172A" font-family="Arial,sans-serif" font-size="12">Rotterdam → NY</text>
+  <rect x="518" y="264" width="280" height="8" rx="4" fill="#E2E8F0"/>
+  <rect x="518" y="264" width="175" height="8" rx="4" fill="url(#ci-bar2)"/>
+  <text x="804" y="272" text-anchor="end" fill="#475569" font-family="Arial,sans-serif" font-size="11">228</text>
+
+  <!-- Lane 3 -->
+  <text x="518" y="298" fill="#0F172A" font-family="Arial,sans-serif" font-size="12">Mexico City → Dallas</text>
+  <rect x="518" y="304" width="280" height="8" rx="4" fill="#E2E8F0"/>
+  <rect x="518" y="304" width="130" height="8" rx="4" fill="url(#ci-bar3)"/>
+  <text x="804" y="312" text-anchor="end" fill="#475569" font-family="Arial,sans-serif" font-size="11">168</text>
+
+  <!-- Lane 4 -->
+  <text x="518" y="338" fill="#0F172A" font-family="Arial,sans-serif" font-size="12">Chicago → Toronto</text>
+  <rect x="518" y="344" width="280" height="8" rx="4" fill="#E2E8F0"/>
+  <rect x="518" y="344" width="90" height="8" rx="4" fill="url(#ci-bar3)"/>
+  <text x="804" y="352" text-anchor="end" fill="#475569" font-family="Arial,sans-serif" font-size="11">89</text>
+
+  <!-- Lane 5 -->
+  <text x="518" y="378" fill="#0F172A" font-family="Arial,sans-serif" font-size="12">Houston → Singapore</text>
+  <rect x="518" y="384" width="280" height="8" rx="4" fill="#E2E8F0"/>
+  <rect x="518" y="384" width="54" height="8" rx="4" fill="url(#ci-bar3)"/>
+  <text x="804" y="392" text-anchor="end" fill="#475569" font-family="Arial,sans-serif" font-size="11">50</text>
+
+  <!-- Right panel: Carrier + signals -->
+  <rect x="862" y="152" width="302" height="190" rx="12" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="882" y="180" fill="#0F172A" font-family="Arial,sans-serif" font-weight="700" font-size="13">Carrier Relationships</text>
+  <text x="882" y="202" fill="#475569" font-family="Arial,sans-serif" font-size="11">FedEx Freight · 38%</text>
+  <text x="882" y="220" fill="#475569" font-family="Arial,sans-serif" font-size="11">XPO Logistics · 24%</text>
+  <text x="882" y="238" fill="#475569" font-family="Arial,sans-serif" font-size="11">Old Dominion · 19%</text>
+  <text x="882" y="256" fill="#475569" font-family="Arial,sans-serif" font-size="11">R+L Carriers · 11%</text>
+  <text x="882" y="274" fill="#475569" font-family="Arial,sans-serif" font-size="11">Other · 8%</text>
+  <rect x="882" y="286" width="62" height="20" rx="10" fill="#FEE2E2"/>
+  <text x="913" y="300" text-anchor="middle" fill="#991B1B" font-family="Arial,sans-serif" font-size="10" font-weight="600">New carrier</text>
+  <text x="952" y="300" fill="#475569" font-family="Arial,sans-serif" font-size="10">Saia LTL added Q3</text>
+
+  <!-- Buying signals panel -->
+  <rect x="862" y="356" width="302" height="196" rx="12" fill="#0F172A" stroke="#1E293B" stroke-width="1"/>
+  <text x="882" y="384" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="700" font-size="13">Buying Signals</text>
+  <rect x="882" y="396" width="246" height="1" fill="#334155"/>
+  <!-- Signal rows -->
+  <circle cx="892" cy="416" r="4" fill="#22C55E"/>
+  <text x="904" y="420" fill="#E2E8F0" font-family="Arial,sans-serif" font-size="11">Volume spike +18% in last 60 days</text>
+  <circle cx="892" cy="438" r="4" fill="#22C55E"/>
+  <text x="904" y="442" fill="#E2E8F0" font-family="Arial,sans-serif" font-size="11">New cross-border lane opened (MEX)</text>
+  <circle cx="892" cy="460" r="4" fill="#FBBF24"/>
+  <text x="904" y="464" fill="#E2E8F0" font-family="Arial,sans-serif" font-size="11">Contract renewal window: Q1 2026</text>
+  <circle cx="892" cy="482" r="4" fill="#FBBF24"/>
+  <text x="904" y="486" fill="#E2E8F0" font-family="Arial,sans-serif" font-size="11">Incumbent carrier (FedEx) gap in LTL</text>
+  <circle cx="892" cy="504" r="4" fill="#3B82F6"/>
+  <text x="904" y="508" fill="#E2E8F0" font-family="Arial,sans-serif" font-size="11">3 similar companies saved by your team</text>
+  <circle cx="892" cy="526" r="4" fill="#3B82F6"/>
+  <text x="904" y="530" fill="#E2E8F0" font-family="Arial,sans-serif" font-size="11">Active in your top 2 lanes</text>
+</svg>
