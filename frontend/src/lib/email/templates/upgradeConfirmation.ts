@@ -2,16 +2,16 @@
 // event_type: 'upgrade_confirmation'
 
 import { renderEmailLayout } from "./baseLayout";
-import { PLAN_EMAIL_COPY, type PlanSlug } from "../planEmailCopy";
+import { getPlanEmailCopy, type PlanSlug } from "../planEmailCopy";
 
 export interface UpgradeConfirmationContext {
   firstName?: string;
-  planSlug: PlanSlug;
+  planSlug: PlanSlug | string;
   /** The plan the user upgraded FROM, for display purposes */
   previousPlanName?: string;
   appUrl?: string;
   siteUrl?: string;
-  heroImageUrl: string;
+  heroImageUrl?: string;
   unsubscribeUrl: string;
 }
 
@@ -35,7 +35,7 @@ export function buildUpgradeConfirmationEmail(ctx: UpgradeConfirmationContext): 
   text: string;
 } {
   const name = resolveName(ctx.firstName);
-  const plan = PLAN_EMAIL_COPY[ctx.planSlug] ?? PLAN_EMAIL_COPY.pro;
+  const plan = getPlanEmailCopy(ctx.planSlug);
   const appUrl = ctx.appUrl ?? "https://app.logisticintel.com";
   const fromPhrase = ctx.previousPlanName ? ` from ${ctx.previousPlanName}` : "";
 

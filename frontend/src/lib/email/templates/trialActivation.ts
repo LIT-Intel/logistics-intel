@@ -2,14 +2,14 @@
 // event_type: 'trial_day_2_activation'
 
 import { renderEmailLayout } from "./baseLayout";
-import { PLAN_EMAIL_COPY, type PlanSlug } from "../planEmailCopy";
+import type { PlanSlug } from "../planEmailCopy";
 
 export interface TrialActivationContext {
   firstName?: string;
-  planSlug?: PlanSlug;
+  planSlug?: PlanSlug | string;
   appUrl?: string;
   siteUrl?: string;
-  heroImageUrl: string;
+  heroImageUrl?: string;
   unsubscribeUrl: string;
 }
 

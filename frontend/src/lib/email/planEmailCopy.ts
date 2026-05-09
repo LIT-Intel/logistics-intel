@@ -1,97 +1,138 @@
 // Plan-specific copy used in lifecycle emails.
-// This file is the SINGLE SOURCE OF TRUTH for plan benefits in emails.
-// Do NOT hardcode benefit text in template files — reference this map.
+// SINGLE source of truth for plan benefits in emails. Do NOT hardcode
+// benefit text inside template files — reference this map.
+//
+// Plan slugs MIRROR the canonical PlanCode enum from frontend/src/lib/planLimits.ts
+// EXACTLY: free_trial, starter, growth, scale, enterprise. Older
+// aliases (trial, pro, team) are accepted via normalizePlanSlug() for
+// backwards compatibility with subscription rows that may carry legacy
+// plan_code values.
+//
+// Trial entitlements (per planLimits.ts free_trial config + product
+// confirmation from founder, 2026-05-08):
+//   - Search shippers by name, lane, or commodity (search feature ON,
+//     10/mo searches)
+//   - View full company supply chain shipment data (company_page ON)
+//   - View trade lanes + benchmark freight rates
+//   - 10 saved contacts with up to 10 contact enrichments
+//   - Pulse AI for company briefings (5 AI runs/mo)
+//   - Revenue opportunity sizing per company
+//   - NO Pulse search (lookalike discovery), NO outreach campaigns,
+//     NO RFP studio, NO lead prospecting, NO team seats
 
-export type PlanSlug = "trial" | "free" | "starter" | "pro" | "team" | "enterprise";
+export type PlanSlug = "free_trial" | "starter" | "growth" | "scale" | "enterprise";
+
+// Legacy aliases the cron + Stripe webhook may emit. These all
+// normalize to a canonical PlanSlug at the call site.
+export type LegacyPlanSlug = "trial" | "free" | "pro" | "team" | PlanSlug;
 
 export interface PlanEmailCopy {
+  /** Display name shown in the email subject + body */
   name: string;
+  /** Hero headline above the body */
   headline: string;
+  /** Bulleted benefits — these become the "what's included" list */
   benefits: string[];
+  /** Primary CTA button label */
   primaryCta: string;
+  /** Path appended to {{app_url}} for the CTA destination */
   primaryPath: string;
 }
 
+/** Map any legacy plan slug to the canonical free_trial / starter /
+ *  growth / scale / enterprise enum. Anything unknown falls back to
+ *  free_trial since that's the safest default for an undefined state. */
+export function normalizePlanSlug(value?: string | null): PlanSlug {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "free" || v === "free_trial" || v === "trial") return "free_trial";
+  if (v === "standard" || v === "starter") return "starter";
+  if (v === "pro" || v === "growth" || v === "growth_plus") return "growth";
+  if (v === "team" || v === "scale") return "scale";
+  if (v === "unlimited" || v.startsWith("enterprise")) return "enterprise";
+  return "free_trial";
+}
+
 export const PLAN_EMAIL_COPY: Record<PlanSlug, PlanEmailCopy> = {
-  trial: {
+  free_trial: {
     name: "Free Trial",
-    headline: "Your LIT trial is live",
+    headline: "Welcome to LIT.",
     benefits: [
-      "Search and filter 500,000+ active freight shippers by lane, volume, and commodity",
-      "View full shipment history, carrier relationships, and trade lane patterns",
-      "Save up to 10 companies to your workspace for follow-up",
-      "Run Pulse AI briefs to surface buying signals and conversation starters",
-      "Access contact discovery on saved companies",
+      "Search shipper companies by name, trade lane, or commodity",
+      "View full supply chain shipment history per company",
+      "See active trade lanes, shipping cadence, and carrier mix",
+      "Compare benchmark freight rates by lane and mode",
+      "Enrich up to 10 contacts with verified emails",
+      "Run Pulse AI briefs for fast account intelligence",
+      "Size revenue opportunity per shipper account",
     ],
-    primaryCta: "Start finding shippers",
-    primaryPath: "/pulse",
+    primaryCta: "Open your dashboard",
+    primaryPath: "/dashboard",
   },
-  free: {
-    name: "Free Trial",
-    headline: "Your LIT trial is live",
-    benefits: [
-      "Search and filter 500,000+ active freight shippers by lane, volume, and commodity",
-      "View full shipment history, carrier relationships, and trade lane patterns",
-      "Save up to 10 companies to your workspace for follow-up",
-      "Run Pulse AI briefs to surface buying signals and conversation starters",
-      "Access contact discovery on saved companies",
-    ],
-    primaryCta: "Start finding shippers",
-    primaryPath: "/pulse",
-  },
+
   starter: {
     name: "Starter",
-    headline: "Welcome to LIT Starter",
+    headline: "Your LIT Starter workspace is ready.",
     benefits: [
-      "Unlimited shipper searches with advanced lane and commodity filters",
-      "Save up to 50 companies with full shipment timeline access",
-      "25 Pulse AI briefs per month for targeted outreach intelligence",
-      "Contact discovery and email export on all saved companies",
-      "CSV export for your CRM or outreach tools",
-    ],
-    primaryCta: "Start prospecting",
-    primaryPath: "/pulse",
-  },
-  pro: {
-    name: "Pro",
-    headline: "Welcome to LIT Pro",
-    benefits: [
-      "Unlimited shipper searches and company saves",
-      "100 Pulse AI briefs per month with deeper competitor and lane analysis",
-      "Full contact discovery with direct emails and phone numbers",
-      "Campaign builder — build and launch multi-touch email sequences from LIT",
-      "Market benchmark reports by lane, mode, and commodity",
-      "Priority support and onboarding session",
+      "75 shipper searches per month with full lane and commodity filters",
+      "Save up to 50 shippers with full shipment timeline access",
+      "25 Pulse account briefs per month for fast research",
+      "Launch outreach campaigns with up to 250 active recipients",
+      "1 connected mailbox for sending from your own domain",
+      "Email support",
     ],
     primaryCta: "Open your workspace",
-    primaryPath: "/pulse",
+    primaryPath: "/dashboard",
   },
-  team: {
-    name: "Team",
-    headline: "Welcome to LIT Team",
+
+  growth: {
+    name: "Growth",
+    headline: "Your LIT Growth team is ready.",
     benefits: [
-      "Everything in Pro for up to 5 team seats",
-      "Shared company saves and Pulse lists across your team",
-      "Team campaign library — share and standardize outreach sequences",
-      "Usage analytics across reps — see who is prospecting and converting",
-      "Admin controls for seat management and org-wide suppression lists",
-      "Dedicated customer success contact",
+      "350 shipper searches per month and 350 saves to Command Center",
+      "100 Pulse AI briefs and 100 Pulse lookalike searches per month",
+      "150 contact enrichments per month with verified emails",
+      "1,000 active campaign recipients across your team",
+      "3 team seats with 3 connected mailboxes",
+      "RFP Studio, lead prospecting, and team analytics",
+      "Saved Pulse lists for industry segmentation",
     ],
-    primaryCta: "Set up your team",
+    primaryCta: "Invite your team",
     primaryPath: "/settings/team",
   },
+
+  scale: {
+    name: "Scale",
+    headline: "Your LIT Scale workspace is ready.",
+    benefits: [
+      "1,000 shipper searches and 1,000 saves per month",
+      "500 Pulse AI briefs and 500 Pulse lookalike searches per month",
+      "500 contact enrichments per month with verified emails",
+      "5 team seats with 5 connected mailboxes",
+      "2,500 active campaign recipients and 100 RFP drafts",
+      "Credit-rating ready and contact intelligence ready datasets",
+      "Saved Pulse lists, lead prospecting, and full team analytics",
+    ],
+    primaryCta: "Open your workspace",
+    primaryPath: "/dashboard",
+  },
+
   enterprise: {
     name: "Enterprise",
-    headline: "Welcome to LIT Enterprise",
+    headline: "Welcome to LIT Enterprise.",
     benefits: [
-      "Unlimited seats and org-wide shipper intelligence",
+      "Unlimited searches, company saves, Pulse runs, and enrichments",
+      "10+ team seats with custom seat scaling",
+      "Credit-rating ready and contact intelligence ready datasets",
       "Custom data integrations and CRM sync (Salesforce, HubSpot)",
-      "White-glove onboarding and quarterly business reviews",
-      "API access for embedding LIT data in your existing stack",
-      "Custom reporting and lane-level market intelligence packages",
-      "SLA-backed support with named account manager",
+      "White-glove onboarding and named customer success contact",
+      "SLA-backed support with quarterly business reviews",
     ],
     primaryCta: "Schedule your kickoff",
     primaryPath: "/settings/billing",
   },
 };
+
+/** Convenience: take any plan-slug-like input and return its email copy. */
+export function getPlanEmailCopy(slug?: string | null): PlanEmailCopy {
+  return PLAN_EMAIL_COPY[normalizePlanSlug(slug)];
+}

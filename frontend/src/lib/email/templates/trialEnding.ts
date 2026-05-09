@@ -2,14 +2,14 @@
 // event_type: 'trial_ending_soon'
 
 import { renderEmailLayout } from "./baseLayout";
-import { PLAN_EMAIL_COPY, type PlanSlug } from "../planEmailCopy";
+import type { PlanSlug } from "../planEmailCopy";
 
 export interface TrialEndingContext {
   firstName?: string;
-  planSlug?: PlanSlug;
+  planSlug?: PlanSlug | string;
   appUrl?: string;
   siteUrl?: string;
-  heroImageUrl: string;
+  heroImageUrl?: string;
   unsubscribeUrl: string;
   /** Trial end date string for display, e.g. "May 22" */
   trialEndsDate?: string;

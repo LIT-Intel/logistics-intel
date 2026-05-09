@@ -2,14 +2,14 @@
 // event_type: 'paid_plan_welcome'
 
 import { renderEmailLayout } from "./baseLayout";
-import { PLAN_EMAIL_COPY, type PlanSlug } from "../planEmailCopy";
+import { getPlanEmailCopy, type PlanSlug } from "../planEmailCopy";
 
 export interface PaidPlanWelcomeContext {
   firstName?: string;
-  planSlug: PlanSlug;
+  planSlug: PlanSlug | string;
   appUrl?: string;
   siteUrl?: string;
-  heroImageUrl: string;
+  heroImageUrl?: string;
   unsubscribeUrl: string;
 }
 
@@ -33,7 +33,7 @@ export function buildPaidPlanWelcomeEmail(ctx: PaidPlanWelcomeContext): {
   text: string;
 } {
   const name = resolveName(ctx.firstName);
-  const plan = PLAN_EMAIL_COPY[ctx.planSlug] ?? PLAN_EMAIL_COPY.starter;
+  const plan = getPlanEmailCopy(ctx.planSlug);
   const appUrl = ctx.appUrl ?? "https://app.logisticintel.com";
 
   const subject = `Welcome to LIT ${plan.name}`;

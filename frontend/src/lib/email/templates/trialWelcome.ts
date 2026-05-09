@@ -2,14 +2,15 @@
 // event_type: 'trial_welcome'
 
 import { renderEmailLayout } from "./baseLayout";
-import { PLAN_EMAIL_COPY, type PlanSlug } from "../planEmailCopy";
+import { getPlanEmailCopy, type PlanSlug } from "../planEmailCopy";
 
 export interface TrialWelcomeContext {
   firstName?: string;
-  planSlug?: PlanSlug;
+  planSlug?: PlanSlug | string;
   appUrl?: string;
   siteUrl?: string;
-  heroImageUrl: string;
+  /** Optional hero image — typography-first design works fine without one. */
+  heroImageUrl?: string;
   unsubscribeUrl: string;
 }
 
@@ -33,8 +34,7 @@ export function buildTrialWelcomeEmail(ctx: TrialWelcomeContext): {
   text: string;
 } {
   const name = resolveName(ctx.firstName);
-  const planSlug = ctx.planSlug ?? "trial";
-  const plan = PLAN_EMAIL_COPY[planSlug] ?? PLAN_EMAIL_COPY.trial;
+  const plan = getPlanEmailCopy(ctx.planSlug ?? "free_trial");
   const appUrl = ctx.appUrl ?? "https://app.logisticintel.com";
 
   const subject = "Your LIT trial is live";
