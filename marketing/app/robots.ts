@@ -59,7 +59,10 @@ export default function robots(): MetadataRoute.Robots {
       // data scoped to direct opt-ins above.
       { userAgent: "CCBot", disallow: "/" },
     ],
-    sitemap: [`${SITE_URL}/sitemap.xml`, `https://www.logisticintel.com/sitemap.xml`],
+    // Sitemaps — main urlset + dedicated companies sub-sitemap (~27K
+    // programmatic importer profile URLs). Single canonical host (apex);
+    // www variant resolves through the same Vercel deploy.
+    sitemap: [`${SITE_URL}/sitemap.xml`, `${SITE_URL}/sitemaps/companies.xml`],
     host: SITE_URL,
   };
 }

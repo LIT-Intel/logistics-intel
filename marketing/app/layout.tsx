@@ -70,6 +70,17 @@ export const metadata: Metadata = {
   },
   manifest: "/site.webmanifest",
   alternates: { canonical: SITE_URL },
+  // Search-engine ownership verification. Values come from
+  // Google Search Console and Bing Webmaster Tools respectively.
+  // Set NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION and
+  // NEXT_PUBLIC_BING_SITE_VERIFICATION in Vercel env when registering
+  // the property. Both are public, safe to expose at build time.
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
+    other: process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION
+      ? { "msvalidate.01": process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION }
+      : undefined,
+  },
 };
 
 export const viewport = {

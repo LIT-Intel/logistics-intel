@@ -10,6 +10,7 @@ import { ProseShell } from "@/components/sections/ProseShell";
 import { BlogCard } from "@/components/sections/BlogCard";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { SocialShare } from "@/components/sections/SocialShare";
+import { howToFor } from "@/lib/blog/howToConfig";
 import { buildMetadata, siteUrl } from "@/lib/seo";
 import { imgUrl } from "@/lib/sanityImage";
 import { formatDate } from "@/lib/format";
@@ -309,6 +310,46 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
           }),
         }}
       />
+
+      {/* HowTo JSON-LD for procedural articles. Slug-keyed config keeps
+          the corpus narrow + auditable. Google deprecated HowTo rich
+          results in Sept 2023 for most categories, but ChatGPT Search,
+          Perplexity, and Gemini all consume HowTo when present —
+          this is AI-search surface area, not Google snippets. */}
+      {(() => {
+        const howTo = howToFor(params.slug);
+        if (!howTo) return null;
+        return (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify({
+                "@context": "https://schema.org",
+                "@type": "HowTo",
+                name: howTo.name,
+                description: howTo.description,
+                ...(howTo.totalTime ? { totalTime: howTo.totalTime } : {}),
+                ...(howTo.estimatedCost
+                  ? {
+                      estimatedCost: {
+                        "@type": "MonetaryAmount",
+                        currency: howTo.estimatedCost.currency,
+                        value: howTo.estimatedCost.value,
+                      },
+                    }
+                  : {}),
+                step: howTo.steps.map((s, i) => ({
+                  "@type": "HowToStep",
+                  position: i + 1,
+                  name: s.name,
+                  text: s.text,
+                  ...(s.url ? { url: s.url } : {}),
+                })),
+              }),
+            }}
+          />
+        );
+      })()}
     </PageShell>
   );
 }

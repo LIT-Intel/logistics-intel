@@ -5,7 +5,7 @@ import { Section } from "@/components/sections/Section";
 import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { TariffCalculator } from "@/components/sections/TariffCalculator";
-import { buildMetadata } from "@/lib/seo";
+import { buildMetadata, siteUrl } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
   title: "US tariff calculator — live HTSUS rates + Section overlays | LIT",
@@ -91,6 +91,51 @@ export default function TariffCalculatorPage() {
         subtitle="In LIT, every importer profile pre-computes the duty stack against their actual import history — so reps walk into a call knowing the prospect's tariff exposure on every lane."
         primaryCta={{ label: "Book a demo", href: "/demo", icon: "calendar" }}
         secondaryCta={{ label: "Start free", href: "https://app.logisticintel.com/signup" }}
+      />
+
+      {/* SoftwareApplication schema. The page is a working tool — not
+          just a marketing description — so it gets the same SoftwareApp
+          treatment Google/AI search expects from interactive utilities.
+          Free + no-signup is encoded as Offer price=0. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            name: "US Tariff Calculator — LIT",
+            description:
+              "Free US tariff calculator with live USITC HTSUS rates plus Section 232 (steel/aluminum/copper), Section 301 (China), and Section 122 reciprocal overlays. Sources cited per line.",
+            applicationCategory: "BusinessApplication",
+            applicationSubCategory: "Tariff calculator",
+            operatingSystem: "Web",
+            url: siteUrl("/tools/tariff-calculator"),
+            featureList: [
+              "Live USITC HTSUS rate lookup",
+              "Section 232 steel / aluminum / copper overlays",
+              "Section 301 China list 3 overlay",
+              "Section 122 reciprocal baseline",
+              "FTA preference auto-detection (USMCA, KORUS, USSFTA, AUSFTA, US-CL, US-CO)",
+              "IEEPA refund notice with CAPE portal link",
+              "AD/CVD applicability pointer to ITC ADCVDmgr",
+            ],
+            offers: {
+              "@type": "Offer",
+              price: "0",
+              priceCurrency: "USD",
+              availability: "https://schema.org/InStock",
+            },
+            publisher: {
+              "@type": "Organization",
+              name: "Logistic Intel",
+              url: siteUrl("/"),
+            },
+            potentialAction: {
+              "@type": "UseAction",
+              target: siteUrl("/tools/tariff-calculator"),
+            },
+          }),
+        }}
       />
     </PageShell>
   );
