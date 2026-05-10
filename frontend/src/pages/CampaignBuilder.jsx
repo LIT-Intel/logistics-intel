@@ -304,12 +304,17 @@ export default function CampaignBuilder() {
     seedPlay ? `${seedPlay.name} — draft` : "Untitled campaign",
   );
   const [steps, setSteps] = useState(() => {
-    // When the LIT Marketing 14-touch play is selected, seed steps with
-    // pre-filled copy (subject, body, title, description, delayDays) so
-    // the builder opens ready-to-use rather than with empty step shells.
-    if (seedPlay && seedPlay.id === "lit-marketing-14") {
-      const litSteps = applyLitMarketingSequenceToBuilder(resolveEmailTemplateHtml);
-      // Expand the first step so the inspector shows content immediately.
+    // When a LIT Marketing play is selected, seed steps with pre-filled
+    // copy (subject, body, title, description, delayDays). Picking the
+    // broker vs. forwarder play swaps in the right 14-day sequence.
+    if (
+      seedPlay &&
+      (seedPlay.id === "lit-marketing-broker-14" ||
+        seedPlay.id === "lit-marketing-forwarder-14" ||
+        seedPlay.id === "lit-marketing-14")
+    ) {
+      const audience = seedPlay.id === "lit-marketing-forwarder-14" ? "forwarder" : "broker";
+      const litSteps = applyLitMarketingSequenceToBuilder(resolveEmailTemplateHtml, audience);
       if (litSteps.length > 0) litSteps[0].expanded = true;
       return litSteps;
     }

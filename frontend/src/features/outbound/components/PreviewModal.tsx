@@ -206,21 +206,12 @@ export function PreviewModal({
                             <span className="text-slate-400">(no subject)</span>
                           )}
                         </div>
-                        <pre
-                          className="mt-2 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700"
-                          style={{ fontFamily: fontBody }}
-                        >
-                          {body || (
-                            <span className="text-slate-400">(empty body)</span>
-                          )}
-                        </pre>
-                        {signatureHtml && s.includeSignature !== false ? (
-                          <div
-                            className="mt-3 border-t border-slate-100 pt-3 text-[12px] text-slate-600"
-                            style={{ fontFamily: fontBody }}
-                            dangerouslySetInnerHTML={{ __html: signatureHtml }}
-                          />
-                        ) : null}
+                        <EmailBodyPreview
+                          body={body}
+                          signatureHtml={
+                            s.includeSignature !== false ? signatureHtml ?? null : null
+                          }
+                        />
                         {missing.length > 0 && (
                           <div
                             className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10.5px] text-[#B45309]"
@@ -311,5 +302,70 @@ export function PreviewModal({
         </div>
       </div>
     </>
+  );
+}
+
+// Sandboxed iframe preview for an email body. Renders HTML faithfully
+// (tables, hero bands, buttons) instead of escaping to raw text. Falls
+// back to plain-text rendering when the body has no HTML markup.
+function EmailBodyPreview({
+  body,
+  signatureHtml,
+}: {
+  body: string;
+  signatureHtml: string | null;
+}) {
+  if (!body || !body.trim()) {
+    return (
+      <pre
+        className="mt-2 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700"
+        style={{ fontFamily: fontBody }}
+      >
+        <span className="text-slate-400">(empty body)</span>
+      </pre>
+    );
+  }
+
+  const looksLikeHtml = /<[a-z][\s\S]*?>/i.test(body);
+  if (!looksLikeHtml) {
+    return (
+      <>
+        <pre
+          className="mt-2 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700"
+          style={{ fontFamily: fontBody }}
+        >
+          {body}
+        </pre>
+        {signatureHtml ? (
+          <div
+            className="mt-3 border-t border-slate-100 pt-3 text-[12px] text-slate-600"
+            style={{ fontFamily: fontBody }}
+            dangerouslySetInnerHTML={{ __html: signatureHtml }}
+          />
+        ) : null}
+      </>
+    );
+  }
+
+  const looksLikeFullDoc = /<!doctype\s+html|<html[\s>]/i.test(body);
+  const sig = signatureHtml
+    ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #E2E8F0;color:#475569;font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${signatureHtml}</div>`
+    : "";
+  let srcDoc: string;
+  if (looksLikeFullDoc) {
+    srcDoc = sig ? body.replace(/<\/body>/i, `${sig}</body>`) : body;
+  } else {
+    srcDoc = `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><style>body{margin:0;padding:12px 14px;font:14px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0F172A;}img{max-width:100%;height:auto;}table{max-width:100%;}</style></head><body>${body}${sig}</body></html>`;
+  }
+
+  return (
+    <div className="mt-2 overflow-hidden rounded-md border border-slate-200 bg-white">
+      <iframe
+        title="Email body preview"
+        sandbox="allow-same-origin"
+        srcDoc={srcDoc}
+        style={{ width: "100%", minHeight: 560, border: 0, display: "block" }}
+      />
+    </div>
   );
 }

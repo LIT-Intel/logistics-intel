@@ -239,15 +239,20 @@ export default function CampaignsPage() {
   const { isSuperAdmin } = useAuth();
   const [filter, setFilter] = useState("all");
 
-  // The LIT Marketing 14-touch sequence is internal — it pitches LIT itself
-  // and is reserved for the founder org's own outbound. Subscribers must
-  // never see it as a play option (or as a template; gated separately in
-  // useTemplates).
+  // The LIT Marketing sequences (broker + forwarder) are internal — they
+  // pitch LIT itself and are reserved for the founder org's own outbound.
+  // Subscribers must never see them as play options (or as templates;
+  // gated separately in useTemplates).
   const visiblePlays = useMemo(
     () =>
       isSuperAdmin
         ? STARTER_PLAYS
-        : STARTER_PLAYS.filter((p) => p.id !== "lit-marketing-14"),
+        : STARTER_PLAYS.filter(
+            (p) =>
+              p.id !== "lit-marketing-14" &&
+              p.id !== "lit-marketing-broker-14" &&
+              p.id !== "lit-marketing-forwarder-14",
+          ),
     [isSuperAdmin],
   );
   const [pendingAction, setPendingAction] = useState(null); // { type, campaign }

@@ -4,41 +4,65 @@ import type { Play } from "../types";
 // in-app templates (see CLAUDE.md §6 — "Start from a play"). The card click
 // just opens /app/campaigns/new with the play's id pre-seeded into the
 // builder's local state; nothing here is persisted server-side.
-// LIT Marketing 2-week sequence — auto-fills the campaign builder with
-// the full 14-day, 8-email + 3 LinkedIn + 2 call multichannel cadence.
-// Picking this play seeds every step's subject/body/script, not just
-// the empty channel shells. See applyLitMarketingSequenceToBuilder()
-// in src/lib/litMarketingSequence.ts.
-export const LIT_MARKETING_PLAY: Play = {
-  id: "lit-marketing-14",
+// LIT Marketing 2-week sequences — two audience-specific plays. Each
+// auto-fills the campaign builder with the full 14-day cadence (emails,
+// LinkedIn touches, calls) including subject lines, bodies, and scripts
+// pre-written with stack-cost comparisons and ROI math.
+//
+// These are admin-only (gated in Campaigns.jsx by isSuperAdmin). They
+// pitch LIT itself and must never be visible to subscribers.
+//
+// See applyLitMarketingSequenceToBuilder(resolveHtml, audience) in
+// src/lib/litMarketingSequence.ts.
+const LIT_MARKETING_CHANNELS: Play["channels"] = [
+  "email",         // Day 1 · intro · stack math
+  "linkedin_invite", // Day 2 · connect
+  "email",         // Day 3 · cost / fit math
+  "call",          // Day 4 · voicemail
+  "email",         // Day 5 · tool-by-tool comparison
+  "linkedin_message", // Day 6 · DM follow-up
+  "wait",          // Day 7 · rest
+  "email",         // Day 8 · workflow proof
+  "email",         // Day 9 · objection / stack
+  "call",          // Day 10 · follow-up
+  "email",         // Day 11 · anonymized example
+  "email",         // Day 13 · breakup
+  "linkedin_message", // Day 14 · final close
+];
+
+export const LIT_MARKETING_BROKER_PLAY: Play = {
+  id: "lit-marketing-broker-14",
   icon: "sparkles",
   accent: "#3B82F6",
-  name: "LIT Marketing · 2-week sequence",
-  persona: "Freight broker / forwarder GTM",
-  desc: "14-day multichannel sequence: 8 emails + 3 LinkedIn touches + 2 calls. Auto-fills with LIT Marketing copy when selected.",
-  channels: [
-    "email",
-    "linkedin_invite",
-    "email",
-    "call",
-    "email",
-    "linkedin_message",
-    "wait",
-    "email",
-    "email",
-    "call",
-    "email",
-    "email",
-    "email",
-    "linkedin_message",
-  ],
-  steps: 14,
-  badge: "Best multichannel reply rate",
+  name: "LIT Marketing · Broker (14 days)",
+  persona: "Freight broker sales teams",
+  desc: "Broker-focused 14-day cadence: stack-cost math, lane-fit comparisons, anonymized 5-rep desk numbers. 6 emails + 3 LinkedIn + 2 calls.",
+  channels: LIT_MARKETING_CHANNELS,
+  steps: 13,
+  badge: "Stack consolidation pitch",
 };
 
+export const LIT_MARKETING_FORWARDER_PLAY: Play = {
+  id: "lit-marketing-forwarder-14",
+  icon: "sparkles",
+  accent: "#06B6D4",
+  name: "LIT Marketing · Forwarder (14 days)",
+  persona: "Forwarder sales teams",
+  desc: "Forwarder-focused 14-day cadence: mode/lane fit math, 3-rep team consolidation example, Pulse AI pre-call workflow. 6 emails + 3 LinkedIn + 2 calls.",
+  channels: LIT_MARKETING_CHANNELS,
+  steps: 13,
+  badge: "Fit-rate pitch",
+};
+
+// Legacy alias — keeps Campaigns.jsx and CampaignBuilder.jsx referencing
+// `lit-marketing-14` working through the migration. New code should pick
+// LIT_MARKETING_BROKER_PLAY or LIT_MARKETING_FORWARDER_PLAY explicitly.
+export const LIT_MARKETING_PLAY: Play = LIT_MARKETING_BROKER_PLAY;
+
 export const STARTER_PLAYS: Play[] = [
-  // LIT Marketing first — primary GTM offering, biggest-touch sequence
-  LIT_MARKETING_PLAY,
+  // LIT Marketing first — primary GTM offering, biggest-touch sequences
+  LIT_MARKETING_BROKER_PLAY,
+  LIT_MARKETING_FORWARDER_PLAY,
   {
     id: "lane-launch",
     icon: "ship",
