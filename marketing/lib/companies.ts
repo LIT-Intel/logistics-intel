@@ -96,7 +96,7 @@ export async function getCompanyBySlug(
     console.error("[companies.getCompanyBySlug]", slug, error.message);
     return null;
   }
-  return (data as PublicCompany | null) || null;
+  return (data as unknown as PublicCompany | null) || null;
 }
 
 /**
@@ -117,7 +117,7 @@ export async function getTopCompanies(limit = 100): Promise<PublicCompany[]> {
     console.error("[companies.getTopCompanies]", error.message);
     return [];
   }
-  return (data as PublicCompany[]) || [];
+  return ((data as unknown) as PublicCompany[]) || [];
 }
 
 /**
@@ -143,7 +143,7 @@ export async function listCompanySlugs(opts: {
     console.error("[companies.listCompanySlugs]", error.message);
     return [];
   }
-  return (data || []) as Array<{ seo_slug: string; updated_at: string | null }>;
+  return ((data as unknown) || []) as Array<{ seo_slug: string; updated_at: string | null }>;
 }
 
 /**
