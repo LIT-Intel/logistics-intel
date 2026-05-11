@@ -3,25 +3,58 @@ import { sanityClient } from "@/sanity/lib/client";
 import { BLOG_INDEX_QUERY } from "@/sanity/lib/queries";
 import { PageShell } from "@/components/sections/PageShell";
 import { PageHero } from "@/components/sections/PageHero";
-import { BlogCard } from "@/components/sections/BlogCard";
+import { BlogHeroTrio } from "@/components/sections/BlogHeroTrio";
+import { BlogGrid } from "@/components/sections/BlogGrid.client";
+import { ShipperInsightsRow } from "@/components/sections/ShipperInsightsRow";
+import { Section } from "@/components/sections/Section";
 import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
 import { buildCollectionPage } from "@/lib/jsonLd";
+import {
+  getFeaturedBrandCompanies,
+  type FeaturedBrand,
+} from "@/lib/companies";
 
 export const revalidate = 600;
 
+/**
+ * Shipper Insights brand set — same shape as the /companies hub but
+ * tighter (8 marquee names is enough for a horizontal scroller). Each
+ * entry gets ILIKE-matched against the customs filer name and pulled
+ * with its highest-TEU row.
+ */
+const SHIPPER_INSIGHTS_BRANDS: FeaturedBrand[] = [
+  { pattern: "HOME DEPOT", domain: "homedepot.com" },
+  { pattern: "COSTCO", domain: "costco.com" },
+  { pattern: "WALMART", domain: "walmart.com" },
+  { pattern: "TARGET CORP", domain: "target.com" },
+  { pattern: "LOWE", domain: "lowes.com" },
+  { pattern: "BEST BUY", domain: "bestbuy.com" },
+  { pattern: "NIKE", domain: "nike.com" },
+  { pattern: "IKEA", domain: "ikea.com" },
+  { pattern: "TESLA", domain: "tesla.com" },
+  { pattern: "WAYFAIR", domain: "wayfair.com" },
+];
+
 export const metadata: Metadata = buildMetadata({
-  title: "Blog — operator-grade GTM playbooks",
+  title: "Blog — operator-grade GTM playbooks for logistics sales teams",
   description:
-    "Long-form playbooks, trade-data analysis, and field notes from teams running outbound on signal — not lists.",
+    "Long-form playbooks, trade-data analysis, shipper insights, and field notes from teams running outbound on signal — not lists.",
   path: "/blog",
   eyebrow: "Blog",
 });
 
 export default async function BlogIndexPage() {
-  const posts = (await sanityClient.fetch<any[]>(BLOG_INDEX_QUERY).catch(() => [])) || [];
-  const [featured, ...rest] = posts;
+  const [postsRaw, shippers] = await Promise.all([
+    sanityClient.fetch<any[]>(BLOG_INDEX_QUERY).catch(() => [] as any[]),
+    getFeaturedBrandCompanies(SHIPPER_INSIGHTS_BRANDS).catch(() => []),
+  ]);
+  const posts = postsRaw || [];
+
+  const hasPosts = posts.length > 0;
+  const heroPosts = posts.slice(0, 3);
+  const gridPosts = posts.slice(3);
 
   return (
     <PageShell>
@@ -38,44 +71,37 @@ export default async function BlogIndexPage() {
         subtitle="Long-form analysis, trade-data deep dives, and tactical playbooks from teams running outbound on signal — not lists."
       />
 
-      {posts.length === 0 && (
-        <section className="px-5 sm:px-8 pb-20">
-          <div className="mx-auto max-w-container">
-            <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
-              <div className="font-display text-[18px] font-semibold text-ink-900">No posts yet</div>
-              <p className="font-body mx-auto mt-2 max-w-[440px] text-[14px] leading-relaxed text-ink-500">
-                Posts will appear here as soon as the Blog Drafter agent runs (next: Monday 6am). You can also
-                publish from Sanity Studio at <code className="font-mono">/studio</code>.
-              </p>
-            </div>
+      {!hasPosts && (
+        <Section top="md" bottom="lg">
+          <div className="rounded-2xl border border-dashed border-ink-100 bg-white px-7 py-16 text-center">
+            <div className="font-display text-[18px] font-semibold text-ink-900">No posts yet</div>
+            <p className="font-body mx-auto mt-2 max-w-[440px] text-[14px] leading-relaxed text-ink-500">
+              Posts will appear here as soon as the Blog Drafter agent runs (next: Monday 6am). You can also
+              publish from Sanity Studio at <code className="font-mono">/studio</code>.
+            </p>
           </div>
-        </section>
+        </Section>
       )}
 
-      {featured && (
-        <section className="px-5 sm:px-8 pb-10">
-          <div className="mx-auto max-w-container">
-            <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
-              Featured
-            </div>
-            <BlogCard post={featured} featured />
-          </div>
-        </section>
+      {hasPosts && (
+        <Section top="md" bottom="md">
+          <BlogHeroTrio posts={heroPosts} />
+        </Section>
       )}
 
-      {rest.length > 0 && (
-        <section className="px-5 sm:px-8 pb-20">
-          <div className="mx-auto max-w-container">
-            <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
-              Latest
-            </div>
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {rest.map((p) => (
-                <BlogCard key={p._id} post={p} />
-              ))}
-            </div>
+      {shippers.length > 0 && (
+        <Section top="md" bottom="md">
+          <ShipperInsightsRow companies={shippers} />
+        </Section>
+      )}
+
+      {hasPosts && (
+        <Section top="md" bottom="lg">
+          <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
+            Browse all stories
           </div>
-        </section>
+          <BlogGrid posts={gridPosts.length > 0 ? gridPosts : posts} />
+        </Section>
       )}
 
       <CtaBanner
