@@ -597,7 +597,7 @@ async function answerQuestion(ctx: ContextBlock, question: string): Promise<{
     { role: "system", content: SYSTEM_PROMPT },
     {
       role: "user",
-      content: `Here is the live context for the user asking the question.\n\n<context>\n${ctxBlock}\n</context>\n\nHere are the most relevant help articles I retrieved:\n\n<help>\n${helpBlock}\n</help>\n\nQUESTION: ${question}\n\nReturn JSON only:\n{\n  "classification": "product_help" | "account_status" | "billing_question" | "usage_question" | "campaign_question" | "search_question" | "contact_question" | "technical_issue" | "data_question" | "recommendation",\n  "answer_md": "<= 4 sentences, markdown ok, lead with the answer, cite real numbers from context",\n  "cta": null | { "label": "<= 4 words", "url": "/app/..." }\n}`,
+      content: `Here is the live context for the user asking the question.\n\n<context>\n${ctxBlock}\n</context>\n\nHere are the most relevant help articles I retrieved:\n\n<help>\n${helpBlock}\n</help>\n\nQUESTION: ${question}\n\nReturn JSON only:\n{\n  "classification": "product_help" | "account_status" | "billing_question" | "usage_question" | "campaign_question" | "search_question" | "contact_question" | "technical_issue" | "data_business_question" | "recommendation",\n  "answer_md": "<= 4 sentences, markdown ok, lead with the answer, cite real numbers from context",\n  "cta": null | { "label": "<= 4 words", "url": "/app/..." }\n}\n\nCTA RULES (important):\n- If ANY retrieved help article has a Route, your cta.url MUST be that Route (the top-ranked one). Do NOT invent routes.\n- Valid routes ALWAYS start with "/app/" or "/settings/".\n- If no Route is available, set cta to null (the server will fall back).\n- Label should be verb-led and short, e.g. "Open Pulse", "View plans", "Find contacts".`,
     },
   ];
 
@@ -616,10 +616,18 @@ async function answerQuestion(ctx: ContextBlock, question: string): Promise<{
     const data = await resp.json();
     const text = data?.choices?.[0]?.message?.content || "";
     const parsed = JSON.parse(text);
+    // CTA fallback: if the LLM emitted no cta but the top-matched help
+    // article has a route_url, use it. Coach answers should always give
+    // the user somewhere to go — never just "check support" with no link.
+    let cta: { label: string; url: string } | null = parsed.cta || null;
+    if (!cta && matched.length > 0) {
+      const top = matched.find((a: any) => a.route_url);
+      if (top) cta = { label: `Open ${top.title.toLowerCase()}`.slice(0, 30), url: top.route_url };
+    }
     return {
       classification: String(parsed.classification || "product_help"),
       answer_md: String(parsed.answer_md || "I don't have enough to answer that yet."),
-      cta: parsed.cta || null,
+      cta,
       matched_articles: matched.map((a) => ({ slug: a.slug, title: a.title })),
     };
   } catch (err) {

@@ -209,32 +209,11 @@ export default function Pulse() {
     return () => clearTimeout(t);
   }, [query]);
 
+  // v2 owns query parsing — the old pulseCoachClassify pre-flight fire
+  // is disabled. The parsed intent comes back inside the pulse-search
+  // response (meta.parsed) and is displayed below the search bar.
   useEffect(() => {
-    const trimmed = String(query || '').trim();
-    if (trimmed.length < 4) {
-      setClassifyState({ loading: false, error: null });
-      return;
-    }
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      setClassifyState({ loading: true, error: null });
-      const res = await classifyQuery(trimmed);
-      if (cancelled) return;
-      if (!res.ok) {
-        setClassifyState({ loading: false, error: res.code });
-        return;
-      }
-      // Merge LLM result onto current heuristic parse. Re-parse here
-      // so we're merging against the latest heuristic for the
-      // submitted query (handles case where user kept typing).
-      const fresh = parsePulseQuery(trimmed);
-      setParsedQuery(mergeClassification(fresh, res.classification));
-      setClassifyState({ loading: false, error: null });
-    }, 700);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
+    setClassifyState({ loading: false, error: null });
   }, [query]);
   const errorClass = useMemo(() => classifyPulseError(errorMessage), [errorMessage]);
   const isSetupError = errorClass === 'setup';
@@ -250,8 +229,10 @@ export default function Pulse() {
     setActiveCompany(null);
 
     try {
-      // v2 path: pulse-search edge fn handles parsing + saved + directory +
-      // Apollo merge + dedup + ranking server-side. Single round trip.
+      // v2 owns search end-to-end: parses, hits saved → directory → Apollo,
+      // merges + ranks server-side. Single round trip. No legacy fallback —
+      // we surface whatever v2 returns, including empty result sets with
+      // the coach_summary explaining what was tried.
       const v2 = await searchPulseV2({ query: trimmed, limit: 50 }).catch(
         (err) => ({ ok: false, error: err?.message || 'pulse_search_failed' }),
       );
@@ -266,184 +247,30 @@ export default function Pulse() {
           coach_summary: v2.coach_summary || '',
           sources: v2.sources || null,
           parsed: v2.parsed || null,
+          apollo_called: v2.apollo_called || false,
         });
-        setApiStatus(v2.apollo_called ? 'connected' : 'connected');
+        setApiStatus('connected');
         setSubmittedQuery(trimmed);
         setSearchPerformed(true);
         if (!v2.rows.length) {
-          setErrorMessage(v2.coach_summary || 'No matches yet. Try broadening the region, removing a size filter, or rephrasing the industry term.');
+          setErrorMessage(v2.coach_summary || 'No matches. Try broadening the geography or rephrasing.');
         }
         return;
       }
 
-      // Fallback to legacy L1-L4 cascade if v2 failed entirely.
-      const parsedAtSubmit = parsePulseQuery(trimmed);
-      const recipe = buildLocalFilterRecipe(parsedAtSubmit);
-
-      // Cache-first cascade. Both queries fire in parallel; local results
-      // come back first to give immediate feedback, remote rows merge in
-      // when they land. Local search uses the structured filter recipe
-      // (countries/states) when present so freight queries tighten.
-      // The remote (Apollo) call ALSO receives the parsed entities so
-      // searchLeads can map them to Apollo's structured filter params
-      // (organization_locations[], q_organization_keyword_tags[],
-      // person_titles[], person_seniorities[]) — not just q_keywords.
-      // Prefer the LLM-merged parsedQuery (carries source='llm' when
-      // the classifier landed) over a fresh heuristic re-parse.
-      const submittedEntities = parsedQuery?.source === 'llm' && parsedQuery?.raw === trimmed
-        ? parsedQuery
-        : parsedAtSubmit;
-      // Local-first routing: await the local cascade before deciding
-      // whether the remote provider is worth calling. The local query
-      // hits lit_companies + lit_company_directory (joined with shipment
-      // metrics) — both are <12K row tables, sub-second on a normal
-      // connection. If we already have LOCAL_RICH_THRESHOLD rows, we
-      // skip the paid remote search entirely.
-      // Cascade order (Pulse search policy):
-      //   L1+L2: searchLocalCompanies (lit_companies + lit_company_directory
-      //          + lit_company_source_metrics)                — free, instant
-      //   L3:    pulse-web-discover (Tavily-backed)            — cheap, fresh
-      //          surfaces real company names from public web
-      //          and persists them to lit_company_directory so
-      //          tomorrow's same query hits L2.
-      //   L4:    searchLeads (Apollo)                          — expensive
-      //          last resort for fully unindexed lookups.
-      const localOut = await searchLocalCompanies(trimmed, 50, recipe).catch(() => null);
-      let localRows = localOut?.rows ?? [];
-      let webRows = [];
-      let webSkipped = false;
-      let remoteResp = null;
-      let remoteRows = [];
-      let remoteSkipped = false;
-
-      const enoughLocally = localRows.length >= LOCAL_RICH_THRESHOLD;
-
-      if (enoughLocally) {
-        // L1+L2 covered it — skip both L3 and L4.
-        webSkipped = true;
-        remoteSkipped = true;
-      } else {
-        // L3: try web discovery before paying for Apollo. Persists new
-        // companies to lit_company_directory for next-time hits.
-        try {
-          const { data: webData, error: webErr } = await supabase.functions.invoke(
-            'pulse-web-discover',
-            {
-              body: {
-                query: trimmed,
-                entities: submittedEntities?.hasAny ? submittedEntities : undefined,
-                limit: 12,
-                persist: true,
-              },
-            },
-          );
-          if (!webErr && webData?.ok && Array.isArray(webData.results)) {
-            // Map L3 results into the same shape the rest of the pipeline
-            // expects. provenance='web' so the UI can badge them.
-            webRows = webData.results.map((r) => ({
-              id: r.directory_id || `web:${r.name}`,
-              type: 'company',
-              business_id: r.directory_id || null,
-              name: r.name,
-              domain: r.domain || null,
-              website: r.website || '',
-              city: r.inferred_location?.city || '',
-              state: r.inferred_location?.state || '',
-              country: r.inferred_location?.country || '',
-              industry: r.inferred_industry || '',
-              summary: r.snippet || '',
-              status: r.provenance === 'directory_existing'
-                ? 'In directory'
-                : 'Web discovered',
-              provenance: r.provenance === 'directory_existing' ? 'directory' : 'web',
-              kpis: {
-                shipments_12m: null, teu_12m: null,
-                fcl_shipments_12m: null, lcl_shipments_12m: null,
-                est_spend_12m: null, top_route_12m: null,
-                recent_route: null, most_recent_shipment_date: null,
-                sources: ['web_discovery'],
-              },
-            }));
-          }
-        } catch (webDiscoverErr) {
-          console.warn('[Pulse] web discovery failed:', webDiscoverErr);
-        }
-
-        // L4: Apollo. Skip when L1+L2+L3 collectively returned enough.
-        if (localRows.length + webRows.length >= LOCAL_RICH_THRESHOLD) {
-          remoteSkipped = true;
-        } else {
-          const remote = await searchPulse({
-            query: trimmed,
-            ui_mode: 'auto',
-            entities: submittedEntities?.hasAny ? submittedEntities : undefined,
-          }).catch((err) => ({ ok: false, error: err?.message || 'remote_failed' }));
-          remoteResp = remote || null;
-          remoteRows = Array.isArray(remoteResp?.data?.results) ? remoteResp.data.results : [];
-        }
-      }
-
-      // Cascade fallback — if the recipe-narrowed local search returned
-      // 0 AND the remote also returned 0, retry the local lookup
-      // without the recipe so the user gets best-effort keyword matches.
-      // This is the safety net for prompts where the recipe is too
-      // strict (e.g. "Georgia" matched a state nobody is saved in yet,
-      // but the keyword "Vietnam" might match company summaries).
-      let usedFallback = false;
-      if (recipe && !localRows.length && !remoteRows.length) {
-        try {
-          const retried = await searchLocalCompanies(trimmed, 50, null);
-          if (retried.rows.length) {
-            localRows = retried.rows;
-            usedFallback = true;
-          }
-        } catch (_) {
-          // ignore — the empty state below will fire
-        }
-      }
-
-      // Three-way merge: local hits first (richest data), web discoveries
-      // second (real names but limited firmographics), Apollo last (deepest
-      // but most expensive). mergeResults dedupes on domain across the
-      // sources, so a company already in our directory won't appear
-      // twice when the web layer also surfaced it.
-      const merged = mergeResults([...localRows, ...webRows], remoteRows);
-
-      setLocalCount(localRows.length);
-      setResults(merged);
-      setResultMode(remoteResp?.mode || (localRows.length ? 'companies' : null));
-      setMeta(remoteResp?.meta || null);
-      setApiStatus(
-        remoteSkipped
-          ? 'connected' // local-only path, no remote dependency to report
-          : remoteResp?.ok && !remoteResp?.error
-          ? 'connected'
-          : remoteResp
-          ? 'error'
-          : 'unknown',
-      );
+      // v2 failed at the function call level (network / CORS / 500 / 401).
+      // Surface the actual error to the user so we can diagnose; do NOT
+      // silently fall back to legacy results that pretend the query worked.
+      setResults([]);
+      setResultMode(null);
+      setMeta(null);
+      setApiStatus('error');
       setSubmittedQuery(trimmed);
       setSearchPerformed(true);
-
-      if (!remoteSkipped && remoteResp && remoteResp.ok === false && !localRows.length) {
-        setErrorMessage(remoteResp?.error || 'Search service is unavailable right now. Please try again in a moment.');
-      } else if (remoteResp?.error && !localRows.length) {
-        setErrorMessage(remoteResp.error);
-      } else if (!merged.length) {
-        // Build a specific empty-state message that names what the
-        // parser actually tried — much more useful than generic copy.
-        const tried = describeAttempt(parsedAtSubmit, recipe);
-        setErrorMessage(
-          tried
-            ? `No matches for ${tried}. The Coach narrowed to your saved freight database; try removing a chip above (e.g. drop the destination) or rephrase as a broader question.`
-            : 'No matches found. Try widening geography, simplifying the prompt, or asking for a different industry.',
-        );
-      } else if (usedFallback) {
-        // Surface a soft hint so the user knows the recipe was loosened
-        setErrorMessage(
-          'Showing keyword matches — your structured freight filters returned no companies. Edit the chips above to refine.',
-        );
-      }
+      setErrorMessage(
+        (v2 && (v2.error || v2.coach_summary)) ||
+          'Pulse search is unreachable right now. Try again in a moment, or contact support if this persists.',
+      );
     } catch (error) {
       console.error('[Pulse] search failed:', error);
       setApiStatus('error');
@@ -1044,14 +871,12 @@ export default function Pulse() {
           </div>
         </div>
 
-        {/* Coach query interpretation — entity chips parsed from the prompt */}
-        <QueryInterpretation
-          parsed={parsedQuery}
-          query={query}
-          onChangeQuery={setQuery}
-          onRun={() => runSearch()}
-          classifying={classifyState.loading}
-        />
+        {/* v2 parsed-intent chips — shown after a search completes. Replaces
+            the legacy QueryInterpretation chip block which read from the
+            client-side parser (now disabled). */}
+        {searchPerformed && meta?.parsed ? (
+          <V2IntentChips parsed={meta.parsed} sources={meta.sources} apolloCalled={meta.apollo_called} />
+        ) : null}
 
         {/* Globe — only renders when the parser found freight endpoints */}
         <PulseMap parsed={parsedQuery} results={results} />
@@ -1259,6 +1084,68 @@ export default function Pulse() {
 }
 
 /* ─────────── Sub-components ─────────── */
+
+function V2IntentChips({ parsed, sources, apolloCalled }) {
+  if (!parsed) return null;
+  const audience = Array.isArray(parsed.audience_type) ? parsed.audience_type : [];
+  const industry = Array.isArray(parsed.industry_terms) ? parsed.industry_terms : [];
+  const states = parsed.geo?.states || [];
+  const cities = parsed.geo?.cities || [];
+  const region = parsed.geo?.region;
+  const sizeMin = parsed.size?.employee_min;
+  const sizeMax = parsed.size?.employee_max;
+  const chips = [];
+  for (const a of audience.slice(0, 4)) chips.push({ key: `aud-${a}`, label: a.replace(/_/g, ' '), tone: 'cyan' });
+  for (const t of industry.slice(0, 3)) chips.push({ key: `ind-${t}`, label: t, tone: 'violet' });
+  if (region) chips.push({ key: `reg-${region}`, label: region, tone: 'green' });
+  for (const s of states.slice(0, 3)) chips.push({ key: `st-${s}`, label: s, tone: 'green' });
+  for (const c of cities.slice(0, 2)) chips.push({ key: `ci-${c}`, label: c, tone: 'green' });
+  if (sizeMin != null || sizeMax != null) chips.push({ key: 'size', label: `${sizeMin ?? 1}–${sizeMax ?? '∞'} employees`, tone: 'amber' });
+  if (chips.length === 0) return null;
+  const total = (sources?.saved || 0) + (sources?.directory || 0) + (sources?.apollo || 0);
+  return (
+    <div className="mt-3 rounded-xl border border-slate-800/40 bg-gradient-to-r from-[#0F172A] to-[#1E293B] p-3 text-slate-100">
+      <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.08em] text-cyan-300">
+        <span>Pulse understood</span>
+        <span className="text-slate-400 normal-case font-normal tracking-normal">
+          {sources?.saved ? `${sources.saved} saved · ` : ''}
+          {sources?.directory ? `${sources.directory} LIT · ` : ''}
+          {sources?.apollo ? `${sources.apollo} Apollo · ` : ''}
+          total {total}
+          {apolloCalled ? '' : ' · Apollo not called'}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {chips.map((c) => (
+          <span
+            key={c.key}
+            className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+            style={{
+              background:
+                c.tone === 'cyan' ? 'rgba(34,211,238,0.15)' :
+                c.tone === 'violet' ? 'rgba(167,139,250,0.18)' :
+                c.tone === 'green' ? 'rgba(74,222,128,0.18)' :
+                c.tone === 'amber' ? 'rgba(251,191,36,0.18)' : 'rgba(148,163,184,0.18)',
+              color:
+                c.tone === 'cyan' ? '#67e8f9' :
+                c.tone === 'violet' ? '#c4b5fd' :
+                c.tone === 'green' ? '#86efac' :
+                c.tone === 'amber' ? '#fcd34d' : '#cbd5e1',
+              border: `1px solid ${
+                c.tone === 'cyan' ? 'rgba(34,211,238,0.3)' :
+                c.tone === 'violet' ? 'rgba(167,139,250,0.3)' :
+                c.tone === 'green' ? 'rgba(74,222,128,0.3)' :
+                c.tone === 'amber' ? 'rgba(251,191,36,0.3)' : 'rgba(148,163,184,0.3)'
+              }`,
+            }}
+          >
+            {c.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function PulseLoading() {
   const [active, setActive] = useState(0);
