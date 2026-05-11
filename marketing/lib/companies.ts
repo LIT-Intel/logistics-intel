@@ -121,15 +121,31 @@ export async function getTopCompanies(limit = 100): Promise<PublicCompany[]> {
 }
 
 /**
- * All active slugs — used for the dedicated companies sitemap. Paginated
- * via offset so we can drive a multi-page sitemap if/when the corpus
- * grows past the 50K Google limit per sitemap.
+ * Threshold for "substantive enough to index." Pages below this stay
+ * accessible via direct URL but are excluded from sitemap + IndexNow
+ * submission and emit `<meta name="robots" content="noindex">`. Keeps
+ * Google from getting fed thin pages, which can otherwise trigger
+ * Panda-style sitewide quality penalties.
+ *
+ * Kept in this lib so the page, sitemap, and cron stay in sync.
+ */
+export const MIN_SHIPMENTS_FOR_INDEX = 10;
+
+/**
+ * Slugs of substantive importer profiles — the only set we submit to
+ * search engines. The 23,279 thinner rows still render at /companies/[slug]
+ * (so any visitor with a direct link sees something) but they don't
+ * get crawl invitations. Concentrated quality > diluted quantity.
+ *
+ * Paginated via offset so we can drive a multi-page sitemap if/when
+ * the substantive corpus grows past 50K.
  */
 export async function listCompanySlugs(opts: {
   limit?: number;
   offset?: number;
+  minShipments?: number;
 } = {}): Promise<Array<{ seo_slug: string; updated_at: string | null }>> {
-  const { limit = 50000, offset = 0 } = opts;
+  const { limit = 50000, offset = 0, minShipments = MIN_SHIPMENTS_FOR_INDEX } = opts;
   const c = client();
   if (!c) return [];
   const { data, error } = await c
@@ -137,6 +153,7 @@ export async function listCompanySlugs(opts: {
     .select("seo_slug, updated_at")
     .eq("is_active", true)
     .not("seo_slug", "is", null)
+    .gte("shipments", minShipments)
     .order("teu", { ascending: false, nullsFirst: false })
     .range(offset, offset + limit - 1);
   if (error) {
@@ -149,15 +166,20 @@ export async function listCompanySlugs(opts: {
 /**
  * Total active row count. Used for sitemap pagination calculation
  * and for "X importers tracked" displays on the hub.
+ *
+ * Pass `substantiveOnly = true` to get the indexable subset
+ * (shipments >= MIN_SHIPMENTS_FOR_INDEX).
  */
-export async function countActiveCompanies(): Promise<number> {
+export async function countActiveCompanies(opts: { substantiveOnly?: boolean } = {}): Promise<number> {
   const c = client();
   if (!c) return 0;
-  const { count, error } = await c
+  let q = c
     .from("lit_company_directory")
     .select("seo_slug", { count: "exact", head: true })
     .eq("is_active", true)
     .not("seo_slug", "is", null);
+  if (opts.substantiveOnly) q = q.gte("shipments", MIN_SHIPMENTS_FOR_INDEX);
+  const { count, error } = await q;
   if (error) {
     console.error("[companies.countActiveCompanies]", error.message);
     return 0;

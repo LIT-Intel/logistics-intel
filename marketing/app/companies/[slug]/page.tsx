@@ -12,6 +12,7 @@ import {
   formatHeadquarters,
   formatNumber,
   formatUsdShort,
+  MIN_SHIPMENTS_FOR_INDEX,
 } from "@/lib/companies";
 import { buildMetadata, siteUrl } from "@/lib/seo";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
@@ -59,6 +60,7 @@ export async function generateMetadata({
     });
   }
   const hq = formatHeadquarters(company);
+  const isThin = !company.shipments || Number(company.shipments) < MIN_SHIPMENTS_FOR_INDEX;
   return buildMetadata({
     title: `${company.company_name} — US import profile, BOL data, top trade lanes`,
     description:
@@ -66,6 +68,9 @@ export async function generateMetadata({
       `Bill of Lading volume, TEU, lanes, and contact discovery. Source: US Customs filings.`,
     path: `/companies/${params.slug}`,
     eyebrow: "Importer profile",
+    // Thin profiles render but stay out of the index. Followed links
+    // still pass equity to the substantive pages they reference.
+    seo: isThin ? { noIndex: true } : null,
   });
 }
 

@@ -28,9 +28,10 @@ export const metadata: Metadata = buildMetadata({
 });
 
 export default async function CompaniesHubPage() {
-  const [top, total] = await Promise.all([
+  const [top, total, indexable] = await Promise.all([
     getTopCompanies(48),
     countActiveCompanies(),
+    countActiveCompanies({ substantiveOnly: true }),
   ]);
 
   return (
@@ -45,7 +46,7 @@ export default async function CompaniesHubPage() {
         eyebrow="Importer directory"
         title="Active US importers,"
         titleHighlight="ranked by trade volume."
-        subtitle={`Browse ${formatNumber(total)} active US importers tracked across live US Customs Bill of Lading filings. Each profile surfaces trailing-12-month TEU, shipment cadence, and the path to verified buyer contacts inside LIT.`}
+        subtitle={`Browse ${formatNumber(indexable)} substantive US importer profiles (10+ Bill of Lading filings) from a tracked universe of ${formatNumber(total)}+ active companies. Each profile surfaces TTM TEU, shipment cadence, and the path to verified buyer contacts inside LIT.`}
         align="center"
       />
 
