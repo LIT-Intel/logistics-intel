@@ -121,6 +121,44 @@ export async function getTopCompanies(limit = 100): Promise<PublicCompany[]> {
 }
 
 /**
+ * Brand patterns used to surface household-name importers on the /companies
+ * hub. The DB stores raw US Customs filer names (e.g. "WALMART INC", "TARGET
+ * CORP", "HOME DEPOT USA INC") so we ILIKE-match a substring and take the
+ * highest-TEU hit per pattern. The `domain` field is curated here because
+ * the customs feed rarely carries domains; this is what powers the logo.dev
+ * image tile on the card.
+ */
+export type FeaturedBrand = { pattern: string; domain: string };
+
+export async function getFeaturedBrandCompanies(
+  brands: FeaturedBrand[],
+): Promise<Array<PublicCompany & { _featured_domain: string }>> {
+  const c = client();
+  if (!c) return [];
+  const results = await Promise.all(
+    brands.map(async (b) => {
+      const { data, error } = await c
+        .from("lit_company_directory")
+        .select(FIELDS)
+        .eq("is_active", true)
+        .not("seo_slug", "is", null)
+        .ilike("company_name", `%${b.pattern}%`)
+        .order("teu", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      if (error || !data) return null;
+      const row = data as unknown as PublicCompany;
+      return { ...row, _featured_domain: b.domain };
+    }),
+  );
+  // Dedup by seo_slug (e.g. "AMAZON" pattern could match the same row as "AMZN")
+  const seen = new Set<string>();
+  return results.flatMap((r) =>
+    r && r.seo_slug && !seen.has(r.seo_slug) ? (seen.add(r.seo_slug), [r]) : [],
+  );
+}
+
+/**
  * Threshold for "substantive enough to index." Pages below this stay
  * accessible via direct URL but are excluded from sitemap + IndexNow
  * submission and emit `<meta name="robots" content="noindex">`. Keeps
