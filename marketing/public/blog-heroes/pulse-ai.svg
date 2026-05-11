@@ -1,58 +1,156 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Pulse AI: natural-language intelligence over your trade graph">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Pulse AI Account Intelligence brief for Costco Wholesale">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#0F172A"/>
-      <stop offset="55%" stop-color="#1E293B"/>
-      <stop offset="100%" stop-color="#1E40AF"/>
+      <stop offset="100%" stop-color="#1E293B"/>
     </linearGradient>
-    <linearGradient id="line1" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0"/>
-      <stop offset="50%" stop-color="#06B6D4" stop-opacity="1"/>
-      <stop offset="100%" stop-color="#06B6D4" stop-opacity="0"/>
+    <linearGradient id="headerBar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
     </linearGradient>
-    <linearGradient id="line2" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0"/>
-      <stop offset="50%" stop-color="#3B82F6" stop-opacity="0.85"/>
-      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.45"/>
-      <stop offset="100%" stop-color="#06B6D4" stop-opacity="0"/>
+    <radialGradient id="cyanGlow" cx="0.85" cy="0.15" r="0.6">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0"/>
     </radialGradient>
+    <radialGradient id="bgGlow" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="modalShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
   </defs>
+
+  <!-- Background -->
   <rect width="1600" height="900" fill="url(#bg)"/>
-  <circle cx="780" cy="450" r="420" fill="url(#glow)"/>
-  <g opacity="0.5" stroke="#1E3A8A" stroke-width="1" fill="none">
-    <path d="M0 200 Q400 100 800 300 T1600 250"/>
-    <path d="M0 400 Q400 320 800 500 T1600 470"/>
-    <path d="M0 600 Q400 520 800 700 T1600 670"/>
-    <path d="M0 800 Q400 720 800 880 T1600 850"/>
+  <circle cx="800" cy="450" r="540" fill="url(#bgGlow)"/>
+
+  <!-- Modal -->
+  <g transform="translate(160,80)" filter="url(#modalShadow)">
+    <rect width="1280" height="740" rx="20" fill="#FBFCFE"/>
+
+    <!-- Header strip -->
+    <g>
+      <rect width="1280" height="120" rx="20" fill="url(#headerBar)"/>
+      <rect y="100" width="1280" height="20" fill="url(#headerBar)"/>
+      <rect width="1280" height="120" rx="20" fill="url(#cyanGlow)"/>
+      <line x1="0" y1="119" x2="1280" y2="119" stroke="#00F0FF" stroke-width="1" opacity="0.4"/>
+      <!-- Sparkle icon -->
+      <g transform="translate(36,40)">
+        <path d="M14 0 L17 11 L28 14 L17 17 L14 28 L11 17 L0 14 L11 11 Z" fill="#00F0FF"/>
+      </g>
+      <text x="76" y="55" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="800" fill="#00F0FF" letter-spacing="0.14em">PULSE AI · ACCOUNT INTELLIGENCE</text>
+      <!-- Action icons row -->
+      <g transform="translate(1100,38)" fill="#94A3B8" opacity="0.6">
+        <rect x="0" y="0" width="22" height="22" rx="3" stroke="#94A3B8" stroke-width="1.5" fill="none"/>
+        <rect x="40" y="0" width="22" height="22" rx="3" stroke="#94A3B8" stroke-width="1.5" fill="none"/>
+        <rect x="80" y="0" width="22" height="22" rx="3" stroke="#94A3B8" stroke-width="1.5" fill="none"/>
+        <rect x="120" y="0" width="22" height="22" rx="3" stroke="#94A3B8" stroke-width="1.5" fill="none"/>
+      </g>
+      <!-- Company name + meta -->
+      <text x="36" y="92" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Costco Wholesale</text>
+      <text x="36" y="113" font-family="ui-monospace, SF Mono, monospace" font-size="13" fill="#CBD5E1">Issaquah, WA · 1,083 TEU/yr · Distributors</text>
+    </g>
+
+    <!-- Section 01: Executive Summary -->
+    <g transform="translate(36,156)">
+      <g>
+        <rect width="26" height="26" rx="5" fill="#E6FBFF" stroke="#00F0FF" stroke-width="1" opacity="0.95"/>
+        <text x="13" y="18" text-anchor="middle" font-family="ui-monospace, SF Mono, monospace" font-size="11" font-weight="800" fill="#0F172A">01</text>
+      </g>
+      <text x="38" y="19" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#0F172A">Executive Account Summary</text>
+    </g>
+    <g transform="translate(36,196)">
+      <text font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="500" fill="#334155">
+        <tspan x="0" dy="0">Costco Wholesale runs a high-volume, low-LCL trans-Pacific program through</tspan>
+        <tspan x="0" dy="22">its Issaquah, WA headquarters — 542 ocean BOL filings over the trailing 12</tspan>
+        <tspan x="0" dy="22">months, 1,083 TEU, and $20.0M declared customs value. Container mix is 99%</tspan>
+        <tspan x="0" dy="22">FCL. The cadence and lane stability suggest contracted allocation rather than</tspan>
+        <tspan x="0" dy="22">spot — a buyer that rebids freight, not one that flips it weekly.</tspan>
+      </text>
+    </g>
+
+    <!-- Section 02: Activity Snapshot -->
+    <g transform="translate(36,360)">
+      <rect width="26" height="26" rx="5" fill="#E6FBFF" stroke="#00F0FF" stroke-width="1"/>
+      <text x="13" y="18" text-anchor="middle" font-family="ui-monospace, SF Mono, monospace" font-size="11" font-weight="800" fill="#0F172A">02</text>
+      <text x="38" y="19" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#0F172A">Trade Activity Snapshot</text>
+    </g>
+    <g transform="translate(36,396)">
+      <!-- 4 stat cards -->
+      <g>
+        <rect width="280" height="78" rx="10" fill="#F1F5F9" stroke="#E2E8F0"/>
+        <text x="16" y="26" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="800" fill="#64748B" letter-spacing="0.12em">12M TEU</text>
+        <text x="16" y="58" font-family="ui-monospace, SF Mono, monospace" font-size="26" font-weight="700" fill="#1D4ED8">1,083</text>
+      </g>
+      <g transform="translate(296,0)">
+        <rect width="280" height="78" rx="10" fill="#F1F5F9" stroke="#E2E8F0"/>
+        <text x="16" y="26" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="800" fill="#64748B" letter-spacing="0.12em">SHIPMENTS (12M)</text>
+        <text x="16" y="58" font-family="ui-monospace, SF Mono, monospace" font-size="26" font-weight="700" fill="#1D4ED8">542</text>
+      </g>
+      <g transform="translate(592,0)">
+        <rect width="280" height="78" rx="10" fill="#F1F5F9" stroke="#E2E8F0"/>
+        <text x="16" y="26" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="800" fill="#64748B" letter-spacing="0.12em">DECLARED VALUE</text>
+        <text x="16" y="58" font-family="ui-monospace, SF Mono, monospace" font-size="26" font-weight="700" fill="#1D4ED8">$20.0M</text>
+      </g>
+      <g transform="translate(888,0)">
+        <rect width="280" height="78" rx="10" fill="#F1F5F9" stroke="#E2E8F0"/>
+        <text x="16" y="26" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="800" fill="#64748B" letter-spacing="0.12em">LCL SHARE</text>
+        <text x="16" y="58" font-family="ui-monospace, SF Mono, monospace" font-size="26" font-weight="700" fill="#1D4ED8">0.2%</text>
+      </g>
+    </g>
+
+    <!-- Section 03: Opportunity Signals -->
+    <g transform="translate(36,510)">
+      <rect width="26" height="26" rx="5" fill="#E6FBFF" stroke="#00F0FF" stroke-width="1"/>
+      <text x="13" y="18" text-anchor="middle" font-family="ui-monospace, SF Mono, monospace" font-size="11" font-weight="800" fill="#0F172A">03</text>
+      <text x="38" y="19" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#0F172A">Opportunity Signals</text>
+    </g>
+    <g transform="translate(36,546)">
+      <!-- Buying signal -->
+      <g>
+        <rect width="588" height="68" rx="10" fill="rgba(16,185,129,0.08)" stroke="rgba(16,185,129,0.3)"/>
+        <text x="16" y="22" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#10B981" letter-spacing="0.12em">BUYING SIGNAL</text>
+        <text x="16" y="44" font-family="Inter, system-ui, sans-serif" font-size="12.5" fill="#0F172A">Container cadence steady; FCL share &gt; 99% suggests contracted</text>
+        <text x="16" y="60" font-family="Inter, system-ui, sans-serif" font-size="12.5" fill="#0F172A">allocation, prime for an RFP-cycle outreach.</text>
+      </g>
+      <g transform="translate(604,0)">
+        <rect width="588" height="68" rx="10" fill="rgba(59,130,246,0.08)" stroke="rgba(59,130,246,0.3)"/>
+        <text x="16" y="22" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#3B82F6" letter-spacing="0.12em">CARRIER OPPORTUNITY</text>
+        <text x="16" y="44" font-family="Inter, system-ui, sans-serif" font-size="12.5" fill="#0F172A">High kg-per-TEU density (~4,924 kg) — heavy freight</text>
+        <text x="16" y="60" font-family="Inter, system-ui, sans-serif" font-size="12.5" fill="#0F172A">specialists win share on this profile.</text>
+      </g>
+    </g>
+    <g transform="translate(36,624)">
+      <g>
+        <rect width="588" height="68" rx="10" fill="rgba(245,158,11,0.08)" stroke="rgba(245,158,11,0.3)"/>
+        <text x="16" y="22" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#F59E0B" letter-spacing="0.12em">FORWARDER DISPLACEMENT</text>
+        <text x="16" y="44" font-family="Inter, system-ui, sans-serif" font-size="12.5" fill="#0F172A">No incumbent forwarder dominance observed —</text>
+        <text x="16" y="60" font-family="Inter, system-ui, sans-serif" font-size="12.5" fill="#0F172A">multi-vendor RFP environment.</text>
+      </g>
+      <g transform="translate(604,0)">
+        <rect width="588" height="68" rx="10" fill="rgba(139,92,246,0.08)" stroke="rgba(139,92,246,0.3)"/>
+        <text x="16" y="22" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#8B5CF6" letter-spacing="0.12em">SUPPLIER SIGNAL</text>
+        <text x="16" y="44" font-family="Inter, system-ui, sans-serif" font-size="12.5" fill="#0F172A">Diversified supplier base across Pacific Rim —</text>
+        <text x="16" y="60" font-family="Inter, system-ui, sans-serif" font-size="12.5" fill="#0F172A">capacity flexibility is the buyer&apos;s point of leverage.</text>
+      </g>
+    </g>
+
+    <!-- Confidence footer -->
+    <g transform="translate(0,718)">
+      <rect width="1280" height="22" rx="0" fill="#F8FAFC"/>
+      <text x="36" y="15" font-family="Inter, system-ui, sans-serif" font-size="11" fill="#64748B">Was this brief useful?</text>
+      <g transform="translate(1140,3)">
+        <rect width="104" height="16" rx="8" fill="rgba(16,185,129,0.1)" stroke="rgba(16,185,129,0.3)"/>
+        <text x="52" y="12" text-anchor="middle" font-family="ui-monospace, SF Mono, monospace" font-size="9.5" font-weight="700" fill="#059669">Confidence 95%</text>
+      </g>
+    </g>
   </g>
-  <g fill="none" stroke-width="3" stroke-linecap="round">
-    <path d="M120 450 Q400 240 780 450 T1480 440" stroke="url(#line1)"/>
-    <path d="M120 520 Q400 720 780 510 T1480 510" stroke="url(#line2)"/>
-  </g>
-  <!-- Node dots along the lines -->
-  <g fill="#06B6D4">
-    <circle cx="400" cy="288" r="6"/>
-    <circle cx="780" cy="450" r="10"/>
-    <circle cx="1140" cy="395" r="6"/>
-  </g>
-  <g fill="#3B82F6">
-    <circle cx="400" cy="608" r="6"/>
-    <circle cx="780" cy="510" r="6"/>
-    <circle cx="1140" cy="585" r="6"/>
-  </g>
-  <!-- Sparkle accents -->
-  <g fill="#F8FAFC" opacity="0.85">
-    <path d="M1080 220 l8 16 l16 8 l-16 8 l-8 16 l-8 -16 l-16 -8 l16 -8 z"/>
-    <path d="M280 660 l6 12 l12 6 l-12 6 l-6 12 l-6 -12 l-12 -6 l12 -6 z"/>
-    <path d="M1320 660 l5 10 l10 5 l-10 5 l-5 10 l-5 -10 l-10 -5 l10 -5 z"/>
-  </g>
-  <!-- Central Pulse AI mark -->
-  <g transform="translate(780,450)">
-    <circle r="60" fill="rgba(15,23,42,0.7)" stroke="#06B6D4" stroke-width="2"/>
-    <text x="0" y="-6" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#E0F2FE" letter-spacing="0.18em">PULSE</text>
-    <text x="0" y="18" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="800" fill="#F8FAFC" letter-spacing="0.04em">AI</text>
+
+  <!-- Floating label badge -->
+  <g transform="translate(80,820)">
+    <rect width="220" height="40" rx="20" fill="rgba(0,240,255,0.12)" stroke="#00F0FF" stroke-width="1"/>
+    <circle cx="22" cy="20" r="4" fill="#00F0FF"/>
+    <text x="40" y="25" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="700" fill="#E0F2FE" letter-spacing="0.08em">LIVE FROM US CUSTOMS</text>
   </g>
 </svg>

@@ -1,73 +1,101 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Pulse Coach: shipment-change signals into outbound triggers">
   <defs>
-    <linearGradient id="bg4" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#1E1B4B"/>
-      <stop offset="100%" stop-color="#7C3AED"/>
+    <linearGradient id="cbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
     </linearGradient>
-    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#A78BFA" stop-opacity="0.0"/>
-      <stop offset="50%" stop-color="#A78BFA" stop-opacity="0.85"/>
-      <stop offset="100%" stop-color="#A78BFA" stop-opacity="0.0"/>
+    <linearGradient id="curve" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#00F0FF" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/>
     </linearGradient>
+    <radialGradient id="cyanFog" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <rect width="1600" height="900" fill="url(#bg4)"/>
-  <!-- Horizontal time-line grid -->
-  <g stroke="#3730A3" stroke-width="1" opacity="0.5">
-    <path d="M0 200 H1600"/><path d="M0 400 H1600"/><path d="M0 600 H1600"/><path d="M0 800 H1600"/>
+
+  <rect width="1600" height="900" fill="url(#cbg)"/>
+  <circle cx="900" cy="430" r="540" fill="url(#cyanFog)"/>
+
+  <!-- Faint horizontal grid -->
+  <g stroke="#1E40AF" stroke-width="1" opacity="0.25">
+    <path d="M0 220 H1600"/>
+    <path d="M0 360 H1600"/>
+    <path d="M0 500 H1600"/>
+    <path d="M0 640 H1600"/>
   </g>
-  <!-- Vertical month markers -->
-  <g font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="600" fill="#C7D2FE" letter-spacing="0.12em">
-    <line x1="200" y1="780" x2="200" y2="810" stroke="#6366F1"/>
-    <text x="200" y="840" text-anchor="middle">JAN</text>
-    <line x1="430" y1="780" x2="430" y2="810" stroke="#6366F1"/>
-    <text x="430" y="840" text-anchor="middle">FEB</text>
-    <line x1="660" y1="780" x2="660" y2="810" stroke="#6366F1"/>
-    <text x="660" y="840" text-anchor="middle">MAR</text>
-    <line x1="890" y1="780" x2="890" y2="810" stroke="#6366F1"/>
-    <text x="890" y="840" text-anchor="middle">APR</text>
-    <line x1="1120" y1="780" x2="1120" y2="810" stroke="#6366F1"/>
-    <text x="1120" y="840" text-anchor="middle">MAY</text>
-    <line x1="1350" y1="780" x2="1350" y2="810" stroke="#6366F1"/>
-    <text x="1350" y="840" text-anchor="middle">JUN</text>
+
+  <!-- Month markers -->
+  <g font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#94A3B8" letter-spacing="0.14em">
+    <line x1="220" y1="730" x2="220" y2="750" stroke="#475569" stroke-width="1.5"/>
+    <text x="220" y="772" text-anchor="middle">JAN</text>
+    <line x1="450" y1="730" x2="450" y2="750" stroke="#475569" stroke-width="1.5"/>
+    <text x="450" y="772" text-anchor="middle">FEB</text>
+    <line x1="680" y1="730" x2="680" y2="750" stroke="#475569" stroke-width="1.5"/>
+    <text x="680" y="772" text-anchor="middle">MAR</text>
+    <line x1="910" y1="730" x2="910" y2="750" stroke="#475569" stroke-width="1.5"/>
+    <text x="910" y="772" text-anchor="middle">APR</text>
+    <line x1="1140" y1="730" x2="1140" y2="750" stroke="#475569" stroke-width="1.5"/>
+    <text x="1140" y="772" text-anchor="middle">MAY</text>
+    <line x1="1370" y1="730" x2="1370" y2="750" stroke="#475569" stroke-width="1.5"/>
+    <text x="1370" y="772" text-anchor="middle">JUN</text>
   </g>
-  <!-- Volume curve -->
-  <path d="M120 600 Q260 540 430 560 T660 480 Q780 400 890 360 T1120 280 Q1280 220 1480 200"
-        fill="none" stroke="url(#wave)" stroke-width="4" stroke-linecap="round"/>
-  <!-- Faint pre-curve -->
-  <path d="M120 620 Q260 600 430 590 T660 570 Q780 560 890 555 T1120 540 Q1280 530 1480 525"
-        fill="none" stroke="#6366F1" stroke-width="2" stroke-dasharray="4 6" opacity="0.7"/>
-  <!-- Alert pins -->
+
+  <!-- Baseline (faint, dashed — what the shipper "would have done") -->
+  <path d="M120 640 Q260 620 450 605 T680 580 Q800 565 910 555 T1140 540 Q1290 530 1480 525"
+        fill="none" stroke="#3B82F6" stroke-width="2" stroke-dasharray="4 7" opacity="0.45"/>
+
+  <!-- Actual curve (cyan, the real story) -->
+  <path d="M120 640 Q260 600 450 580 T680 480 Q800 400 910 360 T1140 280 Q1290 230 1480 200"
+        fill="none" stroke="url(#curve)" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- Alert pins — all using brand-aligned palette -->
   <g>
-    <g transform="translate(660,480)">
-      <circle r="14" fill="#FBBF24"/>
-      <circle r="6" fill="#1E1B4B"/>
-      <line x1="0" y1="14" x2="0" y2="36" stroke="#FBBF24" stroke-width="2"/>
-      <rect x="-90" y="36" width="180" height="44" rx="8" fill="rgba(15,23,42,0.9)" stroke="#FBBF24"/>
-      <text x="0" y="60" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="700" fill="#FCD34D">CARRIER PIVOT</text>
-      <text x="0" y="74" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="500" fill="#E2E8F0">Maersk → MSC</text>
+    <!-- Carrier pivot — cyan -->
+    <g transform="translate(680,480)">
+      <circle r="14" fill="#00F0FF" stroke="#0F172A" stroke-width="2"/>
+      <line x1="0" y1="14" x2="0" y2="34" stroke="#00F0FF" stroke-width="2"/>
+      <rect x="-92" y="34" width="184" height="46" rx="8" fill="rgba(15,23,42,0.92)" stroke="#00F0FF" stroke-width="1"/>
+      <text x="0" y="55" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#00F0FF" letter-spacing="0.1em">CARRIER PIVOT</text>
+      <text x="0" y="70" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="11" fill="#E2E8F0">Maersk → MSC, 38% mix</text>
     </g>
-    <g transform="translate(890,360)">
-      <circle r="14" fill="#34D399"/>
-      <circle r="6" fill="#1E1B4B"/>
-      <line x1="0" y1="14" x2="0" y2="36" stroke="#34D399" stroke-width="2"/>
-      <rect x="-100" y="36" width="200" height="44" rx="8" fill="rgba(15,23,42,0.9)" stroke="#34D399"/>
-      <text x="0" y="60" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="700" fill="#6EE7B7">VOLUME +32% MoM</text>
-      <text x="0" y="74" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="500" fill="#E2E8F0">New origin: VN</text>
+    <!-- Volume spike — bright blue -->
+    <g transform="translate(910,360)">
+      <circle r="14" fill="#3B82F6" stroke="#0F172A" stroke-width="2"/>
+      <line x1="0" y1="14" x2="0" y2="34" stroke="#3B82F6" stroke-width="2"/>
+      <rect x="-100" y="34" width="200" height="46" rx="8" fill="rgba(15,23,42,0.92)" stroke="#3B82F6" stroke-width="1"/>
+      <text x="0" y="55" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#60A5FA" letter-spacing="0.1em">VOLUME +32% MoM</text>
+      <text x="0" y="70" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="11" fill="#E2E8F0">New VN origin lane</text>
     </g>
-    <g transform="translate(1120,280)">
-      <circle r="14" fill="#F472B6"/>
-      <circle r="6" fill="#1E1B4B"/>
-      <line x1="0" y1="14" x2="0" y2="36" stroke="#F472B6" stroke-width="2"/>
-      <rect x="-90" y="36" width="180" height="44" rx="8" fill="rgba(15,23,42,0.9)" stroke="#F472B6"/>
-      <text x="0" y="60" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="700" fill="#F9A8D4">NEW LANE</text>
-      <text x="0" y="74" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="500" fill="#E2E8F0">USEC inbound</text>
+    <!-- New lane — cyan/teal -->
+    <g transform="translate(1140,280)">
+      <circle r="14" fill="#00F0FF" stroke="#0F172A" stroke-width="2"/>
+      <line x1="0" y1="14" x2="0" y2="34" stroke="#00F0FF" stroke-width="2"/>
+      <rect x="-90" y="34" width="180" height="46" rx="8" fill="rgba(15,23,42,0.92)" stroke="#00F0FF" stroke-width="1"/>
+      <text x="0" y="55" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#00F0FF" letter-spacing="0.1em">NEW LANE</text>
+      <text x="0" y="70" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="11" fill="#E2E8F0">USEC inbound, Mar 8</text>
     </g>
   </g>
-  <!-- Y-axis title -->
-  <g font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="700" fill="#C4B5FD" letter-spacing="0.12em">
-    <text x="60" y="500" transform="rotate(-90,60,500)">SHIPMENT VOLUME</text>
+
+  <!-- Y-axis label -->
+  <text x="60" y="500" transform="rotate(-90,60,500)" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="700" fill="#64748B" letter-spacing="0.14em">SHIPMENT VOLUME</text>
+
+  <!-- Title block top-left -->
+  <g>
+    <g transform="translate(120,80)">
+      <rect width="34" height="34" rx="7" fill="rgba(0,240,255,0.18)" stroke="#00F0FF" stroke-width="1"/>
+      <path d="M17 6 L20.2 13.6 L28 17 L20.2 20.4 L17 28 L13.8 20.4 L6 17 L13.8 13.6 Z" fill="#00F0FF"/>
+    </g>
+    <text x="170" y="105" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="800" fill="#00F0FF" letter-spacing="0.14em">PULSE COACH</text>
+    <text x="120" y="148" font-family="Inter, system-ui, sans-serif" font-size="38" font-weight="800" fill="#F8FAFC" letter-spacing="-0.012em">Shipment changes → outbound triggers</text>
+    <text x="120" y="178" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="500" fill="#94A3B8">Watching your saved accounts. Pinging the day a real signal lands.</text>
   </g>
-  <!-- Main title -->
-  <text x="120" y="120" font-family="Inter, system-ui, sans-serif" font-size="34" font-weight="800" fill="#F8FAFC" letter-spacing="-0.01em">Pulse Coach signals</text>
-  <text x="120" y="160" font-family="Inter, system-ui, sans-serif" font-size="16" font-weight="600" fill="#C4B5FD" letter-spacing="0.06em">SHIPMENT CHANGES → OUTBOUND TRIGGERS</text>
+
+  <!-- "LIVE FROM US CUSTOMS" pill bottom-right -->
+  <g transform="translate(1300,820)">
+    <rect width="220" height="36" rx="18" fill="rgba(0,240,255,0.12)" stroke="#00F0FF" stroke-width="1"/>
+    <circle cx="22" cy="18" r="4" fill="#00F0FF"/>
+    <text x="40" y="22" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#E0F2FE" letter-spacing="0.08em">LIVE FROM US CUSTOMS</text>
+  </g>
 </svg>
