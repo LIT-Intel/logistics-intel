@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Inside the LIT contact graph">
+  <defs>
+    <linearGradient id="bg5" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#022C22"/>
+      <stop offset="100%" stop-color="#065F46"/>
+    </linearGradient>
+    <radialGradient id="nodeBlue" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#60A5FA"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </radialGradient>
+    <radialGradient id="nodeGreen" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#34D399"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </radialGradient>
+    <radialGradient id="nodeAmber" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="100%" stop-color="#B45309"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg5)"/>
+  <!-- Network edges (drawn first so nodes sit on top) -->
+  <g stroke="#10B981" stroke-width="2" opacity="0.55" fill="none">
+    <path d="M780 450 L420 250"/>
+    <path d="M780 450 L1180 240"/>
+    <path d="M780 450 L320 540"/>
+    <path d="M780 450 L1280 540"/>
+    <path d="M780 450 L780 220"/>
+    <path d="M780 450 L780 700"/>
+    <path d="M780 450 L460 720"/>
+    <path d="M780 450 L1140 720"/>
+    <!-- Outer ring connectors -->
+    <path d="M420 250 L780 220"/>
+    <path d="M780 220 L1180 240"/>
+    <path d="M1180 240 L1280 540"/>
+    <path d="M1280 540 L1140 720"/>
+    <path d="M1140 720 L780 700"/>
+    <path d="M780 700 L460 720"/>
+    <path d="M460 720 L320 540"/>
+    <path d="M320 540 L420 250"/>
+  </g>
+  <!-- Center: Company node -->
+  <g transform="translate(780,450)">
+    <circle r="55" fill="url(#nodeBlue)" stroke="#93C5FD" stroke-width="2"/>
+    <text x="0" y="-2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="700" fill="#DBEAFE" letter-spacing="0.18em">SHIPPER</text>
+    <text x="0" y="20" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="800" fill="#F8FAFC">Acme Inc.</text>
+  </g>
+  <!-- Outer ring nodes: contacts -->
+  <g font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="700" fill="#ECFDF5" letter-spacing="0.1em" text-anchor="middle">
+    <g transform="translate(420,250)">
+      <circle r="38" fill="url(#nodeGreen)" stroke="#A7F3D0" stroke-width="2"/>
+      <text y="-2">PROCUREMENT</text>
+      <text y="14" font-size="10" font-weight="500" fill="#D1FAE5">VP, Sourcing</text>
+    </g>
+    <g transform="translate(780,220)">
+      <circle r="38" fill="url(#nodeGreen)" stroke="#A7F3D0" stroke-width="2"/>
+      <text y="-2">SUPPLY CHAIN</text>
+      <text y="14" font-size="10" font-weight="500" fill="#D1FAE5">Director, SC Ops</text>
+    </g>
+    <g transform="translate(1180,240)">
+      <circle r="38" fill="url(#nodeGreen)" stroke="#A7F3D0" stroke-width="2"/>
+      <text y="-2">LOGISTICS</text>
+      <text y="14" font-size="10" font-weight="500" fill="#D1FAE5">Head of Imports</text>
+    </g>
+    <g transform="translate(1280,540)">
+      <circle r="38" fill="url(#nodeAmber)" stroke="#FDE68A" stroke-width="2"/>
+      <text y="-2">CUSTOMS</text>
+      <text y="14" font-size="10" font-weight="500" fill="#FEF3C7">Manager</text>
+    </g>
+    <g transform="translate(1140,720)">
+      <circle r="38" fill="url(#nodeAmber)" stroke="#FDE68A" stroke-width="2"/>
+      <text y="-2">TRADE COMPLIANCE</text>
+      <text y="14" font-size="10" font-weight="500" fill="#FEF3C7">Senior Analyst</text>
+    </g>
+    <g transform="translate(780,700)">
+      <circle r="38" fill="url(#nodeGreen)" stroke="#A7F3D0" stroke-width="2"/>
+      <text y="-2">FREIGHT OPS</text>
+      <text y="14" font-size="10" font-weight="500" fill="#D1FAE5">Senior Manager</text>
+    </g>
+    <g transform="translate(460,720)">
+      <circle r="38" fill="url(#nodeGreen)" stroke="#A7F3D0" stroke-width="2"/>
+      <text y="-2">WAREHOUSE</text>
+      <text y="14" font-size="10" font-weight="500" fill="#D1FAE5">Director, DC</text>
+    </g>
+    <g transform="translate(320,540)">
+      <circle r="38" fill="url(#nodeAmber)" stroke="#FDE68A" stroke-width="2"/>
+      <text y="-2">FINANCE</text>
+      <text y="14" font-size="10" font-weight="500" fill="#FEF3C7">Freight Audit Lead</text>
+    </g>
+  </g>
+  <!-- Title -->
+  <text x="120" y="120" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="800" fill="#F8FAFC" letter-spacing="-0.01em">Inside the LIT contact graph</text>
+  <text x="120" y="155" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#6EE7B7" letter-spacing="0.08em">8 BUYER-SIDE PERSONAS PER IMPORTER · DELIVERABILITY &gt; 95%</text>
+</svg>

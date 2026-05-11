@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Pulse AI: natural-language intelligence over your trade graph">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="55%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#1E40AF"/>
+    </linearGradient>
+    <linearGradient id="line1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#06B6D4" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#06B6D4" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="line2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#3B82F6" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#06B6D4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <circle cx="780" cy="450" r="420" fill="url(#glow)"/>
+  <g opacity="0.5" stroke="#1E3A8A" stroke-width="1" fill="none">
+    <path d="M0 200 Q400 100 800 300 T1600 250"/>
+    <path d="M0 400 Q400 320 800 500 T1600 470"/>
+    <path d="M0 600 Q400 520 800 700 T1600 670"/>
+    <path d="M0 800 Q400 720 800 880 T1600 850"/>
+  </g>
+  <g fill="none" stroke-width="3" stroke-linecap="round">
+    <path d="M120 450 Q400 240 780 450 T1480 440" stroke="url(#line1)"/>
+    <path d="M120 520 Q400 720 780 510 T1480 510" stroke="url(#line2)"/>
+  </g>
+  <!-- Node dots along the lines -->
+  <g fill="#06B6D4">
+    <circle cx="400" cy="288" r="6"/>
+    <circle cx="780" cy="450" r="10"/>
+    <circle cx="1140" cy="395" r="6"/>
+  </g>
+  <g fill="#3B82F6">
+    <circle cx="400" cy="608" r="6"/>
+    <circle cx="780" cy="510" r="6"/>
+    <circle cx="1140" cy="585" r="6"/>
+  </g>
+  <!-- Sparkle accents -->
+  <g fill="#F8FAFC" opacity="0.85">
+    <path d="M1080 220 l8 16 l16 8 l-16 8 l-8 16 l-8 -16 l-16 -8 l16 -8 z"/>
+    <path d="M280 660 l6 12 l12 6 l-12 6 l-6 12 l-6 -12 l-12 -6 l12 -6 z"/>
+    <path d="M1320 660 l5 10 l10 5 l-10 5 l-5 10 l-5 -10 l-10 -5 l10 -5 z"/>
+  </g>
+  <!-- Central Pulse AI mark -->
+  <g transform="translate(780,450)">
+    <circle r="60" fill="rgba(15,23,42,0.7)" stroke="#06B6D4" stroke-width="2"/>
+    <text x="0" y="-6" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#E0F2FE" letter-spacing="0.18em">PULSE</text>
+    <text x="0" y="18" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="800" fill="#F8FAFC" letter-spacing="0.04em">AI</text>
+  </g>
+</svg>

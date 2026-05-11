@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Two ways to find leads: precise search and AI discovery">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#0F766E"/>
+    </linearGradient>
+    <linearGradient id="leftPath" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#06B6D4" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="rightPath" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#A78BFA"/>
+      <stop offset="100%" stop-color="#A78BFA" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg2)"/>
+  <!-- Faint grid -->
+  <g stroke="#1E3A5F" stroke-width="1" opacity="0.5">
+    <path d="M0 150 H1600"/><path d="M0 300 H1600"/><path d="M0 450 H1600"/><path d="M0 600 H1600"/><path d="M0 750 H1600"/>
+  </g>
+  <!-- Left funnel: precise -->
+  <g transform="translate(80,200)" fill="none" stroke-width="3">
+    <path d="M0 0 L640 0 L500 220 L140 220 Z" fill="rgba(6,182,212,0.07)" stroke="#06B6D4"/>
+    <path d="M140 220 L500 220 L420 380 L220 380 Z" fill="rgba(6,182,212,0.13)" stroke="#06B6D4"/>
+    <path d="M220 380 L420 380 L380 500 L260 500 Z" fill="rgba(6,182,212,0.22)" stroke="#06B6D4"/>
+    <text x="320" y="-30" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="700" fill="#67E8F9" letter-spacing="0.18em">SEARCH</text>
+    <text x="320" y="40" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="800" fill="#F8FAFC">Known target</text>
+    <text x="320" y="250" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#CBD5E1" letter-spacing="0.1em">SHIPMENTS · LANES · CARRIERS</text>
+    <text x="320" y="410" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="500" fill="#94A3B8" letter-spacing="0.1em">CONTACT GRAPH</text>
+  </g>
+  <!-- Right funnel: discovery -->
+  <g transform="translate(880,200)" fill="none" stroke-width="3">
+    <path d="M0 0 L640 0 L500 220 L140 220 Z" fill="rgba(167,139,250,0.07)" stroke="#A78BFA"/>
+    <path d="M140 220 L500 220 L420 380 L220 380 Z" fill="rgba(167,139,250,0.13)" stroke="#A78BFA"/>
+    <path d="M220 380 L420 380 L380 500 L260 500 Z" fill="rgba(167,139,250,0.22)" stroke="#A78BFA"/>
+    <text x="320" y="-30" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="700" fill="#C4B5FD" letter-spacing="0.18em">PULSE</text>
+    <text x="320" y="40" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="800" fill="#F8FAFC">Open query</text>
+    <text x="320" y="250" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#CBD5E1" letter-spacing="0.1em">THOUSANDS OF MATCHES</text>
+    <text x="320" y="410" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="500" fill="#94A3B8" letter-spacing="0.1em">RANKED · ACTIONABLE</text>
+  </g>
+  <!-- Vertical divider line -->
+  <line x1="800" y1="120" x2="800" y2="780" stroke="#334155" stroke-width="1" stroke-dasharray="6 8"/>
+  <text x="800" y="100" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#64748B" letter-spacing="0.2em">VS</text>
+</svg>
