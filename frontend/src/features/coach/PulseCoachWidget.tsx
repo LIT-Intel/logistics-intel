@@ -18,6 +18,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import {
   getPulseCoachNudges,
+  askPulseCoach,
   type CoachNudge,
   type PulseCoachResult,
   type WorkspaceLane,
@@ -288,8 +289,14 @@ function useNudgeActionHandler() {
         }
         case "none":
         case null:
+          if (nudge.lane_focus) highlightLane(nudge.lane_focus);
+          return;
         default:
-          // Always at least highlight the lane if one is attached.
+          // v2 cards encode their CTA route as "route:/app/<path>".
+          if (typeof nudge.action === "string" && nudge.action.startsWith("route:")) {
+            navigate(nudge.action.slice("route:".length));
+            return;
+          }
           if (nudge.lane_focus) highlightLane(nudge.lane_focus);
           return;
       }
@@ -683,6 +690,89 @@ export function PulseCoachFloating() {
           />
         )}
       </div>
+
+      <CoachComposer />
+    </div>
+  );
+}
+
+/* ── Coach Composer — ask Pulse Coach anything ───────────────────── */
+function CoachComposer() {
+  const navigate = useNavigate();
+  const [q, setQ] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState<{ md: string; cta: { label: string; url: string } | null } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = useCallback(async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const trimmed = q.trim();
+    if (!trimmed || asking) return;
+    setAsking(true);
+    setErr(null);
+    setAnswer(null);
+    try {
+      const resp = await askPulseCoach(trimmed);
+      if (!resp.ok) {
+        setErr(resp.error || resp.answer_md || "Coach couldn't answer that.");
+        return;
+      }
+      setAnswer({ md: resp.answer_md, cta: resp.cta });
+    } catch (err: any) {
+      setErr(err?.message || "Coach failed");
+    } finally {
+      setAsking(false);
+    }
+  }, [q, asking]);
+
+  return (
+    <div className="border-t border-white/5 px-3.5 py-3">
+      {answer ? (
+        <div className="mb-2">
+          <div className="font-body text-[12px] leading-relaxed text-slate-200" style={{ whiteSpace: "pre-wrap" }}>
+            {answer.md}
+          </div>
+          {answer.cta ? (
+            <button
+              type="button"
+              onClick={() => { navigate(answer.cta!.url); setAnswer(null); setQ(""); }}
+              className="mt-2 inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white"
+              style={{ background: "rgba(0,240,255,0.15)", border: "1px solid rgba(0,240,255,0.4)" }}
+            >
+              {answer.cta.label} <ArrowRight className="h-3 w-3" />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => { setAnswer(null); setQ(""); }}
+            className="ml-2 mt-2 inline-flex items-center text-[10px] uppercase tracking-wider text-slate-400 hover:text-slate-200"
+          >
+            Ask another
+          </button>
+        </div>
+      ) : null}
+
+      {err ? <div className="mb-2 text-[11px] text-rose-300">{err}</div> : null}
+
+      <form onSubmit={submit} className="flex items-center gap-1.5">
+        <input
+          type="text"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Ask anything about LIT, your plan, replies, or how to..."
+          className="flex-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-[12px] text-slate-100 placeholder:text-slate-500 focus:border-cyan-400/40 focus:outline-none"
+          disabled={asking}
+          maxLength={500}
+        />
+        <button
+          type="submit"
+          disabled={asking || !q.trim()}
+          className="rounded-md px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40"
+          style={{ background: asking ? "rgba(0,240,255,0.1)" : "rgba(0,240,255,0.18)", border: "1px solid rgba(0,240,255,0.4)" }}
+        >
+          {asking ? "…" : "Ask"}
+        </button>
+      </form>
     </div>
   );
 }

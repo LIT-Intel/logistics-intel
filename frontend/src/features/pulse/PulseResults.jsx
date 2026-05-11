@@ -222,6 +222,23 @@ export function ContactDetailDrawer({ contact, open, onClose, onEnrich, isEnrich
   );
 }
 
+function SourceBadge({ label }) {
+  const tone =
+    label === 'Saved' ? { bg: '#EFF6FF', fg: '#1d4ed8', ring: '#BFDBFE' }
+      : label === 'LIT Database' ? { bg: '#F0FDF4', fg: '#15803d', ring: '#BBF7D0' }
+      : label === 'Apollo' ? { bg: '#FEF3C7', fg: '#92400e', ring: '#FDE68A' }
+      : label === 'Merged' ? { bg: '#F5F3FF', fg: '#6d28d9', ring: '#DDD6FE' }
+      : { bg: '#F1F5F9', fg: '#475569', ring: '#E2E8F0' };
+  return (
+    <span
+      className='inline-block rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em]'
+      style={{ background: tone.bg, color: tone.fg, border: `1px solid ${tone.ring}` }}
+    >
+      {label}
+    </span>
+  );
+}
+
 function Field({ label, value, strong }) {
   return (
     <div>
@@ -272,9 +289,39 @@ export function CompanyResultsTable({
                     <div className='flex h-10 w-10 items-center justify-center rounded-lg bg-[#EEF3FF]'>
                       <Building2 className='h-4 w-4 text-[#4C6FFF]' />
                     </div>
-                    <div>
-                      <div className='font-semibold text-[#17233C]'>{company.name}</div>
-                      <div className='text-sm text-slate-500'>{company.industry || '—'}</div>
+                    <div className='min-w-0'>
+                      <div className='flex flex-wrap items-center gap-1.5'>
+                        <span className='font-semibold text-[#17233C]'>{company.name}</span>
+                        {company.source_badge ? <SourceBadge label={company.source_badge} /> : null}
+                      </div>
+                      {company.industry && company.industry !== '—' ? (
+                        <div className='text-sm text-slate-500'>{company.industry}</div>
+                      ) : null}
+                      {Array.isArray(company.matched_reasons) && company.matched_reasons.length > 0 ? (
+                        <div className='mt-1 flex flex-wrap gap-1'>
+                          {company.matched_reasons.slice(0, 3).map((reason, i) => (
+                            <span
+                              key={i}
+                              className='inline-block rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200'
+                            >
+                              {reason}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      {company.kpis && (company.kpis.shipments_12m || company.kpis.teu_12m) ? (
+                        <div className='mt-1 flex flex-wrap gap-2 text-[11px] text-slate-600'>
+                          {company.kpis.shipments_12m ? (
+                            <span>{Number(company.kpis.shipments_12m).toLocaleString()} shipments</span>
+                          ) : null}
+                          {company.kpis.teu_12m ? (
+                            <span>· {Number(company.kpis.teu_12m).toLocaleString()} TEU</span>
+                          ) : null}
+                          {company.kpis.lcl_shipments_12m ? (
+                            <span>· {Number(company.kpis.lcl_shipments_12m).toLocaleString()} LCL</span>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </td>

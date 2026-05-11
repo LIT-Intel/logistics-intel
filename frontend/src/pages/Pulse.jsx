@@ -35,7 +35,7 @@ import {
   X,
 } from 'lucide-react';
 
-import { searchPulse } from '@/api/pulse';
+import { searchPulse, searchPulseV2 } from '@/api/pulse';
 import { supabase } from '@/lib/supabase';
 import AddToCampaignModal from '@/components/command-center/AddToCampaignModal';
 import { saveCompany, isLimitExceeded, LimitExceededError } from '@/lib/saveCompany';
@@ -250,9 +250,33 @@ export default function Pulse() {
     setActiveCompany(null);
 
     try {
-      // Re-parse the trimmed query so the cache-first filter recipe
-      // matches what the user actually submitted (debounced parsedQuery
-      // may lag by ~200ms when they hit Enter quickly).
+      // v2 path: pulse-search edge fn handles parsing + saved + directory +
+      // Apollo merge + dedup + ranking server-side. Single round trip.
+      const v2 = await searchPulseV2({ query: trimmed, limit: 50 }).catch(
+        (err) => ({ ok: false, error: err?.message || 'pulse_search_failed' }),
+      );
+
+      if (v2 && v2.ok && Array.isArray(v2.rows)) {
+        setLocalCount(v2.sources?.saved + v2.sources?.directory || 0);
+        setResults(v2.rows);
+        setResultMode('companies');
+        setMeta({
+          total: v2.rows.length,
+          provider: v2.parser_model || 'pulse-search',
+          coach_summary: v2.coach_summary || '',
+          sources: v2.sources || null,
+          parsed: v2.parsed || null,
+        });
+        setApiStatus(v2.apollo_called ? 'connected' : 'connected');
+        setSubmittedQuery(trimmed);
+        setSearchPerformed(true);
+        if (!v2.rows.length) {
+          setErrorMessage(v2.coach_summary || 'No matches yet. Try broadening the region, removing a size filter, or rephrasing the industry term.');
+        }
+        return;
+      }
+
+      // Fallback to legacy L1-L4 cascade if v2 failed entirely.
       const parsedAtSubmit = parsePulseQuery(trimmed);
       const recipe = buildLocalFilterRecipe(parsedAtSubmit);
 

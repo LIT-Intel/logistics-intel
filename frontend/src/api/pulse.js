@@ -143,6 +143,116 @@ function normalizeResults(mode, rawResults) {
  *     person_titles[], person_seniorities[]) instead of relying on
  *     keyword matching alone.
  */
+/**
+ * Pulse Search v2 — calls the unified pulse-search edge fn that parses
+ * the query (Gemini Flash → GPT fallback), hits saved → directory →
+ * Apollo, merges + dedups + ranks, and returns a single ranked list.
+ *
+ * Map result shape: the existing PulseResults / PulseQuickCard UI expects
+ * a flat `{ name, domain, kpis, provenance, ... }` shape. We translate
+ * PulseCompanyResult into that here so the UI keeps working — and add a
+ * `matched_reasons` / `source_badge` field for the new badge UI.
+ */
+export async function searchPulseV2(payload = {}) {
+  const { query, limit = 50, includeApollo = true, includeSaved = true, includeDirectory = true } = payload || {};
+  const trimmed = String(query || '').trim();
+  if (!trimmed) {
+    return { ok: false, error: 'query_required', results: [], meta: null };
+  }
+
+  const { data, error } = await supabase.functions.invoke('pulse-search', {
+    body: { query: trimmed, limit, includeApollo, includeSaved, includeDirectory },
+  });
+
+  if (error) {
+    console.error('[Pulse v2] pulse-search invocation failed:', error);
+    throw new Error(error.message || 'Pulse search failed');
+  }
+  const raw = data || {};
+  const results = Array.isArray(raw.results) ? raw.results : [];
+
+  const mappedRows = results.map((r, i) => mapPulseV2ToRow(r, i));
+
+  return {
+    ok: raw.ok ?? true,
+    query: raw.query || trimmed,
+    parsed: raw.parsed || null,
+    parser_model: raw.parser_model || null,
+    sources: raw.sources || { saved: 0, directory: 0, apollo: 0, merged: mappedRows.length },
+    apollo_called: raw.apollo_called || false,
+    coach_summary: raw.coach_summary || '',
+    timing_ms: raw.timing_ms || null,
+    rows: mappedRows,
+    raw_results: results,
+  };
+}
+
+function provenanceFromSource(source) {
+  if (source === 'saved') return 'database';
+  if (source === 'lit_company_directory') return 'directory';
+  if (source === 'apollo') return 'remote';
+  if (source === 'merged') return 'merged';
+  return 'directory';
+}
+
+function sourceBadgeFor(source) {
+  if (source === 'saved') return 'Saved';
+  if (source === 'lit_company_directory') return 'LIT Database';
+  if (source === 'apollo') return 'Apollo';
+  if (source === 'merged') return 'Merged';
+  return 'Discovered';
+}
+
+function mapPulseV2ToRow(r, i) {
+  const sm = r.shipment_metrics || {};
+  const provenance = provenanceFromSource(r.source);
+  const status =
+    provenance === 'database' ? 'In your database'
+      : provenance === 'directory' ? 'In directory'
+      : provenance === 'remote' ? 'Discovered'
+      : provenance === 'merged' ? 'Verified'
+      : 'Prospect';
+  return {
+    id: r.id || r.source_company_key || r.canonical_company_key || `pulse-${i}`,
+    type: 'company',
+    business_id: r.source_company_key || r.id || '',
+    name: r.company_name || 'Unknown Company',
+    domain: r.domain || '',
+    website: r.website || '',
+    phone: r.phone || '',
+    city: r.city || '',
+    state: r.state || '',
+    country: r.country || '',
+    postal_code: r.postal_code || '',
+    industry: r.industry || '—',
+    employee_count: r.employee_count || '—',
+    annual_revenue: r.revenue || '—',
+    linkedin_url: r.linkedin_url || '',
+    summary: r.description || '',
+    keywords: [],
+    tech_stack: [],
+    founded_year: null,
+    status,
+    provenance,
+    source_badge: sourceBadgeFor(r.source),
+    matched_reasons: Array.isArray(r.matched_reasons) ? r.matched_reasons : [],
+    confidence_score: typeof r.confidence_score === 'number' ? r.confidence_score : 0.5,
+    contacts_count: 0,
+    contacts: [],
+    kpis: {
+      shipments_12m: sm.shipments ?? null,
+      teu_12m: sm.teu ?? null,
+      fcl_shipments_12m: null,
+      lcl_shipments_12m: sm.lcl ?? null,
+      est_spend_12m: sm.value_usd ?? null,
+      top_route_12m: null,
+      recent_route: null,
+      most_recent_shipment_date: sm.last_shipment_date ?? null,
+      sources: [provenance],
+    },
+  };
+}
+
 export async function searchPulse(payload = {}) {
   // Strip client-only fields (raw, source, hasAny, suggested_refinements,
   // clarifying_question) that the edge fn doesn't need. Keep only the
