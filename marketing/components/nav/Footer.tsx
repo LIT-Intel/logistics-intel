@@ -34,6 +34,8 @@ const FOOTER_COLS: Array<{ heading: string; links: { label: string; href: string
       { label: "Glossary", href: "/glossary" },
       { label: "Importer directory", href: "/companies" },
       { label: "Trade lanes", href: "/lanes" },
+      { label: "US ports", href: "/ports" },
+      { label: "HS codes", href: "/hs" },
       { label: "Customers", href: "/customers" },
       { label: "Comparisons", href: "/vs" },
       { label: "Alternatives", href: "/alternatives" },

@@ -36,20 +36,11 @@ const NAV_GROUPS: {
     ],
   },
   {
-    heading: "Compare",
-    links: [
-      { label: "All comparisons", href: "/vs" },
-      { label: "Alternatives", href: "/alternatives" },
-      { label: "Best of rankings", href: "/best" },
-    ],
-  },
-  {
     heading: "Resources",
     links: [
       { label: "Resources hub", href: "/resources" },
       { label: "Blog", href: "/blog" },
       { label: "Glossary", href: "/glossary" },
-      { label: "Trade lanes", href: "/lanes" },
       { label: "Free tools", href: "/tools" },
       { label: "FAQ", href: "/faq" },
     ],

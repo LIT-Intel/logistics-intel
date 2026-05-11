@@ -34,7 +34,7 @@ export function Nav() {
           <ProductDropdown />
           <NavLink href="/solutions">Solutions</NavLink>
           <NavLink href="/customers">Customers</NavLink>
-          <NavLink href="/vs">Compare</NavLink>
+          <NavLink href="/blog">Blog</NavLink>
           <CompanyDropdown />
         </div>
 
