@@ -4,7 +4,7 @@ import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitFlag from "@/components/ui/LitFlag";
 import LitPill from "@/components/ui/LitPill";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
-import { canonicalizeLanes } from "@/lib/laneGlobe";
+import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
 
 type SubTabId = "summary" | "lanes" | "shipments" | "products";
 
@@ -82,15 +82,22 @@ export default function CDPSupplyChain({
       .map((r: any) => {
         const dl = String(r?.lane || "").trim();
         const parts = dl.split(/→|->|>/).map((s) => s.trim()).filter(Boolean);
+        const rawFrom = parts[0] ?? null;
+        const rawTo = parts.slice(1).join(" → ") || null;
+        // Resolve each endpoint so LaneRowInner can render a real flag
+        // via LitFlag. Without this, fromMeta/toMeta stayed null and the
+        // flag slot rendered as an empty white pill next to the country
+        // text. resolveEndpoint() returns null for unresolved strings —
+        // the row falls back to the country-text fallback in that case.
         return {
           displayLabel: dl,
-          fromMeta: null,
-          toMeta: null,
+          fromMeta: resolveEndpoint(rawFrom),
+          toMeta: resolveEndpoint(rawTo),
           shipments: Number(r?.shipments) || 0,
           teu: Number(r?.teu) || 0,
           spend: null,
-          rawFrom: parts[0] ?? null,
-          rawTo: parts.slice(1).join(" → ") || null,
+          rawFrom,
+          rawTo,
         };
       })
       .sort(
