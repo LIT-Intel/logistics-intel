@@ -6,6 +6,7 @@ import { Section } from "@/components/sections/Section";
 import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { HubCard, HubCardGrid } from "@/components/sections/HubCard";
 import { CtaBanner } from "@/components/sections/CtaBanner";
+import { LogoTile, inferLogoDomain } from "@/components/sections/LogoTile";
 import {
   countActiveCompanies,
   getFeaturedBrandCompanies,
@@ -51,7 +52,6 @@ const FEATURED_BRANDS: FeaturedBrand[] = [
 ];
 
 const HUB_CARD_COUNT = 25;
-const LOGO_DEV_TOKEN = process.env.NEXT_PUBLIC_LOGO_DEV_TOKEN || "pk_X-1ZO13ESEOoMaJjlPzIaA";
 
 export const metadata: Metadata = buildMetadata({
   title: "US importer directory — live BOL data for 26,000+ active companies",
@@ -107,7 +107,11 @@ export default async function CompaniesHubPage() {
 
         <HubCardGrid cols={2}>
           {cards.map((c) => (
-            <CompanyPreviewCard key={c.seo_slug} c={c} />
+            <CompanyPreviewCard
+              key={c.seo_slug}
+              c={c}
+              isFeatured={Boolean(c._featured_domain)}
+            />
           ))}
         </HubCardGrid>
       </Section>
@@ -161,26 +165,59 @@ export default async function CompaniesHubPage() {
  * behind a locked teaser. The full lanes / carriers / contacts /
  * timeline live inside the LIT app; this card sells the visit.
  */
-function CompanyPreviewCard({ c }: { c: PublicCompany & { _featured_domain?: string } }) {
+function CompanyPreviewCard({
+  c,
+  isFeatured,
+}: {
+  c: PublicCompany & { _featured_domain?: string };
+  isFeatured: boolean;
+}) {
   const hq = formatHeadquarters(c);
   const teu = Number(c.teu) || 0;
   const ships = Number(c.shipments) || 0;
   const valueUsd = Number(c.value_usd) || 0;
   const lclPct = c.lcl != null ? Number(c.lcl) : null;
   const logoDomain =
-    c._featured_domain || (c.domain ? c.domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "") : null);
+    c._featured_domain || inferLogoDomain({ domain: c.domain, website: c.website });
 
   return (
-    <HubCard href={`/companies/${c.seo_slug}`} className="flex flex-col gap-4" variant="compact">
-      <div className="lit-pill self-start">
-        <span className="dot" />
-        US Customs · Importer profile
+    <HubCard
+      href={`/companies/${c.seo_slug}`}
+      className="relative flex flex-col gap-4 overflow-hidden"
+      variant="compact"
+    >
+      {/* Accent stripe — featured rows get a stronger gradient, top-by-TEU rows get a subtle one */}
+      <div
+        aria-hidden
+        className={
+          "absolute inset-x-0 top-0 h-[3px] " +
+          (isFeatured
+            ? "bg-gradient-to-r from-brand-blue via-cyan-400 to-brand-blue"
+            : "bg-gradient-to-r from-ink-100 via-brand-blue/30 to-ink-100")
+        }
+      />
+      {/* Soft tint behind the header — pulls the eye and breaks the white wall */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-brand-blue/[0.04] to-transparent"
+      />
+
+      <div className="relative flex items-center justify-between">
+        <div className="lit-pill">
+          <span className="dot" />
+          {isFeatured ? "Featured importer" : "US Customs · Importer"}
+        </div>
+        {isFeatured && (
+          <div className="font-display rounded-full bg-brand-blue/10 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.1em] text-brand-blue-700">
+            Top brand
+          </div>
+        )}
       </div>
 
-      <div className="flex items-start gap-3">
-        <LogoTile domain={logoDomain} name={c.company_name} />
+      <div className="relative flex items-start gap-3">
+        <LogoTile domain={logoDomain} name={c.company_name} size="lg" />
         <div className="min-w-0 flex-1">
-          <h3 className="font-display text-[18px] font-semibold leading-tight tracking-[-0.015em] text-ink-900 group-hover:text-brand-blue-700">
+          <h3 className="font-display text-[19px] font-semibold leading-tight tracking-[-0.015em] text-ink-900 group-hover:text-brand-blue-700">
             {c.company_name}
           </h3>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-ink-500">
@@ -226,50 +263,6 @@ function CompanyPreviewCard({ c }: { c: PublicCompany & { _featured_domain?: str
         Preview profile <ArrowRight className="h-3.5 w-3.5" />
       </div>
     </HubCard>
-  );
-}
-
-/**
- * Brand logo tile. Uses logo.dev's hosted lookup when we have a domain;
- * falls back to a two-letter monogram. The `referrerpolicy=no-referrer`
- * + `loading=lazy` combo keeps logo.dev's free-tier quota in check.
- */
-function LogoTile({ domain, name }: { domain: string | null; name: string }) {
-  const initials = name
-    .replace(/[^A-Za-z\s]/g, " ")
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-
-  if (!domain) {
-    return (
-      <div
-        aria-hidden
-        className="font-display flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-ink-100 bg-ink-50 text-[13px] font-bold text-ink-500"
-      >
-        {initials || "·"}
-      </div>
-    );
-  }
-
-  const src = `https://img.logo.dev/${domain}?token=${LOGO_DEV_TOKEN}&size=80&format=png&retina=true`;
-  return (
-    <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-ink-100 bg-white">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={`${name} logo`}
-        width={44}
-        height={44}
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        className="h-full w-full object-contain"
-      />
-    </div>
   );
 }
 

@@ -6,6 +6,7 @@ import { PageShell } from "@/components/sections/PageShell";
 import { Section } from "@/components/sections/Section";
 import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { CtaBanner } from "@/components/sections/CtaBanner";
+import { LogoTile, inferLogoDomain } from "@/components/sections/LogoTile";
 import {
   getCompanyBySlug,
   getTopCompanies,
@@ -105,9 +106,14 @@ export default async function CompanyProfilePage({
               <span className="dot" />
               US Customs · Importer profile · Refreshed weekly
             </div>
-            <h1 className="display-xl space-eyebrow-h1 max-w-[640px]">
-              {c.company_name}
-            </h1>
+            <div className="mt-6 flex items-center gap-4">
+              <LogoTile
+                domain={inferLogoDomain({ domain: c.domain, website: c.website })}
+                name={c.company_name}
+                size="lg"
+              />
+              <h1 className="display-xl max-w-[560px]">{c.company_name}</h1>
+            </div>
             <p className="lead space-h1-intro max-w-[640px]">
               {c.company_name} is a US-based importer tracked across {formatNumber(shipments)} Bill
               of Lading filings totaling {formatNumber(teu)} TEU
