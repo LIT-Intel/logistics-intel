@@ -148,7 +148,15 @@ function detectIntent(q) {
 
 export default function Pulse() {
   // — search state —
-  const [query, setQuery] = useState('');
+  // Pre-fill from ?q= URL param so Pulse Coach (or any other surface) can
+  // deep-link a search. The auto-run effect below kicks the query into
+  // runSearch() once auth is ready.
+  const initialQuery = (() => {
+    if (typeof window === 'undefined') return '';
+    const p = new URLSearchParams(window.location.search);
+    return (p.get('q') || p.get('query') || '').trim();
+  })();
+  const [query, setQuery] = useState(initialQuery);
   const [submittedQuery, setSubmittedQuery] = useState('');
   const [results, setResults] = useState([]);
   // Pagination state — `Load more` button appends additional pages to results.
@@ -215,6 +223,21 @@ export default function Pulse() {
   useEffect(() => {
     setClassifyState({ loading: false, error: null });
   }, [query]);
+
+  // Auto-run when the page loads with ?q= in the URL (e.g. deep link
+  // from Pulse Coach). Fires once on mount.
+  const autoRanInitial = useRef(false);
+  useEffect(() => {
+    if (autoRanInitial.current) return;
+    if (!initialQuery) return;
+    autoRanInitial.current = true;
+    // small delay so auth + state settle before the search fires
+    const t = setTimeout(() => {
+      runSearch(initialQuery);
+    }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const errorClass = useMemo(() => classifyPulseError(errorMessage), [errorMessage]);
   const isSetupError = errorClass === 'setup';
   const isPermissionError = errorClass === 'permission';
