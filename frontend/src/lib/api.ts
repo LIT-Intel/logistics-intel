@@ -6563,20 +6563,14 @@ function mapCardToLegacyNudge(card: CoachCardV2): CoachNudge {
 export async function getPulseCoachNudges(
   pageContext: string = "dashboard",
 ): Promise<PulseCoachResult> {
-  // Prefer v2 — proactive cards from pulse-coach-v2.
-  try {
-    const v2 = await getPulseCoachV2();
-    if (v2.ok && v2.cards.length > 0) {
-      return {
-        ok: true,
-        nudges: v2.cards.map(mapCardToLegacyNudge),
-        workspace_lanes: [],
-        source: "pulse-coach-v2",
-      };
-    }
-  } catch {
-    // Fall through to legacy.
-  }
+  // Always hit the legacy pulse-coach for the proactive dashboard
+  // carousel + the Workspace trade-lanes globe. That function returns
+  // both `nudges` (lane-aware, account-specific suggestions like
+  // "Explore Bernhardt's lanes") and `workspace_lanes` (aggregated
+  // origin→dest pairs that power the trade-lanes globe + ranked list).
+  // pulse-coach-v2 is reserved for the chat composer (askPulseCoach)
+  // which handles Q&A + data-query routing — it doesn't aggregate
+  // lanes and we don't want to lose that surface when v2 is used.
   const { data, error } = await supabase.functions.invoke("pulse-coach", {
     body: { page_context: pageContext },
   });
