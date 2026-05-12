@@ -943,24 +943,27 @@ function CommissionCell({ partner, onSaved, onError }) {
       <div>
         <Badge tone="brand">{partner.tier}</Badge>
         <div
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            fontSize: 11.5, color: T.inkFaint, marginTop: 2,
-          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}
         >
-          <span>{partner.commission_pct}% / {partner.commission_months} mo</span>
+          <span style={{ fontSize: 12, color: T.ink, fontWeight: 600 }}>
+            {partner.commission_pct}% / {partner.commission_months} mo
+          </span>
           <button
             type="button"
             onClick={start}
             title="Edit commission rate"
             style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              width: 18, height: 18, padding: 0, borderRadius: 4,
-              border: 'none', background: 'transparent', cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '3px 8px', borderRadius: 6,
+              border: `1px solid ${T.brand}`,
+              background: `${T.brand}12`,
               color: T.brand,
+              fontSize: 11, fontWeight: 600,
+              cursor: 'pointer',
             }}
           >
             <Pencil size={11} />
+            Edit
           </button>
         </div>
       </div>

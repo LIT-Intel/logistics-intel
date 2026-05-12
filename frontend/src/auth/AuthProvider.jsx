@@ -8,6 +8,35 @@ import {
   logout as logoutClient,
   supabase,
 } from './supabaseAuthClient';
+import { getStoredRef, clearStoredRef } from '@/lib/affiliateRef';
+
+// Fire-and-forget claim of any pending affiliate referral once the user
+// authenticates. The edge function is idempotent (a row in
+// affiliate_referrals already keyed to this user blocks a re-insert) so
+// it's safe to call on every auth-ready transition.
+async function claimAffiliateReferralIfAny() {
+  if (!supabase) return;
+  const refCode = getStoredRef();
+  if (!refCode) return;
+  try {
+    const { data, error } = await supabase.functions.invoke(
+      'claim-affiliate-referral',
+      { body: { ref_code: refCode } },
+    );
+    // Clear the stored ref ONLY on a definitive server response:
+    //   - claimed=true (we just recorded the attribution)
+    //   - duplicate (already attributed)
+    //   - invalid_ref / self_referral (will never succeed; stop retrying)
+    // Network errors or 5xx leave the ref intact for the next auth event.
+    if (error) return;
+    const status = data?.status;
+    if (status === 'claimed' || status === 'duplicate' || status === 'invalid_ref' || status === 'self_referral' || status === 'too_late') {
+      clearStoredRef();
+    }
+  } catch {
+    // ignore — try again next auth-ready
+  }
+}
 
 // Platform super-admin allowlist. These emails see the Admin Dashboard,
 // Partner program, Team admin, and bypass plan-feature locks. The demo
@@ -139,6 +168,10 @@ export function AuthProvider({ children }) {
 
         setRawUser(normalized);
         setAuthReady(true);
+
+        // Best-effort affiliate referral claim — does nothing if no
+        // ?ref= was captured before sign-up.
+        void claimAffiliateReferralIfAny();
 
         const membership = await fetchPrimaryOrgMembership(u.id);
 

@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useEffect } from "react";
+import { captureRefFromUrl } from "@/lib/affiliateRef";
 import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
 import Layout from "@/pages/Layout";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
@@ -136,6 +137,18 @@ function LITPage({ children }) {
 }
 
 export default function App() {
+  // Affiliate ref capture: run on every mount + every URL change so any
+  // entry into the app via ?ref=<code> (marketing landing, signup link,
+  // OAuth bounce-back) stashes the code in localStorage + cookie for the
+  // 90-day attribution window. The AuthProvider hook later reads this
+  // and POSTs to claim-affiliate-referral once the user authenticates.
+  useEffect(() => {
+    captureRefFromUrl();
+    const onUrlChange = () => captureRefFromUrl();
+    window.addEventListener("popstate", onUrlChange);
+    return () => window.removeEventListener("popstate", onUrlChange);
+  }, []);
+
   return (
     <Suspense
       fallback={
