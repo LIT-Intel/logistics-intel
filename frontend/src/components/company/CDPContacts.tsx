@@ -11,6 +11,7 @@ import {
   MapPin,
   MoreHorizontal,
   Phone,
+  RefreshCw,
   Search,
   Send,
   Sparkles,
@@ -166,6 +167,11 @@ export default function CDPContacts({
   // Apollo people-search & enrichment state
   const [apolloOpen, setApolloOpen] = useState(false);
   const [apolloLoading, setApolloLoading] = useState(false);
+  // Pagination state for Apollo contact search. Increment on each
+  // "Load more" click; reset to 1 on a fresh Search / Refresh.
+  const [apolloPage, setApolloPage] = useState(1);
+  const [apolloHasMore, setApolloHasMore] = useState(false);
+  const [apolloLoadingMore, setApolloLoadingMore] = useState(false);
   const [apolloError, setApolloError] = useState<string | null>(null);
   const [apolloSetupRequired, setApolloSetupRequired] = useState(false);
   const [apolloResults, setApolloResults] = useState<ApolloContactPreview[]>([]);
@@ -334,6 +340,8 @@ export default function CDPContacts({
     setApolloSelected(new Set());
     setSearchMatchMode(null);
     setSearchOrgMatch(null);
+    setApolloPage(1);
+    setApolloHasMore(false);
 
     // We can search if we have EITHER a domain OR a company name. The
     // edge function will resolve via Apollo Organization Search using
@@ -375,6 +383,11 @@ export default function CDPContacts({
         setApolloSetupRequired(Boolean(result.setupRequired));
       } else {
         setApolloResults(result.contacts);
+        // If the response returned a full page (per_page=50), assume
+        // there may be more. Apollo's API doesn't reliably surface a
+        // total-count for /mixed_people; the "Load more" button is the
+        // honest signal that we'll try the next page.
+        setApolloHasMore(result.contacts.length >= 50);
         if (result.contacts.length === 0 && result.message) {
           // Honest empty state — surface the precise message.
           setApolloError(result.message);
@@ -387,6 +400,56 @@ export default function CDPContacts({
       setApolloError(err?.message || "Contact search failed.");
     } finally {
       setApolloLoading(false);
+    }
+  }
+
+  // Load the next page of Apollo results, appending to the existing
+  // list. De-dupes by apollo_person_id + name+title in case Apollo
+  // returns overlaps across pages.
+  async function handleApolloLoadMore() {
+    if (apolloLoadingMore || apolloLoading) return;
+    setApolloLoadingMore(true);
+    setApolloError(null);
+    const nextPage = apolloPage + 1;
+    try {
+      const result = await searchApolloContacts({
+        companyId: companyId ?? null,
+        companyName: (searchCompanyName || "").trim() || null,
+        companyDomain: (searchCompanyDomain || "").trim() || null,
+        city: searchCity.trim() || null,
+        state: searchState.trim() || null,
+        country: searchCountry.trim() || null,
+        usePersonLocations,
+        includeSimilarTitles,
+        titles: apolloTitles.length ? apolloTitles : APOLLO_DEFAULT_TITLES,
+        seniorities: apolloSeniorities.length ? apolloSeniorities : APOLLO_DEFAULT_SENIORITIES,
+        departments: apolloDepartments,
+        perPage: 50,
+        page: nextPage,
+      });
+      if (result.ok && Array.isArray(result.contacts)) {
+        if (result.contacts.length === 0) {
+          setApolloHasMore(false);
+        } else {
+          setApolloResults((prev) => {
+            const seen = new Set(
+              prev.map((p: any) => p.apollo_person_id || `${p.full_name}|${p.title}`),
+            );
+            const fresh = result.contacts.filter(
+              (p: any) => !seen.has(p.apollo_person_id || `${p.full_name}|${p.title}`),
+            );
+            return [...prev, ...fresh];
+          });
+          setApolloPage(nextPage);
+          setApolloHasMore(result.contacts.length >= 50);
+        }
+      } else {
+        setApolloError(result.error || "Load more failed.");
+      }
+    } catch (err: any) {
+      setApolloError(err?.message || "Load more failed.");
+    } finally {
+      setApolloLoadingMore(false);
     }
   }
 
@@ -804,6 +867,10 @@ export default function CDPContacts({
           onClearSelection={clearApolloSelection}
           onEnrichSelected={handleApolloEnrichSelected}
           keyOf={apolloKey}
+          onLoadMore={handleApolloLoadMore}
+          loadingMore={apolloLoadingMore}
+          hasMore={apolloHasMore}
+          currentPage={apolloPage}
         />
       )}
       {addOpen && (
@@ -1441,6 +1508,10 @@ type ApolloResultsPanelProps = {
   onClearSelection: () => void;
   onEnrichSelected: () => void;
   keyOf: (p: ApolloContactPreview, i: number) => string;
+  onLoadMore: () => void;
+  loadingMore: boolean;
+  hasMore: boolean;
+  currentPage: number;
 };
 
 const APOLLO_DEPARTMENT_OPTIONS = [
@@ -1491,6 +1562,10 @@ function ApolloResultsPanel({
   onClearSelection,
   onEnrichSelected,
   keyOf,
+  onLoadMore,
+  loadingMore,
+  hasMore,
+  currentPage,
 }: ApolloResultsPanelProps) {
   function toggle(list: string[], value: string, setter: (n: string[]) => void) {
     setter(list.includes(value) ? list.filter((x) => x !== value) : [...list, value]);
@@ -1802,7 +1877,7 @@ function ApolloResultsPanel({
               <thead className="sticky top-0 z-[1] bg-[#FAFBFC]">
                 <tr className="border-b border-slate-200">
                   <th className="w-8 px-3 py-2" />
-                  {["Contact", "Title", "Location", "Email status", "LinkedIn"].map(
+                  {["Contact", "Title", "Location", "Phone", "Email status", "LinkedIn"].map(
                     (h) => (
                       <th
                         key={h}
@@ -1882,13 +1957,36 @@ function ApolloResultsPanel({
                         {p.title || "—"}
                       </td>
                       <td className="font-body px-3 py-2 text-[11px] text-slate-500">
-                        {p.location ? (
-                          <span className="inline-flex items-center gap-1">
-                            <MapPin className="h-2.5 w-2.5 text-slate-400" />
-                            {p.location}
-                          </span>
+                        {(() => {
+                          // Prefer the explicit city/state pair when the edge fn
+                          // returned them; fall back to the pre-formatted
+                          // `location` string (legacy responses); else em-dash.
+                          const cityState = [p.city, p.state]
+                            .filter(Boolean)
+                            .join(", ");
+                          const display = cityState || p.location || "";
+                          if (!display) return "—";
+                          return (
+                            <span className="inline-flex items-center gap-1">
+                              <MapPin className="h-2.5 w-2.5 text-slate-400" />
+                              <span className="truncate" title={display}>
+                                {display}
+                                {p.country_code && cityState ? `, ${p.country_code}` : ""}
+                              </span>
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="font-mono px-3 py-2 text-[11px] text-slate-600">
+                        {p.phone ? (
+                          <a
+                            href={`tel:${p.phone}`}
+                            className="hover:text-blue-700"
+                          >
+                            {p.phone}
+                          </a>
                         ) : (
-                          "—"
+                          <span className="text-slate-300">—</span>
                         )}
                       </td>
                       <td className="px-3 py-2">
@@ -1925,13 +2023,36 @@ function ApolloResultsPanel({
               </tbody>
             </table>
           </div>
-          <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-[#FAFBFC] px-3.5 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-[#FAFBFC] px-3.5 py-2">
             <div className="font-body text-[11px] text-slate-500">
               <CheckCircle2 className="mr-1 inline h-3 w-3 text-violet-500" />
-              Email/phone details are only revealed after enrichment.
+              Showing {results.length} {results.length === 1 ? "contact" : "contacts"} (page {currentPage}). Email + phone are only revealed after enrichment.
             </div>
-            <div className="font-mono text-[11px] text-slate-500">
-              {selected.size} selected
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[11px] text-slate-500">
+                {selected.size} selected
+              </span>
+              <button
+                type="button"
+                onClick={onRetry}
+                disabled={loading || loadingMore}
+                className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                title="Re-run the search with current filters"
+              >
+                <RefreshCw className={["h-3 w-3", loading ? "animate-spin" : ""].join(" ")} />
+                Refresh
+              </button>
+              {hasMore ? (
+                <button
+                  type="button"
+                  onClick={onLoadMore}
+                  disabled={loadingMore || loading}
+                  className="font-display inline-flex items-center gap-1 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                  title="Fetch next page from Apollo"
+                >
+                  {loadingMore ? "Loading…" : "Load more"}
+                </button>
+              ) : null}
             </div>
           </div>
         </>

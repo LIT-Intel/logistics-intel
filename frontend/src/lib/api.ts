@@ -4591,6 +4591,12 @@ export type ApolloContactPreview = {
   seniority?: string | null;
   company?: string | null;
   location?: string | null;
+  // The edge fn (apollo-contact-search) returns these but the prior
+  // type omitted them; the UI was silently dropping the values.
+  city?: string | null;
+  state?: string | null;
+  country_code?: string | null;
+  phone?: string | null;
   linkedin_url?: string | null;
   email_status?: string | null;
   source?: "apollo";
