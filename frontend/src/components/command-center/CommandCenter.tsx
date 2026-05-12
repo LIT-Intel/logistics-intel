@@ -21,7 +21,7 @@ import {
   Upload,
 } from "lucide-react";
 import AddToCampaignModal from "./AddToCampaignModal";
-import AddCompanyModal from "./AddCompanyModal";
+// AddCompanyModal import removed — manual company entry no longer offered.
 
 type SavedCompaniesResponse =
   | CommandCenterRecord[]
@@ -185,8 +185,7 @@ export default function CommandCenter() {
   const [campaignModalRow, setCampaignModalRow] = useState<ListRow | null>(null);
 
   // Phase B.3 — top-right "Add Company" action wires to the existing
-  // AddCompanyModal (not modified in this phase, only consumed).
-  const [addCompanyOpen, setAddCompanyOpen] = useState(false);
+  // AddCompanyModal state removed with the manual-entry feature.
 
   const reloadSavedCompanies = useCallback(async () => {
     setSavedLoading(true);
@@ -372,51 +371,8 @@ export default function CommandCenter() {
             </div>
           </div>
 
-          {/* Top-right action buttons — Import (disabled) + Add Company. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <button
-              type="button"
-              disabled
-              title="Import flow coming soon"
-              className="cursor-not-allowed opacity-60"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '7px 14px',
-                borderRadius: 9999,
-                background: '#FFFFFF',
-                border: '1px solid #E2E8F0',
-                color: '#475569',
-                fontSize: 13,
-                fontWeight: 600,
-                fontFamily: "'Space Grotesk', sans-serif",
-              }}
-            >
-              <Upload style={{ width: 14, height: 14 }} />
-              Import
-            </button>
-            <button
-              type="button"
-              onClick={() => setAddCompanyOpen(true)}
-              className="bg-[#0F172A] text-white hover:bg-[#1E293B]"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '7px 14px',
-                borderRadius: 9999,
-                border: '1px solid #0F172A',
-                fontSize: 13,
-                fontWeight: 600,
-                fontFamily: "'Space Grotesk', sans-serif",
-                cursor: 'pointer',
-              }}
-            >
-              <Plus style={{ width: 14, height: 14 }} />
-              Add Company
-            </button>
-          </div>
+          {/* Import + Add Company removed — LIT doesn't offer manual upload.
+              Companies enter the workspace only via Pulse save. */}
         </div>
 
         {/* Search row — chips removed in Phase B.3. */}
@@ -761,24 +717,7 @@ export default function CommandCenter() {
         />
       ) : null}
 
-      {/* Phase B.3 — top-right "Add Company" hooks the existing AddCompanyModal.
-          On close (whether saved or cancelled) we re-call listSavedCompanies()
-          so a freshly saved row appears without a hard reload. */}
-      {addCompanyOpen ? (
-        <AddCompanyModal
-          open={addCompanyOpen}
-          onClose={() => {
-            setAddCompanyOpen(false);
-            // Defer the refresh until the next tick so the modal's own
-            // localStorage write (in saveRow / submit) lands first.
-            setTimeout(() => { void reloadSavedCompanies(); }, 0);
-          }}
-          onSaved={() => {
-            setAddCompanyOpen(false);
-            setTimeout(() => { void reloadSavedCompanies(); }, 0);
-          }}
-        />
-      ) : null}
+      {/* AddCompanyModal removed — manual entry is no longer offered. */}
 
       {/* Pagination */}
       {!savedLoading && !savedError && sortedRows.length > 0 && (
