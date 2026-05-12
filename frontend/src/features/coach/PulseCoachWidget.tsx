@@ -794,24 +794,39 @@ function NudgeCard({
   onLeave?: () => void;
   isHighlighted?: boolean;
 }) {
-  const accent = nudge.accent || "#3B82F6";
+  // Lock the Coach card text to the same cyan-highlighted palette as the
+  // header ("PULSE COACH" in #00F0FF) so no dark/black font ever lands on
+  // the slate gradient. The per-nudge accent is still used for the icon
+  // chip + the dark-compact button background, but every text run is
+  // hardcoded bright via inline style — Tailwind purge / dark-mode
+  // overrides can't override these.
+  const accent = nudge.accent || "#00F0FF";
+  const TITLE_COLOR = "#FFFFFF";
+  const BODY_COLOR = "#CBD5E1";   // slate-300
+  const CTA_COLOR = "#00F0FF";    // cyan — matches the PULSE COACH header
+
   if (variant === "dark-compact") {
     return (
       <div>
         <div
-          className="font-display text-[13px] font-semibold leading-tight tracking-tight text-white"
+          className="font-display text-[13px] font-semibold leading-tight tracking-tight"
+          style={{ color: TITLE_COLOR }}
         >
           {nudge.title}
         </div>
-        <div className="font-body mt-1.5 text-[11.5px] leading-relaxed text-slate-300">
+        <div
+          className="font-body mt-1.5 text-[11.5px] leading-relaxed"
+          style={{ color: BODY_COLOR }}
+        >
           {nudge.body}
         </div>
         <button
           type="button"
           onClick={onAction}
-          className="font-display mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm"
+          className="font-display mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold shadow-sm"
           style={{
             background: `linear-gradient(180deg, ${accent}, ${accent}cc)`,
+            color: "#FFFFFF",
           }}
         >
           <ArrowRight className="h-3 w-3" />
@@ -857,15 +872,21 @@ function NudgeCard({
           </span>
         )}
       </div>
-      <div className="font-display text-[12.5px] font-semibold leading-snug tracking-tight text-white">
+      <div
+        className="font-display text-[12.5px] font-semibold leading-snug tracking-tight"
+        style={{ color: TITLE_COLOR }}
+      >
         {nudge.title}
       </div>
-      <div className="font-body mt-1 text-[11px] leading-relaxed text-slate-300">
+      <div
+        className="font-body mt-1 text-[11px] leading-relaxed"
+        style={{ color: BODY_COLOR }}
+      >
         {nudge.body}
       </div>
       <span
         className="font-display mt-2 inline-flex items-center gap-1 text-[11px] font-semibold"
-        style={{ color: accent }}
+        style={{ color: CTA_COLOR }}
       >
         <ArrowRight className="h-3 w-3" />
         {nudge.cta || "Open"}
