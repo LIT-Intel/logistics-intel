@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import RefBoot from "@/components/RefBoot";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://logisticintel.com";
 
@@ -135,7 +136,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className="lit-page">{children}</body>
+      <body className="lit-page">
+        {/* Affiliate ref capture — writes ?ref= to a cookie scoped to
+            .logisticintel.com so app.logisticintel.com reads the same
+            value when the visitor signs up later. */}
+        <RefBoot />
+        {children}
+      </body>
     </html>
   );
 }

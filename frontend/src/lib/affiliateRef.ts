@@ -41,11 +41,24 @@ function readCookie(name: string): string | null {
   }
 }
 
+// Resolve the parent-domain cookie scope so a ref captured on
+// logisticintel.com is readable from app.logisticintel.com (and vice
+// versa). On localhost or any non-logisticintel host we leave Domain
+// unset, scoping to the current host only.
+function cookieDomainAttr(): string {
+  if (typeof window === "undefined") return "";
+  const host = window.location.hostname;
+  if (!host) return "";
+  // Match *.logisticintel.com (and the apex). Leading-dot Domain= shares
+  // the cookie across all subdomains per RFC 6265bis.
+  if (host === "logisticintel.com" || host.endsWith(".logisticintel.com")) {
+    return "Domain=.logisticintel.com";
+  }
+  return "";
+}
+
 function writeCookie(name: string, value: string, maxAgeSeconds: number) {
   if (typeof document === "undefined") return;
-  // Path=/ so every route can read it. SameSite=Lax so OAuth bounces
-  // back into the app keep the cookie. Secure on prod, not on local
-  // dev (where http://localhost would refuse Secure).
   const secure = typeof window !== "undefined" && window.location.protocol === "https:";
   const parts = [
     `${name}=${encodeURIComponent(value)}`,
@@ -53,12 +66,17 @@ function writeCookie(name: string, value: string, maxAgeSeconds: number) {
     `Max-Age=${maxAgeSeconds}`,
     "SameSite=Lax",
   ];
+  const domain = cookieDomainAttr();
+  if (domain) parts.push(domain);
   if (secure) parts.push("Secure");
   document.cookie = parts.join("; ");
 }
 
 function deleteCookie(name: string) {
   if (typeof document === "undefined") return;
+  // Wipe both scopes: parent-domain (shared) and the current host (default).
+  const domain = cookieDomainAttr();
+  document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax${domain ? "; " + domain : ""}`;
   document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
 }
 

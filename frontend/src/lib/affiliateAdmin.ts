@@ -252,3 +252,33 @@ export async function updatePartnerCommission(body: UpdatePartnerCommissionBody)
     ...body,
   });
 }
+
+export interface PartnerReferralRow {
+  id: string;
+  referred_user_id: string | null;
+  referred_email: string | null;
+  referred_company: string | null;
+  plan_code: string | null;
+  subscription_status: string | null;
+  mrr_cents: number;
+  first_seen_at: string;
+  signed_up_at: string | null;
+  became_paid_at: string | null;
+  churned_at: string | null;
+  attribution_expires_at: string | null;
+  attribution_active: boolean;
+  ref_code: string;
+  lifetime_cents: number;
+  pending_cents: number;
+  paid_cents: number;
+}
+
+/** Per-partner referred-accounts list. Returns the actual rows from
+ *  affiliate_referrals for one partner, with per-row commission totals
+ *  and attribution-window status flag. */
+export async function listPartnerReferrals(partnerId: string) {
+  return callFn('affiliate-admin', {
+    action: 'list_partner_referrals',
+    partner_id: partnerId,
+  });
+}

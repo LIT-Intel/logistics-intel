@@ -46,6 +46,7 @@ import {
   softDeletePartner,
   resendStripeOnboarding,
   updatePartnerCommission,
+  listPartnerReferrals,
 } from '@/lib/affiliateAdmin';
 import { T, Btn } from '@/components/affiliate/tokens';
 import { Badge, Card, StatCell } from '@/components/affiliate/primitives';
@@ -1042,6 +1043,8 @@ function AdminPartners() {
   const [busyId, setBusyId] = useState(null);
   const [notice, setNotice] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
+  // Drawer state for the "click the referrals count to see who" UX.
+  const [referralsDrawer, setReferralsDrawer] = useState(null);
 
   const baseUrl = useMemo(
     () => (import.meta.env.VITE_PUBLIC_APP_URL || 'https://logisticintel.com').replace(/\/$/, ''),
@@ -1227,7 +1230,27 @@ function AdminPartners() {
                       </Badge>
                     </td>
                     <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.ink }}>
-                      {r.referrals_count}
+                      {Number(r.referrals_count) > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setReferralsDrawer({ partner: r })}
+                          title="View referred accounts"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            color: T.brand,
+                            fontFamily: T.ffMono,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                          }}
+                        >
+                          {r.referrals_count}
+                        </button>
+                      ) : (
+                        r.referrals_count
+                      )}
                     </td>
                     <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.brandDeep, fontWeight: 600 }}>
                       {fmtCurrency(r.lifetime_earnings_cents)}
@@ -1249,7 +1272,134 @@ function AdminPartners() {
           </table>
         )}
       </Card>
+
+      {referralsDrawer ? (
+        <ReferralsDrawer
+          partner={referralsDrawer.partner}
+          onClose={() => setReferralsDrawer(null)}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/* ── Per-partner referrals drawer ───────────────────────────── */
+function ReferralsDrawer({ partner, onClose }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    listPartnerReferrals(partner.id)
+      .then((res) => {
+        if (cancelled) return;
+        if (res?.ok) setRows(Array.isArray(res.referrals) ? res.referrals : []);
+        else setError(res?.error || 'Failed to load referrals.');
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err?.message || 'Failed to load referrals.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [partner.id]);
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(15,23,42,0.4)',
+        }}
+      />
+      <div
+        style={{
+          position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(720px, 100vw)',
+          zIndex: 50, background: '#fff', boxShadow: '-12px 0 32px rgba(15,23,42,0.18)',
+          display: 'flex', flexDirection: 'column',
+        }}
+      >
+        <div style={{ borderBottom: `1px solid ${T.border}`, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: T.ffDisplay, fontWeight: 700, fontSize: 16, color: T.ink }}>
+              Referrals for {partner.email || partner.user_id}
+            </div>
+            <div style={{ fontFamily: T.ffBody, fontSize: 12, color: T.inkFaint, marginTop: 2 }}>
+              Ref code <span style={{ fontFamily: T.ffMono }}>{partner.ref_code}</span> · {partner.commission_pct}% / {partner.commission_months} mo · {partner.attribution_days || 90}-day attribution window
+            </div>
+          </div>
+          <button type="button" onClick={onClose} style={Btn.ghost}>Close</button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          {loading ? (
+            <div style={{ fontFamily: T.ffBody, fontSize: 13, color: T.inkFaint }}>Loading referrals…</div>
+          ) : error ? (
+            <div style={{ fontFamily: T.ffBody, fontSize: 13, color: '#b91c1c' }}>{error}</div>
+          ) : rows.length === 0 ? (
+            <div style={{ fontFamily: T.ffBody, fontSize: 13, color: T.inkFaint }}>No referred accounts yet.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                  {['Account', 'Plan', 'Status', 'Signed up', 'Attribution', 'Commission'].map((h) => (
+                    <th key={h} style={{ textAlign: 'left', padding: '8px 6px', fontFamily: T.ffDisplay, fontSize: 10, color: T.inkFaint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id} style={{ borderBottom: `1px solid ${T.borderSoft || T.border}` }}>
+                    <td style={{ padding: '10px 6px', fontFamily: T.ffBody, fontSize: 12.5, color: T.ink }}>
+                      <div style={{ fontWeight: 600 }}>{r.referred_email || '—'}</div>
+                      {r.referred_company ? (
+                        <div style={{ fontFamily: T.ffMono, fontSize: 11, color: T.inkFaint }}>{r.referred_company}</div>
+                      ) : null}
+                    </td>
+                    <td style={{ padding: '10px 6px', fontFamily: T.ffMono, fontSize: 12, color: T.ink }}>
+                      {r.plan_code || '—'}
+                    </td>
+                    <td style={{ padding: '10px 6px' }}>
+                      <Badge tone={r.subscription_status === 'active' ? 'success' : r.subscription_status === 'trialing' ? 'brand' : 'warn'} dot>
+                        {r.subscription_status || 'prospect'}
+                      </Badge>
+                    </td>
+                    <td style={{ padding: '10px 6px', fontFamily: T.ffMono, fontSize: 11.5, color: T.inkFaint }}>
+                      {r.signed_up_at ? new Date(r.signed_up_at).toLocaleDateString() : '—'}
+                    </td>
+                    <td style={{ padding: '10px 6px', fontFamily: T.ffMono, fontSize: 11.5 }}>
+                      {r.attribution_expires_at ? (
+                        <span style={{ color: r.attribution_active ? '#16a34a' : '#b91c1c' }}>
+                          {r.attribution_active ? 'Active · expires ' : 'Expired '}
+                          {new Date(r.attribution_expires_at).toLocaleDateString()}
+                        </span>
+                      ) : (
+                        <span style={{ color: T.inkFaint }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '10px 6px', fontFamily: T.ffMono, fontSize: 12, color: T.brandDeep, fontWeight: 600 }}>
+                      {fmtCurrency(r.lifetime_cents)}
+                      {r.pending_cents > 0 ? (
+                        <div style={{ fontWeight: 400, color: T.inkFaint, fontSize: 10.5 }}>
+                          + {fmtCurrency(r.pending_cents)} pending
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 

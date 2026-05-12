@@ -365,6 +365,69 @@ serve(async (req) => {
       });
     }
 
+    /* ── list_partner_referrals ──────────────────────────────────
+       Returns the referred accounts for a single partner with: email,
+       signed-up date, current subscription status, attribution-expiry,
+       and the commission earned to date. Used by the admin drawer
+       (AdminPartnerProgram → Referrals tab on each row). */
+    if (action === "list_partner_referrals") {
+      const partnerId = String(body?.partner_id || "").trim();
+      if (!partnerId) return json({ ok: false, error: "partner_id_required" }, 400);
+
+      const { data: refs, error } = await adminClient
+        .from("affiliate_referrals")
+        .select("id, referred_user_id, referred_email, referred_company, plan_code, subscription_status, mrr_cents, first_seen_at, signed_up_at, became_paid_at, churned_at, attribution_expires_at, ref_code, created_at")
+        .eq("partner_id", partnerId)
+        .order("signed_up_at", { ascending: false, nullsFirst: false })
+        .limit(500);
+      if (error) return json({ ok: false, error: error.message }, 500);
+      const rows = refs ?? [];
+
+      // Per-referral commission totals (lifetime + outstanding).
+      const referralIds = rows.map((r: any) => r.id);
+      const commissionAgg = new Map<string, { lifetime_cents: number; pending_cents: number; paid_cents: number }>();
+      if (referralIds.length > 0) {
+        const { data: coms } = await adminClient
+          .from("affiliate_commissions")
+          .select("referral_id, amount_cents, status")
+          .in("referral_id", referralIds);
+        for (const c of coms ?? []) {
+          const rid = (c as any).referral_id;
+          if (!rid) continue;
+          const e = commissionAgg.get(rid) || { lifetime_cents: 0, pending_cents: 0, paid_cents: 0 };
+          const amt = Number((c as any).amount_cents) || 0;
+          const status = (c as any).status;
+          if (status === "paid") { e.paid_cents += amt; e.lifetime_cents += amt; }
+          else if (status === "earned") { e.lifetime_cents += amt; }
+          else if (status === "pending") { e.pending_cents += amt; }
+          commissionAgg.set(rid, e);
+        }
+      }
+
+      // Resolve fresh emails from auth.users when referred_email is null
+      // (older referrals may not have the email cached).
+      const userIds = rows
+        .map((r: any) => r.referred_user_id)
+        .filter((v: any): v is string => !!v && !rows.find((rr: any) => rr.referred_user_id === v)?.referred_email);
+      const emailMap = userIds.length > 0 ? await fetchEmails(adminClient, userIds) : new Map<string, string>();
+
+      const now = Date.now();
+      const enriched = rows.map((r: any) => {
+        const agg = commissionAgg.get(r.id) || { lifetime_cents: 0, pending_cents: 0, paid_cents: 0 };
+        const expiresAt = r.attribution_expires_at ? new Date(r.attribution_expires_at).getTime() : null;
+        return {
+          ...r,
+          referred_email: r.referred_email || emailMap.get(r.referred_user_id) || null,
+          lifetime_cents: agg.lifetime_cents,
+          pending_cents: agg.pending_cents,
+          paid_cents: agg.paid_cents,
+          attribution_active: expiresAt == null ? true : expiresAt > now,
+        };
+      });
+
+      return json({ ok: true, referrals: enriched, total: enriched.length });
+    }
+
     /* ── list_commissions ─────────────────────────────────────── */
     if (action === "list_commissions") {
       const { data: coms, error } = await adminClient
