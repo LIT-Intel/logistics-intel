@@ -265,6 +265,7 @@ export function SubscribersTable() {
   const [rows, setRows] = useState<any[] | null>(null);
   const [filter, setFilter] = useState<string>("all");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   useEffect(() => {
     (async () => {
       const [{ data: subs }, { data: profiles }, { data: plans }] = await Promise.all([
@@ -332,6 +333,39 @@ export function SubscribersTable() {
     setRefreshKey((k) => k + 1);
   }
 
+  function askChangePlan(sub: any) {
+    setConfirm({
+      title: `Change plan for ${sub.profile?.email || sub.user_id?.slice(0, 8)}?`,
+      body: `Current plan: ${sub.plan_code || "—"}. Pick a new plan in the next prompt. Stripe is not charged from this action; webhooks will reconcile if Stripe says otherwise.`,
+      target: sub.profile?.email || sub.user_id,
+      action: "admin.subscription.change_plan",
+      severity: "warn",
+      confirmLabel: "Continue",
+      onConfirm: async () => {
+        const planCode = window.prompt(
+          "New plan code:\n  free_trial · starter · growth · scale · enterprise",
+          sub.plan_code || "growth",
+        );
+        if (!planCode) return;
+        const normalized = planCode.trim().toLowerCase();
+        if (!["free_trial", "starter", "growth", "scale", "enterprise"].includes(normalized)) {
+          throw new Error(`Unknown plan code "${planCode}".`);
+        }
+        const interval = window.prompt("Billing interval: month or year", sub.billing_interval || "month");
+        const reason = window.prompt("Reason (logged to audit trail):", "admin manual change");
+        const { error } = await supabase.rpc("lit_admin_change_user_plan", {
+          p_user_id: sub.user_id,
+          p_plan_code: normalized,
+          p_billing_interval: interval === "year" ? "year" : "month",
+          p_reason: reason || null,
+        });
+        if (error) throw new Error(error.message);
+        toast.success(`Plan changed to ${normalized}.`);
+        setRefreshKey((k) => k + 1);
+      },
+    });
+  }
+
   return (
     <APanel
       title={<><Receipt className="h-3.5 w-3.5 text-blue-500" /> Subscribers</>}
@@ -364,7 +398,7 @@ export function SubscribersTable() {
         { label: "Cycle", w: 70 },
         { label: "MRR", w: 96, align: "right" },
         { label: "Renews", w: 110 },
-        { label: "", w: 36, align: "right" },
+        { label: "", w: 72, align: "right" },
       ]} />
       {rows == null ? (
         <AEmpty title="Loading…" />
@@ -418,16 +452,18 @@ export function SubscribersTable() {
                 <div className="text-[11px] text-slate-500" style={{ width: 110, fontFamily: fontBody }}>
                   {s.current_period_end ? new Date(s.current_period_end).toLocaleDateString() : s.trial_ends_at ? `trial · ${new Date(s.trial_ends_at).toLocaleDateString()}` : "—"}
                 </div>
-                <div className="flex shrink-0 justify-end" style={{ width: 36 }}>
+                <div className="flex shrink-0 justify-end gap-0.5" style={{ width: 72 }}>
                   {isCustom && s.id ? (
                     <AIconBtn icon={DollarSign} tone="green" title="Set monthly MRR" onClick={() => editAmount(s)} />
                   ) : null}
+                  <AIconBtn icon={Rocket} tone="blue" title="Change plan" onClick={() => askChangePlan(s)} />
                 </div>
               </ARow>
             );
           })}
         </div>
       )}
+      <ConfirmDialog open={confirm} onClose={() => setConfirm(null)} />
     </APanel>
   );
 }
