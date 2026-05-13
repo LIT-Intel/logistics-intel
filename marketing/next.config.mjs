@@ -51,6 +51,11 @@ const nextConfig = {
       ...appRedirects,
       { source: "/privacy", destination: "/legal/privacy", permanent: true },
       { source: "/terms", destination: "/legal/terms", permanent: true },
+      // /affiliate-program is the alternate SEO route for the partner
+      // program — keeps any inbound links resolving to /partners.
+      { source: "/affiliate-program", destination: "/partners", permanent: true },
+      // Old in-app affiliate apply URL — drive to the public landing.
+      { source: "/partners/apply", destination: "/partners#apply", permanent: false },
     ];
   },
   async rewrites() {

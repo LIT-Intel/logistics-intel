@@ -2,44 +2,38 @@
 
 import { useState } from "react";
 import { ArrowRight, CheckCircle2, AlertCircle } from "lucide-react";
-import { APP_SIGNUP_URL } from "@/lib/app-urls";
 
 type State = "idle" | "submitting" | "ok" | "error";
 
 /**
- * Live demo request form — POSTs to /api/demo-request which writes to
- * Sanity (visible in Studio under "Inbox → Demo requests"). Includes
- * honeypot + client-side validation. On success, swaps to a friendly
- * confirmation panel with next-steps.
+ * Partner / affiliate application form — POSTs to /api/partner-application
+ * which writes to Sanity (visible in Studio under "Inbox → Partner
+ * applications") and fans out to email + Slack. Honeypot + client-side
+ * validation. On success, swaps to a friendly confirmation panel.
  */
-export function DemoRequestForm() {
+export function PartnerApplicationForm() {
   const [state, setState] = useState<State>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (state === "submitting") return;
     setState("submitting");
     setErrorMessage(null);
 
     const fd = new FormData(e.currentTarget);
     const payload = Object.fromEntries(fd.entries());
 
-    // Capture referrer + UTM + landing page path
+    // Capture referrer + UTM if present
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const utm =
-        params.get("utm_source") ||
-        params.get("utm_campaign") ||
-        document.referrer ||
-        window.location.pathname ||
-        "";
+        params.get("utm_source") || params.get("utm_campaign") || document.referrer || window.location.pathname;
       if (utm) (payload as any).source = utm;
-      const campaign = params.get("utm_campaign") || params.get("campaign");
-      if (campaign) (payload as any).campaign = campaign;
     }
 
     try {
-      const r = await fetch("/api/demo-request", {
+      const r = await fetch("/api/partner-application", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -49,7 +43,13 @@ export function DemoRequestForm() {
         setState("ok");
       } else {
         setState("error");
-        setErrorMessage(j.error || "Submission failed. Please try again.");
+        setErrorMessage(
+          j.error === "invalid_email"
+            ? "Please enter a valid email."
+            : j.error?.startsWith?.("missing_field:")
+            ? "Please fill in the required fields."
+            : "Submission failed. Please try again or email partnerships@logisticintel.com.",
+        );
       }
     } catch {
       setState("error");
@@ -73,34 +73,27 @@ export function DemoRequestForm() {
           <CheckCircle2 className="h-6 w-6 text-emerald-600" />
         </div>
         <h3 className="font-display mt-5 text-[22px] font-semibold tracking-[-0.015em] text-ink-900">
-          Got it. We'll reach out shortly.
+          Application received.
         </h3>
         <p className="font-body mx-auto mt-3 max-w-[440px] text-[14px] leading-relaxed text-ink-500">
-          Someone from the team will email you within one business day to confirm a time. Meanwhile,
-          you can start exploring with a free trial — no card required.
+          Our partnerships team reviews every application within two business days. You&apos;ll hear
+          back at the email you provided with next steps and your partner materials.
         </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
+        <p className="font-body mx-auto mt-3 max-w-[440px] text-[12.5px] text-ink-500">
+          Questions in the meantime?{" "}
           <a
-            href={APP_SIGNUP_URL}
-            className="font-display inline-flex h-11 items-center gap-2 rounded-md px-5 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
-            style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
+            href="mailto:partnerships@logisticintel.com"
+            className="font-medium text-brand-blue underline"
           >
-            Start free trial <ArrowRight className="h-3.5 w-3.5" />
+            partnerships@logisticintel.com
           </a>
-          <a
-            href="/products"
-            className="font-display inline-flex h-11 items-center gap-2 rounded-md border border-ink-100 bg-white px-5 text-[13px] font-semibold text-ink-900 hover:bg-ink-25"
-          >
-            Explore the platform
-          </a>
-        </div>
+        </p>
       </div>
     );
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-3.5">
-      {/* Honeypot — bots will fill this; humans never see it */}
       <input
         type="text"
         name="_hp"
@@ -112,48 +105,73 @@ export function DemoRequestForm() {
 
       <div className="grid gap-3.5 md:grid-cols-2">
         <Field label="Full name *" name="name" required autoComplete="name" />
-        <Field label="Work email *" name="email" type="email" required autoComplete="email" />
+        <Field label="Email *" name="email" type="email" required autoComplete="email" />
       </div>
 
       <div className="grid gap-3.5 md:grid-cols-2">
-        <Field label="Company" name="company" autoComplete="organization" />
-        <Field label="Company domain" name="domain" placeholder="acme.com" />
+        <Field
+          label="Company or brand"
+          name="companyOrBrand"
+          autoComplete="organization"
+          placeholder="Freight Caviar, Acme Newsletter, etc."
+        />
+        <Field
+          label="Website or social link"
+          name="websiteOrSocial"
+          autoComplete="url"
+          placeholder="freightcaviar.com or @handle"
+        />
       </div>
 
       <div className="grid gap-3.5 md:grid-cols-2">
         <Select
-          label="What best describes your team?"
-          name="useCase"
+          label="Audience type"
+          name="audienceType"
           options={[
             { value: "", label: "Select…" },
-            { value: "freight-forwarder", label: "Freight forwarder" },
-            { value: "freight-broker", label: "Freight broker" },
-            { value: "3pl", label: "3PL / project logistics" },
-            { value: "importer", label: "Importer / exporter" },
+            { value: "creator", label: "Freight creator (YouTube / TikTok / Reels)" },
+            { value: "newsletter", label: "Logistics newsletter" },
+            { value: "podcast", label: "Podcast host" },
+            { value: "consultant", label: "Consultant" },
+            { value: "coach", label: "Freight sales coach" },
+            { value: "agency", label: "Marketing agency (logistics)" },
+            { value: "saas", label: "SaaS / referral partner" },
             { value: "other", label: "Other" },
           ]}
         />
         <Select
-          label="Team size"
-          name="teamSize"
+          label="Estimated audience size"
+          name="estimatedAudienceSize"
           options={[
             { value: "", label: "Select…" },
-            { value: "1", label: "Just me" },
-            { value: "2-10", label: "2–10" },
-            { value: "11-50", label: "11–50" },
-            { value: "51-200", label: "51–200" },
-            { value: "200+", label: "200+" },
+            { value: "<1k", label: "Under 1,000" },
+            { value: "1k-10k", label: "1,000 – 10,000" },
+            { value: "10k-50k", label: "10,000 – 50,000" },
+            { value: "50k-250k", label: "50,000 – 250,000" },
+            { value: "250k+", label: "250,000+" },
           ]}
         />
       </div>
 
-      <Field label="Phone (optional)" name="phone" type="tel" autoComplete="tel" />
+      <Textarea
+        label="How do you plan to promote LIT?"
+        name="promotionPlan"
+        rows={3}
+        placeholder="e.g. Monthly newsletter feature, dedicated YouTube review, podcast sponsorship, agency rollout to existing freight clients…"
+      />
+
+      <Field
+        label="Payout email (optional)"
+        name="payoutEmail"
+        type="email"
+        placeholder="Stripe or PayPal email for commission payouts"
+        autoComplete="email"
+      />
 
       <Textarea
-        label="What are you hoping LIT will help with? (Optional)"
-        name="primaryGoal"
-        rows={3}
-        placeholder="e.g. Find more active VN→US importers, replace ImportYeti, build outbound around lane signals…"
+        label="Anything else we should know? (Optional)"
+        name="notes"
+        rows={2}
       />
 
       {state === "error" && errorMessage && (
@@ -172,12 +190,12 @@ export function DemoRequestForm() {
         className="font-display inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl text-[14.5px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
         style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
       >
-        {state === "submitting" ? "Submitting…" : "Request demo"}
+        {state === "submitting" ? "Submitting…" : "Apply to the partner program"}
         {state !== "submitting" && <ArrowRight className="h-4 w-4" />}
       </button>
 
       <p className="font-body mt-2 text-center text-[11.5px] text-ink-200">
-        We respond within one business day. No spam, no auto-cadences.
+        Applications reviewed within 2 business days. No automatic approval.
       </p>
     </form>
   );
