@@ -95,16 +95,65 @@ export async function POST(req: NextRequest) {
   // Fan out emails + webhook + Supabase row in parallel — all best-effort.
   // Failures log but don't fail the request; the Sanity write above is
   // the recoverable source of truth.
+  //
+  // pingAdminNotify is the founder backstop: even if the marketing-site
+  // RESEND_API_KEY isn't set or the sales inbox is unread, the Supabase
+  // admin-notify function fires from the app side using its own credential
+  // and writes the attempt into lit_outreach_history. That row is what
+  // the admin dashboard reads, so missed notifications surface there.
   const fanOut: Promise<unknown>[] = [
     sendProspectConfirmation(doc),
     sendSalesAlert(doc, sanityId),
     sendWebhook(doc, sanityId),
     writeSupabaseRow(doc, sanityId),
+    pingAdminNotify(doc, sanityId),
   ];
-  // Don't block the response — fan-out completes in the background.
   Promise.allSettled(fanOut);
 
   return json({ ok: true, id: sanityId });
+}
+
+/**
+ * Best-effort founder notification via Supabase admin-notify. Uses
+ * LIT_ADMIN_NOTIFY_SECRET as a bearer credential. If either env var is
+ * unset we skip — the function never throws because we don't want to
+ * fail the user-facing response on an internal observability hop.
+ */
+async function pingAdminNotify(d: Doc, sanityId: string): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const secret = process.env.LIT_ADMIN_NOTIFY_SECRET;
+  if (!url || !secret) return;
+  try {
+    const r = await fetch(`${url}/functions/v1/admin-notify`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        event: "demo_request",
+        subject: `New demo request — ${d.name}${d.company ? ` · ${d.company}` : ""}`,
+        summary: `${d.name}${d.company ? ` · ${d.company}` : ""} wants a demo`,
+        cta_url: `https://logisticintel.com/studio/desk/demoRequest;${sanityId}`,
+        cta_label: "Open in Studio",
+        details: {
+          Email: d.email,
+          Company: d.company,
+          Domain: d.domain,
+          Phone: d.phone,
+          "Use case": d.useCase,
+          "Team size": d.teamSize,
+          Source: d.source,
+          "Primary goal": d.primaryGoal,
+          "Submitted at": d.submittedAt,
+          "Sanity id": sanityId,
+        },
+      }),
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => "");
+      console.error("[demo-request] admin-notify non-2xx", r.status, text.slice(0, 300));
+    }
+  } catch (e: any) {
+    console.error("[demo-request] admin-notify threw", e?.message || e);
+  }
 }
 
 type Doc = {
