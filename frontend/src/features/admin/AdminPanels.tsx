@@ -35,11 +35,13 @@ import {
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 import {
   ABar,
   ADot,
   AEmpty,
   AHead,
+  AIconBtn,
   AInput,
   AKPI,
   APanel,
@@ -53,6 +55,8 @@ import {
   fontDisplay,
   fontMono,
 } from "./AdminShared";
+import { ConfirmDialog, type ConfirmRequest } from "./ConfirmDialog";
+import { Pause, Play, RotateCcw, Square, UserCheck, UserX } from "lucide-react";
 
 const fmt = (n: number | null | undefined) =>
   typeof n === "number" ? n.toLocaleString("en-US") : "—";
@@ -306,6 +310,8 @@ function QMini({ label, value, tone, icon: Icon, live }: { label: string; value:
 
 export function ErrorLog() {
   const [rows, setRows] = useState<any[] | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -316,7 +322,24 @@ export function ErrorLog() {
         .limit(50);
       setRows(data || []);
     })();
-  }, []);
+  }, [refreshKey]);
+
+  function askRetry(e: any) {
+    setConfirm({
+      title: "Retry this job?",
+      body: `Re-queues the recipient (if attached) and marks the error resolved. Useful after fixing a token / quota / config issue.`,
+      target: e.code,
+      action: "admin.job_error.retry",
+      severity: "info",
+      confirmLabel: "Retry now",
+      onConfirm: async () => {
+        const { error } = await supabase.rpc("lit_admin_resolve_job_error", { p_error: e.id });
+        if (error) throw new Error(error.message);
+        toast.success("Job error retried.");
+        setRefreshKey((k) => k + 1);
+      },
+    });
+  }
   return (
     <APanel
       title={<><AlertOctagon className="h-3.5 w-3.5 text-rose-500" /> Provider errors · failed jobs</>}
@@ -359,10 +382,12 @@ export function ErrorLog() {
               <div className="w-16 text-right text-[10.5px] text-slate-400" style={{ fontFamily: fontMono }}>
                 try {e.attempts}
               </div>
+              <AIconBtn icon={RotateCcw} tone="blue" title="Retry now" onClick={() => askRetry(e)} />
             </ARow>
           ))}
         </div>
       )}
+      <ConfirmDialog open={confirm} onClose={() => setConfirm(null)} />
     </APanel>
   );
 }
@@ -372,6 +397,8 @@ export function ErrorLog() {
 export function UserManagement() {
   const [rows, setRows] = useState<any[] | null>(null);
   const [q, setQ] = useState("");
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     (async () => {
       // profiles has email + global_role + status + company; subscriptions
@@ -396,7 +423,7 @@ export function UserManagement() {
       }));
       setRows(merged);
     })();
-  }, []);
+  }, [refreshKey]);
   const filtered = useMemo(() => {
     if (!rows) return [];
     const needle = q.trim().toLowerCase();
@@ -408,6 +435,30 @@ export function UserManagement() {
         (r.organization_name || r.company_name || "").toLowerCase().includes(needle),
     );
   }, [rows, q]);
+
+  function askSuspend(u: any) {
+    const isSuspended = u.status === "suspended";
+    setConfirm({
+      title: isSuspended ? "Reactivate user?" : "Suspend user?",
+      body: isSuspended
+        ? `Restoring access for ${u.email}. They'll be able to sign in immediately.`
+        : `Suspending ${u.email} blocks new sessions on their next request. Their plan and data are unchanged.`,
+      target: u.email || u.id,
+      action: isSuspended ? "admin.user.reactivate" : "admin.user.suspend",
+      severity: isSuspended ? "info" : "warn",
+      confirmLabel: isSuspended ? "Reactivate" : "Suspend",
+      onConfirm: async () => {
+        const { error } = await supabase.rpc("lit_admin_suspend_user", {
+          p_user: u.id,
+          p_suspend: !isSuspended,
+        });
+        if (error) throw new Error(error.message);
+        toast.success(isSuspended ? "User reactivated." : "User suspended.");
+        setRefreshKey((k) => k + 1);
+      },
+    });
+  }
+
   return (
     <APanel
       title={<><Users className="h-3.5 w-3.5 text-blue-500" /> User management</>}
@@ -421,6 +472,7 @@ export function UserManagement() {
         { label: "Role", w: 92 },
         { label: "Plan", w: 96 },
         { label: "Joined", w: 110 },
+        { label: "", w: 56, align: "right" },
       ]} />
       {rows == null ? (
         <AEmpty title="Loading…" />
@@ -463,11 +515,20 @@ export function UserManagement() {
                 <div className="text-[11px] text-slate-500" style={{ width: 110, fontFamily: fontBody }}>
                   {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
                 </div>
+                <div className="flex shrink-0 justify-end" style={{ width: 56 }}>
+                  <AIconBtn
+                    icon={u.status === "suspended" ? UserCheck : UserX}
+                    tone={u.status === "suspended" ? "green" : "red"}
+                    title={u.status === "suspended" ? "Reactivate" : "Suspend"}
+                    onClick={() => askSuspend(u)}
+                  />
+                </div>
               </ARow>
             );
           })}
         </div>
       )}
+      <ConfirmDialog open={confirm} onClose={() => setConfirm(null)} />
     </APanel>
   );
 }
@@ -476,6 +537,8 @@ export function UserManagement() {
 
 export function CampaignMonitoring() {
   const [rows, setRows] = useState<any[] | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -485,7 +548,37 @@ export function CampaignMonitoring() {
         .limit(20);
       setRows(data || []);
     })();
-  }, []);
+  }, [refreshKey]);
+
+  function askStatusChange(c: any, nextStatus: "paused" | "active" | "completed") {
+    const action =
+      nextStatus === "paused" ? "Pause campaign" :
+      nextStatus === "active" ? "Resume campaign" :
+      "Force-stop campaign";
+    const isDestructive = nextStatus === "completed";
+    setConfirm({
+      title: `${action}?`,
+      body: isDestructive
+        ? `Force-stopping ${c.name || c.id} halts every queued recipient and cannot be undone.`
+        : nextStatus === "paused"
+          ? `Pausing ${c.name || c.id}. Pending recipients won't be picked up by the dispatcher until you resume.`
+          : `Resuming ${c.name || c.id}. The dispatcher will re-pick eligible recipients on its next tick.`,
+      target: c.name || c.id,
+      action: `admin.campaign.${nextStatus === "completed" ? "force_stop" : nextStatus === "paused" ? "pause" : "resume"}`,
+      severity: isDestructive ? "danger" : "warn",
+      confirmLabel: action,
+      requireType: isDestructive ? (c.name || c.id) : undefined,
+      onConfirm: async () => {
+        const { error } = await supabase.rpc("lit_admin_set_campaign_status", {
+          p_campaign: c.id, p_status: nextStatus,
+        });
+        if (error) throw new Error(error.message);
+        toast.success(`${action} complete.`);
+        setRefreshKey((k) => k + 1);
+      },
+    });
+  }
+
   return (
     <APanel
       title={<><Send className="h-3.5 w-3.5 text-blue-500" /> Campaign monitoring</>}
@@ -496,6 +589,7 @@ export function CampaignMonitoring() {
         { label: "Campaign", flex: 2.4 },
         { label: "Status", w: 100 },
         { label: "Updated", w: 130 },
+        { label: "", w: 96, align: "right" },
       ]} />
       {rows == null ? (
         <AEmpty title="Loading…" />
@@ -523,11 +617,22 @@ export function CampaignMonitoring() {
                 <div className="text-[11px] text-slate-500" style={{ width: 130, fontFamily: fontBody }}>
                   {c.updated_at ? new Date(c.updated_at).toLocaleString() : "—"}
                 </div>
+                <div className="flex shrink-0 justify-end gap-1" style={{ width: 96 }}>
+                  {c.status === "paused" ? (
+                    <AIconBtn icon={Play} tone="green" title="Resume" onClick={() => askStatusChange(c, "active")} />
+                  ) : c.status !== "completed" ? (
+                    <AIconBtn icon={Pause} tone="amber" title="Pause" onClick={() => askStatusChange(c, "paused")} />
+                  ) : null}
+                  {c.status !== "completed" ? (
+                    <AIconBtn icon={Square} tone="red" title="Force stop" onClick={() => askStatusChange(c, "completed")} />
+                  ) : null}
+                </div>
               </ARow>
             );
           })}
         </div>
       )}
+      <ConfirmDialog open={confirm} onClose={() => setConfirm(null)} />
     </APanel>
   );
 }
