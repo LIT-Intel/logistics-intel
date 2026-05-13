@@ -450,24 +450,29 @@ export function AdminOverview() {
     totalUsers: null, activeUsers7d: null, companies: null, contacts: null,
     activeCampaigns: null, outreachSent24h: null, errorRate24h: null, apiLatencyMs: null,
   });
+  const [signupTrend, setSignupTrend] = useState<number[] | null>(null);
+  const [outreachTrend, setOutreachTrend] = useState<number[] | null>(null);
+  const [errorTrend, setErrorTrend] = useState<number[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
       const oneDayAgo = new Date(Date.now() - 86_400_000).toISOString();
 
       const [
-        userProfiles, activeUsers, companies, contacts,
+        userSnap, companies, contacts,
         activeCampaigns, outreachSends, outreachFails,
+        signupHourly, outreachHourly, errorHourly,
       ] = await Promise.all([
-        supabase.from("user_profiles").select("id", { count: "exact", head: true }),
-        supabase.from("lit_user_activity").select("user_id", { count: "exact", head: true }).gte("ts", sevenDaysAgo),
+        supabase.rpc("lit_admin_user_snapshot"),
         supabase.from("lit_companies").select("id", { count: "exact", head: true }),
         supabase.from("lit_contacts").select("id", { count: "exact", head: true }),
         supabase.from("lit_campaigns").select("id", { count: "exact", head: true }).in("status", ["active", "sending", "paused"]),
         supabase.from("lit_outreach_history").select("id", { count: "exact", head: true }).eq("status", "sent").gte("occurred_at", oneDayAgo),
         supabase.from("lit_outreach_history").select("id", { count: "exact", head: true }).eq("status", "failed").gte("occurred_at", oneDayAgo),
+        supabase.rpc("lit_admin_hourly_series", { p_counter: "signups" }),
+        supabase.rpc("lit_admin_hourly_series", { p_counter: "outreach_sent" }),
+        supabase.rpc("lit_admin_hourly_series", { p_counter: "outreach_failed" }),
       ]);
 
       if (cancelled) return;
@@ -475,10 +480,11 @@ export function AdminOverview() {
       const sent = outreachSends.count ?? 0;
       const failed = outreachFails.count ?? 0;
       const errPct = sent + failed > 0 ? (failed * 100) / (sent + failed) : 0;
+      const userJson = (userSnap.data as any) || {};
 
       setSnap({
-        totalUsers: userProfiles.count ?? 0,
-        activeUsers7d: activeUsers.count ?? 0,
+        totalUsers: userJson.total_users ?? 0,
+        activeUsers7d: userJson.active_7d ?? 0,
         companies: companies.count ?? 0,
         contacts: contacts.count ?? 0,
         activeCampaigns: activeCampaigns.count ?? 0,
@@ -486,71 +492,86 @@ export function AdminOverview() {
         errorRate24h: Number(errPct.toFixed(2)),
         apiLatencyMs: null,
       });
+      setSignupTrend(seriesToCounts(signupHourly.data));
+      setOutreachTrend(seriesToCounts(outreachHourly.data));
+      setErrorTrend(seriesToCounts(errorHourly.data));
     })();
     return () => { cancelled = true; };
   }, []);
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <AKPI label="Total users"      tone="blue"   icon={Users}        value={fmt(snap.totalUsers)} />
-      <AKPI label="Active · 7 days"  tone="cyan"   icon={Activity}     value={fmt(snap.activeUsers7d)} />
+      <AKPI label="Total users"      tone="blue"   icon={Users}        value={fmt(snap.totalUsers)} sparkline={signupTrend ?? undefined} />
+      <AKPI label="Active · 7 days"  tone="cyan"   icon={Activity}     value={fmt(snap.activeUsers7d)} sub="Sign-ins last 7d" />
       <AKPI label="Companies"        tone="violet" icon={Building2}    value={fmt(snap.companies)} />
       <AKPI label="Contacts"         tone="blue"   icon={UserRound}    value={fmt(snap.contacts)} />
       <AKPI label="Active campaigns" tone="amber"  icon={Send}         value={fmt(snap.activeCampaigns)} />
-      <AKPI label="Outreach · 24h"   tone="cyan"   icon={Mail}         value={fmt(snap.outreachSent24h)} />
-      <AKPI label="Error rate · 24h" tone="green"  icon={ShieldCheck}  value={snap.errorRate24h != null ? snap.errorRate24h.toFixed(2) : "—"} unit="%" />
+      <AKPI label="Outreach · 24h"   tone="cyan"   icon={Mail}         value={fmt(snap.outreachSent24h)} sparkline={outreachTrend ?? undefined} />
+      <AKPI label="Error rate · 24h" tone={snap.errorRate24h != null && snap.errorRate24h > 5 ? "red" : "green"}  icon={ShieldCheck}  value={snap.errorRate24h != null ? snap.errorRate24h.toFixed(2) : "—"} unit="%" sparkline={errorTrend ?? undefined} />
       <AKPI label="API latency · p95" tone="slate" icon={Timer}        value={snap.apiLatencyMs != null ? String(snap.apiLatencyMs) : "—"} unit="ms" sub={snap.apiLatencyMs == null ? "Monitoring not wired" : undefined} />
     </div>
   );
 }
 
+function seriesToCounts(series: any): number[] {
+  if (!Array.isArray(series)) return [];
+  return series.map((s) => Number(s?.count ?? 0));
+}
+
 // ─────────────────────────── System Health ───────────────────────────
 
-const HEALTH_SERVICES = [
-  { svc: "API · api.logisticintel.com", status: "ok" as const, note: "p95 · us-west-1" },
-  { svc: "Supabase · Primary DB",       status: "ok" as const, note: "" },
-  { svc: "Supabase · Edge Functions",   status: "ok" as const, note: "" },
-  { svc: "Stripe · Billing Webhooks",   status: "ok" as const, note: "" },
-  { svc: "Gmail API · OAuth",           status: "ok" as const, note: "" },
-  { svc: "Outlook / Microsoft Graph",   status: "ok" as const, note: "" },
-  { svc: "PhantomBuster · LinkedIn",    status: "ok" as const, note: "" },
-  { svc: "ImportYeti · Ingestion",      status: "stale" as const, note: "live monitoring not wired" },
-  { svc: "Clay / Apollo · Enrichment",  status: "ok" as const, note: "" },
-  { svc: "OpenAI · Insights engine",    status: "ok" as const, note: "" },
-];
-
 export function SystemHealth() {
-  const overall = HEALTH_SERVICES.some((s) => s.status === "stale" as any)
-    ? "amber"
-    : "green";
+  const [services, setServices] = useState<Array<{ svc: string; status: string; note: string }> | null>(null);
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      const { data } = await supabase.rpc("lit_admin_system_health");
+      if (!active) return;
+      setServices(Array.isArray(data) ? data : []);
+    }
+    load();
+    const i = window.setInterval(load, 30_000);
+    return () => { active = false; window.clearInterval(i); };
+  }, []);
+  const overall = !services
+    ? "slate"
+    : services.some((s) => s.status === "fail" || s.status === "down")
+      ? "red"
+      : services.some((s) => s.status === "warning" || s.status === "stale")
+        ? "amber"
+        : "green";
   return (
     <APanel
       title={<><ADot tone={overall as any} live /> System health</>}
-      subtitle="Provider + infrastructure status"
-      right={<APill tone={overall as any} dot>{overall === "green" ? "All systems operational" : "Degraded"}</APill>}
+      subtitle="Derived from real signals · refreshes every 30s"
+      right={<APill tone={overall as any} dot>{overall === "green" ? "All systems operational" : overall === "amber" ? "Degraded" : overall === "red" ? "Incident" : "Loading"}</APill>}
       pad={0}
     >
-      <div>
-        {HEALTH_SERVICES.map((h) => {
-          const tone = h.status === "ok" ? "green" : h.status === "stale" ? "amber" : "red";
-          return (
-            <ARow key={h.svc}>
-              <ADot tone={tone as any} live={h.status === "ok"} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[12.5px] font-semibold text-slate-900" style={{ fontFamily: fontDisplay }}>
-                  {h.svc}
-                </div>
-                {h.note ? (
-                  <div className={`mt-0.5 text-[11px] ${h.status === "stale" ? "text-amber-700" : "text-slate-400"}`} style={{ fontFamily: fontBody }}>
-                    {h.note}
+      {services == null ? (
+        <AEmpty title="Loading…" />
+      ) : (
+        <div>
+          {services.map((h) => {
+            const tone = h.status === "ok" ? "green" : h.status === "warning" || h.status === "stale" ? "amber" : "red";
+            return (
+              <ARow key={h.svc}>
+                <ADot tone={tone as any} live={h.status === "ok"} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[12.5px] font-semibold text-slate-900" style={{ fontFamily: fontDisplay }}>
+                    {h.svc}
                   </div>
-                ) : null}
-              </div>
-              <APill tone={tone as any} dot>{h.status}</APill>
-            </ARow>
-          );
-        })}
-      </div>
+                  {h.note ? (
+                    <div className={`mt-0.5 truncate text-[11px] ${tone === "amber" ? "text-amber-700" : tone === "red" ? "text-rose-700" : "text-slate-400"}`} style={{ fontFamily: fontBody }}>
+                      {h.note}
+                    </div>
+                  ) : null}
+                </div>
+                <APill tone={tone as any} dot>{h.status}</APill>
+              </ARow>
+            );
+          })}
+        </div>
+      )}
     </APanel>
   );
 }
@@ -619,6 +640,7 @@ export function PlanDistribution() {
 
 export function QueueMonitor() {
   const [counts, setCounts] = useState<{ pending: number; queued: number; failed: number; completed: number } | null>(null);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     (async () => {
       const oneDayAgo = new Date(Date.now() - 86_400_000).toISOString();
@@ -635,6 +657,14 @@ export function QueueMonitor() {
         completed: completed.count ?? 0,
       });
     })();
+  }, [tick]);
+  // Poll every 10s (operators expect this to feel live). Realtime on
+  // lit_campaign_contacts works too but the channel chatters because
+  // every dispatcher tick updates statuses across many rows, so we
+  // prefer a steady poll.
+  useEffect(() => {
+    const i = window.setInterval(() => setTick((t) => t + 1), 10_000);
+    return () => window.clearInterval(i);
   }, []);
   return (
     <APanel
@@ -694,6 +724,16 @@ export function ErrorLog() {
       setRows(data || []);
     })();
   }, [refreshKey]);
+  // Realtime: any insert/update on lit_job_errors refreshes the list.
+  // Fallback poll every 15s.
+  useEffect(() => {
+    const ch = supabase
+      .channel("admin-job-errors")
+      .on("postgres_changes", { event: "*", schema: "public", table: "lit_job_errors" }, () => setRefreshKey((k) => k + 1))
+      .subscribe();
+    const i = window.setInterval(() => setRefreshKey((k) => k + 1), 15_000);
+    return () => { supabase.removeChannel(ch); window.clearInterval(i); };
+  }, []);
 
   function askRetry(e: any) {
     setConfirm({
@@ -1211,6 +1251,7 @@ export function AuditLog() {
   const [rows, setRows] = useState<any[] | null>(null);
   const [filter, setFilter] = useState("all");
   const [exporting, setExporting] = useState(false);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     (async () => {
       let q = supabase
@@ -1223,7 +1264,22 @@ export function AuditLog() {
       const { data } = await q;
       setRows(data || []);
     })();
-  }, [filter]);
+  }, [filter, tick]);
+  // Realtime: new audit rows trigger an immediate refresh. Fallback
+  // poll every 20s in case the channel drops or the table isn't on
+  // the realtime publication yet.
+  useEffect(() => {
+    const ch = supabase
+      .channel("admin-audit-log")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "lit_audit_log" },
+        () => setTick((t) => t + 1),
+      )
+      .subscribe();
+    const i = window.setInterval(() => setTick((t) => t + 1), 20_000);
+    return () => { supabase.removeChannel(ch); window.clearInterval(i); };
+  }, []);
 
   async function handleExport() {
     setExporting(true);

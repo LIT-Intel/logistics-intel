@@ -131,6 +131,7 @@ export function AKPI({
   tone = "slate",
   unit,
   icon: Icon,
+  sparkline,
 }: {
   label: string;
   value: React.ReactNode;
@@ -139,6 +140,7 @@ export function AKPI({
   tone?: Tone;
   unit?: string;
   icon?: LucideIcon;
+  sparkline?: number[];
 }) {
   const trendIsUp = trend?.startsWith("+");
   const trendIsDown = trend?.startsWith("-");
@@ -149,6 +151,12 @@ export function AKPI({
         ? "text-emerald-700"
         : "text-rose-700"
       : "text-slate-500";
+  const TONE_HEX: Record<Tone, string> = {
+    slate: "#475569", blue: "#3B82F6", cyan: "#06B6D4",
+    green: "#22C55E", amber: "#F59E0B", red: "#EF4444", violet: "#8B5CF6",
+  };
+  const toneColor = TONE_HEX[tone] || "#475569";
+  const toneFill = `${toneColor}1A`;
   return (
     <div className="flex min-w-0 flex-col gap-1.5 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-center justify-between gap-2">
@@ -171,10 +179,15 @@ export function AKPI({
           </span>
         ) : null}
       </div>
-      <div className="leading-[1.05] text-[26px] font-bold tracking-[-0.02em] text-slate-950" style={{ fontFamily: fontDisplay }}>
-        {value}
-        {unit ? (
-          <span className="ml-1 text-[13px] font-semibold text-slate-400">{unit}</span>
+      <div className="flex items-end justify-between gap-2">
+        <div className="leading-[1.05] text-[26px] font-bold tracking-[-0.02em] text-slate-950" style={{ fontFamily: fontDisplay }}>
+          {value}
+          {unit ? (
+            <span className="ml-1 text-[13px] font-semibold text-slate-400">{unit}</span>
+          ) : null}
+        </div>
+        {sparkline && sparkline.length > 1 ? (
+          <ASpark data={sparkline} w={80} h={26} stroke={toneColor} fill={toneFill} />
         ) : null}
       </div>
       {sub ? <div className="text-[11.5px] text-slate-400" style={{ fontFamily: fontBody }}>{sub}</div> : null}
