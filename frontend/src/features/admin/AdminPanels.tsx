@@ -109,7 +109,7 @@ export function RevenueKPIs() {
       const [{ data: subs }, { data: plans }] = await Promise.all([
         supabase
           .from("subscriptions")
-          .select("user_id, plan_code, status, billing_interval, current_period_end, updated_at, created_at, cancel_at_period_end"),
+          .select("id, user_id, plan_code, status, billing_interval, current_period_end, updated_at, created_at, cancel_at_period_end, metadata"),
         supabase
           .from("plans")
           .select("code, name, price_monthly, price_yearly")
@@ -138,7 +138,18 @@ export function RevenueKPIs() {
         if (s.status === "active") {
           active += 1;
           cell.active += 1;
-          if (plan && plan.price_monthly != null) {
+          // Resolution order for active MRR contribution:
+          //   1. subscriptions.metadata.monthly_amount_cents (admin
+          //      override — primary source for enterprise/custom subs)
+          //   2. plans.price_monthly × 100 (or price_yearly/12 × 100
+          //      for annual subs)
+          //   3. count under enterpriseActive so the tile is honest
+          //      when neither price is known
+          const override = Number((s.metadata as any)?.monthly_amount_cents);
+          if (Number.isFinite(override) && override > 0) {
+            mrrCents += override;
+            cell.mrrCents += override;
+          } else if (plan && plan.price_monthly != null) {
             const monthlyCents =
               s.billing_interval === "year"
                 ? Math.round((plan.price_yearly || 0) * 100 / 12)
@@ -146,8 +157,6 @@ export function RevenueKPIs() {
             mrrCents += monthlyCents;
             cell.mrrCents += monthlyCents;
           } else if (code === "enterprise") {
-            // Enterprise is custom-priced — counted separately so the
-            // MRR tile doesn't lie at $0 when an enterprise account is live.
             enterpriseActive += 1;
           }
         }
@@ -255,12 +264,13 @@ function PlanBreakdown({ perPlan }: { perPlan: RevenueSnap["perPlan"] | null }) 
 export function SubscribersTable() {
   const [rows, setRows] = useState<any[] | null>(null);
   const [filter, setFilter] = useState<string>("all");
+  const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     (async () => {
       const [{ data: subs }, { data: profiles }, { data: plans }] = await Promise.all([
         supabase
           .from("subscriptions")
-          .select("user_id, plan_code, status, billing_interval, current_period_start, current_period_end, trial_ends_at, cancel_at_period_end, stripe_customer_id, created_at")
+          .select("id, user_id, plan_code, status, billing_interval, current_period_start, current_period_end, trial_ends_at, cancel_at_period_end, stripe_customer_id, created_at, metadata")
           .order("created_at", { ascending: false })
           .limit(200),
         supabase.from("profiles").select("id, email, full_name, organization_name, company_name"),
@@ -277,7 +287,7 @@ export function SubscribersTable() {
       }));
       setRows(merged);
     })();
-  }, []);
+  }, [refreshKey]);
 
   const visible = useMemo(() => {
     if (!rows) return [];
@@ -294,6 +304,33 @@ export function SubscribersTable() {
     s === "trialing" ? "amber" :
     s === "past_due" ? "red" :
     s === "canceled" || s === "expired" ? "slate" : "blue";
+
+  async function editAmount(sub: any) {
+    const current = Number(sub.metadata?.monthly_amount_cents);
+    const currentDollars = Number.isFinite(current) ? (current / 100).toFixed(2) : "";
+    const input = window.prompt(
+      `Set monthly MRR for ${sub.profile?.email || sub.user_id?.slice(0, 8)} (USD per month).\nLeave blank or 0 to clear.`,
+      currentDollars,
+    );
+    if (input === null) return;
+    const trimmed = input.trim();
+    const dollars = trimmed === "" ? 0 : Number(trimmed);
+    if (!Number.isFinite(dollars) || dollars < 0) {
+      toast.error("Enter a non-negative number.");
+      return;
+    }
+    const cents = trimmed === "" || dollars === 0 ? null : Math.round(dollars * 100);
+    const { error } = await supabase.rpc("lit_admin_set_subscription_amount", {
+      p_subscription_id: sub.id,
+      p_monthly_cents: cents,
+    });
+    if (error) {
+      toast.error(error.message || "Failed to set MRR.");
+      return;
+    }
+    toast.success(cents == null ? "MRR override cleared." : `MRR set to $${dollars.toFixed(2)}.`);
+    setRefreshKey((k) => k + 1);
+  }
 
   return (
     <APanel
@@ -325,8 +362,9 @@ export function SubscribersTable() {
         { label: "Plan", w: 100 },
         { label: "Status", w: 100 },
         { label: "Cycle", w: 70 },
-        { label: "MRR", w: 80, align: "right" },
+        { label: "MRR", w: 96, align: "right" },
         { label: "Renews", w: 110 },
+        { label: "", w: 36, align: "right" },
       ]} />
       {rows == null ? (
         <AEmpty title="Loading…" />
@@ -335,13 +373,17 @@ export function SubscribersTable() {
       ) : (
         <div>
           {visible.map((s) => {
-            const monthly = s.plan
+            const overrideCents = Number(s.metadata?.monthly_amount_cents);
+            const hasOverride = Number.isFinite(overrideCents) && overrideCents > 0;
+            const monthlyFromPlan = s.plan
               ? s.billing_interval === "year"
                 ? Math.round((Number(s.plan.price_yearly) || 0) / 12)
                 : Math.round(Number(s.plan.price_monthly) || 0)
               : 0;
+            const monthly = hasOverride ? overrideCents / 100 : monthlyFromPlan;
+            const isCustom = s.plan_code === "enterprise";
             return (
-              <ARow key={s.user_id + (s.stripe_customer_id || "")}>
+              <ARow key={s.id || s.user_id + (s.stripe_customer_id || "")}>
                 <div className="min-w-0" style={{ flex: 2 }}>
                   <div className="truncate text-[12.5px] font-semibold text-slate-900" style={{ fontFamily: fontDisplay }}>
                     {s.profile?.full_name || s.profile?.email?.split("@")[0] || "(no profile)"}
@@ -361,11 +403,25 @@ export function SubscribersTable() {
                 <div className="text-[11px] text-slate-500" style={{ width: 70, fontFamily: fontMono }}>
                   {s.billing_interval || "—"}
                 </div>
-                <div className="text-right text-[12px] font-semibold text-slate-900" style={{ width: 80, fontFamily: fontMono }}>
-                  {monthly > 0 && s.status === "active" ? `$${monthly}` : "—"}
+                <div className="text-right" style={{ width: 96, fontFamily: fontMono }}>
+                  {monthly > 0 && s.status === "active" ? (
+                    <span className="text-[12px] font-semibold text-slate-900">
+                      ${monthly.toLocaleString()}
+                      {hasOverride ? <span className="ml-1 text-[10px] font-normal text-emerald-600">●</span> : null}
+                    </span>
+                  ) : isCustom && s.status === "active" ? (
+                    <span className="text-[11px] italic text-slate-400">Custom · set →</span>
+                  ) : (
+                    <span className="text-slate-300">—</span>
+                  )}
                 </div>
                 <div className="text-[11px] text-slate-500" style={{ width: 110, fontFamily: fontBody }}>
                   {s.current_period_end ? new Date(s.current_period_end).toLocaleDateString() : s.trial_ends_at ? `trial · ${new Date(s.trial_ends_at).toLocaleDateString()}` : "—"}
+                </div>
+                <div className="flex shrink-0 justify-end" style={{ width: 36 }}>
+                  {isCustom && s.id ? (
+                    <AIconBtn icon={DollarSign} tone="green" title="Set monthly MRR" onClick={() => editAmount(s)} />
+                  ) : null}
                 </div>
               </ARow>
             );
