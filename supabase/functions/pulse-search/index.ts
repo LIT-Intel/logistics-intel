@@ -406,6 +406,81 @@ function ruleBasedFallback(rawQuery: string): ParsedIntent {
 // ─────────────────────────────────────────────────────────────────────
 // Post-parse expansion (deterministic)
 // ─────────────────────────────────────────────────────────────────────
+
+// Reverse map: "GA" -> "Georgia"
+const STATE_ABBR_TO_FULL: Record<string, string> = Object.fromEntries(
+  Object.entries(STATE_ABBR).map(([full, abbr]) => [abbr, full.replace(/\b\w/g, (c) => c.toUpperCase())]),
+);
+
+// Tokens we strip when deriving keyword terms from the raw query.
+const KEYWORD_STOPWORDS = new Set([
+  "a", "an", "the", "in", "at", "for", "to", "from", "of", "with", "by",
+  "and", "or", "find", "get", "give", "want", "need", "list", "me", "my",
+  "you", "i", "top", "best", "most", "any", "some", "all",
+  "companies", "company", "business", "businesses", "firm", "firms",
+  "provider", "providers", "vendor", "vendors", "industry", "sector",
+  "market", "based", "near", "around", "that", "is", "are", "more", "than",
+  "under", "over", "between", "do", "does", "please", "kindly", "could",
+  "can", "compile", "make", "build", "create", "show", "let", "know",
+  "show", "us", "we", "their", "lookalike", "similar", "like",
+  // generic plurals/digits
+  "50", "100", "10", "20", "25",
+]);
+
+function deriveKeywordTerms(intent: ParsedIntent): string[] {
+  const geoWords = new Set<string>();
+  for (const s of intent.geo.states) geoWords.add(s.toLowerCase());
+  for (const c of intent.geo.cities) geoWords.add(c.toLowerCase());
+  for (const c of intent.geo.countries) geoWords.add(c.toLowerCase());
+  for (const m of intent.geo.metros) geoWords.add(m.toLowerCase());
+  for (const r of Object.keys(REGION_STATES)) geoWords.add(r);
+  for (const s of Object.keys(STATE_ABBR)) geoWords.add(s);
+  for (const a of Object.values(STATE_ABBR)) geoWords.add(a.toLowerCase());
+
+  const raw = String(intent.raw_query || "").toLowerCase();
+  const cleaned = raw.replace(/[^\p{L}\p{N}\s]/gu, " ");
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+
+  const unigrams: string[] = [];
+  for (const t of tokens) {
+    if (t.length < 3) continue;
+    if (KEYWORD_STOPWORDS.has(t)) continue;
+    if (geoWords.has(t)) continue;
+    if (/^\d+$/.test(t)) continue;
+    unigrams.push(t);
+  }
+
+  // Bigrams: keep meaningful adjacent pairs
+  const bigrams: string[] = [];
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const a = tokens[i];
+    const b = tokens[i + 1];
+    if (!a || !b) continue;
+    if (KEYWORD_STOPWORDS.has(a) || KEYWORD_STOPWORDS.has(b)) continue;
+    if (geoWords.has(a) || geoWords.has(b)) continue;
+    if (a.length < 3 || b.length < 3) continue;
+    bigrams.push(`${a} ${b}`);
+  }
+
+  return Array.from(new Set([...bigrams.slice(0, 3), ...unigrams]));
+}
+
+// Build the unified list of text terms used for both directory text-matching
+// and the "what did Pulse actually search for?" coach summary. Always returns
+// something non-empty for non-trivial queries so the directory never
+// state-filters with no topic constraint.
+function buildTextTerms(intent: ParsedIntent): string[] {
+  const explicit = [
+    ...intent.industry_terms,
+    ...intent.service_terms,
+    ...intent.audience_type.map((a) => a.replace(/_/g, " ")),
+  ]
+    .map((t) => (t || "").toLowerCase().trim())
+    .filter(Boolean);
+  const derived = deriveKeywordTerms(intent);
+  return Array.from(new Set([...explicit, ...derived]));
+}
+
 function expandIntent(intent: ParsedIntent): ParsedIntent {
   // Region → states
   if (intent.geo.region) {
@@ -414,6 +489,15 @@ function expandIntent(intent: ParsedIntent): ParsedIntent {
       intent.geo.states = [...REGION_STATES[key]];
     }
   }
+  // State abbreviations → full names (directory stores full names; abbr
+  // queries used to return zero rows). Keep both forms downstream.
+  if (intent.geo.states.length > 0) {
+    intent.geo.states = intent.geo.states.map((s) => {
+      const up = s.toUpperCase();
+      if (STATE_ABBR_TO_FULL[up]) return STATE_ABBR_TO_FULL[up];
+      return s;
+    });
+  }
   // Metros → cities (don't override explicit cities)
   if (intent.geo.metros && intent.geo.metros.length > 0) {
     for (const metro of intent.geo.metros) {
@@ -421,6 +505,30 @@ function expandIntent(intent: ParsedIntent): ParsedIntent {
       if (cities) {
         intent.geo.cities = Array.from(new Set([...intent.geo.cities, ...cities]));
       }
+    }
+  }
+  // Backfill industry_terms when parser left both industry and service empty,
+  // so downstream text matching has something to grip on.
+  if (intent.industry_terms.length === 0 && intent.service_terms.length === 0) {
+    const derived = deriveKeywordTerms(intent);
+    if (derived.length > 0) {
+      intent.industry_terms = derived.slice(0, 6);
+    }
+  }
+  // Widen Apollo gating: general-industry discovery (industry terms set, no
+  // shipment/trade filter) should also call Apollo, not just service-provider
+  // audiences. Fixes "medical supplies in Georgia" → Apollo skipped.
+  if (!intent.needs_apollo) {
+    const hasShipment = intent.shipment_filters &&
+      (intent.shipment_filters.shipments_min != null ||
+        intent.shipment_filters.teu_min != null ||
+        intent.shipment_filters.containerization != null);
+    const hasTrade = intent.trade_filters &&
+      (intent.trade_filters.origin_country ||
+        intent.trade_filters.destination_country ||
+        intent.trade_filters.commodities?.length);
+    if (intent.industry_terms.length > 0 && !hasShipment && !hasTrade) {
+      intent.needs_apollo = true;
     }
   }
   return intent;
@@ -493,28 +601,40 @@ async function searchSaved(supa: any, userId: string, intent: ParsedIntent, limi
 // ─────────────────────────────────────────────────────────────────────
 // Source B — lit_company_directory (Panjiva/ImportYeti shipment data)
 // ─────────────────────────────────────────────────────────────────────
-async function searchDirectory(supa: any, intent: ParsedIntent, limit: number): Promise<PulseCompanyResult[]> {
+// Escape an ilike pattern fragment for safe inclusion inside a PostgREST
+// .or() string (commas + parens have meaning there). PostgREST URL-encodes
+// the value for us, but we still strip characters that would break the
+// boolean filter expression.
+function escapeIlikeFragment(s: string): string {
+  return String(s).replace(/[,()\\]/g, " ").trim();
+}
+
+async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, textTerms: string[]): Promise<PulseCompanyResult[]> {
   try {
     let q = supa
       .from("lit_company_directory")
       .select(
-        "company_key, company_name, domain, website, phone, address_line1, address_line2, city, state, postal_code, country, industry, trade_roles, shipments, teu, lcl, value_usd, description, normalized_json",
+        "company_key, company_name, domain, website, phone, address_line1, address_line2, city, state, postal_code, country, industry, trade_roles, shipments, teu, lcl, value_usd, description",
       )
       .eq("is_active", true)
-      .limit(limit * 2);
+      .limit(limit * 3);
 
-    // Geography filters
+    // Geography filters — state.ilike matches the directory's full-name
+    // storage; state.eq.{abbr} is kept as a safety net for any abbr rows.
     if (intent.geo.states.length > 0) {
-      const abbrs = intent.geo.states
-        .map((s) => STATE_ABBR[s.toLowerCase()])
-        .filter(Boolean);
-      const orParts = [
-        ...intent.geo.states.map((s) => `state.ilike.${s}`),
-        ...abbrs.map((a) => `state.eq.${a}`),
-      ];
+      const orParts: string[] = [];
+      for (const s of intent.geo.states) {
+        const safe = escapeIlikeFragment(s);
+        if (!safe) continue;
+        orParts.push(`state.ilike.${safe}`);
+        const abbr = STATE_ABBR[s.toLowerCase()];
+        if (abbr) orParts.push(`state.eq.${abbr}`);
+        // If the input was an abbreviation, also try as-is
+        if (s.length === 2) orParts.push(`state.eq.${s.toUpperCase()}`);
+      }
       if (orParts.length) q = q.or(orParts.join(","));
     } else if (intent.geo.cities.length > 0) {
-      q = q.or(intent.geo.cities.map((c) => `city.ilike.${c}`).join(","));
+      q = q.or(intent.geo.cities.map((c) => `city.ilike.${escapeIlikeFragment(c)}`).join(","));
     } else if (intent.geo.postal_codes.length > 0) {
       q = q.in("postal_code", intent.geo.postal_codes);
     }
@@ -533,33 +653,39 @@ async function searchDirectory(supa: any, intent: ParsedIntent, limit: number): 
       q = q.gt("lcl", 0);
     }
 
+    // SQL-level text-match. Without this, a query like "medical supplies in
+    // Georgia" returned the top 50 Georgia rows by shipment volume (Mercedes,
+    // Kia, Hisense) — none of them medical. We OR across the four columns
+    // most likely to carry topic signal.
+    const topTerms = textTerms.slice(0, 5).map(escapeIlikeFragment).filter(Boolean);
+    if (topTerms.length > 0) {
+      const orParts: string[] = [];
+      for (const t of topTerms) {
+        const pat = `%${t}%`;
+        orParts.push(`company_name.ilike.${pat}`);
+        orParts.push(`industry.ilike.${pat}`);
+        orParts.push(`trade_roles.ilike.${pat}`);
+        orParts.push(`description.ilike.${pat}`);
+      }
+      q = q.or(orParts.join(","));
+    }
+
     const { data, error } = await q;
     if (error || !Array.isArray(data)) {
       console.warn("[pulse-search] directory error:", error);
       return [];
     }
 
-    // Text relevance filter (industry/service/audience term match) — apply
-    // in-memory since lit_company_directory has spotty industry coverage.
-    const terms = [
-      ...intent.industry_terms,
-      ...intent.service_terms,
-      ...intent.audience_type.map((a) => a.replace(/_/g, " ")),
-    ]
-      .map((t) => t.toLowerCase())
-      .filter(Boolean);
-
+    const lowerTerms = topTerms.map((t) => t.toLowerCase());
     const scored = (data as any[])
       .map((row) => {
         const result = directoryRowToResult(row);
         const reasons = matchReasons(result, intent);
-        // Tier-1 strong: company name / industry / trade_roles / description
-        // contains a term
         const haystack = [
           row.company_name, row.industry, row.trade_roles, row.description,
         ].filter(Boolean).join(" ").toLowerCase();
         let textBoost = 0;
-        for (const t of terms) {
+        for (const t of lowerTerms) {
           if (t.length > 2 && haystack.includes(t)) {
             textBoost += 0.15;
             reasons.push(`Matched: ${t}`);
@@ -567,17 +693,11 @@ async function searchDirectory(supa: any, intent: ParsedIntent, limit: number): 
           }
         }
         result.matched_reasons = reasons;
-        result.confidence_score = Math.min(0.85, 0.5 + textBoost + Math.min(0.2, (row.shipments || 0) / 500));
-        return { result, hasGeo: !!(row.city || row.state || row.country), textBoost };
+        result.confidence_score = Math.min(0.9, 0.5 + textBoost + Math.min(0.2, (row.shipments || 0) / 500));
+        return { result, textBoost };
       })
-      .filter(({ result, textBoost }) => {
-        // If we have audience/industry terms, require either a text match OR
-        // a clear geo filter that already narrowed the result set.
-        if (terms.length > 0 && textBoost === 0 && intent.geo.states.length === 0 && intent.geo.cities.length === 0 && intent.geo.postal_codes.length === 0) {
-          return false;
-        }
-        return true;
-      })
+      // When text terms were supplied we trust the SQL filter; no extra
+      // in-memory drop is necessary. Score still surfaces best matches first.
       .sort((a, b) => b.result.confidence_score - a.result.confidence_score)
       .slice(0, limit)
       .map(({ result }) => result);
@@ -1007,6 +1127,7 @@ serve(async (req) => {
   const t0 = Date.now();
   const { intent: parsedRaw, model: parserModel } = await parseQuery(rawQuery);
   const intent = expandIntent(parsedRaw);
+  const textTerms = buildTextTerms(intent);
   const parserMs = Date.now() - t0;
 
   // 2. Run sources in parallel (within slot-routing rules)
@@ -1015,7 +1136,7 @@ serve(async (req) => {
     : Promise.resolve([]);
 
   const directoryPromise: Promise<PulseCompanyResult[]> = includeDirectory
-    ? searchDirectory(supa, intent, Math.min(50, limit))
+    ? searchDirectory(supa, intent, Math.min(50, limit), textTerms)
     : Promise.resolve([]);
 
   let apolloCalled = false;
@@ -1068,7 +1189,7 @@ serve(async (req) => {
     console.warn("[pulse-search] telemetry insert failed:", err);
   }
 
-  const coachSummary = buildCoachSummary(intent, sourceCounts, ranked);
+  const coachSummary = buildCoachSummary(intent, sourceCounts, ranked, textTerms);
 
   return new Response(JSON.stringify({
     ok: true,
@@ -1077,6 +1198,7 @@ serve(async (req) => {
     parser_model: parserModel,
     sources: sourceCounts,
     apollo_called: apolloCalled,
+    text_terms: textTerms,
     results: ranked,
     coach_summary: coachSummary,
     timing_ms: { parser: parserMs, total: totalMs },
@@ -1085,15 +1207,19 @@ serve(async (req) => {
   });
 });
 
-function buildCoachSummary(intent: ParsedIntent, counts: Record<string, number>, results: PulseCompanyResult[]): string {
+function buildCoachSummary(intent: ParsedIntent, counts: Record<string, number>, results: PulseCompanyResult[], textTerms: string[]): string {
   if (results.length === 0) {
-    if (intent.confidence < 0.4) {
+    if (intent.confidence < 0.4 && textTerms.length === 0) {
       return "I couldn't quite parse that query. Try a phrase like 'cold-chain logistics providers in the Southeast' or 'freight brokers in Atlanta with 1-500 employees'.";
     }
-    return "No matches yet. Try broadening the region, removing a size filter, or rephrasing the industry term.";
+    const what = textTerms.slice(0, 3).join(", ") || "your query";
+    return `No matches for ${what} yet. Try broadening the region, removing a size filter, or rephrasing the industry term.`;
   }
   const parts: string[] = [];
   parts.push(`Found ${results.length} ${results.length === 1 ? "company" : "companies"}`);
+  if (textTerms.length > 0) {
+    parts.push(`matching ${textTerms.slice(0, 3).join(", ")}`);
+  }
   const breakdown: string[] = [];
   if (counts.saved) breakdown.push(`${counts.saved} from your saved list`);
   if (counts.directory) breakdown.push(`${counts.directory} from the LIT shipment directory`);
