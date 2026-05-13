@@ -504,7 +504,7 @@ function generateRuleBasedCards(ctx: ContextBlock): CoachCard[] {
       title: "Save your first shipper",
       body: "Run a Pulse search on a lane you sell, then save 2-3 companies to lock in their profiles for outreach.",
       cta_label: "Open Pulse",
-      cta_url: "/app/pulse",
+      cta_url: "/app/prospecting",
       dismissible: true,
       source_table: null as any,
       created_at: now,
