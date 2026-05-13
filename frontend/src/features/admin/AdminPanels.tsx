@@ -97,7 +97,8 @@ interface RevenueSnap {
   trialing: number;
   cancellations30d: number;
   newSubs30d: number;
-  perPlan: Array<{ plan: string; active: number; trialing: number; mrrCents: number; price: number }>;
+  enterpriseActive: number; // counted separately — plans.price_monthly is null on custom-priced tiers
+  perPlan: Array<{ plan: string; active: number; trialing: number; mrrCents: number; price: number | null }>;
 }
 
 export function RevenueKPIs() {
@@ -128,21 +129,26 @@ export function RevenueKPIs() {
       let trialing = 0;
       let cancellations30d = 0;
       let newSubs30d = 0;
-      const perPlanMap = new Map<string, { active: number; trialing: number; mrrCents: number; price: number }>();
+      let enterpriseActive = 0;
+      const perPlanMap = new Map<string, { active: number; trialing: number; mrrCents: number; price: number | null }>();
       for (const s of subRows) {
         const code = s.plan_code || "free_trial";
         const plan = planByCode.get(code);
-        const cell = perPlanMap.get(code) || { active: 0, trialing: 0, mrrCents: 0, price: plan?.price_monthly ?? 0 };
+        const cell = perPlanMap.get(code) || { active: 0, trialing: 0, mrrCents: 0, price: plan?.price_monthly ?? null };
         if (s.status === "active") {
           active += 1;
           cell.active += 1;
-          if (plan) {
+          if (plan && plan.price_monthly != null) {
             const monthlyCents =
               s.billing_interval === "year"
                 ? Math.round((plan.price_yearly || 0) * 100 / 12)
                 : Math.round((plan.price_monthly || 0) * 100);
             mrrCents += monthlyCents;
             cell.mrrCents += monthlyCents;
+          } else if (code === "enterprise") {
+            // Enterprise is custom-priced — counted separately so the
+            // MRR tile doesn't lie at $0 when an enterprise account is live.
+            enterpriseActive += 1;
           }
         }
         if (s.status === "trialing") {
@@ -161,18 +167,21 @@ export function RevenueKPIs() {
         .sort((a, b) => b.mrrCents - a.mrrCents);
       setSnap({
         mrrCents, arrCents: mrrCents * 12,
-        activeSubs: active, trialing, cancellations30d, newSubs30d, perPlan,
+        activeSubs: active, trialing, cancellations30d, newSubs30d, enterpriseActive, perPlan,
       });
     })();
   }, []);
 
   const mrr = snap ? snap.mrrCents / 100 : null;
   const arr = snap ? (snap.arrCents ?? 0) / 100 : null;
+  const mrrSub = snap
+    ? `ARR: ${fmtMoney(arr)}${snap.enterpriseActive > 0 ? ` · + ${snap.enterpriseActive} enterprise (custom)` : ""}`
+    : undefined;
 
   return (
     <div className="flex flex-col gap-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <AKPI label="MRR"               tone="green"  icon={DollarSign} value={fmtMoney(mrr)}        sub={snap ? `ARR: ${fmtMoney(arr)}` : undefined} />
+        <AKPI label="MRR"               tone="green"  icon={DollarSign} value={fmtMoney(mrr)}        sub={mrrSub} />
         <AKPI label="Active subscribers" tone="blue"   icon={Receipt}    value={snap ? fmt(snap.activeSubs) : "—"} />
         <AKPI label="Trial users"        tone="amber"  icon={SparklesIcon} value={snap ? fmt(snap.trialing) : "—"} />
         <AKPI label="Cancellations · 30d" tone="red"   icon={HeartCrack} value={snap ? fmt(snap.cancellations30d) : "—"} sub={snap ? `${fmt(snap.newSubs30d)} new this month` : undefined} />
@@ -224,10 +233,10 @@ function PlanBreakdown({ perPlan }: { perPlan: RevenueSnap["perPlan"] | null }) 
                 {fmt(row.trialing)}
               </div>
               <div className="text-right text-[12px] text-slate-500" style={{ width: 130, fontFamily: fontMono }}>
-                {row.price > 0 ? `$${row.price.toFixed(0)}` : "—"}
+                {row.plan === "enterprise" ? "Custom" : row.price && row.price > 0 ? `$${row.price.toFixed(0)}` : "—"}
               </div>
               <div className="text-right text-[12.5px] font-semibold text-emerald-700" style={{ width: 110, fontFamily: fontDisplay }}>
-                {fmtMoney(row.mrrCents / 100)}
+                {row.plan === "enterprise" && row.mrrCents === 0 ? <span className="text-slate-400">Custom</span> : fmtMoney(row.mrrCents / 100)}
               </div>
             </ARow>
           ))}
