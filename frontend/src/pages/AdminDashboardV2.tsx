@@ -14,14 +14,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Crown,
-  CpuIcon,
   Cpu,
   DatabaseZap,
+  DollarSign,
   FlaskConical,
   LayoutDashboard,
   RefreshCcw,
   ScrollText,
-  Search,
   Send,
   Shield,
   ShieldAlert,
@@ -31,6 +30,8 @@ import { useAuth } from "@/auth/AuthProvider";
 import { APill, AInput, aBtnGhost, fontBody, fontDisplay } from "@/features/admin/AdminShared";
 import {
   AdminOverview,
+  RevenueKPIs,
+  SubscribersTable,
   SystemHealth,
   PlanDistribution,
   QueueMonitor,
@@ -44,6 +45,7 @@ import {
 
 type SectionId =
   | "overview"
+  | "revenue"
   | "users"
   | "campaigns"
   | "queue"
@@ -61,6 +63,7 @@ interface SectionDef {
 
 const SECTIONS: SectionDef[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Monitor" },
+  { id: "revenue", label: "Revenue", icon: DollarSign, group: "Monitor" },
   { id: "users", label: "Users", icon: Users, group: "Manage" },
   { id: "campaigns", label: "Campaigns", icon: Send, group: "Manage" },
   { id: "queue", label: "Queue & Errors", icon: Cpu, group: "Monitor" },
@@ -207,6 +210,7 @@ function SectionBody({ section }: { section: SectionId }) {
   if (section === "overview") {
     return (
       <div className="flex flex-col gap-4">
+        <RevenueKPIs />
         <AdminOverview />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr,1fr]">
           <SystemHealth />
@@ -218,6 +222,14 @@ function SectionBody({ section }: { section: SectionId }) {
         </div>
         <CampaignMonitoring />
         <AuditLog />
+      </div>
+    );
+  }
+  if (section === "revenue") {
+    return (
+      <div className="flex flex-col gap-4">
+        <RevenueKPIs />
+        <SubscribersTable />
       </div>
     );
   }

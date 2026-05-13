@@ -56,10 +56,316 @@ import {
   fontMono,
 } from "./AdminShared";
 import { ConfirmDialog, type ConfirmRequest } from "./ConfirmDialog";
-import { Pause, Play, RotateCcw, Square, UserCheck, UserX } from "lucide-react";
+import {
+  Banknote,
+  DollarSign,
+  HeartCrack,
+  Pause,
+  Play,
+  Receipt,
+  RotateCcw,
+  Sparkles as SparklesIcon,
+  Square,
+  UserCheck,
+  UserPlus,
+  UserX,
+} from "lucide-react";
 
 const fmt = (n: number | null | undefined) =>
   typeof n === "number" ? n.toLocaleString("en-US") : "—";
+
+function fmtMoney(dollars: number | null | undefined): string {
+  if (typeof dollars !== "number" || !Number.isFinite(dollars)) return "—";
+  if (Math.abs(dollars) >= 1000) {
+    return `$${(dollars / 1000).toFixed(1)}k`;
+  }
+  return `$${dollars.toFixed(0)}`;
+}
+
+// ─────────────────────────── Revenue KPIs ───────────────────────────
+//
+// Primary financial snapshot — placed at the top of Overview so the
+// founder sees MRR / active subs / trial users / cancellations before
+// any other metric. Reads from public.subscriptions joined with
+// public.plans (no Stripe round-trip — the webhook keeps the local
+// rows in sync).
+
+interface RevenueSnap {
+  mrrCents: number | null;
+  arrCents: number | null;
+  activeSubs: number;
+  trialing: number;
+  cancellations30d: number;
+  newSubs30d: number;
+  perPlan: Array<{ plan: string; active: number; trialing: number; mrrCents: number; price: number }>;
+}
+
+export function RevenueKPIs() {
+  const [snap, setSnap] = useState<RevenueSnap | null>(null);
+  useEffect(() => {
+    (async () => {
+      const thirtyAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const [{ data: subs }, { data: plans }] = await Promise.all([
+        supabase
+          .from("subscriptions")
+          .select("user_id, plan_code, status, billing_interval, current_period_end, updated_at, created_at, cancel_at_period_end"),
+        supabase
+          .from("plans")
+          .select("code, name, price_monthly, price_yearly")
+          .eq("is_active", true),
+      ]);
+      const planByCode = new Map<string, { name: string; price_monthly: number; price_yearly: number }>();
+      for (const p of plans ?? []) {
+        planByCode.set(p.code, {
+          name: p.name,
+          price_monthly: Number(p.price_monthly || 0),
+          price_yearly: Number(p.price_yearly || 0),
+        });
+      }
+      const subRows = subs ?? [];
+      let mrrCents = 0;
+      let active = 0;
+      let trialing = 0;
+      let cancellations30d = 0;
+      let newSubs30d = 0;
+      const perPlanMap = new Map<string, { active: number; trialing: number; mrrCents: number; price: number }>();
+      for (const s of subRows) {
+        const code = s.plan_code || "free_trial";
+        const plan = planByCode.get(code);
+        const cell = perPlanMap.get(code) || { active: 0, trialing: 0, mrrCents: 0, price: plan?.price_monthly ?? 0 };
+        if (s.status === "active") {
+          active += 1;
+          cell.active += 1;
+          if (plan) {
+            const monthlyCents =
+              s.billing_interval === "year"
+                ? Math.round((plan.price_yearly || 0) * 100 / 12)
+                : Math.round((plan.price_monthly || 0) * 100);
+            mrrCents += monthlyCents;
+            cell.mrrCents += monthlyCents;
+          }
+        }
+        if (s.status === "trialing") {
+          trialing += 1;
+          cell.trialing += 1;
+        }
+        if ((s.status === "canceled" || s.status === "expired") && s.updated_at && s.updated_at >= thirtyAgo) {
+          cancellations30d += 1;
+        }
+        if (s.created_at && s.created_at >= thirtyAgo && (s.status === "active" || s.status === "trialing")) {
+          newSubs30d += 1;
+        }
+        perPlanMap.set(code, cell);
+      }
+      const perPlan = [...perPlanMap.entries()].map(([plan, cell]) => ({ plan, ...cell }))
+        .sort((a, b) => b.mrrCents - a.mrrCents);
+      setSnap({
+        mrrCents, arrCents: mrrCents * 12,
+        activeSubs: active, trialing, cancellations30d, newSubs30d, perPlan,
+      });
+    })();
+  }, []);
+
+  const mrr = snap ? snap.mrrCents / 100 : null;
+  const arr = snap ? (snap.arrCents ?? 0) / 100 : null;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <AKPI label="MRR"               tone="green"  icon={DollarSign} value={fmtMoney(mrr)}        sub={snap ? `ARR: ${fmtMoney(arr)}` : undefined} />
+        <AKPI label="Active subscribers" tone="blue"   icon={Receipt}    value={snap ? fmt(snap.activeSubs) : "—"} />
+        <AKPI label="Trial users"        tone="amber"  icon={SparklesIcon} value={snap ? fmt(snap.trialing) : "—"} />
+        <AKPI label="Cancellations · 30d" tone="red"   icon={HeartCrack} value={snap ? fmt(snap.cancellations30d) : "—"} sub={snap ? `${fmt(snap.newSubs30d)} new this month` : undefined} />
+      </div>
+      <PlanBreakdown perPlan={snap?.perPlan ?? null} />
+    </div>
+  );
+}
+
+function PlanBreakdown({ perPlan }: { perPlan: RevenueSnap["perPlan"] | null }) {
+  const PLAN_LABELS: Record<string, string> = {
+    free_trial: "Free Trial",
+    starter: "Starter",
+    growth: "Growth",
+    scale: "Scale",
+    enterprise: "Enterprise",
+  };
+  const PLAN_TONE: Record<string, any> = {
+    free_trial: "slate", starter: "blue", growth: "cyan", scale: "violet", enterprise: "amber",
+  };
+  return (
+    <APanel
+      title={<><Banknote className="h-3.5 w-3.5 text-emerald-500" /> Subscriptions by plan</>}
+      subtitle="Real MRR contribution per tier · pulled from subscriptions + plans"
+      pad={0}
+    >
+      <AHead cols={[
+        { label: "Plan", flex: 1.8 },
+        { label: "Active", w: 80, align: "right" },
+        { label: "Trialing", w: 80, align: "right" },
+        { label: "List price / mo", w: 130, align: "right" },
+        { label: "MRR", w: 110, align: "right" },
+      ]} />
+      {perPlan == null ? (
+        <AEmpty title="Loading…" />
+      ) : perPlan.length === 0 ? (
+        <AEmpty icon={Receipt} title="No subscriptions yet" />
+      ) : (
+        <div>
+          {perPlan.map((row) => (
+            <ARow key={row.plan}>
+              <div style={{ flex: 1.8 }}>
+                <APill tone={PLAN_TONE[row.plan] || "slate"}>{PLAN_LABELS[row.plan] || row.plan}</APill>
+              </div>
+              <div className="text-right text-[12px] font-semibold text-slate-900" style={{ width: 80, fontFamily: fontMono }}>
+                {fmt(row.active)}
+              </div>
+              <div className="text-right text-[12px] text-amber-700" style={{ width: 80, fontFamily: fontMono }}>
+                {fmt(row.trialing)}
+              </div>
+              <div className="text-right text-[12px] text-slate-500" style={{ width: 130, fontFamily: fontMono }}>
+                {row.price > 0 ? `$${row.price.toFixed(0)}` : "—"}
+              </div>
+              <div className="text-right text-[12.5px] font-semibold text-emerald-700" style={{ width: 110, fontFamily: fontDisplay }}>
+                {fmtMoney(row.mrrCents / 100)}
+              </div>
+            </ARow>
+          ))}
+        </div>
+      )}
+    </APanel>
+  );
+}
+
+// ─────────────────────────── Subscribers (drill-down) ───────────────────────────
+//
+// Per-subscription rows showing user, plan, status, renewal date, MRR
+// contribution. Read-only this phase; suspend/role-change live on the
+// User Management panel.
+
+export function SubscribersTable() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [filter, setFilter] = useState<string>("all");
+  useEffect(() => {
+    (async () => {
+      const [{ data: subs }, { data: profiles }, { data: plans }] = await Promise.all([
+        supabase
+          .from("subscriptions")
+          .select("user_id, plan_code, status, billing_interval, current_period_start, current_period_end, trial_ends_at, cancel_at_period_end, stripe_customer_id, created_at")
+          .order("created_at", { ascending: false })
+          .limit(200),
+        supabase.from("profiles").select("id, email, full_name, organization_name, company_name"),
+        supabase.from("plans").select("code, price_monthly, price_yearly"),
+      ]);
+      const profileById = new Map<string, any>();
+      for (const p of profiles ?? []) profileById.set(p.id, p);
+      const planByCode = new Map<string, any>();
+      for (const p of plans ?? []) planByCode.set(p.code, p);
+      const merged = (subs ?? []).map((s) => ({
+        ...s,
+        profile: profileById.get(s.user_id) || null,
+        plan: planByCode.get(s.plan_code || "free_trial") || null,
+      }));
+      setRows(merged);
+    })();
+  }, []);
+
+  const visible = useMemo(() => {
+    if (!rows) return [];
+    if (filter === "all") return rows;
+    if (filter === "active") return rows.filter((r) => r.status === "active");
+    if (filter === "trialing") return rows.filter((r) => r.status === "trialing");
+    if (filter === "canceled") return rows.filter((r) => r.status === "canceled" || r.status === "expired");
+    if (filter === "past_due") return rows.filter((r) => r.status === "past_due");
+    return rows.filter((r) => r.plan_code === filter);
+  }, [rows, filter]);
+
+  const statusTone = (s: string) =>
+    s === "active" ? "green" :
+    s === "trialing" ? "amber" :
+    s === "past_due" ? "red" :
+    s === "canceled" || s === "expired" ? "slate" : "blue";
+
+  return (
+    <APanel
+      title={<><Receipt className="h-3.5 w-3.5 text-blue-500" /> Subscribers</>}
+      subtitle={rows ? `${fmt(rows.length)} rows` : "Loading…"}
+      right={
+        <ASelect
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          options={[
+            { value: "all", label: "All subscriptions" },
+            { value: "active", label: "Active" },
+            { value: "trialing", label: "Trialing" },
+            { value: "past_due", label: "Past due" },
+            { value: "canceled", label: "Canceled / expired" },
+            { value: "free_trial", label: "Plan: Free Trial" },
+            { value: "starter", label: "Plan: Starter" },
+            { value: "growth", label: "Plan: Growth" },
+            { value: "scale", label: "Plan: Scale" },
+            { value: "enterprise", label: "Plan: Enterprise" },
+          ]}
+          className="w-52"
+        />
+      }
+      pad={0}
+    >
+      <AHead cols={[
+        { label: "Subscriber", flex: 2 },
+        { label: "Plan", w: 100 },
+        { label: "Status", w: 100 },
+        { label: "Cycle", w: 70 },
+        { label: "MRR", w: 80, align: "right" },
+        { label: "Renews", w: 110 },
+      ]} />
+      {rows == null ? (
+        <AEmpty title="Loading…" />
+      ) : visible.length === 0 ? (
+        <AEmpty icon={Receipt} title="No subscriptions match" />
+      ) : (
+        <div>
+          {visible.map((s) => {
+            const monthly = s.plan
+              ? s.billing_interval === "year"
+                ? Math.round((Number(s.plan.price_yearly) || 0) / 12)
+                : Math.round(Number(s.plan.price_monthly) || 0)
+              : 0;
+            return (
+              <ARow key={s.user_id + (s.stripe_customer_id || "")}>
+                <div className="min-w-0" style={{ flex: 2 }}>
+                  <div className="truncate text-[12.5px] font-semibold text-slate-900" style={{ fontFamily: fontDisplay }}>
+                    {s.profile?.full_name || s.profile?.email?.split("@")[0] || "(no profile)"}
+                  </div>
+                  <div className="truncate text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>
+                    {s.profile?.email || s.user_id?.slice(0, 8)}{s.profile?.organization_name ? ` · ${s.profile.organization_name}` : ""}
+                  </div>
+                </div>
+                <div style={{ width: 100 }}>
+                  <APill tone={s.plan_code === "enterprise" ? "violet" : s.plan_code === "scale" ? "cyan" : s.plan_code === "growth" ? "blue" : "slate"}>
+                    {s.plan_code || "free_trial"}
+                  </APill>
+                </div>
+                <div style={{ width: 100 }}>
+                  <APill tone={statusTone(s.status) as any} dot>{s.status || "—"}</APill>
+                </div>
+                <div className="text-[11px] text-slate-500" style={{ width: 70, fontFamily: fontMono }}>
+                  {s.billing_interval || "—"}
+                </div>
+                <div className="text-right text-[12px] font-semibold text-slate-900" style={{ width: 80, fontFamily: fontMono }}>
+                  {monthly > 0 && s.status === "active" ? `$${monthly}` : "—"}
+                </div>
+                <div className="text-[11px] text-slate-500" style={{ width: 110, fontFamily: fontBody }}>
+                  {s.current_period_end ? new Date(s.current_period_end).toLocaleDateString() : s.trial_ends_at ? `trial · ${new Date(s.trial_ends_at).toLocaleDateString()}` : "—"}
+                </div>
+              </ARow>
+            );
+          })}
+        </div>
+      )}
+    </APanel>
+  );
+}
 
 // ─────────────────────────── Overview KPI strip ───────────────────────────
 
