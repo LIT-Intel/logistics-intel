@@ -742,16 +742,94 @@ export function IngestionStatus() {
 // ─────────────────────────── Feature Flags ───────────────────────────
 
 export function FeatureFlags() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("lit_feature_flags")
+        .select("*")
+        .order("scope", { ascending: true })
+        .order("key", { ascending: true });
+      setRows(data || []);
+    })();
+  }, [refreshKey]);
+
+  async function setField(key: string, field: string, value: any) {
+    const { error } = await supabase.rpc("lit_admin_set_flag", {
+      p_key: key, p_field: field, p_value: String(value),
+    });
+    if (error) {
+      toast.error(error.message || "Flag update failed.");
+      return;
+    }
+    toast.success(`${key} · ${field} updated.`);
+    setRefreshKey((k) => k + 1);
+  }
+
   return (
     <APanel
       title={<><FlaskConical className="h-3.5 w-3.5 text-violet-500" /> Feature flags · plan matrix</>}
-      subtitle="Per-plan entitlement + global kill-switches"
+      subtitle="Per-plan entitlement + global kill-switches · every change is audited"
       right={<APill tone="violet" icon={ShieldAlert}>Superadmin only</APill>}
+      pad={0}
     >
-      <ASourceNotConnected
-        tableName="lit_feature_flags"
-        hint="Phase 3C creates the table + plan matrix toggle wiring. Existing feature_toggles and feature_overrides will be merged then."
-      />
+      <AHead cols={[
+        { label: "Flag", flex: 2.4 },
+        { label: "Scope", w: 88 },
+        { label: "Free", w: 60, align: "center" },
+        { label: "Growth", w: 68, align: "center" },
+        { label: "Scale", w: 62, align: "center" },
+        { label: "Enterprise", w: 88, align: "center" },
+        { label: "Rollout", flex: 1 },
+        { label: "Owner", w: 110 },
+      ]} />
+      {rows == null ? (
+        <AEmpty title="Loading flags…" />
+      ) : rows.length === 0 ? (
+        <AEmpty icon={FlaskConical} title="No flags configured" sub="Seed via the migration." />
+      ) : (
+        <div className="overflow-x-auto">
+          {rows.map((f) => (
+            <ARow key={f.key}>
+              <div className="min-w-0" style={{ flex: 2.4 }}>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[12.5px] font-semibold text-slate-900" style={{ fontFamily: fontDisplay }}>{f.label}</span>
+                  <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10.5px] text-slate-600" style={{ fontFamily: fontMono }}>{f.key}</span>
+                  {f.global_kill ? <APill tone="red" dot>killed</APill> : null}
+                </div>
+                <div className="mt-0.5 truncate text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>{f.description}</div>
+              </div>
+              <div style={{ width: 88 }}>
+                <APill tone={f.scope === "global" ? "amber" : "slate"}>{f.scope}</APill>
+              </div>
+              {(["free","growth","scale","enterprise"] as const).map((plan, i) => {
+                const w = [60, 68, 62, 88][i];
+                const v = f[plan];
+                return (
+                  <div key={plan} className="flex justify-center" style={{ width: w }}>
+                    {v === null ? (
+                      <span className="text-[11px] text-slate-300" style={{ fontFamily: fontMono }}>—</span>
+                    ) : (
+                      <AToggle checked={!!v} onChange={(next) => setField(f.key, plan, next)} />
+                    )}
+                  </div>
+                );
+              })}
+              <div className="flex min-w-[120px] items-center gap-2" style={{ flex: 1 }}>
+                <ABar value={f.rollout || 0} max={100} tone={f.rollout === 100 ? "green" : f.rollout > 50 ? "blue" : "amber"} />
+                <span className="min-w-[36px] text-right text-[10.5px] text-slate-500" style={{ fontFamily: fontMono }}>{f.rollout}%</span>
+              </div>
+              <div style={{ width: 110, fontFamily: fontMono }}>
+                <div className="text-[10.5px] text-slate-600">{f.owner || "—"}</div>
+                <div className="text-[10px] text-slate-400" style={{ fontFamily: fontBody }}>
+                  {f.updated_at ? new Date(f.updated_at).toLocaleDateString() : "—"}
+                </div>
+              </div>
+            </ARow>
+          ))}
+        </div>
+      )}
     </APanel>
   );
 }
@@ -761,6 +839,7 @@ export function FeatureFlags() {
 export function AuditLog() {
   const [rows, setRows] = useState<any[] | null>(null);
   const [filter, setFilter] = useState("all");
+  const [exporting, setExporting] = useState(false);
   useEffect(() => {
     (async () => {
       let q = supabase
@@ -774,24 +853,69 @@ export function AuditLog() {
       setRows(data || []);
     })();
   }, [filter]);
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        toast.error("Sign in expired — refresh and try again.");
+        return;
+      }
+      const params = new URLSearchParams();
+      if (filter === "critical") params.set("severity", "warn");
+      else if (filter !== "all") params.set("source", filter);
+      const url = `${(supabase as any).supabaseUrl || ""}/functions/v1/admin-audit-export?${params}`;
+      const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!resp.ok) {
+        toast.error(`Export failed: ${resp.status}`);
+        return;
+      }
+      const blob = await resp.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `lit-audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Audit log exported.");
+    } catch (e: any) {
+      toast.error(e?.message || "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <APanel
       title={<><ScrollText className="h-3.5 w-3.5 text-blue-500" /> Audit trail & events</>}
       subtitle="Every admin action · immutable · lit_audit_log"
       right={
-        <ASelect
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          options={[
-            { value: "all", label: "All events" },
-            { value: "critical", label: "Critical only" },
-            { value: "admin", label: "Admin actions" },
-            { value: "webhook", label: "Webhooks" },
-            { value: "job", label: "System jobs" },
-            { value: "sec", label: "Security" },
-          ]}
-          className="w-40"
-        />
+        <>
+          <ASelect
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            options={[
+              { value: "all", label: "All events" },
+              { value: "critical", label: "Critical only" },
+              { value: "admin", label: "Admin actions" },
+              { value: "webhook", label: "Webhooks" },
+              { value: "job", label: "System jobs" },
+              { value: "sec", label: "Security" },
+            ]}
+            className="w-40"
+          />
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            style={{ fontFamily: fontDisplay }}
+          >
+            {exporting ? "Exporting…" : "Export CSV"}
+          </button>
+        </>
       }
       pad={0}
     >
