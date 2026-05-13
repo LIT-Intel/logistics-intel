@@ -570,7 +570,7 @@ export default function Billing() {
             planLabel={planLabelFor(currentPlanCode)}
             state={canonicalState}
             amountDisplay={amountForHero}
-            cycle={currentPlanCode === 'free_trial' || currentPlanCode === 'enterprise' ? null : billingInterval}
+            cycle={currentPlanCode === 'enterprise' ? null : billingInterval}
             renewalDate={renewalDate}
             daysUntilRenewal={daysUntilRenewal}
             paymentMethodLabel={paymentMethodLabel}
@@ -594,6 +594,7 @@ export default function Billing() {
           <BillingPlans
             currentPlanCode={currentPlanCode}
             cycle={billingInterval}
+            onCycleChange={setBillingInterval}
             onSelectPlan={(p) => handleSelectPlan(p)}
             onContactSales={() => { window.location.href = SALES_MAILTO; }}
             onManageCurrent={handlePortal}
