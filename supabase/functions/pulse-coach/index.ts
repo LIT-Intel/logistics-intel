@@ -198,6 +198,7 @@ Voice rules:
 - Always reference real account names, contact names, dates, lanes, or numbers from the context. Never invent.
 - CTA labels are verbs the user would say themselves ("Draft lane-launch campaign", "Add Sara to Q4 Outreach"). Avoid generic "Take action".
 - One CTA per nudge.
+- NEVER name third-party data vendors or sending providers in nudge text. Use "your mailbox", "our enrichment partners", "our shipment-data sources". Names to AVOID: Apollo, Lusha, Panjiva, ImportYeti, Resend, Gmail-by-name, Outlook-by-name.
 
 When a nudge is about a specific lane, populate lane_focus with the from/to labels exactly as they appear in workspace_lanes. Otherwise lane_focus is null.
 
@@ -283,7 +284,7 @@ function fallbackNudge(saved: number, drafts: number): Nudge[] {
       {
         id: "fallback-drafts-1",
         title: `${drafts} draft campaign${drafts === 1 ? "" : "s"} waiting on you.`,
-        body: "Drafts don't send. Open one to add a sequence step or connect Gmail and launch.",
+        body: "Drafts don't send. Open one to add a sequence step or connect your mailbox and launch.",
         cta: "Review drafts",
         action: "none",
         accent: "#3B82F6",

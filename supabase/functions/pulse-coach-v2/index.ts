@@ -130,8 +130,11 @@ async function loadContext(supa: any, userId: string): Promise<ContextBlock> {
       supa.from("lit_saved_companies").select("id", { count: "exact", head: true }).eq("user_id", userId),
       supa.from("lit_pulse_search_events").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", monthStart),
       supa.from("lit_apollo_daily_usage").select("apollo_company_searches, apollo_contact_searches").eq("user_id", userId).eq("usage_date", today).maybeSingle(),
-      supa.from("lit_pulse_ai_reports").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", monthStart),
-      supa.from("lit_contacts").select("id", { count: "exact", head: true }).eq("created_by", userId).gte("created_at", monthStart),
+      supa.from("lit_pulse_ai_reports").select("id", { count: "exact", head: true }).eq("generated_by_user_id", userId).gte("created_at", monthStart),
+      // lit_contacts has no created_by column; we attribute enrichments
+      // via lit_activity_events.event_type = 'apollo_contact_enrich' which
+      // is logged whenever a user enriches a contact.
+      supa.from("lit_activity_events").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("event_type", "apollo_contact_enrich").gte("created_at", monthStart),
     ]);
     const plan = ctx.subscription.plan_code || "free_trial";
     ctx.usage = {
@@ -163,18 +166,34 @@ async function loadContext(supa: any, userId: string): Promise<ContextBlock> {
     }
   } catch {}
 
+  // Scope inbound to this user's campaigns. lit_inbound_emails has no
+  // recipient_user_id column, so we join via campaign_id. Without this
+  // scoping, every user would see workspace-wide inbound counts, which
+  // is a privacy leak across orgs.
   try {
-    const { data: replies } = await supa
-      .from("lit_inbound_emails")
-      .select("id, from_email, subject, created_at")
-      .order("created_at", { ascending: false })
-      .limit(10);
-    ctx.inbox = {
-      unread_replies_count: Array.isArray(replies) ? replies.length : 0,
-      latest_reply: Array.isArray(replies) && replies.length ? replies[0] : null,
-    };
+    const { data: userCamps } = await supa
+      .from("lit_campaigns")
+      .select("id")
+      .eq("user_id", userId);
+    const campIds = Array.isArray(userCamps) ? userCamps.map((c: any) => c.id).filter(Boolean) : [];
+    if (campIds.length === 0) {
+      ctx.inbox = { unread_replies_count: 0, latest_reply: null };
+    } else {
+      const since7d = new Date(Date.now() - 7 * 86400000).toISOString();
+      const { data: replies } = await supa
+        .from("lit_inbound_emails")
+        .select("id, from_email, subject, created_at")
+        .in("campaign_id", campIds)
+        .gte("created_at", since7d)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      ctx.inbox = {
+        unread_replies_count: Array.isArray(replies) ? replies.length : 0,
+        latest_reply: Array.isArray(replies) && replies.length ? replies[0] : null,
+      };
+    }
   } catch {
-    ctx.inbox = { unread_replies_count: 0 };
+    ctx.inbox = { unread_replies_count: 0, latest_reply: null };
   }
 
   try {
