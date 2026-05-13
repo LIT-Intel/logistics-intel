@@ -175,11 +175,11 @@ export const TUTORIALS: TutorialConfig[] = [
     ],
     title: "Outbound Engine",
     intro_md:
-      "Multi-touch sequences across email, LinkedIn, and calls. Audience comes from saved companies + enriched contacts. Sends via Gmail, Outlook, or Resend.",
+      "Multi-touch sequences across email, LinkedIn, and calls. Audience comes from saved companies + enriched contacts.",
     steps: [
       { title: "Pick a play", body: "Lane Launch, Conquest, Win-back, RFP follow-up — each comes with a pre-written cadence." },
       { title: "Select your audience", body: "Pull from saved companies. Filters narrow by lane, industry, recent activity." },
-      { title: "Connect a mailbox", body: "Gmail / Outlook / Resend. Domain auth + warmup status visible in Settings." },
+      { title: "Connect a mailbox", body: "Link your sending mailbox in Settings before launch. Domain auth + warmup status visible there." },
       { title: "Launch + monitor", body: "Replies route to /app/inbox. Pulse Coach surfaces unread replies on the dashboard." },
     ],
     first_action: { label: "Start a new campaign", route: "/app/campaigns/new" },
@@ -228,15 +228,15 @@ export const TUTORIALS: TutorialConfig[] = [
     route_patterns: ["/app/settings"],
     title: "Settings & integrations",
     intro_md:
-      "Connect mailboxes, configure Apollo + Lusha credits, manage team access, and reset your onboarding tour any time.",
+      "Connect your mailbox, manage enrichment credits, invite teammates, and reset your onboarding tour any time.",
     steps: [
-      { title: "Connect a mailbox", body: "Gmail / Outlook / Resend — required before launching campaigns." },
+      { title: "Connect a mailbox", body: "Required before launching campaigns. Walk through the connect flow in Integrations." },
       { title: "Set your signature", body: "Personal signature renders at the end of every campaign email." },
-      { title: "Invite teammates", body: "Send Stripe-billed seats via Team. Roles: member, admin, super-admin." },
+      { title: "Invite teammates", body: "Send seats via Team. Roles: member, admin, super-admin." },
     ],
     first_action: { label: "Open Settings", route: "/app/settings" },
     quick_prompts: [
-      "How do I connect Gmail?",
+      "How do I connect my mailbox?",
       "Where do I invite a teammate?",
       "Reset my onboarding tour",
       "Why is my mailbox disconnected?",
@@ -254,7 +254,7 @@ export const TUTORIALS: TutorialConfig[] = [
     route_patterns: ["/app/billing"],
     title: "Billing",
     intro_md:
-      "Plans, usage, and invoices. Toggle to annual for a 20% discount; usage caps for Pulse, Apollo, and enrichment live here.",
+      "Plans, usage, and invoices. Toggle to annual for a 20% discount; usage caps for Pulse and enrichment live here.",
     steps: [
       { title: "Check usage", body: "Searches, enrichments, briefs — all metered against your plan." },
       { title: "Compare plans", body: "Free trial → Starter → Growth → Scale → Enterprise. See current vs. next tier." },

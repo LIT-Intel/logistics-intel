@@ -550,10 +550,34 @@ function UsageBanner({ usage }: { usage: UsageState | null }) {
 
 const FLOATING_COLLAPSED_KEY = "lit.pulse_coach.floating.collapsed";
 
+/** Returns true when the page-aware tutorial card should be visible
+ *  for the current route. While true, the floating coach hides the
+ *  top nudge so the user sees the tutorial first; once the user
+ *  completes or dismisses it, the nudge surfaces again. */
+function useTutorialActive(): { tutorial: TutorialConfig | null; loaded: boolean; visible: boolean } {
+  const { pathname } = useLocation();
+  const [map, setMap] = useState<OnboardingMap | null>(null);
+  const tutorial = useMemo(() => findTutorialForPath(pathname), [pathname]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!tutorial) {
+      setMap(null);
+      return;
+    }
+    loadOnboardingState().then((m) => {
+      if (!cancelled) setMap(m);
+    });
+    return () => { cancelled = true; };
+  }, [tutorial?.page_key]);
+  const visible = Boolean(tutorial && map && shouldShowTutorial(map, tutorial.page_key));
+  return { tutorial, loaded: tutorial == null || map != null, visible };
+}
+
 export function PulseCoachFloating() {
   const { result, loading, refresh } = usePulseCoach();
   const handleAction = useNudgeActionHandler();
   const usage = usePulseUsage();
+  const tut = useTutorialActive();
   // Default collapsed so the widget greets the user as a quiet pill
   // rather than a popped-open card every page load.
   const [open, setOpen] = useState(() => {
@@ -688,21 +712,23 @@ export function PulseCoachFloating() {
 
       <UsageBanner usage={usage} />
 
-      <div className="relative p-4">
-        {!t ? (
-          <div className="font-body text-[11px] text-slate-400">
-            {loading
-              ? "Reading your workspace…"
-              : "All clear — nothing urgent on your plate today."}
-          </div>
-        ) : (
-          <NudgeCard
-            nudge={t}
-            variant="dark-compact"
-            onAction={() => handleAction(t)}
-          />
-        )}
-      </div>
+      {!tut.visible ? (
+        <div className="relative p-4">
+          {!t ? (
+            <div className="font-body text-[11px] text-slate-400">
+              {loading
+                ? "Reading your workspace…"
+                : "All clear — nothing urgent on your plate today."}
+            </div>
+          ) : (
+            <NudgeCard
+              nudge={t}
+              variant="dark-compact"
+              onAction={() => handleAction(t)}
+            />
+          )}
+        </div>
+      ) : null}
 
       <TutorialCard />
       <CoachComposer />
