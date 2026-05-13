@@ -27,8 +27,10 @@ const OUTLOOK_SCOPES = [
 ];
 
 function settingsUrl() {
+  // SPA on app.logisticintel.com; /settings resolves only under /app/*.
+  // Default avoids the marketing-apex 404 trap when FRONTEND_URL is unset.
   const frontendUrl =
-    Deno.env.get("FRONTEND_URL") || "https://www.logisticintel.com/app";
+    Deno.env.get("FRONTEND_URL") || "https://app.logisticintel.com/app";
   return `${frontendUrl.replace(/\/$/, "")}/settings?tab=integrations`;
 }
 
