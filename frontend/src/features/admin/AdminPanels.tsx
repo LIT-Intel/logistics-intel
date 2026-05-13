@@ -374,12 +374,27 @@ export function UserManagement() {
   const [q, setQ] = useState("");
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("user_profiles")
-        .select("id, email, full_name, plan, created_at, last_sign_in_at")
-        .order("created_at", { ascending: false })
-        .limit(50);
-      setRows(data || []);
+      // profiles has email + global_role + status + company; subscriptions
+      // is the plan source of truth. Joining at the client (separate
+      // queries) keeps RLS straightforward — both reads are admin-scoped.
+      const [{ data: profiles }, { data: subs }] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, email, full_name, global_role, status, organization_name, company_name, created_at, updated_at")
+          .order("created_at", { ascending: false })
+          .limit(80),
+        supabase
+          .from("subscriptions")
+          .select("user_id, plan_code, status, current_period_end"),
+      ]);
+      const subByUser = new Map<string, any>();
+      for (const s of subs ?? []) subByUser.set(s.user_id, s);
+      const merged = (profiles ?? []).map((p) => ({
+        ...p,
+        plan: subByUser.get(p.id)?.plan_code || "free_trial",
+        sub_status: subByUser.get(p.id)?.status || null,
+      }));
+      setRows(merged);
     })();
   }, []);
   const filtered = useMemo(() => {
@@ -389,21 +404,23 @@ export function UserManagement() {
     return rows.filter(
       (r) =>
         (r.email || "").toLowerCase().includes(needle) ||
-        (r.full_name || "").toLowerCase().includes(needle),
+        (r.full_name || "").toLowerCase().includes(needle) ||
+        (r.organization_name || r.company_name || "").toLowerCase().includes(needle),
     );
   }, [rows, q]);
   return (
     <APanel
       title={<><Users className="h-3.5 w-3.5 text-blue-500" /> User management</>}
-      subtitle="user_profiles · last 50"
-      right={<AInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search email or name…" className="w-64" />}
+      subtitle={rows ? `${fmt(rows.length)} users · last 80` : "Loading…"}
+      right={<AInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search email, name, org…" className="w-64" />}
       pad={0}
     >
       <AHead cols={[
         { label: "User", flex: 2.2 },
+        { label: "Org", flex: 1.4 },
+        { label: "Role", w: 92 },
         { label: "Plan", w: 96 },
         { label: "Joined", w: 110 },
-        { label: "Last sign-in", w: 130 },
       ]} />
       {rows == null ? (
         <AEmpty title="Loading…" />
@@ -415,34 +432,40 @@ export function UserManagement() {
         />
       ) : (
         <div className="overflow-x-auto">
-          {filtered.map((u) => (
-            <ARow key={u.id}>
-              <div className="flex min-w-0 items-center gap-2.5" style={{ flex: 2.2 }}>
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-[10.5px] font-bold text-blue-700" style={{ fontFamily: fontDisplay }}>
-                  {(u.full_name || u.email || "?").slice(0, 2).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate text-[12.5px] font-semibold text-slate-900" style={{ fontFamily: fontDisplay }}>
-                    {u.full_name || u.email?.split("@")[0]}
+          {filtered.map((u) => {
+            const role = u.global_role || "user";
+            const roleTone = role === "superadmin" ? "violet" : role === "admin" ? "blue" : "slate";
+            const planTone = u.plan === "enterprise" ? "violet" : u.plan === "scale" ? "cyan" : u.plan === "growth" ? "blue" : "slate";
+            return (
+              <ARow key={u.id}>
+                <div className="flex min-w-0 items-center gap-2.5" style={{ flex: 2.2 }}>
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-[10.5px] font-bold text-blue-700" style={{ fontFamily: fontDisplay }}>
+                    {(u.full_name || u.email || "?").slice(0, 2).toUpperCase()}
                   </div>
-                  <div className="truncate text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>
-                    {u.email}
+                  <div className="min-w-0">
+                    <div className="truncate text-[12.5px] font-semibold text-slate-900" style={{ fontFamily: fontDisplay }}>
+                      {u.full_name || u.email?.split("@")[0] || "(no name)"}
+                    </div>
+                    <div className="truncate text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>
+                      {u.email || "(no email)"}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div style={{ width: 96 }}>
-                <APill tone={u.plan === "enterprise" ? "violet" : u.plan === "scale" ? "cyan" : u.plan === "growth" ? "blue" : "slate"}>
-                  {u.plan || "free_trial"}
-                </APill>
-              </div>
-              <div className="text-[11px] text-slate-500" style={{ width: 110, fontFamily: fontBody }}>
-                {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
-              </div>
-              <div className="text-[11px] text-slate-500" style={{ width: 130, fontFamily: fontBody }}>
-                {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString() : "Never"}
-              </div>
-            </ARow>
-          ))}
+                <div className="truncate text-[12px] text-slate-700" style={{ flex: 1.4, fontFamily: fontBody }}>
+                  {u.organization_name || u.company_name || "—"}
+                </div>
+                <div style={{ width: 92 }}>
+                  <APill tone={roleTone as any} dot>{role}</APill>
+                </div>
+                <div style={{ width: 96 }}>
+                  <APill tone={planTone as any}>{u.plan}</APill>
+                </div>
+                <div className="text-[11px] text-slate-500" style={{ width: 110, fontFamily: fontBody }}>
+                  {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
+                </div>
+              </ARow>
+            );
+          })}
         </div>
       )}
     </APanel>
@@ -515,11 +538,55 @@ export function IngestionStatus() {
   const [rows, setRows] = useState<any[] | null>(null);
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("lit_ingestion_runs")
-        .select("*")
-        .order("last_run_at", { ascending: false, nullsFirst: false });
-      setRows(data || []);
+      // Pull lit_ingestion_runs + the underlying source tables in
+      // parallel. Whichever has the more recent timestamp wins so the
+      // panel reflects reality even when no cron writes to the runs
+      // table yet. Add new sources here as pipelines come online.
+      const [{ data: runRows }, importYetiLast, contactsLast, companiesLast] = await Promise.all([
+        supabase.from("lit_ingestion_runs").select("*"),
+        supabase.from("lit_importyeti_company_snapshot")
+          .select("updated_at")
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase.from("lit_contacts")
+          .select("updated_at")
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase.from("lit_companies")
+          .select("updated_at")
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+      const overrides: Record<string, { last: string | null; tone?: "ok" | "warning" | "stale" }> = {
+        "ImportYeti · BOL feed": { last: (importYetiLast.data as any)?.updated_at ?? null },
+        "Apollo enrichment · contacts": { last: (contactsLast.data as any)?.updated_at ?? null },
+        "Clay enrichment · companies": { last: (companiesLast.data as any)?.updated_at ?? null },
+      };
+
+      const merged = (runRows || []).map((r) => {
+        const o = overrides[r.pipeline_name];
+        if (!o || !o.last) return r;
+        const storedTs = r.last_run_at ? new Date(r.last_run_at).getTime() : 0;
+        const sourceTs = new Date(o.last).getTime();
+        const ageHours = (Date.now() - sourceTs) / 3_600_000;
+        const status = ageHours < 24 ? "ok" : ageHours < 168 ? "warning" : "stale";
+        if (sourceTs > storedTs) {
+          return { ...r, last_run_at: o.last, status, note: r.note?.startsWith("awaiting") ? "live · derived from source" : r.note };
+        }
+        return r;
+      });
+
+      merged.sort((a: any, b: any) => {
+        const ta = a.last_run_at ? new Date(a.last_run_at).getTime() : 0;
+        const tb = b.last_run_at ? new Date(b.last_run_at).getTime() : 0;
+        return tb - ta;
+      });
+
+      setRows(merged);
     })();
   }, []);
   return (

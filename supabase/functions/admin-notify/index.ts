@@ -100,19 +100,53 @@ serve(async (req) => {
   if (req.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
 
   const adminSecret = Deno.env.get("LIT_ADMIN_NOTIFY_SECRET");
-  const resendKey = Deno.env.get("LIT_RESEND_API_KEY");
+  let resendKey = Deno.env.get("LIT_RESEND_API_KEY");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-  if (!resendKey) return json({ ok: false, error: "resend_key_missing" }, 500);
   if (!supabaseUrl || !serviceKey) return json({ ok: false, error: "server_misconfigured" }, 500);
+
+  // Resend key fallback to lit_internal_secrets (same pattern as
+  // admin-notify-secret below). Lets the function ship without any
+  // dashboard env config.
+  if (!resendKey) {
+    try {
+      const adminTmp = createClient(supabaseUrl, serviceKey);
+      const { data } = await adminTmp
+        .from("lit_internal_secrets")
+        .select("value")
+        .eq("key", "lit_resend_api_key")
+        .maybeSingle();
+      resendKey = (data as any)?.value || undefined;
+    } catch (e) {
+      console.warn("[admin-notify] resend key lookup failed", e);
+    }
+  }
+  if (!resendKey) return json({ ok: false, error: "resend_key_missing" }, 500);
 
   // Bearer auth. The function MUST refuse anonymous traffic — this is a
   // founder-only notification path. If LIT_ADMIN_NOTIFY_SECRET is unset,
   // we fail closed.
-  if (!adminSecret) return json({ ok: false, error: "admin_secret_unset" }, 500);
+  // Resolve the bearer secret. Prefer env (faster, no DB hit), but
+  // fall back to lit_internal_secrets so the function can be wired up
+  // entirely from SQL without anyone touching the dashboard.
+  let resolvedSecret = adminSecret;
+  if (!resolvedSecret) {
+    try {
+      const adminTmp = createClient(supabaseUrl, serviceKey);
+      const { data } = await adminTmp
+        .from("lit_internal_secrets")
+        .select("value")
+        .eq("key", "admin_notify_secret")
+        .maybeSingle();
+      resolvedSecret = (data as any)?.value || null;
+    } catch (e) {
+      console.warn("[admin-notify] secret lookup failed", e);
+    }
+  }
+  if (!resolvedSecret) return json({ ok: false, error: "admin_secret_unset" }, 500);
   const auth = req.headers.get("Authorization") || "";
-  const expected = `Bearer ${adminSecret}`;
+  const expected = `Bearer ${resolvedSecret}`;
   if (auth !== expected) {
     console.warn("[admin-notify] auth failed");
     return json({ ok: false, error: "unauthorized" }, 401);

@@ -114,15 +114,35 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Best-effort founder notification via Supabase admin-notify. Uses
- * LIT_ADMIN_NOTIFY_SECRET as a bearer credential. If either env var is
- * unset we skip — the function never throws because we don't want to
- * fail the user-facing response on an internal observability hop.
+ * Best-effort founder notification via Supabase admin-notify. Looks up
+ * the bearer secret from public.lit_internal_secrets using the existing
+ * SUPABASE_SERVICE_ROLE_KEY (so the marketing site needs zero extra
+ * env vars). Falls back to LIT_ADMIN_NOTIFY_SECRET if the marketing
+ * Vercel project happens to have it set. Never throws.
  */
 async function pingAdminNotify(d: Doc, sanityId: string): Promise<void> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const secret = process.env.LIT_ADMIN_NOTIFY_SECRET;
-  if (!url || !secret) return;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url) return;
+
+  let secret = process.env.LIT_ADMIN_NOTIFY_SECRET || null;
+  if (!secret && serviceKey) {
+    try {
+      const res = await fetch(
+        `${url}/rest/v1/lit_internal_secrets?key=eq.admin_notify_secret&select=value`,
+        { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
+      );
+      const rows = (await res.json().catch(() => [])) as Array<{ value: string }>;
+      secret = rows?.[0]?.value || null;
+    } catch (e: any) {
+      console.error("[demo-request] secret lookup threw", e?.message || e);
+    }
+  }
+  if (!secret) {
+    console.warn("[demo-request] admin-notify skipped: no secret available");
+    return;
+  }
+
   try {
     const r = await fetch(`${url}/functions/v1/admin-notify`, {
       method: "POST",
