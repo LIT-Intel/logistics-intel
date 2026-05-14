@@ -132,7 +132,6 @@ type PulseCompanyResult = {
     headcount_six_month_growth?: number | null;
     headcount_twelve_month_growth?: number | null;
     owned_by?: { id?: string | null; name?: string | null; website_url?: string | null } | null;
-    num_open_positions?: number | null;
     latest_funding_round_date?: string | null;
     latest_funding_stage?: string | null;
     total_funding?: number | null;
@@ -1393,7 +1392,6 @@ function apolloOrgToResult(o: any, intent: ParsedIntent, naicsTargets: string[])
         name: o.owned_by_organization.name || null,
         website_url: o.owned_by_organization.website_url || null,
       } : null,
-      num_open_positions: typeof o.num_open_positions === "number" ? o.num_open_positions : null,
       latest_funding_round_date: o.latest_funding_round_date || null,
       latest_funding_stage: o.latest_funding_stage || null,
       total_funding: typeof o.total_funding === "number" ? o.total_funding : null,
