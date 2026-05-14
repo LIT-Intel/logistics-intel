@@ -18,6 +18,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
+  ArrowRight,
   ArrowUpRight,
   BarChart3,
   Bookmark,
@@ -37,6 +38,7 @@ import {
   Phone,
   RefreshCw,
   Search,
+  Ship,
   ShoppingBag,
   Sparkles,
   Target,
@@ -482,6 +484,39 @@ export default function PulseQuickCard({
               accent={recentDate ? 'blue' : 'mute'}
             />
           </Section>
+
+          {/* Supply-chain data nudge — Pulse is discovery; live BOL /
+              top-routes / suppliers / forwarders data lives on the Search
+              page where one explicit lookup pulls the full shipment history
+              for THIS company. Pulse never auto-fetches that on the user's
+              behalf to keep credits respected. */}
+          <div className="mx-3 mb-3 rounded-[10px] border border-blue-200 bg-blue-50 p-3">
+            <div className="flex items-start gap-2">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-100">
+                <Ship className="h-3 w-3 text-blue-700" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-display text-[12px] font-bold text-slate-900">
+                  {shipments != null
+                    ? 'See full supply-chain data'
+                    : 'No supply-chain data loaded yet'}
+                </div>
+                <div className="font-body mt-0.5 text-[11.5px] leading-snug text-slate-600">
+                  {shipments != null
+                    ? 'Open this company in Search to see top routes, suppliers, forwarders, and the last 12 months of BOL detail.'
+                    : 'Open this company in Search to fetch its top routes, suppliers, forwarders, and 12-month shipment history.'}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenInSearch?.(company)}
+                  className="font-display mt-2 inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-2.5 py-1 text-[11.5px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)] hover:from-blue-600 hover:to-blue-700"
+                >
+                  <ArrowRight className="h-3 w-3" />
+                  Open in Search
+                </button>
+              </div>
+            </div>
+          </div>
 
           {/* Tech stack — visual brand row */}
           <Section label="Tech stack">
