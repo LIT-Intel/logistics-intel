@@ -131,7 +131,7 @@ const HOW_IT_WORKS = [
   {
     step: "05",
     title: "Earn monthly",
-    body: "Get recurring commission for 12 months on every converted customer. Payouts via Stripe where available.",
+    body: "Get recurring commission for 12 months on every converted customer. Monthly Stripe Connect Express payouts, $50 minimum.",
   },
 ];
 
@@ -153,7 +153,7 @@ const FAQS = [
   {
     question: "When do commissions pay out?",
     answer:
-      "Monthly, on referred customer accounts in good standing. Commission is paid for 12 months from each referred customer's conversion date. Approved partners receive payout details and a dashboard link with their welcome kit.",
+      "Monthly, on referred customer accounts in good standing, via Stripe Connect Express. The minimum payout threshold is $50; balances below that roll over to the next cycle. Commission is paid for 12 months from each referred customer's conversion date. Approved partners onboard Stripe Connect Express during invite acceptance and see real-time ledger entries in the in-app partner dashboard.",
   },
   {
     question: "Do partners get free access to LIT?",

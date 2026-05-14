@@ -66,6 +66,38 @@ export const partnerApplication = defineType({
     }),
     defineField({ name: "partnerCode", type: "string", description: "Assigned ref code once approved. Sets the ?ref= value." }),
     defineField({ name: "reviewNotes", type: "text", rows: 4 }),
+    // Bridge state — set by /api/admin/partner-invite when partnerships
+    // team fires the LIT invite email via the Supabase pipeline. Readonly
+    // for human editors; only the bridge endpoint writes here.
+    defineField({
+      name: "inviteSent",
+      title: "Invite sent",
+      type: "boolean",
+      readOnly: true,
+      initialValue: false,
+      description: "Set to true once the LIT invite has been dispatched via the bridge.",
+    }),
+    defineField({
+      name: "inviteId",
+      title: "Supabase invite ID",
+      type: "string",
+      readOnly: true,
+      description: "Foreign key to affiliate_invites.id in Supabase.",
+    }),
+    defineField({
+      name: "inviteSentAt",
+      title: "Invite sent at",
+      type: "datetime",
+      readOnly: true,
+    }),
+    defineField({
+      name: "inviteEmailLog",
+      title: "Invite email log",
+      type: "text",
+      rows: 3,
+      readOnly: true,
+      description: "Bridge response payload — useful for audit / retry.",
+    }),
   ],
   preview: {
     select: { name: "name", company: "companyOrBrand", audience: "audienceType", status: "status" },
