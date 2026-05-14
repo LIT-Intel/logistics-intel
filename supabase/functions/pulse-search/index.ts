@@ -242,26 +242,28 @@ SIZE RULES:
 - "1-500 employees" → employee_min:1, employee_max:500
 - "under $10M revenue" → revenue_max_usd:10000000
 
-INDUSTRY EXPANSION (write these expanded terms into industry_terms):
-- "cold-chain" / "cold chain" → ["cold chain","refrigerated","temperature controlled","reefer","cold storage","frozen","chilled","perishable","food logistics","pharma logistics"]; audience_type:["cold_chain_provider","3pl","warehouse"]
-- "freight broker" → service_terms:["freight broker","brokerage","truckload","ltl","transportation broker"]; audience_type:["freight_broker"]
-- "freight forwarder" / "forwarder" → service_terms:["freight forwarder","ocean freight forwarder","air freight forwarder","nvocc","international logistics"]; audience_type:["freight_forwarder"]
-- "customs broker" → service_terms:["customs broker","customs clearance","import brokerage","trade compliance"]; audience_type:["customs_broker"]
-- "3PL" → service_terms:["3pl","third party logistics","contract logistics","fulfillment"]; audience_type:["3pl","warehouse"]
-- "warehouse" / "warehousing" → audience_type:["warehouse","distribution_center"]
-- "manufacturer" / "factory" → audience_type:["manufacturer"]
-- "importer" → audience_type:["importer"]; "exporter" → audience_type:["exporter"]
+IMPORTANT: when the user mentions an INDUSTRY/TOPIC (automotive, medical, electronics, apparel, furniture, food, chemicals, pharmaceuticals, agriculture, construction, solar, energy, plastics, metals, machinery, paper, textiles, cosmetics, beverages, etc.), ALWAYS populate industry_terms with the topic AND related expansions. Do not put generic audience labels like "manufacturer" alone — always pair them with the topic.
 
-HS / commodity:
-- "auto parts" → trade_filters.commodities:["auto parts"], trade_filters.hs_chapters:["87"]
-- "apparel" → chapters ["61","62"]; "furniture" → ["94"]; "electronics" → ["85"]; "machinery" → ["84"]; "food" → ["16","17","18","19","20","21","22"]
+INDUSTRY EXPANSION examples (always write these into industry_terms):
+- "automotive" / "auto parts" / "cars" → ["automotive","auto parts","vehicle","motor","automaker","tire","OEM"]; audience_type usually ["manufacturer"]; trade_filters.hs_chapters:["87"]
+- "medical" / "medical supplies" / "healthcare" → ["medical","medical device","healthcare","pharmaceutical","hospital supplies","diagnostics"]
+- "cold-chain" / "cold chain" → ["cold chain","refrigerated","temperature controlled","reefer","cold storage","frozen","chilled","perishable"]; audience_type:["cold_chain_provider","3pl","warehouse"]
+- "freight broker" → ["freight broker","brokerage","truckload","ltl","transportation broker"]; audience_type:["freight_broker"]
+- "freight forwarder" / "forwarder" → ["freight forwarder","ocean freight forwarder","air freight forwarder","nvocc","international logistics"]; audience_type:["freight_forwarder"]
+- "customs broker" → ["customs broker","customs clearance","import brokerage","trade compliance"]; audience_type:["customs_broker"]
+- "3PL" → ["3pl","third party logistics","contract logistics","fulfillment"]; audience_type:["3pl","warehouse"]
+- "warehouse" / "warehousing" → audience_type:["warehouse","distribution_center"]
+- "electronics" → ["electronics","semiconductor","consumer electronics","PCB"]
+- "apparel" → ["apparel","clothing","garment","textile","fashion"]; trade_filters.hs_chapters:["61","62"]
+- "furniture" → ["furniture","home furnishings","upholstery","office furniture"]; trade_filters.hs_chapters:["94"]
+- "solar" → ["solar","solar panel","photovoltaic","PV","renewable energy"]
 
 NEEDS_APOLLO — set true if ANY of:
 - size.employee_min/max or revenue set
 - contact_filters set
 - intent = find_contacts
+- industry_terms is non-empty AND shipment_filters is null
 - audience_type is service-provider (freight_broker, freight_forwarder, customs_broker, 3pl, warehouse) AND no shipment_filters
-- query references website/phone/address/linkedin/industry as discovery criteria
 False when:
 - shipment_filters or trade_filters dominate (Apollo can't answer those)
 - query mentions "saved" or "my companies" only
@@ -376,6 +378,15 @@ function ruleBasedFallback(rawQuery: string): ParsedIntent {
   if (/3pl|third[- ]party logistics|warehouse|warehousing|fulfillment/.test(q)) {
     audience.push("3pl", "warehouse");
   }
+  // Industry/topic expansion — the LLM parser usually fills these, but
+  // when it falls back to this rule-based path we still want topical
+  // tokens in industry_terms so downstream SQL matching works.
+  if (/automotive|auto parts|\bcars?\b/.test(q)) industryTerms.push("automotive", "auto parts", "vehicle", "motor");
+  if (/medical|healthcare|pharma/.test(q)) industryTerms.push("medical", "medical device", "healthcare", "pharmaceutical");
+  if (/electronics?|semiconductor/.test(q)) industryTerms.push("electronics", "semiconductor");
+  if (/furniture|home furnishing/.test(q)) industryTerms.push("furniture", "home furnishings");
+  if (/apparel|clothing|garment|textile/.test(q)) industryTerms.push("apparel", "clothing", "garment", "textile");
+  if (/solar|photovoltaic/.test(q)) industryTerms.push("solar", "solar panel", "photovoltaic");
   if (/manufactur|factory/.test(q)) audience.push("manufacturer");
   if (/importer|importing/.test(q)) audience.push("importer");
   if (/exporter|exporting/.test(q)) audience.push("exporter");
@@ -397,7 +408,7 @@ function ruleBasedFallback(rawQuery: string): ParsedIntent {
     trade_filters: null,
     contact_filters: null,
     exclusions: [],
-    needs_apollo: audience.some((a) => ["freight_broker", "freight_forwarder", "customs_broker", "3pl", "warehouse"].includes(a)),
+    needs_apollo: audience.some((a) => ["freight_broker", "freight_forwarder", "customs_broker", "3pl", "warehouse"].includes(a)) || industryTerms.length > 0,
     needs_shipment_data: audience.includes("importer") || audience.includes("exporter"),
     confidence: 0.3,
   };
@@ -465,20 +476,45 @@ function deriveKeywordTerms(intent: ParsedIntent): string[] {
   return Array.from(new Set([...bigrams.slice(0, 3), ...unigrams]));
 }
 
-// Build the unified list of text terms used for both directory text-matching
-// and the "what did Pulse actually search for?" coach summary. Always returns
-// something non-empty for non-trivial queries so the directory never
-// state-filters with no topic constraint.
-function buildTextTerms(intent: ParsedIntent): string[] {
-  const explicit = [
+// Audience tokens describe a trade role (manufacturer, distributor, retailer,
+// wholesaler, etc.) — they're so generic that ILIKE-matching them against
+// `trade_roles` floods the result set with unrelated companies. Keep these
+// out of the directory SQL filter; use them only for Apollo keyword tags
+// and match-reason explanations.
+const AUDIENCE_GENERIC = new Set([
+  "manufacturer", "distributor", "wholesaler", "retailer", "importer",
+  "exporter", "consignee", "shipper", "carrier", "3pl", "4pl",
+]);
+
+// Split parsed intent into:
+//   topicTerms     → used for directory SQL filtering (industry/service +
+//                    raw-query derivation when parser was empty). MUST be
+//                    specific enough to narrow rows, not flood them.
+//   audienceTokens → used for Apollo keyword tags + match reasons only.
+function buildSearchTerms(intent: ParsedIntent): { topicTerms: string[]; audienceTokens: string[]; all: string[] } {
+  const topicExplicit = [
     ...intent.industry_terms,
     ...intent.service_terms,
-    ...intent.audience_type.map((a) => a.replace(/_/g, " ")),
   ]
     .map((t) => (t || "").toLowerCase().trim())
     .filter(Boolean);
+  const audienceTokens = intent.audience_type
+    .map((a) => (a || "").replace(/_/g, " ").toLowerCase().trim())
+    .filter(Boolean);
+
   const derived = deriveKeywordTerms(intent);
-  return Array.from(new Set([...explicit, ...derived]));
+  const topicTerms = Array.from(new Set([...topicExplicit, ...derived]))
+    // Drop generic audience tokens that slipped into industry_terms or the
+    // derived bigrams — they don't help narrow the directory.
+    .filter((t) => !AUDIENCE_GENERIC.has(t));
+
+  const all = Array.from(new Set([...topicTerms, ...audienceTokens]));
+  return { topicTerms, audienceTokens, all };
+}
+
+// Kept for backwards-compat where callers only want the union for display.
+function buildTextTerms(intent: ParsedIntent): string[] {
+  return buildSearchTerms(intent).all;
 }
 
 function expandIntent(intent: ParsedIntent): ParsedIntent {
@@ -609,7 +645,7 @@ function escapeIlikeFragment(s: string): string {
   return String(s).replace(/[,()\\]/g, " ").trim();
 }
 
-async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, textTerms: string[]): Promise<PulseCompanyResult[]> {
+async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, topicTerms: string[]): Promise<PulseCompanyResult[]> {
   try {
     let q = supa
       .from("lit_company_directory")
@@ -653,18 +689,24 @@ async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, t
       q = q.gt("lcl", 0);
     }
 
-    // SQL-level text-match. Without this, a query like "medical supplies in
-    // Georgia" returned the top 50 Georgia rows by shipment volume (Mercedes,
-    // Kia, Hisense) — none of them medical. We OR across the four columns
-    // most likely to carry topic signal.
-    const topTerms = textTerms.slice(0, 5).map(escapeIlikeFragment).filter(Boolean);
+    // SQL-level text-match. Only TOPIC terms (industry/service/raw-query
+    // derivation) drive the filter. Audience tokens like "manufacturer"
+    // are explicitly excluded upstream because OR-matching them across
+    // trade_roles flooded results with every Southeast manufacturer
+    // (food, furniture, cosmetics) when the user searched "automotive".
+    //
+    // For company_name we ILIKE the term so partial matches work
+    // (Panasonic Automotive Systems matches "automotive"). We also try
+    // industry/description. We deliberately DROP trade_roles from the
+    // filter columns — that column carries audience-style values
+    // ("Manufacturer", "Logistics") that don't carry topic signal.
+    const topTerms = topicTerms.slice(0, 5).map(escapeIlikeFragment).filter(Boolean);
     if (topTerms.length > 0) {
       const orParts: string[] = [];
       for (const t of topTerms) {
         const pat = `%${t}%`;
         orParts.push(`company_name.ilike.${pat}`);
         orParts.push(`industry.ilike.${pat}`);
-        orParts.push(`trade_roles.ilike.${pat}`);
         orParts.push(`description.ilike.${pat}`);
       }
       q = q.or(orParts.join(","));
@@ -1127,7 +1169,7 @@ serve(async (req) => {
   const t0 = Date.now();
   const { intent: parsedRaw, model: parserModel } = await parseQuery(rawQuery);
   const intent = expandIntent(parsedRaw);
-  const textTerms = buildTextTerms(intent);
+  const { topicTerms, audienceTokens, all: textTerms } = buildSearchTerms(intent);
   const parserMs = Date.now() - t0;
 
   // 2. Run sources in parallel (within slot-routing rules)
@@ -1136,7 +1178,7 @@ serve(async (req) => {
     : Promise.resolve([]);
 
   const directoryPromise: Promise<PulseCompanyResult[]> = includeDirectory
-    ? searchDirectory(supa, intent, Math.min(50, limit), textTerms)
+    ? searchDirectory(supa, intent, Math.min(50, limit), topicTerms)
     : Promise.resolve([]);
 
   let apolloCalled = false;
@@ -1199,6 +1241,8 @@ serve(async (req) => {
     sources: sourceCounts,
     apollo_called: apolloCalled,
     text_terms: textTerms,
+    topic_terms: topicTerms,
+    audience_tokens: audienceTokens,
     results: ranked,
     coach_summary: coachSummary,
     timing_ms: { parser: parserMs, total: totalMs },
