@@ -517,6 +517,40 @@ function buildTextTerms(intent: ParsedIntent): string[] {
   return buildSearchTerms(intent).all;
 }
 
+// Defensive: ensure all nested fields exist even if parser returned partial JSON.
+// Prevents 500s when the LLM omits geo/size/industry_terms etc.
+function normalizeIntent(intent: any, rawQuery: string): ParsedIntent {
+  return {
+    raw_query: intent?.raw_query || rawQuery,
+    intent: intent?.intent || "find_companies",
+    audience_type: Array.isArray(intent?.audience_type) ? intent.audience_type : [],
+    industry_terms: Array.isArray(intent?.industry_terms) ? intent.industry_terms : [],
+    service_terms: Array.isArray(intent?.service_terms) ? intent.service_terms : [],
+    geo: {
+      region: intent?.geo?.region ?? null,
+      states: Array.isArray(intent?.geo?.states) ? intent.geo.states : [],
+      metros: Array.isArray(intent?.geo?.metros) ? intent.geo.metros : [],
+      cities: Array.isArray(intent?.geo?.cities) ? intent.geo.cities : [],
+      postal_codes: Array.isArray(intent?.geo?.postal_codes) ? intent.geo.postal_codes : [],
+      countries: Array.isArray(intent?.geo?.countries) ? intent.geo.countries : [],
+      ports: Array.isArray(intent?.geo?.ports) ? intent.geo.ports : [],
+    },
+    size: {
+      employee_min: intent?.size?.employee_min ?? null,
+      employee_max: intent?.size?.employee_max ?? null,
+      revenue_min_usd: intent?.size?.revenue_min_usd ?? null,
+      revenue_max_usd: intent?.size?.revenue_max_usd ?? null,
+    },
+    shipment_filters: intent?.shipment_filters ?? null,
+    trade_filters: intent?.trade_filters ?? null,
+    contact_filters: intent?.contact_filters ?? null,
+    exclusions: Array.isArray(intent?.exclusions) ? intent.exclusions : [],
+    needs_apollo: Boolean(intent?.needs_apollo),
+    needs_shipment_data: Boolean(intent?.needs_shipment_data),
+    confidence: typeof intent?.confidence === "number" ? intent.confidence : 0.3,
+  };
+}
+
 function expandIntent(intent: ParsedIntent): ParsedIntent {
   // Region → states
   if (intent.geo.region) {
@@ -1274,6 +1308,8 @@ serve(async (req) => {
     });
   }
 
+  try {
+
   const auth = req.headers.get("Authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "");
 
@@ -1322,7 +1358,10 @@ serve(async (req) => {
   // 1. Parse
   const t0 = Date.now();
   const { intent: parsedRaw, model: parserModel } = await parseQuery(rawQuery);
-  const intent = expandIntent(parsedRaw);
+  // Defensive normalization — guarantees every field downstream code reads
+  // is present, even if the LLM returned a partial JSON object.
+  const normalizedRaw = normalizeIntent(parsedRaw, rawQuery);
+  const intent = expandIntent(normalizedRaw);
   const { topicTerms, audienceTokens, all: textTerms } = buildSearchTerms(intent);
   const parserMs = Date.now() - t0;
 
@@ -1410,6 +1449,21 @@ serve(async (req) => {
   }), {
     headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
+
+  } catch (err: any) {
+    // Top-level safety net — never return 500 to the UI; always a structured body.
+    // The frontend shows "Failed to send a request to the Edge Function" on any
+    // non-2xx, which is unhelpful. Returning 200 with ok:false lets the UI
+    // surface the actual error message.
+    console.error("[pulse-search] unhandled error:", err?.stack || err?.message || String(err));
+    return new Response(JSON.stringify({
+      ok: false,
+      error: "pulse_search_internal_error",
+      message: err?.message || "Unexpected error in pulse-search",
+      results: [],
+      sources: { saved: 0, directory: 0, apollo: 0, merged: 0 },
+    }), { status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" } });
+  }
 });
 
 function buildCoachSummary(intent: ParsedIntent, counts: Record<string, number>, results: PulseCompanyResult[], textTerms: string[]): string {
