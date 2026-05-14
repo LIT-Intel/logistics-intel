@@ -241,7 +241,11 @@ export default function EmailComposerModal({
     const el = visualRef.current;
     if (!el) return;
     if (lastVisualBodyRef.current === body) return;
-    el.innerHTML = body;
+    // Sanitize before paint — body can include template tokens / pasted HTML
+    // from external sources. Reuses the email-safe allowlist used on save so
+    // the editor view matches what the recipient sees. (CodeQL: DOM text
+    // reinterpreted as HTML.)
+    el.innerHTML = DOMPurify.sanitize(body, SANITIZE_CONFIG as any).toString();
     lastVisualBodyRef.current = body;
   }, [mode, body, open]);
 
