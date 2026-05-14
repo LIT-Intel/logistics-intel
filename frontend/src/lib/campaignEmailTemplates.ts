@@ -78,22 +78,24 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
     name: "Broker Email 1 · Company Intelligence Intro",
     audience: "freight_broker",
     stepNumber: 1,
-    subject: "Built this for freight sales teams",
+    subject: "Saw your {{top_lane}} moves this quarter",
     previewText:
-      "A better way to find active shippers using real shipment signals.",
+      "Two questions on the cadence shift, peer to peer.",
     imageAssetKey: "company_intelligence",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
-    description: "Founder-style intro framed around freight signals.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
+    description: "Cold intro built around a specific lane observation.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">I built LIT because freight sales teams are still stuck jumping between shipment data, spreadsheets, CRMs, and contact tools just to figure out who's actually worth calling.</p>
-<p style="margin:0 0 16px 0;">LIT helps brokers find active shippers, understand trade activity, identify the right contacts, and start outreach from one workspace — using live shipment signals, not guesses.</p>
-<p style="margin:0 0 16px 0;">The goal is simple: help your team spend less time qualifying and more time selling into accounts with real freight movement.</p>
-<p style="margin:0 0 16px 0;">Happy to send over a sample shipper profile so you can see what it looks like for {{company_name}}.</p>
+<p style="margin:0 0 16px 0;">Pulled {{company_name}}'s footprint on {{top_lane}} this morning. Cadence shifted in the last 60 days — new consignee names on a few of the boxes, which usually means a partner shipper came on or a re-route is in play.</p>
+<p style="margin:0 0 16px 0;">Two questions, operator to operator:</p>
+<p style="margin:0 0 16px 0;">1. Is the new consignee mix something you brought on, or did it land in your laps via an NVO partner?</p>
+<p style="margin:0 0 16px 0;">2. Are you seeing the LA/LB dwell drift on your inbounds? A couple of your boxes ran past 7 days at terminal.</p>
+<p style="margin:0 0 16px 0;">Not pitching anything yet — just curious whether you're seeing what I'm seeing.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      "Built this for freight sales teams",
-      "A better way to find active shippers using real shipment signals.",
-      `Reps who book the most freight don't ask "any capacity?" — they open with a specific signal: "I noticed your volume on this lane shifted last quarter." That's the conversation LIT makes possible.`,
+      "Saw your {{top_lane}} moves this quarter",
+      "Two questions on the cadence shift, peer to peer.",
+      `If dwell on {{top_lane}} is creeping past 5 days, the rate sheet matters less than the demurrage exposure on the back end. Worth flagging before peak GRI lands.`,
+      "Pull up my lane",
     ),
   },
   {
@@ -101,24 +103,23 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
     name: "Broker Email 2 · Manual Prospecting Pain",
     audience: "freight_broker",
     stepNumber: 2,
-    subject: "Freight prospecting is too manual",
+    subject: "One more thing on the consignee cluster",
     previewText:
-      "Who is shipping right now, and is there a real reason to reach out?",
-    tokensUsed: ["{{first_name}}", "{{sender_name}}"],
-    description: "Follow-up — names the prospecting pain.",
+      "Backhaul math worth checking before the next bid cycle.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
+    description: "Operator follow-up on a specific lane observation.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">One of the reasons we built LIT is that freight prospecting still feels way too manual.</p>
-<p style="margin:0 0 16px 0;">Brokers are jumping between shipment databases, Google searches, spreadsheets, CRMs, contact tools, and campaign platforms — all to answer one basic question:</p>
-<p style="margin:0 0 16px 0;font-weight:600;">Who is shipping right now, and is there a real reason to reach out?</p>
-<p style="margin:0 0 16px 0;">LIT is built to make that answer fast. Look up a company, see shipment activity, understand top lanes, spot account-level signals, find contacts, and start outreach from the same workspace.</p>
-<p style="margin:0 0 16px 0;">It's not meant to replace the sales process. It's meant to give your team a better starting point.</p>
-<p style="margin:0 0 16px 0;">Worth a quick look on a few lanes {{company_name}} already sells?</p>
+<p style="margin:0 0 16px 0;">Quick follow-up. One more pattern that jumped out on {{company_name}}'s {{top_lane}} book:</p>
+<p style="margin:0 0 16px 0;">Your top three consignees on that lane cluster within roughly 200 miles of each other inland. If you've got a backhaul shipper anywhere in that radius, the drayage round-trip math usually pencils out at $400–$600 per box once you back out the empty repo cost.</p>
+<p style="margin:0 0 16px 0;font-weight:600;">Is the inland leg something you control, or is it on the consignee's account?</p>
+<p style="margin:0 0 16px 0;">That's the only question that changes whether the play is yours to make or whether the consignee's incumbent locks it down first. Either way the BOL footprint is telling on this one.</p>
+<p style="margin:0 0 16px 0;">Hit reply if you want to talk through it.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      "Freight prospecting is too manual",
-      "Who is shipping right now, and is there a real reason to reach out?",
-      `Freight sales timing matters more than list size. One rep who knows <em>when</em> a shipper is reviewing capacity beats ten reps who are guessing.`,
-      "See it on your target lanes",
+      "One more thing on the consignee cluster",
+      "Backhaul math worth checking before the next bid cycle.",
+      `Drayage round-trips on clustered consignees are one of the cleanest margin plays on a domestic-inland leg. Most operators miss them because the BOL data is split across the headhaul and the empty repo.`,
+      "Look at the cluster",
     ),
   },
   {
@@ -126,22 +127,22 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
     name: "Broker Email 3 · Contact Discovery",
     audience: "freight_broker",
     stepNumber: 3,
-    subject: "Not just any contacts",
-    previewText: "Find the contacts behind the freight activity.",
+    subject: "Briefly — what we actually do",
+    previewText: "Lane signals, the right person on the BCO side, one screen.",
     imageAssetKey: "contact_discovery",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
-    description: "Frames Contact Discovery as the answer to who to call.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
+    description: "First touch that explains the service, after two signal-only emails.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">One thing we wanted to avoid with LIT was giving brokers another giant list of generic contacts.</p>
-<p style="margin:0 0 16px 0;">A good freight sales workflow needs context first: who is actually shipping, what lanes they use, and which people are likely connected to logistics, transportation, procurement, or supply chain.</p>
-<p style="margin:0 0 16px 0;">That's why LIT connects company intelligence with contact discovery — so your team isn't just chasing names, they're working from actual freight signals.</p>
-<p style="margin:0 0 16px 0;">If {{company_name}} is focused on shipper growth, this could be useful. Want me to send over a sample account profile?</p>
+<p style="margin:0 0 16px 0;">If the last two notes were useful, here's the bit where I tell you what I'm actually using.</p>
+<p style="margin:0 0 16px 0;">Short version: we pull BOL records and layer in lane, mode, cadence, and carrier mix per shipper — same data I referenced when I flagged {{company_name}}'s {{top_lane}} cadence shift. We also keep the decision-maker contact info next to each account, so the rep can move from "I want to talk to procurement at this shipper" to a sequenced touch without leaving the screen.</p>
+<p style="margin:0 0 16px 0;">For a broker desk, the value is the handoff — the gap between spotting a signal and getting a contextual outreach in front of the right person on the BCO side. That gap is where most desks lose deals to whoever moved faster.</p>
+<p style="margin:0 0 16px 0;">Worth a 20-minute walkthrough on three of {{company_name}}'s active lanes? You keep the screenshots either way.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      "Not just any contacts",
-      "Find the contacts behind the freight activity.",
-      `The right title with no shipment context is still a cold call. The right title <em>plus</em> "your volume on this lane changed in Q3" is a meeting.`,
-      "Send me a sample profile",
+      "Briefly — what we actually do",
+      "Lane signals, the right person on the BCO side, one screen.",
+      `The right title without freight context is still a cold call. The right title with "your cadence on {{top_lane}} shifted last month" is a meeting.`,
+      "Walk me through three lanes",
     ),
   },
   {
@@ -149,21 +150,20 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
     name: "Broker Email 4 · Close the Loop",
     audience: "freight_broker",
     stepNumber: 4,
-    subject: "Should I close the loop?",
-    previewText: "Last note on LIT for freight prospecting.",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
+    subject: "Closing the loop — last one",
+    previewText: "If the timing's off I'll back off.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
     description: "Breakup email — leaves the door open without pressure.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">I don't want to keep chasing you if this isn't relevant, so I'll close the loop after this.</p>
-<p style="margin:0 0 16px 0;">We built LIT for freight teams that want a cleaner way to find active shippers, understand what they move, identify the right contacts, and turn that into outreach — without bouncing between five tools.</p>
-<p style="margin:0 0 16px 0;">If shipper prospecting is already handled well at {{company_name}}, no worries.</p>
-<p style="margin:0 0 16px 0;">But if your team is still working from static lists, generic lead databases, or manual research, this could be useful. Want a quick example of what a shipper profile looks like in LIT?</p>
+<p style="margin:0 0 16px 0;">Not going to keep landing in your inbox if the timing isn't there.</p>
+<p style="margin:0 0 16px 0;">For what it's worth: the thing I'd really want you to see is the cadence-drift read on {{company_name}}'s {{top_lane}} consignees. That one signal has been worth catching RFPs ~30 days before they hit your inbox on books like yours. Whether you'd ever do anything about it with us is a separate question.</p>
+<p style="margin:0 0 16px 0;">If next quarter makes more sense, ping me. Otherwise — good selling.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      "Should I close the loop?",
-      "Last note on LIT for freight prospecting.",
+      "Closing the loop — last one",
+      "If the timing's off I'll back off.",
       undefined,
-      "Yes, send a sample",
+      "Send the lane snapshot",
     ),
   },
 ];
@@ -178,22 +178,22 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
     name: "Forwarder Email 1 · Company Intelligence Intro",
     audience: "small_forwarder",
     stepNumber: 1,
-    subject: "Built this for forwarder sales teams",
-    previewText: "Shipment intelligence for smaller forwarders.",
+    subject: "{{top_lane}} — quick mode-split question",
+    previewText: "Saw your consol vs FCL ratio. Curious how you decided.",
     imageAssetKey: "company_intelligence",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
-    description: "Founder-style intro for forwarders.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
+    description: "Cold intro built on a mode-split observation.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">I built LIT because smaller freight forwarders need a better way to find and understand potential customers — without adding more manual research to the sales process.</p>
-<p style="margin:0 0 16px 0;">Most forwarder teams don't have endless time to dig through shipment records, contact databases, spreadsheets, and CRMs just to figure out which accounts are worth pursuing.</p>
-<p style="margin:0 0 16px 0;">LIT helps forwarders see who's actively shipping, what lanes they use, how often they move freight, and who may be worth contacting — all in one workspace.</p>
-<p style="margin:0 0 16px 0;">{{company_name}} might find it useful as a way to build more targeted sales opportunities from real shipment activity. Want me to send over a sample profile?</p>
+<p style="margin:0 0 16px 0;">Was looking at {{company_name}}'s {{top_lane}} pattern this morning. Mode split looks heavier on consol than I'd expect for the volume bands you're hitting. Wanted to ask, operator to operator:</p>
+<p style="margin:0 0 16px 0;">Is that a service-level call (transit predictability over cost), or did the FCL math just not pencil out this quarter at current rates?</p>
+<p style="margin:0 0 16px 0;">Asking because the consol-vs-FCL break point on that pair has moved ~2 CBM in the wrong direction since Q3. Most operators I talk to are quietly re-running the calc.</p>
+<p style="margin:0 0 16px 0;">Not pitching anything — just curious whether you've already had to make the call.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      "Built this for forwarder sales teams",
-      "Shipment intelligence built for smaller forwarders.",
-      `Smaller forwarder teams win when they pick the right 50 accounts and pursue them with context — not when they email 5,000 names with no signal. LIT is built to make picking those 50 fast.`,
-      "See a sample shipper profile",
+      "{{top_lane}} — quick mode-split question",
+      "Saw your consol vs FCL ratio. Curious how you decided.",
+      `If LCL is winning on the rate sheet but FCL buys back a week of transit, that's worth re-modeling — usually pencils out around the 8-CBM mark, but the threshold has shifted this quarter.`,
+      "Pull up the lane",
     ),
   },
   {
@@ -201,22 +201,22 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
     name: "Forwarder Email 2 · Better Signals",
     audience: "small_forwarder",
     stepNumber: 2,
-    subject: "Forwarders need better signals",
-    previewText: "Start sales conversations from actual shipment activity.",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
-    description: "Follow-up on why shipment activity matters as a sales signal.",
+    subject: "Two shippers on your book went quiet",
+    previewText: "60+ days, no boxes — usually means one of two things.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
+    description: "Follow-up flagging a specific cadence-drift signal.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">A lot of freight sales still starts with a weak signal: a company list, a cold contact, or a guess that someone might ship.</p>
-<p style="margin:0 0 16px 0;">We built LIT around a stronger signal: actual shipment activity.</p>
-<p style="margin:0 0 16px 0;">For forwarders, that means looking at companies by trade activity, top lanes, shipment volume, mode indicators, and account-level patterns before deciding who to pursue.</p>
-<p style="margin:0 0 16px 0;">The goal isn't to make sales robotic — it's to help your team start better conversations with better context.</p>
-<p style="margin:0 0 16px 0;">If {{company_name}} is growing import or export accounts, LIT can identify companies already moving freight and give your team a real reason to reach out. Want me to show you?</p>
+<p style="margin:0 0 16px 0;">Following up on the {{top_lane}} note. Went a layer deeper on {{company_name}}'s consignee mix and one pattern is worth flagging.</p>
+<p style="margin:0 0 16px 0;">Two of your inbound shippers haven't moved a box in 60+ days. That window is almost always one of two things:</p>
+<p style="margin:0 0 16px 0;">1. They're ramping for a seasonal pulse and bookings are about to land.<br>2. They're quietly testing another forwarder and the relationship's already drifting.</p>
+<p style="margin:0 0 16px 0;">Either one is a phone call this week, not next month. By the time the next BOL hits, the answer to which it was is already locked in.</p>
+<p style="margin:0 0 16px 0;">Want the specific BCO names so you can prioritize?</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      "Forwarders need better signals",
-      "Start sales conversations from actual shipment activity.",
-      `"Hope you're well, just checking in" reads the same to every shipper. "I noticed your import volume to LAX shifted in Q2" reads only to the one that's actually relevant. That's the difference shipment data makes.`,
-      "Show me what it looks like",
+      "Two shippers on your book went quiet",
+      "60+ days, no boxes — usually means one of two things.",
+      `Quiet shipper > active shipper for outbound timing. Active ones are too busy to take the call. The quiet quarter is when the incumbent forwarder is either ramping rates or already losing the relationship.`,
+      "Send the BCO names",
     ),
   },
   {
@@ -224,22 +224,22 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
     name: "Forwarder Email 3 · Pulse AI Brief",
     audience: "small_forwarder",
     stepNumber: 3,
-    subject: "The first 30 seconds of account research",
-    previewText: "Pulse AI turns shipment activity into account briefs.",
+    subject: "Briefly — what we actually do",
+    previewText: "How the cadence read works and why it's worth a look.",
     imageAssetKey: "pulse_ai",
-    tokensUsed: ["{{first_name}}", "{{sender_name}}"],
-    description: "Frames Pulse AI as a research / time-saving tool.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
+    description: "Explains the service after two pure-signal emails.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">One of the hardest parts of forwarder sales is doing enough research to make the outreach relevant — without spending 30 minutes on every account.</p>
-<p style="margin:0 0 16px 0;">That's why we built Pulse AI inside LIT.</p>
-<p style="margin:0 0 16px 0;">Pulse turns shipment activity into a quick account brief: what changed, where the opportunity is, what risk signals are visible, and what outreach angle may actually make sense.</p>
-<p style="margin:0 0 16px 0;">For smaller teams, the value is simple: less account research from scratch, more focused conversations. Want me to send a sample brief?</p>
+<p style="margin:0 0 16px 0;">If the last two notes were useful, here's the bit where I tell you what I'm actually using.</p>
+<p style="margin:0 0 16px 0;">We work off BOL records — every container that lands has a consignee, shipper, carrier, port pair, and date attached to it. Layer that into a cadence model per account and you get the patterns I was flagging on {{company_name}}: who pulses seasonally, who's drifted off, who switched carriers, and which lanes have a mode-split worth re-examining.</p>
+<p style="margin:0 0 16px 0;">For your reps, that turns into a one-card brief per shipper before each call. Open the account, glance at the card (cadence, top lanes, recent shifts, suggested opener), dial. 30 seconds of prep instead of 12 minutes — and the opener actually lands because it's about their freight, not "any capacity needs?"</p>
+<p style="margin:0 0 16px 0;">Want me to run a brief on one {{top_lane}} shipper so you can see the format?</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      "The first 30 seconds of account research",
-      "Pulse AI turns shipment activity into account briefs.",
-      `Pulse AI is what reps use right before a call — 30 seconds in, you know cadence, top lanes, recent shifts, and what to lead with. The point isn't more data; it's the right data, fast.`,
-      "Send me a sample brief",
+      "Briefly — what we actually do",
+      "How the cadence read works and why it's worth a look.",
+      `30 seconds of context beats 12 minutes of tab-switching. The rep who walks in with one specific signal — not a longer dossier — books the meeting.`,
+      "Send a sample brief",
     ),
   },
   {
@@ -247,21 +247,20 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
     name: "Forwarder Email 4 · Useful or Not a Fit",
     audience: "small_forwarder",
     stepNumber: 4,
-    subject: "Useful or not a fit?",
-    previewText: "Last note on LIT for forwarder prospecting.",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
+    subject: "Closing the loop — last one",
+    previewText: "If the timing's off I'll back off.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
     description: "Breakup email — closes the loop with a clean ask.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">Last note from me.</p>
-<p style="margin:0 0 16px 0;">LIT isn't for every forwarder. If your team already has a strong way to find active shippers, research accounts, enrich contacts, and manage outreach, this probably isn't urgent.</p>
-<p style="margin:0 0 16px 0;">But if prospecting still involves manual research, spreadsheets, disconnected tools, or generic lead lists — I think LIT could help.</p>
-<p style="margin:0 0 16px 0;">We built it to help forwarders turn shipment data into real sales opportunities, not just more records to sort through. Want a sample account profile so you can decide?</p>
+<p style="margin:0 0 16px 0;">Not going to keep landing in your inbox if the timing isn't there.</p>
+<p style="margin:0 0 16px 0;">For what it's worth: the read I'd really want you to see is the cadence-drift signal on {{company_name}}'s {{top_lane}} shippers — that one read alone has been worth catching BCOs ~30 days before their incumbent forwarder loses them. Whether you'd do anything about it with us is a separate question.</p>
+<p style="margin:0 0 16px 0;">If next quarter makes more sense, ping me. Otherwise — good selling.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      "Useful or not a fit?",
-      "Last note on LIT for forwarder prospecting.",
+      "Closing the loop — last one",
+      "If the timing's off I'll back off.",
       undefined,
-      "Send the sample profile",
+      "Send the lane snapshot",
     ),
   },
 ];
