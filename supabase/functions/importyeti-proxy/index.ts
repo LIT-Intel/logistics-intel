@@ -1,5 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  buildParsedSummary,
+  fetchAndUpsertSnapshot,
+} from "../_shared/importyeti_fetch.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -165,85 +169,9 @@ function normalizeDateForPg(value: string | null | undefined): string | null {
   return parsed ? parsed.toISOString().slice(0, 10) : null;
 }
 
-function formatMonthKey(date: Date): string {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
-
-function estimateBolTeu(bol: any): number {
-  return (
-    normalizeNumber(bol?.TEU) ??
-    normalizeNumber(bol?.teu) ??
-    normalizeNumber(bol?.total_teu) ??
-    normalizeNumber(bol?.container_teu) ??
-    normalizeNumber(bol?.containers_count) ??
-    normalizeNumber(bol?.container_count) ??
-    0
-  );
-}
-
-function estimateBolSpendUsd(bol: any): number {
-  return (
-    normalizeNumber(bol?.shipping_cost) ??
-    normalizeNumber(bol?.shipping_rate_usd) ??
-    normalizeNumber(bol?.rate_usd) ??
-    normalizeNumber(bol?.amount_usd) ??
-    0
-  );
-}
-
-function buildRouteLabel(bol: any): string | null {
-  const maybeString = (value: any): string | null => normalizeString(value);
-
-  const preformatted = maybeString(bol?.shipping_route);
-  if (preformatted && /→|->|—|-/u.test(preformatted)) {
-    return preformatted;
-  }
-
-  const origin =
-    maybeString(bol?.origin_port) ??
-    maybeString(bol?.supplier_address_loc) ??
-    maybeString(bol?.supplier_address_location) ??
-    maybeString(bol?.origin) ??
-    maybeString(bol?.origin_city) ??
-    maybeString(bol?.origin_state) ??
-    maybeString(bol?.origin_country) ??
-    maybeString(bol?.origin_country_code) ??
-    maybeString(bol?.origin_port_name) ??
-    maybeString(bol?.origin_port_location) ??
-    maybeString(bol?.Country) ??
-    maybeString(bol?.country_code) ??
-    maybeString(bol?.shipper_address_loc) ??
-    maybeString(bol?.origin?.label) ??
-    maybeString(bol?.origin?.city) ??
-    maybeString(bol?.origin?.state) ??
-    maybeString(bol?.origin?.country);
-
-  const dest =
-    maybeString(bol?.destination_port) ??
-    maybeString(bol?.company_address_loc) ??
-    maybeString(bol?.company_address_country) ??
-    maybeString(bol?.destination) ??
-    maybeString(bol?.destination_city) ??
-    maybeString(bol?.destination_state) ??
-    maybeString(bol?.destination_country) ??
-    maybeString(bol?.destination_country_code) ??
-    maybeString(bol?.destination_port_name) ??
-    maybeString(bol?.destination_port_location) ??
-    maybeString(bol?.entry_port) ??
-    maybeString(bol?.Consignee_Address) ??
-    maybeString(bol?.consignee_address_loc) ??
-    maybeString(bol?.destination?.label) ??
-    maybeString(bol?.destination?.city) ??
-    maybeString(bol?.destination?.state) ??
-    maybeString(bol?.destination?.country);
-
-  if (origin && dest) return `${origin} → ${dest}`;
-  if (origin) return origin;
-  if (dest) return dest;
-  return null;
-}
+// formatMonthKey, estimateBolTeu, estimateBolSpendUsd, buildRouteLabel
+// moved into supabase/functions/_shared/importyeti_fetch.ts — they're now
+// only needed by the snapshot-build path, which lives in the shared module.
 
 function inferProfileTitle(snapshot: any, raw: any, companySlug: string): string {
   return (
@@ -503,18 +431,6 @@ async function safeMaybeSingleSnapshot(
   }
 }
 
-async function safeUpsertSnapshot(
-  supabase: any,
-  payload: Record<string, unknown>,
-): Promise<string | null> {
-  try {
-    const result = await supabase.from(SNAPSHOT_TABLE).upsert(payload);
-    return result?.error?.message ?? null;
-  } catch (error: any) {
-    return error?.message || "Snapshot upsert failed";
-  }
-}
-
 async function safeUpsertIndex(
   supabase: any,
   payload: Record<string, unknown>,
@@ -578,224 +494,16 @@ async function fetchCompanyBolsUpstream(
   };
 }
 
-async function fetchCompanyByIdUpstream(
-  companySlug: string,
-  env: EnvConfig,
-) {
-  const cleanSlug = normalizeCompanyKey(companySlug);
-  const url = `${env.dmaBaseUrl}/company/${encodeURIComponent(cleanSlug)}`;
+// getLast12MonthKeys, parseTimeSeriesToMonthlyVolumes,
+// applyRecentBolsFclLclSplits, buildTopRoutesFromRecentBols,
+// pickTopSuppliers, buildSnapshotFromCompanyData all moved into
+// supabase/functions/_shared/importyeti_fetch.ts (exported as
+// buildParsedSummary). The reparseAll admin path below imports
+// buildParsedSummary directly from the shared module.
 
-  console.log("  COMPANY URL:", url);
-
-  const payload = await fetchImportYetiJson(url, env.apiKey);
-  const data = payload?.data ?? payload ?? {};
-
-  return {
-    raw: payload,
-    data,
-  };
-}
-
-function getLast12MonthKeys(): Set<string> {
-  const now = new Date();
-  const keys = new Set<string>();
-
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-    keys.add(formatMonthKey(d));
-  }
-
-  return keys;
-}
-
-function parseTimeSeriesToMonthlyVolumes(timeSeriesRaw: any) {
-  const monthlyMap = new Map<
-    string,
-    { fcl: number; lcl: number; shipments: number; teu: number; weight: number }
-  >();
-
-  if (!timeSeriesRaw || typeof timeSeriesRaw !== "object") {
-    return monthlyMap;
-  }
-
-  const currentMonthKey = formatMonthKey(todayUtcMidnight());
-
-  if (Array.isArray(timeSeriesRaw)) {
-    for (const row of timeSeriesRaw) {
-      const rawMonth =
-        row?.month ??
-        row?.date ??
-        row?.period ??
-        row?.label;
-
-      const d = parseImportYetiDate(rawMonth);
-      if (!d) continue;
-
-      const monthKey = formatMonthKey(d);
-      if (monthKey > currentMonthKey) continue;
-
-      const shipments =
-        normalizeNumber(row?.shipments) ??
-        normalizeNumber(row?.total_shipments) ??
-        normalizeNumber(row?.count) ??
-        0;
-
-      const teu =
-        normalizeNumber(row?.teu) ??
-        normalizeNumber(row?.total_teu) ??
-        0;
-
-      const weight =
-        normalizeNumber(row?.weight) ??
-        normalizeNumber(row?.total_weight) ??
-        0;
-
-      const fcl =
-        normalizeNumber(row?.fcl_count) ??
-        normalizeNumber(row?.fclShipments) ??
-        shipments;
-
-      const lcl =
-        normalizeNumber(row?.lcl_count) ??
-        normalizeNumber(row?.lclShipments) ??
-        0;
-
-      monthlyMap.set(monthKey, {
-        fcl,
-        lcl,
-        shipments,
-        teu,
-        weight,
-      });
-    }
-
-    return monthlyMap;
-  }
-
-  for (const [rawKey, rawValue] of Object.entries(timeSeriesRaw)) {
-    const d = parseImportYetiDate(rawKey);
-    if (!d) continue;
-
-    const monthKey = formatMonthKey(d);
-    if (monthKey > currentMonthKey) continue;
-    const shipments = normalizeNumber((rawValue as any)?.shipments) ?? 0;
-    const teu = normalizeNumber((rawValue as any)?.teu) ?? 0;
-    const weight = normalizeNumber((rawValue as any)?.weight) ?? 0;
-
-    monthlyMap.set(monthKey, {
-      fcl: shipments,
-      lcl: 0,
-      shipments,
-      teu,
-      weight,
-    });
-  }
-
-  return monthlyMap;
-}
-
-function applyRecentBolsFclLclSplits(
-  monthlyMap: Map<
-    string,
-    { fcl: number; lcl: number; shipments: number; teu: number; weight: number }
-  >,
-  recentBols: any[],
-) {
-  if (!Array.isArray(recentBols) || recentBols.length === 0) return;
-
-  const splitByMonth = new Map<string, { fcl: number; lcl: number }>();
-
-  for (const bol of recentBols) {
-    const d = parseImportYetiDate(
-      bol?.date_formatted ?? bol?.date ?? bol?.shipped_on ?? bol?.arrival_date,
-    );
-    if (!d || !isPastOrToday(d)) continue;
-
-    const monthKey = formatMonthKey(d);
-    const current = splitByMonth.get(monthKey) || { fcl: 0, lcl: 0 };
-
-    if (bol?.lcl === true) current.lcl += 1;
-    else current.fcl += 1;
-
-    splitByMonth.set(monthKey, current);
-  }
-
-  for (const [monthKey, split] of splitByMonth.entries()) {
-    const existing = monthlyMap.get(monthKey);
-    if (!existing) {
-      monthlyMap.set(monthKey, {
-        fcl: split.fcl,
-        lcl: split.lcl,
-        shipments: split.fcl + split.lcl,
-        teu: 0,
-        weight: 0,
-      });
-      continue;
-    }
-
-    const totalSplit = split.fcl + split.lcl;
-    if (totalSplit <= 0) continue;
-
-    const sourceShipments = existing.shipments > 0 ? existing.shipments : totalSplit;
-    const ratio = sourceShipments / totalSplit;
-
-    existing.fcl = Math.round(split.fcl * ratio);
-    existing.lcl = Math.max(0, sourceShipments - existing.fcl);
-    monthlyMap.set(monthKey, existing);
-  }
-}
-
-function buildTopRoutesFromRecentBols(recentBols: any[]): TopRoute[] {
-  const routeStats = new Map<
-    string,
-    { shipments: number; teu: number; fcl: number; lcl: number }
-  >();
-
-  for (const bol of Array.isArray(recentBols) ? recentBols : []) {
-    const route = buildRouteLabel(bol);
-    if (!route) continue;
-
-    const current = routeStats.get(route) || {
-      shipments: 0,
-      teu: 0,
-      fcl: 0,
-      lcl: 0,
-    };
-
-    current.shipments += 1;
-    current.teu += estimateBolTeu(bol);
-    if (bol?.lcl === true) current.lcl += 1;
-    else current.fcl += 1;
-
-    routeStats.set(route, current);
-  }
-
-  return Array.from(routeStats.entries())
-    .sort((a, b) => b[1].shipments - a[1].shipments)
-    .slice(0, 10)
-    .map(([route, stats]) => ({
-      route,
-      shipments: stats.shipments,
-      teu: stats.teu || null,
-      fclShipments: stats.fcl || null,
-      lclShipments: stats.lcl || null,
-    }));
-}
-
-function pickTopSuppliers(raw: any): string[] {
-  const rows = Array.isArray(raw?.suppliers_table) ? raw.suppliers_table : [];
-  const values = rows
-    .map((row: any) =>
-      normalizeString(row?.supplier) ??
-      normalizeString(row?.supplier_name) ??
-      normalizeString(row?.shipper) ??
-      normalizeString(row?.name),
-    )
-    .filter((value: string | null): value is string => Boolean(value));
-
-  return Array.from(new Set(values)).slice(0, 10);
-}
-
+// pickPhone stays here — buildCompanyProfileFromSnapshot (below) still
+// needs it when shaping the user-facing companyProfile response from a
+// cached raw payload.
 function pickPhone(raw: any): string | null {
   let fallbackPhone: string | null = null;
 
@@ -816,246 +524,6 @@ function pickPhone(raw: any): string | null {
     fallbackPhone ??
     null
   );
-}
-
-function buildSnapshotFromCompanyData(
-  companySlug: string,
-  raw: any,
-) {
-  const last12Keys = getLast12MonthKeys();
-
-  const monthlyMap = parseTimeSeriesToMonthlyVolumes(raw?.time_series);
-  applyRecentBolsFclLclSplits(monthlyMap, raw?.recent_bols);
-
-  const orderedMonths = Array.from(monthlyMap.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]));
-
-  let shipmentsLast12m = 0;
-  let totalTeu12m = 0;
-  let totalWeight12m = 0;
-  let fclCount12m = 0;
-  let lclCount12m = 0;
-
-  for (const [month, value] of orderedMonths) {
-    if (!last12Keys.has(month)) continue;
-
-    shipmentsLast12m += value.shipments || 0;
-    totalTeu12m += value.teu || 0;
-    totalWeight12m += value.weight || 0;
-    fclCount12m += value.fcl || 0;
-    lclCount12m += value.lcl || 0;
-  }
-
-  if (fclCount12m === 0 && lclCount12m === 0) {
-    const loadRows = Array.isArray(raw?.containers_load) ? raw.containers_load : [];
-    const fclRow = loadRows.find((row: any) => String(row?.load_type).toUpperCase() === "FCL");
-    const lclRow = loadRows.find((row: any) => String(row?.load_type).toUpperCase() === "LCL");
-
-    const fclPctValue = normalizeNumber(fclRow?.shipments_perc);
-    const lclPctValue = normalizeNumber(lclRow?.shipments_perc);
-
-    const pctFcl = fclPctValue != null ? fclPctValue / 100 : null;
-    const pctLcl = lclPctValue != null ? lclPctValue / 100 : null;
-
-    if (shipmentsLast12m > 0 && pctFcl != null && pctLcl != null) {
-      fclCount12m = Math.round(shipmentsLast12m * pctFcl);
-      lclCount12m = Math.max(0, shipmentsLast12m - fclCount12m);
-    }
-  }
-
-  const isUsableRouteLabel = (value: unknown): value is string =>
-    typeof value === "string" && value.trim().length > 0 && value.trim() !== "Unknown → Unknown";
-
-  let topRoutes: TopRoute[] = buildTopRoutesFromRecentBols(raw?.recent_bols);
-
-  const needsFallback =
-    topRoutes.length === 0 || topRoutes.every((entry) => !isUsableRouteLabel(entry?.route));
-
-  if (needsFallback) {
-    const aggregated: any[] = Array.isArray(raw?.route_kpis?.topRoutesLast12m)
-      ? raw.route_kpis.topRoutesLast12m
-      : Array.isArray(raw?.top_routes)
-        ? raw.top_routes
-        : Array.isArray(raw?.topRoutes)
-          ? raw.topRoutes
-          : [];
-    const fallback: TopRoute[] = [];
-    for (const entry of aggregated) {
-      let route: string | null = normalizeString(entry?.route);
-      if (!isUsableRouteLabel(route)) {
-        route = buildRouteLabel(entry);
-      }
-      if (!isUsableRouteLabel(route)) continue;
-
-      const shipments =
-        normalizeNumber(entry?.shipments) ??
-        normalizeNumber(entry?.count) ??
-        normalizeNumber(entry?.shipments_12m) ??
-        0;
-
-      const teu =
-        normalizeNumber(entry?.teu) ??
-        normalizeNumber(entry?.total_teu) ??
-        normalizeNumber(entry?.teu_12m) ??
-        null;
-
-      const fclShipments =
-        normalizeNumber(entry?.fclShipments) ??
-        normalizeNumber(entry?.fcl_count) ??
-        normalizeNumber(entry?.fcl_shipments) ??
-        null;
-
-      const lclShipments =
-        normalizeNumber(entry?.lclShipments) ??
-        normalizeNumber(entry?.lcl_count) ??
-        normalizeNumber(entry?.lcl_shipments) ??
-        null;
-
-      fallback.push({ route, shipments, teu, fclShipments, lclShipments });
-    }
-    if (fallback.length > 0) {
-      topRoutes = fallback;
-    }
-  }
-
-  topRoutes = topRoutes
-    .filter((entry) => isUsableRouteLabel(entry?.route))
-    .sort((a, b) => b.shipments - a.shipments)
-    .slice(0, 10);
-
-  // ImportYeti's `time_series` carries monthly TEU values that are often
-  // 0 for recent months (the parser only fills TEU when the full container
-  // detail is available). That makes our naive "sum monthly TEU over last
-  // 12m" wildly underestimate when most BOLs lack container detail —
-  // Superior Essex shows 9 TEU against 44 12m shipments, while the
-  // top_routes aggregate adds to ~138 TEU and avg_teu_per_month.12m × 12
-  // says ~174. Pick the largest credible value so we never persist the
-  // single-digit number.
-  {
-    const routeTeuSum = topRoutes.reduce(
-      (sum, r) => sum + (Number(r?.teu) || 0),
-      0,
-    );
-    const avgPerMonth12m = (() => {
-      const obj = raw?.avg_teu_per_month;
-      if (!obj || typeof obj !== "object") return 0;
-      const v = Number((obj as any)["12m"] ?? (obj as any).twelve_m);
-      return Number.isFinite(v) && v > 0 ? v * 12 : 0;
-    })();
-    const avgPerShipment12m = (() => {
-      const obj = raw?.avg_teu_per_shipment;
-      if (!obj || typeof obj !== "object" || !shipmentsLast12m) return 0;
-      const v = Number((obj as any)["12m"] ?? (obj as any).twelve_m);
-      return Number.isFinite(v) && v > 0 ? v * shipmentsLast12m : 0;
-    })();
-    const candidates = [
-      totalTeu12m,
-      routeTeuSum,
-      avgPerMonth12m,
-      avgPerShipment12m,
-    ].filter((v) => Number.isFinite(v) && v > 0);
-    if (candidates.length > 0) {
-      totalTeu12m = Math.max(...candidates);
-    }
-  }
-
-  const topSuppliers = pickTopSuppliers(raw);
-
-  const lastShipmentDate =
-    Array.isArray(raw?.recent_bols) && raw.recent_bols.length > 0
-      ? (() => {
-          const dates = raw.recent_bols
-            .map((bol: any) =>
-              parseImportYetiDateNoFuture(
-                bol?.date_formatted ?? bol?.date ?? bol?.arrival_date ?? bol?.shipped_on,
-              ),
-            )
-            .filter((d: Date | null): d is Date => Boolean(d))
-            .sort((a: Date, b: Date) => b.getTime() - a.getTime());
-
-          return dates[0] ? dates[0].toISOString().slice(0, 10) : null;
-        })()
-      : (() => {
-          const end = parseImportYetiDateNoFuture(raw?.date_range?.end_date);
-          return end ? end.toISOString().slice(0, 10) : null;
-        })();
-
-  const monthlyVolumes = Object.fromEntries(
-    orderedMonths.map(([month, value]) => [
-      month,
-      {
-        fcl: value.fcl,
-        lcl: value.lcl,
-        shipments: value.shipments,
-        teu: value.teu,
-        weight: value.weight,
-      },
-    ]),
-  );
-
-  return {
-    company_id: companySlug,
-    key: `company/${companySlug}`,
-    company_name:
-      normalizeString(raw?.title) ??
-      normalizeString(raw?.name) ??
-      companySlug,
-    title:
-      normalizeString(raw?.title) ??
-      normalizeString(raw?.name) ??
-      companySlug,
-    name:
-      normalizeString(raw?.title) ??
-      normalizeString(raw?.name) ??
-      companySlug,
-    website: normalizeString(raw?.website),
-    phone_number: pickPhone(raw),
-    address:
-      normalizeString(raw?.address) ??
-      normalizeString(raw?.address_plain) ??
-      null,
-    country: normalizeString(raw?.country),
-    country_code:
-      normalizeString(raw?.country_code) ??
-      null,
-    total_shipments:
-      normalizeNumber(raw?.total_shipments) ??
-      shipmentsLast12m,
-    shipments_last_12m: shipmentsLast12m,
-    total_teu: Math.round(totalTeu12m * 100) / 100,
-    total_weight_kg_12m: Math.round(totalWeight12m * 100) / 100,
-    est_spend:
-      Math.round((normalizeNumber(raw?.total_shipping_cost) ?? 0) * 100) / 100,
-    fcl_count: fclCount12m,
-    lcl_count: lclCount12m,
-    last_shipment_date: lastShipmentDate,
-    monthly_volumes: monthlyVolumes,
-    top_routes: topRoutes,
-    top_suppliers: topSuppliers,
-    notify_parties: Array.isArray(raw?.notify_party_table)
-      ? raw.notify_party_table
-      : [],
-    recent_bols: Array.isArray(raw?.recent_bols) ? raw.recent_bols : [],
-    containers: Array.isArray(raw?.containers) ? raw.containers : [],
-    containers_load: Array.isArray(raw?.containers_load) ? raw.containers_load : [],
-    avg_teu_per_shipment: raw?.avg_teu_per_shipment ?? null,
-    avg_teu_per_month: raw?.avg_teu_per_month ?? null,
-    route_kpis: {
-      shipmentsLast12m,
-      teuLast12m: Math.round(totalTeu12m * 100) / 100,
-      estSpendUsd12m:
-        Math.round((normalizeNumber(raw?.total_shipping_cost) ?? 0) * 100) / 100,
-      topRouteLast12m: topRoutes[0]?.route ?? null,
-      mostRecentRoute:
-        buildRouteLabel(
-          Array.isArray(raw?.recent_bols) ? raw.recent_bols[0] : null,
-        ) ??
-        topRoutes[0]?.route ??
-        null,
-      sampleSize: Array.isArray(raw?.recent_bols) ? raw.recent_bols.length : 0,
-      topRoutesLast12m: topRoutes,
-    },
-  };
 }
 
 function buildCompanyProfileFromSnapshot(
@@ -1502,17 +970,40 @@ async function handleCompanyProfileAction(
   }
 
   try {
-    const upstream = await fetchCompanyByIdUpstream(normalizedCompanyKey, env);
-    const rawCompanyData = upstream.data ?? {};
-
-    const snapshot = buildSnapshotFromCompanyData(
+    // Delegate upstream fetch + parsed-summary build + snapshot upsert to the
+    // shared module so the cron refresher (pulse-refresh-tick) writes the
+    // exact same shape into lit_importyeti_company_snapshot. The user-JWT
+    // gate + quota check above stay in this proxy.
+    const fetchResult = await fetchAndUpsertSnapshot(
+      supabase,
       normalizedCompanyKey,
-      rawCompanyData,
+      {
+        IMPORTYETI_API_KEY: env.apiKey,
+        IMPORTYETI_API_BASE: env.dmaBaseUrl,
+      },
     );
+
+    if (fetchResult.httpStatus === 404 || !fetchResult.parsedSummary) {
+      console.error("❌ Company profile upstream 404", {
+        requestId,
+        company_id: normalizedCompanyKey,
+      });
+      return jsonResponse(
+        {
+          ok: false,
+          error: "Company not found upstream",
+          code: "COMPANY_NOT_FOUND",
+        },
+        404,
+      );
+    }
+
+    const snapshot = fetchResult.parsedSummary as any;
+    const rawPayload = fetchResult.rawPayload ?? {};
 
     const companyProfile = buildCompanyProfileFromSnapshot(
       snapshot,
-      upstream.raw,
+      rawPayload,
       normalizedCompanyKey,
     );
 
@@ -1528,22 +1019,11 @@ async function handleCompanyProfileAction(
 
     const now = new Date().toISOString();
 
-    const snapshotError = await safeUpsertSnapshot(supabase, {
+    console.log("✅ Snapshot saved (via _shared/importyeti_fetch)", {
+      requestId,
       company_id: normalizedCompanyKey,
-      raw_payload: upstream.raw,
-      parsed_summary: snapshot,
-      updated_at: now,
+      idempotent_key: normalizedCompanyKey,
     });
-
-    if (snapshotError) {
-      console.error("❌ Snapshot save error:", { requestId, error: snapshotError });
-    } else {
-      console.log("✅ Snapshot saved", {
-        requestId,
-        company_id: normalizedCompanyKey,
-        idempotent_key: normalizedCompanyKey,
-      });
-    }
 
     const indexError = await safeUpsertIndex(supabase, {
       company_id: normalizedCompanyKey,
@@ -1586,7 +1066,7 @@ async function handleCompanyProfileAction(
       source: "fresh",
       snapshot,
       companyProfile,
-      raw: upstream.raw,
+      raw: rawPayload,
       fetched_at: now,
     });
   } catch (error: any) {
@@ -1687,7 +1167,7 @@ async function handleReparseAll(
         continue;
       }
 
-      const reparsed = buildSnapshotFromCompanyData(row.company_id, rawData);
+      const reparsed = buildParsedSummary(row.company_id, rawData) as any;
       const now = new Date().toISOString();
 
       const { error: snapErr } = await supabase
