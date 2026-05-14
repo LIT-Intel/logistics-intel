@@ -862,14 +862,115 @@ function matchReasons(result: PulseCompanyResult, intent: ParsedIntent): string[
 // ─────────────────────────────────────────────────────────────────────
 // Source C — Apollo
 // ─────────────────────────────────────────────────────────────────────
+// NAICS/SIC prefix map keyed by lowercased topic term. When Apollo returns
+// firmographic codes, we use these to filter false positives (CNN, IT
+// staffing firms, etc. that match by keyword only) and to boost true
+// industry matches. Sourced from the Apollo audit; extend over time.
+const NAICS_PREFIX_BY_TOPIC: Record<string, string[]> = {
+  automotive: ["3361", "3362", "3363", "4231", "4411", "4413", "4511", "8111"],
+  "auto parts": ["3363", "4231", "4413"],
+  vehicle: ["3361", "3362", "3363"],
+  motor: ["3361", "3362", "3363"],
+  medical: ["3391", "3254", "3345", "4234", "6211", "6215"],
+  "medical device": ["3391", "3345"],
+  "medical supplies": ["3391", "4234"],
+  healthcare: ["6211", "6215", "6213", "6214", "6216"],
+  pharmaceutical: ["3254", "4242"],
+  electronics: ["3341", "3342", "3344", "3345", "4234", "4431"],
+  semiconductor: ["3344"],
+  furniture: ["3371", "3372", "4232", "4421", "4422"],
+  "home furnishings": ["3371", "4422"],
+  food: ["3111", "3112", "3114", "3115", "3116", "3118", "4244", "4245"],
+  beverages: ["3121", "4248"],
+  apparel: ["3151", "3152", "3159", "3162", "4243", "4481"],
+  clothing: ["3151", "3152", "4243"],
+  textile: ["3131", "3132", "3133"],
+  solar: ["3344", "2211", "2371", "3359", "3361"],
+  photovoltaic: ["3344"],
+  chemicals: ["3251", "3252", "3253", "3254", "3255", "3256", "3259"],
+  plastics: ["3261"],
+  machinery: ["3331", "3332", "3333", "3334", "3335", "3336", "3339"],
+  cosmetics: ["3256", "4461"],
+};
+
+function naicsTargetsFor(intent: ParsedIntent): string[] {
+  const targets = new Set<string>();
+  for (const t of intent.industry_terms) {
+    const prefixes = NAICS_PREFIX_BY_TOPIC[t.toLowerCase().trim()];
+    if (prefixes) for (const p of prefixes) targets.add(p);
+  }
+  return Array.from(targets);
+}
+
+function naicsMatches(codes: string[] | null | undefined, targets: string[]): string | null {
+  if (!Array.isArray(codes) || codes.length === 0 || targets.length === 0) return null;
+  for (const code of codes) {
+    const s = String(code);
+    for (const prefix of targets) {
+      if (s.startsWith(prefix)) return s;
+    }
+  }
+  return null;
+}
+
+// Batch industry classifier — fills `industry` on rows where Apollo /
+// directory returned null, using a single Gemini Flash call for up to
+// 20 rows. Cheap (~$0.0001 per batch, ~600ms) and turns blank-industry
+// rows into proper "Automotive Manufacturing" labels for the UI.
+async function batchClassifyIndustries(rows: PulseCompanyResult[]): Promise<void> {
+  if (!GEMINI_API_KEY) return;
+  const blanks = rows.filter((r) => !r.industry && r.company_name).slice(0, 20);
+  if (blanks.length === 0) return;
+  try {
+    const prompt = `Classify each company by industry. Return ONLY a JSON array of objects with this exact shape:
+[{"name":"<input name>","industry":"<short industry label like 'Automotive Manufacturing', 'Medical Devices', 'Freight Forwarding'>"}]
+Use null for industry if you genuinely don't know. No prose, no markdown.
+
+Companies:
+${blanks.map((r, i) => `${i + 1}. ${r.company_name}${r.domain ? ` (${r.domain})` : ""}`).join("\n")}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, response_mime_type: "application/json" },
+      }),
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    if (!text) return;
+    const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+    const arr = JSON.parse(cleaned);
+    if (!Array.isArray(arr)) return;
+    const byName = new Map<string, string>();
+    for (const entry of arr) {
+      const name = (entry?.name || "").toString().trim().toLowerCase();
+      const industry = (entry?.industry || "").toString().trim();
+      if (name && industry && industry.toLowerCase() !== "null") byName.set(name, industry);
+    }
+    for (const row of blanks) {
+      const tag = byName.get(row.company_name.toLowerCase());
+      if (tag) {
+        row.industry = tag;
+        row.matched_reasons = [...row.matched_reasons, `AI-classified: ${tag}`];
+      }
+    }
+  } catch (err) {
+    console.warn("[pulse-search] batchClassifyIndustries failed:", err);
+  }
+}
+
 async function searchApollo(intent: ParsedIntent, limit: number): Promise<PulseCompanyResult[]> {
   if (!APOLLO_API_KEY) return [];
   try {
-    // Build keyword tags from audience/industry/service terms.
+    // Keyword tags: TOPIC ONLY (industry + service). Sending audience tokens
+    // like "manufacturer" as a keyword tag drags in IT staffing / media
+    // companies that mention the word in their marketing copy.
     const keywords = Array.from(new Set([
       ...intent.industry_terms,
       ...intent.service_terms,
-      ...intent.audience_type.map((a) => a.replace(/_/g, " ")),
     ])).filter((s) => s && s.length > 2);
 
     // Build locations: prefer cities, then states, then countries.
@@ -912,6 +1013,21 @@ async function searchApollo(intent: ParsedIntent, limit: number): Promise<PulseC
     if (locations.length > 0) body.organization_locations = locations;
     if (ranges.length > 0) body.organization_num_employees_ranges = ranges;
 
+    // Wire revenue range — we already parse it from the LLM; previously
+    // the value sat in intent.size but never reached Apollo.
+    const rMin = intent.size.revenue_min_usd;
+    const rMax = intent.size.revenue_max_usd;
+    if (rMin != null || rMax != null) {
+      body.revenue_range = {};
+      if (rMin != null) body.revenue_range.min = rMin;
+      if (rMax != null) body.revenue_range.max = rMax;
+    }
+
+    // Exclusions from parser (regions / industries we don't want).
+    if (Array.isArray(intent.exclusions) && intent.exclusions.length > 0) {
+      body.organization_not_locations = intent.exclusions.slice(0, 5);
+    }
+
     const url = `${APOLLO_API_BASE}/api/v1/mixed_companies/search`;
     const resp = await fetch(url, {
       method: "POST",
@@ -930,15 +1046,37 @@ async function searchApollo(intent: ParsedIntent, limit: number): Promise<PulseC
     const data = await resp.json();
     const orgs: any[] = data?.organizations || data?.accounts || [];
 
-    const out: PulseCompanyResult[] = orgs.map((o: any) => apolloOrgToResult(o, intent));
-    return out;
+    const naicsTargets = naicsTargetsFor(intent);
+    const mapped = orgs.map((o: any) => apolloOrgToResult(o, intent, naicsTargets));
+
+    // NAICS post-filter: when we have target codes for the topic, DROP rows
+    // that match neither a NAICS code nor a keyword/name hit. This kills
+    // CNN/Jabil/VDart-class false positives where Apollo matched on a
+    // marketing-copy keyword but the firmographic record is unrelated.
+    // If no NAICS targets exist for the topic, fall back to the original
+    // keyword-only signal (no row dropping).
+    let filtered: PulseCompanyResult[];
+    if (naicsTargets.length > 0) {
+      filtered = mapped.filter((r: any) => r.__keywordHit || r.__naicsHit);
+      // Safety net: if NAICS filtering wiped everything (rare — Apollo
+      // sometimes returns rows with empty naics_codes), keep keyword hits
+      // and the top few by score so we don't return nothing.
+      if (filtered.length === 0) filtered = mapped.filter((r: any) => r.__keywordHit);
+      if (filtered.length === 0) filtered = mapped.slice(0, Math.min(10, mapped.length));
+    } else {
+      filtered = mapped;
+    }
+
+    // Strip the internal scoring flags before returning to merge.
+    for (const r of filtered as any[]) { delete r.__keywordHit; delete r.__naicsHit; }
+    return filtered;
   } catch (err) {
     console.warn("[pulse-search] Apollo failed:", err);
     return [];
   }
 }
 
-function apolloOrgToResult(o: any, intent: ParsedIntent): PulseCompanyResult {
+function apolloOrgToResult(o: any, intent: ParsedIntent, naicsTargets: string[]): PulseCompanyResult & { __keywordHit?: boolean; __naicsHit?: boolean } {
   const reasons: string[] = ["Discovered via Apollo"];
   const stateMatch = (o.state || "").toLowerCase();
   if (intent.geo.region) {
@@ -953,15 +1091,29 @@ function apolloOrgToResult(o: any, intent: ParsedIntent): PulseCompanyResult {
       reasons.push(`Matched employee range: ${o.estimated_num_employees}`);
     }
   }
-  if (intent.industry_terms.length > 0 && o.industry) {
-    const ind = String(o.industry).toLowerCase();
+  let keywordHit = false;
+  if (intent.industry_terms.length > 0) {
+    const ind = String(o.industry || "").toLowerCase();
+    const nm = String(o.name || "").toLowerCase();
     for (const t of intent.industry_terms) {
-      if (ind.includes(t.toLowerCase())) {
-        reasons.push(`Matched Apollo industry: ${o.industry}`);
+      const tl = t.toLowerCase();
+      if (ind.includes(tl) || nm.includes(tl)) {
+        reasons.push(`Matched topic: ${t}`);
+        keywordHit = true;
         break;
       }
     }
   }
+
+  const naicsCodes: string[] = Array.isArray(o.naics_codes) ? o.naics_codes.map((c: any) => String(c)) : [];
+  const sicCodes: string[] = Array.isArray(o.sic_codes) ? o.sic_codes.map((c: any) => String(c)) : [];
+  const naicsHitCode = naicsMatches(naicsCodes, naicsTargets);
+  if (naicsHitCode) reasons.push(`Matched NAICS: ${naicsHitCode}`);
+
+  // Score: base 0.7 + boosts for industry + NAICS + completeness.
+  let score = 0.7;
+  if (keywordHit) score += 0.1;
+  if (naicsHitCode) score += 0.15;
 
   return {
     id: o.id,
@@ -985,10 +1137,12 @@ function apolloOrgToResult(o: any, intent: ParsedIntent): PulseCompanyResult {
     description: o.short_description || null,
     shipment_metrics: null,
     matched_reasons: reasons,
-    confidence_score: 0.7,
+    confidence_score: Math.min(0.95, score),
     can_enrich_contacts: true,
     can_add_to_campaign: true,
     can_open_profile: true,
+    __keywordHit: keywordHit,
+    __naicsHit: !!naicsHitCode,
   };
 }
 
@@ -1203,6 +1357,13 @@ serve(async (req) => {
   // 3. Merge + dedup + rank
   const merged = mergeResults([savedRows, directoryRows, apolloRows]);
   const ranked = rankResults(merged, intent).slice(0, limit);
+
+  // 3.5. AI industry classification — fills `industry` on rows where the
+  // upstream source returned null (very common in lit_company_directory,
+  // where only 12% of rows have industry set). One batched Gemini Flash
+  // call covers up to 20 blank rows in ~600ms / ~$0.0001. We don't fail
+  // the response if it errors; rows just stay blank.
+  await batchClassifyIndustries(ranked);
 
   const sourceCounts = {
     saved: savedRows.length,
