@@ -7,6 +7,10 @@
 // Both modes share the same context loader (user, org, subscription,
 // usage, campaigns, inbox, integrations, recent activity) and the same
 // system prompt. Mode only changes the user-facing task.
+//
+// Vendor confidentiality: the user-facing surfaces (cards, answer_md,
+// system prompt) NEVER name third-party data vendors or sending
+// providers. Internal table / column names are unchanged.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
@@ -16,13 +20,11 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || "";
 const COACH_MODEL = Deno.env.get("OPENAI_COACH_MODEL") || "gpt-4o-mini";
 
-// Plan limits — informational only, used in copy. Keep in sync with
-// frontend/src/lib/planLimits.ts.
 const PLAN_LABEL: Record<string, string> = {
   free_trial: "Free Trial", starter: "Starter", growth: "Growth",
   scale: "Scale", enterprise: "Enterprise", expired: "Expired",
 };
-const APOLLO_DAILY_CAP: Record<string, number> = {
+const DAILY_ENRICHMENT_CAP: Record<string, number> = {
   free_trial: 10, starter: 25, growth: 100, scale: 500, enterprise: 5000,
 };
 
@@ -64,9 +66,6 @@ function corsHeaders() {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Context loader — runs once per request, caches in memory.
-// ─────────────────────────────────────────────────────────────────────
 async function loadContext(supa: any, userId: string): Promise<ContextBlock> {
   const ctx: ContextBlock = {
     user: {}, org: {}, subscription: {}, usage: {},
@@ -112,7 +111,6 @@ async function loadContext(supa: any, userId: string): Promise<ContextBlock> {
     if (sub) {
       ctx.subscription = sub;
       ctx.subscription.plan_label = PLAN_LABEL[sub.plan_code] || sub.plan_code;
-      // Days remaining on trial
       if (sub.trial_ends_at) {
         const ms = new Date(sub.trial_ends_at).getTime() - Date.now();
         ctx.subscription.trial_days_remaining = Math.max(0, Math.ceil(ms / 86400000));
@@ -120,36 +118,40 @@ async function loadContext(supa: any, userId: string): Promise<ContextBlock> {
     }
   } catch {}
 
-  // Usage — saved companies, recent searches, Apollo usage today
+  // Usage — saved companies, recent searches, daily enrichment usage.
+  // The underlying table is named lit_apollo_daily_usage for legacy
+  // reasons; we surface its counts as "enrichment lookups" everywhere
+  // user-facing.
   try {
     const today = new Date().toISOString().slice(0, 10);
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
-    const [savedRes, searchRes, apolloRes, briefRes, enrichRes] = await Promise.all([
+    const [savedRes, searchRes, dailyRes, briefRes, enrichRes] = await Promise.all([
       supa.from("lit_saved_companies").select("id", { count: "exact", head: true }).eq("user_id", userId),
       supa.from("lit_pulse_search_events").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", monthStart),
       supa.from("lit_apollo_daily_usage").select("apollo_company_searches, apollo_contact_searches").eq("user_id", userId).eq("usage_date", today).maybeSingle(),
-      supa.from("lit_pulse_ai_reports").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", monthStart),
-      supa.from("lit_contacts").select("id", { count: "exact", head: true }).eq("created_by", userId).gte("created_at", monthStart),
+      supa.from("lit_pulse_ai_reports").select("id", { count: "exact", head: true }).eq("generated_by_user_id", userId).gte("created_at", monthStart),
+      // lit_contacts has no created_by column; we attribute enrichments
+      // via lit_activity_events.event_type = 'apollo_contact_enrich' which
+      // is logged whenever a user enriches a contact.
+      supa.from("lit_activity_events").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("event_type", "apollo_contact_enrich").gte("created_at", monthStart),
     ]);
     const plan = ctx.subscription.plan_code || "free_trial";
     ctx.usage = {
       saved_companies_count: savedRes.count ?? 0,
       pulse_searches_this_month: searchRes.count ?? 0,
-      apollo_company_searches_today: apolloRes.data?.apollo_company_searches ?? 0,
-      apollo_contact_searches_today: apolloRes.data?.apollo_contact_searches ?? 0,
-      apollo_daily_cap: APOLLO_DAILY_CAP[plan] ?? 0,
+      enrichment_lookups_today: (dailyRes.data?.apollo_company_searches ?? 0) + (dailyRes.data?.apollo_contact_searches ?? 0),
+      daily_enrichment_cap: DAILY_ENRICHMENT_CAP[plan] ?? 0,
       pulse_briefs_this_month: briefRes.count ?? 0,
       enrichments_this_month: enrichRes.count ?? 0,
     };
   } catch (err) { console.warn("[coach-v2] usage load failed:", err); }
 
-  // Campaigns
   try {
     const { data: camps } = await supa
       .from("lit_campaigns")
-      .select("id, name, status, created_at, updated_at, health")
-      .eq("owner_id", userId)
+      .select("id, name, status, created_at, updated_at")
+      .eq("user_id", userId)
       .order("updated_at", { ascending: false })
       .limit(50);
     if (Array.isArray(camps)) {
@@ -157,31 +159,43 @@ async function loadContext(supa: any, userId: string): Promise<ContextBlock> {
         drafts: camps.filter((c) => c.status === "draft"),
         active: camps.filter((c) => c.status === "active"),
         paused: camps.filter((c) => c.status === "paused"),
-        attention: camps.filter((c) => c.health === "attention"),
+        attention: [],
         total: camps.length,
         latest: camps[0] || null,
       };
     }
   } catch {}
 
-  // Inbox
+  // Scope inbound to this user's campaigns. lit_inbound_emails has no
+  // recipient_user_id column, so we join via campaign_id. Without this
+  // scoping, every user would see workspace-wide inbound counts, which
+  // is a privacy leak across orgs.
   try {
-    const { data: replies } = await supa
-      .from("lit_inbound_emails")
-      .select("id, from_email, subject, created_at, is_read")
-      .eq("recipient_user_id", userId)
-      .eq("is_read", false)
-      .order("created_at", { ascending: false })
-      .limit(10);
-    ctx.inbox = {
-      unread_replies_count: Array.isArray(replies) ? replies.length : 0,
-      latest_reply: Array.isArray(replies) && replies.length ? replies[0] : null,
-    };
+    const { data: userCamps } = await supa
+      .from("lit_campaigns")
+      .select("id")
+      .eq("user_id", userId);
+    const campIds = Array.isArray(userCamps) ? userCamps.map((c: any) => c.id).filter(Boolean) : [];
+    if (campIds.length === 0) {
+      ctx.inbox = { unread_replies_count: 0, latest_reply: null };
+    } else {
+      const since7d = new Date(Date.now() - 7 * 86400000).toISOString();
+      const { data: replies } = await supa
+        .from("lit_inbound_emails")
+        .select("id, from_email, subject, created_at")
+        .in("campaign_id", campIds)
+        .gte("created_at", since7d)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      ctx.inbox = {
+        unread_replies_count: Array.isArray(replies) ? replies.length : 0,
+        latest_reply: Array.isArray(replies) && replies.length ? replies[0] : null,
+      };
+    }
   } catch {
-    ctx.inbox = { unread_replies_count: 0 };
+    ctx.inbox = { unread_replies_count: 0, latest_reply: null };
   }
 
-  // Saved companies meta — which lack contacts
   try {
     const { data: savedRows } = await supa
       .from("lit_saved_companies")
@@ -219,23 +233,20 @@ async function loadContext(supa: any, userId: string): Promise<ContextBlock> {
     }
   } catch {}
 
-  // Integrations — gmail / outlook / resend / apollo
+  // Mailbox state is exposed as a single boolean; the provider name is
+  // deliberately hidden from user-facing context.
   try {
     const { data: accounts } = await supa
       .from("lit_email_accounts")
-      .select("provider, verified, is_default")
+      .select("provider")
       .eq("user_id", userId);
     ctx.integrations = {
-      gmail_connected: Array.isArray(accounts) && accounts.some((a) => a.provider === "gmail"),
-      outlook_connected: Array.isArray(accounts) && accounts.some((a) => a.provider === "outlook"),
-      resend_verified: Array.isArray(accounts) && accounts.some((a) => a.provider === "resend" && a.verified),
-      apollo_connected: true, // platform-level
+      mailbox_connected: Array.isArray(accounts) && accounts.length > 0,
     };
   } catch {
-    ctx.integrations = { gmail_connected: false, outlook_connected: false, resend_verified: false, apollo_connected: true };
+    ctx.integrations = { mailbox_connected: false };
   }
 
-  // Recent activity
   try {
     const { data: searches } = await supa
       .from("lit_pulse_search_events")
@@ -248,7 +259,6 @@ async function loadContext(supa: any, userId: string): Promise<ContextBlock> {
     };
   } catch {}
 
-  // Help articles — pulled once for reactive mode RAG
   try {
     const { data: articles } = await supa
       .from("lit_help_articles")
@@ -261,35 +271,33 @@ async function loadContext(supa: any, userId: string): Promise<ContextBlock> {
   return ctx;
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Shared system prompt
-// ─────────────────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are Pulse Coach, the in-app assistant for Logistic Intel (LIT) — a freight-sales intelligence platform for brokers and forwarders.
 
 IDENTITY:
 - Friendly, concise, freight-operator tone. Not corporate. Never say "as an AI".
 - Second person ("you", "your") to the active user.
 - Never invent data. If a metric isn't in the context block, say "I don't have that yet — check {route}".
+- NEVER name third-party data vendors or sending providers. Use "our enrichment partners", "our shipment-data sources", or "your sending mailbox". Names to AVOID in answers: Apollo, Lusha, Panjiva, ImportYeti, Resend, Gmail-by-name, Outlook-by-name.
 
 YOU CAN SEE:
 - user, org, subscription (status, trial_ends_at, plan_code, plan_label, trial_days_remaining)
-- usage: saved_companies_count, pulse_searches_this_month, apollo_company_searches_today + apollo_daily_cap, enrichments_this_month
-- campaigns.drafts / active / paused / attention
+- usage: saved_companies_count, pulse_searches_this_month, enrichment_lookups_today + daily_enrichment_cap, enrichments_this_month
+- campaigns.drafts / active / paused
 - inbox.unread_replies_count
 - saved.total_count, saved.companies_without_contacts
-- integrations: gmail_connected, outlook_connected, resend_verified
+- integrations: mailbox_connected (boolean; do not name the provider)
 - recent_activity.recent_searches
 
 YOU CANNOT SEE:
 - Raw shipment records — redirect to Pulse search or a company profile
-- Stripe internals beyond `subscription` — redirect to /settings/billing
+- Stripe internals beyond subscription — redirect to /settings/billing
 - Other users' private data
 - The product roadmap or unreleased features
 
 LIT KNOWLEDGE (always available):
-- Pulse: LIT's natural-language search. Hits saved → lit_company_directory (Panjiva BOL) → Apollo. Returns ranked companies with shipment metrics when known.
+- Pulse: LIT's natural-language search. Returns ranked companies with shipment metrics when known.
 - Command Center: full company profile (supply chain, contacts, briefs, campaigns).
-- Outbound Engine: multi-touch campaigns (email + LinkedIn + call). Sends via Gmail/Outlook/Resend.
+- Outbound Engine: multi-touch campaigns (email + LinkedIn + call). Sends through the user's connected mailbox.
 - Pulse AI Brief: per-company AI summary + recommended outreach angle.
 - Trial = 14 days. After expiration, account gates behind upgrade. Login + Settings stay accessible.
 - TEU = twenty-foot equivalent unit (ocean container).
@@ -297,8 +305,7 @@ LIT KNOWLEDGE (always available):
 - HS code = Harmonized System, 6+ digit commodity classification.
 - BOL = bill of lading.
 - Plans: free_trial → starter ($99/mo) → growth → scale → enterprise.
-- Data: Panjiva BOL for shipment activity, Apollo for firmographics, Lusha for contact verification.
-- Apollo daily caps: free_trial 10, starter 25, growth 100, scale 500, enterprise 5000.
+- Daily enrichment lookups: free_trial 10, starter 25, growth 100, scale 500, enterprise 5000.
 
 REFUSE / REDIRECT:
 - General industry trivia not tied to LIT product → "I focus on helping you use LIT. For industry deep-dives, run a Pulse search or open a company profile."
@@ -309,14 +316,10 @@ TONE:
 - Always cite real numbers from context when available.
 - Include a route hint when the answer needs follow-up: "→ Open: /app/<route>".`;
 
-// ─────────────────────────────────────────────────────────────────────
-// Proactive sweep — generate cards from context (rules + LLM ranking)
-// ─────────────────────────────────────────────────────────────────────
 function generateRuleBasedCards(ctx: ContextBlock): CoachCard[] {
   const cards: CoachCard[] = [];
   const now = new Date().toISOString();
 
-  // Subscription cards
   const sub = ctx.subscription || {};
   if (sub.status === "trialing" && sub.trial_days_remaining != null) {
     if (sub.trial_days_remaining <= 2) {
@@ -374,7 +377,6 @@ function generateRuleBasedCards(ctx: ContextBlock): CoachCard[] {
     });
   }
 
-  // Inbox replies
   if ((ctx.inbox?.unread_replies_count ?? 0) >= 3) {
     cards.push({
       id: crypto.randomUUID(),
@@ -403,16 +405,16 @@ function generateRuleBasedCards(ctx: ContextBlock): CoachCard[] {
     });
   }
 
-  // Apollo cap
-  const cap = ctx.usage?.apollo_daily_cap ?? 0;
-  const used = ctx.usage?.apollo_company_searches_today ?? 0;
+  // Daily enrichment cap card — vendor-neutral copy.
+  const cap = ctx.usage?.daily_enrichment_cap ?? 0;
+  const used = ctx.usage?.enrichment_lookups_today ?? 0;
   if (cap > 0 && used >= cap * 0.85) {
     cards.push({
       id: crypto.randomUUID(),
       category: "subscription",
       priority: used >= cap ? "critical" : "high",
-      title: used >= cap ? "Apollo daily cap reached" : "85% of Apollo cap used",
-      body: `You've used ${used} of ${cap} Apollo searches today. Cap resets at midnight UTC. Upgrade for a higher limit.`,
+      title: used >= cap ? "Daily enrichment cap reached" : "85% of daily enrichment cap used",
+      body: `You've used ${used} of ${cap} enrichment lookups today. Cap resets at midnight UTC. Upgrade for a higher limit.`,
       cta_label: "View plans",
       cta_url: "/settings/billing",
       dismissible: true,
@@ -421,7 +423,6 @@ function generateRuleBasedCards(ctx: ContextBlock): CoachCard[] {
     });
   }
 
-  // Contact gap on saved companies
   if ((ctx.saved?.companies_without_contacts ?? 0) >= 5) {
     cards.push({
       id: crypto.randomUUID(),
@@ -437,15 +438,14 @@ function generateRuleBasedCards(ctx: ContextBlock): CoachCard[] {
     });
   }
 
-  // Mailbox not connected but drafts exist
-  const hasMailbox = ctx.integrations?.gmail_connected || ctx.integrations?.outlook_connected;
+  const hasMailbox = ctx.integrations?.mailbox_connected;
   if (!hasMailbox && (ctx.campaigns?.drafts?.length ?? 0) > 0) {
     cards.push({
       id: crypto.randomUUID(),
       category: "system",
       priority: "high",
       title: "Connect a mailbox before launch",
-      body: `You have ${ctx.campaigns.drafts.length} campaign draft${ctx.campaigns.drafts.length === 1 ? "" : "s"} but no Gmail or Outlook connected.`,
+      body: `You have ${ctx.campaigns.drafts.length} campaign draft${ctx.campaigns.drafts.length === 1 ? "" : "s"} but no sending mailbox connected yet.`,
       cta_label: "Connect mailbox",
       cta_url: "/settings/integrations",
       dismissible: false,
@@ -454,7 +454,6 @@ function generateRuleBasedCards(ctx: ContextBlock): CoachCard[] {
     });
   }
 
-  // Aging draft campaigns (>7 days)
   if (Array.isArray(ctx.campaigns?.drafts)) {
     for (const d of ctx.campaigns.drafts.slice(0, 1)) {
       const ageMs = Date.now() - new Date(d.updated_at || d.created_at).getTime();
@@ -477,25 +476,6 @@ function generateRuleBasedCards(ctx: ContextBlock): CoachCard[] {
     }
   }
 
-  // Health == attention
-  if (Array.isArray(ctx.campaigns?.attention) && ctx.campaigns.attention.length > 0) {
-    const c = ctx.campaigns.attention[0];
-    cards.push({
-      id: crypto.randomUUID(),
-      category: "campaign",
-      priority: "high",
-      title: `Campaign "${c.name}" needs attention`,
-      body: "Bounce rate, sending account, or audience issue. Open the campaign for the specific reason.",
-      cta_label: "Review",
-      cta_url: `/app/campaigns/new?edit=${c.id}`,
-      dismissible: false,
-      source_table: "lit_campaigns",
-      source_id: c.id,
-      created_at: now,
-    });
-  }
-
-  // Saved 0 companies → activation card
   if ((ctx.usage?.saved_companies_count ?? 0) === 0 && sub.status === "trialing") {
     cards.push({
       id: crypto.randomUUID(),
@@ -504,7 +484,7 @@ function generateRuleBasedCards(ctx: ContextBlock): CoachCard[] {
       title: "Save your first shipper",
       body: "Run a Pulse search on a lane you sell, then save 2-3 companies to lock in their profiles for outreach.",
       cta_label: "Open Pulse",
-      cta_url: "/app/pulse",
+      cta_url: "/app/prospecting",
       dismissible: true,
       source_table: null as any,
       created_at: now,
@@ -514,7 +494,6 @@ function generateRuleBasedCards(ctx: ContextBlock): CoachCard[] {
   return cards;
 }
 
-// Rank + cap cards
 function rankAndCapCards(cards: CoachCard[]): CoachCard[] {
   const priorityWeight: Record<string, number> = {
     critical: 4, high: 3, medium: 2, low: 1,
@@ -524,16 +503,12 @@ function rankAndCapCards(cards: CoachCard[]): CoachCard[] {
     .slice(0, 5);
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Reactive — answer user question
-// ─────────────────────────────────────────────────────────────────────
 async function answerQuestion(ctx: ContextBlock, question: string): Promise<{
   classification: string;
   answer_md: string;
   cta: { label: string; url: string } | null;
   matched_articles?: { slug: string; title: string }[];
 }> {
-  // Lightweight retrieval — keyword match against help articles + categories.
   const q = question.toLowerCase();
   const matched = (ctx.help_articles || [])
     .map((a) => {
@@ -549,7 +524,6 @@ async function answerQuestion(ctx: ContextBlock, question: string): Promise<{
     .slice(0, 4)
     .map(({ a }) => a);
 
-  // Build a context block for the LLM
   const ctxBlock = JSON.stringify({
     user: ctx.user,
     org: ctx.org,
@@ -559,7 +533,6 @@ async function answerQuestion(ctx: ContextBlock, question: string): Promise<{
       drafts_count: ctx.campaigns?.drafts?.length ?? 0,
       active_count: ctx.campaigns?.active?.length ?? 0,
       paused_count: ctx.campaigns?.paused?.length ?? 0,
-      attention_count: ctx.campaigns?.attention?.length ?? 0,
       latest_name: ctx.campaigns?.latest?.name ?? null,
     },
     inbox: ctx.inbox,
@@ -576,7 +549,6 @@ async function answerQuestion(ctx: ContextBlock, question: string): Promise<{
     : "(no help articles matched — answer from the LIT KNOWLEDGE block in the system prompt)";
 
   if (!OPENAI_API_KEY) {
-    // Hard fallback — return the most relevant help article verbatim if any.
     if (matched.length) {
       const top = matched[0];
       return {
@@ -616,9 +588,6 @@ async function answerQuestion(ctx: ContextBlock, question: string): Promise<{
     const data = await resp.json();
     const text = data?.choices?.[0]?.message?.content || "";
     const parsed = JSON.parse(text);
-    // CTA fallback: if the LLM emitted no cta but the top-matched help
-    // article has a route_url, use it. Coach answers should always give
-    // the user somewhere to go — never just "check support" with no link.
     let cta: { label: string; url: string } | null = parsed.cta || null;
     if (!cta && matched.length > 0) {
       const top = matched.find((a: any) => a.route_url);
@@ -649,9 +618,6 @@ async function answerQuestion(ctx: ContextBlock, question: string): Promise<{
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Serve
-// ─────────────────────────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
   if (req.method !== "POST") {
@@ -698,7 +664,6 @@ serve(async (req) => {
     }), { headers: { ...corsHeaders(), "Content-Type": "application/json" } });
   }
 
-  // proactive_sweep
   const cards = rankAndCapCards(generateRuleBasedCards(ctx));
   return new Response(JSON.stringify({
     ok: true,
@@ -716,14 +681,13 @@ function summarizeContext(ctx: ContextBlock) {
     trial_days_remaining: ctx.subscription?.trial_days_remaining ?? null,
     saved_count: ctx.usage?.saved_companies_count ?? 0,
     searches_this_month: ctx.usage?.pulse_searches_this_month ?? 0,
-    apollo_today: { used: ctx.usage?.apollo_company_searches_today ?? 0, cap: ctx.usage?.apollo_daily_cap ?? 0 },
+    enrichment_today: { used: ctx.usage?.enrichment_lookups_today ?? 0, cap: ctx.usage?.daily_enrichment_cap ?? 0 },
     campaigns: {
       drafts: ctx.campaigns?.drafts?.length ?? 0,
       active: ctx.campaigns?.active?.length ?? 0,
       paused: ctx.campaigns?.paused?.length ?? 0,
-      attention: ctx.campaigns?.attention?.length ?? 0,
     },
     unread_replies: ctx.inbox?.unread_replies_count ?? 0,
-    mailbox_connected: !!(ctx.integrations?.gmail_connected || ctx.integrations?.outlook_connected),
+    mailbox_connected: !!(ctx.integrations?.mailbox_connected),
   };
 }

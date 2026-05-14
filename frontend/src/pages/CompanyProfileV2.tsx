@@ -55,6 +55,7 @@ import { capFutureDate } from "@/lib/dateUtils";
 import { supabase } from "@/lib/supabase";
 
 import CDPHeader from "@/components/company/CDPHeader";
+import CompanySignalsStrip from "@/components/company/CompanySignalsStrip";
 import CDPDetailsPanel from "@/components/company/CDPDetailsPanel";
 import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import CDPSupplyChain from "@/components/company/CDPSupplyChain";
@@ -1565,6 +1566,15 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         refreshing={refreshing}
         manualRefreshing={manualRefreshing}
         snapshotUpdatedAt={snapshotUpdatedAt}
+      />
+
+      <CompanySignalsStrip
+        companyId={companyId}
+        sourceCompanyKey={
+          (bundle?.identity as any)?.source_company_key ??
+          (bundle?.identity as any)?.sourceCompanyKey ??
+          undefined
+        }
       />
 
       {/* Tab bar — verbatim density from legacy. */}

@@ -56,6 +56,7 @@ import GlobeCanvas from "@/components/GlobeCanvas";
 import { laneStringToGlobeLane } from "@/lib/laneGlobe";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { formatSafeShipmentDate } from "@/lib/dateUtils";
+import SignalsCard from "@/components/dashboard/SignalsCard";
 
 // ─── Card primitives ─────────────────────────────────────────────────────────
 
@@ -902,6 +903,15 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
+
+        {/* Signals row — top 3 unseen, real cron-driven. */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.08 }}
+        >
+          <SignalsCard />
+        </motion.div>
 
         {/* Phase B.16 — Trade Lane Intelligence row. 3-column on lg+,
             stacked on mobile. Left 1/4: Top Active Trade Lanes list.

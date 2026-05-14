@@ -7,7 +7,9 @@ import {
   ShieldCheck,
   BarChart3,
   RefreshCw,
+  GraduationCap,
 } from "lucide-react";
+import { TUTORIALS } from "@/lib/tutorials";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 
@@ -706,7 +708,133 @@ const TABS = [
   { id: "orgs", label: "Organizations", icon: Building2 },
   { id: "memberships", label: "Memberships", icon: ShieldCheck },
   { id: "billing", label: "Billing", icon: CreditCard },
+  { id: "onboarding", label: "Onboarding", icon: GraduationCap },
 ];
+
+function OnboardingTab() {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: rpcError } = await supabase.rpc("admin_onboarding_summary");
+      if (rpcError) throw new Error(rpcError.message);
+      setRows(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err?.message || "Failed to load onboarding summary");
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const totalUsers = rows && rows.length > 0 ? Number(rows[0].total_users || 0) : 0;
+
+  // Merge tutorial config with stats so unstarted tutorials still
+  // appear (with 0% completion) instead of being hidden.
+  const merged = TUTORIALS.map((t) => {
+    const stat = (rows || []).find((r) => r.page_key === t.page_key);
+    const completed = stat ? Number(stat.completed_count) : 0;
+    const dismissed = stat ? Number(stat.dismissed_count) : 0;
+    const touched = stat ? Number(stat.touched_users) : 0;
+    const completionPct = totalUsers > 0 ? Math.round((completed / totalUsers) * 100) : 0;
+    return { tutorial: t, completed, dismissed, touched, completionPct };
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Tutorial completion</h2>
+          <p className="text-sm text-slate-500">
+            Per-page progress across {totalUsers.toLocaleString()} user{totalUsers === 1 ? "" : "s"}.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={load}
+          disabled={loading}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+          Refresh
+        </button>
+      </div>
+
+      {error ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="text-left px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-500">Page</th>
+              <th className="text-right px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-500">Completed</th>
+              <th className="text-right px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-500">Dismissed</th>
+              <th className="text-right px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-500">Touched</th>
+              <th className="text-left px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-500" colSpan={2}>Completion %</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                  Loading…
+                </td>
+              </tr>
+            ) : merged.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                  No tutorial config loaded.
+                </td>
+              </tr>
+            ) : (
+              merged.map(({ tutorial, completed, dismissed, touched, completionPct }) => (
+                <tr key={tutorial.page_key} className={tutorial.active ? "" : "bg-slate-50/60"}>
+                  <td className="px-4 py-3 align-top">
+                    <div className="font-semibold text-slate-900">{tutorial.title}</div>
+                    <div className="text-xs text-slate-500 font-mono">{tutorial.page_key}</div>
+                    {!tutorial.active ? (
+                      <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wide text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                        Inactive
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-900">{completed}</td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-700">{dismissed}</td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-700">{touched}</td>
+                  <td className="px-4 py-3" style={{ width: 180 }}>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-2 bg-slate-100 rounded overflow-hidden">
+                        <div
+                          className="h-full bg-indigo-500"
+                          style={{ width: `${Math.min(100, completionPct)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-sm font-semibold text-slate-900" style={{ width: 60 }}>
+                    {completionPct}%
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -774,6 +902,7 @@ export default function AdminDashboard() {
           {activeTab === "orgs" && <OrgsTab />}
           {activeTab === "memberships" && <MembershipsTab />}
           {activeTab === "billing" && <BillingTab />}
+          {activeTab === "onboarding" && <OnboardingTab />}
         </div>
       </div>
     </div>

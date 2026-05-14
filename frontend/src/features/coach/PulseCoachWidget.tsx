@@ -25,6 +25,19 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
+import { useLocation } from "react-router-dom";
+import {
+  findTutorialForPath,
+  pageKeyForPath,
+  type TutorialConfig,
+} from "@/lib/tutorials";
+import {
+  loadOnboardingState,
+  markTutorialCompleted,
+  markTutorialDismissed,
+  shouldShowTutorial,
+  type OnboardingMap,
+} from "@/lib/onboardingState";
 
 /**
  * Pulse Coach widget — proactive AI nudges grounded in the user's
@@ -537,10 +550,34 @@ function UsageBanner({ usage }: { usage: UsageState | null }) {
 
 const FLOATING_COLLAPSED_KEY = "lit.pulse_coach.floating.collapsed";
 
+/** Returns true when the page-aware tutorial card should be visible
+ *  for the current route. While true, the floating coach hides the
+ *  top nudge so the user sees the tutorial first; once the user
+ *  completes or dismisses it, the nudge surfaces again. */
+function useTutorialActive(): { tutorial: TutorialConfig | null; loaded: boolean; visible: boolean } {
+  const { pathname } = useLocation();
+  const [map, setMap] = useState<OnboardingMap | null>(null);
+  const tutorial = useMemo(() => findTutorialForPath(pathname), [pathname]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!tutorial) {
+      setMap(null);
+      return;
+    }
+    loadOnboardingState().then((m) => {
+      if (!cancelled) setMap(m);
+    });
+    return () => { cancelled = true; };
+  }, [tutorial?.page_key]);
+  const visible = Boolean(tutorial && map && shouldShowTutorial(map, tutorial.page_key));
+  return { tutorial, loaded: tutorial == null || map != null, visible };
+}
+
 export function PulseCoachFloating() {
   const { result, loading, refresh } = usePulseCoach();
   const handleAction = useNudgeActionHandler();
   const usage = usePulseUsage();
+  const tut = useTutorialActive();
   // Default collapsed so the widget greets the user as a quiet pill
   // rather than a popped-open card every page load.
   const [open, setOpen] = useState(() => {
@@ -675,23 +712,128 @@ export function PulseCoachFloating() {
 
       <UsageBanner usage={usage} />
 
-      <div className="relative p-4">
-        {!t ? (
-          <div className="font-body text-[11px] text-slate-400">
-            {loading
-              ? "Reading your workspace…"
-              : "All clear — nothing urgent on your plate today."}
-          </div>
-        ) : (
-          <NudgeCard
-            nudge={t}
-            variant="dark-compact"
-            onAction={() => handleAction(t)}
-          />
-        )}
-      </div>
+      {!tut.visible ? (
+        <div className="relative p-4">
+          {!t ? (
+            <div className="font-body text-[11px] text-slate-400">
+              {loading
+                ? "Reading your workspace…"
+                : "All clear — nothing urgent on your plate today."}
+            </div>
+          ) : (
+            <NudgeCard
+              nudge={t}
+              variant="dark-compact"
+              onAction={() => handleAction(t)}
+            />
+          )}
+        </div>
+      ) : null}
 
+      <TutorialCard />
       <CoachComposer />
+    </div>
+  );
+}
+
+/* ── Tutorial card — page-aware onboarding ───────────────────────── */
+function TutorialCard() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const [onboardingMap, setOnboardingMap] = useState<OnboardingMap | null>(null);
+  const [dismissingPending, setDismissingPending] = useState(false);
+
+  const tutorial = useMemo(() => findTutorialForPath(pathname), [pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!tutorial) {
+      setOnboardingMap(null);
+      return;
+    }
+    loadOnboardingState().then((map) => {
+      if (!cancelled) setOnboardingMap(map);
+    });
+    return () => { cancelled = true; };
+  }, [tutorial?.page_key]);
+
+  if (!tutorial) return null;
+  if (!onboardingMap) return null;
+  if (!shouldShowTutorial(onboardingMap, tutorial.page_key)) return null;
+
+  const handleDismiss = async () => {
+    if (dismissingPending) return;
+    setDismissingPending(true);
+    await markTutorialDismissed(tutorial.page_key);
+    // Optimistic local update so the card disappears immediately.
+    setOnboardingMap((prev) => ({
+      ...(prev ?? {}),
+      [tutorial.page_key]: {
+        page_key: tutorial.page_key,
+        completed: false,
+        completed_at: null,
+        dismissed: true,
+        dismissed_at: new Date().toISOString(),
+      },
+    }));
+  };
+
+  const handlePrimary = async () => {
+    await markTutorialCompleted(tutorial.page_key);
+    setOnboardingMap((prev) => ({
+      ...(prev ?? {}),
+      [tutorial.page_key]: {
+        page_key: tutorial.page_key,
+        completed: true,
+        completed_at: new Date().toISOString(),
+        dismissed: false,
+        dismissed_at: null,
+      },
+    }));
+    if (tutorial.first_action.route) navigate(tutorial.first_action.route);
+  };
+
+  return (
+    <div className="border-t border-white/5 px-3.5 py-3">
+      <div className="mb-1 flex items-center gap-1.5">
+        <span
+          className="inline-flex h-4 items-center rounded px-1.5 text-[9px] font-bold uppercase tracking-[0.06em]"
+          style={{ background: "rgba(0,240,255,0.15)", color: "#67E8F9", border: "1px solid rgba(0,240,255,0.3)" }}
+        >
+          Tutorial · 30s
+        </span>
+        <button
+          type="button"
+          onClick={handleDismiss}
+          className="ml-auto text-[10px] uppercase tracking-wider text-slate-400 hover:text-slate-200"
+        >
+          Dismiss
+        </button>
+      </div>
+      <div className="font-display mb-1 text-[13px] font-semibold text-white">
+        {tutorial.title}
+      </div>
+      <div className="font-body text-[11.5px] leading-relaxed text-slate-300">
+        {tutorial.intro_md}
+      </div>
+      <ol className="mt-2 space-y-1.5 pl-3">
+        {tutorial.steps.map((s, i) => (
+          <li key={i} className="font-body text-[11px] leading-snug text-slate-300">
+            <span className="font-mono mr-1.5 text-[9px] text-cyan-300">{String(i + 1).padStart(2, "0")}</span>
+            <span className="font-semibold text-slate-100">{s.title}.</span>{" "}
+            <span className="text-slate-400">{s.body}</span>
+          </li>
+        ))}
+      </ol>
+      <button
+        type="button"
+        onClick={handlePrimary}
+        className="font-display mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm"
+        style={{ background: "linear-gradient(180deg,#06B6D4,#0891B2)" }}
+      >
+        <ArrowRight className="h-3 w-3" />
+        {tutorial.first_action.label}
+      </button>
     </div>
   );
 }
@@ -699,15 +841,23 @@ export function PulseCoachFloating() {
 /* ── Coach Composer — ask Pulse Coach anything ───────────────────── */
 function CoachComposer() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [q, setQ] = useState("");
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState<{ md: string; cta: { label: string; url: string } | null } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const submit = useCallback(async (e?: React.FormEvent) => {
+  // Resolve page-aware prompts. We always look at the full tutorial
+  // map (active or not) so quick prompts surface even when the
+  // tutorial card is suppressed.
+  const tutorial = useMemo(() => findTutorialForPath(pathname), [pathname]);
+  const quickPrompts = tutorial?.quick_prompts ?? [];
+
+  const submit = useCallback(async (e?: React.FormEvent, override?: string) => {
     e?.preventDefault();
-    const trimmed = q.trim();
+    const trimmed = (override ?? q).trim();
     if (!trimmed || asking) return;
+    if (override) setQ(override);
     setAsking(true);
     setErr(null);
     setAnswer(null);
@@ -727,6 +877,27 @@ function CoachComposer() {
 
   return (
     <div className="border-t border-white/5 px-3.5 py-3">
+      {quickPrompts.length > 0 && !answer ? (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {quickPrompts.slice(0, 4).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => submit(undefined, p)}
+              disabled={asking}
+              className="font-display rounded-full px-2.5 py-1 text-[10.5px] font-semibold text-cyan-200 disabled:opacity-50"
+              style={{
+                background: "rgba(0,240,255,0.08)",
+                border: "1px solid rgba(0,240,255,0.25)",
+              }}
+              title="Send this prompt to Pulse Coach"
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {answer ? (
         <div className="mb-2">
           <div className="font-body text-[12px] leading-relaxed text-slate-200" style={{ whiteSpace: "pre-wrap" }}>

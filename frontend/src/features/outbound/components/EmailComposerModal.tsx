@@ -1,29 +1,45 @@
-// EmailComposerModal — split-pane HTML composer for campaign email steps.
+// EmailComposerModal — split-pane composer for campaign email steps.
 //
-// Opened from StepInspector when the user wants more than a plain text
-// area. Left pane = HTML source editor. Right pane = live preview rendered
-// inside a sandboxed iframe with merge tokens replaced by mock values.
+// Opened from StepInspector. Left pane has two modes:
+//   - Visual: contenteditable WYSIWYG with a formatting toolbar, image
+//     upload (Supabase Storage), and YouTube embed (email-safe clickable
+//     thumbnail — no iframe).
+//   - HTML:  raw HTML source editor (tab-to-indent preserved).
+// Right pane = live preview in a sandboxed iframe with merge tokens
+// replaced by mock values, plus desktop/mobile/dark toggle.
 //
 // On save, runs DOMPurify with an email-safe allowlist (tables, inline
-// styles, images, anchors) and writes the cleaned HTML back to the step.
-// Test Send fires through the existing send-test-email Edge Function.
+// styles, images, anchors with target/rel) and writes the cleaned HTML
+// back to the step. Test Send fires through send-test-email Edge Fn.
 
 import {
+  Bold,
   Code,
   Copy,
   Eye,
+  Heading2,
+  Image as ImageIcon,
+  Italic,
+  Link2,
+  List,
+  ListOrdered,
   Loader2,
   Monitor,
+  Pilcrow,
+  RemoveFormatting,
   Send,
   Smartphone,
   Tag,
   Trash2,
+  Underline,
   X,
+  Youtube,
 } from "lucide-react";
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fontDisplay, fontBody, fontMono } from "@/features/outbound/tokens";
 import { sendTestEmail } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import StarterTemplateGallery from "@/features/outbound/components/StarterTemplateGallery";
 import type { StarterTemplate } from "@/features/outbound/data/starterTemplates";
 
@@ -76,6 +92,85 @@ interface Props {
   onOpenTemplates?: () => void;
 }
 
+// If the initial body already looks like a full template (e.g. starter
+// template HTML wraps content in <table> / <html>), open in HTML mode so
+// power users can edit the table scaffold directly.
+function detectInitialMode(html: string): "visual" | "html" {
+  const trimmed = (html || "").trimStart().toLowerCase();
+  if (!trimmed) return "visual";
+  if (trimmed.startsWith("<html") || trimmed.startsWith("<!doctype") || trimmed.startsWith("<table")) {
+    return "html";
+  }
+  return "visual";
+}
+
+// Sample merge values used in the live preview iframe and Test Send.
+// Real merges happen at dispatch time inside the campaign worker.
+const SAMPLE_VALUES: Record<string, string> = {
+  first_name: "Sarah",
+  last_name: "Chen",
+  full_name: "Sarah Chen",
+  company_name: "DSV Air & Sea",
+  title: "VP Logistics",
+  email: "sarah.chen@dsv.com",
+  sender_name: "Vince Raymond",
+  sender_company: "Logistic Intel",
+};
+
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+// Parse various YouTube URL forms and return the 11-char video id, or
+// null if it doesn't look like YouTube.
+function extractYouTubeId(raw: string): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  // Standard ID pattern: 11 chars of [A-Za-z0-9_-]
+  const idRe = /^[A-Za-z0-9_-]{11}$/;
+  // 1. Bare ID
+  if (idRe.test(s)) return s;
+  try {
+    const url = new URL(s);
+    const host = url.hostname.replace(/^www\./, "");
+    if (host === "youtu.be") {
+      const id = url.pathname.slice(1).split("/")[0];
+      return idRe.test(id) ? id : null;
+    }
+    if (host === "youtube.com" || host === "m.youtube.com" || host === "youtube-nocookie.com") {
+      // /watch?v=ID
+      const v = url.searchParams.get("v");
+      if (v && idRe.test(v)) return v;
+      // /embed/ID  or  /shorts/ID  or  /v/ID
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (parts.length >= 2 && ["embed", "shorts", "v"].includes(parts[0])) {
+        const id = parts[1];
+        return idRe.test(id) ? id : null;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function buildYouTubeEmbed(id: string): string {
+  return (
+    `<a href="https://www.youtube.com/watch?v=${id}" target="_blank" rel="noopener" style="display:inline-block;position:relative;text-decoration:none;">` +
+      `<img src="https://img.youtube.com/vi/${id}/hqdefault.jpg" alt="Watch on YouTube" style="display:block;max-width:480px;width:100%;height:auto;border-radius:8px;border:1px solid #E2E8F0;" />` +
+      `<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.78);color:#fff;font-family:Arial,sans-serif;font-size:16px;font-weight:700;padding:10px 18px;border-radius:999px;">▶ Watch</span>` +
+    `</a>`
+  );
+}
+
+function buildImageTag(url: string, alt = ""): string {
+  const safeAlt = alt.replace(/"/g, "&quot;");
+  const safeUrl = url.replace(/"/g, "&quot;");
+  return `<img src="${safeUrl}" alt="${safeAlt}" style="max-width:100%;height:auto;display:block;border-radius:6px;" />`;
+}
+
+function sanitizeFileName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "image";
+}
+
 export default function EmailComposerModal({
   open,
   onClose,
@@ -88,6 +183,7 @@ export default function EmailComposerModal({
 }: Props) {
   const [subject, setSubject] = useState(initialSubject || "");
   const [body, setBody] = useState(initialBody || "");
+  const [mode, setMode] = useState<"visual" | "html">(() => detectInitialMode(initialBody || ""));
   const [previewMode, setPreviewMode] = useState<"desktop" | "mobile" | "dark">("desktop");
   const [tokenOpen, setTokenOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -95,16 +191,70 @@ export default function EmailComposerModal({
   const [testSending, setTestSending] = useState(false);
   const [testStatus, setTestStatus] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
   const [dirty, setDirty] = useState(false);
+
+  // Image upload state
+  const [imageMenuOpen, setImageMenuOpen] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageUrlInput, setImageUrlInput] = useState("");
+
+  // YouTube popover state
+  const [ytMenuOpen, setYtMenuOpen] = useState(false);
+  const [ytInput, setYtInput] = useState("");
+  const [ytError, setYtError] = useState<string | null>(null);
+
+  // Transient toast (errors / status from toolbar actions)
+  const [toolbarMsg, setToolbarMsg] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+
   const sourceRef = useRef<HTMLTextAreaElement | null>(null);
+  const visualRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Selection saved before opening a popover so we can restore it for
+  // insertion at the user's caret.
+  const savedRangeRef = useRef<Range | null>(null);
+  // Tracks the last body string written into the visual editor so we
+  // don't clobber the user's caret on every keystroke.
+  const lastVisualBodyRef = useRef<string>("");
 
   // Re-seed when the modal reopens with a different step.
   useEffect(() => {
     if (!open) return;
     setSubject(initialSubject || "");
     setBody(initialBody || "");
+    setMode(detectInitialMode(initialBody || ""));
     setDirty(false);
     setTestStatus(null);
+    setToolbarMsg(null);
+    setImageMenuOpen(false);
+    setYtMenuOpen(false);
+    setYtInput("");
+    setYtError(null);
+    setImageUrlInput("");
+    lastVisualBodyRef.current = "";
   }, [open, initialSubject, initialBody]);
+
+  // When entering visual mode (or when body changes from outside the
+  // editor — e.g. token insertion, template pick), paint the latest body
+  // into the contenteditable div. We avoid re-painting on every onInput
+  // by comparing against lastVisualBodyRef.
+  useEffect(() => {
+    if (mode !== "visual") return;
+    const el = visualRef.current;
+    if (!el) return;
+    if (lastVisualBodyRef.current === body) return;
+    // Sanitize before paint — body can include template tokens / pasted HTML
+    // from external sources. Reuses the email-safe allowlist used on save so
+    // the editor view matches what the recipient sees. (CodeQL: DOM text
+    // reinterpreted as HTML.)
+    el.innerHTML = DOMPurify.sanitize(body, SANITIZE_CONFIG as any).toString();
+    lastVisualBodyRef.current = body;
+  }, [mode, body, open]);
+
+  // Auto-dismiss toolbar toast
+  useEffect(() => {
+    if (!toolbarMsg) return;
+    const t = setTimeout(() => setToolbarMsg(null), 3500);
+    return () => clearTimeout(t);
+  }, [toolbarMsg]);
 
   // Keyboard: Esc closes, Cmd/Ctrl+S saves.
   useEffect(() => {
@@ -130,27 +280,199 @@ export default function EmailComposerModal({
   }
 
   function handleSave() {
-    const clean = DOMPurify.sanitize(body, SANITIZE_CONFIG as any).toString();
+    // If we're in visual mode, pick up the very latest innerHTML in
+    // case onInput hasn't fired yet (e.g. IME composition end).
+    let raw = body;
+    if (mode === "visual" && visualRef.current) {
+      raw = visualRef.current.innerHTML;
+    }
+    const clean = DOMPurify.sanitize(raw, SANITIZE_CONFIG as any).toString();
     onSave({ subject: subject.trim(), body: clean });
     onClose();
   }
 
+  // Insert text/HTML into whichever editor is active.
   function insertAtCursor(text: string) {
-    const ta = sourceRef.current;
-    if (!ta) {
-      setBody((prev) => prev + text);
+    if (mode === "html") {
+      const ta = sourceRef.current;
+      if (!ta) {
+        setBody((prev) => prev + text);
+        setDirty(true);
+        return;
+      }
+      const start = ta.selectionStart ?? body.length;
+      const end = ta.selectionEnd ?? body.length;
+      const next = body.slice(0, start) + text + body.slice(end);
+      setBody(next);
       setDirty(true);
+      requestAnimationFrame(() => {
+        ta.focus();
+        ta.selectionStart = ta.selectionEnd = start + text.length;
+      });
       return;
     }
-    const start = ta.selectionStart ?? body.length;
-    const end = ta.selectionEnd ?? body.length;
-    const next = body.slice(0, start) + text + body.slice(end);
+    // Visual mode
+    const el = visualRef.current;
+    if (!el) return;
+    el.focus();
+    restoreSelection();
+    // execCommand("insertHTML") respects current selection inside the
+    // contenteditable, which is what we want for cursor-position insert.
+    try {
+      document.execCommand("insertHTML", false, text);
+    } catch {
+      el.innerHTML += text;
+    }
+    const next = el.innerHTML;
+    lastVisualBodyRef.current = next;
     setBody(next);
     setDirty(true);
-    requestAnimationFrame(() => {
-      ta.focus();
-      ta.selectionStart = ta.selectionEnd = start + text.length;
+  }
+
+  function saveSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    // Only remember the range if it's inside the visual editor.
+    const root = visualRef.current;
+    if (!root) return;
+    if (root.contains(range.commonAncestorContainer)) {
+      savedRangeRef.current = range.cloneRange();
+    }
+  }
+
+  function restoreSelection() {
+    const range = savedRangeRef.current;
+    if (!range) return;
+    const sel = window.getSelection();
+    if (!sel) return;
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  // Toolbar commands (visual mode only). Most lean on execCommand —
+  // deprecated but still universally supported and good enough here.
+  function exec(cmd: string, value?: string) {
+    const el = visualRef.current;
+    if (!el) return;
+    el.focus();
+    restoreSelection();
+    try {
+      document.execCommand(cmd, false, value);
+    } catch {
+      // ignore
+    }
+    const next = el.innerHTML;
+    lastVisualBodyRef.current = next;
+    setBody(next);
+    setDirty(true);
+  }
+
+  function applyHeading(tag: "H2" | "P") {
+    exec("formatBlock", `<${tag}>`);
+  }
+
+  function applyLink() {
+    const url = window.prompt("Link URL", "https://");
+    if (!url) return;
+    const trimmed = url.trim();
+    if (!/^https?:\/\//i.test(trimmed) && !trimmed.startsWith("mailto:")) {
+      setToolbarMsg({ kind: "err", msg: "Link must start with http://, https://, or mailto:" });
+      return;
+    }
+    const el = visualRef.current;
+    if (!el) return;
+    el.focus();
+    restoreSelection();
+    const sel = window.getSelection();
+    // If no selection, just insert the URL as a link.
+    if (!sel || sel.isCollapsed) {
+      insertAtCursor(`<a href="${trimmed}" target="_blank" rel="noopener">${trimmed}</a>`);
+      return;
+    }
+    // Use createLink then patch target/rel via a follow-up DOM walk.
+    try {
+      document.execCommand("createLink", false, trimmed);
+    } catch {
+      /* ignore */
+    }
+    // Ensure target=_blank rel=noopener on the new anchor(s) — find
+    // anchors whose href === trimmed and stamp the attrs.
+    el.querySelectorAll(`a[href="${cssEscape(trimmed)}"]`).forEach((a) => {
+      a.setAttribute("target", "_blank");
+      a.setAttribute("rel", "noopener");
     });
+    const next = el.innerHTML;
+    lastVisualBodyRef.current = next;
+    setBody(next);
+    setDirty(true);
+  }
+
+  async function handleFilePicked(file: File) {
+    setImageMenuOpen(false);
+    if (!file.type.startsWith("image/")) {
+      setToolbarMsg({ kind: "err", msg: "Only image files are allowed." });
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setToolbarMsg({ kind: "err", msg: `Image is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 10 MB.` });
+      return;
+    }
+    setImageUploading(true);
+    try {
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr) throw userErr;
+      const userId = userData?.user?.id || "anon";
+      const ts = Date.now();
+      const safe = sanitizeFileName(file.name);
+      const path = `email-images/${userId}/${ts}-${safe}`;
+      const { error: upErr } = await supabase.storage
+        .from("assets")
+        .upload(path, file, { contentType: file.type, upsert: false });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from("assets").getPublicUrl(path);
+      const publicUrl = pub?.publicUrl;
+      if (!publicUrl) throw new Error("Could not resolve public URL for upload.");
+      insertImage(publicUrl);
+      setToolbarMsg({ kind: "ok", msg: "Image uploaded." });
+    } catch (err: any) {
+      // Surface the real error rather than swallow it.
+      const msg = err?.message || err?.error_description || "Image upload failed.";
+      setToolbarMsg({ kind: "err", msg });
+    } finally {
+      setImageUploading(false);
+      // Reset the file input so re-picking the same file re-fires onChange.
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function insertImage(url: string) {
+    const html = buildImageTag(url);
+    insertAtCursor(html);
+  }
+
+  function handleInsertImageUrl() {
+    const url = imageUrlInput.trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url) && !url.startsWith("data:image/")) {
+      setToolbarMsg({ kind: "err", msg: "Image URL must start with http://, https://, or data:image/" });
+      return;
+    }
+    insertImage(url);
+    setImageUrlInput("");
+    setImageMenuOpen(false);
+  }
+
+  function handleInsertYouTube() {
+    const id = extractYouTubeId(ytInput);
+    if (!id) {
+      setYtError("Paste a YouTube link.");
+      return;
+    }
+    insertAtCursor(buildYouTubeEmbed(id));
+    setYtInput("");
+    setYtError(null);
+    setYtMenuOpen(false);
   }
 
   async function handleTestSend() {
@@ -271,35 +593,222 @@ table{max-width:100%;}
 
         {/* Body — split-pane */}
         <div className="grid min-h-0 flex-1 grid-cols-2">
-          {/* Source editor */}
-          <div className="flex min-h-0 flex-col border-r border-slate-200 bg-[#0F172A]">
+          {/* Source / Visual editor */}
+          <div className={`flex min-h-0 flex-col border-r border-slate-200 ${mode === "visual" ? "bg-white" : "bg-[#0F172A]"}`}>
+            {/* Pane header — mode toggle replaces the static label */}
             <div
-              className="flex items-center justify-between border-b border-slate-800 bg-[#0B1220] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400"
+              className={`flex items-center justify-between border-b px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] ${
+                mode === "visual"
+                  ? "border-slate-200 bg-slate-50 text-slate-500"
+                  : "border-slate-800 bg-[#0B1220] text-slate-400"
+              }`}
               style={{ fontFamily: fontDisplay }}
             >
-              <span className="inline-flex items-center gap-1.5">
-                <Code className="h-3 w-3" />
-                HTML Source
-              </span>
-              <span className="text-slate-500" style={{ fontFamily: fontMono }}>
+              <div className={`inline-flex rounded-md border p-0.5 text-[10px] ${
+                mode === "visual" ? "border-slate-200 bg-white" : "border-slate-700 bg-[#111B30]"
+              }`}>
+                {[
+                  { k: "visual", label: "Visual" },
+                  { k: "html", label: "HTML" },
+                ].map((m) => {
+                  const active = mode === m.k;
+                  return (
+                    <button
+                      key={m.k}
+                      type="button"
+                      onClick={() => setMode(m.k as any)}
+                      className={`inline-flex items-center gap-1 rounded-[4px] px-2 py-0.5 font-semibold ${
+                        active
+                          ? "bg-slate-900 text-white"
+                          : (mode === "visual" ? "text-slate-600 hover:bg-slate-100" : "text-slate-400 hover:bg-[#1B2745]")
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <span className={mode === "visual" ? "text-slate-500" : "text-slate-500"} style={{ fontFamily: fontMono }}>
                 {charCount.toLocaleString()} chars
               </span>
             </div>
-            <textarea
-              ref={sourceRef}
-              value={body}
-              onChange={(e) => { setBody(e.target.value); setDirty(true); }}
-              spellCheck={false}
-              placeholder={PLACEHOLDER_HTML}
-              className="min-h-0 flex-1 resize-none border-0 bg-[#0F172A] px-4 py-3 text-[12.5px] leading-relaxed text-slate-100 outline-none placeholder:text-slate-500"
-              style={{ fontFamily: fontMono }}
-              onKeyDown={(e) => {
-                if (e.key === "Tab") {
-                  e.preventDefault();
-                  insertAtCursor("  ");
-                }
-              }}
-            />
+
+            {/* Visual mode toolbar */}
+            {mode === "visual" ? (
+              <div className="flex flex-wrap items-center gap-0.5 border-b border-slate-200 bg-white px-2 py-1.5">
+                <ToolbarBtn title="Bold (Ctrl+B)" onClick={() => exec("bold")}><Bold className="h-3.5 w-3.5" /></ToolbarBtn>
+                <ToolbarBtn title="Italic (Ctrl+I)" onClick={() => exec("italic")}><Italic className="h-3.5 w-3.5" /></ToolbarBtn>
+                <ToolbarBtn title="Underline (Ctrl+U)" onClick={() => exec("underline")}><Underline className="h-3.5 w-3.5" /></ToolbarBtn>
+                <ToolbarSep />
+                <ToolbarBtn title="Heading 2" onClick={() => applyHeading("H2")}><Heading2 className="h-3.5 w-3.5" /></ToolbarBtn>
+                <ToolbarBtn title="Paragraph" onClick={() => applyHeading("P")}><Pilcrow className="h-3.5 w-3.5" /></ToolbarBtn>
+                <ToolbarSep />
+                <ToolbarBtn title="Bulleted list" onClick={() => exec("insertUnorderedList")}><List className="h-3.5 w-3.5" /></ToolbarBtn>
+                <ToolbarBtn title="Numbered list" onClick={() => exec("insertOrderedList")}><ListOrdered className="h-3.5 w-3.5" /></ToolbarBtn>
+                <ToolbarSep />
+                <ToolbarBtn title="Insert link" onClick={() => { saveSelection(); applyLink(); }}><Link2 className="h-3.5 w-3.5" /></ToolbarBtn>
+
+                {/* Image button + popover */}
+                <div className="relative">
+                  <ToolbarBtn
+                    title="Insert image"
+                    onClick={() => {
+                      saveSelection();
+                      setYtMenuOpen(false);
+                      setImageMenuOpen((v) => !v);
+                    }}
+                  >
+                    {imageUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                  </ToolbarBtn>
+                  {imageMenuOpen ? (
+                    <div className="absolute left-0 top-full z-20 mt-1 w-[320px] rounded-lg border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
+                      <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500" style={{ fontFamily: fontDisplay }}>
+                        Upload from device
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={imageUploading}
+                        className="mb-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11.5px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                        style={{ fontFamily: fontDisplay }}
+                      >
+                        {imageUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImageIcon className="h-3 w-3" />}
+                        Choose image (max 10 MB)
+                      </button>
+                      <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500" style={{ fontFamily: fontDisplay }}>
+                        Or paste an image URL
+                      </div>
+                      <div className="flex gap-1.5">
+                        <input
+                          value={imageUrlInput}
+                          onChange={(e) => setImageUrlInput(e.target.value)}
+                          placeholder="https://cdn.example.com/hero.png"
+                          className="flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11.5px] outline-none placeholder:text-slate-400 focus:border-blue-300"
+                          style={{ fontFamily: fontBody }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleInsertImageUrl}
+                          disabled={!imageUrlInput.trim()}
+                          className="inline-flex items-center rounded-md bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                          style={{ fontFamily: fontDisplay }}
+                        >
+                          Insert
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleFilePicked(f);
+                    }}
+                  />
+                </div>
+
+                {/* YouTube button + popover */}
+                <div className="relative">
+                  <ToolbarBtn
+                    title="Insert YouTube video"
+                    onClick={() => {
+                      saveSelection();
+                      setImageMenuOpen(false);
+                      setYtMenuOpen((v) => !v);
+                    }}
+                  >
+                    <Youtube className="h-3.5 w-3.5" />
+                  </ToolbarBtn>
+                  {ytMenuOpen ? (
+                    <div className="absolute left-0 top-full z-20 mt-1 w-[340px] rounded-lg border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
+                      <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500" style={{ fontFamily: fontDisplay }}>
+                        YouTube URL
+                      </div>
+                      <input
+                        value={ytInput}
+                        onChange={(e) => { setYtInput(e.target.value); setYtError(null); }}
+                        placeholder="https://www.youtube.com/watch?v=..."
+                        className="mb-2 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11.5px] outline-none placeholder:text-slate-400 focus:border-blue-300"
+                        style={{ fontFamily: fontBody }}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleInsertYouTube(); }}
+                      />
+                      {ytError ? (
+                        <div className="mb-2 text-[10.5px] text-rose-600" style={{ fontFamily: fontBody }}>{ytError}</div>
+                      ) : (
+                        <div className="mb-2 text-[10.5px] text-slate-500" style={{ fontFamily: fontBody }}>
+                          Inserts an email-safe clickable thumbnail (no iframe).
+                        </div>
+                      )}
+                      <div className="flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => { setYtMenuOpen(false); setYtError(null); }}
+                          className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                          style={{ fontFamily: fontDisplay }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleInsertYouTube}
+                          disabled={!ytInput.trim()}
+                          className="inline-flex items-center rounded-md bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                          style={{ fontFamily: fontDisplay }}
+                        >
+                          Insert
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <ToolbarSep />
+                <ToolbarBtn title="Clear formatting" onClick={() => exec("removeFormat")}>
+                  <RemoveFormatting className="h-3.5 w-3.5" />
+                </ToolbarBtn>
+              </div>
+            ) : null}
+
+            {/* The two editors. We keep both mounted but only show the
+                active one so the visual ref stays available for paint. */}
+            {mode === "html" ? (
+              <textarea
+                ref={sourceRef}
+                value={body}
+                onChange={(e) => { setBody(e.target.value); setDirty(true); }}
+                spellCheck={false}
+                placeholder={PLACEHOLDER_HTML}
+                className="min-h-0 flex-1 resize-none border-0 bg-[#0F172A] px-4 py-3 text-[12.5px] leading-relaxed text-slate-100 outline-none placeholder:text-slate-500"
+                style={{ fontFamily: fontMono }}
+                onKeyDown={(e) => {
+                  if (e.key === "Tab") {
+                    e.preventDefault();
+                    insertAtCursor("  ");
+                  }
+                }}
+              />
+            ) : (
+              <div
+                ref={visualRef}
+                contentEditable
+                suppressContentEditableWarning
+                spellCheck
+                className="min-h-0 flex-1 overflow-auto bg-white px-5 py-4 text-[14px] leading-relaxed text-slate-900 outline-none"
+                style={{ fontFamily: fontBody }}
+                onInput={(e) => {
+                  const next = (e.currentTarget as HTMLDivElement).innerHTML;
+                  lastVisualBodyRef.current = next;
+                  setBody(next);
+                  setDirty(true);
+                }}
+                onKeyUp={saveSelection}
+                onMouseUp={saveSelection}
+                onBlur={saveSelection}
+              />
+            )}
           </div>
 
           {/* Live preview */}
@@ -355,7 +864,7 @@ table{max-width:100%;}
           <div className="relative">
             <button
               type="button"
-              onClick={() => setTokenOpen((v) => !v)}
+              onClick={() => { saveSelection(); setTokenOpen((v) => !v); }}
               className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
               style={{ fontFamily: fontDisplay }}
             >
@@ -408,11 +917,11 @@ table{max-width:100%;}
 
           <button
             type="button"
-            onClick={() => setBody("")}
+            onClick={() => { setBody(""); lastVisualBodyRef.current = ""; if (visualRef.current) visualRef.current.innerHTML = ""; setDirty(true); }}
             disabled={body.length === 0}
             className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
             style={{ fontFamily: fontDisplay }}
-            title="Clear the source editor"
+            title="Clear the editor"
           >
             <Trash2 className="h-3 w-3" />
             Clear
@@ -440,6 +949,19 @@ table{max-width:100%;}
           </div>
         </footer>
 
+        {toolbarMsg ? (
+          <div
+            className={`shrink-0 border-t px-4 py-1.5 text-[11px] ${
+              toolbarMsg.kind === "ok"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-rose-200 bg-rose-50 text-rose-800"
+            }`}
+            style={{ fontFamily: fontBody }}
+          >
+            {toolbarMsg.msg}
+          </div>
+        ) : null}
+
         {testStatus ? (
           <div
             className={`shrink-0 border-t px-4 py-1.5 text-[11px] ${
@@ -459,6 +981,9 @@ table{max-width:100%;}
         onPick={(t: StarterTemplate) => {
           setSubject(t.subject);
           setBody(t.body_html);
+          // Template HTML usually ships as a table scaffold — drop into
+          // HTML mode so the user can edit the table directly.
+          setMode(detectInitialMode(t.body_html));
           setDirty(true);
           setGalleryOpen(false);
         }}
@@ -467,18 +992,42 @@ table{max-width:100%;}
   );
 }
 
-// Sample merge values used in the live preview iframe and Test Send.
-// Real merges happen at dispatch time inside the campaign worker.
-const SAMPLE_VALUES: Record<string, string> = {
-  first_name: "Sarah",
-  last_name: "Chen",
-  full_name: "Sarah Chen",
-  company_name: "DSV Air & Sea",
-  title: "VP Logistics",
-  email: "sarah.chen@dsv.com",
-  sender_name: "Vince Raymond",
-  sender_company: "Logistic Intel",
-};
+// Small, ghost-style toolbar button (28x28) for the visual editor.
+function ToolbarBtn({
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      // onMouseDown preserves the current contenteditable selection;
+      // onClick fires the command after focus returns.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToolbarSep() {
+  return <span className="mx-1 inline-block h-4 w-px bg-slate-200" aria-hidden />;
+}
+
+// Escape characters that have special meaning in CSS attribute selectors
+// — used when we need to find anchors by exact href after createLink.
+function cssEscape(s: string): string {
+  if (typeof (window as any).CSS?.escape === "function") return (window as any).CSS.escape(s);
+  return s.replace(/["\\]/g, "\\$&");
+}
 
 function renderTokens(input: string): string {
   if (!input) return "";

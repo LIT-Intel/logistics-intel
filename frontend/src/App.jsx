@@ -23,6 +23,7 @@ const Campaigns = lazy(() => import("@/pages/Campaigns"));
 const CampaignBuilder = lazy(() => import("@/pages/CampaignBuilder"));
 const CampaignAnalyticsPage = lazy(() => import("@/pages/CampaignAnalyticsPage"));
 const InboxPage = lazy(() => import("@/pages/InboxPage"));
+const NotificationsInbox = lazy(() => import("@/pages/NotificationsInbox"));
 const EmailCenter = lazy(() => import("@/pages/EmailCenter"));
 const RFPStudio = lazy(() => import("@/pages/RFPStudio"));
 const Settings = lazy(() => import("@/pages/SettingsPage"));
@@ -31,7 +32,7 @@ const AffiliateDash = lazy(() => import("@/pages/AffiliateDashboard"));
 const AffiliateOnboarding = lazy(() => import("@/pages/AffiliateOnboarding"));
 const PartnersApply = lazy(() => import("@/pages/PartnersApply"));
 const AdminPartnerProgram = lazy(() => import("@/pages/AdminPartnerProgram"));
-const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
+const AdminDashboard = lazy(() => import("@/pages/AdminDashboardV2"));
 const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
 const AdminDemoRequests = lazy(() => import("@/pages/AdminDemoRequests"));
 const Pulse = lazy(() => import("@/pages/Pulse"));
@@ -374,6 +375,17 @@ export default function App() {
             <RequireAuth>
               <LITPage>
                 <InboxPage />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+
+        <Route
+          path="/app/notifications"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <NotificationsInbox />
               </LITPage>
             </RequireAuth>
           }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { listSavedCompanies, enrichCompaniesFromKpis } from "@/lib/api";
@@ -172,6 +172,17 @@ export default function CommandCenter() {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortableKey>('shipments12m');
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
+  // Filters panel — collapsible below the search row. Active filters
+  // narrow the visible saved-company list. Reset clears every filter
+  // including the search term.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterCountry, setFilterCountry] = useState<string>("");
+  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "pending" | "inactive">("all");
+  const [filterHasContacts, setFilterHasContacts] = useState<"all" | "yes" | "no">("all");
+  const [filterMinShipments, setFilterMinShipments] = useState<string>("");
+  const [filterMode, setFilterMode] = useState<"all" | "fcl" | "lcl">("all");
+  const [filterLane, setFilterLane] = useState<string>("");
+  const [contactCountsMap, setContactCountsMap] = useState<Record<string, number>>({});
 
   // Phase E — per-company contact counts. Loaded once after saved companies
   // arrive, via a single bulk `lit_contacts` select scoped by the set of
@@ -270,8 +281,12 @@ export default function CommandCenter() {
           counts[key] = (counts[key] || 0) + 1;
         }
         setContactCounts(counts);
+        setContactCountsMap(counts);
       } catch {
-        if (isMounted) setContactCounts({});
+        if (isMounted) {
+          setContactCounts({});
+          setContactCountsMap({});
+        }
       }
     })();
     return () => {
@@ -281,16 +296,67 @@ export default function CommandCenter() {
 
   const listRows = useMemo(() => savedCompanies.map(buildListRow).filter((r) => r.key), [savedCompanies]);
 
-  // Phase B.3 — search-only filtering. The four "All / High value / Active /
-  // Recent" chips were removed per the validated design source.
+  // Country options derived from the loaded list. Sorted, deduped,
+  // empty values filtered out.
+  const countryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of listRows) {
+      if (r.countryCode) set.add(r.countryCode);
+    }
+    return Array.from(set).sort();
+  }, [listRows]);
+
+  // Filtering pipeline. Order: text search -> country -> status ->
+  // contacts presence -> mode (FCL/LCL share) -> lane substring ->
+  // min-shipments threshold. Empty / "all" filters short-circuit.
   const filteredRows = useMemo(() => {
     const lower = searchTerm.trim().toLowerCase();
+    const minShipmentsNum = filterMinShipments.trim() === "" ? null : Number(filterMinShipments);
+    const laneLower = filterLane.trim().toLowerCase();
     return listRows.filter((row) => {
       const haystack = [row.companyName, row.domain, row.website, row.address, row.countryCode, row.topRoute12m, row.recentRoute]
         .filter(Boolean).join(" ").toLowerCase();
-      return !lower || haystack.includes(lower);
+      if (lower && !haystack.includes(lower)) return false;
+      if (filterCountry && row.countryCode !== filterCountry) return false;
+      if (filterStatus !== "all" && statusForRow(row) !== filterStatus) return false;
+      if (filterHasContacts !== "all") {
+        const cnt = row.companyUuid ? contactCountsMap[row.companyUuid] || 0 : 0;
+        if (filterHasContacts === "yes" && cnt <= 0) return false;
+        if (filterHasContacts === "no"  && cnt >  0) return false;
+      }
+      if (filterMode === "fcl" && !((row.fclShipments12m || 0) > 0)) return false;
+      if (filterMode === "lcl" && !((row.lclShipments12m || 0) > 0)) return false;
+      if (laneLower) {
+        const lanes = [row.topRoute12m, row.recentRoute].filter(Boolean).join(" ").toLowerCase();
+        if (!lanes.includes(laneLower)) return false;
+      }
+      if (minShipmentsNum != null && !Number.isNaN(minShipmentsNum)) {
+        if ((row.shipments12m || 0) < minShipmentsNum) return false;
+      }
+      return true;
     });
-  }, [listRows, searchTerm]);
+  }, [listRows, searchTerm, filterCountry, filterStatus, filterHasContacts, filterMode, filterLane, filterMinShipments, contactCountsMap]);
+
+  // Reset every filter at once. Search term included so "Reset
+  // filters" actually clears the visible list view.
+  const resetFilters = useCallback(() => {
+    setSearchTerm("");
+    setFilterCountry("");
+    setFilterStatus("all");
+    setFilterHasContacts("all");
+    setFilterMinShipments("");
+    setFilterMode("all");
+    setFilterLane("");
+  }, []);
+
+  const activeFilterCount = (
+    (filterCountry ? 1 : 0) +
+    (filterStatus !== "all" ? 1 : 0) +
+    (filterHasContacts !== "all" ? 1 : 0) +
+    (filterMode !== "all" ? 1 : 0) +
+    (filterLane.trim() ? 1 : 0) +
+    (filterMinShipments.trim() ? 1 : 0)
+  );
 
   const sortedRows = useMemo(() => {
     return [...filteredRows].sort((a, b) => {
@@ -303,7 +369,9 @@ export default function CommandCenter() {
     });
   }, [filteredRows, sortKey, sortDir]);
 
-  useEffect(() => { setCurrentPage(1); }, [searchTerm]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterCountry, filterStatus, filterHasContacts, filterMode, filterLane, filterMinShipments]);
 
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
 
@@ -393,11 +461,142 @@ export default function CommandCenter() {
             />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#94a3b8', fontFamily: "'DM Sans', sans-serif" }}>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '7px 12px', borderRadius: 10,
+              border: '1.5px solid ' + (activeFilterCount > 0 ? '#3B82F6' : '#CBD5E1'),
+              background: activeFilterCount > 0 ? 'rgba(59,130,246,0.08)' : '#FFFFFF',
+              color: activeFilterCount > 0 ? '#1D4ED8' : '#0F172A',
+              fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
             <Filter style={{ width: 13, height: 13 }} />
+            Filters
+            {activeFilterCount > 0 ? (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9,
+                background: '#3B82F6', color: '#FFFFFF', fontSize: 10, fontWeight: 700,
+              }}>{activeFilterCount}</span>
+            ) : null}
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#94a3b8', fontFamily: "'DM Sans', sans-serif", marginLeft: 'auto' }}>
             {formatNumber(sortedRows.length)} shown
           </div>
         </div>
+
+        {filtersOpen ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 14,
+              borderRadius: 12,
+              border: '1px solid #E5E7EB',
+              background: '#FFFFFF',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+              gap: 12,
+              alignItems: 'end',
+            }}
+          >
+            <FilterField label="Country">
+              <select
+                value={filterCountry}
+                onChange={(e) => setFilterCountry(e.target.value)}
+                style={selectStyle}
+              >
+                <option value="">All countries</option>
+                {countryOptions.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </FilterField>
+
+            <FilterField label="Status">
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value as any)}
+                style={selectStyle}
+              >
+                <option value="all">All statuses</option>
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </FilterField>
+
+            <FilterField label="Contacts">
+              <select
+                value={filterHasContacts}
+                onChange={(e) => setFilterHasContacts(e.target.value as any)}
+                style={selectStyle}
+              >
+                <option value="all">All accounts</option>
+                <option value="yes">With contacts</option>
+                <option value="no">Without contacts</option>
+              </select>
+            </FilterField>
+
+            <FilterField label="Mode">
+              <select
+                value={filterMode}
+                onChange={(e) => setFilterMode(e.target.value as any)}
+                style={selectStyle}
+              >
+                <option value="all">FCL + LCL</option>
+                <option value="fcl">FCL only</option>
+                <option value="lcl">LCL only</option>
+              </select>
+            </FilterField>
+
+            <FilterField label="Lane contains">
+              <input
+                type="text"
+                value={filterLane}
+                onChange={(e) => setFilterLane(e.target.value)}
+                placeholder="e.g. CN→US"
+                style={inputStyle}
+              />
+            </FilterField>
+
+            <FilterField label="Min shipments 12M">
+              <input
+                type="number"
+                min={0}
+                value={filterMinShipments}
+                onChange={(e) => setFilterMinShipments(e.target.value)}
+                placeholder="0"
+                style={inputStyle}
+              />
+            </FilterField>
+
+            <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={resetFilters}
+                style={{
+                  padding: '7px 12px',
+                  border: '1.5px solid #CBD5E1',
+                  borderRadius: 10,
+                  background: '#FFFFFF',
+                  color: '#475569',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Reset filters
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Table area */}
@@ -761,5 +960,49 @@ export default function CommandCenter() {
         </div>
       )}
     </div>
+  );
+}
+
+const selectStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '7px 10px',
+  borderRadius: 8,
+  border: '1.5px solid #CBD5E1',
+  background: '#FFFFFF',
+  fontFamily: "'DM Sans', sans-serif",
+  fontSize: 12.5,
+  color: '#0F172A',
+  outline: 'none',
+};
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '7px 10px',
+  borderRadius: 8,
+  border: '1.5px solid #CBD5E1',
+  background: '#FFFFFF',
+  fontFamily: "'DM Sans', sans-serif",
+  fontSize: 12.5,
+  color: '#0F172A',
+  outline: 'none',
+};
+
+function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span
+        style={{
+          fontFamily: "'Space Grotesk', sans-serif",
+          fontSize: 10,
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: '#64748b',
+        }}
+      >
+        {label}
+      </span>
+      {children}
+    </label>
   );
 }

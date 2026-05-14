@@ -28,6 +28,7 @@ import { kpi } from "./objects/kpi";
 import { faqItem } from "./objects/faqItem";
 import { contentBlock } from "./objects/contentBlock";
 import { demoRequest } from "./demoRequest";
+import { partnerApplication } from "./partnerApplication";
 
 export const schemaTypes = [
   // singletons
@@ -58,6 +59,7 @@ export const schemaTypes = [
   page,
   // inbox
   demoRequest,
+  partnerApplication,
   // reusable objects
   seoFields,
   kpi,

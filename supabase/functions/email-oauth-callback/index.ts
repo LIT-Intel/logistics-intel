@@ -8,7 +8,7 @@
 //
 // FRONTEND_URL must include the app base path so /settings resolves on
 // the SPA, not on the marketing apex (which 404s). Default:
-// https://www.logisticintel.com/app
+// https://app.logisticintel.com/app
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -26,8 +26,11 @@ function base64UrlDecode(input: string) {
 }
 
 function settingsUrl() {
+  // The SPA is deployed at app.logisticintel.com with React Router routes
+  // prefixed by /app. Using the marketing apex lands on a 404. Default
+  // to the app subdomain so this works even when FRONTEND_URL is unset.
   const frontendUrl =
-    Deno.env.get("FRONTEND_URL") || "https://www.logisticintel.com/app";
+    Deno.env.get("FRONTEND_URL") || "https://app.logisticintel.com/app";
   return `${frontendUrl.replace(/\/$/, "")}/settings?tab=integrations`;
 }
 

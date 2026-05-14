@@ -36,6 +36,11 @@ import {
 interface Props {
   currentPlanCode: PlanCode;
   cycle: BillingInterval;
+  // When provided, the "Save 25% with annual" chip flips the cycle in
+  // place instead of scrolling the page back to itself. Optional so
+  // call-sites that already render their own cycle toggle on the hero
+  // can leave it undefined and keep the chip as a passive hint.
+  onCycleChange?: (next: BillingInterval) => void;
   onSelectPlan: (planCode: PlanCode) => void;
   onContactSales: () => void;
   onManageCurrent: () => void;
@@ -140,6 +145,7 @@ const COMMITMENT_PLANS: PlanCode[] = ['starter', 'growth', 'scale'];
 export function BillingPlans({
   currentPlanCode,
   cycle,
+  onCycleChange,
   onSelectPlan,
   onContactSales,
   onManageCurrent,
@@ -175,8 +181,12 @@ export function BillingPlans({
             </span>
           </div>
           {cycle === 'yearly' ? (
-            <div
-              className="font-display inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 text-[11px] font-bold text-white"
+            <button
+              type="button"
+              onClick={() => onCycleChange?.('monthly')}
+              disabled={!onCycleChange}
+              title={onCycleChange ? 'Switch back to monthly billing' : 'You are on annual billing'}
+              className="font-display inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 text-[11px] font-bold text-white disabled:cursor-default"
               style={{
                 background: 'linear-gradient(135deg,#0F172A,#1E293B)',
                 boxShadow: '0 2px 8px rgba(15,23,42,0.18)',
@@ -184,15 +194,18 @@ export function BillingPlans({
             >
               <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: '#00F0FF' }} />
               You're saving 25% vs monthly
-            </div>
+            </button>
           ) : (
             <button
               type="button"
               onClick={() => {
-                // surfaced as a hint; cycle toggle lives on the hero
-                document.getElementById('lit-billing-plans')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                if (onCycleChange) {
+                  onCycleChange('yearly');
+                } else {
+                  document.getElementById('lit-billing-plans')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
               }}
-              className="font-display inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.06em] text-emerald-700"
+              className="font-display inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.06em] text-emerald-700 transition hover:bg-emerald-100"
             >
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
               Save 25% with annual

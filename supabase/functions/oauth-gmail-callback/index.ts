@@ -19,8 +19,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { verifyState } from "../_shared/oauth-state.ts";
 
 function settingsUrl() {
+  // The SPA is deployed at app.logisticintel.com with React Router routes
+  // prefixed by /app (e.g. /app/settings). Using the marketing apex
+  // (www.logisticintel.com) lands on the Next.js 404 page since /app/*
+  // doesn't exist there. Default to the app subdomain so the redirect
+  // works even when FRONTEND_URL is unset.
   const frontendUrl =
-    Deno.env.get("FRONTEND_URL") || "https://www.logisticintel.com/app";
+    Deno.env.get("FRONTEND_URL") || "https://app.logisticintel.com/app";
   return `${frontendUrl.replace(/\/$/, "")}/settings?tab=integrations`;
 }
 

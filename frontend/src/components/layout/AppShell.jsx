@@ -22,6 +22,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { canAccessFeature } from "@/lib/planLimits";
 import { logout } from "@/auth/supabaseAuthClient";
 import { LockoutBanner } from "@/components/subscription/LockoutBanner";
+import NotificationBell from "@/components/layout/NotificationBell";
 
 function SideLink({ to, icon: Icon, label, locked = false, onClick = null }) {
   const baseClass =
@@ -325,6 +326,8 @@ export default function AppShell({ currentPageName, children }) {
             </div>
 
             <div className="flex items-center gap-3">
+              <NotificationBell />
+
               <button
                 className="hidden sm:inline-flex items-center px-3 py-1.5 text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 max-w-[220px]"
                 onClick={() => {

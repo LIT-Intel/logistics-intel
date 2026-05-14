@@ -32,6 +32,7 @@ import {
 import { PLAN_LIMITS, normalizePlan as normalizePlanCode } from "@/lib/planLimits";
 import { listEmailAccounts, startGmailOAuth, startOutlookOAuth, sendTestEmail, disconnectEmailAccount } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
+import { resetOnboarding } from "@/lib/onboardingState";
 import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
 import type { LitEmailAccountRow } from "@/types/lit-outbound";
 import { useAuth } from "@/auth/AuthProvider";
@@ -2019,6 +2020,8 @@ export function PreferencesSection(props: {
         )}
       </SCard>
 
+      <ResetOnboardingCard />
+
       {/* Coming soon card */}
       <div style={{
         borderRadius: 12, border: "1px dashed #CBD5E1", background: "#fff",
@@ -2032,6 +2035,31 @@ export function PreferencesSection(props: {
         </div>
       </div>
     </div>
+  );
+}
+
+function ResetOnboardingCard() {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  async function handleReset() {
+    setBusy(true);
+    setMsg(null);
+    const ok = await resetOnboarding();
+    setBusy(false);
+    setMsg(ok ? "Tutorials reset. Refresh any open pages to see the cards again." : "Could not reset. Try again or contact support.");
+    setTimeout(() => setMsg(null), 5000);
+  }
+  return (
+    <SCard title="Onboarding tutorials" subtitle="Replay the 30-second page tours that surface when you first land on each section.">
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <button onClick={handleReset} disabled={busy} style={sBtnPrimary}>
+          {busy ? "Resetting…" : "Reset onboarding"}
+        </button>
+        {msg && (
+          <span style={{ fontFamily: "DM Sans,sans-serif", fontSize: 12, color: "#64748b" }}>{msg}</span>
+        )}
+      </div>
+    </SCard>
   );
 }
 

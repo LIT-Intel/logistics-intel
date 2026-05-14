@@ -209,8 +209,8 @@ export const LIT_MARKETING_BROKER_14: LitMarketingTouch[] = [
     delayDays: 0,
     kind: "email",
     title: "Email · Intro · stack math",
-    subject: "What your team's prospecting stack actually costs",
-    previewText: "Replacing 3–4 disconnected tools with one freight-native workspace.",
+    subject: "Saw your {{top_lane}} moves last quarter",
+    previewText: "Two questions about how you're handling the volume swing.",
     tokensUsed: [
       "{{first_name}}",
       "{{company_name}}",
@@ -219,22 +219,14 @@ export const LIT_MARKETING_BROKER_14: LitMarketingTouch[] = [
     ],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">Most freight broker sales teams I talk to are running the same prospecting stack — and paying for all of it, per rep, every month:</p>
-${stackTableHtml(
-  [
-    { tool: "Trade / BOL data (ImportYeti, Panjiva, etc.)", cost: "$199–$499" },
-    { tool: "Contact database (ZoomInfo, Apollo)", cost: "$79–$149" },
-    { tool: "Email outreach (Smartlead, Instantly)", cost: "$59–$99" },
-    { tool: "CRM seat (HubSpot, Salesforce)", cost: "$45–$90" },
-  ],
-  "$382–$837",
-)}
-<p style="margin:14px 0;">And reps still copy-paste between four dashboards just to figure out who's worth a call this week.</p>
-<p style="margin:0 0 14px 0;">LIT collapses the stack into one workspace: live BOL signals, lane / volume / carrier patterns, contact discovery, and outreach — built specifically for freight sales. Most teams that switch cut $200–$400 / rep / month out of their tooling and recover a half-day of research time per rep per week.</p>
-<p style="margin:0 0 14px 0;">Worth a 20-minute look on {{top_lane}} shippers your team is already working?</p>
+<p style="margin:0 0 14px 0;">Pulled up {{company_name}}'s BOL footprint earlier this week. Your {{top_lane}} lane has been the steady one — but the cadence shifted in the last 60 days. A handful of containers landed on different consignee names than what you'd been running, which usually means either a new partner shipper or a re-route through a different gateway.</p>
+<p style="margin:0 0 14px 0;">Two things I'd be curious about, peer to peer:</p>
+<p style="margin:0 0 14px 0;">1. Are you seeing the same demurrage drift at LA/LB that everyone else is screaming about this quarter? The dwell on a few of your boxes ran past 7 days.</p>
+<p style="margin:0 0 14px 0;">2. Is the {{top_lane}} carrier mix something you picked, or is it whatever your NVO had space on that week?</p>
+<p style="margin:0 0 14px 0;">No pitch — just nosy. If you want to compare notes, hit reply.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      `The cheapest stack isn't the goal — the smallest stack is. Every tool a rep has to context-switch into is a tax on outreach volume.`,
-      "See the stack comparison",
+      `If your dwell on {{top_lane}} is creeping past 5 days, you're not alone — terminal congestion at the LA/LB pair has been ugly since late Q3. Worth flagging on rate sheets before peak.`,
+      "Pull up my lane data",
     ),
   },
   // ── Touch 2 · Day 2 · LinkedIn invite ────────────────────────────────────
@@ -245,8 +237,8 @@ ${stackTableHtml(
     kind: "linkedin_invite",
     title: "LinkedIn connection request",
     description: "Brief, relevant connection request — no pitch.",
-    scriptMarkdown: `Hi {{first_name}}, I work with freight broker sales teams on signal-based prospecting using live BOL data and lane intelligence. Would be good to connect.`,
-    tokensUsed: ["{{first_name}}"],
+    scriptMarkdown: `{{first_name}} — saw {{company_name}}'s footprint on {{top_lane}}. Curious how you're handling the LA/LB dwell drift this quarter. Always good to swap notes with another operator working that lane.`,
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}"],
   },
   // ── Touch 3 · Day 3 · Email · The bad-fit cost ───────────────────────────
   {
@@ -255,37 +247,19 @@ ${stackTableHtml(
     delayDays: 1,
     kind: "email",
     title: "Email · The cost of bad-fit prospecting",
-    subject: "Most broker outreach goes to the wrong companies",
-    previewText: "And the cost is bigger than reps think.",
-    tokensUsed: ["{{first_name}}", "{{sender_name}}"],
+    subject: "Question on your {{top_lane}} carrier mix",
+    previewText: "Looked at the consignee pattern — one thing stood out.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">Here's the math I keep seeing on broker sales teams:</p>
-${comparisonHtml(
-  "Without freight signals",
-  [
-    "Reps work a list of 300 importers from a generic DB.",
-    "~40% are on the wrong lanes for your capacity.",
-    "~25% are locked into a yearly RFP contract.",
-    "~15% don't ship the volume your team handles.",
-    "Best case: 60 real-fit accounts.",
-    "Time spent: ~18 min / account on research.",
-  ],
-  "With LIT lane + volume signals",
-  [
-    "Reps filter to companies actually moving on your lanes.",
-    "Volume bands, carrier mix, cadence are visible up-front.",
-    "Recent shifts surface accounts in-market right now.",
-    "200+ real-fit accounts on the same effort budget.",
-    "Time spent: ~30 sec / account on research.",
-    "Reps make 3–4× more contextual calls per day.",
-  ],
-)}
-<p style="margin:14px 0;">For a 5-rep broker desk, that gap is usually worth 8–12 extra qualified conversations a week — the kind that turn into RFP invites instead of voicemails.</p>
-<p style="margin:0 0 14px 0;">Want to see this run against your top 3 lanes?</p>
+<p style="margin:0 0 14px 0;">Following up — went a layer deeper on {{company_name}}'s {{top_lane}} pattern this morning.</p>
+<p style="margin:0 0 14px 0;">Two things that jumped out:</p>
+<p style="margin:0 0 14px 0;">— You're running FCL on the headhaul but the return legs look like consol moves. That's not a bad setup, but the timing on the empties is where most operators leak money on this pair.</p>
+<p style="margin:0 0 14px 0;">— Your top three consignees are clustered in one inland market. If you've got a backhaul shipper anywhere within 200 miles, there's a drayage round-trip play that I've seen pencil out at $400–$600 per box.</p>
+<p style="margin:0 0 14px 0;">Is the inland leg something you control, or is it on the consignee's account? Different conversation either way.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      undefined,
-      "Run it on my lanes",
+      `FCL headhaul with LCL backhaul is the classic asymmetric exposure. Worth modeling the empty repo cost separately from the loaded leg — most operators bundle them and miss the leak.`,
+      "Look at my consignee cluster",
     ),
   },
   // ── Touch 4 · Day 4 · Call · Voicemail ───────────────────────────────────
@@ -295,9 +269,9 @@ ${comparisonHtml(
     delayDays: 1,
     kind: "call",
     title: "Call · voicemail",
-    description: "Voicemail referencing wasted reach on wrong-lane accounts.",
-    scriptMarkdown: `Hi {{first_name}}, {{sender_name}} from Logistic Intel. We help broker sales teams stop wasting reach on wrong-lane shippers and focus on accounts actually moving freight on lanes you can win. Most teams that switch tell us they replace two or three of their prospecting tools and cut $300+ per rep per month while doubling qualified conversations. Reach me at {{phone}} — would love to compare what your team works with today.`,
-    tokensUsed: ["{{first_name}}", "{{sender_name}}", "{{phone}}"],
+    description: "Voicemail referencing the specific lane signal.",
+    scriptMarkdown: `Hey {{first_name}}, {{sender_name}} here. I won't take long — I was looking at {{company_name}}'s {{top_lane}} moves and noticed your consignee cluster is pretty tight in one inland market. Wanted to ask whether you control the drayage leg or if it's on the consignee, because there might be a backhaul play that pencils out. Hit me back at {{phone}} when you've got two minutes. Thanks.`,
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}", "{{phone}}"],
   },
   // ── Touch 5 · Day 5 · Email · Tool-by-tool comparison ────────────────────
   {
@@ -305,50 +279,21 @@ ${comparisonHtml(
     calendarDay: 5,
     delayDays: 1,
     kind: "email",
-    title: "Email · Tool-by-tool comparison",
-    subject: "How LIT compares to your current stack",
-    previewText: "BOL data + contacts + outreach in one workflow.",
-    tokensUsed: ["{{first_name}}", "{{sender_name}}"],
+    title: "Email · How we actually help",
+    subject: "Where the shipment data fits in",
+    previewText: "Briefly: what we use to spot lane shifts before they hit rates.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">Quick breakdown of how LIT compares to what most broker teams use today:</p>
-${comparisonHtml(
-  "ImportYeti / Panjiva",
-  [
-    "Strong on raw BOL data.",
-    "Weak on contact discovery and outreach.",
-    "No signal scoring or lane prioritization.",
-    "Built for analysts, not for reps.",
-  ],
-  "Logistic Intel",
-  [
-    "Same BOL + lane data, freight-sales tuned.",
-    "Built-in contact discovery + verification.",
-    "Pulse AI scores accounts by signal strength.",
-    "Outreach runs from the same workspace.",
-  ],
-)}
-${comparisonHtml(
-  "ZoomInfo + Apollo",
-  [
-    "Wide contact coverage, generic titles.",
-    "No shipment / lane context whatsoever.",
-    "Reps still need a separate freight data tool.",
-    "Reaches the wrong logistics buyers often.",
-  ],
-  "Logistic Intel",
-  [
-    "Logistics-specific contacts: VP Supply Chain, Procurement.",
-    "Every contact tied to shipment + lane data.",
-    "Reps see WHY a contact matters before reaching out.",
-    "Cuts the contact-DB line item entirely for most teams.",
-  ],
-)}
-<p style="margin:14px 0;">For most broker teams, LIT replaces 2–3 stack line items. Pricing is below the combined cost of what it replaces — that's the model.</p>
-<p style="margin:0 0 14px 0;">Want a side-by-side run against your current tools?</p>
+<p style="margin:0 0 14px 0;">A few of you have asked what I'm actually looking at when I reference your lane data — fair question.</p>
+<p style="margin:0 0 14px 0;">We pull BOL records on shippers and consignees, then layer in carrier mix, mode, cadence, and a 14-day TEU trendline per lane. That's how I caught the cadence shift on {{company_name}}'s {{top_lane}} last week. Same data tells us when a shipper's locked into an RFP cycle vs. when they're testing capacity — which is the only time a cold outreach actually lands.</p>
+<p style="margin:0 0 14px 0;">For broker desks, the practical use is two things:</p>
+<p style="margin:0 0 14px 0;">— Skip the importers who aren't moving on lanes you can cover.</p>
+<p style="margin:0 0 14px 0;">— Get the heads-up when an existing relationship's volume is drifting before they put it out to bid.</p>
+<p style="margin:0 0 14px 0;">If a 20-min walkthrough on three of {{company_name}}'s target lanes would be useful, I'll run it live and you keep the screenshots.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      `Apples-to-apples: ask your team what it costs to onboard a new rep onto the current stack. With LIT it's one login and one workflow — typically a day instead of a week.`,
-      "Send me the side-by-side",
+      `Volume drift on an existing account is the cheapest renewal signal you'll ever get. By the time it's an RFP email in your inbox, you're already in a bidding war.`,
+      "Walk me through three lanes",
     ),
   },
   // ── Touch 6 · Day 6 · LinkedIn DM ────────────────────────────────────────
@@ -358,9 +303,9 @@ ${comparisonHtml(
     delayDays: 1,
     kind: "linkedin_message",
     title: "LinkedIn follow-up DM",
-    description: "Follow-up after connection — concrete question on stack cost.",
-    scriptMarkdown: `Thanks for connecting {{first_name}}. Honest question — when you add up what your reps pay for trade data + contacts + outreach + CRM each month, what's the per-rep total? Most broker teams I talk to are at $400+. LIT typically replaces 2–3 of those line items. Curious where you'd land.`,
-    tokensUsed: ["{{first_name}}"],
+    description: "Follow-up after connection — concrete operator question.",
+    scriptMarkdown: `Thanks for connecting, {{first_name}}. Quick one — on {{top_lane}}, are you running mostly direct shipper relationships or is most of that volume coming through NVOs / freight forwarders? Asking because the carrier mix on your recent moves looks more like a partner play than a primary contract, and that changes which conversations are worth having this quarter.`,
+    tokensUsed: ["{{first_name}}", "{{top_lane}}"],
   },
   // ── Touch 7 · Day 8 · Email · Workflow proof ─────────────────────────────
   {
@@ -368,38 +313,19 @@ ${comparisonHtml(
     calendarDay: 8,
     delayDays: 2,
     kind: "email",
-    title: "Email · Workflow before/after",
-    subject: "Before / after on a typical broker prospecting workflow",
-    previewText: "From 18-minute research per account to 30 seconds.",
+    title: "Email · Where reps actually lose time",
+    subject: "The 18 minutes before a call you can't bill for",
+    previewText: "Pre-call research is where the day disappears.",
     tokensUsed: ["{{first_name}}", "{{top_lane}}", "{{sender_name}}"],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">The shift that drives most of the ROI for broker teams isn't the data — it's the workflow.</p>
-${comparisonHtml(
-  "Before LIT — 18 min / account",
-  [
-    "1. Search ImportYeti, copy company.",
-    "2. Open ZoomInfo, find logistics contact.",
-    "3. Open LinkedIn, verify title and tenure.",
-    "4. Open Smartlead, paste into a sequence.",
-    "5. Open CRM, create the account.",
-    "6. Hope the lane fits next time you check.",
-  ],
-  "With LIT — 30 sec / account",
-  [
-    "1. Filter Pulse by lane / mode / volume.",
-    "2. Open the company — signals + cadence visible.",
-    "3. Save the contact (already verified).",
-    "4. Enroll in a campaign — same workspace.",
-    "5. CRM sync happens automatically.",
-    "6. Re-rank when signals shift — no manual check.",
-  ],
-)}
-<p style="margin:14px 0;">For a rep working 25 accounts a day, that's the difference between 90 minutes of actual selling vs. 90 minutes lost to dashboard tabbing. Across a 5-person desk: a full FTE of recovered selling time per week.</p>
-<p style="margin:0 0 14px 0;">Could I show you what this looks like on {{top_lane}} accounts?</p>
+<p style="margin:0 0 14px 0;">One thing I've watched a lot of broker desks struggle with: the 18 minutes a rep burns before every call.</p>
+<p style="margin:0 0 14px 0;">Pull up the shipper. Try to figure out what they're moving. Hunt for the right person in procurement. Skim LinkedIn. Check the CRM for last quarter's notes. Then dial — usually missing the angle anyway because none of that surfaced what changed in their freight last month.</p>
+<p style="margin:0 0 14px 0;">What we do is collapse that into the first 30 seconds of opening an account: top lanes, cadence, recent shifts, mode mix, and the decision-maker contact info already pulled. The rep walks into the call leading with what actually changed on the shipper's side, instead of "any capacity needs?"</p>
+<p style="margin:0 0 14px 0;">For a rep doing 25 dials a day on lanes like {{top_lane}}, that's the difference between 90 minutes of selling and 90 minutes lost to tab-switching. Want to see it run on a {{top_lane}} account this week?</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      `Time cost is the unspoken stack tax. A $0 free tool that adds 10 minutes per account is more expensive than a paid tool that saves 17.`,
-      "Walk me through it on {{top_lane}}",
+      `If a rep has to open four windows to know what a shipper moves, they won't do it every time. They'll wing the call. Which is why "any capacity?" is still the most common broker opener — not because it works, but because it's what you fall back on when you don't have time to prep.`,
+      "Run it on {{top_lane}}",
     ),
   },
   // ── Touch 8 · Day 9 · Email · Objection / "we already have X" ────────────
@@ -409,24 +335,18 @@ ${comparisonHtml(
     delayDays: 1,
     kind: "email",
     title: "Email · Objection handler",
-    subject: "Already on ZoomInfo, ImportYeti, or Smartlead?",
-    previewText: "LIT isn't another tab — it replaces those tabs.",
+    subject: "Already have a trade-data subscription?",
+    previewText: "Where shipment-data tools start to overlap — and where they don't.",
     tokensUsed: ["{{first_name}}", "{{sender_name}}"],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">If your team already has ZoomInfo, ImportYeti, Smartlead, and a CRM, the fair question is "why add anything?" The honest answer: don't add LIT — <strong>swap</strong> with it.</p>
-<p style="margin:0 0 10px 0;">What most broker teams replace when they move to LIT:</p>
-<ul style="margin:0 0 14px 18px;padding:0;line-height:1.7;">
-  <li>ImportYeti / Panjiva — covered by LIT's BOL + lane intelligence</li>
-  <li>ZoomInfo / Apollo for logistics roles — covered by LIT's freight-tuned contact discovery</li>
-  <li>Smartlead / Instantly seats — outreach now lives in the same workspace</li>
-</ul>
-<p style="margin:0 0 14px 0;">What stays: your CRM (HubSpot, Salesforce, Pipedrive — LIT syncs to all three).</p>
-<p style="margin:0 0 14px 0;">Net for most teams: $200–$400 cut from per-rep monthly cost, plus an hour or two reclaimed per rep per day.</p>
-<p style="margin:0 0 14px 0;">Worth a 20-minute walkthrough so you can decide for yourself?</p>
+<p style="margin:0 0 14px 0;">Most broker desks I talk to already have something for trade data, something for contacts, and something for outreach. The fair pushback on us is: "why one more login?"</p>
+<p style="margin:0 0 14px 0;">Honest answer: we're not trying to be one more login. The reason teams move to us is the workflow — same BOL data, but tied to the decision-maker contact info and the outbound in one place. The handoff between "this shipper's interesting" and "the right person heard about it" usually loses days. Compressing that to minutes is the actual value.</p>
+<p style="margin:0 0 14px 0;">If you've already got a trade-data subscription and it's doing its job, great. The question I'd ask is whether the contact info next to each shipper is actually current, and whether the rep can move from "found them" to "in a sequence" without leaving the screen. If yes, keep what you have. If no, we should talk.</p>
+<p style="margin:0 0 14px 0;">Worth 20 minutes on your existing setup so you can see the gap before I push?</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      `Stack consolidation tends to feel risky on paper and obvious in practice. The teams that move first compound a quarter-over-quarter selling advantage on the teams that don't.`,
-      "Yes, walk me through it",
+      `Trade data without verified contacts is half the value. The other half — verified contacts without freight context — is just noise. The handoff between the two is where most desks bleed time.`,
+      "Compare what I have",
     ),
   },
   // ── Touch 9 · Day 10 · Call · Follow-up ──────────────────────────────────
@@ -436,9 +356,9 @@ ${comparisonHtml(
     delayDays: 1,
     kind: "call",
     title: "Call · follow-up",
-    description: "Follow-up call referencing the stack comparison.",
-    scriptMarkdown: `Hi {{first_name}}, {{sender_name}} again. I sent over a comparison of how LIT replaces ImportYeti, ZoomInfo, and an outreach tool for most broker desks — usually nets out $200–$400 cheaper per rep monthly. Wanted to see if a quick walkthrough on your top lanes would be useful. My number is {{phone}}.`,
-    tokensUsed: ["{{first_name}}", "{{sender_name}}", "{{phone}}"],
+    description: "Follow-up referencing the prior lane observation.",
+    scriptMarkdown: `Hey {{first_name}}, {{sender_name}} circling back. Still curious about the {{top_lane}} cadence shift I flagged last week — whether the new consignee names are a partner shipper or a re-route. Either way it's the kind of thing you usually only catch in the BOLs after the fact, and I'd rather flag it before peak GRI hits. {{phone}} if you've got two minutes. Thanks.`,
+    tokensUsed: ["{{first_name}}", "{{top_lane}}", "{{sender_name}}", "{{phone}}"],
   },
   // ── Touch 10 · Day 11 · Email · Anonymized example ───────────────────────
   {
@@ -447,37 +367,19 @@ ${comparisonHtml(
     delayDays: 1,
     kind: "email",
     title: "Email · Anonymized example",
-    subject: "What a 5-rep broker desk looked like 90 days in",
-    previewText: "Concrete numbers from a team that consolidated their stack.",
-    tokensUsed: ["{{first_name}}", "{{sender_name}}"],
+    subject: "What a similar desk caught in their book",
+    previewText: "Two RFP cycles flagged ~30 days early. Same lane mix.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">A 5-rep broker desk we work with switched their stack to LIT 90 days ago. Anonymized numbers from their last review:</p>
-${comparisonHtml(
-  "Their old stack — per rep / mo",
-  [
-    "ImportYeti — $299",
-    "ZoomInfo — $129",
-    "Smartlead — $79",
-    "Misc lookups (DataAxle, etc) — $40",
-    "Total: ~$547 / rep / mo",
-    "Stack total (5 reps): $2,735 / mo",
-  ],
-  "LIT — per rep / mo",
-  [
-    "Logistic Intel (Pro) — $249",
-    "Everything above, one workspace",
-    "Same CRM sync (HubSpot)",
-    "Total: $249 / rep / mo",
-    "Stack total (5 reps): $1,245 / mo",
-    "Saved: $1,490 / mo · $17,880 / yr",
-  ],
-)}
-<p style="margin:14px 0;">More relevant: qualified meetings booked per rep per week went from 2.4 → 4.1 in the first 60 days. They credit it to less time in dashboards, more time on calls with shippers that actually fit their lanes.</p>
-<p style="margin:0 0 14px 0;">Happy to walk through what this would look like for {{company_name}} if it's useful.</p>
+<p style="margin:0 0 14px 0;">Short one. A 5-rep broker desk on lane mix similar to {{company_name}}'s started working with us about 90 days back. What actually changed in their numbers, anonymized:</p>
+<p style="margin:0 0 14px 0;">— Qualified meetings per rep per week went from 2.4 to 4.1. They credit it to walking into calls with a specific lane observation in hand instead of "any capacity needs?"</p>
+<p style="margin:0 0 14px 0;">— They caught two RFP cycles roughly 30 days early by watching cadence drift on existing accounts. Both closed as renewals at better rates than the prior contract.</p>
+<p style="margin:0 0 14px 0;">— Pre-call research dropped from ~18 min to under a minute per account. Same rep count, materially more dials that mattered.</p>
+<p style="margin:0 0 14px 0;">No magic — just less time hunting for context. Worth a walkthrough on {{company_name}}'s book?</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
       undefined,
-      "Show me a walkthrough",
+      "Walk me through it",
     ),
   },
   // ── Touch 11 · Day 13 · Email · Breakup ──────────────────────────────────
@@ -487,17 +389,17 @@ ${comparisonHtml(
     delayDays: 2,
     kind: "email",
     title: "Email · Breakup",
-    subject: "Should I close the loop?",
-    previewText: "Final note on LIT for your broker desk.",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
+    subject: "Closing the loop — last note",
+    previewText: "If the timing isn't right, no follow-up coming.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">I don't want to keep sending notes if this isn't a fit right now, so I'll close the loop here.</p>
-<p style="margin:0 0 14px 0;">The short version: most broker desks running ImportYeti + ZoomInfo + Smartlead are paying $400–$500 / rep / mo and still working from disconnected dashboards. LIT replaces those, usually nets out cheaper, and gets reps to "in-market" shippers faster.</p>
-<p style="margin:0 0 14px 0;">If shipper prospecting is already dialed at {{company_name}}, no worries. If not, this is worth a 20-minute look. Just reply "send it" and I'll share a recorded walkthrough on your lanes.</p>
+<p style="margin:0 0 14px 0;">Not going to keep landing in your inbox if the timing isn't there.</p>
+<p style="margin:0 0 14px 0;">For what it's worth, the thing I'd actually want you to see is the cadence drift on your {{top_lane}} consignees — that one signal alone has been worth catching RFPs ~30 days early on books that look like {{company_name}}'s. Whether you want to run that with us or not is a separate question.</p>
+<p style="margin:0 0 14px 0;">If it makes sense to revisit in the next quarter, ping me. Otherwise, good selling out there.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
       undefined,
-      "Send the walkthrough",
+      "Send the lane snapshot",
     ),
   },
   // ── Touch 12 · Day 14 · LinkedIn final close ─────────────────────────────
@@ -508,8 +410,8 @@ ${comparisonHtml(
     kind: "linkedin_message",
     title: "LinkedIn final close",
     description: "Clean LinkedIn close — leaves the door open.",
-    scriptMarkdown: `{{first_name}}, closing the loop here. The main idea was helping your broker reps cut $200–$400/mo per rep in stack cost while booking more qualified meetings. Open to reconnecting when consolidating the prospecting stack becomes a priority.`,
-    tokensUsed: ["{{first_name}}"],
+    scriptMarkdown: `{{first_name}}, signing off on this one. The thread was really about the {{top_lane}} cadence shift on {{company_name}}'s book — that signal tends to show up 30 days before an RFP hits. Whenever you want to compare notes on the lane, I'm around.`,
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}"],
   },
 ];
 
@@ -522,8 +424,8 @@ export const LIT_MARKETING_FORWARDER_14: LitMarketingTouch[] = [
     delayDays: 0,
     kind: "email",
     title: "Email · Intro · qualification math",
-    subject: "Most forwarder prospect lists are 80% noise",
-    previewText: "Cut the wrong-mode, wrong-lane, wrong-volume accounts before outreach.",
+    subject: "{{top_lane}} — quick question",
+    previewText: "Saw the mode split on your recent moves. Curious how you decide.",
     tokensUsed: [
       "{{first_name}}",
       "{{company_name}}",
@@ -532,30 +434,13 @@ export const LIT_MARKETING_FORWARDER_14: LitMarketingTouch[] = [
     ],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">Smaller forwarders don't lose deals because they have too few accounts to chase — they lose them because their prospect lists are too broad.</p>
-${comparisonHtml(
-  "Generic importer list",
-  [
-    "All importers in a category.",
-    "No mode visibility (air vs. ocean).",
-    "No lane match to your strengths.",
-    "Volume mix unknown — 1 carton or 1,000?",
-    "Result: ~80% of outreach goes to bad fits.",
-  ],
-  "LIT mode + lane + volume filter",
-  [
-    "Filter to companies on {{top_lane}}.",
-    "See ocean vs. air vs. hybrid up front.",
-    "Volume bands surface the accounts you can win.",
-    "Carrier mix shows if there's a service gap.",
-    "Result: 3–4× lift in real-fit conversations.",
-  ],
-)}
-<p style="margin:14px 0;">For a 3-rep forwarder team, the practical effect is usually 10–15 extra qualified conversations a month with shippers that actually match your service profile.</p>
-<p style="margin:0 0 14px 0;">Worth a quick look on {{company_name}}'s strongest lanes?</p>
+<p style="margin:0 0 14px 0;">Was looking at {{company_name}}'s {{top_lane}} pattern this morning. A few things I noticed and wanted to ask about, operator to operator:</p>
+<p style="margin:0 0 14px 0;">— Your mode split on that lane is heavier on consol than I'd expect for the volume bands you're hitting. Is that a service-level choice (transit predictability over cost) or because the FCL math just didn't work this quarter?</p>
+<p style="margin:0 0 14px 0;">— Carrier mix shifted in the last 30 days — looks like you tried someone new on a couple of moves. Did the transit hold up, or did you eat dwell on the back end?</p>
+<p style="margin:0 0 14px 0;">No pitch, just nosy. If you've got a take, hit reply.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      `Most forwarders win when they pick the right 50 accounts and pursue them with context — not when they email 5,000 names with no signal. LIT is built to make picking those 50 fast.`,
-      "Run it on my lanes",
+      `Mode-split decisions usually look obvious in retrospect and ugly in the moment. If LCL is winning on the rate sheet but FCL buys back a week of transit, that's worth re-modeling — usually pencils out around the 8-CBM mark.`,
+      "Pull up my lane",
     ),
   },
   // ── Touch 2 · Day 2 · LinkedIn invite ────────────────────────────────────
@@ -566,8 +451,8 @@ ${comparisonHtml(
     kind: "linkedin_invite",
     title: "LinkedIn connection request",
     description: "Brief connection request — no pitch.",
-    scriptMarkdown: `Hi {{first_name}}, I work with forwarder sales teams on better lane-match prospecting using live BOL + mode data. Would be good to connect.`,
-    tokensUsed: ["{{first_name}}"],
+    scriptMarkdown: `{{first_name}} — noticed {{company_name}} has been active on {{top_lane}}. Always interesting to compare notes with another forwarder working that pair, especially with the mode split shifting the way it has been.`,
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}"],
   },
   // ── Touch 3 · Day 3 · Email · Cost of broad prospecting ──────────────────
   {
@@ -576,27 +461,18 @@ ${comparisonHtml(
     delayDays: 1,
     kind: "email",
     title: "Email · The real cost of broad prospecting",
-    subject: "What broad prospecting actually costs a 3-rep forwarder team",
-    previewText: "Time, dollars, and missed in-market accounts.",
-    tokensUsed: ["{{first_name}}", "{{sender_name}}"],
+    subject: "Following up on the consol question",
+    previewText: "One more thing I caught on your inbound volume.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">Quick math on a typical 3-rep forwarder team running a generic-list approach:</p>
-${stackTableHtml(
-  [
-    { tool: "Trade data subscription", cost: "$199–$399" },
-    { tool: "Contact / enrichment tool", cost: "$79–$129" },
-    { tool: "Outreach sequencer", cost: "$59–$99" },
-    { tool: "Misc lookup tools (Whois, etc)", cost: "$30–$60" },
-  ],
-  "$367–$687",
-)}
-<p style="margin:14px 0;">That's $1,100–$2,000 / month across 3 reps for a stack that still doesn't tell them which accounts are mode-matched and lane-matched to your service.</p>
-<p style="margin:0 0 14px 0;">LIT replaces most of that — one workspace, freight-native, with mode / lane / volume filters built for forwarder qualification. Most 3-rep teams cut $300–$500 / month from total stack cost and book more qualified conversations.</p>
-<p style="margin:0 0 14px 0;">Want me to model what your stack consolidation would look like?</p>
+<p style="margin:0 0 14px 0;">Quick follow-up on the lane question from the other day. Went a layer deeper on {{company_name}}'s {{top_lane}} moves.</p>
+<p style="margin:0 0 14px 0;">A handful of your inbound shippers are showing a pattern where they pulse heavy for a quarter and then go quiet for two. That's classic seasonal-importer behavior — the kind where if you're not getting a heads-up two weeks before the season starts, the bookings have already gone to whoever called first.</p>
+<p style="margin:0 0 14px 0;">Two of those shippers haven't moved a box in 60+ days, which is usually when they're either ramping for the next pulse or quietly testing another forwarder. Either one is worth a phone call this week.</p>
+<p style="margin:0 0 14px 0;">Want me to send the specific BCO names so you can prioritize?</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      undefined,
-      "Model my stack consolidation",
+      `Seasonal importers are the stickiest book a smaller forwarder can build — predictable, sticky, and they reward whoever called first. The trick is watching the quiet quarter, not the busy one.`,
+      "Send me the shipper names",
     ),
   },
   // ── Touch 4 · Day 4 · Call · Voicemail ───────────────────────────────────
@@ -606,9 +482,9 @@ ${stackTableHtml(
     delayDays: 1,
     kind: "call",
     title: "Call · voicemail",
-    description: "Voicemail referencing forwarder qualification gap.",
-    scriptMarkdown: `Hi {{first_name}}, {{sender_name}} with Logistic Intel. We help smaller forwarders cut the 80% of generic-list outreach that doesn't match your modes or lanes — typically saves $300–$500/mo across the team and books 10+ extra qualified conversations a month. My number is {{phone}}, would love to compare against what your team uses today.`,
-    tokensUsed: ["{{first_name}}", "{{sender_name}}", "{{phone}}"],
+    description: "Voicemail referencing the seasonal shipper signal.",
+    scriptMarkdown: `Hey {{first_name}}, {{sender_name}}. Won't keep you — I sent a note about two shippers on your {{top_lane}} book that have gone quiet for 60+ days. That window's usually when they're ramping or testing somebody else, and the call this week is the one that matters. Hit me at {{phone}} if you want the specific names. Thanks.`,
+    tokensUsed: ["{{first_name}}", "{{top_lane}}", "{{sender_name}}", "{{phone}}"],
   },
   // ── Touch 5 · Day 5 · Email · Mode + lane fit ────────────────────────────
   {
@@ -616,36 +492,19 @@ ${stackTableHtml(
     calendarDay: 5,
     delayDays: 1,
     kind: "email",
-    title: "Email · Mode + lane fit beats company name",
-    subject: "Stop chasing importers — start chasing fit",
-    previewText: "Why shipping profile matters more than company name.",
-    tokensUsed: ["{{first_name}}", "{{sender_name}}"],
+    title: "Email · How the lane data actually works",
+    subject: "What we use to spot the quiet shippers",
+    previewText: "Briefly: where the cadence signal comes from.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">Most forwarder prospect lists are organized by industry or revenue band. Both are weak proxies for "would this account actually fit our service."</p>
-${comparisonHtml(
-  "Industry / revenue lists",
-  [
-    "\"$50M+ furniture importers\" → 600 names.",
-    "Half are FCL ocean — your team is LCL.",
-    "A third already have a 3PL contract.",
-    "Most won't say.",
-    "Outreach feels generic to recipients.",
-  ],
-  "LIT shipping-profile match",
-  [
-    "Filter by mode (LCL / FCL / air).",
-    "Filter by lane match to your network.",
-    "Filter by cadence — monthly vs. one-off.",
-    "Sort by carrier-switch signals.",
-    "Outreach references their actual freight.",
-  ],
-)}
-<p style="margin:14px 0;">For smaller forwarders, the win isn't more names — it's a tighter list of accounts where your service profile and their shipping profile actually overlap. That's the conversation worth having.</p>
-<p style="margin:0 0 14px 0;">Want to see what a fit-filtered list looks like for {{company_name}}?</p>
+<p style="margin:0 0 14px 0;">A few of you asked what I'm pulling against when I reference a shipper going quiet on {{top_lane}}. Worth a brief.</p>
+<p style="margin:0 0 14px 0;">We work off BOL records — every inbound container has a consignee, shipper, carrier, port pair, and date. Layer that into a per-account cadence model and you get a clear pattern: monthly importers, seasonal pulses, and the ones whose volume just dropped off a cliff for reasons their incumbent forwarder probably hasn't noticed yet.</p>
+<p style="margin:0 0 14px 0;">For a 3-person forwarder team, the practical use is short list, real reason. Instead of cold-calling 200 names from a directory, the rep walks into 20 calls with "your boxes on this lane went quiet — what's going on?" That's a conversation, not a pitch.</p>
+<p style="margin:0 0 14px 0;">Happy to run a fit-filtered shortlist for {{company_name}}'s active lanes if that'd be useful.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
       `For a smaller team, 50 well-fit accounts beats 500 generic ones every quarter. The math is on time-per-conversation, not list size.`,
-      "Show me a fit-filtered list",
+      "Run my shortlist",
     ),
   },
   // ── Touch 6 · Day 6 · LinkedIn DM ────────────────────────────────────────
@@ -655,9 +514,9 @@ ${comparisonHtml(
     delayDays: 1,
     kind: "linkedin_message",
     title: "LinkedIn follow-up DM",
-    description: "Follow-up — concrete question on prospecting fit-rate.",
-    scriptMarkdown: `Thanks for connecting {{first_name}}. Honest question — when your reps run a prospect list, what % of accounts end up actually mode-matched and lane-matched to your service? Most forwarder teams I talk to are at 20–30%. LIT typically pushes that to 70–80% by filtering on shipping profile before outreach. Curious where you'd land.`,
-    tokensUsed: ["{{first_name}}"],
+    description: "Follow-up — concrete operator question on the lane.",
+    scriptMarkdown: `Thanks for connecting, {{first_name}}. Quick one — on the {{top_lane}} consol moves I flagged in my note, are you running those through a partner NVO or directly with the carrier? Asking because the rate exposure on shared consols this quarter has been ugly, and operators who own the BL are sitting in a different spot than ones who don't.`,
+    tokensUsed: ["{{first_name}}", "{{top_lane}}"],
   },
   // ── Touch 7 · Day 8 · Email · Pulse AI 30-second brief ───────────────────
   {
@@ -665,38 +524,19 @@ ${comparisonHtml(
     calendarDay: 8,
     delayDays: 2,
     kind: "email",
-    title: "Email · Pulse AI · 30 seconds before each call",
-    subject: "The 30 seconds before a forwarder rep makes a call",
-    previewText: "What changed, what they ship, what to lead with.",
+    title: "Email · Pulse · 30 seconds before each call",
+    subject: "The 30 seconds before the call",
+    previewText: "What changed on the lane, what to open with.",
     tokensUsed: ["{{first_name}}", "{{top_lane}}", "{{sender_name}}"],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">The hardest 30 seconds in forwarder sales is right before a rep dials — getting enough context to not sound generic, fast enough that you can still make the next 20 calls.</p>
-${comparisonHtml(
-  "Typical pre-call research — 12 min",
-  [
-    "Tab to ImportYeti, search company.",
-    "Skim 80 rows of BOL data.",
-    "Tab to LinkedIn, check the contact.",
-    "Tab to Google, hunt for recent news.",
-    "Tab to CRM, scan prior notes.",
-    "Dial — usually missed the angle.",
-  ],
-  "LIT Pulse AI brief — 30 sec",
-  [
-    "Open the account.",
-    "Pulse summary: top lanes, cadence, recent shifts.",
-    "Mode mix + carrier mix in one card.",
-    "Suggested outreach angle, signal-based.",
-    "One click — start the call.",
-    "Lead with what actually changed in their freight.",
-  ],
-)}
-<p style="margin:14px 0;">For a rep dialing 25–30 accounts a day, that's 4–5 hours a week reclaimed for actual conversations. For a 3-rep team, it's the equivalent of adding half a rep — without the salary.</p>
-<p style="margin:0 0 14px 0;">Could I show you what a Pulse brief looks like for a {{top_lane}} shipper?</p>
+<p style="margin:0 0 14px 0;">The hardest 30 seconds in forwarder sales is the bit right before a rep dials — getting enough context to not sound generic, fast enough that the next 20 calls still happen today.</p>
+<p style="margin:0 0 14px 0;">What we built for that moment is a one-card brief per shipper: top lanes, cadence, mode mix, carrier mix, what shifted in the last 30 days, and one suggested opener tied to the actual signal. No 80-row BOL grid to scroll. Open the account, glance at the card, dial.</p>
+<p style="margin:0 0 14px 0;">For a rep doing 25–30 dials a day, that's 4–5 hours of pre-call hunting clawed back per week. For a 3-rep team on lanes like {{top_lane}}, that's basically half an extra rep without the headcount.</p>
+<p style="margin:0 0 14px 0;">Want me to send a sample brief on one of {{top_lane}}'s active shippers so you can see the format?</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
-      `Pulse AI is what reps open right before they dial. 30 seconds in, you know cadence, top lanes, recent shifts, and what to lead with. The point isn't more data; it's the right data, fast.`,
-      "See a sample Pulse brief",
+      `The point isn't more data — it's the right data, fast. A rep who knows what to lead with closes more meetings than one with a longer dossier.`,
+      "Send a sample brief",
     ),
   },
   // ── Touch 8 · Day 9 · Email · Stack consolidation deep-dive ──────────────
@@ -705,38 +545,19 @@ ${comparisonHtml(
     calendarDay: 9,
     delayDays: 1,
     kind: "email",
-    title: "Email · Stack consolidation deep-dive",
-    subject: "If you're already paying for ImportYeti + Apollo + Smartlead",
-    previewText: "Most forwarders can replace all three with one tool.",
+    title: "Email · The handoff problem",
+    subject: "Where the prospecting workflow breaks",
+    previewText: "Trade data, contact info, outreach — the gap is the problem.",
     tokensUsed: ["{{first_name}}", "{{sender_name}}"],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">A common pattern on forwarder teams: 3 tools, 3 invoices, 3 logins per rep, and the workflow is still copy-paste.</p>
-${comparisonHtml(
-  "Current 3-tool stack — per rep / mo",
-  [
-    "ImportYeti / Panjiva — ~$299",
-    "Apollo / ZoomInfo — ~$99",
-    "Smartlead / Instantly — ~$79",
-    "Total: ~$477 / rep / mo",
-    "3 reps: ~$1,431 / mo",
-    "3 reps × 12: $17,172 / yr",
-  ],
-  "LIT (Pro plan) — per rep / mo",
-  [
-    "Logistic Intel — $249",
-    "BOL + lane + mode signals included",
-    "Forwarder-tuned contact discovery",
-    "Outreach engine in same workspace",
-    "3 reps: $747 / mo",
-    "3 reps × 12: $8,964 / yr",
-  ],
-)}
-<p style="margin:14px 0;">Net for a 3-rep team: <strong>~$8,200 / yr cut from tooling</strong>, plus the time tax of switching between 3 dashboards goes to zero.</p>
-<p style="margin:0 0 14px 0;">Worth a side-by-side against your current setup?</p>
+<p style="margin:0 0 14px 0;">Most forwarder teams I talk to have something for shipment data we already have on them, something for decision-maker contact info, and something for outreach. Three tools. That part's normal.</p>
+<p style="margin:0 0 14px 0;">The problem isn't owning them — it's the handoff between them. Rep spots a promising shipper in the trade data, opens a second tab to find the contact, opens a third to drop them in a sequence, then a fourth to log it in CRM. By the time that loop closes the rep has lost the thread on whatever specific signal made the shipper interesting in the first place. The outreach goes out generic.</p>
+<p style="margin:0 0 14px 0;">What collapses the workflow is doing all of it from the same screen with the lane signal in view the entire time. The opener writes itself when the rep can see "cadence dropped on this consignee 45 days ago" while drafting the email.</p>
+<p style="margin:0 0 14px 0;">Worth a 20-minute walkthrough on a couple of {{first_name}}'s real accounts so you can see the difference live?</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
       undefined,
-      "Run the side-by-side",
+      "Run the walkthrough",
     ),
   },
   // ── Touch 9 · Day 10 · Call · Follow-up ──────────────────────────────────
@@ -746,9 +567,9 @@ ${comparisonHtml(
     delayDays: 1,
     kind: "call",
     title: "Call · follow-up",
-    description: "Follow-up referencing the 3-tool consolidation math.",
-    scriptMarkdown: `Hi {{first_name}}, {{sender_name}} again. The note I sent had the math on consolidating ImportYeti + Apollo + Smartlead into LIT — usually $8k+/yr saved for a 3-rep team plus a much cleaner workflow. Wanted to see if a walkthrough on your lanes makes sense. Reach me at {{phone}}.`,
-    tokensUsed: ["{{first_name}}", "{{sender_name}}", "{{phone}}"],
+    description: "Follow-up call referencing the quiet-shipper signal.",
+    scriptMarkdown: `Hey {{first_name}}, {{sender_name}} circling back. Wanted to see if the two quiet {{top_lane}} shippers I flagged ended up being worth a call. Either way I'd love to hear what came back from them — and if you want me to run the same cadence check on the rest of your book, that takes about 10 minutes. {{phone}} when you've got a sec. Thanks.`,
+    tokensUsed: ["{{first_name}}", "{{top_lane}}", "{{sender_name}}", "{{phone}}"],
   },
   // ── Touch 10 · Day 11 · Email · Anonymized example ───────────────────────
   {
@@ -757,37 +578,19 @@ ${comparisonHtml(
     delayDays: 1,
     kind: "email",
     title: "Email · Anonymized example",
-    subject: "What a 3-rep forwarder team booked in 60 days on LIT",
-    previewText: "Numbers from a team that consolidated their stack.",
-    tokensUsed: ["{{first_name}}", "{{sender_name}}"],
+    subject: "What a similar forwarder team caught in 60 days",
+    previewText: "Three booked accounts from cadence drift on a single lane.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">A 3-rep forwarder team we work with moved their full prospecting stack onto LIT 60 days ago. Anonymized snapshot:</p>
-${comparisonHtml(
-  "Days 1–60 — before LIT",
-  [
-    "Stack cost: ~$477 / rep / mo",
-    "Mode-fit rate: ~22% of accounts",
-    "Avg pre-call research: 11 min",
-    "Qualified meetings: 2.1 / rep / week",
-    "Wins / rep / quarter: 1.3",
-    "Reps burning time on dashboard switching",
-  ],
-  "Days 1–60 — on LIT",
-  [
-    "Stack cost: $249 / rep / mo (-48%)",
-    "Mode-fit rate: ~74% of accounts",
-    "Avg pre-call research: 35 sec",
-    "Qualified meetings: 3.6 / rep / week (+71%)",
-    "Wins / rep / quarter: 2.4 (projected)",
-    "Reps in one workspace, all day",
-  ],
-)}
-<p style="margin:14px 0;">The shift wasn't magic — it was eliminating the dashboard-tabbing tax and getting reps to in-market shippers faster. Same headcount, more output.</p>
-<p style="margin:0 0 14px 0;">Happy to model what this would look like for {{company_name}}.</p>
+<p style="margin:0 0 14px 0;">Short story for context. A 3-rep forwarder team on a similar lane mix to {{company_name}}'s started using us 60 days back. What changed:</p>
+<p style="margin:0 0 14px 0;">— Three new BCO accounts booked, all of them shippers their reps had been on quietly for months but couldn't time. The cadence-drift signal flagged each one within a two-week window of when the incumbent forwarder was clearly losing the relationship.</p>
+<p style="margin:0 0 14px 0;">— Qualified meetings per rep per week moved from 2.1 to 3.6. Same reps, same dial volume — just better openers.</p>
+<p style="margin:0 0 14px 0;">— Pre-call research dropped from ~11 min to under a minute per account. The hours saved went straight into more dials.</p>
+<p style="margin:0 0 14px 0;">No magic — they just stopped chasing names from a directory and started chasing shippers whose freight footprint actually said something. Worth seeing what the same approach surfaces on {{company_name}}'s book?</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
       undefined,
-      "Model it for my team",
+      "Run it on my book",
     ),
   },
   // ── Touch 11 · Day 13 · Email · Breakup ──────────────────────────────────
@@ -797,17 +600,17 @@ ${comparisonHtml(
     delayDays: 2,
     kind: "email",
     title: "Email · Breakup",
-    subject: "Should I close the loop?",
-    previewText: "Final note on LIT for forwarder prospecting.",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{sender_name}}"],
+    subject: "Last note — closing the loop",
+    previewText: "If the timing's off, I'll back off.",
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
     html: wrapPlainText(
       `<p style="margin:0 0 14px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 14px 0;">I don't want to keep sending notes if this isn't relevant, so I'll close the loop here.</p>
-<p style="margin:0 0 14px 0;">Short version: smaller forwarder teams running ImportYeti + Apollo + Smartlead are typically at ~$477 / rep / mo and still working from disconnected lists. LIT replaces those, nets out below the combined cost, and filters accounts by actual mode + lane + cadence fit before outreach.</p>
-<p style="margin:0 0 14px 0;">If shipper prospecting is already a strength at {{company_name}}, no worries. If consolidating the stack and tightening fit-rate is on the radar, reply "send it" and I'll share a recorded walkthrough on your lanes.</p>
+<p style="margin:0 0 14px 0;">Not going to keep landing in your inbox if the timing isn't there.</p>
+<p style="margin:0 0 14px 0;">For what it's worth, the thing I'd really want you to see is the cadence-drift signal on {{company_name}}'s {{top_lane}} book — that one read alone has been worth catching shippers ~30 days before their incumbent forwarder loses them. Whether you want to do something about it with us or not is a separate question.</p>
+<p style="margin:0 0 14px 0;">If it makes more sense to revisit next quarter, ping me. Otherwise, good selling out there.</p>
 <p style="margin:0;">— {{sender_name}}</p>`,
       undefined,
-      "Send the walkthrough",
+      "Send the lane snapshot",
     ),
   },
   // ── Touch 12 · Day 14 · LinkedIn final close ─────────────────────────────
@@ -818,8 +621,8 @@ ${comparisonHtml(
     kind: "linkedin_message",
     title: "LinkedIn final close",
     description: "Clean LinkedIn close — leaves the door open.",
-    scriptMarkdown: `{{first_name}}, closing the loop. Main idea was helping your forwarder reps cut ~$200–$300/mo per rep in stack cost while raising mode-fit rate from ~22% to 70%+. Open to reconnecting when consolidating the prospecting stack is a priority.`,
-    tokensUsed: ["{{first_name}}"],
+    scriptMarkdown: `{{first_name}}, signing off on this one. The thread was really about the cadence-drift read on {{company_name}}'s {{top_lane}} shippers — that signal tends to show up before the incumbent loses them. Whenever you want to compare notes on the lane, I'm around.`,
+    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}"],
   },
 ];
 
