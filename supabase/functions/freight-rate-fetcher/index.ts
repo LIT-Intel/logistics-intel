@@ -6,15 +6,17 @@
 // updates). Public Freightos pages render the current USD per 40' rate
 // in the server-rendered HTML; we extract via regex.
 //
-// Auth: requires service role bearer (cron uses the service role key).
-// Manual invocations also accepted with a super-admin email allowlist
-// for sanity checks. No user JWT required.
+// Auth: X-Internal-Cron header against LIT_CRON_SECRET env (shared-secret
+// pattern used by all LIT cron-triggered edge fns — see _shared/cron_auth.ts).
+// pg_cron + pg_net injects the header from current_setting('app.lit_cron_secret').
+// Manual invocations should pass the same header.
 //
 // Body (optional):
 //   { lanes?: ("FBX01" | ... | "FBX12")[]  // restrict to a subset
 //     dry_run?: boolean }                  // return parsed values, do not write
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { verifyCronAuth } from "../_shared/cron_auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -117,48 +119,13 @@ async function fetchLaneRate(lane: Lane): Promise<{
   }
 }
 
-async function authorizeRequest(req: Request, supabase: any): Promise<
-  | { ok: true; via: "service_role" | "admin_jwt"; userId: string | null }
-  | { ok: false; status: number; body: any }
-> {
-  const auth = req.headers.get("Authorization");
-  if (!auth || !auth.startsWith("Bearer ")) {
-    return {
-      ok: false,
-      status: 401,
-      body: { ok: false, error: "Missing authorization", code: "UNAUTHORIZED" },
-    };
-  }
-  const token = auth.replace(/^Bearer\s+/i, "").trim();
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (token === serviceKey) {
-    return { ok: true, via: "service_role", userId: null };
-  }
-  // Otherwise: super-admin JWT
-  try {
-    const { data } = await supabase.auth.getUser(token);
-    const email = String(data?.user?.email ?? "").toLowerCase();
-    const allow = new Set([
-      "vraymond@sparkfusiondigital.com",
-      "support@logisticintel.com",
-    ]);
-    if (allow.has(email)) {
-      return { ok: true, via: "admin_jwt", userId: data?.user?.id ?? null };
-    }
-  } catch {
-    // fall through to forbidden
-  }
-  return {
-    ok: false,
-    status: 403,
-    body: { ok: false, error: "Forbidden", code: "FORBIDDEN" },
-  };
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
+
+  const auth = verifyCronAuth(req);
+  if (!auth.ok) return auth.response;
 
   const requestId = crypto.randomUUID();
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -170,9 +137,6 @@ Deno.serve(async (req: Request) => {
     );
   }
   const supabase = createClient(supabaseUrl, supabaseKey);
-
-  const auth = await authorizeRequest(req, supabase);
-  if (!auth.ok) return jsonResponse(auth.body, auth.status);
 
   let body: any = {};
   try {
@@ -192,7 +156,7 @@ Deno.serve(async (req: Request) => {
 
   console.log("➡️ freight-rate-fetcher", {
     requestId,
-    via: auth.via,
+    via: "cron_shared_secret",
     lane_count: lanesToFetch.length,
     dry_run: dryRun,
   });
