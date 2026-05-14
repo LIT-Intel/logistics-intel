@@ -33,6 +33,9 @@ export interface ShipmentLite {
   origin_country_code?: string | null;
   dest_country_code?: string | null;
   mode?: string | null;
+  arrival_date?: string | null;
+  dest_city?: string | null;
+  dest_state?: string | null;
 }
 
 export interface CommandCenterRecord {

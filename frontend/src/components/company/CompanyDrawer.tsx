@@ -131,10 +131,8 @@ export default function CompanyDrawer({ company, open, onOpenChange }: Props) {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {shipments.map((s, index) => {
-                        const destCity = (s as any).dest_city as string | null | undefined;
-                        const arrivalDate = (s as any).arrival_date as string | null | undefined;
-                        const finalDest = destCity
-                          ? `${destCity}${s.dest_country_code ? `, ${s.dest_country_code}` : ''}`
+                        const finalDest = s.dest_city
+                          ? `${s.dest_city}${s.dest_country_code ? `, ${s.dest_country_code}` : ''}`
                           : '—';
                         return (
                           <tr key={`${s.bol}-${index}`} className="bg-white">
@@ -148,7 +146,7 @@ export default function CompanyDrawer({ company, open, onOpenChange }: Props) {
                             <td className="px-3 py-2 text-slate-600">{s.origin_port || '—'}</td>
                             <td className="px-3 py-2 text-slate-600">{s.destination_port || '—'}</td>
                             <td className="px-3 py-2 text-slate-600">{finalDest}</td>
-                            <td className="px-3 py-2 text-slate-600">{arrivalDate ? new Date(arrivalDate).toLocaleDateString('en-US') : '—'}</td>
+                            <td className="px-3 py-2 text-slate-600">{s.arrival_date ? new Date(s.arrival_date).toLocaleDateString('en-US') : '—'}</td>
                             <td className="px-3 py-2 text-slate-600">{s.shipper_name || '—'}</td>
                             <td className="px-3 py-2 text-slate-600">{s.consignee_name || '—'}</td>
                             <td className="px-3 py-2 text-right text-slate-800">{formatNumber(s.shipping_cost_usd ?? null)}</td>
