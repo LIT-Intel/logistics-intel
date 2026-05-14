@@ -16,6 +16,7 @@ import {
   type NotificationSeverity,
   type NotificationStatus,
 } from "@/lib/notifications";
+import AlertPreferencesPanel from "@/features/notifications/AlertPreferencesPanel";
 
 const SEV_DOT: Record<NotificationSeverity, string> = {
   low: "bg-slate-300",
@@ -125,6 +126,10 @@ export default function NotificationsInbox() {
             </button>
           ) : null}
         </header>
+
+        <div className="mb-5">
+          <AlertPreferencesPanel />
+        </div>
 
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 flex-wrap gap-2">
