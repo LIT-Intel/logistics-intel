@@ -235,7 +235,15 @@ GEOGRAPHY RULES:
 - "West Coast" / "Northeast" / "Midwest" / "Southwest" / "Mountain West" → set region
 - Metros: "Atlanta", "Dallas-Fort Worth", "Miami", "Los Angeles", "New York", "Chicago", "Houston", "Savannah", "Charleston" → metros[]
 - ZIP/postal: "zip 30328" / "near 30346" → postal_codes
-- Country phrases like "Vietnam to Savannah" → trade_filters.origin_country="Vietnam", trade_filters.destination_port="Savannah"
+
+TRADE-LANE vs COMPANY-HQ — CRITICAL DISTINCTION:
+- geo.countries is the company HEADQUARTERS country. ONLY put a country here when the user explicitly says the COMPANY is based / located / headquartered there.
+- trade_filters.origin_country and trade_filters.destination_country are SHIPMENT ENDPOINTS. NEVER put these same country names into geo.countries.
+- Examples:
+  - "companies in china that ship to the us" → geo.countries:["China"], trade_filters.destination_country:"United States". geo.countries gets CHINA only.
+  - "us companies importing from china" → trade_filters.origin_country:"China", geo.countries:[] (or ["United States"] if explicitly stated). DO NOT add China to geo.countries.
+  - "electronic companies importing from china to georgia" → geo.states:["Georgia"], trade_filters.origin_country:"China", trade_filters.destination_country:"United States". geo.countries:[].
+  - "companies shipping vietnam to savannah" → trade_filters.origin_country:"Vietnam", trade_filters.destination_port:"Savannah". geo.countries:[].
 
 SIZE RULES:
 - "small" → 1-50 | "small business" → 1-100 | "mid-size" / "middle market" → 51-500 | "enterprise" / "large" → 500+
@@ -552,6 +560,19 @@ function normalizeIntent(intent: any, rawQuery: string): ParsedIntent {
 }
 
 function expandIntent(intent: ParsedIntent): ParsedIntent {
+  // Trade origin/destination countries are SHIPMENT-route attributes, not
+  // the company's HQ country. The LLM parser often conflates "imports from
+  // China to Georgia" into BOTH trade_filters.origin_country="China" AND
+  // geo.countries=["China"], which then makes the directory filter on
+  // country='China' and excludes every Georgia-based importer. Scrub
+  // geo.countries of any value that's actually a trade endpoint so the
+  // company-HQ filter stops fighting the trade-lane intent.
+  const tradeEndpoints = new Set<string>();
+  if (intent.trade_filters?.origin_country) tradeEndpoints.add(intent.trade_filters.origin_country.toLowerCase());
+  if (intent.trade_filters?.destination_country) tradeEndpoints.add(intent.trade_filters.destination_country.toLowerCase());
+  if (tradeEndpoints.size > 0 && Array.isArray(intent.geo.countries)) {
+    intent.geo.countries = intent.geo.countries.filter((c) => !tradeEndpoints.has(String(c).toLowerCase()));
+  }
   // Region → states
   if (intent.geo.region) {
     const key = intent.geo.region.toLowerCase();
@@ -752,6 +773,31 @@ async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, t
       return [];
     }
 
+    // If the query has trade_filters (origin_country / destination_country),
+    // pull importyeti snapshot's top_routes for the matched companies in a
+    // single batch query. Most directory rows won't have a snapshot, but the
+    // ones that do let us verify the lane intent ("imports from China") and
+    // surface it as a match reason. ImportYeti only covers ~268 companies
+    // today, so we treat this as an enrichment, not a hard filter.
+    const tradeOrigin = intent.trade_filters?.origin_country?.toLowerCase() || "";
+    const tradeDest = intent.trade_filters?.destination_country?.toLowerCase() || "";
+    const hasTradeFilter = Boolean(tradeOrigin || tradeDest);
+    let snapshotByKey = new Map<string, any>();
+    if (hasTradeFilter && (data as any[]).length > 0) {
+      try {
+        const keys = (data as any[]).map((r) => r.company_key).filter(Boolean);
+        if (keys.length > 0) {
+          const { data: snaps } = await supa
+            .from("lit_importyeti_company_snapshot")
+            .select("company_id, parsed_summary")
+            .in("company_id", keys);
+          for (const s of (snaps || [])) snapshotByKey.set(s.company_id, s.parsed_summary || {});
+        }
+      } catch (err) {
+        console.warn("[pulse-search] importyeti snapshot fetch failed:", err);
+      }
+    }
+
     const lowerTerms = topTerms.map((t) => t.toLowerCase());
     const scored = (data as any[])
       .map((row) => {
@@ -768,9 +814,34 @@ async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, t
             break;
           }
         }
+        // Trade-lane match against importyeti top_routes (when available).
+        // Each route is "Origin Country → Destination Country" — we check
+        // either side of the arrow against the parsed intent.
+        let laneBoost = 0;
+        if (hasTradeFilter) {
+          const snap = snapshotByKey.get(row.company_key);
+          const routes = Array.isArray(snap?.top_routes) ? snap.top_routes : [];
+          for (const route of routes) {
+            const r = String(route?.route || "").toLowerCase();
+            if (!r) continue;
+            const parts = r.split("→").map((p: string) => p.trim());
+            const origin = parts[0] || "";
+            const dest = parts[1] || "";
+            const originOk = !tradeOrigin || origin.includes(tradeOrigin);
+            const destOk = !tradeDest || dest.includes(tradeDest);
+            if (originOk && destOk && (tradeOrigin || tradeDest)) {
+              const shipments = Number(route?.shipments) || 0;
+              const teu = Number(route?.teu) || 0;
+              laneBoost = 0.2;
+              const label = [tradeOrigin && origin, tradeDest && dest].filter(Boolean).join(" → ");
+              reasons.push(`Trade lane verified: ${label}${shipments ? ` · ${shipments} shipments` : ""}${teu ? ` · ${teu.toFixed(1)} TEU` : ""}`);
+              break;
+            }
+          }
+        }
         result.matched_reasons = reasons;
-        result.confidence_score = Math.min(0.9, 0.5 + textBoost + Math.min(0.2, (row.shipments || 0) / 500));
-        return { result, textBoost };
+        result.confidence_score = Math.min(0.95, 0.5 + textBoost + laneBoost + Math.min(0.2, (row.shipments || 0) / 500));
+        return { result, textBoost, laneBoost };
       })
       // When text terms were supplied we trust the SQL filter; no extra
       // in-memory drop is necessary. Score still surfaces best matches first.
