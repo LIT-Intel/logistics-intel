@@ -590,7 +590,87 @@ export default function PulseQuickCard({
             <Row label="Employees" value={company.employee_count || '—'} />
             <Row label="Revenue band" value={company.annual_revenue || '—'} />
             <Row label="HQ" value={location || '—'} />
+            {company.firmographics?.founded_year ? (
+              <Row label="Founded" value={String(company.firmographics.founded_year)} />
+            ) : null}
+            {company.firmographics?.publicly_traded_symbol ? (
+              <Row
+                label="Public"
+                value={`${company.firmographics.publicly_traded_exchange || ''}${company.firmographics.publicly_traded_exchange ? ': ' : ''}${company.firmographics.publicly_traded_symbol}${company.firmographics.market_cap ? ` · ${company.firmographics.market_cap}` : ''}`.trim()}
+              />
+            ) : null}
+            {company.firmographics?.owned_by?.name ? (
+              <Row label="Parent" value={company.firmographics.owned_by.name} />
+            ) : null}
+            {typeof company.firmographics?.headcount_twelve_month_growth === 'number' ? (
+              <Row
+                label="Headcount 12mo"
+                value={`${company.firmographics.headcount_twelve_month_growth >= 0 ? '+' : ''}${(company.firmographics.headcount_twelve_month_growth * 100).toFixed(1)}%`}
+              />
+            ) : null}
+            {typeof company.firmographics?.num_open_positions === 'number' && company.firmographics.num_open_positions > 0 ? (
+              <Row label="Open roles" value={`${company.firmographics.num_open_positions} hiring`} />
+            ) : null}
           </Section>
+
+          {/* Funding (Apollo, free signal) */}
+          {(company.firmographics?.latest_funding_round_date || company.firmographics?.total_funding_printed) ? (
+            <Section label="Funding">
+              {company.firmographics?.latest_funding_stage ? (
+                <Row label="Latest round" value={company.firmographics.latest_funding_stage} />
+              ) : null}
+              {company.firmographics?.latest_funding_round_date ? (
+                <Row label="Round date" value={new Date(company.firmographics.latest_funding_round_date).toLocaleDateString()} />
+              ) : null}
+              {company.firmographics?.total_funding_printed ? (
+                <Row label="Total raised" value={company.firmographics.total_funding_printed} />
+              ) : null}
+            </Section>
+          ) : null}
+
+          {/* Tech stack (from Apollo technology_names) */}
+          {Array.isArray(company.tech_stack) && company.tech_stack.length > 0 ? (
+            <Section label="Tech stack">
+              <div className="flex flex-wrap gap-1.5 px-3 py-2">
+                {company.tech_stack.slice(0, 12).map((t) => (
+                  <span
+                    key={t}
+                    className="font-body inline-flex items-center rounded-full border border-violet-100 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </Section>
+          ) : null}
+
+          {/* Decision-makers (Apollo people search — free) */}
+          {Array.isArray(company.contacts) && company.contacts.length > 0 ? (
+            <Section label={`Decision-makers (${company.contacts.length})`}>
+              <div className="flex flex-col gap-1 px-3 py-2">
+                {company.contacts.slice(0, 5).map((c) => (
+                  <div key={c.id || c.full_name} className="flex items-center justify-between gap-2 text-[12px]">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-display truncate font-semibold text-slate-900">{c.full_name || 'Unknown'}</div>
+                      <div className="font-body truncate text-[11px] text-slate-500">
+                        {c.title || '—'}{c.seniority ? ` · ${c.seniority}` : ''}
+                      </div>
+                    </div>
+                    {c.linkedin_url ? (
+                      <a
+                        href={ensureHttp(c.linkedin_url)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-display inline-flex items-center gap-0.5 rounded-md border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-blue-700 hover:bg-blue-100"
+                      >
+                        <Linkedin className="h-3 w-3" />
+                      </a>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          ) : null}
 
           {/* Contact */}
           <Section label="Contact">

@@ -117,6 +117,37 @@ type PulseCompanyResult = {
     value_usd?: number | null;
     last_shipment_date?: string | null;
   } | null;
+  // v9 — fields Apollo already returns on every org payload but we used
+  // to drop. Surfacing them costs zero new API calls and removes the need
+  // for separate Crunchbase / BuiltWith integrations for the common case.
+  firmographics?: {
+    founded_year?: number | null;
+    naics_codes?: string[];
+    sic_codes?: string[];
+    logo_url?: string | null;
+    linkedin_uid?: string | null;
+    market_cap?: string | null;
+    publicly_traded_symbol?: string | null;
+    publicly_traded_exchange?: string | null;
+    headcount_six_month_growth?: number | null;
+    headcount_twelve_month_growth?: number | null;
+    owned_by?: { id?: string | null; name?: string | null; website_url?: string | null } | null;
+    num_open_positions?: number | null;
+    latest_funding_round_date?: string | null;
+    latest_funding_stage?: string | null;
+    total_funding?: number | null;
+    total_funding_printed?: string | null;
+  } | null;
+  tech_stack?: string[];
+  contacts?: Array<{
+    id?: string | null;
+    full_name?: string | null;
+    title?: string | null;
+    seniority?: string | null;
+    department?: string | null;
+    linkedin_url?: string | null;
+    email_status?: string | null;
+  }>;
   matched_reasons: string[];
   confidence_score: number;
   can_enrich_contacts: boolean;
@@ -1022,6 +1053,110 @@ function naicsMatches(codes: string[] | null | undefined, targets: string[]): st
 // directory returned null, using a single Gemini Flash call for up to
 // 20 rows. Cheap (~$0.0001 per batch, ~600ms) and turns blank-industry
 // rows into proper "Automotive Manufacturing" labels for the UI.
+// v9 — Attach top-3 decision-maker stubs per company via Apollo's
+// `mixed_people/search` endpoint. Search itself is FREE (no credit spend);
+// only `people/match` with `reveal_personal_emails=true` burns credits,
+// which we defer to lazy on-card-expand. This call gives us name + title
+// + seniority + LinkedIn URL per contact so cards have something useful
+// to show without any per-search cost.
+const DECISION_MAKER_TITLES = [
+  "VP Supply Chain", "Director of Supply Chain", "Head of Supply Chain",
+  "VP Operations", "Director of Operations", "Head of Operations",
+  "VP Procurement", "Director of Procurement", "Head of Procurement",
+  "Chief Supply Chain Officer", "Chief Operating Officer",
+  "Logistics Manager", "Procurement Manager", "Supply Chain Manager",
+  "Director of Logistics", "Head of Logistics",
+  "Import Manager", "Export Manager", "Trade Compliance Manager",
+];
+const DECISION_MAKER_SENIORITIES = ["c_suite", "vp", "director", "head", "manager"];
+const DECISION_MAKER_DEPARTMENTS = ["operations", "logistics", "procurement", "supply_chain"];
+
+async function enrichWithDecisionMakers(rows: PulseCompanyResult[], intent: ParsedIntent): Promise<void> {
+  if (!APOLLO_API_KEY) return;
+  // Collect distinct domains from the result rows (Apollo person-search
+  // works domain-first). Cap at 25 — Apollo allows more but Pulse returns
+  // at most 50 results and the people-search free pass should focus on
+  // the highest-ranked.
+  const domains = Array.from(new Set(
+    rows.map((r) => normalizeDomain(r.domain || r.website || "")).filter((d) => d.length > 3),
+  )).slice(0, 25);
+  if (domains.length === 0) return;
+
+  // Use the parsed contact_filters when present; otherwise default to the
+  // supply-chain / procurement / ops decision-maker waterfall.
+  const titles = (intent.contact_filters?.titles?.length ? intent.contact_filters.titles : DECISION_MAKER_TITLES).slice(0, 12);
+  const seniorities = (intent.contact_filters?.seniority?.length ? intent.contact_filters.seniority : DECISION_MAKER_SENIORITIES);
+
+  const body: Record<string, any> = {
+    q_organization_domains_list: domains,
+    person_titles: titles,
+    include_similar_titles: true,
+    person_seniorities: seniorities,
+    person_departments: DECISION_MAKER_DEPARTMENTS,
+    contact_email_status: ["verified", "likely_to_engage"],
+    page: 1,
+    per_page: 100,
+  };
+
+  try {
+    const url = `${APOLLO_API_BASE}/api/v1/mixed_people/search`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": APOLLO_API_KEY,
+        "Cache-Control": "no-cache",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      console.warn("[pulse-search] mixed_people/search non-ok:", resp.status, txt.slice(0, 200));
+      return;
+    }
+    const data = await resp.json();
+    const people: any[] = data?.people || data?.contacts || [];
+
+    // Group by organization domain so we can attach top-3 contacts per row.
+    const seniorityRank: Record<string, number> = {
+      c_suite: 100, owner: 95, founder: 95, partner: 90, vp: 80, head: 70,
+      director: 60, manager: 40, senior: 30, entry: 10,
+    };
+    const byDomain = new Map<string, any[]>();
+    for (const p of people) {
+      const dom = normalizeDomain(p?.organization?.primary_domain || p?.organization?.website_url || "");
+      if (!dom) continue;
+      const list = byDomain.get(dom) || [];
+      list.push(p);
+      byDomain.set(dom, list);
+    }
+    for (const [dom, list] of byDomain.entries()) {
+      list.sort((a, b) => (seniorityRank[String(b.seniority || "").toLowerCase()] || 0) - (seniorityRank[String(a.seniority || "").toLowerCase()] || 0));
+      byDomain.set(dom, list.slice(0, 3));
+    }
+
+    // Attach onto rows.
+    for (const row of rows) {
+      const dom = normalizeDomain(row.domain || row.website || "");
+      if (!dom) continue;
+      const matches = byDomain.get(dom);
+      if (!matches || matches.length === 0) continue;
+      row.contacts = matches.map((p) => ({
+        id: p.id || null,
+        full_name: p.name || [p.first_name, p.last_name].filter(Boolean).join(" ") || null,
+        title: p.title || null,
+        seniority: p.seniority || null,
+        department: Array.isArray(p.departments) ? p.departments[0] : (p.department || null),
+        linkedin_url: p.linkedin_url || null,
+        email_status: p.email_status || null,
+      }));
+      row.matched_reasons = [...row.matched_reasons, `${matches.length} decision-maker${matches.length === 1 ? "" : "s"} identified`];
+    }
+  } catch (err) {
+    console.warn("[pulse-search] enrichWithDecisionMakers failed:", err);
+  }
+}
+
 async function batchClassifyIndustries(rows: PulseCompanyResult[]): Promise<void> {
   if (!GEMINI_API_KEY) return;
   const blanks = rows.filter((r) => !r.industry && r.company_name).slice(0, 20);
@@ -1241,6 +1376,31 @@ function apolloOrgToResult(o: any, intent: ParsedIntent, naicsTargets: string[])
     linkedin_url: o.linkedin_url || null,
     description: o.short_description || null,
     shipment_metrics: null,
+    // v9 — surface fields Apollo already returns for free
+    firmographics: {
+      founded_year: typeof o.founded_year === "number" ? o.founded_year : null,
+      naics_codes: naicsCodes,
+      sic_codes: sicCodes,
+      logo_url: o.logo_url || null,
+      linkedin_uid: o.linkedin_uid || null,
+      market_cap: o.market_cap || null,
+      publicly_traded_symbol: o.publicly_traded_symbol || null,
+      publicly_traded_exchange: o.publicly_traded_exchange || null,
+      headcount_six_month_growth: typeof o.organization_headcount_six_month_growth === "number" ? o.organization_headcount_six_month_growth : null,
+      headcount_twelve_month_growth: typeof o.organization_headcount_twelve_month_growth === "number" ? o.organization_headcount_twelve_month_growth : null,
+      owned_by: o.owned_by_organization ? {
+        id: o.owned_by_organization.id || null,
+        name: o.owned_by_organization.name || null,
+        website_url: o.owned_by_organization.website_url || null,
+      } : null,
+      num_open_positions: typeof o.num_open_positions === "number" ? o.num_open_positions : null,
+      latest_funding_round_date: o.latest_funding_round_date || null,
+      latest_funding_stage: o.latest_funding_stage || null,
+      total_funding: typeof o.total_funding === "number" ? o.total_funding : null,
+      total_funding_printed: o.total_funding_printed || null,
+    },
+    tech_stack: Array.isArray(o.technology_names) ? o.technology_names.slice(0, 12) : [],
+    contacts: [],
     matched_reasons: reasons,
     confidence_score: Math.min(0.95, score),
     can_enrich_contacts: true,
@@ -1468,12 +1628,19 @@ serve(async (req) => {
   const merged = mergeResults([savedRows, directoryRows, apolloRows]);
   const ranked = rankResults(merged, intent).slice(0, limit);
 
-  // 3.5. AI industry classification — fills `industry` on rows where the
-  // upstream source returned null (very common in lit_company_directory,
-  // where only 12% of rows have industry set). One batched Gemini Flash
-  // call covers up to 20 blank rows in ~600ms / ~$0.0001. We don't fail
-  // the response if it errors; rows just stay blank.
-  await batchClassifyIndustries(ranked);
+  // 3.5. Parallel enrichment — both calls are best-effort, both are free
+  // or near-free, and they hit completely different APIs (Apollo people
+  // search + Gemini Flash classifier) so we fire them in parallel.
+  //   - enrichWithDecisionMakers: one free Apollo mixed_people/search call
+  //     that returns top-3 supply-chain / procurement / ops contacts per
+  //     company. Email reveal is deferred to lazy on-card-expand to keep
+  //     credits available.
+  //   - batchClassifyIndustries: fills `industry` on rows where the
+  //     upstream source returned null. ~$0.0001 per batch, ~600ms.
+  await Promise.all([
+    enrichWithDecisionMakers(ranked, intent),
+    batchClassifyIndustries(ranked),
+  ]);
 
   const sourceCounts = {
     saved: savedRows.length,
