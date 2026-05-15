@@ -39,12 +39,6 @@ const DOMESTIC_FTL_PER_FCL_USD = 1200;
 /** Air freight effective per-kg rate (general cargo, transpac mid-2026). */
 const AIR_RATE_PER_KG_USD = 2.8;
 
-/** Warehouse storage: $7 per CBM per month, ~1 month average dwell. */
-const WAREHOUSE_PER_CBM_PER_MONTH_USD = 7;
-const WAREHOUSE_AVG_DWELL_MONTHS = 1;
-/** TEU → CBM conversion (1 TEU ≈ 28 cubic meters loaded). */
-const CBM_PER_TEU = 28;
-
 /** LCL benchmark $/TEU when no carrier-disclosed rate is available. */
 const LCL_BENCHMARK_USD_PER_TEU = 850;
 
@@ -93,7 +87,6 @@ export type RevenueOpportunityReport = {
     customs: ServiceLineEstimate;
     drayage: ServiceLineEstimate;
     air: ServiceLineEstimate;
-    warehousing: ServiceLineEstimate;
     trucking: ServiceLineEstimate;
   };
   crossSellSignals: CrossSellSignal[];
@@ -125,6 +118,8 @@ export type RevenueOpportunityInputs = {
   carrierMix?: any[] | null;
   /** Importer-reported total shipping cost (BOL customs value). */
   importerSelfReportedSpend12m?: number | null;
+  /** Drayage rollup from `lit_drayage_estimates` (Pulse LIVE). */
+  drayageRollup?: DrayageRollup | null;
 };
 
 // ---------- Helpers ------------------------------------------------------
@@ -392,37 +387,6 @@ function sizeAir(inputs: RevenueOpportunityInputs): ServiceLineEstimate {
   };
 }
 
-function sizeWarehousing(inputs: RevenueOpportunityInputs): ServiceLineEstimate {
-  const teu = safeNum(inputs.teu12m);
-  if (!teu) {
-    return {
-      serviceLine: "Warehousing",
-      value: null,
-      confidence: "insufficient_data",
-      reason: "Need TEU to derive cubic-meter throughput.",
-      inputs: [],
-    };
-  }
-  const cbm = teu * CBM_PER_TEU;
-  const value = Math.round(
-    cbm * WAREHOUSE_PER_CBM_PER_MONTH_USD * WAREHOUSE_AVG_DWELL_MONTHS,
-  );
-  return {
-    serviceLine: "Warehousing",
-    value,
-    confidence: "medium",
-    reason: `Annual TEU × ${CBM_PER_TEU} CBM/TEU × $${WAREHOUSE_PER_CBM_PER_MONTH_USD}/CBM/mo × ${WAREHOUSE_AVG_DWELL_MONTHS} mo dwell. Assumes domestic dwell — discount if buyer ships direct-to-store.`,
-    inputs: [
-      { label: "Annual CBM", value: Math.round(cbm).toLocaleString() },
-      {
-        label: "Storage rate",
-        value: `$${WAREHOUSE_PER_CBM_PER_MONTH_USD}/CBM/mo`,
-      },
-      { label: "Avg dwell", value: `${WAREHOUSE_AVG_DWELL_MONTHS} mo` },
-    ],
-  };
-}
-
 function sizeTrucking(inputs: RevenueOpportunityInputs): ServiceLineEstimate {
   const fcl = safeNum(inputs.fclShipments12m);
   if (!fcl) {
@@ -527,7 +491,6 @@ export function buildRevenueOpportunity(
   const customs = sizeCustoms(inputs);
   const drayage = sizeDrayage(inputs);
   const air = sizeAir(inputs);
-  const warehousing = sizeWarehousing(inputs);
   const trucking = sizeTrucking(inputs);
 
   const totalAddressableSpend = [
@@ -535,7 +498,6 @@ export function buildRevenueOpportunity(
     customs,
     drayage,
     air,
-    warehousing,
     trucking,
   ].reduce((s, line) => s + (line.value ?? 0), 0);
 
@@ -569,7 +531,7 @@ export function buildRevenueOpportunity(
     companyName: inputs.companyName ?? null,
     totalAddressableSpend: Math.round(totalAddressableSpend),
     scenarios,
-    serviceLines: { ocean, customs, drayage, air, warehousing, trucking },
+    serviceLines: { ocean, customs, drayage, air, trucking },
     crossSellSignals,
     benchmarkAsOf,
     hasUsableData: totalAddressableSpend > 0,

@@ -18,7 +18,6 @@ import {
   Plane,
   TrendingUp,
   Truck,
-  Warehouse as WarehouseIcon,
   AlertTriangle,
   Lightbulb,
   Building2,
@@ -51,7 +50,6 @@ const SERVICE_LINE_ICONS: Record<string, any> = {
   Customs: FileSearch,
   Drayage: Truck,
   Air: Plane,
-  Warehousing: WarehouseIcon,
   Trucking: Truck,
 };
 
@@ -288,7 +286,6 @@ export default function CDPRevenueOpportunity(props: Props) {
           <ServiceLineCard line={serviceLines.customs} shortKey="Customs" />
           <ServiceLineCard line={serviceLines.drayage} shortKey="Drayage" />
           <ServiceLineCard line={serviceLines.air} shortKey="Air" />
-          <ServiceLineCard line={serviceLines.warehousing} shortKey="Warehousing" />
           <ServiceLineCard line={serviceLines.trucking} shortKey="Trucking" />
         </div>
       </div>
@@ -325,8 +322,7 @@ export default function CDPRevenueOpportunity(props: Props) {
             uses per-entry brokerage fees ($150 FCL / $200 LCL). Drayage uses
             blended US East/West coast pulls (~$450). Air uses HS-derived
             air-likely share with a 5% conversion factor + $2.80/kg general
-            cargo rate. Warehousing uses TEU × 28 CBM × $7/CBM/mo × 1 mo dwell.
-            Trucking uses 60% of FCL × $1,200 post-port FTL.
+            cargo rate. Trucking uses 60% of FCL × $1,200 post-port FTL.
             {benchmarkAsOf
               ? ` Benchmark snapshot as of ${benchmarkAsOf}.`
               : ""}
