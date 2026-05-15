@@ -3,6 +3,7 @@ import { Building2, Package as PackageIcon, Ship as ShipIcon, Newspaper, Linkedi
 import PreCallBriefing from '../company/PreCallBriefing';
 import CompanyFirmographics from './CompanyFirmographics';
 import { ServiceModeIcon } from '@/components/pulse/ServiceModeIcon';
+import { PulseLIVETab } from '@/features/pulse/PulseLIVETab';
 import { exportCompanyPdf } from '../pdf/exportCompanyPdf';
 import { buildPreCallPrompt } from '../../lib/ai';
 import {
@@ -339,7 +340,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 </div>
               </div>
               <div className='mt-4'>
-                <Tabs tabs={["Overview", "Pre-Call", "Contacts", "Shipments", "RFP", "Activity", "Campaigns", "Settings"]} value={tab} onChange={setTab} />
+                <Tabs tabs={["Overview", "Pre-Call", "Contacts", "Shipments", "Pulse LIVE", "RFP", "Activity", "Campaigns", "Settings"]} value={tab} onChange={setTab} />
                 {loading && (<div className='text-sm text-slate-600'>Loading…</div>)}
                 {error && (<div className='text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3'>{error}</div>)}
                 {!loading && !error && tab === 'Overview' && overview && (
@@ -496,6 +497,11 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                         <div className='text-xs text-slate-600'>No uploaded lanes for this company.</div>
                       )}
                     </div>
+                  </div>
+                )}
+                {!loading && !error && tab === 'Pulse LIVE' && (
+                  <div className='mt-3'>
+                    <PulseLIVETab sourceCompanyKey={active?.source_company_key || null} />
                   </div>
                 )}
                 {!loading && !error && tab === 'Contacts' && (
