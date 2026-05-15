@@ -1,17 +1,16 @@
 import { useState } from 'react';
 import { usePulseLiveData } from '@/lib/pulse/usePulseLiveData';
-import { ArrivalScheduleView } from './views/ArrivalScheduleView';
 import { DrayageOpportunityView } from './views/DrayageOpportunityView';
 import { CarrierMixView } from './views/CarrierMixView';
 import { BolPreviewTable, type BolColumn } from '@/components/bols/BolPreviewTable';
 import { exportPulseLiveReportPdf } from '@/lib/pulse/exportPulseLiveReportPdf';
 import { exportPulseLiveReportXlsx } from '@/lib/pulse/exportPulseLiveReportXlsx';
 
-type View = 'all' | 'arrival' | 'drayage' | 'carrier';
+type View = 'all' | 'drayage' | 'carrier';
 
 const ALL_SHIPMENTS_COLUMNS: BolColumn[] = [
   'date', 'bol_number', 'lane', 'carrier', 'supplier', 'container',
-  'container_type', 'teu', 'fcl_lcl', 'hs', 'final_dest', 'arrival',
+  'container_type', 'teu', 'fcl_lcl', 'hs', 'final_dest',
 ];
 
 export function PulseLIVETab({ sourceCompanyKey, companyName }: { sourceCompanyKey: string | null; companyName?: string }) {
@@ -46,7 +45,6 @@ export function PulseLIVETab({ sourceCompanyKey, companyName }: { sourceCompanyK
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 text-sm w-fit">
           <Btn active={view === 'all'} onClick={() => setView('all')}>All Shipments</Btn>
-          <Btn active={view === 'arrival'} onClick={() => setView('arrival')}>Arrival Schedule</Btn>
           <Btn active={view === 'drayage'} onClick={() => setView('drayage')}>Drayage Opportunity</Btn>
           <Btn active={view === 'carrier'} onClick={() => setView('carrier')}>Carrier Mix</Btn>
         </div>
@@ -63,7 +61,6 @@ export function PulseLIVETab({ sourceCompanyKey, companyName }: { sourceCompanyK
           emptyMessage="No shipments yet."
         />
       )}
-      {!data.loading && view === 'arrival' && <ArrivalScheduleView shipments={data.shipments} />}
       {!data.loading && view === 'drayage' && <DrayageOpportunityView drayage={data.drayage} shipments={data.shipments} />}
       {!data.loading && view === 'carrier' && <CarrierMixView data={data} />}
     </div>
