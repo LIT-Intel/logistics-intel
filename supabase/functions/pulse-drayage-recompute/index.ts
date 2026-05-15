@@ -54,7 +54,7 @@ serve(async (req) => {
 
   const { data: rows, error } = await supabase
     .from("lit_unified_shipments")
-    .select("id, bol_number, company_id, destination_port, dest_city, dest_state, container_count, container_type, lcl")
+    .select("id, bol_number, company_id, destination_port, dest_city, dest_state, container_count, load_type, lcl")
     .not("destination_port", "is", null)
     .not("dest_city", "is", null)
     .limit(BATCH_CAP);
@@ -94,7 +94,7 @@ serve(async (req) => {
       }, { onConflict: "pod_unloc,dest_city_norm,dest_state" });
     }
 
-    const container_type = r.lcl ? "LCL" : normalizeContainerType(r.container_type);
+    const container_type = r.lcl ? "LCL" : normalizeContainerType(r.load_type);
     const out = estimateDrayageCost({
       pod_unloc: pod,
       dest_city: r.dest_city,

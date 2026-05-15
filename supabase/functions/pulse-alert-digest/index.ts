@@ -54,7 +54,7 @@ serve(async (req) => {
 
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, email, first_name")
+    .select("id, email, full_name")
     .in("id", userIds);
   const profileByUser = new Map((profiles || []).map((r: any) => [r.id, r]));
 
@@ -92,7 +92,7 @@ serve(async (req) => {
     if (filtered.length === 0) continue;
 
     const html = renderDigestHtml({
-      firstName: profile.first_name || "there",
+      firstName: (profile.full_name || "").split(/\s+/)[0] || "there",
       alerts: filtered.map((a: any) => ({
         alert_type: a.alert_type,
         severity: a.severity,

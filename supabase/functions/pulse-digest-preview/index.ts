@@ -81,15 +81,15 @@ serve(async (req) => {
     (a.alert_type === "baseline")
   );
 
-  // Pull first_name for the salutation.
+  // Pull full_name for the salutation (we derive the first token).
   const { data: profile } = await supabase
     .from("profiles")
-    .select("first_name")
+    .select("full_name")
     .eq("id", userId)
     .maybeSingle();
 
   const html = renderDigestHtml({
-    firstName: profile?.first_name || "there",
+    firstName: (profile?.full_name || "").split(/\s+/)[0] || "there",
     alerts: filtered.map((a: any) => ({
       alert_type: a.alert_type,
       severity: a.severity,
