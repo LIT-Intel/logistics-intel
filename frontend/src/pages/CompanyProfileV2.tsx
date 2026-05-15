@@ -472,7 +472,13 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     };
   }, [routeOrStoredId]);
 
-  const companyId = resolvedCompanyId;
+  // Synchronous fallback to the raw route id so loaders never see null while
+  // the async slug→UUID resolver is in flight. For UUID inputs the resolver
+  // sets resolvedCompanyId on the first useEffect pass; for slug inputs the
+  // raw slug flows through to loaders which already normalize (e.g.
+  // usePulseLiveData strips the "company/" prefix). Once the resolver
+  // returns a UUID the loaders re-fire with the canonical id.
+  const companyId = resolvedCompanyId || routeOrStoredId;
 
   // ── State (verbatim from Company.jsx 290–351) ──────────────────────────
   const [profile, setProfile] = useState<any>(null);
@@ -538,12 +544,6 @@ function ProfilePanel({ rawId }: { rawId: string }) {
 
   // ── Cached-first load (verbatim from Company.jsx 354–418) ──────────────
   useEffect(() => {
-    if (resolvingSlug) {
-      // Still resolving slug → UUID — keep the spinner up rather than
-      // briefly flashing "Missing company id".
-      setLoading(true);
-      return;
-    }
     if (!companyId) {
       setError("Missing company id");
       setLoading(false);
