@@ -10,6 +10,18 @@
 //
 // HTML structure mirrors docs/mockups/pulse-digest-sample.html.
 
+// Inline SVGs for email — lucide-react path strings.
+const SERVICE_SVG: Record<string, string> = {
+  fcl: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><path d="M2 21c.6.5 1.2 1 2.5 1c2.5 0 2.5-2 5-2c1.3 0 1.9.5 2.5 1c.6.5 1.2 1 2.5 1c2.5 0 2.5-2 5-2c1.3 0 1.9.5 2.5 1"/><path d="M19.38 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76"/><path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"/></svg>',
+  lcl: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>',
+  air: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><path d="M17.8 19.2 16 11 3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>',
+  truck: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>',
+};
+
+export function serviceIconSvg(mode: 'fcl' | 'lcl' | 'air' | 'truck'): string {
+  return SERVICE_SVG[mode] || SERVICE_SVG.fcl;
+}
+
 export type DigestAlertType = "volume" | "shipment" | "lane" | "benchmark" | "baseline";
 
 export interface DigestAlert {
@@ -211,8 +223,22 @@ function renderVolumeRow(alert: DigestAlert): string {
   const pctColor = (typeof p.pct_delta === "number" && p.pct_delta < 0) ? "#DC2626" : "#16A34A";
   const sevTag = renderSeverity(alert.severity);
   const locPart = loc ? `${loc} · ` : "";
+  const contextLine = [];
+  if (p.pod) contextLine.push(`POD: ${htmlEscape(p.pod)}`);
+  if (p.final_dest) contextLine.push(`Final dest: ${htmlEscape(p.final_dest)}`);
+  if (p.next_arrival_date) {
+    contextLine.push(`Next arrival: ${htmlEscape(new Date(p.next_arrival_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}`);
+  }
+  const contextHtml = contextLine.length
+    ? `<div style="font-size:11px; color:#94A3B8; margin-top:4px;">${contextLine.join(' · ')}</div>`
+    : '';
+  const opportunity = (typeof p.drayage_est_usd === 'number' && p.drayage_est_usd > 0)
+    ? `<div style="font-size:11px; color:#0F172A; margin-top:6px;"><strong>Drayage opportunity:</strong> $${Math.round(p.drayage_est_usd).toLocaleString('en-US')} (${Math.round(p.drayage_est_low_usd || 0).toLocaleString('en-US')}–${Math.round(p.drayage_est_high_usd || 0).toLocaleString('en-US')}, ${p.drayage_container_count} containers)</div>`
+    : '';
   return `<div style="font-size:14px; font-weight:bold; color:#0F172A;">${name}</div>
                   <div style="font-size:12px; color:#64748B; margin-top:2px;">${locPart}${before} → ${after} shipments · <span style="color:${pctColor}; font-weight:bold;">${pctStr}</span>${sevTag}</div>
+                  ${contextHtml}
+                  ${opportunity}
                   <a href="https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}" style="display:inline-block; margin-top:8px; font-size:11px; color:#3B82F6; font-weight:bold; text-decoration:none;">See full supply chain →</a>`;
 }
 
