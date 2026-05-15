@@ -19,12 +19,11 @@ import {
   readCarrier,
 } from "@/lib/bols/helpers";
 
-type SubTabId = "summary" | "lanes" | "shipments" | "products";
+type SubTabId = "summary" | "lanes" | "products";
 
 const SUB_TABS: { id: SubTabId; label: string }[] = [
   { id: "summary", label: "Summary" },
   { id: "lanes", label: "Trade Lanes" },
-  { id: "shipments", label: "Shipments" },
   { id: "products", label: "Products" },
 ];
 
@@ -34,6 +33,7 @@ type CDPSupplyChainProps = {
   selectedYear?: number;
   years?: number[];
   onSelectYear?: (year: number) => void;
+  onOpenPulseLive?: () => void;
 };
 
 /**
@@ -61,6 +61,7 @@ export default function CDPSupplyChain({
   selectedYear,
   years,
   onSelectYear,
+  onOpenPulseLive,
 }: CDPSupplyChainProps) {
   const [sub, setSub] = useState<SubTabId>("summary");
 

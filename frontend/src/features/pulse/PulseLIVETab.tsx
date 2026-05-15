@@ -3,13 +3,19 @@ import { usePulseLiveData } from '@/lib/pulse/usePulseLiveData';
 import { ArrivalScheduleView } from './views/ArrivalScheduleView';
 import { DrayageOpportunityView } from './views/DrayageOpportunityView';
 import { CarrierMixView } from './views/CarrierMixView';
+import { BolPreviewTable, type BolColumn } from '@/components/bols/BolPreviewTable';
 import { exportPulseLiveReportPdf } from '@/lib/pulse/exportPulseLiveReportPdf';
 import { exportPulseLiveReportXlsx } from '@/lib/pulse/exportPulseLiveReportXlsx';
 
-type View = 'arrival' | 'drayage' | 'carrier';
+type View = 'all' | 'arrival' | 'drayage' | 'carrier';
+
+const ALL_SHIPMENTS_COLUMNS: BolColumn[] = [
+  'date', 'service', 'lane', 'carrier', 'supplier', 'container',
+  'container_type', 'teu', 'fcl_lcl', 'hs', 'final_dest', 'arrival', 'cost',
+];
 
 export function PulseLIVETab({ sourceCompanyKey, companyName }: { sourceCompanyKey: string | null; companyName?: string }) {
-  const [view, setView] = useState<View>('arrival');
+  const [view, setView] = useState<View>('all');
   const data = usePulseLiveData(sourceCompanyKey);
 
   function downloadPdf() {
@@ -39,6 +45,7 @@ export function PulseLIVETab({ sourceCompanyKey, companyName }: { sourceCompanyK
       </div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 text-sm w-fit">
+          <Btn active={view === 'all'} onClick={() => setView('all')}>All Shipments</Btn>
           <Btn active={view === 'arrival'} onClick={() => setView('arrival')}>Arrival Schedule</Btn>
           <Btn active={view === 'drayage'} onClick={() => setView('drayage')}>Drayage Opportunity</Btn>
           <Btn active={view === 'carrier'} onClick={() => setView('carrier')}>Carrier Mix</Btn>
@@ -49,6 +56,13 @@ export function PulseLIVETab({ sourceCompanyKey, companyName }: { sourceCompanyK
         </div>
       </div>
       {data.loading && <div className="py-8 text-center text-slate-500 text-sm">Loading…</div>}
+      {!data.loading && view === 'all' && (
+        <BolPreviewTable
+          bols={data.allBols}
+          columns={ALL_SHIPMENTS_COLUMNS}
+          emptyMessage="No shipments yet."
+        />
+      )}
       {!data.loading && view === 'arrival' && <ArrivalScheduleView shipments={data.shipments} />}
       {!data.loading && view === 'drayage' && <DrayageOpportunityView drayage={data.drayage} shipments={data.shipments} />}
       {!data.loading && view === 'carrier' && <CarrierMixView data={data} />}

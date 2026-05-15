@@ -4,6 +4,7 @@ import type { PulseLiveData, PulseTrackedShipment, PulseDrayageEstimate } from '
 
 export function usePulseLiveData(sourceCompanyKey: string | null): PulseLiveData {
   const [shipments, setShipments] = useState<PulseTrackedShipment[]>([]);
+  const [allBols, setAllBols] = useState<any[]>([]);
   const [drayage, setDrayage] = useState<PulseDrayageEstimate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -16,10 +17,12 @@ export function usePulseLiveData(sourceCompanyKey: string | null): PulseLiveData
       const { data: ships, error: shipErr } = await supabase
         .from('lit_unified_shipments')
         .select(`
-          bol_number, scac, origin_port, destination_port,
-          dest_city, dest_state, container_count, container_type, lcl, hs_code,
+          bol_number, scac, carrier_name, origin_port, destination_port,
+          origin_country, destination_country,
+          dest_city, dest_state, container_count, container_type, teu, lcl, load_type,
+          hs_code, product_description, shipper_name, consignee_name,
           tracking_status, tracking_eta, tracking_arrival_actual,
-          tracking_last_event_code, tracking_last_event_at, bol_date
+          tracking_last_event_code, tracking_last_event_at, bol_date, raw_payload
         `)
         .eq('company_id', sourceCompanyKey)
         .order('bol_date', { ascending: false })
@@ -37,6 +40,10 @@ export function usePulseLiveData(sourceCompanyKey: string | null): PulseLiveData
         ...s,
         carrier: deriveCarrierName(s.scac),
       })));
+      // Raw BOL rows for the "All Shipments" table — keep the row payload
+      // intact so the BolPreviewTable getBol* helpers can fall back through
+      // their many field-name aliases. Cap at 100 rows for the table view.
+      setAllBols((ships || []).slice(0, 100));
       setDrayage(dray || []);
       setLoading(false);
     })();
@@ -44,7 +51,7 @@ export function usePulseLiveData(sourceCompanyKey: string | null): PulseLiveData
   }, [sourceCompanyKey]);
 
   const carrierMix = computeCarrierMix(shipments);
-  return { shipments, drayage, carrierMix, loading, error };
+  return { shipments, allBols, drayage, carrierMix, loading, error };
 }
 
 function deriveCarrierName(scac: string | null): string | null {

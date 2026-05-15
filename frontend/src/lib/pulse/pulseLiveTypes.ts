@@ -31,6 +31,7 @@ export interface PulseDrayageEstimate {
 
 export interface PulseLiveData {
   shipments: PulseTrackedShipment[];
+  allBols: any[];
   drayage: PulseDrayageEstimate[];
   carrierMix: { carrier: string; bol_count: number; container_count: number; tracked: boolean }[];
   loading: boolean;
