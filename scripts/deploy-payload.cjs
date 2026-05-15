@@ -5,6 +5,14 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 
 const FUNCTIONS = {
+  'importyeti-proxy': {
+    entrypoint: 'index.ts',
+    files: [
+      { name: 'index.ts',                       path: 'supabase/functions/importyeti-proxy/index.ts' },
+      { name: '../_shared/importyeti_fetch.ts', path: 'supabase/functions/_shared/importyeti_fetch.ts' },
+      { name: '../_shared/materialize_bols.ts', path: 'supabase/functions/_shared/materialize_bols.ts' },
+    ],
+  },
   'pulse-refresh-tick': {
     entrypoint: 'index.ts',
     files: [
@@ -39,6 +47,12 @@ const FUNCTIONS = {
     files: [
       { name: 'index.ts',                 path: 'supabase/functions/pulse-arrival-alerts/index.ts' },
       { name: '../_shared/cron_auth.ts',  path: 'supabase/functions/_shared/cron_auth.ts' },
+    ],
+  },
+  'pulse-ai-enrich': {
+    entrypoint: 'index.ts',
+    files: [
+      { name: 'index.ts', path: 'supabase/functions/pulse-ai-enrich/index.ts' },
     ],
   },
   'pulse-drayage-recompute': {

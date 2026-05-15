@@ -867,12 +867,35 @@ Return a structured report with:
 }
 
 function extractOutputText(response: any): string {
+  // The Responses API exposes `output_text` as a convenience join of all
+  // assistant-message text content. Prefer that when present.
   if (typeof response?.output_text === "string" && response.output_text.trim()) {
     return response.output_text;
   }
 
   const output = safeArray(response?.output);
 
+  // Prefer items whose `type === "message"` and `role === "assistant"` — this
+  // skips `web_search_call` / `reasoning` items that don't carry the JSON
+  // payload. Inside a message, prefer `output_text` content blocks.
+  const messageTexts: string[] = [];
+  for (const item of output) {
+    const itemType = String(item?.type || "").toLowerCase();
+    if (itemType && itemType !== "message") continue;
+    const role = String(item?.role || "").toLowerCase();
+    if (role && role !== "assistant") continue;
+    const content = safeArray(item?.content);
+    for (const c of content) {
+      const cType = String(c?.type || "").toLowerCase();
+      if (cType && cType !== "output_text" && cType !== "text") continue;
+      if (typeof c?.text === "string" && c.text.trim()) {
+        messageTexts.push(c.text);
+      }
+    }
+  }
+  if (messageTexts.length) return messageTexts.join("");
+
+  // Fallback: take any text content we can find.
   for (const item of output) {
     const content = safeArray(item?.content);
     for (const c of content) {
@@ -881,6 +904,58 @@ function extractOutputText(response: any): string {
   }
 
   return "";
+}
+
+function extractRefusal(response: any): string | null {
+  const output = safeArray(response?.output);
+  for (const item of output) {
+    const content = safeArray(item?.content);
+    for (const c of content) {
+      const cType = String(c?.type || "").toLowerCase();
+      if (cType === "refusal" && typeof c?.refusal === "string") {
+        return c.refusal;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Strip common wrappers OpenAI sometimes returns even under json_schema mode:
+ * - Leading/trailing markdown fences (```json ... ```)
+ * - BOMs / zero-width chars
+ * - Leading prose before the first `{` and trailing prose after last `}`
+ */
+function sanitizeJsonText(raw: string): string {
+  let text = String(raw ?? "").trim();
+  if (!text) return text;
+
+  // Strip BOM / zero-width
+  text = text.replace(/^﻿/, "").replace(/^​+/, "");
+
+  // Strip markdown fences
+  text = text.replace(/^```(?:json|JSON)?\s*\n?/, "");
+  text = text.replace(/\n?```\s*$/, "");
+  text = text.trim();
+
+  // If there's prose before/after the JSON object, slice to the outer braces.
+  if (text && text[0] !== "{" && text[0] !== "[") {
+    const firstBrace = text.indexOf("{");
+    const firstBracket = text.indexOf("[");
+    const candidates = [firstBrace, firstBracket].filter((i) => i >= 0);
+    if (candidates.length) {
+      text = text.slice(Math.min(...candidates));
+    }
+  }
+  const lastChar = text[text.length - 1];
+  if (lastChar && lastChar !== "}" && lastChar !== "]") {
+    const lastBrace = text.lastIndexOf("}");
+    const lastBracket = text.lastIndexOf("]");
+    const end = Math.max(lastBrace, lastBracket);
+    if (end > 0) text = text.slice(0, end + 1);
+  }
+
+  return text.trim();
 }
 
 function normalizeSimilarCompanies(report: JsonRecord): JsonRecord {
@@ -924,14 +999,16 @@ async function callOpenAi(payload: {
     instructions: buildInstructions(),
     input: buildUserInput(payload),
     tools: [
-      {
-        type: "web_search",
-        external_web_access: true,
-      },
+      // Responses API web_search tool — no `external_web_access` field; that
+      // was an invalid key and caused silent fallbacks on some accounts.
+      { type: "web_search" },
     ],
     tool_choice: "auto",
     include: ["web_search_call.action.sources"],
-    max_output_tokens: 4500,
+    // Bumped from 4500 → 8000 because web_search reasoning + structured JSON
+    // routinely hit the cap and truncated the message mid-object, which is
+    // what produced "OpenAI returned invalid JSON" before this fix.
+    max_output_tokens: 8000,
     text: {
       format: {
         type: "json_schema",
@@ -958,22 +1035,61 @@ async function callOpenAi(payload: {
     throw new Error(data?.error?.message || `OpenAI request failed: ${res.status}`);
   }
 
-  const outputText = extractOutputText(data);
+  // Model refusal — surface a friendly error rather than "invalid JSON".
+  const refusal = extractRefusal(data);
+  if (refusal) {
+    console.error("[pulse-ai-enrich] OpenAI refusal", { refusal });
+    throw new Error(
+      `Pulse AI couldn't generate this report (model refusal): ${refusal.slice(0, 200)}`,
+    );
+  }
 
-  if (!outputText) {
+  // Detect output truncation explicitly — token cap, content filter, etc.
+  // The Responses API exposes status + incomplete_details on the response.
+  const status = String(data?.status || "").toLowerCase();
+  const incompleteReason = data?.incomplete_details?.reason ||
+    data?.incomplete_details?.code || null;
+  if (status === "incomplete" || incompleteReason) {
+    console.error("[pulse-ai-enrich] OpenAI response incomplete", {
+      status,
+      incompleteReason,
+      usage: data?.usage,
+    });
+    if (incompleteReason === "max_output_tokens" || status === "incomplete") {
+      throw new Error(
+        "Pulse AI response was truncated before completion. Please retry — if this persists, the report scope is too large for the current token budget.",
+      );
+    }
+  }
+
+  const rawOutputText = extractOutputText(data);
+
+  if (!rawOutputText) {
+    console.error("[pulse-ai-enrich] OpenAI returned empty output", {
+      status: data?.status,
+      output_types: safeArray(data?.output).map((o: any) => o?.type),
+    });
     throw new Error("OpenAI returned no structured output text.");
   }
+
+  const sanitized = sanitizeJsonText(rawOutputText);
 
   let report: JsonRecord;
 
   try {
-    report = JSON.parse(outputText);
+    report = JSON.parse(sanitized);
   } catch (error) {
+    const snippet = rawOutputText.slice(0, 200).replace(/\s+/g, " ");
     console.error("[pulse-ai-enrich] Failed to parse OpenAI JSON", {
-      error,
-      outputText,
+      error: error instanceof Error ? error.message : String(error),
+      rawLength: rawOutputText.length,
+      sanitizedLength: sanitized.length,
+      rawHead: rawOutputText.slice(0, 500),
+      rawTail: rawOutputText.slice(-200),
     });
-    throw new Error("OpenAI returned invalid JSON.");
+    throw new Error(
+      `OpenAI returned invalid JSON (first 200 chars: ${snippet})`,
+    );
   }
 
   return {
