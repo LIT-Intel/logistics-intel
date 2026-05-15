@@ -1,10 +1,12 @@
 # Pulse LIVE — BOL Tracking, Drayage Opportunity & Branded Reports Implementation Plan
 
+> **Revised 2026-05-14:** Originally referenced a `unified_shipments` table that doesn't exist on prod. BOL data lives in `lit_importyeti_company_snapshot.parsed_summary.recent_bols[]` JSONB array. Founder chose **Option 2 (materialize BOLs to a real table)**: *"enterprise grade SaaS, don't go the easy route, want accurate data, high level data."* This plan now creates `lit_unified_shipments` as a proper indexed table, with a one-off backfill (B0) and a re-materialize hook in the existing `pulse-refresh-tick` (B1.5). All downstream tasks reference `lit_unified_shipments`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Each task is a separate subagent dispatch. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship a "Pulse LIVE" tab with free carrier-direct BOL tracking (Maersk + Hapag-Lloyd), deterministic drayage cost estimation, branded PDF/Excel exports, and digest email enrichment — zero ongoing API cost.
 
-**Architecture:** Six sequential sub-projects (A–F). Carrier-direct OAuth2 for tracking; OSRM + 2026 industry coefficients for drayage cost; jspdf-autotable + xlsx for client-side branded reports. All shared modules live under `supabase/functions/_shared/` and `frontend/src/lib/pulse/`. Vendor-neutrality rules from the prior digest work continue, with one addition: carrier names (Maersk/Hapag-Lloyd) ARE allowed in user-facing copy.
+**Architecture:** Six sequential sub-projects (A–F), plus a 3-task data-layer foundation (B0 + B1 + B1.5) that materializes BOLs from JSONB into a proper relational table. Carrier-direct OAuth2 for tracking; OSRM + 2026 industry coefficients for drayage cost; jspdf-autotable + xlsx for client-side branded reports. All shared modules live under `supabase/functions/_shared/` and `frontend/src/lib/pulse/`. Vendor-neutrality rules from the prior digest work continue, with one addition: carrier names (Maersk/Hapag-Lloyd) ARE allowed in user-facing copy.
 
 **Tech Stack:** Supabase edge functions (Deno), Postgres + pg_cron + pg_net, React + Vite, lucide-react, jspdf 3.x + jspdf-autotable, xlsx 0.18.x. No new runtime dependencies on the server.
 
@@ -30,7 +32,7 @@
 ### Sub-project B — Carrier tracking ingest
 
 **Create:**
-- `supabase/migrations/20260515100000_pulse_live_tracking_schema.sql` — `lit_bol_tracking_events` table + `unified_shipments` column adds
+- `supabase/migrations/20260515100000_pulse_live_tracking_schema.sql` — `lit_bol_tracking_events` table + `lit_unified_shipments` column adds
 - `supabase/functions/_shared/maersk_client.ts` — OAuth2 token + tracking client for Maersk
 - `supabase/functions/_shared/hapag_client.ts` — same for Hapag-Lloyd
 - `supabase/functions/_shared/dcsa_event_map.ts` — DCSA event code → internal taxonomy + ETA extraction
@@ -246,10 +248,12 @@ git commit -m "feat(pulse): enrich Workspace.Shipments + CompanyShipmentsPanel w
 
 ## Sub-Project B — Carrier Tracking Ingest
 
-### Task B1: Schema migration for tracking events
+### Task B1: lit_unified_shipments + tracking events schema migration
 
 **Files:**
 - Create: `supabase/migrations/20260515100000_pulse_live_tracking_schema.sql`
+
+This migration creates BOTH the new `lit_unified_shipments` materialized table (replacing the absent `unified_shipments`) AND the `lit_bol_tracking_events` table in a single transaction. Tracking-state columns live inline on the new `lit_unified_shipments` table (no ALTER needed since the table is brand new).
 
 - [ ] **Step 1: Write the migration**
 
@@ -257,6 +261,68 @@ git commit -m "feat(pulse): enrich Workspace.Shipments + CompanyShipmentsPanel w
 -- 20260515100000_pulse_live_tracking_schema.sql
 BEGIN;
 
+-- Materialized BOL table. Populated by pulse-unified-shipments-backfill (one-off,
+-- Task B0) and kept fresh by the re-materialize hook in pulse-refresh-tick (B1.5).
+CREATE TABLE IF NOT EXISTS public.lit_unified_shipments (
+  id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id               text NOT NULL,
+  bol_number               text NOT NULL,
+  master_bol               text,
+  bol_date                 timestamptz,
+  scac                     text,
+  carrier_name             text,
+  shipper_name             text,
+  consignee_name           text,
+  origin_country           text,
+  origin_country_code      text,
+  destination_country      text,
+  destination_country_code text,
+  origin_port              text,
+  destination_port         text,
+  dest_city                text,
+  dest_state               text,
+  hs_code                  text,
+  product_description      text,
+  container_count          integer,
+  teu                      numeric,
+  weight_kg                numeric,
+  lcl                      boolean,
+  load_type                text,
+  shipping_cost_usd        numeric,
+  raw_payload              jsonb,
+  -- Tracking state (populated by pulse-bol-tracking-tick, Task B5):
+  tracking_status          text,
+  tracking_eta             timestamptz,
+  tracking_arrival_actual  timestamptz,
+  tracking_last_event_code text,
+  tracking_last_event_at   timestamptz,
+  tracking_refreshed_at    timestamptz,
+  created_at               timestamptz NOT NULL DEFAULT now(),
+  updated_at               timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS lit_unified_shipments_bol_unique
+  ON public.lit_unified_shipments (company_id, bol_number);
+CREATE INDEX IF NOT EXISTS lit_unified_shipments_company_date_idx
+  ON public.lit_unified_shipments (company_id, bol_date DESC);
+CREATE INDEX IF NOT EXISTS lit_unified_shipments_scac_idx
+  ON public.lit_unified_shipments (scac);
+CREATE INDEX IF NOT EXISTS lit_unified_shipments_dest_idx
+  ON public.lit_unified_shipments (destination_port);
+CREATE INDEX IF NOT EXISTS lit_unified_shipments_hs_idx
+  ON public.lit_unified_shipments (hs_code);
+CREATE INDEX IF NOT EXISTS lit_unified_shipments_tracking_refresh_idx
+  ON public.lit_unified_shipments (tracking_refreshed_at NULLS FIRST)
+  WHERE tracking_arrival_actual IS NULL;
+
+ALTER TABLE public.lit_unified_shipments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "lit_unified_shipments_service_role_all"
+  ON public.lit_unified_shipments FOR ALL TO service_role
+  USING (true) WITH CHECK (true);
+CREATE POLICY "lit_unified_shipments_read_authenticated"
+  ON public.lit_unified_shipments FOR SELECT TO authenticated USING (true);
+
+-- DCSA tracking events from Maersk + Hapag-Lloyd.
 CREATE TABLE IF NOT EXISTS public.lit_bol_tracking_events (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   bol_number        text NOT NULL,
@@ -283,25 +349,10 @@ CREATE INDEX IF NOT EXISTS lit_bol_tracking_events_scac_idx
 
 ALTER TABLE public.lit_bol_tracking_events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "lit_bol_tracking_events_service_role_all"
-  ON public.lit_bol_tracking_events
-  FOR ALL TO service_role
+  ON public.lit_bol_tracking_events FOR ALL TO service_role
   USING (true) WITH CHECK (true);
 CREATE POLICY "lit_bol_tracking_events_read_authenticated"
-  ON public.lit_bol_tracking_events
-  FOR SELECT TO authenticated
-  USING (true);
-
-ALTER TABLE public.unified_shipments
-  ADD COLUMN IF NOT EXISTS tracking_status text,
-  ADD COLUMN IF NOT EXISTS tracking_eta timestamptz,
-  ADD COLUMN IF NOT EXISTS tracking_arrival_actual timestamptz,
-  ADD COLUMN IF NOT EXISTS tracking_last_event_code text,
-  ADD COLUMN IF NOT EXISTS tracking_last_event_at timestamptz,
-  ADD COLUMN IF NOT EXISTS tracking_refreshed_at timestamptz;
-
-CREATE INDEX IF NOT EXISTS unified_shipments_tracking_refresh_idx
-  ON public.unified_shipments (tracking_refreshed_at NULLS FIRST)
-  WHERE tracking_arrival_actual IS NULL;
+  ON public.lit_bol_tracking_events FOR SELECT TO authenticated USING (true);
 
 COMMIT;
 ```
@@ -312,18 +363,340 @@ Use `mcp__claude_ai_Supabase__apply_migration` with `project_id="jkmrfiaefxwgbvf
 
 - [ ] **Step 3: Verify schema**
 
-Use `mcp__claude_ai_Supabase__execute_sql`:
 ```sql
-SELECT count(*) FROM information_schema.tables WHERE table_name='lit_bol_tracking_events';
-SELECT column_name FROM information_schema.columns WHERE table_name='unified_shipments' AND column_name LIKE 'tracking_%' ORDER BY column_name;
+SELECT count(*) FROM information_schema.tables
+WHERE table_name IN ('lit_unified_shipments', 'lit_bol_tracking_events');
+SELECT column_name FROM information_schema.columns
+WHERE table_name='lit_unified_shipments' AND column_name LIKE 'tracking_%' ORDER BY column_name;
 ```
-Expected: count=1, six tracking_* columns listed.
+Expected: count=2; six tracking_* columns listed.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add supabase/migrations/20260515100000_pulse_live_tracking_schema.sql
-git commit -m "feat(pulse-live): schema for BOL tracking events + unified_shipments tracking columns"
+git commit -m "feat(pulse-live): create lit_unified_shipments + lit_bol_tracking_events schema"
+```
+
+---
+
+### Task B1.5: Re-materialize hook in pulse-refresh-tick
+
+**Files:**
+- Modify: `supabase/functions/pulse-refresh-tick/index.ts`
+- Create: `supabase/functions/_shared/materialize_bols.ts`
+
+The existing `pulse-refresh-tick` refreshes ~20 oldest snapshots per 15-min cron tick. We piggyback on it: after each `lit_importyeti_company_snapshot` upsert, re-materialize that company's BOL rows in `lit_unified_shipments`. Wrapped in a transaction-like sequence so tracking state from prior rows is preserved.
+
+- [ ] **Step 1: Create the shared materializer module**
+
+```ts
+// supabase/functions/_shared/materialize_bols.ts
+//
+// Re-materialize lit_unified_shipments rows for a single company_id from the
+// parsed_summary.recent_bols[] JSONB array in lit_importyeti_company_snapshot.
+// Preserves tracking_* state when (company_id, bol_number) match.
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+
+type SupabaseClient = ReturnType<typeof createClient>;
+
+export interface MaterializeResult {
+  upserted: number;
+  removed: number;
+  preserved_tracking_state: number;
+}
+
+export async function rematerializeCompanyBols(
+  supabase: SupabaseClient,
+  companyId: string,
+  parsedSummary: any,
+): Promise<MaterializeResult> {
+  const rawBols = Array.isArray(parsedSummary?.recent_bols) ? parsedSummary.recent_bols : [];
+
+  // 1. Snapshot current tracking state to preserve across re-materialize.
+  const { data: existing } = await supabase
+    .from("lit_unified_shipments")
+    .select("bol_number, tracking_status, tracking_eta, tracking_arrival_actual, tracking_last_event_code, tracking_last_event_at, tracking_refreshed_at")
+    .eq("company_id", companyId);
+  const prior = new Map((existing || []).map((r: any) => [r.bol_number, r]));
+
+  // 2. Build new row set from JSONB.
+  const rows = rawBols.map((b: any) => buildRow(companyId, b, prior)).filter(Boolean) as any[];
+
+  // 3. Upsert (matches on company_id + bol_number).
+  let upserted = 0;
+  if (rows.length > 0) {
+    const { error } = await supabase
+      .from("lit_unified_shipments")
+      .upsert(rows, { onConflict: "company_id,bol_number" });
+    if (error) throw new Error(`materialize_upsert_failed: ${error.message}`);
+    upserted = rows.length;
+  }
+
+  // 4. Delete stale rows (BOLs no longer in the snapshot).
+  const newKeys = new Set(rows.map((r) => r.bol_number));
+  const staleBolNumbers = Array.from(prior.keys()).filter((k) => !newKeys.has(k));
+  let removed = 0;
+  if (staleBolNumbers.length > 0) {
+    const { error } = await supabase
+      .from("lit_unified_shipments")
+      .delete()
+      .eq("company_id", companyId)
+      .in("bol_number", staleBolNumbers);
+    if (error) throw new Error(`materialize_delete_failed: ${error.message}`);
+    removed = staleBolNumbers.length;
+  }
+
+  return {
+    upserted,
+    removed,
+    preserved_tracking_state: rows.filter((r) => r.tracking_refreshed_at).length,
+  };
+}
+
+function buildRow(companyId: string, b: any, prior: Map<string, any>): any | null {
+  const bolNumber =
+    b.house_bill_of_lading || b.houseBillOfLading ||
+    b.Bill_of_Lading || b.bolNumber ||
+    b.Master_Bill_of_Lading || b.masterBillOfLading;
+  if (!bolNumber) return null;
+
+  const masterBol = b.Master_Bill_of_Lading || b.masterBillOfLading || null;
+  const carrierCode = b.carrierCode || null;
+  const carrierName = b.carrierName || b.carrier || b.topServiceProvider || null;
+  const shipmentDate = b.shipmentDate || b.date_formatted || null;
+  const containerCount = num(b.containers_count) ?? num(b.quantity) ?? num(b.Quantity);
+  const teu = num(b.TEU) ?? num(b.teu);
+  const isLcl = (b.lcl === true) || (typeof b.fcl_lcl === "string" && b.fcl_lcl.toLowerCase().includes("lcl"));
+  const destCountry = b.destinationCountry || b.Country || null;
+  const destCountryCode = b.destinationCountryCode || b.country_code || null;
+  const originCountry = b.originCountry || null;
+  const originCountryCode = b.originCountryCode || null;
+  const originPort = (b.route && b.route.origin) || (b.shipping_route && b.shipping_route.split("→")[0]?.trim()) || null;
+  const destPort = (b.route && b.route.destination) || (b.shipping_route && b.shipping_route.split("→")[1]?.trim()) || null;
+  const { city, state } = parseConsigneeAddress(b.Consignee_Address);
+  const preserved = prior.get(bolNumber);
+
+  return {
+    company_id: companyId,
+    bol_number: bolNumber,
+    master_bol: masterBol,
+    bol_date: shipmentDate ? new Date(shipmentDate).toISOString() : null,
+    scac: carrierCode,
+    carrier_name: carrierName,
+    shipper_name: b.Shipper_Name || b.shipper_basename || null,
+    consignee_name: b.Consignee_Name || b.consignee_basename || null,
+    origin_country: originCountry,
+    origin_country_code: originCountryCode,
+    destination_country: destCountry,
+    destination_country_code: destCountryCode,
+    origin_port: originPort,
+    destination_port: destPort,
+    dest_city: city,
+    dest_state: state,
+    hs_code: b.HS_Code || null,
+    product_description: b.Product_Description || null,
+    container_count: containerCount,
+    teu,
+    weight_kg: num(b.Weight_in_KG) ?? num(b.weightKg),
+    lcl: isLcl,
+    load_type: b.loadType || null,
+    shipping_cost_usd: num(b.shipping_cost),
+    raw_payload: b,
+    // Preserve tracking state if we already had it for this BOL.
+    tracking_status: preserved?.tracking_status ?? null,
+    tracking_eta: preserved?.tracking_eta ?? null,
+    tracking_arrival_actual: preserved?.tracking_arrival_actual ?? null,
+    tracking_last_event_code: preserved?.tracking_last_event_code ?? null,
+    tracking_last_event_at: preserved?.tracking_last_event_at ?? null,
+    tracking_refreshed_at: preserved?.tracking_refreshed_at ?? null,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function num(v: any): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(String(v).replace(/[, $]/g, ""));
+  return isFinite(n) ? n : null;
+}
+
+// Parse "123 Main St, Chicago, IL 60601, USA" → { city: "Chicago", state: "IL" }.
+// Conservative: only return values when both city + state are confidently extracted.
+export function parseConsigneeAddress(addr: any): { city: string | null; state: string | null } {
+  if (!addr || typeof addr !== "string") return { city: null, state: null };
+  const parts = addr.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return { city: null, state: null };
+  // Look for the "STATE ZIP" pattern in the next-to-last (or last) part.
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const m = parts[i].match(/^([A-Z]{2})(?:\s+\d{5}(?:-\d{4})?)?$/);
+    if (m && i >= 1) {
+      return { city: parts[i - 1], state: m[1] };
+    }
+  }
+  return { city: null, state: null };
+}
+```
+
+- [ ] **Step 2: Wire into pulse-refresh-tick**
+
+Open `supabase/functions/pulse-refresh-tick/index.ts`. After the existing snapshot upsert (look for `.from("lit_importyeti_company_snapshot").upsert(...)` or similar), add a call to the materializer:
+
+```ts
+import { rematerializeCompanyBols } from "../_shared/materialize_bols.ts";
+// ...
+// After successful snapshot upsert, with `parsedSummary` and `companyId` in scope:
+try {
+  const result = await rematerializeCompanyBols(supabase, companyId, parsedSummary);
+  console.log(`[pulse-refresh-tick] rematerialize ${companyId}: +${result.upserted} -${result.removed}`);
+} catch (err) {
+  console.error(`[pulse-refresh-tick] rematerialize failed for ${companyId}:`, err);
+  // Don't fail the tick — snapshot is still saved; we'll retry on next pass.
+}
+```
+
+- [ ] **Step 3: Test the materializer locally**
+
+```bash
+cd supabase/functions/_shared && deno test materialize_bols.test.ts --allow-net 2>&1 | tail -10
+```
+
+Where `materialize_bols.test.ts` covers `parseConsigneeAddress` edge cases:
+
+```ts
+// supabase/functions/_shared/materialize_bols.test.ts
+import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { parseConsigneeAddress } from "./materialize_bols.ts";
+
+Deno.test("parseConsigneeAddress — US format", () => {
+  assertEquals(parseConsigneeAddress("123 Main St, Chicago, IL 60601, USA"),
+    { city: "Chicago", state: "IL" });
+});
+Deno.test("parseConsigneeAddress — no state", () => {
+  assertEquals(parseConsigneeAddress("Shanghai, China"), { city: null, state: null });
+});
+Deno.test("parseConsigneeAddress — empty", () => {
+  assertEquals(parseConsigneeAddress(null), { city: null, state: null });
+  assertEquals(parseConsigneeAddress(""), { city: null, state: null });
+});
+```
+
+- [ ] **Step 4: Deploy updated pulse-refresh-tick via MCP**
+
+`deploy_edge_function` with the updated index.ts and the new `_shared/materialize_bols.ts`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add supabase/functions/_shared/materialize_bols.ts \
+        supabase/functions/_shared/materialize_bols.test.ts \
+        supabase/functions/pulse-refresh-tick/index.ts
+git commit -m "feat(pulse-live): re-materialize lit_unified_shipments after each snapshot refresh"
+```
+
+---
+
+### Task B1.6: One-off backfill of lit_unified_shipments
+
+**Files:**
+- Create: `supabase/functions/pulse-unified-shipments-backfill/index.ts`
+
+A one-shot edge function that walks every existing `lit_importyeti_company_snapshot` row and runs `rematerializeCompanyBols()` against each one. Run once after Task B1 lands; never scheduled.
+
+- [ ] **Step 1: Implement**
+
+```ts
+// supabase/functions/pulse-unified-shipments-backfill/index.ts
+//
+// One-off backfill. Walks every lit_importyeti_company_snapshot row, expands
+// its parsed_summary.recent_bols[] into lit_unified_shipments rows via the
+// shared materializer. Idempotent (matches on company_id + bol_number).
+//
+// Auth: cron secret. Not scheduled — invoke manually once.
+
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { verifyCronAuth } from "../_shared/cron_auth.ts";
+import { rematerializeCompanyBols } from "../_shared/materialize_bols.ts";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const BATCH_SIZE = 50;
+
+serve(async (req) => {
+  const auth = verifyCronAuth(req);
+  if (!auth.ok) return auth.response;
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+  let processed = 0, totalUpserted = 0, totalRemoved = 0, errors = 0;
+  let lastCompanyId: string | null = null;
+
+  while (true) {
+    let q = supabase
+      .from("lit_importyeti_company_snapshot")
+      .select("company_id, parsed_summary")
+      .order("company_id", { ascending: true })
+      .limit(BATCH_SIZE);
+    if (lastCompanyId) q = q.gt("company_id", lastCompanyId);
+    const { data: batch, error } = await q;
+    if (error) return json({ ok: false, error: error.message }, 500);
+    if (!batch || batch.length === 0) break;
+
+    for (const row of batch) {
+      try {
+        const result = await rematerializeCompanyBols(
+          supabase, row.company_id, row.parsed_summary,
+        );
+        totalUpserted += result.upserted;
+        totalRemoved += result.removed;
+        processed++;
+      } catch (err) {
+        console.error(`[backfill] failed for ${row.company_id}:`, err);
+        errors++;
+      }
+      lastCompanyId = row.company_id;
+    }
+  }
+
+  return json({ ok: true, processed, totalUpserted, totalRemoved, errors });
+});
+
+function json(body: any, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+```
+
+- [ ] **Step 2: Deploy via MCP**
+
+`deploy_edge_function` with `name="pulse-unified-shipments-backfill"`, `verify_jwt=false`, files = [index.ts, ../_shared/cron_auth.ts, ../_shared/materialize_bols.ts].
+
+- [ ] **Step 3: Invoke once**
+
+```bash
+curl -sS -X POST \
+  -H "X-Internal-Cron: <LIT_CRON_SECRET value>" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  --max-time 600 \
+  "https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/pulse-unified-shipments-backfill"
+```
+
+Expected: `{"ok":true,"processed":N,"totalUpserted":M,"totalRemoved":0,"errors":0}` where N is the number of snapshot rows and M is the total BOLs materialized.
+
+- [ ] **Step 4: Spot-check via SQL**
+
+```sql
+SELECT count(*) AS total_bols,
+       count(DISTINCT company_id) AS companies,
+       count(*) FILTER (WHERE bol_date >= now() - interval '60 days') AS recent
+FROM lit_unified_shipments;
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add supabase/functions/pulse-unified-shipments-backfill/index.ts
+git commit -m "feat(pulse-live): one-off backfill that materializes JSONB BOLs into lit_unified_shipments"
 ```
 
 ---
@@ -741,7 +1114,7 @@ export function isSupportedSCAC(scac: string | null | undefined): boolean {
 // supabase/functions/_shared/dcsa_event_map.ts
 //
 // Reduces an ordered list of DCSA TrackingEvent rows into a summary used to
-// stamp unified_shipments tracking_* columns. Treat the latest ACT event as
+// stamp lit_unified_shipments tracking_* columns. Treat the latest ACT event as
 // the "current" status; treat EST DISC as the ETA.
 
 import type { TrackingEvent } from "./maersk_client.ts";
@@ -846,7 +1219,7 @@ serve(async (req) => {
     const sixtyDaysAgo = new Date(Date.now() - 60 * 86400 * 1000).toISOString();
     const twelveHoursAgo = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
     const { data: candidates, error } = await supabase
-      .from("unified_shipments")
+      .from("lit_unified_shipments")
       .select("id, bol_number, scac, bol_date, tracking_refreshed_at")
       .gte("bol_date", sixtyDaysAgo)
       .is("tracking_arrival_actual", null)
@@ -858,7 +1231,7 @@ serve(async (req) => {
     for (const row of candidates || []) {
       const carrier = routeBySCAC(row.scac);
       if (!carrier) {
-        await supabase.from("unified_shipments").update({
+        await supabase.from("lit_unified_shipments").update({
           tracking_status: "unsupported",
           tracking_refreshed_at: new Date().toISOString(),
         }).eq("id", row.id);
@@ -870,7 +1243,7 @@ serve(async (req) => {
         : await fetchHapagEvents({ bolNumber: row.bol_number, env: ENV });
       if (!result.ok) {
         errors++;
-        await supabase.from("unified_shipments").update({
+        await supabase.from("lit_unified_shipments").update({
           tracking_status: "error",
           tracking_refreshed_at: new Date().toISOString(),
         }).eq("id", row.id);
@@ -894,7 +1267,7 @@ serve(async (req) => {
         }, { onConflict: "bol_number,event_code,event_timestamp,container_number", ignoreDuplicates: true });
       }
       const summary = summarizeEvents(result.events);
-      await supabase.from("unified_shipments").update({
+      await supabase.from("lit_unified_shipments").update({
         tracking_status: result.events.length > 0 ? "tracked" : "no_match",
         tracking_eta: summary.eta,
         tracking_arrival_actual: summary.arrivalActual,
@@ -1386,7 +1759,7 @@ git commit -m "feat(pulse-live): OSRM client with haversine fallback + tests"
 // supabase/functions/pulse-drayage-recompute/index.ts
 //
 // Daily tick at 07:00 UTC (1h after tracking refresh).
-// For each unified_shipments row that has POD + dest city + container info,
+// For each lit_unified_shipments row that has POD + dest city + container info,
 // looks up cached distance (or resolves via OSRM), computes drayage cost,
 // and upserts lit_drayage_estimates.
 
@@ -1438,7 +1811,7 @@ serve(async (req) => {
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
   const { data: rows, error } = await supabase
-    .from("unified_shipments")
+    .from("lit_unified_shipments")
     .select("id, bol_number, source_company_key, destination_port, dest_city, dest_state, container_count, container_type, lcl")
     .not("destination_port", "is", null)
     .not("dest_city", "is", null)
@@ -1684,7 +2057,7 @@ export function usePulseLiveData(sourceCompanyKey: string | null): PulseLiveData
     (async () => {
       setLoading(true);
       const { data: ships, error: shipErr } = await supabase
-        .from('unified_shipments')
+        .from('lit_unified_shipments')
         .select(`
           bol_number, scac, origin_port, destination_port,
           dest_city, dest_state, container_count, container_type, lcl, hs_code,

@@ -1,7 +1,20 @@
 # Pulse LIVE — BOL Tracking, Drayage Opportunity & Branded Reports
 
 **Date:** 2026-05-14
-**Status:** Draft for review
+**Status:** Approved (revised 2026-05-14 after data-layer drift discovery)
+
+## Revision Notes (2026-05-14)
+
+The original spec assumed a relational `lit_unified_shipments` table existed. It does not. The actual data lives in `lit_importyeti_company_snapshot.parsed_summary.recent_bols[]` (JSONB array). Founder explicitly chose **Option 2 (materialize BOLs to a real table)** over Option 1 (view-over-JSONB) with the rationale: *"we are creating an enterprise grade saas software, we should not try to go the easy route. we want accurate data, high level data."*
+
+Architectural changes from this decision:
+1. Add new table `public.lit_lit_unified_shipments` (one row per BOL, fully indexed)
+2. Add one-off backfill edge function `pulse-unified-shipments-backfill` that walks every `lit_importyeti_company_snapshot` row and materializes BOLs into the new table
+3. Modify existing `pulse-refresh-tick` edge fn so each snapshot upsert also re-materializes the company's BOL rows (no second cron, no triggers, no drift)
+4. All downstream tasks reference `lit_lit_unified_shipments` instead of `lit_unified_shipments`
+5. Sub-project G (Overview redesign) acknowledged as scope — separate brainstorm/plan after Pulse LIVE 1.0 lands
+
+Net plan impact: +1 day (one new task B0, ~30-line addition to existing refresh cron, no functional rework of B/C/D/E/F).
 
 ## Goal
 
@@ -40,7 +53,7 @@ This feature closes those three gaps. It also feeds the weekly digest a much ric
 │  4. Route HLCU/HLXU → Hapag-Lloyd client                        │
 │  5. Skip everything else, mark tracking_status='unsupported'    │
 │  6. Upsert events into lit_bol_tracking_events                  │
-│  7. Update unified_shipments.arrival_date when DCSA "DISC"      │
+│  7. Update lit_unified_shipments.arrival_date when DCSA "DISC"      │
 │     (discharged) event arrives                                  │
 │  8. Generate drayage cost row in lit_drayage_estimates          │
 └─────────────────────────────────────────────────────────────────┘
@@ -135,18 +148,70 @@ CREATE TABLE lit_drayage_estimates (
 CREATE INDEX ON lit_drayage_estimates (source_company_key);
 ```
 
-### Modified tables
+### New table `lit_unified_shipments` (materialized BOL rows)
 
-**`unified_shipments`** — add tracking-state columns:
+One row per BOL, materialized from `lit_importyeti_company_snapshot.parsed_summary.recent_bols[]`. Includes tracking-state columns inline since the table is brand new.
+
 ```sql
-ALTER TABLE unified_shipments
-  ADD COLUMN IF NOT EXISTS tracking_status text,    -- 'tracked' | 'unsupported' | 'no_match' | 'pending'
-  ADD COLUMN IF NOT EXISTS tracking_eta timestamptz,
-  ADD COLUMN IF NOT EXISTS tracking_arrival_actual timestamptz,
-  ADD COLUMN IF NOT EXISTS tracking_last_event_code text,
-  ADD COLUMN IF NOT EXISTS tracking_last_event_at timestamptz,
-  ADD COLUMN IF NOT EXISTS tracking_refreshed_at timestamptz;
+CREATE TABLE public.lit_unified_shipments (
+  id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id               text NOT NULL,
+  bol_number               text NOT NULL,
+  master_bol               text,
+  bol_date                 timestamptz,
+  scac                     text,
+  carrier_name             text,
+  shipper_name             text,
+  consignee_name           text,
+  origin_country           text,
+  origin_country_code      text,
+  destination_country      text,
+  destination_country_code text,
+  origin_port              text,
+  destination_port         text,
+  dest_city                text,
+  dest_state               text,
+  hs_code                  text,
+  product_description      text,
+  container_count          integer,
+  teu                      numeric,
+  weight_kg                numeric,
+  lcl                      boolean,
+  load_type                text,
+  shipping_cost_usd        numeric,
+  raw_payload              jsonb,
+  tracking_status          text,
+  tracking_eta             timestamptz,
+  tracking_arrival_actual  timestamptz,
+  tracking_last_event_code text,
+  tracking_last_event_at   timestamptz,
+  tracking_refreshed_at    timestamptz,
+  created_at               timestamptz NOT NULL DEFAULT now(),
+  updated_at               timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX lit_unified_shipments_bol_unique
+  ON public.lit_unified_shipments (company_id, bol_number);
+CREATE INDEX lit_unified_shipments_company_date_idx
+  ON public.lit_unified_shipments (company_id, bol_date DESC);
+CREATE INDEX lit_unified_shipments_scac_idx ON public.lit_unified_shipments (scac);
+CREATE INDEX lit_unified_shipments_dest_idx ON public.lit_unified_shipments (destination_port);
+CREATE INDEX lit_unified_shipments_hs_idx ON public.lit_unified_shipments (hs_code);
+CREATE INDEX lit_unified_shipments_tracking_refresh_idx
+  ON public.lit_unified_shipments (tracking_refreshed_at NULLS FIRST)
+  WHERE tracking_arrival_actual IS NULL;
+
+ALTER TABLE public.lit_unified_shipments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "lit_unified_shipments_service_role_all"
+  ON public.lit_unified_shipments FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "lit_unified_shipments_read_authenticated"
+  ON public.lit_unified_shipments FOR SELECT TO authenticated USING (true);
 ```
+
+### Materialization strategy
+
+- **One-off backfill** (`pulse-unified-shipments-backfill` edge fn): walks every existing `lit_importyeti_company_snapshot` row, expands `parsed_summary.recent_bols[]` into rows, upserts on `(company_id, bol_number)`.
+- **Ongoing freshness** (modify existing `pulse-refresh-tick`): after each snapshot upsert, DELETE existing `lit_unified_shipments` rows for that `company_id` and re-INSERT from the new JSONB. Wrapped in transaction. Tracking-state columns from prior rows are preserved by matching on `(company_id, bol_number)` and copying forward before delete.
 
 ### RLS
 
@@ -201,7 +266,7 @@ The existing `CompanyShipmentsPanel.tsx` and `Workspace.tsx:Shipments` tab rende
 - **Origin port** (already in `ShipmentLite.origin_port`, just unhidden)
 - **POD** (from `ShipmentLite.destination_port`)
 - **Final destination** (consignee city/state, derived from ImportYeti record)
-- **Arrival date** (from `unified_shipments.arrival_date` when present)
+- **Arrival date** (from `lit_unified_shipments.arrival_date` when present)
 - **Service icon** — small lucide-react badge next to the row:
   - `<Ship />` for FCL
   - `<Container />` for LCL
@@ -328,7 +393,7 @@ UX helper text for the unsupported-carrier case (Sub-project A + D):
 - [ ] jspdf-autotable installed (`npm i jspdf-autotable`)
 - [ ] Brand constants verified against `docs/mockups/pulse-digest-sample.html`
 - [ ] Manual draft of branded PDF reviewed by founder before public release
-- [ ] One end-to-end test: pick a real Maersk BOL from `unified_shipments`, refresh tick, verify event appears in `lit_bol_tracking_events`, verify `unified_shipments.tracking_eta` populated
+- [ ] One end-to-end test: pick a real Maersk BOL from `lit_unified_shipments`, refresh tick, verify event appears in `lit_bol_tracking_events`, verify `lit_unified_shipments.tracking_eta` populated
 - [ ] Drayage formula calibrated against 3 known real quotes (sanity-check the ±25% band)
 - [ ] Digest enrichment dry-run sent to `vraymond@logisticintel.com`
 
