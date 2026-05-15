@@ -9,11 +9,11 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { verifyCronAuth } from "../_shared/cron_auth.ts";
 import { estimateDrayageCost, normalizeContainerType } from "../_shared/drayage_cost.ts";
-import { routeMiles, normalizeCityKey } from "../_shared/osrm_client.ts";
+import { routeMiles, normalizeCityKey, haversineMiles as haversineMilesFromCoords } from "../_shared/osrm_client.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const BATCH_CAP = 500;
+const BATCH_CAP = 150;
 
 // Minimal port → lat/lon map for v1. Extend as needed.
 const PORT_COORDS: Record<string, { lat: number; lon: number }> = {
@@ -101,15 +101,33 @@ serve(async (req) => {
   if (!auth.ok) return auth.response;
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+  // ?fast=1 → skip OSRM, use haversine only (fast initial cache warm)
+  const url = new URL(req.url);
+  const fastMode = url.searchParams.get("fast") === "1";
+
+  // ?skipExisting=1 → only process BOLs that don't yet have an estimate.
+  // Lets multiple invocations make progress instead of always processing the same first N.
+  const skipExisting = url.searchParams.get("skipExisting") === "1";
+  let existingBols: Set<string> = new Set();
+  if (skipExisting) {
+    const { data: existingRows } = await supabase
+      .from("lit_drayage_estimates")
+      .select("bol_number")
+      .limit(10000);
+    existingBols = new Set((existingRows || []).map((x: any) => x.bol_number));
+  }
+
   const { data: rows, error } = await supabase
     .from("lit_unified_shipments")
     .select("id, bol_number, company_id, destination_port, destination_country_code, dest_city, dest_state, container_count, load_type, lcl")
     .not("dest_city", "is", null)
-    .limit(BATCH_CAP);
+    .limit(skipExisting ? BATCH_CAP * 8 : BATCH_CAP);
   if (error) return json({ ok: false, error: error.message }, 500);
 
-  let computed = 0, skipped = 0, missing_coords = 0, inferred_pod_count = 0;
+  let computed = 0, skipped = 0, missing_coords = 0, inferred_pod_count = 0, already_done = 0;
   for (const r of rows || []) {
+    if (skipExisting && existingBols.has(r.bol_number)) { already_done++; continue; }
+    if (computed >= BATCH_CAP) break;
     let pod = r.destination_port?.toUpperCase();
     if (!pod || !PORT_COORDS[pod]) {
       pod = inferPodFromState(r.dest_state, r.destination_country_code);
@@ -135,17 +153,27 @@ serve(async (req) => {
     if (cached?.miles) {
       miles = Number(cached.miles);
     } else {
-      const route = await routeMiles({
-        fromLat: PORT_COORDS[pod].lat, fromLon: PORT_COORDS[pod].lon,
-        toLat: cityCoord.lat, toLon: cityCoord.lon,
-      });
-      miles = route.miles;
+      let routeSource: "osrm" | "haversine";
+      if (fastMode) {
+        miles = haversineMilesFromCoords(
+          PORT_COORDS[pod].lat, PORT_COORDS[pod].lon,
+          cityCoord.lat, cityCoord.lon,
+        ) * 1.2;
+        routeSource = "haversine";
+      } else {
+        const route = await routeMiles({
+          fromLat: PORT_COORDS[pod].lat, fromLon: PORT_COORDS[pod].lon,
+          toLat: cityCoord.lat, toLon: cityCoord.lon,
+        });
+        miles = route.miles;
+        routeSource = route.source;
+      }
       await supabase.from("lit_drayage_distance_cache").upsert({
         pod_unloc: pod,
         dest_city_norm: normalizeCityKey(r.dest_city),
         dest_state: (r.dest_state || "").toUpperCase(),
         miles,
-        source: route.source,
+        source: routeSource,
       }, { onConflict: "pod_unloc,dest_city_norm,dest_state" });
     }
 
@@ -158,7 +186,16 @@ serve(async (req) => {
       container_type: container_type as any,
       miles,
     });
-    await supabase.from("lit_drayage_estimates").upsert({
+    // Manual upsert: the unique index uses COALESCE expressions, which PostgREST
+    // can't reference via onConflict. So we look up by key, then update or insert.
+    const { data: existing } = await supabase
+      .from("lit_drayage_estimates")
+      .select("id")
+      .eq("bol_number", r.bol_number)
+      .eq("destination_city", r.dest_city || "")
+      .eq("destination_state", r.dest_state || "")
+      .maybeSingle();
+    const payload = {
       bol_number: r.bol_number,
       source_company_key: r.company_id,
       pod_unloc: pod,
@@ -170,11 +207,19 @@ serve(async (req) => {
       est_cost_low_usd: out.low,
       est_cost_high_usd: out.high,
       formula_version: out.formula_version,
-    }, { onConflict: "bol_number,destination_city,destination_state" });
+    };
+    const writeResult = existing?.id
+      ? await supabase.from("lit_drayage_estimates").update(payload).eq("id", existing.id)
+      : await supabase.from("lit_drayage_estimates").insert(payload);
+    if (writeResult.error) {
+      console.error("[drayage-write] error", writeResult.error.message, "bol=", r.bol_number);
+      skipped++;
+      continue;
+    }
     computed++;
   }
 
-  return json({ ok: true, computed, missing_coords, skipped, inferred_pod_count, examined: rows?.length || 0 });
+  return json({ ok: true, computed, missing_coords, skipped, already_done, inferred_pod_count, examined: rows?.length || 0 });
 });
 
 function json(body: any, status = 200) {
