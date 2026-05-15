@@ -394,6 +394,10 @@ function SummaryView({
         cadence={cadence}
         reducedMotion={reducedMotion}
       />
+      <TopLanesCard
+        canonicalLanes={canonicalLanes}
+        globeLanes={globeLanes}
+      />
       <CarrierMixLive
         recentBols={recentBols}
         carriers={carriers}
