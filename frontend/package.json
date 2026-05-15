@@ -59,6 +59,7 @@
     "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
     "jspdf": "^3.0.3",
+    "jspdf-autotable": "^3.8.4",
     "lucide-react": "^0.475.0",
     "quill": "^2.0.3",
     "react": "^18.2.0",
