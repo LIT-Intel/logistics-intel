@@ -7,6 +7,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { verifyCronAuth } from "../_shared/cron_auth.ts";
 import { fetchAndUpsertSnapshot } from "../_shared/importyeti_fetch.ts";
 import { computeAlertCandidates } from "../_shared/alert_diff.ts";
+import { rematerializeCompanyBols } from "../_shared/materialize_bols.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -52,6 +53,15 @@ serve(async (req) => {
       if (result.httpStatus === 404) {
         await markUntrackable(supabase, slug);
         continue;
+      }
+      // Re-materialize lit_unified_shipments from the fresh JSONB blob.
+      // Wrapped so a materializer failure does NOT fail the tick — the
+      // snapshot is already persisted and we'll retry on the next pass.
+      try {
+        const matResult = await rematerializeCompanyBols(supabase, slug, result.parsedSummary);
+        console.log(`[pulse-refresh-tick] rematerialize ${slug}: +${matResult.upserted} -${matResult.removed}`);
+      } catch (matErr) {
+        console.error(`[pulse-refresh-tick] rematerialize failed for ${slug}:`, (matErr as any)?.message || matErr);
       }
       const candidates = computeAlertCandidates(result.previousParsedSummary, result.parsedSummary!);
       if (candidates.length > 0) {
