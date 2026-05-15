@@ -4,7 +4,6 @@ import {
   Sparkles,
   Info,
   Container,
-  TrendingUp,
 } from "lucide-react";
 import {
   Area,
@@ -348,12 +347,12 @@ function StrategicBriefBanner({
 /* ── Summary view ─────────────────────────────────────────────────────── */
 
 function SummaryView({
-  profile,
+  profile: _profile,
   cadence,
   modes: _modes,
   containerProfile,
   recentBols,
-  carriers,
+  carriers: _carriers,
   suppliers: _suppliers,
   canonicalLanes,
   globeLanes,
@@ -372,35 +371,26 @@ function SummaryView({
 }) {
   const reducedMotion = usePrefersReducedMotion();
 
+  // Consolidated Summary order (post-feedback):
+  //   1. TopLanesCard — globe + ranked lane list + container-mix bar
+  //      (the equipment footprint card was removed; its container bar
+  //      is now merged into this hero card.)
+  //   2. CadenceAndModalMix — area chart + donut
+  //   3. RecentActivityCards — 5 BOL previews + Pulse LIVE link
+  // Removed: ShipperVitalsStrip (dup of CDPHeader), EquipmentAndLaneFootprint
+  // (dup of TopLanes), CarrierMixLive (lives in Pulse LIVE tab).
   return (
     <>
-      <ShipperVitalsStrip
-        profile={profile}
-        cadence={cadence}
-        containerProfile={containerProfile}
+      <TopLanesCard
         canonicalLanes={canonicalLanes}
+        globeLanes={globeLanes}
         recentBols={recentBols}
+        containerProfile={containerProfile}
         reducedMotion={reducedMotion}
       />
       <CadenceAndModalMix
         cadence={cadence}
         containerProfile={containerProfile}
-        reducedMotion={reducedMotion}
-      />
-      <EquipmentAndLaneFootprint
-        containerProfile={containerProfile}
-        recentBols={recentBols}
-        canonicalLanes={canonicalLanes}
-        cadence={cadence}
-        reducedMotion={reducedMotion}
-      />
-      <TopLanesCard
-        canonicalLanes={canonicalLanes}
-        globeLanes={globeLanes}
-      />
-      <CarrierMixLive
-        recentBols={recentBols}
-        carriers={carriers}
         reducedMotion={reducedMotion}
       />
       <RecentActivityCards
@@ -432,189 +422,7 @@ function usePrefersReducedMotion(): boolean {
   return prefers;
 }
 
-/* ── A. Shipper Vitals Strip ──────────────────────────────────────────── */
-
-type VitalCellKind = "spark" | "icon" | "text";
-
-function ShipperVitalsStrip({
-  profile,
-  cadence,
-  containerProfile,
-  canonicalLanes,
-  recentBols,
-  reducedMotion,
-}: {
-  profile: any;
-  cadence: CadencePoint[];
-  containerProfile: ContainerProfile;
-  canonicalLanes: any[];
-  recentBols: any[];
-  reducedMotion: boolean;
-}) {
-  // Build shipment + TEU series from profile.timeSeries (fallback: cadence)
-  const series = useMemo(() => {
-    const raw = Array.isArray(profile?.timeSeries) ? profile.timeSeries : [];
-    if (raw.length > 0) {
-      return raw.map((p: any) => ({
-        shipments:
-          Number(p?.shipments) ||
-          (Number(p?.fclShipments) || 0) + (Number(p?.lclShipments) || 0),
-        teu: Number(p?.teu) || 0,
-      }));
-    }
-    return cadence.map((c) => ({
-      shipments: c.total,
-      teu: Number(c.teu) || 0,
-    }));
-  }, [profile, cadence]);
-
-  const shipmentSpark = series.map((p, i) => ({ i, v: p.shipments }));
-  const teuSpark = series.map((p, i) => ({ i, v: p.teu }));
-
-  const totalShipments =
-    Number(profile?.shipmentsLast12m) ||
-    series.reduce((s: number, p: { shipments: number }) => s + p.shipments, 0) ||
-    containerProfile.totalShipments ||
-    0;
-  const totalTeu =
-    Number(profile?.totalTeu) ||
-    Number(profile?.teuLast12m) ||
-    series.reduce((s: number, p: { teu: number }) => s + p.teu, 0) ||
-    0;
-  const estSpend =
-    Number(profile?.estSpend) ||
-    Number(profile?.estimatedSpend) ||
-    Number(profile?.spendLast12m) ||
-    0;
-  const fcl = containerProfile.fcl;
-  const lcl = containerProfile.lcl;
-  const mixTotal = fcl + lcl;
-  const fclPct = mixTotal > 0 ? Math.round((fcl / mixTotal) * 100) : 0;
-  const lclPct = mixTotal > 0 ? 100 - fclPct : 0;
-  const uniqueRoutes = canonicalLanes?.length || 0;
-  const uniqueCarriers = useMemo(() => {
-    const set = new Set<string>();
-    for (const bol of recentBols) {
-      const c = readCarrier(bol);
-      const name = c?.name || getBolCarrierString(bol);
-      if (name && name !== "—") set.add(String(name).toLowerCase());
-    }
-    return set.size;
-  }, [recentBols]);
-
-  const cells: Array<{
-    kind: VitalCellKind;
-    label: string;
-    value: string;
-    data?: { i: number; v: number }[];
-    color?: string;
-  }> = [
-    {
-      kind: "spark",
-      label: "Shipments 12m",
-      value: formatCompactNumber(totalShipments),
-      data: shipmentSpark,
-      color: "#3B82F6",
-    },
-    {
-      kind: "spark",
-      label: "Total TEU",
-      value: formatCompactNumber(totalTeu),
-      data: teuSpark,
-      color: "#8B5CF6",
-    },
-    {
-      kind: "icon",
-      label: "Est Spend",
-      value: estSpend > 0 ? `$${formatCompactNumber(estSpend)}` : "—",
-    },
-    {
-      kind: "text",
-      label: "FCL / LCL Mix",
-      value: mixTotal > 0 ? `${fclPct}% FCL / ${lclPct}% LCL` : "—",
-    },
-    {
-      kind: "text",
-      label: "Unique Routes",
-      value: formatCompactNumber(uniqueRoutes),
-    },
-    {
-      kind: "text",
-      label: "Unique Carriers",
-      value: formatCompactNumber(uniqueCarriers),
-    },
-  ];
-
-  return (
-    <div className="grid grid-cols-2 gap-2.5 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)] sm:grid-cols-3 lg:grid-cols-6">
-      {cells.map((cell, i) => (
-        <VitalCell
-          key={cell.label}
-          cell={cell}
-          delay={reducedMotion ? 0 : i * 80}
-          reducedMotion={reducedMotion}
-        />
-      ))}
-    </div>
-  );
-}
-
-function VitalCell({
-  cell,
-  delay,
-  reducedMotion,
-}: {
-  cell: {
-    kind: VitalCellKind;
-    label: string;
-    value: string;
-    data?: { i: number; v: number }[];
-    color?: string;
-  };
-  delay: number;
-  reducedMotion: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5 rounded-lg border border-slate-100 bg-white p-3 transition-colors hover:bg-slate-50/40">
-      <div className="font-display text-[20px] font-bold leading-none text-slate-900 sm:text-[24px] lg:text-3xl">
-        {cell.value}
-      </div>
-      <div className="font-display text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-        {cell.label}
-      </div>
-      <div className="mt-auto h-6">
-        {cell.kind === "spark" && cell.data && cell.data.length > 0 ? (
-          <div style={{ width: 80, height: 24 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={cell.data}>
-                <defs>
-                  <linearGradient id={`vit-${cell.label}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={cell.color} stopOpacity={0.4} />
-                    <stop offset="100%" stopColor={cell.color} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <Area
-                  type="monotone"
-                  dataKey="v"
-                  stroke={cell.color}
-                  strokeWidth={1.5}
-                  fill={`url(#vit-${cell.label})`}
-                  isAnimationActive={!reducedMotion}
-                  animationDuration={reducedMotion ? 0 : 400}
-                  animationBegin={delay}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        ) : cell.kind === "icon" ? (
-          <TrendingUp className="h-4 w-4 text-emerald-500" />
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-/* ── B. Cadence & Modal Mix ───────────────────────────────────────────── */
+/* ── A. Cadence & Modal Mix ───────────────────────────────────────────── */
 
 function CadenceAndModalMix({
   cadence,
@@ -655,9 +463,9 @@ function CadenceAndModalMix({
 
   return (
     <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months">
-      <div className="flex flex-col gap-4 lg:flex-row">
+      <div className="flex flex-col gap-4 md:flex-row">
         {/* Left 70% — stacked area */}
-        <div className="min-w-0 flex-1 lg:basis-[70%]">
+        <div className="min-w-0 flex-1 md:basis-[70%]">
           <div style={{ height: 240 }}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -696,7 +504,7 @@ function CadenceAndModalMix({
                   fill="url(#cad-fcl)"
                   name="FCL"
                   isAnimationActive={!reducedMotion}
-                  animationDuration={reducedMotion ? 0 : 800}
+                  animationDuration={reducedMotion ? 0 : 1600}
                   animationBegin={0}
                 />
                 <Area
@@ -707,7 +515,7 @@ function CadenceAndModalMix({
                   fill="url(#cad-lcl)"
                   name="LCL"
                   isAnimationActive={!reducedMotion}
-                  animationDuration={reducedMotion ? 0 : 800}
+                  animationDuration={reducedMotion ? 0 : 1600}
                   animationBegin={0}
                 />
                 <Area
@@ -718,7 +526,7 @@ function CadenceAndModalMix({
                   fill="url(#cad-air)"
                   name="Air"
                   isAnimationActive={!reducedMotion}
-                  animationDuration={reducedMotion ? 0 : 800}
+                  animationDuration={reducedMotion ? 0 : 1600}
                   animationBegin={0}
                 />
               </AreaChart>
@@ -732,7 +540,7 @@ function CadenceAndModalMix({
         </div>
 
         {/* Right 30% — donut */}
-        <div className="flex min-w-0 flex-col items-center justify-center lg:basis-[30%]">
+        <div className="flex min-w-0 flex-col items-center justify-center md:basis-[30%]">
           <div className="relative" style={{ width: 180, height: 180 }}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -743,8 +551,8 @@ function CadenceAndModalMix({
                   paddingAngle={2}
                   dataKey="value"
                   isAnimationActive={!reducedMotion}
-                  animationDuration={reducedMotion ? 0 : 600}
-                  animationBegin={reducedMotion ? 0 : 300}
+                  animationDuration={reducedMotion ? 0 : 1200}
+                  animationBegin={reducedMotion ? 0 : 800}
                   stroke="none"
                 >
                   {(donut.length > 0 ? donut : [{ name: "—", value: 1, color: "#E2E8F0" }]).map(
@@ -791,7 +599,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
-/* ── C. Equipment & Lane Footprint ────────────────────────────────────── */
+/* ── Container Mix (merged into TopLanesCard) ─────────────────────────── */
 
 const CONTAINER_TYPE_COLORS: Record<string, string> = {
   "20ST": "#3B82F6",
@@ -815,143 +623,6 @@ function classifyContainerType(raw: string): keyof typeof CONTAINER_TYPE_COLORS 
   if (/^45/.test(s)) return "40HC";
   if (/^L5/.test(s)) return "45HC";
   return null;
-}
-
-function EquipmentAndLaneFootprint({
-  containerProfile,
-  recentBols,
-  canonicalLanes,
-  cadence,
-  reducedMotion,
-}: {
-  containerProfile: ContainerProfile;
-  recentBols: any[];
-  canonicalLanes: any[];
-  cadence: CadencePoint[];
-  reducedMotion: boolean;
-}) {
-  // Build container mix from BOLs first; fall back to containerProfile.
-  const mix = useMemo(() => {
-    const counts: Record<string, number> = {
-      "20ST": 0,
-      "40ST": 0,
-      "40HC": 0,
-      "45HC": 0,
-      LCL: 0,
-    };
-    let sourceCounted = 0;
-    for (const bol of recentBols) {
-      const t = classifyContainerType(
-        String(bol?.container_type || bol?.containerType || bol?.iso_code || ""),
-      );
-      if (t) {
-        counts[t]! += 1;
-        sourceCounted += 1;
-      }
-    }
-    if (sourceCounted === 0) {
-      // Fall back to containerProfile.lengths + LCL bucket
-      for (const len of containerProfile.lengths) {
-        const t = classifyContainerType(len.label);
-        if (t) counts[t]! += len.count;
-      }
-      if (containerProfile.lcl > 0) counts.LCL += containerProfile.lcl;
-    }
-    const total = Object.values(counts).reduce((s, n) => s + n, 0);
-    return { counts, total };
-  }, [recentBols, containerProfile]);
-
-  // Top 5 lanes — sort canonicalLanes by shipments
-  const topLanes = useMemo(() => {
-    return (canonicalLanes || [])
-      .slice()
-      .sort(
-        (a: any, b: any) => (Number(b?.shipments) || 0) - (Number(a?.shipments) || 0),
-      )
-      .slice(0, 5);
-  }, [canonicalLanes]);
-
-  const maxLaneShipments = Math.max(
-    1,
-    ...topLanes.map((l: any) => Number(l?.shipments) || 0),
-  );
-
-  // Tiny 12mo trend per lane: use overall cadence as a stand-in
-  // (per-lane series isn't currently in scope). Scaled to lane share.
-  const cadenceSpark = cadence.map((c, i) => ({ i, v: c.total }));
-
-  const hasData = mix.total > 0 || topLanes.length > 0;
-  if (!hasData) {
-    return (
-      <LitSectionCard
-        title="Equipment & Lane Footprint"
-        sub="Containers · Top 5 lanes"
-      >
-        <EmptyMessage text="No equipment or lane data yet — try Refresh Intel to pull the latest shipments." />
-      </LitSectionCard>
-    );
-  }
-
-  const orderedKeys: Array<keyof typeof CONTAINER_TYPE_COLORS> = [
-    "20ST",
-    "40ST",
-    "40HC",
-    "45HC",
-    "LCL",
-  ];
-
-  return (
-    <LitSectionCard
-      title="Equipment & Lane Footprint"
-      sub="Containers · Top 5 lanes"
-    >
-      <div className="flex flex-col gap-5 lg:flex-row">
-        {/* Left 40% — container mix */}
-        <div className="min-w-0 lg:basis-[40%]">
-          <div className="font-display mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Container Mix
-          </div>
-          {mix.total > 0 ? (
-            <ContainerMixBar
-              counts={mix.counts as Record<string, number>}
-              total={mix.total}
-              orderedKeys={orderedKeys as string[]}
-              reducedMotion={reducedMotion}
-            />
-          ) : (
-            <div className="font-body text-[12px] text-slate-400">
-              Container mix pending.
-            </div>
-          )}
-        </div>
-
-        {/* Right 60% — top 5 lanes */}
-        <div className="min-w-0 lg:basis-[60%]">
-          <div className="font-display mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Top 5 Lanes
-          </div>
-          {topLanes.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              {topLanes.map((lane: any, i: number) => (
-                <LaneFootprintRow
-                  key={lane.displayLabel || i}
-                  lane={lane}
-                  index={i}
-                  maxShipments={maxLaneShipments}
-                  spark={cadenceSpark}
-                  reducedMotion={reducedMotion}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="font-body text-[12px] text-slate-400">
-              No lane data yet.
-            </div>
-          )}
-        </div>
-      </div>
-    </LitSectionCard>
-  );
 }
 
 function ContainerMixBar({
@@ -993,7 +664,7 @@ function ContainerMixBar({
                 background: CONTAINER_TYPE_COLORS[seg.key],
                 transition: reducedMotion
                   ? "none"
-                  : `width 700ms ease-out ${seg.idx * 80}ms`,
+                  : `width 1400ms ease-out ${seg.idx * 200}ms`,
               }}
               className="h-full"
             />
@@ -1023,245 +694,7 @@ function ContainerMixBar({
   );
 }
 
-function LaneFootprintRow({
-  lane,
-  index,
-  maxShipments,
-  spark,
-  reducedMotion,
-}: {
-  lane: any;
-  index: number;
-  maxShipments: number;
-  spark: { i: number; v: number }[];
-  reducedMotion: boolean;
-}) {
-  const [mounted, setMounted] = useState(reducedMotion);
-  useEffect(() => {
-    if (reducedMotion) {
-      setMounted(true);
-      return;
-    }
-    const id = window.setTimeout(() => setMounted(true), 16 + index * 80);
-    return () => clearTimeout(id);
-  }, [reducedMotion, index]);
-
-  const shipments = Number(lane?.shipments) || 0;
-  const fromCountry =
-    lane?.fromMeta?.countryCode ||
-    lane?.fromMeta?.country ||
-    null;
-  const fromPort =
-    lane?.fromMeta?.label ||
-    lane?.fromMeta?.portName ||
-    lane?.rawFrom ||
-    "—";
-  const toLabel =
-    lane?.toMeta?.label ||
-    lane?.toMeta?.portName ||
-    lane?.rawTo ||
-    "—";
-  const widthPct = maxShipments > 0 ? (shipments / maxShipments) * 100 : 0;
-
-  return (
-    <div
-      className="flex items-center gap-2.5"
-      style={{
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? "translateY(0)" : "translateY(4px)",
-        transition: reducedMotion
-          ? "none"
-          : "opacity 320ms ease-out, transform 320ms ease-out",
-      }}
-    >
-      <LitFlag code={fromCountry} size={14} />
-      <div className="min-w-0 flex-1">
-        <div className="font-display truncate text-[11px] font-semibold text-slate-900">
-          {fromPort} <span className="text-slate-400">→</span> {toLabel}
-        </div>
-        <div className="mt-1 h-1 w-full overflow-hidden rounded bg-slate-100">
-          <div
-            className="h-full rounded bg-blue-500"
-            style={{
-              width: mounted ? `${widthPct}%` : "0%",
-              transition: reducedMotion
-                ? "none"
-                : `width 700ms ease-out ${index * 80}ms`,
-            }}
-          />
-        </div>
-      </div>
-      <div className="font-mono shrink-0 text-right text-[10px] font-semibold text-slate-600">
-        {shipments.toLocaleString()}
-      </div>
-      <div className="shrink-0" style={{ width: 56, height: 22 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={spark}>
-            <Area
-              type="monotone"
-              dataKey="v"
-              stroke="#3B82F6"
-              strokeWidth={1.25}
-              fill="#3B82F6"
-              fillOpacity={0.15}
-              isAnimationActive={!reducedMotion}
-              animationDuration={reducedMotion ? 0 : 400}
-              animationBegin={reducedMotion ? 0 : index * 80}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-}
-
-/* ── D. Carrier Mix Live ──────────────────────────────────────────────── */
-
-const CARRIER_BAR_COLORS = [
-  "bg-blue-500",
-  "bg-purple-500",
-  "bg-pink-500",
-  "bg-amber-500",
-  "bg-emerald-500",
-  "bg-cyan-500",
-];
-
-function CarrierMixLive({
-  recentBols,
-  carriers: _carriers,
-  reducedMotion,
-}: {
-  recentBols: any[];
-  carriers: CarrierRow[];
-  reducedMotion: boolean;
-}) {
-  const top = useMemo(() => {
-    const since = Date.now() - 90 * 24 * 60 * 60 * 1000;
-    const map = new Map<
-      string,
-      { name: string; scac: string | null; count: number; lastDate: Date | null }
-    >();
-    for (const bol of recentBols) {
-      const dStr = getBolDate(bol);
-      const d = parseBolDate(dStr);
-      if (!d || d.getTime() < since) continue;
-      const c = readCarrier(bol);
-      const name =
-        c?.name ||
-        getBolCarrierString(bol) ||
-        null;
-      if (!name || name === "—") continue;
-      const key = String(name).toLowerCase();
-      const entry = map.get(key) || {
-        name: String(name),
-        scac: c?.scac || null,
-        count: 0,
-        lastDate: null as Date | null,
-      };
-      entry.count += 1;
-      if (!entry.lastDate || d > entry.lastDate) entry.lastDate = d;
-      if (!entry.scac && c?.scac) entry.scac = c.scac;
-      map.set(key, entry);
-    }
-    const arr = Array.from(map.values());
-    arr.sort((a, b) => b.count - a.count);
-    return arr.slice(0, 6);
-  }, [recentBols]);
-
-  if (top.length === 0) {
-    return (
-      <LitSectionCard title="Carrier Mix" sub="Last 90 days">
-        <EmptyMessage text="No carrier activity in the last 90 days." />
-      </LitSectionCard>
-    );
-  }
-
-  const max = Math.max(1, ...top.map((c) => c.count));
-  const total = top.reduce((s, c) => s + c.count, 0);
-
-  return (
-    <LitSectionCard title="Carrier Mix" sub="Last 90 days">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
-        {top.map((c, i) => (
-          <CarrierBar
-            key={c.name}
-            carrier={c}
-            index={i}
-            maxCount={max}
-            total={total}
-            reducedMotion={reducedMotion}
-          />
-        ))}
-      </div>
-    </LitSectionCard>
-  );
-}
-
-function CarrierBar({
-  carrier,
-  index,
-  maxCount,
-  total,
-  reducedMotion,
-}: {
-  carrier: { name: string; scac: string | null; count: number; lastDate: Date | null };
-  index: number;
-  maxCount: number;
-  total: number;
-  reducedMotion: boolean;
-}) {
-  const [mounted, setMounted] = useState(reducedMotion);
-  useEffect(() => {
-    if (reducedMotion) {
-      setMounted(true);
-      return;
-    }
-    const id = window.setTimeout(() => setMounted(true), 16);
-    return () => clearTimeout(id);
-  }, [reducedMotion]);
-
-  const targetPct = maxCount > 0 ? (carrier.count / maxCount) * 100 : 0;
-  const sharePct = total > 0 ? Math.round((carrier.count / total) * 100) : 0;
-  const colorClass = CARRIER_BAR_COLORS[index % CARRIER_BAR_COLORS.length];
-  const tooltipText = carrier.lastDate
-    ? `Last shipment: ${carrier.lastDate.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })}`
-    : "Last shipment: —";
-
-  return (
-    <div className="flex flex-col items-stretch gap-2" title={tooltipText}>
-      <div className="relative flex h-[140px] w-full items-end justify-center rounded-md bg-slate-50">
-        <div
-          className={`w-full rounded-md ${colorClass}`}
-          style={{
-            height: mounted ? `${targetPct}%` : "0%",
-            transition: reducedMotion
-              ? "none"
-              : `height 700ms cubic-bezier(0.4, 0, 0.2, 1) ${index * 120}ms`,
-          }}
-        />
-      </div>
-      <div className="flex flex-col items-center gap-0.5">
-        <div className="font-display max-w-full truncate text-[11px] font-semibold text-slate-900">
-          {carrier.name}
-        </div>
-        {carrier.scac && (
-          <LitPill tone="slate">
-            <span className="font-mono">{carrier.scac}</span>
-          </LitPill>
-        )}
-        <div className="font-mono text-[10px] text-slate-500">
-          {carrier.count.toLocaleString()} · {sharePct}%
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── E. Recent Activity Cards ─────────────────────────────────────────── */
+/* ── B. Recent Activity Cards ─────────────────────────────────────────── */
 
 function RecentActivityCards({
   recentBols,
@@ -1282,7 +715,7 @@ function RecentActivityCards({
   }
   return (
     <LitSectionCard title="Recent Activity" sub="Latest BOL records">
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 lg:grid-cols-5">
         {cards.map((bol, i) => (
           <ActivityCard
             key={i}
@@ -1326,7 +759,7 @@ function ActivityCard({
       setMounted(true);
       return;
     }
-    const id = window.setTimeout(() => setMounted(true), 16 + index * 60);
+    const id = window.setTimeout(() => setMounted(true), 16 + index * 150);
     return () => clearTimeout(id);
   }, [reducedMotion, index]);
 
@@ -1365,7 +798,7 @@ function ActivityCard({
         transform: mounted ? "translateY(0)" : "translateY(6px)",
         transition: reducedMotion
           ? "none"
-          : "opacity 280ms ease-out, transform 280ms ease-out",
+          : "opacity 560ms ease-out, transform 560ms ease-out",
       }}
     >
       <div className="font-mono text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -1851,10 +1284,71 @@ function ContainerProfileCard({ profile }: { profile: ContainerProfile }) {
 function TopLanesCard({
   canonicalLanes,
   globeLanes: globeOnlyLanes,
+  recentBols = [],
+  containerProfile,
+  reducedMotion = false,
 }: {
   canonicalLanes: any[];
   globeLanes?: any[];
+  recentBols?: any[];
+  containerProfile?: ContainerProfile;
+  reducedMotion?: boolean;
 }) {
+  // Globe needs resolved coordinates; fall back to filtering canonicalLanes
+  // for backwards compatibility when globeLanes prop isn't passed.
+  const sourceForGlobe = (Array.isArray(globeOnlyLanes) && globeOnlyLanes.length > 0
+    ? globeOnlyLanes
+    : canonicalLanes.filter((l: any) => l.fromMeta?.coords && l.toMeta?.coords));
+  const globeLanes: GlobeLane[] = sourceForGlobe.slice(0, 8).map((l: any) => ({
+    id: l.displayLabel,
+    from: l.fromMeta.canonicalKey,
+    to: l.toMeta.canonicalKey,
+    coords: [l.fromMeta.coords, l.toMeta.coords],
+    fromMeta: l.fromMeta,
+    toMeta: l.toMeta,
+    shipments: Number(l.shipments) || 0,
+  }));
+  const initialSelected = globeLanes[0]?.id || canonicalLanes[0]?.displayLabel || null;
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelected);
+
+  // Container-mix bar data (merged from former EquipmentAndLaneFootprint).
+  const mix = useMemo(() => {
+    const counts: Record<string, number> = {
+      "20ST": 0,
+      "40ST": 0,
+      "40HC": 0,
+      "45HC": 0,
+      LCL: 0,
+    };
+    let sourceCounted = 0;
+    for (const bol of recentBols) {
+      const t = classifyContainerType(
+        String(bol?.container_type || bol?.containerType || bol?.iso_code || ""),
+      );
+      if (t) {
+        counts[t]! += 1;
+        sourceCounted += 1;
+      }
+    }
+    if (sourceCounted === 0 && containerProfile) {
+      for (const len of containerProfile.lengths) {
+        const t = classifyContainerType(len.label);
+        if (t) counts[t]! += len.count;
+      }
+      if (containerProfile.lcl > 0) counts.LCL += containerProfile.lcl;
+    }
+    const total = Object.values(counts).reduce((s, n) => s + n, 0);
+    return { counts, total };
+  }, [recentBols, containerProfile]);
+
+  const orderedKeys: Array<keyof typeof CONTAINER_TYPE_COLORS> = [
+    "20ST",
+    "40ST",
+    "40HC",
+    "45HC",
+    "LCL",
+  ];
+
   if (canonicalLanes.length === 0) {
     return (
       <LitSectionCard
@@ -1865,58 +1359,102 @@ function TopLanesCard({
       </LitSectionCard>
     );
   }
-  // Globe needs resolved coordinates; fall back to filtering canonicalLanes
-  // for backwards compatibility when globeLanes prop isn't passed.
-  const sourceForGlobe = (Array.isArray(globeOnlyLanes) && globeOnlyLanes.length > 0
-    ? globeOnlyLanes
-    : canonicalLanes.filter((l: any) => l.fromMeta?.coords && l.toMeta?.coords));
-  const globeLanes: GlobeLane[] = sourceForGlobe.slice(0, 6).map((l: any) => ({
-    id: l.displayLabel,
-    from: l.fromMeta.canonicalKey,
-    to: l.toMeta.canonicalKey,
-    coords: [l.fromMeta.coords, l.toMeta.coords],
-    fromMeta: l.fromMeta,
-    toMeta: l.toMeta,
-    shipments: Number(l.shipments) || 0,
-  }));
-  const [selectedId, setSelectedId] = useState<string | null>(globeLanes[0]?.id || null);
+
+  // Top lanes for the ranked list — sorted by shipments. Keep up to 8 so
+  // the right-rail fills the card height on lg+ viewports.
+  const rankedLanes = canonicalLanes
+    .slice()
+    .sort((a: any, b: any) => (Number(b?.shipments) || 0) - (Number(a?.shipments) || 0))
+    .slice(0, 8);
+  const maxLaneShipments = Math.max(
+    1,
+    ...rankedLanes.map((l: any) => Number(l?.shipments) || 0),
+  );
 
   return (
     <LitSectionCard
       title="Top trade lanes"
-      sub="Globe + ranked share"
+      sub="Globe · ranked share · container mix"
       padded={false}
     >
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(220px,300px)_1fr]">
-        <div className="flex items-center justify-center bg-slate-50 p-3">
-          <GlobeCanvas
-            lanes={globeLanes}
-            selectedLane={selectedId}
-            size={260}
-            theme="trade"
-            showFlagPins
-          />
+      <div className="flex flex-col lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        {/* Left ~40% — interactive globe. Full-width on mobile/tablet. */}
+        <div className="flex items-center justify-center bg-slate-50 p-3 sm:p-4 lg:p-4">
+          <div className="aspect-square w-full max-w-[320px]">
+            <GlobeCanvas
+              lanes={globeLanes}
+              selectedLane={selectedId}
+              size={260}
+              theme="trade"
+              showFlagPins
+            />
+          </div>
         </div>
-        <div className="max-h-[320px] overflow-y-auto">
-          {canonicalLanes.slice(0, 8).map((lane: any, i: number) => (
-            <button
-              key={lane.displayLabel}
-              type="button"
-              onClick={() =>
-                setSelectedId(selectedId === lane.displayLabel ? null : lane.displayLabel)
-              }
-              className={[
-                "flex w-full items-center gap-2.5 border-b border-slate-100 px-4 py-2.5 text-left last:border-b-0",
-                selectedId === lane.displayLabel
-                  ? "border-l-2 border-l-blue-500 bg-blue-50"
-                  : "border-l-2 border-l-transparent hover:bg-slate-50/60",
-              ].join(" ")}
-            >
-              <LaneRowInner lane={lane} index={i} highlight={selectedId === lane.displayLabel} />
-            </button>
-          ))}
+
+        {/* Right ~60% — lane list. On mobile stacks below globe with its
+            own internal scroll so the card never overflows the viewport. */}
+        <div className="max-h-[340px] overflow-y-auto border-t border-slate-100 lg:max-h-[420px] lg:border-l lg:border-t-0">
+          {rankedLanes.map((lane: any, i: number) => {
+            const isSelected = selectedId === lane.displayLabel;
+            const shipments = Number(lane?.shipments) || 0;
+            const widthPct = (shipments / maxLaneShipments) * 100;
+            return (
+              <button
+                key={lane.displayLabel}
+                type="button"
+                onClick={() =>
+                  setSelectedId(isSelected ? null : lane.displayLabel)
+                }
+                className={[
+                  "flex w-full items-center gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left last:border-b-0 sm:px-4",
+                  isSelected
+                    ? "border-l-2 border-l-blue-500 bg-blue-50"
+                    : "border-l-2 border-l-transparent hover:bg-slate-50/60",
+                ].join(" ")}
+              >
+                <div className="flex w-full items-center gap-2.5">
+                  <LaneRowInner lane={lane} index={i} highlight={isSelected} />
+                </div>
+                {/* Inline share bar — visualises lane share-of-shipments
+                    so the founder gets the equipment/footprint affordance
+                    inside the same card. */}
+                <div className="hidden w-[68px] shrink-0 sm:block">
+                  <div className="h-1 overflow-hidden rounded bg-slate-100">
+                    <div
+                      className="h-full rounded bg-blue-500"
+                      style={{
+                        width: `${widthPct}%`,
+                        transition: reducedMotion
+                          ? "none"
+                          : `width 1400ms ease-out ${i * 150}ms`,
+                      }}
+                    />
+                  </div>
+                  <div className="font-mono mt-1 text-right text-[10px] font-semibold text-slate-600">
+                    {shipments.toLocaleString()}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {/* Container-mix bar — spans full width below the globe + lane list.
+          Replaces the deleted Equipment & Lane Footprint card. */}
+      {mix.total > 0 && (
+        <div className="border-t border-slate-100 px-3 py-3 sm:px-4">
+          <div className="font-display mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Container Mix
+          </div>
+          <ContainerMixBar
+            counts={mix.counts as Record<string, number>}
+            total={mix.total}
+            orderedKeys={orderedKeys as string[]}
+            reducedMotion={reducedMotion}
+          />
+        </div>
+      )}
     </LitSectionCard>
   );
 }

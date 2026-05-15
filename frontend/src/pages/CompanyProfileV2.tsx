@@ -1720,6 +1720,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 selectedYear={selectedYear}
                 years={years}
                 onSelectYear={setSelectedYear}
+                onOpenPulseLive={() => setTab("live")}
               />
             )
           )}
