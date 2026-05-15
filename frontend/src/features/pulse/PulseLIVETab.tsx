@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { usePulseLiveData } from '@/lib/pulse/usePulseLiveData';
 import { ArrivalScheduleView } from './views/ArrivalScheduleView';
+import { DrayageOpportunityView } from './views/DrayageOpportunityView';
+import { CarrierMixView } from './views/CarrierMixView';
 
 type View = 'arrival' | 'drayage' | 'carrier';
 
@@ -20,7 +22,8 @@ export function PulseLIVETab({ sourceCompanyKey }: { sourceCompanyKey: string | 
       </div>
       {data.loading && <div className="py-8 text-center text-slate-500 text-sm">Loading…</div>}
       {!data.loading && view === 'arrival' && <ArrivalScheduleView shipments={data.shipments} />}
-      {/* DrayageOpportunityView + CarrierMixView wired in next task */}
+      {!data.loading && view === 'drayage' && <DrayageOpportunityView drayage={data.drayage} shipments={data.shipments} />}
+      {!data.loading && view === 'carrier' && <CarrierMixView data={data} />}
     </div>
   );
 }
