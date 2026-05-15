@@ -402,8 +402,77 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   }, [rawId]);
 
   const storedSelectedCompany = useMemo(() => getStoredSelectedCompany(), []);
-  const companyId =
+  const routeOrStoredId =
     decodedRouteId || storedSelectedCompany?.company_id || null;
+
+  // Phase 4.x — slug→UUID resolver. Bell-notification CTAs land here with a
+  // bare slug (e.g. "city-furniture") because the notification trigger
+  // strips the "company/" prefix. The downstream data path (snapshot
+  // lookup, lit_companies reads, writebacks) was originally written for
+  // UUIDs that originate from Command Center search, so a bare slug
+  // arrives at the loaders unnormalized and the page renders with empty
+  // KPI cards.
+  //
+  // The resolver checks the route param's shape:
+  //   - UUID → use as-is (Command Center path, unchanged)
+  //   - anything else → treat as slug, look up the UUID via
+  //     lit_companies.source_company_key (both "company/<slug>" and bare
+  //     forms), then promote the UUID as the canonical companyId.
+  //
+  // Resolution is non-fatal: if the lookup misses, we fall through with
+  // the raw value so the existing error/not-found UI still fires.
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const [resolvedCompanyId, setResolvedCompanyId] = useState<string | null>(
+    () => (routeOrStoredId && UUID_RE.test(routeOrStoredId) ? routeOrStoredId : null),
+  );
+  const [resolvingSlug, setResolvingSlug] = useState<boolean>(
+    !!routeOrStoredId && !UUID_RE.test(routeOrStoredId),
+  );
+  useEffect(() => {
+    if (!routeOrStoredId) {
+      setResolvedCompanyId(null);
+      setResolvingSlug(false);
+      return;
+    }
+    if (UUID_RE.test(routeOrStoredId)) {
+      setResolvedCompanyId(routeOrStoredId);
+      setResolvingSlug(false);
+      return;
+    }
+    // Slug path — try to find the canonical UUID.
+    let cancelled = false;
+    setResolvingSlug(true);
+    (async () => {
+      try {
+        const bare = String(routeOrStoredId).replace(/^company\//i, "");
+        const candidates = Array.from(
+          new Set([bare, `company/${bare}`].filter(Boolean)),
+        );
+        const { data: rows } = await supabase
+          .from("lit_companies")
+          .select("id, source_company_key")
+          .in("source_company_key", candidates)
+          .limit(1);
+        if (cancelled) return;
+        const uuid = Array.isArray(rows) && rows.length > 0 ? (rows[0] as any).id : null;
+        // Fall through to raw slug if no UUID match — downstream loaders
+        // already handle the slug shape via their own normalization.
+        setResolvedCompanyId(uuid || routeOrStoredId);
+      } catch (e) {
+        if (cancelled) return;
+        console.warn("[CompanyProfileV2] slug→UUID resolve failed", e);
+        setResolvedCompanyId(routeOrStoredId);
+      } finally {
+        if (!cancelled) setResolvingSlug(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [routeOrStoredId]);
+
+  const companyId = resolvedCompanyId;
 
   // ── State (verbatim from Company.jsx 290–351) ──────────────────────────
   const [profile, setProfile] = useState<any>(null);
@@ -469,6 +538,12 @@ function ProfilePanel({ rawId }: { rawId: string }) {
 
   // ── Cached-first load (verbatim from Company.jsx 354–418) ──────────────
   useEffect(() => {
+    if (resolvingSlug) {
+      // Still resolving slug → UUID — keep the spinner up rather than
+      // briefly flashing "Missing company id".
+      setLoading(true);
+      return;
+    }
     if (!companyId) {
       setError("Missing company id");
       setLoading(false);
