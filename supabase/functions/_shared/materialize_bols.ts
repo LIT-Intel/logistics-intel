@@ -69,49 +69,64 @@ function buildRow(companyId: string, b: any, prior: Map<string, any>): any | nul
     b.Master_Bill_of_Lading || b.masterBillOfLading;
   if (!bolNumber) return null;
 
-  const masterBol = b.Master_Bill_of_Lading || b.masterBillOfLading || null;
-  const carrierCode = b.carrierCode || null;
-  const carrierName = b.carrierName || b.carrier || b.topServiceProvider || null;
-  const shipmentDate = b.shipmentDate || b.date_formatted || null;
+  const mbl = b.Master_Bill_of_Lading ?? b.masterBillOfLading ?? null;
+  const mblPrefix = mbl && /^[A-Z]{4}/.test(mbl) ? mbl.slice(0, 4) : null;
+  const scac = b.carrierCode ?? b.carrier?.carrierCode ?? mblPrefix;
+  const carrierFromScac = scac ? SCAC_TO_CARRIER[scac] : null;
+  const carrierName = b.carrierName ?? b.carrier?.carrierName ?? b.carrier ?? b.topServiceProvider ?? carrierFromScac ?? null;
+
+  const shipmentDateRaw = b.shipmentDate ?? b.date_formatted ?? null;
+  const shipmentDate = parseDDMMYYYY(shipmentDateRaw);
+
   const containerCount = num(b.containers_count) ?? num(b.quantity) ?? num(b.Quantity);
   const teu = num(b.TEU) ?? num(b.teu);
   const isLcl = (b.lcl === true) || (typeof b.fcl_lcl === "string" && b.fcl_lcl.toLowerCase().includes("lcl"));
-  const destCountry = b.destinationCountry || b.Country || null;
-  const destCountryCode = b.destinationCountryCode || b.country_code || null;
-  const originCountry = b.originCountry || null;
-  const originCountryCode = b.originCountryCode || null;
-  const originPort = (b.route && b.route.origin) || (b.shipping_route && b.shipping_route.split("→")[0]?.trim()) || null;
-  const destPort = (b.route && b.route.destination) || (b.shipping_route && b.shipping_route.split("→")[1]?.trim()) || null;
-  const { city, state } = parseConsigneeAddress(b.Consignee_Address);
+  const containerTypeResult = inferContainerType(b);
+
+  const originCountryCode = b.originCountryCode ?? b.country_code ?? b.supplier_address_country_code ?? null;
+  const originCountry = b.originCountry ?? b.Country ?? b.supplier_address_country ?? null;
+  const originCity = b.supplier_address_location ?? null;
+  const destCountryCode = b.destinationCountryCode ?? b.company_address_country_code ?? null;
+  const destCountry = b.destinationCountry ?? b.company_address_country ?? null;
+  const destCity = b.company_address_location ?? null;
+
+  const originPort = (b.route && b.route.origin) ||
+    (b.shipping_route && typeof b.shipping_route === "string" && b.shipping_route.includes("→")
+      ? b.shipping_route.split("→")[0]?.trim() : null) ||
+    originCity || originCountry || null;
+  const destPort = (b.route && b.route.destination) ||
+    (b.shipping_route && typeof b.shipping_route === "string" && b.shipping_route.includes("→")
+      ? b.shipping_route.split("→")[1]?.trim() : null) ||
+    destCity || destCountry || null;
+
+  const { city: consigneeCity, state: consigneeState } = parseConsigneeAddress(b.Consignee_Address);
+  const finalDestCity = consigneeCity || destCity;
+  const finalDestState = consigneeState;
+
   const preserved = prior.get(bolNumber);
 
   return {
     company_id: companyId,
     bol_number: bolNumber,
-    master_bol: masterBol,
-    bol_date: shipmentDate ? new Date(shipmentDate).toISOString() : null,
-    scac: carrierCode,
-    carrier_name: carrierName,
+    master_bol: b.Master_Bill_of_Lading || b.masterBillOfLading || null,
+    bol_date: shipmentDate,
+    scac, carrier_name: carrierName,
     shipper_name: b.Shipper_Name || b.shipper_basename || null,
     consignee_name: b.Consignee_Name || b.consignee_basename || null,
-    origin_country: originCountry,
-    origin_country_code: originCountryCode,
-    destination_country: destCountry,
-    destination_country_code: destCountryCode,
-    origin_port: originPort,
-    destination_port: destPort,
-    dest_city: city,
-    dest_state: state,
+    origin_country: originCountry, origin_country_code: originCountryCode,
+    destination_country: destCountry, destination_country_code: destCountryCode,
+    origin_port: originPort, destination_port: destPort,
+    dest_city: finalDestCity, dest_state: finalDestState,
     hs_code: b.HS_Code || null,
     product_description: b.Product_Description || null,
-    container_count: containerCount,
-    teu,
+    container_count: containerCount, teu,
+    container_type: containerTypeResult.type,
+    container_type_confidence: containerTypeResult.confidence,
     weight_kg: num(b.Weight_in_KG) ?? num(b.weightKg),
     lcl: isLcl,
-    load_type: b.loadType || null,
+    load_type: b.loadType || (isLcl ? "LCL" : "FCL"),
     shipping_cost_usd: num(b.shipping_cost),
     raw_payload: b,
-    // Preserve tracking state if we already had it for this BOL.
     tracking_status: preserved?.tracking_status ?? null,
     tracking_eta: preserved?.tracking_eta ?? null,
     tracking_arrival_actual: preserved?.tracking_arrival_actual ?? null,
@@ -121,6 +136,52 @@ function buildRow(companyId: string, b: any, prior: Map<string, any>): any | nul
     updated_at: new Date().toISOString(),
   };
 }
+
+function parseDDMMYYYY(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+  if (!m) {
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  return `${m[3]}-${m[2]}-${m[1]}T00:00:00Z`;
+}
+
+type CTResult = { type: string | null; confidence: 'high' | 'medium' | 'low' };
+const NEAR = (a: number, b: number, tol = 0.03) => Math.abs(a - b) <= tol;
+function inferContainerType(bol: any): CTResult {
+  const explicit = bol.containerType ?? bol.Container_Type;
+  if (explicit) return { type: String(explicit).toUpperCase(), confidence: 'high' };
+  if (bol.lcl === true) return { type: 'LCL', confidence: 'high' };
+  const teu = Number(bol.TEU ?? bol.teu);
+  const cc = Number(bol.containers_count ?? bol.containersCount);
+  if (!teu || !cc) return { type: null, confidence: 'low' };
+  const r = teu / cc;
+  if (NEAR(r, 1.00)) return { type: '20ST', confidence: 'high' };
+  if (NEAR(r, 1.50)) return { type: '40HC', confidence: 'high' };
+  if (NEAR(r, 2.12, 0.04) || NEAR(r, 2.25, 0.04)) return { type: '45HC', confidence: 'high' };
+  if (NEAR(r, 2.00)) return { type: cc === 1 ? '40ST' : 'MIXED', confidence: cc === 1 ? 'medium' : 'low' };
+  return { type: 'MIXED', confidence: 'low' };
+}
+
+const SCAC_TO_CARRIER: Record<string, string> = {
+  MAEU: 'Maersk', SUDU: 'Sealand', SAFM: 'Safmarine', MCPU: 'Hamburg Süd',
+  MEDU: 'MSC', MSCU: 'MSC',
+  CMDU: 'CMA CGM', APLU: 'APL', ANRM: 'ANL', CHVW: 'CMA CGM',
+  COSU: 'COSCO', OOLU: 'OOCL',
+  HLCU: 'Hapag-Lloyd', HLXU: 'Hapag-Lloyd',
+  EGLV: 'Evergreen', EISU: 'Evergreen',
+  ONEY: 'Ocean Network Express',
+  HDMU: 'HMM',
+  YMLU: 'Yang Ming',
+  ZIMU: 'ZIM',
+  '22AA': 'Wan Hai', WHLC: 'Wan Hai',
+  SMLU: 'Seaboard Marine',
+  KKLU: 'K Line',
+  NYKS: 'NYK Line',
+  MOLU: 'MOL',
+  PCIU: 'PIL',
+};
 
 function num(v: any): number | null {
   if (v === null || v === undefined || v === "") return null;
