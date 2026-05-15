@@ -41,9 +41,11 @@ import {
   Bookmark,
   Anchor,
   TrendingUp,
+  Radio,
 } from "lucide-react";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import AddToListPicker from "@/features/pulse/AddToListPicker";
+import { PulseLIVETab } from "@/features/pulse/PulseLIVETab";
 import {
   getSavedCompanyDetail,
   getSavedCompanyShellOnly,
@@ -269,6 +271,7 @@ function buildShellCompany(companyId: string | null, stored: any): any {
 
 const TABS = [
   { id: "supply", label: "Supply Chain", Icon: Workflow },
+  { id: "live", label: "Pulse LIVE", Icon: Radio },
   { id: "rates", label: "Rate Benchmark", Icon: Anchor },
   { id: "contacts", label: "Contacts", Icon: Users },
   { id: "research", label: "Pulse AI", Icon: Sparkles },
@@ -1644,6 +1647,12 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 onSelectYear={setSelectedYear}
               />
             )
+          )}
+          {tab === "live" && (
+            <PulseLIVETab
+              sourceCompanyKey={bundle?.identity?.key || activeProfile?.identity?.key || null}
+              companyName={companyName}
+            />
           )}
           {tab === "rates" && (
             <CDPRateBenchmark
