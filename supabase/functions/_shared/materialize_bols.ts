@@ -129,16 +129,18 @@ function num(v: any): number | null {
 }
 
 // Parse "123 Main St, Chicago, IL 60601, USA" → { city: "Chicago", state: "IL" }.
-// Conservative: only return values when both city + state are confidently extracted.
+// Real-world ImportYeti data uses mixed case ("Wa 98109"), so the regex is
+// case-insensitive and the state token is uppercased before returning.
 export function parseConsigneeAddress(addr: any): { city: string | null; state: string | null } {
   if (!addr || typeof addr !== "string") return { city: null, state: null };
   const parts = addr.split(",").map((p) => p.trim()).filter(Boolean);
   if (parts.length < 2) return { city: null, state: null };
-  // Look for the "STATE ZIP" pattern in the next-to-last (or last) part.
+  // Require the ZIP code so a bare country suffix ("Us") doesn't get
+  // misinterpreted as a state. Real US-format addresses always carry the ZIP.
   for (let i = parts.length - 1; i >= 0; i--) {
-    const m = parts[i].match(/^([A-Z]{2})(?:\s+\d{5}(?:-\d{4})?)?$/);
+    const m = parts[i].match(/^([A-Za-z]{2})\s+\d{5}(?:-\d{4})?$/);
     if (m && i >= 1) {
-      return { city: parts[i - 1], state: m[1] };
+      return { city: parts[i - 1], state: m[1].toUpperCase() };
     }
   }
   return { city: null, state: null };
