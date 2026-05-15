@@ -1,5 +1,21 @@
-import { useMemo, useState } from "react";
-import { ArrowRight, Sparkles, Info, Container } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowRight,
+  Sparkles,
+  Info,
+  Container,
+  TrendingUp,
+} from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+} from "recharts";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitFlag from "@/components/ui/LitFlag";
 import LitPill from "@/components/ui/LitPill";
@@ -221,13 +237,16 @@ export default function CDPSupplyChain({
       {/* Sub-tab content */}
       {sub === "summary" && (
         <SummaryView
+          profile={profile}
           cadence={cadence}
           modes={modes}
           containerProfile={containerProfile}
           recentBols={recentBols}
+          carriers={carriers}
           suppliers={suppliers}
           canonicalLanes={allLanes}
           globeLanes={globeLanes}
+          onOpenPulseLive={onOpenPulseLive}
         />
       )}
       {sub === "lanes" && (
@@ -329,37 +348,1052 @@ function StrategicBriefBanner({
 /* ── Summary view ─────────────────────────────────────────────────────── */
 
 function SummaryView({
+  profile,
   cadence,
-  modes,
+  modes: _modes,
   containerProfile,
   recentBols,
-  suppliers,
+  carriers,
+  suppliers: _suppliers,
   canonicalLanes,
-  globeLanes,
+  globeLanes: _globeLanes,
+  onOpenPulseLive,
 }: {
+  profile: any;
   cadence: CadencePoint[];
   modes: ModeSlice[];
   containerProfile: ContainerProfile;
   recentBols: any[];
+  carriers: CarrierRow[];
   suppliers: SupplierRow[];
   canonicalLanes: any[];
   globeLanes: any[];
+  onOpenPulseLive?: () => void;
 }) {
+  const reducedMotion = usePrefersReducedMotion();
+
   return (
     <>
-      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1.3fr_1fr]">
-        <TopLanesCard canonicalLanes={canonicalLanes} globeLanes={globeLanes} />
-        <ImportsByModeCard modes={modes} cadence={cadence} />
-      </div>
-
-      <ContainerProfileCard profile={containerProfile} />
-
-      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1.3fr_1fr]">
-        <RecentBolsCompactCard recentBols={recentBols.slice(0, 5)} />
-        <TopSuppliersCard suppliers={suppliers} />
-      </div>
+      <ShipperVitalsStrip
+        profile={profile}
+        cadence={cadence}
+        containerProfile={containerProfile}
+        canonicalLanes={canonicalLanes}
+        recentBols={recentBols}
+        reducedMotion={reducedMotion}
+      />
+      <CadenceAndModalMix
+        cadence={cadence}
+        containerProfile={containerProfile}
+        reducedMotion={reducedMotion}
+      />
+      <EquipmentAndLaneFootprint
+        containerProfile={containerProfile}
+        recentBols={recentBols}
+        canonicalLanes={canonicalLanes}
+        cadence={cadence}
+        reducedMotion={reducedMotion}
+      />
+      <CarrierMixLive
+        recentBols={recentBols}
+        carriers={carriers}
+        reducedMotion={reducedMotion}
+      />
+      <RecentActivityCards
+        recentBols={recentBols}
+        onOpenPulseLive={onOpenPulseLive}
+        reducedMotion={reducedMotion}
+      />
     </>
   );
+}
+
+/* ── Reduced-motion hook ──────────────────────────────────────────────── */
+
+function usePrefersReducedMotion(): boolean {
+  const [prefers, setPrefers] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setPrefers(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setPrefers(e.matches);
+    if (mq.addEventListener) {
+      mq.addEventListener("change", handler);
+      return () => mq.removeEventListener("change", handler);
+    }
+    // Safari < 14 fallback
+    mq.addListener(handler);
+    return () => mq.removeListener(handler);
+  }, []);
+  return prefers;
+}
+
+/* ── A. Shipper Vitals Strip ──────────────────────────────────────────── */
+
+type VitalCellKind = "spark" | "icon" | "text";
+
+function ShipperVitalsStrip({
+  profile,
+  cadence,
+  containerProfile,
+  canonicalLanes,
+  recentBols,
+  reducedMotion,
+}: {
+  profile: any;
+  cadence: CadencePoint[];
+  containerProfile: ContainerProfile;
+  canonicalLanes: any[];
+  recentBols: any[];
+  reducedMotion: boolean;
+}) {
+  // Build shipment + TEU series from profile.timeSeries (fallback: cadence)
+  const series = useMemo(() => {
+    const raw = Array.isArray(profile?.timeSeries) ? profile.timeSeries : [];
+    if (raw.length > 0) {
+      return raw.map((p: any) => ({
+        shipments:
+          Number(p?.shipments) ||
+          (Number(p?.fclShipments) || 0) + (Number(p?.lclShipments) || 0),
+        teu: Number(p?.teu) || 0,
+      }));
+    }
+    return cadence.map((c) => ({
+      shipments: c.total,
+      teu: Number(c.teu) || 0,
+    }));
+  }, [profile, cadence]);
+
+  const shipmentSpark = series.map((p, i) => ({ i, v: p.shipments }));
+  const teuSpark = series.map((p, i) => ({ i, v: p.teu }));
+
+  const totalShipments =
+    Number(profile?.shipmentsLast12m) ||
+    series.reduce((s: number, p: { shipments: number }) => s + p.shipments, 0) ||
+    containerProfile.totalShipments ||
+    0;
+  const totalTeu =
+    Number(profile?.totalTeu) ||
+    Number(profile?.teuLast12m) ||
+    series.reduce((s: number, p: { teu: number }) => s + p.teu, 0) ||
+    0;
+  const estSpend =
+    Number(profile?.estSpend) ||
+    Number(profile?.estimatedSpend) ||
+    Number(profile?.spendLast12m) ||
+    0;
+  const fcl = containerProfile.fcl;
+  const lcl = containerProfile.lcl;
+  const mixTotal = fcl + lcl;
+  const fclPct = mixTotal > 0 ? Math.round((fcl / mixTotal) * 100) : 0;
+  const lclPct = mixTotal > 0 ? 100 - fclPct : 0;
+  const uniqueRoutes = canonicalLanes?.length || 0;
+  const uniqueCarriers = useMemo(() => {
+    const set = new Set<string>();
+    for (const bol of recentBols) {
+      const c = readCarrier(bol);
+      const name = c?.name || getBolCarrierString(bol);
+      if (name && name !== "—") set.add(String(name).toLowerCase());
+    }
+    return set.size;
+  }, [recentBols]);
+
+  const cells: Array<{
+    kind: VitalCellKind;
+    label: string;
+    value: string;
+    data?: { i: number; v: number }[];
+    color?: string;
+  }> = [
+    {
+      kind: "spark",
+      label: "Shipments 12m",
+      value: formatCompactNumber(totalShipments),
+      data: shipmentSpark,
+      color: "#3B82F6",
+    },
+    {
+      kind: "spark",
+      label: "Total TEU",
+      value: formatCompactNumber(totalTeu),
+      data: teuSpark,
+      color: "#8B5CF6",
+    },
+    {
+      kind: "icon",
+      label: "Est Spend",
+      value: estSpend > 0 ? `$${formatCompactNumber(estSpend)}` : "—",
+    },
+    {
+      kind: "text",
+      label: "FCL / LCL Mix",
+      value: mixTotal > 0 ? `${fclPct}% FCL / ${lclPct}% LCL` : "—",
+    },
+    {
+      kind: "text",
+      label: "Unique Routes",
+      value: formatCompactNumber(uniqueRoutes),
+    },
+    {
+      kind: "text",
+      label: "Unique Carriers",
+      value: formatCompactNumber(uniqueCarriers),
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2.5 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)] sm:grid-cols-3 lg:grid-cols-6">
+      {cells.map((cell, i) => (
+        <VitalCell
+          key={cell.label}
+          cell={cell}
+          delay={reducedMotion ? 0 : i * 80}
+          reducedMotion={reducedMotion}
+        />
+      ))}
+    </div>
+  );
+}
+
+function VitalCell({
+  cell,
+  delay,
+  reducedMotion,
+}: {
+  cell: {
+    kind: VitalCellKind;
+    label: string;
+    value: string;
+    data?: { i: number; v: number }[];
+    color?: string;
+  };
+  delay: number;
+  reducedMotion: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border border-slate-100 bg-white p-3 transition-colors hover:bg-slate-50/40">
+      <div className="font-display text-[20px] font-bold leading-none text-slate-900 sm:text-[24px] lg:text-3xl">
+        {cell.value}
+      </div>
+      <div className="font-display text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+        {cell.label}
+      </div>
+      <div className="mt-auto h-6">
+        {cell.kind === "spark" && cell.data && cell.data.length > 0 ? (
+          <div style={{ width: 80, height: 24 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={cell.data}>
+                <defs>
+                  <linearGradient id={`vit-${cell.label}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={cell.color} stopOpacity={0.4} />
+                    <stop offset="100%" stopColor={cell.color} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <Area
+                  type="monotone"
+                  dataKey="v"
+                  stroke={cell.color}
+                  strokeWidth={1.5}
+                  fill={`url(#vit-${cell.label})`}
+                  isAnimationActive={!reducedMotion}
+                  animationDuration={reducedMotion ? 0 : 400}
+                  animationBegin={delay}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        ) : cell.kind === "icon" ? (
+          <TrendingUp className="h-4 w-4 text-emerald-500" />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/* ── B. Cadence & Modal Mix ───────────────────────────────────────────── */
+
+function CadenceAndModalMix({
+  cadence,
+  containerProfile,
+  reducedMotion,
+}: {
+  cadence: CadencePoint[];
+  containerProfile: ContainerProfile;
+  reducedMotion: boolean;
+}) {
+  // Stacked area data: FCL/LCL come from cadence; Air defaults to 0 unless
+  // backend supplies it via cadence (it doesn't yet — graceful zero).
+  const chartData = cadence.map((c) => ({
+    label: c.label,
+    fcl: c.fcl,
+    lcl: c.lcl,
+    air: 0,
+  }));
+
+  const fcl = containerProfile.fcl;
+  const lcl = containerProfile.lcl;
+  // Air slice: 0 today (not derived). Donut keeps it for visual continuity.
+  const air = 0;
+  const total = fcl + lcl + air;
+  const donut = [
+    { name: "FCL", value: fcl, color: "#0EA5E9" },
+    { name: "LCL", value: lcl, color: "#F59E0B" },
+    { name: "Air", value: air, color: "#94A3B8" },
+  ].filter((s) => s.value > 0);
+
+  if (cadence.length === 0 && total === 0) {
+    return (
+      <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months">
+        <EmptyMessage text="No cadence data on file yet — try Refresh Intel to pull the latest shipments." />
+      </LitSectionCard>
+    );
+  }
+
+  return (
+    <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months">
+      <div className="flex flex-col gap-4 lg:flex-row">
+        {/* Left 70% — stacked area */}
+        <div className="min-w-0 flex-1 lg:basis-[70%]">
+          <div style={{ height: 240 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="cad-fcl" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#0EA5E9" stopOpacity={0.5} />
+                    <stop offset="100%" stopColor="#0EA5E9" stopOpacity={0.05} />
+                  </linearGradient>
+                  <linearGradient id="cad-lcl" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#F59E0B" stopOpacity={0.5} />
+                    <stop offset="100%" stopColor="#F59E0B" stopOpacity={0.05} />
+                  </linearGradient>
+                  <linearGradient id="cad-air" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#94A3B8" stopOpacity={0.5} />
+                    <stop offset="100%" stopColor="#94A3B8" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 10, fill: "#64748B" }}
+                  tickLine={false}
+                  axisLine={{ stroke: "#E2E8F0" }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    fontSize: 11,
+                    border: "1px solid #E2E8F0",
+                    borderRadius: 6,
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="fcl"
+                  stackId="1"
+                  stroke="#0EA5E9"
+                  fill="url(#cad-fcl)"
+                  name="FCL"
+                  isAnimationActive={!reducedMotion}
+                  animationDuration={reducedMotion ? 0 : 800}
+                  animationBegin={0}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="lcl"
+                  stackId="1"
+                  stroke="#F59E0B"
+                  fill="url(#cad-lcl)"
+                  name="LCL"
+                  isAnimationActive={!reducedMotion}
+                  animationDuration={reducedMotion ? 0 : 800}
+                  animationBegin={0}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="air"
+                  stackId="1"
+                  stroke="#94A3B8"
+                  fill="url(#cad-air)"
+                  name="Air"
+                  isAnimationActive={!reducedMotion}
+                  animationDuration={reducedMotion ? 0 : 800}
+                  animationBegin={0}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <LegendDot color="#0EA5E9" label="FCL" />
+            <LegendDot color="#F59E0B" label="LCL" />
+            <LegendDot color="#94A3B8" label="Air" />
+          </div>
+        </div>
+
+        {/* Right 30% — donut */}
+        <div className="flex min-w-0 flex-col items-center justify-center lg:basis-[30%]">
+          <div className="relative" style={{ width: 180, height: 180 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={donut.length > 0 ? donut : [{ name: "—", value: 1, color: "#E2E8F0" }]}
+                  innerRadius="60%"
+                  outerRadius="90%"
+                  paddingAngle={2}
+                  dataKey="value"
+                  isAnimationActive={!reducedMotion}
+                  animationDuration={reducedMotion ? 0 : 600}
+                  animationBegin={reducedMotion ? 0 : 300}
+                  stroke="none"
+                >
+                  {(donut.length > 0 ? donut : [{ name: "—", value: 1, color: "#E2E8F0" }]).map(
+                    (s, i) => (
+                      <Cell key={i} fill={s.color} />
+                    ),
+                  )}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    fontSize: 11,
+                    border: "1px solid #E2E8F0",
+                    borderRadius: 6,
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+              <div className="font-display text-[22px] font-bold leading-none text-slate-900">
+                {formatCompactNumber(total)}
+              </div>
+              <div className="font-display mt-1 text-[9px] font-semibold uppercase tracking-wider text-slate-500">
+                Shipments
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </LitSectionCard>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span
+        className="inline-block h-2 w-2 rounded-full"
+        style={{ background: color }}
+      />
+      <span className="font-display text-[10px] font-semibold text-slate-600">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+/* ── C. Equipment & Lane Footprint ────────────────────────────────────── */
+
+const CONTAINER_TYPE_COLORS: Record<string, string> = {
+  "20ST": "#3B82F6",
+  "40ST": "#8B5CF6",
+  "40HC": "#06B6D4",
+  "45HC": "#F59E0B",
+  LCL: "#64748B",
+};
+
+function classifyContainerType(raw: string): keyof typeof CONTAINER_TYPE_COLORS | null {
+  const s = String(raw || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!s) return null;
+  if (/LCL/.test(s)) return "LCL";
+  if (s.startsWith("45") && /HC|HQ/.test(s)) return "45HC";
+  if (s.startsWith("40") && /HC|HQ/.test(s)) return "40HC";
+  if (s.startsWith("40")) return "40ST";
+  if (s.startsWith("20")) return "20ST";
+  // ISO codes — 22G1=20ST, 42G1=40ST, 45G1=40HC, L5G1=45HC etc
+  if (/^22/.test(s)) return "20ST";
+  if (/^42/.test(s)) return "40ST";
+  if (/^45/.test(s)) return "40HC";
+  if (/^L5/.test(s)) return "45HC";
+  return null;
+}
+
+function EquipmentAndLaneFootprint({
+  containerProfile,
+  recentBols,
+  canonicalLanes,
+  cadence,
+  reducedMotion,
+}: {
+  containerProfile: ContainerProfile;
+  recentBols: any[];
+  canonicalLanes: any[];
+  cadence: CadencePoint[];
+  reducedMotion: boolean;
+}) {
+  // Build container mix from BOLs first; fall back to containerProfile.
+  const mix = useMemo(() => {
+    const counts: Record<string, number> = {
+      "20ST": 0,
+      "40ST": 0,
+      "40HC": 0,
+      "45HC": 0,
+      LCL: 0,
+    };
+    let sourceCounted = 0;
+    for (const bol of recentBols) {
+      const t = classifyContainerType(
+        String(bol?.container_type || bol?.containerType || bol?.iso_code || ""),
+      );
+      if (t) {
+        counts[t]! += 1;
+        sourceCounted += 1;
+      }
+    }
+    if (sourceCounted === 0) {
+      // Fall back to containerProfile.lengths + LCL bucket
+      for (const len of containerProfile.lengths) {
+        const t = classifyContainerType(len.label);
+        if (t) counts[t]! += len.count;
+      }
+      if (containerProfile.lcl > 0) counts.LCL += containerProfile.lcl;
+    }
+    const total = Object.values(counts).reduce((s, n) => s + n, 0);
+    return { counts, total };
+  }, [recentBols, containerProfile]);
+
+  // Top 5 lanes — sort canonicalLanes by shipments
+  const topLanes = useMemo(() => {
+    return (canonicalLanes || [])
+      .slice()
+      .sort(
+        (a: any, b: any) => (Number(b?.shipments) || 0) - (Number(a?.shipments) || 0),
+      )
+      .slice(0, 5);
+  }, [canonicalLanes]);
+
+  const maxLaneShipments = Math.max(
+    1,
+    ...topLanes.map((l: any) => Number(l?.shipments) || 0),
+  );
+
+  // Tiny 12mo trend per lane: use overall cadence as a stand-in
+  // (per-lane series isn't currently in scope). Scaled to lane share.
+  const cadenceSpark = cadence.map((c, i) => ({ i, v: c.total }));
+
+  const hasData = mix.total > 0 || topLanes.length > 0;
+  if (!hasData) {
+    return (
+      <LitSectionCard
+        title="Equipment & Lane Footprint"
+        sub="Containers · Top 5 lanes"
+      >
+        <EmptyMessage text="No equipment or lane data yet — try Refresh Intel to pull the latest shipments." />
+      </LitSectionCard>
+    );
+  }
+
+  const orderedKeys: Array<keyof typeof CONTAINER_TYPE_COLORS> = [
+    "20ST",
+    "40ST",
+    "40HC",
+    "45HC",
+    "LCL",
+  ];
+
+  return (
+    <LitSectionCard
+      title="Equipment & Lane Footprint"
+      sub="Containers · Top 5 lanes"
+    >
+      <div className="flex flex-col gap-5 lg:flex-row">
+        {/* Left 40% — container mix */}
+        <div className="min-w-0 lg:basis-[40%]">
+          <div className="font-display mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Container Mix
+          </div>
+          {mix.total > 0 ? (
+            <ContainerMixBar
+              counts={mix.counts as Record<string, number>}
+              total={mix.total}
+              orderedKeys={orderedKeys as string[]}
+              reducedMotion={reducedMotion}
+            />
+          ) : (
+            <div className="font-body text-[12px] text-slate-400">
+              Container mix pending.
+            </div>
+          )}
+        </div>
+
+        {/* Right 60% — top 5 lanes */}
+        <div className="min-w-0 lg:basis-[60%]">
+          <div className="font-display mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Top 5 Lanes
+          </div>
+          {topLanes.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {topLanes.map((lane: any, i: number) => (
+                <LaneFootprintRow
+                  key={lane.displayLabel || i}
+                  lane={lane}
+                  index={i}
+                  maxShipments={maxLaneShipments}
+                  spark={cadenceSpark}
+                  reducedMotion={reducedMotion}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="font-body text-[12px] text-slate-400">
+              No lane data yet.
+            </div>
+          )}
+        </div>
+      </div>
+    </LitSectionCard>
+  );
+}
+
+function ContainerMixBar({
+  counts,
+  total,
+  orderedKeys,
+  reducedMotion,
+}: {
+  counts: Record<string, number>;
+  total: number;
+  orderedKeys: string[];
+  reducedMotion: boolean;
+}) {
+  const [mounted, setMounted] = useState(reducedMotion);
+  useEffect(() => {
+    if (reducedMotion) {
+      setMounted(true);
+      return;
+    }
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, [reducedMotion]);
+
+  const present = orderedKeys
+    .map((k, i) => ({ key: k, count: counts[k] || 0, idx: i }))
+    .filter((seg) => seg.count > 0);
+
+  return (
+    <div>
+      <div className="flex h-6 w-full overflow-hidden rounded-md bg-slate-100">
+        {present.map((seg) => {
+          const target = total > 0 ? (seg.count / total) * 100 : 0;
+          return (
+            <div
+              key={seg.key}
+              title={`${seg.key} · ${seg.count} (${target.toFixed(0)}%)`}
+              style={{
+                width: mounted ? `${target}%` : "0%",
+                background: CONTAINER_TYPE_COLORS[seg.key],
+                transition: reducedMotion
+                  ? "none"
+                  : `width 700ms ease-out ${seg.idx * 80}ms`,
+              }}
+              className="h-full"
+            />
+          );
+        })}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+        {present.map((seg) => {
+          const pct = total > 0 ? Math.round((seg.count / total) * 100) : 0;
+          return (
+            <div key={seg.key} className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2 w-2 rounded-sm"
+                style={{ background: CONTAINER_TYPE_COLORS[seg.key] }}
+              />
+              <span className="font-display text-[10px] font-semibold text-slate-700">
+                {seg.key}
+              </span>
+              <span className="font-mono text-[10px] text-slate-500">
+                {seg.count} · {pct}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function LaneFootprintRow({
+  lane,
+  index,
+  maxShipments,
+  spark,
+  reducedMotion,
+}: {
+  lane: any;
+  index: number;
+  maxShipments: number;
+  spark: { i: number; v: number }[];
+  reducedMotion: boolean;
+}) {
+  const [mounted, setMounted] = useState(reducedMotion);
+  useEffect(() => {
+    if (reducedMotion) {
+      setMounted(true);
+      return;
+    }
+    const id = window.setTimeout(() => setMounted(true), 16 + index * 80);
+    return () => clearTimeout(id);
+  }, [reducedMotion, index]);
+
+  const shipments = Number(lane?.shipments) || 0;
+  const fromCountry =
+    lane?.fromMeta?.countryCode ||
+    lane?.fromMeta?.country ||
+    null;
+  const fromPort =
+    lane?.fromMeta?.label ||
+    lane?.fromMeta?.portName ||
+    lane?.rawFrom ||
+    "—";
+  const toLabel =
+    lane?.toMeta?.label ||
+    lane?.toMeta?.portName ||
+    lane?.rawTo ||
+    "—";
+  const widthPct = maxShipments > 0 ? (shipments / maxShipments) * 100 : 0;
+
+  return (
+    <div
+      className="flex items-center gap-2.5"
+      style={{
+        opacity: mounted ? 1 : 0,
+        transform: mounted ? "translateY(0)" : "translateY(4px)",
+        transition: reducedMotion
+          ? "none"
+          : "opacity 320ms ease-out, transform 320ms ease-out",
+      }}
+    >
+      <LitFlag code={fromCountry} size={14} />
+      <div className="min-w-0 flex-1">
+        <div className="font-display truncate text-[11px] font-semibold text-slate-900">
+          {fromPort} <span className="text-slate-400">→</span> {toLabel}
+        </div>
+        <div className="mt-1 h-1 w-full overflow-hidden rounded bg-slate-100">
+          <div
+            className="h-full rounded bg-blue-500"
+            style={{
+              width: mounted ? `${widthPct}%` : "0%",
+              transition: reducedMotion
+                ? "none"
+                : `width 700ms ease-out ${index * 80}ms`,
+            }}
+          />
+        </div>
+      </div>
+      <div className="font-mono shrink-0 text-right text-[10px] font-semibold text-slate-600">
+        {shipments.toLocaleString()}
+      </div>
+      <div className="shrink-0" style={{ width: 56, height: 22 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={spark}>
+            <Area
+              type="monotone"
+              dataKey="v"
+              stroke="#3B82F6"
+              strokeWidth={1.25}
+              fill="#3B82F6"
+              fillOpacity={0.15}
+              isAnimationActive={!reducedMotion}
+              animationDuration={reducedMotion ? 0 : 400}
+              animationBegin={reducedMotion ? 0 : index * 80}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+/* ── D. Carrier Mix Live ──────────────────────────────────────────────── */
+
+const CARRIER_BAR_COLORS = [
+  "bg-blue-500",
+  "bg-purple-500",
+  "bg-pink-500",
+  "bg-amber-500",
+  "bg-emerald-500",
+  "bg-cyan-500",
+];
+
+function CarrierMixLive({
+  recentBols,
+  carriers: _carriers,
+  reducedMotion,
+}: {
+  recentBols: any[];
+  carriers: CarrierRow[];
+  reducedMotion: boolean;
+}) {
+  const top = useMemo(() => {
+    const since = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    const map = new Map<
+      string,
+      { name: string; scac: string | null; count: number; lastDate: Date | null }
+    >();
+    for (const bol of recentBols) {
+      const dStr = getBolDate(bol);
+      const d = parseBolDate(dStr);
+      if (!d || d.getTime() < since) continue;
+      const c = readCarrier(bol);
+      const name =
+        c?.name ||
+        getBolCarrierString(bol) ||
+        null;
+      if (!name || name === "—") continue;
+      const key = String(name).toLowerCase();
+      const entry = map.get(key) || {
+        name: String(name),
+        scac: c?.scac || null,
+        count: 0,
+        lastDate: null as Date | null,
+      };
+      entry.count += 1;
+      if (!entry.lastDate || d > entry.lastDate) entry.lastDate = d;
+      if (!entry.scac && c?.scac) entry.scac = c.scac;
+      map.set(key, entry);
+    }
+    const arr = Array.from(map.values());
+    arr.sort((a, b) => b.count - a.count);
+    return arr.slice(0, 6);
+  }, [recentBols]);
+
+  if (top.length === 0) {
+    return (
+      <LitSectionCard title="Carrier Mix" sub="Last 90 days">
+        <EmptyMessage text="No carrier activity in the last 90 days." />
+      </LitSectionCard>
+    );
+  }
+
+  const max = Math.max(1, ...top.map((c) => c.count));
+  const total = top.reduce((s, c) => s + c.count, 0);
+
+  return (
+    <LitSectionCard title="Carrier Mix" sub="Last 90 days">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
+        {top.map((c, i) => (
+          <CarrierBar
+            key={c.name}
+            carrier={c}
+            index={i}
+            maxCount={max}
+            total={total}
+            reducedMotion={reducedMotion}
+          />
+        ))}
+      </div>
+    </LitSectionCard>
+  );
+}
+
+function CarrierBar({
+  carrier,
+  index,
+  maxCount,
+  total,
+  reducedMotion,
+}: {
+  carrier: { name: string; scac: string | null; count: number; lastDate: Date | null };
+  index: number;
+  maxCount: number;
+  total: number;
+  reducedMotion: boolean;
+}) {
+  const [mounted, setMounted] = useState(reducedMotion);
+  useEffect(() => {
+    if (reducedMotion) {
+      setMounted(true);
+      return;
+    }
+    const id = window.setTimeout(() => setMounted(true), 16);
+    return () => clearTimeout(id);
+  }, [reducedMotion]);
+
+  const targetPct = maxCount > 0 ? (carrier.count / maxCount) * 100 : 0;
+  const sharePct = total > 0 ? Math.round((carrier.count / total) * 100) : 0;
+  const colorClass = CARRIER_BAR_COLORS[index % CARRIER_BAR_COLORS.length];
+  const tooltipText = carrier.lastDate
+    ? `Last shipment: ${carrier.lastDate.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })}`
+    : "Last shipment: —";
+
+  return (
+    <div className="flex flex-col items-stretch gap-2" title={tooltipText}>
+      <div className="relative flex h-[140px] w-full items-end justify-center rounded-md bg-slate-50">
+        <div
+          className={`w-full rounded-md ${colorClass}`}
+          style={{
+            height: mounted ? `${targetPct}%` : "0%",
+            transition: reducedMotion
+              ? "none"
+              : `height 700ms cubic-bezier(0.4, 0, 0.2, 1) ${index * 120}ms`,
+          }}
+        />
+      </div>
+      <div className="flex flex-col items-center gap-0.5">
+        <div className="font-display max-w-full truncate text-[11px] font-semibold text-slate-900">
+          {carrier.name}
+        </div>
+        {carrier.scac && (
+          <LitPill tone="slate">
+            <span className="font-mono">{carrier.scac}</span>
+          </LitPill>
+        )}
+        <div className="font-mono text-[10px] text-slate-500">
+          {carrier.count.toLocaleString()} · {sharePct}%
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── E. Recent Activity Cards ─────────────────────────────────────────── */
+
+function RecentActivityCards({
+  recentBols,
+  onOpenPulseLive,
+  reducedMotion,
+}: {
+  recentBols: any[];
+  onOpenPulseLive?: () => void;
+  reducedMotion: boolean;
+}) {
+  const cards = recentBols.slice(0, 5);
+  if (cards.length === 0) {
+    return (
+      <LitSectionCard title="Recent Activity" sub="Latest BOL records">
+        <EmptyMessage text="No recent BOLs to display." />
+      </LitSectionCard>
+    );
+  }
+  return (
+    <LitSectionCard title="Recent Activity" sub="Latest BOL records">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+        {cards.map((bol, i) => (
+          <ActivityCard
+            key={i}
+            bol={bol}
+            index={i}
+            reducedMotion={reducedMotion}
+          />
+        ))}
+      </div>
+      <div className="mt-3 flex justify-end">
+        <a
+          href="?tab=live"
+          onClick={(e) => {
+            if (onOpenPulseLive) {
+              e.preventDefault();
+              onOpenPulseLive();
+            }
+          }}
+          className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+        >
+          See all BOLs in Pulse LIVE
+          <ArrowRight className="h-3 w-3" />
+        </a>
+      </div>
+    </LitSectionCard>
+  );
+}
+
+function ActivityCard({
+  bol,
+  index,
+  reducedMotion,
+}: {
+  bol: any;
+  index: number;
+  reducedMotion: boolean;
+}) {
+  const [mounted, setMounted] = useState(reducedMotion);
+  useEffect(() => {
+    if (reducedMotion) {
+      setMounted(true);
+      return;
+    }
+    const id = window.setTimeout(() => setMounted(true), 16 + index * 60);
+    return () => clearTimeout(id);
+  }, [reducedMotion, index]);
+
+  const dateStr = formatBolDate(bol);
+  const carrier = readCarrier(bol);
+  const scac =
+    carrier?.scac ||
+    (() => {
+      const raw = getBolCarrierString(bol);
+      return raw && raw !== "—" ? raw.slice(0, 6).toUpperCase() : null;
+    })();
+  const containerCount =
+    Number(bol?.container_count) ||
+    Number(bol?.containerCount) ||
+    Number(bol?.containers) ||
+    Number(bol?.container_qty) ||
+    null;
+  const ctype =
+    classifyContainerType(
+      String(bol?.container_type || bol?.containerType || bol?.iso_code || ""),
+    ) || null;
+  const origin = (() => {
+    const s = getBolOrigin(bol);
+    return s === "—" ? null : s;
+  })();
+  const destination = (() => {
+    const s = getBolDestination(bol);
+    return s === "—" ? null : s;
+  })();
+
+  return (
+    <div
+      className="flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-3 transition-colors hover:bg-slate-50/60"
+      style={{
+        opacity: mounted ? 1 : 0,
+        transform: mounted ? "translateY(0)" : "translateY(6px)",
+        transition: reducedMotion
+          ? "none"
+          : "opacity 280ms ease-out, transform 280ms ease-out",
+      }}
+    >
+      <div className="font-mono text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+        {dateStr}
+      </div>
+      <div className="flex flex-wrap items-center gap-1">
+        {scac && <LitPill tone="blue">{scac}</LitPill>}
+        {containerCount != null && (
+          <span className="font-mono text-[10px] text-slate-600">
+            {containerCount} ctr
+          </span>
+        )}
+        {ctype && (
+          <LitPill tone={ctype === "LCL" ? "slate" : "purple"}>{ctype}</LitPill>
+        )}
+      </div>
+      <div className="font-display truncate text-[11px] font-semibold text-slate-900">
+        {origin || "—"} <span className="text-slate-400">→</span>{" "}
+        {destination || "—"}
+      </div>
+    </div>
+  );
+}
+
+/* ── Shared formatting ────────────────────────────────────────────────── */
+
+function formatCompactNumber(n: number): string {
+  if (!Number.isFinite(n) || n === 0) return n === 0 ? "0" : "—";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (abs >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return String(Math.round(n));
 }
 
 /* ── Trade Lanes view ─────────────────────────────────────────────────── */
