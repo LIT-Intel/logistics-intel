@@ -52,6 +52,13 @@ const LCL_BENCHMARK_USD_PER_TEU = 850;
 
 export type ConfidenceLevel = "high" | "medium" | "low" | "insufficient_data";
 
+export interface DrayageRollup {
+  total_est_usd: number;
+  total_low_usd: number;
+  total_high_usd: number;
+  bol_count: number;
+}
+
 export type ServiceLineEstimate = {
   serviceLine: string;
   /** Annualized revenue opportunity in USD. null when inputs are missing. */
@@ -157,6 +164,30 @@ function airLikelyShareFromHs(hsProfile: any[] | null | undefined): number {
   }
   if (allTotal <= 0) return 0;
   return airTotal / allTotal;
+}
+
+// ---------- Drayage revenue estimator (Pulse LIVE hook) ------------------
+
+export function computeDrayageRevenue(args: {
+  rollup?: DrayageRollup | null;
+  fclShipments12m: number;
+}): { value: number; low: number; high: number; confidence: 'High' | 'Medium' | 'Low' } {
+  if (args.rollup && args.rollup.bol_count > 0) {
+    return {
+      value: args.rollup.total_est_usd,
+      low: args.rollup.total_low_usd,
+      high: args.rollup.total_high_usd,
+      confidence: 'Medium',
+    };
+  }
+  const perShipment = 1200;
+  const value = args.fclShipments12m * perShipment;
+  return {
+    value,
+    low: Math.round(value * 0.75),
+    high: Math.round(value * 1.25),
+    confidence: 'Low',
+  };
 }
 
 // ---------- Service-line sizers -----------------------------------------
