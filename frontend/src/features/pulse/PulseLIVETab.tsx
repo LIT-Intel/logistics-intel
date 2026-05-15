@@ -10,8 +10,8 @@ import { exportPulseLiveReportXlsx } from '@/lib/pulse/exportPulseLiveReportXlsx
 type View = 'all' | 'arrival' | 'drayage' | 'carrier';
 
 const ALL_SHIPMENTS_COLUMNS: BolColumn[] = [
-  'date', 'service', 'lane', 'carrier', 'supplier', 'container',
-  'container_type', 'teu', 'fcl_lcl', 'hs', 'final_dest', 'arrival', 'cost',
+  'date', 'bol_number', 'lane', 'carrier', 'supplier', 'container',
+  'container_type', 'teu', 'fcl_lcl', 'hs', 'final_dest', 'arrival',
 ];
 
 export function PulseLIVETab({ sourceCompanyKey, companyName }: { sourceCompanyKey: string | null; companyName?: string }) {

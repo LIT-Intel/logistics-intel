@@ -74,12 +74,77 @@ export function formatBolDate(bol: any): string {
   });
 }
 
+// Country-name → ISO-2 code for common origin countries surfaced by ImportYeti.
+// Used to render lane labels as "City, KR" instead of "City, Korea, Republic of".
+const COUNTRY_NAME_TO_CODE: Record<string, string> = {
+  "korea, republic of": "KR",
+  "south korea": "KR",
+  "republic of korea": "KR",
+  "china": "CN",
+  "people's republic of china": "CN",
+  "hong kong": "HK",
+  "taiwan": "TW",
+  "japan": "JP",
+  "vietnam": "VN",
+  "viet nam": "VN",
+  "india": "IN",
+  "thailand": "TH",
+  "malaysia": "MY",
+  "indonesia": "ID",
+  "singapore": "SG",
+  "philippines": "PH",
+  "germany": "DE",
+  "france": "FR",
+  "italy": "IT",
+  "spain": "ES",
+  "netherlands": "NL",
+  "belgium": "BE",
+  "united kingdom": "GB",
+  "great britain": "GB",
+  "turkey": "TR",
+  "mexico": "MX",
+  "canada": "CA",
+  "brazil": "BR",
+  "united states": "US",
+  "united states of america": "US",
+  "usa": "US",
+};
+
+function toCountryCode(value: any): string | null {
+  if (!value) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  if (/^[A-Z]{2}$/.test(s)) return s;
+  const lc = s.toLowerCase();
+  return COUNTRY_NAME_TO_CODE[lc] || null;
+}
+
 export function getBolOrigin(bol: any): string {
   // v200: route="A → B"; if present, take left side
   if (typeof bol?.route === "string" && bol.route.includes("→")) {
     const left = bol.route.split("→")[0]?.trim();
     if (left) return left;
   }
+  // Prefer "City, CC" when both pieces are available from the materialized row.
+  const originCity =
+    bol?.origin_city ||
+    bol?.originCity ||
+    bol?.supplier_address_location ||
+    null;
+  const originCountryRaw =
+    bol?.origin_country_code ||
+    bol?.originCountryCode ||
+    bol?.origin_country ||
+    bol?.originCountry ||
+    bol?.supplier_address_country ||
+    bol?.shipper_country ||
+    bol?.supplier_country ||
+    bol?.Country ||
+    bol?.raw?.country ||
+    null;
+  const originCC = toCountryCode(originCountryRaw);
+  if (originCity && originCC) return `${originCity}, ${originCC}`;
+
   return (
     // v200 raw BOL emits origin_port / destination_port directly.
     bol?.origin_port ||
@@ -87,10 +152,6 @@ export function getBolOrigin(bol: any): string {
     bol?.Origin_Port ||
     bol?.origin_name ||
     bol?.origin ||
-    bol?.origin_country ||
-    bol?.originCountry ||
-    bol?.originCountryCode ||
-    bol?.Country ||
     bol?.foreign_port ||
     bol?.foreignPort ||
     bol?.from_port ||
@@ -99,12 +160,10 @@ export function getBolOrigin(bol: any): string {
     bol?.portOfLading ||
     bol?.place_of_receipt ||
     bol?.placeOfReceipt ||
-    bol?.supplier_address_country ||
-    bol?.shipper_country ||
-    bol?.supplier_country ||
+    (originCity && !originCC ? originCity : null) ||
+    (originCountryRaw ? String(originCountryRaw) : null) ||
     bol?.raw?.origin_port ||
     bol?.raw?.foreign_port ||
-    bol?.raw?.country ||
     bol?.raw?.origin ||
     "—"
   );
@@ -116,6 +175,30 @@ export function getBolDestination(bol: any): string {
     const right = bol.route.split("→")[1]?.trim();
     if (right) return right;
   }
+  // For US destinations, "City, ST" from the parsed consignee address is the
+  // most useful — surface it directly when both pieces are present.
+  const destCity = bol?.dest_city || null;
+  const destState = bol?.dest_state || null;
+  if (destCity && destState) return `${destCity}, ${destState}`;
+
+  // Non-US: prefer "City, CC" when both city + country are available.
+  const fallbackCity =
+    bol?.destination_city ||
+    bol?.destinationCity ||
+    bol?.company_address_location ||
+    destCity ||
+    null;
+  const destCountryRaw =
+    bol?.destination_country_code ||
+    bol?.destinationCountryCode ||
+    bol?.destination_country ||
+    bol?.destinationCountry ||
+    bol?.company_address_country ||
+    bol?.consignee_country ||
+    null;
+  const destCC = toCountryCode(destCountryRaw);
+  if (fallbackCity && destCC) return `${fallbackCity}, ${destCC}`;
+
   return (
     // v200 raw BOL emits origin_port / destination_port directly.
     bol?.destination_port ||
@@ -123,9 +206,6 @@ export function getBolDestination(bol: any): string {
     bol?.Destination_Port ||
     bol?.destination_name ||
     bol?.destination ||
-    bol?.destination_country ||
-    bol?.destinationCountry ||
-    bol?.destinationCountryCode ||
     bol?.us_port ||
     bol?.usPort ||
     bol?.us_port_of_unlading ||
@@ -136,8 +216,8 @@ export function getBolDestination(bol: any): string {
     bol?.portOfUnlading ||
     bol?.place_of_delivery ||
     bol?.placeOfDelivery ||
-    bol?.company_address_country ||
-    bol?.consignee_country ||
+    (fallbackCity && !destCC ? fallbackCity : null) ||
+    (destCountryRaw ? String(destCountryRaw) : null) ||
     bol?.raw?.destination_port ||
     bol?.raw?.us_port ||
     bol?.raw?.destination ||

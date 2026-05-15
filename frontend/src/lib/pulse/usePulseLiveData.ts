@@ -27,11 +27,13 @@ export function usePulseLiveData(sourceCompanyKey: string | null): PulseLiveData
         .from('lit_unified_shipments')
         .select(`
           bol_number, scac, carrier_name, origin_port, destination_port,
-          origin_country, destination_country,
-          dest_city, dest_state, container_count, container_type, teu, lcl, load_type,
+          origin_country, destination_country, origin_country_code, destination_country_code,
+          dest_city, dest_state, dest_zip, container_count, container_type, teu, lcl, load_type,
           hs_code, product_description, shipper_name, consignee_name,
           tracking_status, tracking_eta, tracking_arrival_actual,
-          tracking_last_event_code, tracking_last_event_at, bol_date, raw_payload
+          tracking_last_event_code, tracking_last_event_at, bol_date,
+          estimated_arrival_date, estimated_arrival_low, estimated_arrival_high,
+          raw_payload
         `)
         .eq('company_id', companyId)
         .order('bol_date', { ascending: false })

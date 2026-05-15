@@ -4,12 +4,16 @@ import { parseConsigneeAddress } from "./materialize_bols.ts";
 
 Deno.test("parseConsigneeAddress — US format", () => {
   assertEquals(parseConsigneeAddress("123 Main St, Chicago, IL 60601, USA"),
-    { city: "Chicago", state: "IL" });
+    { city: "Chicago", state: "IL", zip: "60601" });
+});
+Deno.test("parseConsigneeAddress — US format with ZIP+4", () => {
+  assertEquals(parseConsigneeAddress("410 Terry Ave N 9, Seattle, Wa 98109-1234, Us"),
+    { city: "Seattle", state: "WA", zip: "98109-1234" });
 });
 Deno.test("parseConsigneeAddress — no state", () => {
-  assertEquals(parseConsigneeAddress("Shanghai, China"), { city: null, state: null });
+  assertEquals(parseConsigneeAddress("Shanghai, China"), { city: null, state: null, zip: null });
 });
 Deno.test("parseConsigneeAddress — empty", () => {
-  assertEquals(parseConsigneeAddress(null), { city: null, state: null });
-  assertEquals(parseConsigneeAddress(""), { city: null, state: null });
+  assertEquals(parseConsigneeAddress(null), { city: null, state: null, zip: null });
+  assertEquals(parseConsigneeAddress(""), { city: null, state: null, zip: null });
 });

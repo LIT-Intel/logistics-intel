@@ -8,7 +8,8 @@
 // `container_type`, `consignee`, `cost`, `service`) are available for
 // Pulse LIVE digest cards.
 
-import { Info } from "lucide-react";
+import { useState } from "react";
+import { Info, Copy, Check } from "lucide-react";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitPill from "@/components/ui/LitPill";
 import {
@@ -25,6 +26,7 @@ import {
 
 export type BolColumn =
   | "date"
+  | "bol_number"
   | "service"
   | "lane"
   | "carrier"
@@ -66,6 +68,7 @@ const DEFAULT_COLUMNS: BolColumn[] = [
 
 const COLUMN_LABEL: Record<BolColumn, string> = {
   date: "Date",
+  bol_number: "BOL #",
   service: "Service",
   lane: "Lane",
   carrier: "Carrier",
@@ -204,12 +207,30 @@ export function BolPreviewRow({
     const s = getBolDestination(bol);
     return s === "—" ? null : s;
   })();
+  const destCity = bol?.dest_city || null;
+  const destState = bol?.dest_state || null;
+  const destZip = bol?.dest_zip || null;
+  const finalDestParsed = (() => {
+    if (destCity && destState && destZip) return `${destCity}, ${destState} ${destZip}`;
+    if (destCity && destState) return `${destCity}, ${destState}`;
+    if (destCity) return destCity;
+    return null;
+  })();
   const finalDest =
+    finalDestParsed ||
     bol?.final_destination ||
     bol?.finalDestination ||
     bol?.place_of_delivery ||
     bol?.placeOfDelivery ||
     bol?.raw?.place_of_delivery ||
+    null;
+  const bolNumber =
+    bol?.bol_number ||
+    bol?.bolNumber ||
+    bol?.Bill_of_Lading ||
+    bol?.house_bill_of_lading ||
+    bol?.houseBillOfLading ||
+    bol?.raw?.house_bill_of_lading ||
     null;
   const arrival = (() => {
     const value =
@@ -270,6 +291,16 @@ export function BolPreviewRow({
             <span className="font-display text-[11px] text-slate-700">
               {service || <span className="text-slate-300">—</span>}
             </span>
+          </td>
+        );
+      case "bol_number":
+        return (
+          <td key={col} className="px-3 py-2">
+            {bolNumber ? (
+              <BolNumberCell value={String(bolNumber)} />
+            ) : (
+              <span className="text-slate-300">—</span>
+            )}
           </td>
         );
       case "lane":
@@ -416,6 +447,44 @@ export function BolPreviewRow({
     >
       {columns.map(renderCell)}
     </tr>
+  );
+}
+
+function BolNumberCell({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      // ignore clipboard errors
+    }
+  };
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="font-mono text-[10px] font-semibold tracking-tight text-slate-800">
+        {value}
+      </span>
+      <button
+        type="button"
+        onClick={handleCopy}
+        title={copied ? "Copied!" : "Copy BOL #"}
+        className="inline-flex h-4 w-4 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+      >
+        {copied ? (
+          <Check className="h-2.5 w-2.5 text-emerald-600" />
+        ) : (
+          <Copy className="h-2.5 w-2.5" />
+        )}
+      </button>
+      {copied && (
+        <span className="text-[9px] font-semibold text-emerald-600">
+          Copied!
+        </span>
+      )}
+    </span>
   );
 }
 

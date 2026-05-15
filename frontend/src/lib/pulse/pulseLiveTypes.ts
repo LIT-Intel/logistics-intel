@@ -6,16 +6,21 @@ export interface PulseTrackedShipment {
   destination_port: string | null;
   dest_city: string | null;
   dest_state: string | null;
+  dest_zip: string | null;
   container_count: number | null;
   container_type: string | null;
   lcl: boolean | null;
   hs_code: string | null;
+  shipper_name?: string | null;
   tracking_status: 'tracked' | 'unsupported' | 'no_match' | 'error' | 'pending' | null;
   tracking_eta: string | null;
   tracking_arrival_actual: string | null;
   tracking_last_event_code: string | null;
   tracking_last_event_at: string | null;
   bol_date: string | null;
+  estimated_arrival_date: string | null;
+  estimated_arrival_low: string | null;
+  estimated_arrival_high: string | null;
 }
 
 export interface PulseDrayageEstimate {

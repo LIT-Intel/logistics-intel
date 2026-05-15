@@ -99,9 +99,10 @@ function buildRow(companyId: string, b: any, prior: Map<string, any>): any | nul
       ? b.shipping_route.split("→")[1]?.trim() : null) ||
     destCity || destCountry || null;
 
-  const { city: consigneeCity, state: consigneeState } = parseConsigneeAddress(b.Consignee_Address);
+  const { city: consigneeCity, state: consigneeState, zip: consigneeZip } = parseConsigneeAddress(b.Consignee_Address);
   const finalDestCity = consigneeCity || destCity;
   const finalDestState = consigneeState;
+  const finalDestZip = consigneeZip;
 
   const preserved = prior.get(bolNumber);
 
@@ -116,7 +117,7 @@ function buildRow(companyId: string, b: any, prior: Map<string, any>): any | nul
     origin_country: originCountry, origin_country_code: originCountryCode,
     destination_country: destCountry, destination_country_code: destCountryCode,
     origin_port: originPort, destination_port: destPort,
-    dest_city: finalDestCity, dest_state: finalDestState,
+    dest_city: finalDestCity, dest_state: finalDestState, dest_zip: finalDestZip,
     hs_code: b.HS_Code || null,
     product_description: b.Product_Description || null,
     container_count: containerCount, teu,
@@ -189,20 +190,20 @@ function num(v: any): number | null {
   return isFinite(n) ? n : null;
 }
 
-// Parse "123 Main St, Chicago, IL 60601, USA" → { city: "Chicago", state: "IL" }.
+// Parse "123 Main St, Chicago, IL 60601, USA" → { city: "Chicago", state: "IL", zip: "60601" }.
 // Real-world ImportYeti data uses mixed case ("Wa 98109"), so the regex is
 // case-insensitive and the state token is uppercased before returning.
-export function parseConsigneeAddress(addr: any): { city: string | null; state: string | null } {
-  if (!addr || typeof addr !== "string") return { city: null, state: null };
+export function parseConsigneeAddress(addr: any): { city: string | null; state: string | null; zip: string | null } {
+  if (!addr || typeof addr !== "string") return { city: null, state: null, zip: null };
   const parts = addr.split(",").map((p) => p.trim()).filter(Boolean);
-  if (parts.length < 2) return { city: null, state: null };
+  if (parts.length < 2) return { city: null, state: null, zip: null };
   // Require the ZIP code so a bare country suffix ("Us") doesn't get
   // misinterpreted as a state. Real US-format addresses always carry the ZIP.
   for (let i = parts.length - 1; i >= 0; i--) {
-    const m = parts[i].match(/^([A-Za-z]{2})\s+\d{5}(?:-\d{4})?$/);
+    const m = parts[i].match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
     if (m && i >= 1) {
-      return { city: parts[i - 1], state: m[1].toUpperCase() };
+      return { city: parts[i - 1], state: m[1].toUpperCase(), zip: m[2] };
     }
   }
-  return { city: null, state: null };
+  return { city: null, state: null, zip: null };
 }
