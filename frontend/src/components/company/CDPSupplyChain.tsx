@@ -5,6 +5,19 @@ import LitFlag from "@/components/ui/LitFlag";
 import LitPill from "@/components/ui/LitPill";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
+import { BolPreviewTable } from "@/components/bols/BolPreviewTable";
+import {
+  formatBolDate,
+  getBolCarrierString,
+  getBolDate,
+  getBolDescription,
+  getBolDestination,
+  getBolHs,
+  getBolOrigin,
+  getBolSupplier,
+  parseBolDate,
+  readCarrier,
+} from "@/lib/bols/helpers";
 
 type SubTabId = "summary" | "lanes" | "shipments" | "products";
 
@@ -389,7 +402,7 @@ function ShipmentsView({ recentBols }: { recentBols: any[] }) {
       </LitSectionCard>
     );
   }
-  return <BolPreviewTable recentBols={recentBols.slice(0, 25)} />;
+  return <BolPreviewTable bols={recentBols.slice(0, 25)} />;
 }
 
 /* ── Products view ────────────────────────────────────────────────────── */
@@ -1428,147 +1441,6 @@ function RecentBolsCompactCard({ recentBols }: { recentBols: any[] }) {
   );
 }
 
-function BolPreviewTable({ recentBols }: { recentBols: any[] }) {
-  return (
-    <LitSectionCard
-      title="Recent BOLs"
-      sub={`${recentBols.length} latest records · expand to see HS / weight / quantity`}
-      padded={false}
-    >
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-[#FAFBFC]">
-              {[
-                "Date",
-                "Lane",
-                "Carrier",
-                "Supplier",
-                "Container",
-                "TEU",
-                "FCL/LCL",
-                "HS",
-              ].map((h) => (
-                <th
-                  key={h}
-                  className="font-display whitespace-nowrap border-b border-slate-100 px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400"
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {recentBols.map((bol, i, arr) => (
-              <BolPreviewRow key={i} bol={bol} isLast={i === arr.length - 1} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </LitSectionCard>
-  );
-}
-
-function BolPreviewRow({ bol, isLast }: { bol: any; isLast: boolean }) {
-  // Phase 6 — broad BOL helpers; the row never renders "Invalid Date" /
-  // empty lane / blank carrier when ANY of the multi-name fields are
-  // present in the raw row.
-  const dateLabel = formatBolDate(bol);
-  const carrierMeta = readCarrier(bol);
-  const carrierName = carrierMeta?.name || (() => {
-    const s = getBolCarrierString(bol);
-    return s === "—" ? null : s;
-  })();
-  const supplier = (() => {
-    const s = getBolSupplier(bol);
-    return s === "—" ? null : s;
-  })();
-  const teu = Number(bol?.teu) || Number(bol?.containers_teu) || null;
-  const isLcl =
-    Boolean(bol?.lcl) ||
-    /lcl/i.test(String(bol?.mode || bol?.fcl_lcl || bol?.loadType || ""));
-  const fclLcl = isLcl ? "LCL" : "FCL";
-  const containerCount =
-    Number(bol?.containers_count) ||
-    Number(bol?.containersCount) ||
-    Number(bol?.container_count) ||
-    null;
-  const containerType =
-    bol?.container_type ||
-    bol?.containerType ||
-    bol?.raw?.container_group ||
-    null;
-  const hs = (() => {
-    const s = getBolHs(bol);
-    return s === "—" ? null : s;
-  })();
-  const origin = (() => {
-    const s = getBolOrigin(bol);
-    return s === "—" ? null : s;
-  })();
-  const destination = (() => {
-    const s = getBolDestination(bol);
-    return s === "—" ? null : s;
-  })();
-  return (
-    <tr
-      className={[
-        "hover:bg-slate-50/60",
-        !isLast ? "border-b border-slate-100" : "",
-      ].join(" ")}
-    >
-      <td className="font-mono whitespace-nowrap px-3 py-2 text-[10px] text-slate-600">
-        {dateLabel}
-      </td>
-      <td className="px-3 py-2">
-        <span className="font-display whitespace-nowrap text-[11px] text-slate-700">
-          {origin || <span className="text-slate-300">—</span>}{" "}
-          <span className="text-slate-300">→</span>{" "}
-          {destination || <span className="text-slate-300">—</span>}
-        </span>
-      </td>
-      <td className="px-3 py-2">
-        {carrierName ? (
-          <span className="inline-flex items-center gap-1">
-            <span className="font-display text-[11px] font-semibold text-slate-900">
-              {carrierName}
-            </span>
-            {carrierMeta?.inferred && (
-              <span title="Inferred from Master Bill prefix">
-                <LitPill tone="amber" icon={<Info className="h-2 w-2" />}>
-                  MBL
-                </LitPill>
-              </span>
-            )}
-          </span>
-        ) : (
-          <span className="text-slate-300">—</span>
-        )}
-      </td>
-      <td className="font-body truncate px-3 py-2 text-[11px] text-slate-600">
-        {supplier || <span className="text-slate-300">—</span>}
-      </td>
-      <td className="px-3 py-2">
-        <span className="font-mono whitespace-nowrap text-[10px] text-slate-700">
-          {containerCount != null ? containerCount.toString() : "—"}
-          {containerType ? (
-            <span className="text-slate-400"> · {containerType}</span>
-          ) : null}
-        </span>
-      </td>
-      <td className="font-mono px-3 py-2 text-[11px] font-semibold text-slate-900">
-        {teu != null ? Number(teu).toFixed(1) : "—"}
-      </td>
-      <td className="px-3 py-2">
-        <LitPill tone={isLcl ? "purple" : "blue"}>{fclLcl}</LitPill>
-      </td>
-      <td className="font-mono px-3 py-2 text-[10px] text-slate-500">
-        {hs || <span className="text-slate-300">—</span>}
-      </td>
-    </tr>
-  );
-}
-
 function ShipmentRow({ bol, isLast }: { bol: any; isLast: boolean }) {
   // Phase 6 — broad helpers + safe formatBolDate so the row never says
   // "Invalid Date" / "— → —" when the raw row uses non-standard field
@@ -2527,48 +2399,6 @@ function deriveProducts(profile: any, recentBols: any[] = []): ProductRow[] {
     .slice(0, 8);
 }
 
-function readCarrier(
-  bol: any,
-): { name: string; inferred: boolean } | null {
-  // v200 emits camelCase carrierName / nested carrier.carrierName as well
-  // as the legacy snake_case carrier_name. Prefer string fields, fall
-  // through to nested objects, then to inferred MBL prefix.
-  const directCandidate =
-    bol?.carrierName ||
-    bol?.carrier_name ||
-    bol?.normalized_carrier ||
-    (typeof bol?.carrier === "string" ? bol.carrier : null) ||
-    bol?.carrier?.carrierName ||
-    bol?.carrier?.name ||
-    bol?.shippingLine ||
-    bol?.shipping_line ||
-    bol?.steamshipLine ||
-    bol?.steamship_line ||
-    bol?.raw?.carrierName ||
-    bol?.raw?.carrier_name ||
-    bol?.raw?.shipping_line ||
-    null;
-  if (directCandidate && String(directCandidate).trim()) {
-    return { name: String(directCandidate).trim(), inferred: false };
-  }
-  // No code-side normalization of MBL prefixes per design directive — we
-  // surface the prefix verbatim so a future enrichment pass can map it to
-  // a canonical carrier name.
-  const mbl =
-    bol?.master_bill_of_lading_number ||
-    bol?.masterBillOfLadingNumber ||
-    bol?.mbl ||
-    bol?.raw?.master_bill_of_lading_number ||
-    null;
-  if (mbl) {
-    const prefix = String(mbl).slice(0, 4).toUpperCase();
-    if (/^[A-Z]{4}$/.test(prefix)) {
-      return { name: prefix, inferred: true };
-    }
-  }
-  return null;
-}
-
 function bolMatchesLane(bol: any, lane: any): boolean {
   const fromName = String(lane?.fromMeta?.countryName || "").toLowerCase();
   const toName = String(lane?.toMeta?.countryName || "").toLowerCase();
@@ -2585,226 +2415,6 @@ function bolMatchesLane(bol: any, lane: any): boolean {
     toName && destination && (destination.includes(toName) || toName.includes(destination)),
   );
   return matchFrom || matchTo;
-}
-
-// Phase 6 — broad BOL field helpers per QA brief. All accept the row OR
-// the row.raw object and return a string fallback "—" / null when the
-// field is genuinely missing. Never throw, never return "Invalid Date".
-function getBolDate(bol: any): string | null {
-  if (!bol) return null;
-  return (
-    bol?.shipmentDate ||
-    bol?.shipment_date ||
-    bol?.date_formatted ||
-    bol?.dateFormatted ||
-    bol?.Date ||
-    bol?.bill_of_lading_date ||
-    bol?.bill_of_lading_date_formatted ||
-    bol?.arrival_date ||
-    bol?.arrivalDate ||
-    bol?.Arrival_Date ||
-    bol?.entry_date ||
-    bol?.entryDate ||
-    bol?.bol_date ||
-    bol?.bolDate ||
-    bol?.bill_date ||
-    bol?.billDate ||
-    bol?.shipped_on ||
-    bol?.shippedOn ||
-    bol?.created_at ||
-    bol?.last_shipment_date ||
-    bol?.lastShipmentDate ||
-    bol?.date ||
-    bol?.raw?.bill_of_lading_date ||
-    bol?.raw?.shipment_date ||
-    bol?.raw?.arrival_date ||
-    null
-  );
-}
-
-function parseBolDate(value: string | null): Date | null {
-  if (!value) return null;
-  const s = String(value).trim();
-  if (!s) return null;
-  // v200 emits DD/MM/YYYY (e.g. "13/04/2026"). Try that first, then native Date.
-  const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slash) {
-    const a = Number(slash[1]);
-    const b = Number(slash[2]);
-    const y = Number(slash[3]);
-    if (a >= 1 && a <= 31 && b >= 1 && b <= 12) {
-      const d = new Date(Date.UTC(y, b - 1, a));
-      if (!Number.isNaN(d.getTime())) return d;
-    }
-    if (a >= 1 && a <= 12 && b >= 1 && b <= 31) {
-      const d = new Date(Date.UTC(y, a - 1, b));
-      if (!Number.isNaN(d.getTime())) return d;
-    }
-  }
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function formatBolDate(bol: any): string {
-  const value = getBolDate(bol);
-  const d = parseBolDate(value);
-  if (!d) return "—";
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function getBolOrigin(bol: any): string {
-  // v200: route="A → B"; if present, take left side
-  if (typeof bol?.route === "string" && bol.route.includes("→")) {
-    const left = bol.route.split("→")[0]?.trim();
-    if (left) return left;
-  }
-  return (
-    // v200 raw BOL emits origin_port / destination_port directly.
-    bol?.origin_port ||
-    bol?.originPort ||
-    bol?.Origin_Port ||
-    bol?.origin_name ||
-    bol?.origin ||
-    bol?.origin_country ||
-    bol?.originCountry ||
-    bol?.originCountryCode ||
-    bol?.Country ||
-    bol?.foreign_port ||
-    bol?.foreignPort ||
-    bol?.from_port ||
-    bol?.fromPort ||
-    bol?.port_of_lading ||
-    bol?.portOfLading ||
-    bol?.place_of_receipt ||
-    bol?.placeOfReceipt ||
-    bol?.supplier_address_country ||
-    bol?.shipper_country ||
-    bol?.supplier_country ||
-    bol?.raw?.origin_port ||
-    bol?.raw?.foreign_port ||
-    bol?.raw?.country ||
-    bol?.raw?.origin ||
-    "—"
-  );
-}
-
-function getBolDestination(bol: any): string {
-  // v200: route="A → B"; if present, take right side
-  if (typeof bol?.route === "string" && bol.route.includes("→")) {
-    const right = bol.route.split("→")[1]?.trim();
-    if (right) return right;
-  }
-  return (
-    // v200 raw BOL emits origin_port / destination_port directly.
-    bol?.destination_port ||
-    bol?.destinationPort ||
-    bol?.Destination_Port ||
-    bol?.destination_name ||
-    bol?.destination ||
-    bol?.destination_country ||
-    bol?.destinationCountry ||
-    bol?.destinationCountryCode ||
-    bol?.us_port ||
-    bol?.usPort ||
-    bol?.us_port_of_unlading ||
-    bol?.usPortOfUnlading ||
-    bol?.to_port ||
-    bol?.toPort ||
-    bol?.port_of_unlading ||
-    bol?.portOfUnlading ||
-    bol?.place_of_delivery ||
-    bol?.placeOfDelivery ||
-    bol?.company_address_country ||
-    bol?.consignee_country ||
-    bol?.raw?.destination_port ||
-    bol?.raw?.us_port ||
-    bol?.raw?.destination ||
-    "—"
-  );
-}
-
-function getBolCarrierString(bol: any): string {
-  return (
-    bol?.carrierName ||
-    bol?.carrier?.carrierName ||
-    (typeof bol?.carrier === "string" ? bol.carrier : null) ||
-    bol?.carrier_name ||
-    bol?.normalized_carrier ||
-    bol?.inferred_carrier ||
-    bol?.steamship_line ||
-    bol?.steamshipLine ||
-    bol?.shipping_line ||
-    bol?.shippingLine ||
-    bol?.carrierCode ||
-    bol?.carrier?.carrierCode ||
-    bol?.scac ||
-    bol?.master_bill_prefix ||
-    bol?.mbl_prefix ||
-    bol?.raw?.carrier_name ||
-    bol?.raw?.shipping_line ||
-    bol?.raw?.scac ||
-    "—"
-  );
-}
-
-function getBolSupplier(bol: any): string {
-  return (
-    bol?.supplierName ||
-    bol?.supplier_name ||
-    bol?.Shipper_Name ||
-    bol?.shipper_name ||
-    bol?.shipperName ||
-    bol?.shipper_basename ||
-    bol?.topServiceProvider ||
-    (typeof bol?.supplier === "string" ? bol.supplier : null) ||
-    (typeof bol?.shipper === "string" ? bol.shipper : null) ||
-    bol?.notify_party ||
-    bol?.notifyParty ||
-    bol?.notify_party_name ||
-    bol?.Notify_Party_Name ||
-    bol?.raw?.shipper_name ||
-    bol?.raw?.supplier_name ||
-    bol?.raw?.notify_party_name ||
-    "—"
-  );
-}
-
-function getBolHs(bol: any): string {
-  return (
-    bol?.hsCode ||
-    bol?.hs_code ||
-    bol?.HS_Code ||
-    bol?.hts_code ||
-    bol?.htsCode ||
-    bol?.HTS_Code ||
-    bol?.commodity_code ||
-    bol?.commodityCode ||
-    bol?.raw?.hs_code ||
-    bol?.raw?.hts_code ||
-    "—"
-  );
-}
-
-function getBolDescription(bol: any): string {
-  return (
-    bol?.description ||
-    bol?.product_description ||
-    bol?.productDescription ||
-    bol?.commodity ||
-    bol?.commodity_description ||
-    bol?.commodityDescription ||
-    bol?.goods_description ||
-    bol?.goodsDescription ||
-    bol?.cargo_description ||
-    bol?.cargoDescription ||
-    bol?.raw?.product_description ||
-    bol?.raw?.commodity_description ||
-    ""
-  );
 }
 
 function formatMonthLabel(month: any, _year: any) {
