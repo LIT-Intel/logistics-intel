@@ -37,6 +37,24 @@ serve(async (req) => {
     return json({ ok: true, sent: 0, reason: "no_alerts" });
   }
 
+  // 1.5. Fetch drayage rollup per company from lit_drayage_estimates.
+  const companyKeys = [...new Set((alerts || []).map((a: any) => a.source_company_key).filter(Boolean))];
+  let drayageByCompany = new Map<string, { sum: number; low: number; high: number; containers: number }>();
+  if (companyKeys.length > 0) {
+    const { data: dray } = await supabase
+      .from("lit_drayage_estimates")
+      .select("source_company_key, est_cost_usd, est_cost_low_usd, est_cost_high_usd, containers_eq")
+      .in("source_company_key", companyKeys);
+    for (const d of dray || []) {
+      const prev = drayageByCompany.get(d.source_company_key) || { sum: 0, low: 0, high: 0, containers: 0 };
+      prev.sum += Number(d.est_cost_usd);
+      prev.low += Number(d.est_cost_low_usd);
+      prev.high += Number(d.est_cost_high_usd);
+      prev.containers += Number(d.containers_eq);
+      drayageByCompany.set(d.source_company_key, prev);
+    }
+  }
+
   // 2. Group by user_id.
   const byUser = new Map<string, any[]>();
   for (const a of alerts) {
@@ -91,9 +109,27 @@ serve(async (req) => {
 
     if (filtered.length === 0) continue;
 
+    // Enrich volume alerts with drayage rollup.
+    const enriched = filtered.map((a: any) => {
+      const dr = drayageByCompany.get(a.source_company_key);
+      if (dr && a.alert_type === "volume") {
+        return {
+          ...a,
+          payload: {
+            ...(a.payload || {}),
+            drayage_est_usd: Math.round(dr.sum),
+            drayage_est_low_usd: Math.round(dr.low),
+            drayage_est_high_usd: Math.round(dr.high),
+            drayage_container_count: Math.round(dr.containers),
+          },
+        };
+      }
+      return a;
+    });
+
     const html = renderDigestHtml({
       firstName: (profile.full_name || "").split(/\s+/)[0] || "there",
-      alerts: filtered.map((a: any) => ({
+      alerts: enriched.map((a: any) => ({
         alert_type: a.alert_type,
         severity: a.severity,
         payload: a.payload || {},
@@ -102,14 +138,14 @@ serve(async (req) => {
     });
     const result = await sendResend(profile.email, html, prefs.unsubscribe_token || "");
     if (result.ok) {
-      sentAlertIds.push(...filtered.map((a: any) => a.id));
+      sentAlertIds.push(...enriched.map((a: any) => a.id));
       sent++;
     } else {
       // Bump send attempts.
       await supabase.from("lit_pulse_alerts").update({
-        digest_send_attempts: (filtered[0].digest_send_attempts || 0) + 1,
+        digest_send_attempts: (enriched[0].digest_send_attempts || 0) + 1,
         digest_last_error: result.error,
-      }).in("id", filtered.map((a: any) => a.id));
+      }).in("id", enriched.map((a: any) => a.id));
     }
   }
 
