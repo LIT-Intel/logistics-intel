@@ -14,9 +14,22 @@ export type AlertCandidate = {
   payload: Record<string, unknown>;
 };
 
+export interface LiveCompanyContext {
+  pod: string | null;
+  final_dest: string | null;
+  next_arrival_date: string | null;
+  drayage: {
+    total_est_usd: number;
+    total_low_usd: number;
+    total_high_usd: number;
+    container_count: number;
+  } | null;
+}
+
 export function computeAlertCandidates(
   prev: Record<string, any> | null,
   next: Record<string, any>,
+  liveContext?: LiveCompanyContext,
 ): AlertCandidate[] {
   if (!prev || Object.keys(prev).length === 0) {
     return [{
@@ -39,16 +52,30 @@ export function computeAlertCandidates(
   const absDelta = nextShip - prevShip;
   const pctDelta = prevShip > 0 ? absDelta / prevShip : 0;
   if (absDelta >= 5 || pctDelta >= 0.20) {
+    const volumePayload: Record<string, unknown> = {
+      before: prevShip,
+      after: nextShip,
+      abs_delta: absDelta,
+      pct_delta: pctDelta,
+      company_name: next.company_name ?? null,
+    };
+
+    if (liveContext) {
+      volumePayload.pod = liveContext.pod;
+      volumePayload.final_dest = liveContext.final_dest;
+      volumePayload.next_arrival_date = liveContext.next_arrival_date;
+      if (liveContext.drayage) {
+        volumePayload.drayage_est_usd = liveContext.drayage.total_est_usd;
+        volumePayload.drayage_est_low_usd = liveContext.drayage.total_low_usd;
+        volumePayload.drayage_est_high_usd = liveContext.drayage.total_high_usd;
+        volumePayload.drayage_container_count = liveContext.drayage.container_count;
+      }
+    }
+
     candidates.push({
       alert_type: "volume",
       severity: Math.abs(pctDelta) >= 0.50 ? "high" : "warning",
-      payload: {
-        before: prevShip,
-        after: nextShip,
-        abs_delta: absDelta,
-        pct_delta: pctDelta,
-        company_name: next.company_name ?? null,
-      },
+      payload: volumePayload,
     });
   }
 
