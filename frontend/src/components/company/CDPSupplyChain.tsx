@@ -356,7 +356,7 @@ function SummaryView({
   carriers,
   suppliers: _suppliers,
   canonicalLanes,
-  globeLanes: _globeLanes,
+  globeLanes,
   onOpenPulseLive,
 }: {
   profile: any;
