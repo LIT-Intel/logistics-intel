@@ -4,6 +4,7 @@ import {
   buildParsedSummary,
   fetchAndUpsertSnapshot,
 } from "../_shared/importyeti_fetch.ts";
+import { rematerializeCompanyBols } from "../_shared/materialize_bols.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1024,6 +1025,27 @@ async function handleCompanyProfileAction(
       company_id: normalizedCompanyKey,
       idempotent_key: normalizedCompanyKey,
     });
+
+    // Re-materialize lit_unified_shipments from the fresh JSONB blob so
+    // Pulse LIVE sees this company's BOLs immediately on save (instead of
+    // waiting for the next bi-weekly pulse-refresh-tick). Wrapped in
+    // try/catch so a materializer failure does NOT fail the user-facing
+    // save — the snapshot is already persisted and the cron will retry.
+    try {
+      const matResult = await rematerializeCompanyBols(
+        supabase,
+        normalizedCompanyKey,
+        snapshot,
+      );
+      console.log(
+        `[importyeti-proxy] rematerialize ${normalizedCompanyKey}: +${matResult.upserted} -${matResult.removed}`,
+      );
+    } catch (matErr) {
+      console.error(
+        `[importyeti-proxy] rematerialize failed for ${normalizedCompanyKey}:`,
+        (matErr as any)?.message || matErr,
+      );
+    }
 
     const indexError = await safeUpsertIndex(supabase, {
       company_id: normalizedCompanyKey,
