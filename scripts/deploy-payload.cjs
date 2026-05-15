@@ -34,6 +34,13 @@ const FUNCTIONS = {
       { name: '../_shared/dcsa_event_map.ts',   path: 'supabase/functions/_shared/dcsa_event_map.ts' },
     ],
   },
+  'pulse-arrival-alerts': {
+    entrypoint: 'index.ts',
+    files: [
+      { name: 'index.ts',                 path: 'supabase/functions/pulse-arrival-alerts/index.ts' },
+      { name: '../_shared/cron_auth.ts',  path: 'supabase/functions/_shared/cron_auth.ts' },
+    ],
+  },
   'pulse-drayage-recompute': {
     entrypoint: 'index.ts',
     files: [
