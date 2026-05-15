@@ -501,7 +501,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 )}
                 {!loading && !error && tab === 'Pulse LIVE' && (
                   <div className='mt-3'>
-                    <PulseLIVETab sourceCompanyKey={active?.source_company_key || null} />
+                    <PulseLIVETab sourceCompanyKey={active?.source_company_key || null} companyName={active?.name} />
                   </div>
                 )}
                 {!loading && !error && tab === 'Contacts' && (
