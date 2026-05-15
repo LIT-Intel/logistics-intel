@@ -64,6 +64,22 @@ const FUNCTIONS = {
       { name: '../_shared/osrm_client.ts',      path: 'supabase/functions/_shared/osrm_client.ts' },
     ],
   },
+  'pulse-alert-digest': {
+    entrypoint: 'index.ts',
+    files: [
+      { name: 'index.ts',                      path: 'supabase/functions/pulse-alert-digest/index.ts' },
+      { name: '../_shared/cron_auth.ts',       path: 'supabase/functions/_shared/cron_auth.ts' },
+      { name: '../_shared/digest_render.ts',   path: 'supabase/functions/_shared/digest_render.ts' },
+    ],
+  },
+  'pulse-digest-draft-send': {
+    entrypoint: 'index.ts',
+    files: [
+      { name: 'index.ts',                      path: 'supabase/functions/pulse-digest-draft-send/index.ts' },
+      { name: '../_shared/cron_auth.ts',       path: 'supabase/functions/_shared/cron_auth.ts' },
+      { name: '../_shared/digest_render.ts',   path: 'supabase/functions/_shared/digest_render.ts' },
+    ],
+  },
 };
 
 const fn = process.argv[2];

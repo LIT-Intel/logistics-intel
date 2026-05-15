@@ -140,7 +140,7 @@ function buildDigestHtml(args: DigestArgs): string {
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#F8FAFC;">
   <tr>
     <td align="center" style="padding:32px 16px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px; background:#ffffff; border-radius:14px; box-shadow:0 4px 16px rgba(15,23,42,0.06); overflow:hidden;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="680" style="max-width:680px; background:#ffffff; border-radius:14px; box-shadow:0 4px 16px rgba(15,23,42,0.06); overflow:hidden;">
 
         <!-- Header -->
         <tr>
@@ -295,7 +295,7 @@ function renderBenchmarkRow(alert: DigestAlert): string {
   // Freightos attribution is MANDATORY for benchmark rows (legal ToS).
   return `<div style="font-size:14px; font-weight:bold; color:#0F172A;">${title}</div>
                   <div style="font-size:12px; color:#64748B; margin-top:2px;">${before} → ${after} ${unit} · <span style="color:${pctColor}; font-weight:bold;">${pctStr}</span> WoW</div>
-                  <div style="font-size:11px; color:#94A3B8; margin-top:6px;">Source: <a href="https://www.freightos.com/enterprise/terminal/freightos-baltic-index-global-container-pricing-index/" style="color:#94A3B8; text-decoration:underline;">Freightos Baltic Index</a></div>`;
+                  <div style="font-size:11px; color:#94A3B8; margin-top:6px;">Source: Freightos Baltic Index</div>`;
 }
 
 // ---------------------------------------------------------------------------
