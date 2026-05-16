@@ -172,12 +172,12 @@ function buildDigestHtml(args: DigestArgs): string {
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
                 <td class="lit-stack" style="vertical-align:middle;">
-                  <img src="https://app.logisticintel.com/logo_email_clean.png" alt="Logistic Intel" width="180" height="40" class="lit-logo" style="display:block; height:40px; width:auto; max-width:180px; border:0; outline:none;">
+                  <img src="https://app.logisticintel.com/logo_web_neon.png" alt="Logistics Intel" width="200" height="56" class="lit-logo" style="display:block; height:56px; width:auto; max-width:200px; border:0; outline:none;">
                 </td>
                 <td class="lit-stack lit-meta" align="right" style="color:#94A3B8; font-size:12px; vertical-align:middle; letter-spacing:0.04em;">Weekly digest &middot; ${safeDate}</td>
               </tr>
             </table>
-            <h1 class="lit-h1" style="color:#ffffff; font-size:26px; line-height:32px; margin:22px 0 6px 0; font-weight:700;">Hi ${safeFirst} &mdash; ${totalCount} ${totalCount === 1 ? "signal" : "signals"} across your saved companies this week</h1>
+            <h1 class="lit-h1" style="color:#ffffff; font-size:26px; line-height:32px; margin:22px 0 6px 0; font-weight:700;">Hi ${safeFirst} &mdash; ${totalCount} ${totalCount === 1 ? "signal" : "signals"} across your saved companies this&nbsp;week</h1>
             <p style="color:#CBD5E1; font-size:14px; line-height:21px; margin:0;">Volume changes, new shipment activity, and trade-lane shifts from the past 14 days.</p>
           </td>
         </tr>
@@ -190,8 +190,8 @@ function buildDigestHtml(args: DigestArgs): string {
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
                 <td>
-                  <img src="https://app.logisticintel.com/logo_email_clean.png" alt="Logistic Intel" width="120" height="27" style="display:block; height:27px; width:auto; max-width:120px; opacity:0.7; border:0; outline:none; margin-bottom:10px;">
-                  <p style="font-size:12px; line-height:18px; color:#64748B; margin:0 0 8px 0;">Logistic Intel &middot; Atlanta, GA &middot; Trade intelligence for freight brokers</p>
+                  <img src="https://app.logisticintel.com/logo_email.png" alt="Logistics Intel" width="130" height="29" style="display:block; height:29px; width:auto; max-width:130px; opacity:0.75; border:0; outline:none; margin-bottom:10px;">
+                  <p style="font-size:12px; line-height:18px; color:#64748B; margin:0 0 8px 0;">Logistics Intel &middot; Atlanta, GA &middot; Trade intelligence for freight brokers</p>
                   <p style="font-size:11px; line-height:16px; color:#94A3B8; margin:0;">
                     You're receiving this weekly digest because you have saved companies in your Pulse Library.
                     <a href="https://app.logisticintel.com/app/notifications" style="color:#3B82F6;">Manage preferences</a> &middot;
