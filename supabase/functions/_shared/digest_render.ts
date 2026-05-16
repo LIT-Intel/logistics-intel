@@ -134,28 +134,51 @@ function buildDigestHtml(args: DigestArgs): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="color-scheme" content="light only">
+<meta name="supported-color-schemes" content="light only">
 <title>Your Pulse Digest — Logistic Intel</title>
+<style>
+  /* Mobile-first overrides — supported by Apple Mail, iOS Mail, Gmail (app + web), Outlook 365 web. */
+  @media only screen and (max-width: 600px) {
+    .lit-shell { width: 100% !important; max-width: 100% !important; border-radius: 0 !important; }
+    .lit-pad-x { padding-left: 18px !important; padding-right: 18px !important; }
+    .lit-pad-x-tight { padding-left: 14px !important; padding-right: 14px !important; }
+    .lit-h1 { font-size: 20px !important; line-height: 26px !important; }
+    .lit-meta { display: block !important; text-align: left !important; padding-top: 8px !important; }
+    .lit-logo { height: 32px !important; }
+    .lit-row-name { font-size: 15px !important; }
+    .lit-row-meta { font-size: 12px !important; }
+    .lit-stack { display: block !important; width: 100% !important; }
+  }
+  /* Dark-mode email client tweaks — keep brand contrast in dark mode (Apple Mail dark). */
+  @media (prefers-color-scheme: dark) {
+    .lit-darkmode-keep { background-color: #ffffff !important; }
+  }
+  a { text-decoration: none; }
+  img { -ms-interpolation-mode: bicubic; border: 0; line-height: 100%; outline: none; text-decoration: none; }
+</style>
 </head>
-<body style="margin:0; padding:0; background:#F8FAFC; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#F8FAFC;">
+<body style="margin:0; padding:0; background:#F1F5F9; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased;">
+<div style="display:none; max-height:0; overflow:hidden; opacity:0;">Hi ${safeFirst} — ${totalCount} ${totalCount === 1 ? "signal" : "signals"} across your saved companies this week.</div>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#F1F5F9;">
   <tr>
-    <td align="center" style="padding:32px 16px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="680" style="max-width:680px; background:#ffffff; border-radius:14px; box-shadow:0 4px 16px rgba(15,23,42,0.06); overflow:hidden;">
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="760" class="lit-shell lit-darkmode-keep" style="width:100%; max-width:760px; background:#ffffff; border-radius:16px; box-shadow:0 6px 24px rgba(15,23,42,0.08); overflow:hidden;">
 
         <!-- Header -->
         <tr>
-          <td style="background:linear-gradient(135deg,#0F172A 0%,#1E293B 100%); padding:24px 28px;">
+          <td class="lit-pad-x" style="background:linear-gradient(135deg,#0B1220 0%,#111B2E 55%,#1A2540 100%); padding:28px 36px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
-                <td>
-                  <div style="display:inline-block; width:32px; height:32px; background:radial-gradient(circle at 30% 30%, rgba(0,240,255,0.32), transparent 65%), linear-gradient(135deg,#0F172A 0%,#1E293B 100%); border-radius:8px; vertical-align:middle; text-align:center; line-height:32px; color:#00F0FF; font-weight:bold;">L</div>
-                  <span style="color:#ffffff; font-size:18px; font-weight:bold; margin-left:10px; vertical-align:middle;">Logistic Intel</span>
+                <td class="lit-stack" style="vertical-align:middle;">
+                  <img src="https://app.logisticintel.com/logo_email_clean.png" alt="Logistic Intel" width="180" height="40" class="lit-logo" style="display:block; height:40px; width:auto; max-width:180px; border:0; outline:none;">
                 </td>
-                <td align="right" style="color:#94A3B8; font-size:12px;">Weekly digest · ${safeDate}</td>
+                <td class="lit-stack lit-meta" align="right" style="color:#94A3B8; font-size:12px; vertical-align:middle; letter-spacing:0.04em;">Weekly digest &middot; ${safeDate}</td>
               </tr>
             </table>
-            <h1 style="color:#ffffff; font-size:24px; line-height:30px; margin:18px 0 4px 0;">Hi ${safeFirst} — ${totalCount} ${totalCount === 1 ? "signal" : "signals"} across your saved companies this week</h1>
-            <p style="color:#CBD5E1; font-size:14px; line-height:20px; margin:0;">Volume changes, new shipment activity, and trade-lane shifts from the past 14 days.</p>
+            <h1 class="lit-h1" style="color:#ffffff; font-size:26px; line-height:32px; margin:22px 0 6px 0; font-weight:700;">Hi ${safeFirst} &mdash; ${totalCount} ${totalCount === 1 ? "signal" : "signals"} across your saved companies this week</h1>
+            <p style="color:#CBD5E1; font-size:14px; line-height:21px; margin:0;">Volume changes, new shipment activity, and trade-lane shifts from the past 14 days.</p>
           </td>
         </tr>
 
@@ -163,13 +186,20 @@ function buildDigestHtml(args: DigestArgs): string {
 
         <!-- Footer -->
         <tr>
-          <td style="padding:24px 28px; background:#F8FAFC; border-top:1px solid #E2E8F0;">
-            <p style="font-size:12px; line-height:18px; color:#64748B; margin:0 0 8px 0;">Logistic Intel · Atlanta, GA</p>
-            <p style="font-size:11px; line-height:16px; color:#94A3B8; margin:0;">
-              You're receiving this weekly digest because you have saved companies in your Pulse Library.
-              <a href="https://app.logisticintel.com/app/notifications" style="color:#3B82F6;">Manage preferences</a> ·
-              <a href="${htmlEscape(unsubUrl)}" style="color:#3B82F6;">Unsubscribe</a>
-            </p>
+          <td class="lit-pad-x" style="padding:28px 36px; background:#F8FAFC; border-top:1px solid #E2E8F0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td>
+                  <img src="https://app.logisticintel.com/logo_email_clean.png" alt="Logistic Intel" width="120" height="27" style="display:block; height:27px; width:auto; max-width:120px; opacity:0.7; border:0; outline:none; margin-bottom:10px;">
+                  <p style="font-size:12px; line-height:18px; color:#64748B; margin:0 0 8px 0;">Logistic Intel &middot; Atlanta, GA &middot; Trade intelligence for freight brokers</p>
+                  <p style="font-size:11px; line-height:16px; color:#94A3B8; margin:0;">
+                    You're receiving this weekly digest because you have saved companies in your Pulse Library.
+                    <a href="https://app.logisticintel.com/app/notifications" style="color:#3B82F6;">Manage preferences</a> &middot;
+                    <a href="${htmlEscape(unsubUrl)}" style="color:#3B82F6;">Unsubscribe</a>
+                  </p>
+                </td>
+              </tr>
+            </table>
           </td>
         </tr>
 
@@ -182,14 +212,12 @@ function buildDigestHtml(args: DigestArgs): string {
 }
 
 function renderSection(opts: { label: string; labelColor: string; rows: string[] }): string {
-  // Stitch row HTMLs together inside the bordered card. Each rendered row
-  // already contains its own border-bottom for separation except the last.
   const rowCount = opts.rows.length;
   const stitched = opts.rows.map((row, i) => {
     const isLast = i === rowCount - 1;
     return `
               <tr>
-                <td style="padding:14px 16px;${isLast ? "" : " border-bottom:1px solid #F1F5F9;"}">
+                <td class="lit-pad-x-tight" style="padding:16px 18px;${isLast ? "" : " border-bottom:1px solid #F1F5F9;"}">
                   ${row}
                 </td>
               </tr>`;
@@ -197,13 +225,13 @@ function renderSection(opts: { label: string; labelColor: string; rows: string[]
 
   return `
         <tr>
-          <td style="padding:16px 28px 8px 28px;">
-            <div style="display:inline-block; font-size:10px; font-weight:bold; letter-spacing:0.08em; text-transform:uppercase; color:${opts.labelColor};">${htmlEscape(opts.label)}</div>
+          <td class="lit-pad-x" style="padding:20px 36px 10px 36px;">
+            <div style="display:inline-block; font-size:11px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:${opts.labelColor};">${htmlEscape(opts.label)}</div>
           </td>
         </tr>
         <tr>
-          <td style="padding:0 28px 16px 28px;">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid #E2E8F0; border-radius:10px;">${stitched}
+          <td class="lit-pad-x" style="padding:0 36px 18px 36px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid #E2E8F0; border-radius:12px; background:#ffffff;">${stitched}
             </table>
           </td>
         </tr>`;
@@ -235,8 +263,8 @@ function renderVolumeRow(alert: DigestAlert): string {
   const opportunity = (typeof p.drayage_est_usd === 'number' && p.drayage_est_usd > 0)
     ? `<div style="font-size:11px; color:#0F172A; margin-top:6px;"><strong>Drayage opportunity:</strong> $${Math.round(p.drayage_est_usd).toLocaleString('en-US')} (${Math.round(p.drayage_est_low_usd || 0).toLocaleString('en-US')}–${Math.round(p.drayage_est_high_usd || 0).toLocaleString('en-US')}, ${p.drayage_container_count} containers)</div>`
     : '';
-  return `<div style="font-size:14px; font-weight:bold; color:#0F172A;">${name}</div>
-                  <div style="font-size:12px; color:#64748B; margin-top:2px;">${locPart}${before} → ${after} shipments · <span style="color:${pctColor}; font-weight:bold;">${pctStr}</span>${sevTag}</div>
+  return `<div class="lit-row-name" style="font-size:14px; font-weight:600; color:#0F172A;">${name}</div>
+                  <div class="lit-row-meta" style="font-size:13px; color:#475569; margin-top:3px; line-height:18px;">${locPart}${before} → ${after} shipments · <span style="color:${pctColor}; font-weight:bold;">${pctStr}</span>${sevTag}</div>
                   ${contextHtml}
                   ${opportunity}
                   <a href="https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}" style="display:inline-block; margin-top:8px; font-size:11px; color:#3B82F6; font-weight:bold; text-decoration:none;">See full supply chain →</a>`;
@@ -249,8 +277,8 @@ function renderShipmentRow(alert: DigestAlert): string {
   const newCount = formatNum(p.new_shipments ?? p.after ?? p.abs_delta);
   const sevTag = renderSeverity(alert.severity);
   const locPart = loc ? `${loc} · ` : "";
-  return `<div style="font-size:14px; font-weight:bold; color:#0F172A;">${name}</div>
-                  <div style="font-size:12px; color:#64748B; margin-top:2px;">${locPart}<strong style="color:#0F172A;">${newCount}</strong> new shipments in the past 14 days${sevTag}</div>
+  return `<div class="lit-row-name" style="font-size:14px; font-weight:600; color:#0F172A;">${name}</div>
+                  <div class="lit-row-meta" style="font-size:13px; color:#475569; margin-top:3px; line-height:18px;">${locPart}<strong style="color:#0F172A;">${newCount}</strong> new shipments in the past 14 days${sevTag}</div>
                   <a href="https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}" style="display:inline-block; margin-top:8px; font-size:11px; color:#3B82F6; font-weight:bold; text-decoration:none;">See full supply chain →</a>`;
 }
 
@@ -263,8 +291,8 @@ function renderLaneRow(alert: DigestAlert): string {
   const newCount = formatNum(p.new_shipments ?? p.after ?? p.abs_delta);
   const sevTag = renderSeverity(alert.severity);
   const prefix = loc ? `${loc} started shipping from ` : "started shipping from ";
-  return `<div style="font-size:14px; font-weight:bold; color:#0F172A;">${name}</div>
-                  <div style="font-size:12px; color:#64748B; margin-top:2px;">${prefix}<strong style="color:#0F172A;">${origin} → ${dest}</strong> · ${newCount} new shipments${sevTag}</div>
+  return `<div class="lit-row-name" style="font-size:14px; font-weight:600; color:#0F172A;">${name}</div>
+                  <div class="lit-row-meta" style="font-size:13px; color:#475569; margin-top:3px; line-height:18px;">${prefix}<strong style="color:#0F172A;">${origin} → ${dest}</strong> · ${newCount} new shipments${sevTag}</div>
                   <a href="https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}" style="display:inline-block; margin-top:8px; font-size:11px; color:#3B82F6; font-weight:bold; text-decoration:none;">See full supply chain →</a>`;
 }
 
@@ -277,8 +305,8 @@ function renderBaselineRow(alert: DigestAlert): string {
   const pctStr = formatPct(p.pct_delta);
   const sevTag = renderSeverity(alert.severity);
   const locPart = loc ? `${loc} · ` : "";
-  return `<div style="font-size:14px; font-weight:bold; color:#0F172A;">${name}</div>
-                  <div style="font-size:12px; color:#64748B; margin-top:2px;">${locPart}Baseline shift · ${before} → ${after} shipments · <span style="color:#0F172A; font-weight:bold;">${pctStr}</span>${sevTag}</div>
+  return `<div class="lit-row-name" style="font-size:14px; font-weight:600; color:#0F172A;">${name}</div>
+                  <div class="lit-row-meta" style="font-size:13px; color:#475569; margin-top:3px; line-height:18px;">${locPart}Baseline shift · ${before} → ${after} shipments · <span style="color:#0F172A; font-weight:bold;">${pctStr}</span>${sevTag}</div>
                   <a href="https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}" style="display:inline-block; margin-top:8px; font-size:11px; color:#3B82F6; font-weight:bold; text-decoration:none;">See full supply chain →</a>`;
 }
 
@@ -294,7 +322,7 @@ function renderBenchmarkRow(alert: DigestAlert): string {
   const pctColor = (typeof p.pct_delta === "number" && p.pct_delta < 0) ? "#16A34A" : "#DC2626";
   // Freightos attribution is MANDATORY for benchmark rows (legal ToS).
   return `<div style="font-size:14px; font-weight:bold; color:#0F172A;">${title}</div>
-                  <div style="font-size:12px; color:#64748B; margin-top:2px;">${before} → ${after} ${unit} · <span style="color:${pctColor}; font-weight:bold;">${pctStr}</span> WoW</div>
+                  <div class="lit-row-meta" style="font-size:13px; color:#475569; margin-top:3px; line-height:18px;">${before} → ${after} ${unit} · <span style="color:${pctColor}; font-weight:bold;">${pctStr}</span> WoW</div>
                   <div style="font-size:11px; color:#94A3B8; margin-top:6px;">Source: Freightos Baltic Index</div>`;
 }
 
