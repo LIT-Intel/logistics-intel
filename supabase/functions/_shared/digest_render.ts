@@ -7,8 +7,6 @@
 // can leak third-party data-source vendor names). The only permitted vendor
 // name in the rendered email is "Freightos", which is the legally-required
 // attribution for the Freightos Baltic Index benchmarks.
-//
-// HTML structure mirrors docs/mockups/pulse-digest-sample.html.
 
 // Inline SVGs for email — lucide-react path strings.
 const SERVICE_SVG: Record<string, string> = {
@@ -54,12 +52,25 @@ export function renderDigestHtml(args: RenderDigestArgs): string {
   };
   const unsubUrl = `https://www.logisticintel.com/api/unsubscribe?token=${encodeURIComponent(unsubscribeToken)}`;
 
+  // Aggregate stats — total $ opportunity is the hero number. Sum across all
+  // alert buckets that might carry a drayage_est_usd (volume primarily, but
+  // we tolerate the field on any payload).
+  let totalOpportunityUsd = 0;
+  let criticalCount = 0;
+  for (const a of alerts) {
+    const usd = a?.payload?.drayage_est_usd;
+    if (typeof usd === "number" && isFinite(usd) && usd > 0) totalOpportunityUsd += usd;
+    if (a?.severity === "critical") criticalCount += 1;
+  }
+
   return buildDigestHtml({
     firstName,
     buckets,
     unsubUrl,
     dateLabel,
     totalCount: alerts.length,
+    totalOpportunityUsd,
+    criticalCount,
   });
 }
 
@@ -79,10 +90,44 @@ interface DigestArgs {
   unsubUrl: string;
   dateLabel: string;
   totalCount: number;
+  totalOpportunityUsd: number;
+  criticalCount: number;
 }
 
+// Brand palette
+const NAVY = "#0B1220";
+const NAVY_MID = "#111B2E";
+const NAVY_HI = "#1A2540";
+const CYAN = "#00F0FF";
+const TEXT = "#0F172A";
+const TEXT_MUTED = "#475569";
+const TEXT_FAINT = "#94A3B8";
+const HAIRLINE = "#E2E8F0";
+const SURFACE = "#FFFFFF";
+const SURFACE_ALT = "#F8FAFC";
+const BG = "#EEF2F7";
+
+// Section accents
+const C_VOLUME = "#2563EB";       // blue
+const C_VOLUME_BG = "#EFF6FF";
+const C_SHIPMENT = "#0891B2";     // cyan-700
+const C_SHIPMENT_BG = "#ECFEFF";
+const C_LANE = "#7C3AED";         // violet
+const C_LANE_BG = "#F5F3FF";
+const C_BASELINE = "#D97706";     // amber-600
+const C_BASELINE_BG = "#FFFBEB";
+const C_BENCHMARK = "#0F766E";    // teal-700
+const C_BENCHMARK_BG = "#F0FDFA";
+
+const POS = "#047857";            // emerald-700 (text on light pill)
+const POS_BG = "#ECFDF5";
+const NEG = "#B91C1C";            // red-700
+const NEG_BG = "#FEF2F2";
+const MONEY_BG = "#ECFDF5";
+const MONEY_TEXT = "#065F46";
+
 function buildDigestHtml(args: DigestArgs): string {
-  const { firstName, buckets, unsubUrl, dateLabel, totalCount } = args;
+  const { firstName, buckets, unsubUrl, dateLabel, totalCount, totalOpportunityUsd, criticalCount } = args;
 
   const safeFirst = htmlEscape(firstName);
   const safeDate = htmlEscape(dateLabel);
@@ -91,43 +136,82 @@ function buildDigestHtml(args: DigestArgs): string {
 
   if (buckets.volume.length > 0) {
     sections.push(renderSection({
-      label: `VOLUME ALERTS · ${buckets.volume.length}`,
-      labelColor: "#3B82F6",
+      label: "Volume Alerts",
+      count: buckets.volume.length,
+      color: C_VOLUME,
+      bg: C_VOLUME_BG,
       rows: buckets.volume.map(renderVolumeRow),
     }));
   }
 
   if (buckets.shipment.length > 0) {
     sections.push(renderSection({
-      label: `SHIPMENT ACTIVITY · ${buckets.shipment.length}`,
-      labelColor: "#0EA5E9",
+      label: "Shipment Activity",
+      count: buckets.shipment.length,
+      color: C_SHIPMENT,
+      bg: C_SHIPMENT_BG,
       rows: buckets.shipment.map(renderShipmentRow),
     }));
   }
 
   if (buckets.lane.length > 0) {
     sections.push(renderSection({
-      label: `NEW TRADE LANES · ${buckets.lane.length}`,
-      labelColor: "#8B5CF6",
+      label: "New Trade Lanes",
+      count: buckets.lane.length,
+      color: C_LANE,
+      bg: C_LANE_BG,
       rows: buckets.lane.map(renderLaneRow),
     }));
   }
 
   if (buckets.baseline.length > 0) {
     sections.push(renderSection({
-      label: `BASELINE SHIFTS · ${buckets.baseline.length}`,
-      labelColor: "#F59E0B",
+      label: "Baseline Shifts",
+      count: buckets.baseline.length,
+      color: C_BASELINE,
+      bg: C_BASELINE_BG,
       rows: buckets.baseline.map(renderBaselineRow),
     }));
   }
 
   if (buckets.benchmark.length > 0) {
     sections.push(renderSection({
-      label: `BENCHMARK RATE MOVERS · ${buckets.benchmark.length}`,
-      labelColor: "#0891B2",
+      label: "Benchmark Rate Movers",
+      count: buckets.benchmark.length,
+      color: C_BENCHMARK,
+      bg: C_BENCHMARK_BG,
       rows: buckets.benchmark.map(renderBenchmarkRow),
     }));
   }
+
+  const headline = `${totalCount} ${totalCount === 1 ? "signal" : "signals"} across your saved companies`;
+  const opportunityDisplay = totalOpportunityUsd > 0
+    ? `$${Math.round(totalOpportunityUsd).toLocaleString("en-US")}`
+    : "—";
+
+  // Stats strip — three-column table on desktop, two-column wrap on mobile.
+  const statsStrip = `
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:22px;">
+              <tr>
+                <td class="lit-stat lit-stat-hero" valign="top" width="40%" style="padding:14px 16px; background:rgba(0,240,255,0.06); border:1px solid rgba(0,240,255,0.22); border-radius:10px;">
+                  <div style="font-size:10px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:${CYAN};">Total Opportunity</div>
+                  <div style="font-family:Georgia,'Times New Roman',serif; font-size:28px; line-height:34px; color:#FFFFFF; font-weight:700; margin-top:6px; letter-spacing:-0.01em;">${htmlEscape(opportunityDisplay)}</div>
+                  <div style="font-size:11px; color:#94A3B8; margin-top:2px;">Drayage est. across volume alerts</div>
+                </td>
+                <td class="lit-stat-gap" width="12" style="font-size:0; line-height:0;">&nbsp;</td>
+                <td class="lit-stat" valign="top" width="29%" style="padding:14px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10); border-radius:10px;">
+                  <div style="font-size:10px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:#94A3B8;">Total Signals</div>
+                  <div style="font-family:Georgia,'Times New Roman',serif; font-size:24px; line-height:30px; color:#FFFFFF; font-weight:700; margin-top:6px;">${totalCount}</div>
+                  <div style="font-size:11px; color:#94A3B8; margin-top:2px;">Past 14 days</div>
+                </td>
+                <td class="lit-stat-gap" width="12" style="font-size:0; line-height:0;">&nbsp;</td>
+                <td class="lit-stat" valign="top" width="29%" style="padding:14px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10); border-radius:10px;">
+                  <div style="font-size:10px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:#94A3B8;">Critical</div>
+                  <div style="font-family:Georgia,'Times New Roman',serif; font-size:24px; line-height:30px; color:${criticalCount > 0 ? "#FCA5A5" : "#FFFFFF"}; font-weight:700; margin-top:6px;">${criticalCount}</div>
+                  <div style="font-size:11px; color:#94A3B8; margin-top:2px;">High-severity alerts</div>
+                </td>
+              </tr>
+            </table>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -137,65 +221,74 @@ function buildDigestHtml(args: DigestArgs): string {
 <meta name="x-apple-disable-message-reformatting">
 <meta name="color-scheme" content="light only">
 <meta name="supported-color-schemes" content="light only">
-<title>Your Pulse Digest — Logistic Intel</title>
+<title>Your Pulse Digest — Logistics Intel</title>
 <style>
-  /* Mobile-first overrides — supported by Apple Mail, iOS Mail, Gmail (app + web), Outlook 365 web. */
+  /* Mobile overrides — Apple Mail, iOS Mail, Gmail (app + web), Outlook 365 web. */
   @media only screen and (max-width: 600px) {
     .lit-shell { width: 100% !important; max-width: 100% !important; border-radius: 0 !important; }
-    .lit-pad-x { padding-left: 18px !important; padding-right: 18px !important; }
-    .lit-pad-x-tight { padding-left: 14px !important; padding-right: 14px !important; }
-    .lit-h1 { font-size: 20px !important; line-height: 26px !important; }
-    .lit-meta { display: block !important; text-align: left !important; padding-top: 8px !important; }
-    .lit-logo { height: 32px !important; }
+    .lit-pad-x { padding-left: 20px !important; padding-right: 20px !important; }
+    .lit-pad-x-tight { padding-left: 16px !important; padding-right: 16px !important; }
+    .lit-h1 { font-size: 20px !important; line-height: 27px !important; }
+    .lit-meta { display: block !important; text-align: left !important; padding-top: 10px !important; }
+    .lit-logo { height: 30px !important; }
     .lit-row-name { font-size: 15px !important; }
     .lit-row-meta { font-size: 12px !important; }
-    .lit-stack { display: block !important; width: 100% !important; }
-  }
-  /* Dark-mode email client tweaks — keep brand contrast in dark mode (Apple Mail dark). */
-  @media (prefers-color-scheme: dark) {
-    .lit-darkmode-keep { background-color: #ffffff !important; }
+    .lit-stack { display: block !important; width: 100% !important; box-sizing: border-box; }
+    .lit-pill-right { display: block !important; text-align: left !important; padding-top: 8px !important; padding-left: 0 !important; }
+    /* Stats strip: hero full-width, then two equal-width below. Hide the gap spacers. */
+    .lit-stat-hero { display: block !important; width: 100% !important; box-sizing: border-box; margin-bottom: 8px !important; }
+    .lit-stat { display: inline-block !important; width: 48% !important; box-sizing: border-box; vertical-align: top; }
+    .lit-stat-gap { display: none !important; }
+    .lit-cta { display: block !important; text-align: center !important; }
   }
   a { text-decoration: none; }
   img { -ms-interpolation-mode: bicubic; border: 0; line-height: 100%; outline: none; text-decoration: none; }
+  /* Outlook fallback for serif display numerals. */
+  .lit-display { mso-line-height-rule: exactly; }
 </style>
 </head>
-<body style="margin:0; padding:0; background:#F1F5F9; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased;">
-<div style="display:none; max-height:0; overflow:hidden; opacity:0;">Hi ${safeFirst} — ${totalCount} ${totalCount === 1 ? "signal" : "signals"} across your saved companies this week.</div>
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#F1F5F9;">
+<body style="margin:0; padding:0; background:${BG}; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; color:${TEXT};">
+<div style="display:none; max-height:0; overflow:hidden; opacity:0;">${headline} · ${opportunityDisplay} in drayage opportunity this week.</div>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${BG};">
   <tr>
-    <td align="center" style="padding:24px 12px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="760" class="lit-shell lit-darkmode-keep" style="width:100%; max-width:760px; background:#ffffff; border-radius:16px; box-shadow:0 6px 24px rgba(15,23,42,0.08); overflow:hidden;">
+    <td align="center" style="padding:28px 12px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="760" class="lit-shell" style="width:100%; max-width:760px; background:${SURFACE}; border-radius:16px; box-shadow:0 10px 32px rgba(11,18,32,0.10); overflow:hidden;">
 
         <!-- Header -->
         <tr>
-          <td class="lit-pad-x" style="background:linear-gradient(135deg,#0B1220 0%,#111B2E 55%,#1A2540 100%); padding:28px 36px;">
+          <td class="lit-pad-x" style="background:linear-gradient(135deg,${NAVY} 0%,${NAVY_MID} 55%,${NAVY_HI} 100%); padding:24px 36px 28px 36px; border-bottom:2px solid ${CYAN};">
+            <!-- Top bar: logo left, date right -->
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
                 <td class="lit-stack" style="vertical-align:middle;">
-                  <img src="https://app.logisticintel.com/logo_web_neon.png" alt="Logistics Intel" width="200" height="56" class="lit-logo" style="display:block; height:56px; width:auto; max-width:200px; border:0; outline:none;">
+                  <img src="https://app.logisticintel.com/logo_web_neon.png" alt="Logistics Intel" width="160" height="46" class="lit-logo" style="display:block; height:38px; width:auto; max-width:160px; border:0; outline:none;">
                 </td>
-                <td class="lit-stack lit-meta" align="right" style="color:#94A3B8; font-size:12px; vertical-align:middle; letter-spacing:0.04em;">Weekly digest &middot; ${safeDate}</td>
+                <td class="lit-stack lit-meta" align="right" style="color:#94A3B8; font-size:11px; vertical-align:middle; letter-spacing:0.10em; text-transform:uppercase; font-weight:600;">Weekly Digest &middot; ${safeDate}</td>
               </tr>
             </table>
-            <h1 class="lit-h1" style="color:#ffffff; font-size:26px; line-height:32px; margin:22px 0 6px 0; font-weight:700;">Hi ${safeFirst} &mdash; ${totalCount} ${totalCount === 1 ? "signal" : "signals"} across your saved companies this&nbsp;week</h1>
-            <p style="color:#CBD5E1; font-size:14px; line-height:21px; margin:0;">Volume changes, new shipment activity, and trade-lane shifts from the past 14 days.</p>
+            <!-- Headline -->
+            <h1 class="lit-h1" style="color:#FFFFFF; font-family:Georgia,'Times New Roman',serif; font-size:24px; line-height:32px; margin:18px 0 0 0; font-weight:700; letter-spacing:-0.01em;">${htmlEscape(headline)}<span style="color:${CYAN};">.</span></h1>
+            <p style="color:#CBD5E1; font-size:13px; line-height:20px; margin:6px 0 0 0;">Hi ${safeFirst} — here's what moved across your saved companies in the past 14 days.</p>
+            ${statsStrip}
           </td>
         </tr>
 
-        ${sections.join("\n")}
+        ${sections.length > 0 ? sections.join("\n") : renderEmptyState()}
 
         <!-- Footer -->
         <tr>
-          <td class="lit-pad-x" style="padding:28px 36px; background:#F8FAFC; border-top:1px solid #E2E8F0;">
+          <td class="lit-pad-x" style="padding:28px 36px 32px 36px; background:${SURFACE_ALT}; border-top:1px solid ${HAIRLINE};">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
                 <td>
-                  <img src="https://app.logisticintel.com/logo_email.png" alt="Logistics Intel" width="130" height="29" style="display:block; height:29px; width:auto; max-width:130px; opacity:0.75; border:0; outline:none; margin-bottom:10px;">
-                  <p style="font-size:12px; line-height:18px; color:#64748B; margin:0 0 8px 0;">Logistics Intel &middot; Atlanta, GA &middot; Trade intelligence for freight brokers</p>
-                  <p style="font-size:11px; line-height:16px; color:#94A3B8; margin:0;">
-                    You're receiving this weekly digest because you have saved companies in your Pulse Library.
-                    <a href="https://app.logisticintel.com/app/notifications" style="color:#3B82F6;">Manage preferences</a> &middot;
-                    <a href="${htmlEscape(unsubUrl)}" style="color:#3B82F6;">Unsubscribe</a>
+                  <img src="https://app.logisticintel.com/logo_email.png" alt="Logistics Intel" width="120" height="27" style="display:block; height:27px; width:auto; max-width:120px; opacity:0.7; border:0; outline:none; margin-bottom:14px;">
+                  <p style="font-size:12px; line-height:18px; color:${TEXT_MUTED}; margin:0 0 4px 0; font-weight:600;">Logistics Intel</p>
+                  <p style="font-size:11px; line-height:17px; color:${TEXT_FAINT}; margin:0 0 14px 0;">Trade intelligence for freight brokers &middot; Atlanta, GA</p>
+                  <p style="font-size:11px; line-height:17px; color:${TEXT_FAINT}; margin:0;">
+                    You're receiving this weekly digest because you have saved companies in your Pulse Library.<br>
+                    <a href="https://app.logisticintel.com/app/notifications" style="color:${C_VOLUME}; font-weight:600;">Manage preferences</a>
+                    &nbsp;&middot;&nbsp;
+                    <a href="${htmlEscape(unsubUrl)}" style="color:${C_VOLUME}; font-weight:600;">Unsubscribe</a>
                   </p>
                 </td>
               </tr>
@@ -211,30 +304,118 @@ function buildDigestHtml(args: DigestArgs): string {
 </html>`;
 }
 
-function renderSection(opts: { label: string; labelColor: string; rows: string[] }): string {
+// ---------------------------------------------------------------------------
+// Section + card primitives
+// ---------------------------------------------------------------------------
+
+function renderSection(opts: {
+  label: string;
+  count: number;
+  color: string;
+  bg: string;
+  rows: string[];
+}): string {
   const rowCount = opts.rows.length;
   const stitched = opts.rows.map((row, i) => {
     const isLast = i === rowCount - 1;
     return `
               <tr>
-                <td class="lit-pad-x-tight" style="padding:16px 18px;${isLast ? "" : " border-bottom:1px solid #F1F5F9;"}">
+                <td class="lit-pad-x-tight" style="padding:18px 20px;${isLast ? "" : ` border-bottom:1px solid ${HAIRLINE};`}">
                   ${row}
                 </td>
               </tr>`;
   }).join("");
 
+  // Pill badge with built-in count — replaces the tracked uppercase label.
+  const pill = `<span style="display:inline-block; padding:5px 11px; font-size:11px; font-weight:700; letter-spacing:0.04em; color:${opts.color}; background:${opts.bg}; border:1px solid ${opts.color}22; border-radius:999px;">${htmlEscape(opts.label)} <span style="opacity:0.65;">·</span> ${opts.count}</span>`;
+
   return `
         <tr>
-          <td class="lit-pad-x" style="padding:20px 36px 10px 36px;">
-            <div style="display:inline-block; font-size:11px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:${opts.labelColor};">${htmlEscape(opts.label)}</div>
+          <td class="lit-pad-x" style="padding:30px 36px 12px 36px;">
+            ${pill}
           </td>
         </tr>
         <tr>
-          <td class="lit-pad-x" style="padding:0 36px 18px 36px;">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid #E2E8F0; border-radius:12px; background:#ffffff;">${stitched}
+          <td class="lit-pad-x" style="padding:0 36px 4px 36px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid ${HAIRLINE}; border-radius:14px; background:${SURFACE}; box-shadow:0 1px 2px rgba(15,23,42,0.04);">${stitched}
             </table>
           </td>
         </tr>`;
+}
+
+function renderEmptyState(): string {
+  return `
+        <tr>
+          <td class="lit-pad-x" style="padding:48px 36px; text-align:center;">
+            <div style="font-family:Georgia,'Times New Roman',serif; font-size:18px; color:${TEXT}; margin-bottom:6px;">All quiet this week.</div>
+            <div style="font-size:13px; color:${TEXT_MUTED};">No signal threshold breaches across your saved companies. We'll keep watching.</div>
+          </td>
+        </tr>`;
+}
+
+// Card scaffold: two-column row with company info left, metric pill right,
+// followed by an optional context line, an optional money callout strip, then CTA.
+function renderCard(opts: {
+  name: string;
+  loc: string;
+  pillHtml: string;        // right-aligned metric pill(s)
+  metaHtml: string;        // primary metadata line (sub-heading under name)
+  contextHtml?: string;    // small extra context (POD, dest, etc.)
+  moneyStripHtml?: string; // colored money callout strip at bottom
+  ctaHref: string;
+  ctaLabel: string;
+  severity?: string;
+}): string {
+  const sevBadge = opts.severity === "critical"
+    ? `<span style="display:inline-block; vertical-align:middle; margin-left:8px; padding:2px 7px; font-size:10px; font-weight:700; letter-spacing:0.06em; color:${NEG}; background:${NEG_BG}; border-radius:4px;">HIGH</span>`
+    : "";
+  const locChip = opts.loc
+    ? `<span style="display:inline-block; vertical-align:middle; margin-left:8px; padding:2px 8px; font-size:11px; font-weight:500; color:${TEXT_MUTED}; background:${SURFACE_ALT}; border:1px solid ${HAIRLINE}; border-radius:999px;">${opts.loc}</span>`
+    : "";
+
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                    <tr>
+                      <td class="lit-stack" valign="top" style="vertical-align:top;">
+                        <div class="lit-row-name" style="font-size:16px; font-weight:600; color:${TEXT}; line-height:22px; letter-spacing:-0.005em;">${opts.name}${locChip}${sevBadge}</div>
+                        <div class="lit-row-meta" style="font-size:13px; color:${TEXT_MUTED}; margin-top:5px; line-height:19px;">${opts.metaHtml}</div>
+                        ${opts.contextHtml || ""}
+                      </td>
+                      <td class="lit-stack lit-pill-right" valign="top" align="right" style="vertical-align:top; padding-left:16px; white-space:nowrap;">
+                        ${opts.pillHtml}
+                      </td>
+                    </tr>
+                  </table>
+                  ${opts.moneyStripHtml || ""}
+                  <div style="margin-top:14px;">
+                    <a class="lit-cta" href="${opts.ctaHref}" style="display:inline-block; padding:8px 14px; font-size:12px; font-weight:600; color:${TEXT}; background:${SURFACE}; border:1px solid ${HAIRLINE}; border-radius:8px; text-decoration:none;">${opts.ctaLabel} <span style="color:${C_VOLUME};">&rarr;</span></a>
+                  </div>`;
+}
+
+// Pill helpers
+function pctPill(pct: any): string {
+  if (typeof pct !== "number" || !isFinite(pct)) return "";
+  const isNeg = pct < 0;
+  const color = isNeg ? NEG : POS;
+  const bg = isNeg ? NEG_BG : POS_BG;
+  return `<span style="display:inline-block; padding:5px 11px; font-size:13px; font-weight:700; color:${color}; background:${bg}; border:1px solid ${color}22; border-radius:999px;">${htmlEscape(formatPct(pct))}</span>`;
+}
+
+function countPill(n: any, label: string, color: string, bg: string): string {
+  const num = typeof n === "number" && isFinite(n) ? Math.round(n).toLocaleString("en-US") : "—";
+  return `<span style="display:inline-block; padding:5px 11px; font-size:13px; font-weight:700; color:${color}; background:${bg}; border:1px solid ${color}22; border-radius:999px;"><strong style="font-weight:800;">${htmlEscape(num)}</strong> <span style="font-weight:500; opacity:0.8;">${htmlEscape(label)}</span></span>`;
+}
+
+function moneyStrip(amountUsd: number, lowUsd: number | undefined, highUsd: number | undefined, containers: number | undefined): string {
+  const amt = `$${Math.round(amountUsd).toLocaleString("en-US")}`;
+  const range = (typeof lowUsd === "number" && typeof highUsd === "number" && isFinite(lowUsd) && isFinite(highUsd))
+    ? ` <span style="opacity:0.75;">(${Math.round(lowUsd).toLocaleString("en-US")}–${Math.round(highUsd).toLocaleString("en-US")})</span>`
+    : "";
+  const ctrs = (typeof containers === "number" && containers > 0)
+    ? ` <span style="opacity:0.75;">·</span> ${containers} container${containers === 1 ? "" : "s"}`
+    : "";
+  // Small leading bullet (styled circle) instead of emoji.
+  const bullet = `<span style="display:inline-block; width:6px; height:6px; background:${MONEY_TEXT}; border-radius:999px; vertical-align:middle; margin-right:8px;"></span>`;
+  return `<div style="margin-top:12px; padding:10px 14px; background:${MONEY_BG}; border:1px solid #A7F3D0; border-radius:8px; font-size:12px; color:${MONEY_TEXT}; line-height:18px;">${bullet}<strong style="font-weight:700;">${htmlEscape(amt)} drayage opportunity</strong>${range}${ctrs}</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -247,39 +428,49 @@ function renderVolumeRow(alert: DigestAlert): string {
   const loc = formatLocation(p);
   const before = formatNum(p.before);
   const after = formatNum(p.after);
-  const pctStr = formatPct(p.pct_delta);
-  const pctColor = (typeof p.pct_delta === "number" && p.pct_delta < 0) ? "#DC2626" : "#16A34A";
-  const sevTag = renderSeverity(alert.severity);
-  const locPart = loc ? `${loc} · ` : "";
-  const contextLine = [];
-  if (p.pod) contextLine.push(`POD: ${htmlEscape(p.pod)}`);
-  if (p.final_dest) contextLine.push(`Final dest: ${htmlEscape(p.final_dest)}`);
+
+  const contextParts: string[] = [];
+  if (p.pod) contextParts.push(`POD ${htmlEscape(p.pod)}`);
+  if (p.final_dest) contextParts.push(`Final dest ${htmlEscape(p.final_dest)}`);
   if (p.next_arrival_date) {
-    contextLine.push(`Next arrival: ${htmlEscape(new Date(p.next_arrival_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}`);
+    contextParts.push(`Next arrival ${htmlEscape(new Date(p.next_arrival_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}`);
   }
-  const contextHtml = contextLine.length
-    ? `<div style="font-size:11px; color:#94A3B8; margin-top:4px;">${contextLine.join(' · ')}</div>`
+  const contextHtml = contextParts.length
+    ? `<div style="font-size:11px; color:${TEXT_FAINT}; margin-top:6px; line-height:16px;">${contextParts.join('  ·  ')}</div>`
     : '';
-  const opportunity = (typeof p.drayage_est_usd === 'number' && p.drayage_est_usd > 0)
-    ? `<div style="font-size:11px; color:#0F172A; margin-top:6px;"><strong>Drayage opportunity:</strong> $${Math.round(p.drayage_est_usd).toLocaleString('en-US')} (${Math.round(p.drayage_est_low_usd || 0).toLocaleString('en-US')}–${Math.round(p.drayage_est_high_usd || 0).toLocaleString('en-US')}, ${p.drayage_container_count} containers)</div>`
+
+  const moneyHtml = (typeof p.drayage_est_usd === 'number' && p.drayage_est_usd > 0)
+    ? moneyStrip(p.drayage_est_usd, p.drayage_est_low_usd, p.drayage_est_high_usd, p.drayage_container_count)
     : '';
-  return `<div class="lit-row-name" style="font-size:14px; font-weight:600; color:#0F172A;">${name}</div>
-                  <div class="lit-row-meta" style="font-size:13px; color:#475569; margin-top:3px; line-height:18px;">${locPart}${before} → ${after} shipments · <span style="color:${pctColor}; font-weight:bold;">${pctStr}</span>${sevTag}</div>
-                  ${contextHtml}
-                  ${opportunity}
-                  <a href="https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}" style="display:inline-block; margin-top:8px; font-size:11px; color:#3B82F6; font-weight:bold; text-decoration:none;">See full supply chain →</a>`;
+
+  return renderCard({
+    name,
+    loc,
+    pillHtml: pctPill(p.pct_delta),
+    metaHtml: `<strong style="color:${TEXT}; font-weight:600;">${before} &rarr; ${after}</strong> shipments &middot; volume change`,
+    contextHtml,
+    moneyStripHtml: moneyHtml,
+    ctaHref: `https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}`,
+    ctaLabel: "View company",
+    severity: alert.severity,
+  });
 }
 
 function renderShipmentRow(alert: DigestAlert): string {
   const p = alert.payload || {};
   const name = htmlEscape(p.company_name || "Saved company");
   const loc = formatLocation(p);
-  const newCount = formatNum(p.new_shipments ?? p.after ?? p.abs_delta);
-  const sevTag = renderSeverity(alert.severity);
-  const locPart = loc ? `${loc} · ` : "";
-  return `<div class="lit-row-name" style="font-size:14px; font-weight:600; color:#0F172A;">${name}</div>
-                  <div class="lit-row-meta" style="font-size:13px; color:#475569; margin-top:3px; line-height:18px;">${locPart}<strong style="color:#0F172A;">${newCount}</strong> new shipments in the past 14 days${sevTag}</div>
-                  <a href="https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}" style="display:inline-block; margin-top:8px; font-size:11px; color:#3B82F6; font-weight:bold; text-decoration:none;">See full supply chain →</a>`;
+  const newCount = p.new_shipments ?? p.after ?? p.abs_delta;
+
+  return renderCard({
+    name,
+    loc,
+    pillHtml: countPill(newCount, "shipments", C_SHIPMENT, C_SHIPMENT_BG),
+    metaHtml: `New shipment activity detected in the past 14 days`,
+    ctaHref: `https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}`,
+    ctaLabel: "View company",
+    severity: alert.severity,
+  });
 }
 
 function renderLaneRow(alert: DigestAlert): string {
@@ -288,12 +479,17 @@ function renderLaneRow(alert: DigestAlert): string {
   const loc = formatLocation(p);
   const origin = htmlEscape(p.origin || p.lane_origin || "new origin");
   const dest = htmlEscape(p.destination || p.lane_destination || p.destination_city || "destination");
-  const newCount = formatNum(p.new_shipments ?? p.after ?? p.abs_delta);
-  const sevTag = renderSeverity(alert.severity);
-  const prefix = loc ? `${loc} started shipping from ` : "started shipping from ";
-  return `<div class="lit-row-name" style="font-size:14px; font-weight:600; color:#0F172A;">${name}</div>
-                  <div class="lit-row-meta" style="font-size:13px; color:#475569; margin-top:3px; line-height:18px;">${prefix}<strong style="color:#0F172A;">${origin} → ${dest}</strong> · ${newCount} new shipments${sevTag}</div>
-                  <a href="https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}" style="display:inline-block; margin-top:8px; font-size:11px; color:#3B82F6; font-weight:bold; text-decoration:none;">See full supply chain →</a>`;
+  const newCount = p.new_shipments ?? p.after ?? p.abs_delta;
+
+  return renderCard({
+    name,
+    loc,
+    pillHtml: countPill(newCount, "new", C_LANE, C_LANE_BG),
+    metaHtml: `Started shipping on a new lane &middot; <strong style="color:${TEXT}; font-weight:600;">${origin} &rarr; ${dest}</strong>`,
+    ctaHref: `https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}`,
+    ctaLabel: "View company",
+    severity: alert.severity,
+  });
 }
 
 function renderBaselineRow(alert: DigestAlert): string {
@@ -302,28 +498,49 @@ function renderBaselineRow(alert: DigestAlert): string {
   const loc = formatLocation(p);
   const before = formatNum(p.before);
   const after = formatNum(p.after);
-  const pctStr = formatPct(p.pct_delta);
-  const sevTag = renderSeverity(alert.severity);
-  const locPart = loc ? `${loc} · ` : "";
-  return `<div class="lit-row-name" style="font-size:14px; font-weight:600; color:#0F172A;">${name}</div>
-                  <div class="lit-row-meta" style="font-size:13px; color:#475569; margin-top:3px; line-height:18px;">${locPart}Baseline shift · ${before} → ${after} shipments · <span style="color:#0F172A; font-weight:bold;">${pctStr}</span>${sevTag}</div>
-                  <a href="https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}" style="display:inline-block; margin-top:8px; font-size:11px; color:#3B82F6; font-weight:bold; text-decoration:none;">See full supply chain →</a>`;
+
+  return renderCard({
+    name,
+    loc,
+    pillHtml: pctPill(p.pct_delta),
+    metaHtml: `Baseline shift &middot; <strong style="color:${TEXT}; font-weight:600;">${before} &rarr; ${after}</strong> shipments`,
+    ctaHref: `https://app.logisticintel.com/app/search?q=${encodeURIComponent(p.company_name || "")}`,
+    ctaLabel: "View company",
+    severity: alert.severity,
+  });
 }
 
 function renderBenchmarkRow(alert: DigestAlert): string {
   const p = alert.payload || {};
   const indexCode = htmlEscape(p.index_code || p.code || "FBX");
   const lane = htmlEscape(p.lane || p.lane_name || "");
-  const title = lane ? `${indexCode} · ${lane}` : indexCode;
+  const title = lane ? `${indexCode} <span style="color:${TEXT_FAINT}; font-weight:500;">&middot;</span> ${lane}` : indexCode;
   const before = formatMoney(p.before);
   const after = formatMoney(p.after);
   const unit = htmlEscape(p.unit || "per 40HC");
-  const pctStr = formatPct(p.pct_delta);
-  const pctColor = (typeof p.pct_delta === "number" && p.pct_delta < 0) ? "#16A34A" : "#DC2626";
-  // Freightos attribution is MANDATORY for benchmark rows (legal ToS).
-  return `<div style="font-size:14px; font-weight:bold; color:#0F172A;">${title}</div>
-                  <div class="lit-row-meta" style="font-size:13px; color:#475569; margin-top:3px; line-height:18px;">${before} → ${after} ${unit} · <span style="color:${pctColor}; font-weight:bold;">${pctStr}</span> WoW</div>
-                  <div style="font-size:11px; color:#94A3B8; margin-top:6px;">Source: Freightos Baltic Index</div>`;
+  // For benchmark rates, "down" is good for shippers → green; "up" is bad → red.
+  const pct = p.pct_delta;
+  let pctPillHtml = "";
+  if (typeof pct === "number" && isFinite(pct)) {
+    const isUp = pct >= 0;
+    const color = isUp ? NEG : POS;
+    const bg = isUp ? NEG_BG : POS_BG;
+    pctPillHtml = `<span style="display:inline-block; padding:5px 11px; font-size:13px; font-weight:700; color:${color}; background:${bg}; border:1px solid ${color}22; border-radius:999px;">${htmlEscape(formatPct(pct))} WoW</span>`;
+  }
+
+  // Benchmark cards have a different shape — no company, no CTA, but Freightos attribution is MANDATORY.
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                    <tr>
+                      <td class="lit-stack" valign="top" style="vertical-align:top;">
+                        <div class="lit-row-name" style="font-size:16px; font-weight:600; color:${TEXT}; line-height:22px; letter-spacing:-0.005em;">${title}</div>
+                        <div class="lit-row-meta" style="font-size:13px; color:${TEXT_MUTED}; margin-top:5px; line-height:19px;"><strong style="color:${TEXT}; font-weight:600;">${before} &rarr; ${after}</strong> ${unit}</div>
+                        <div style="font-size:11px; color:${TEXT_FAINT}; margin-top:8px; line-height:16px;">Source: Freightos Baltic Index</div>
+                      </td>
+                      <td class="lit-stack lit-pill-right" valign="top" align="right" style="vertical-align:top; padding-left:16px; white-space:nowrap;">
+                        ${pctPillHtml}
+                      </td>
+                    </tr>
+                  </table>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -353,13 +570,7 @@ function formatPct(n: any): string {
   if (typeof n !== "number" || !isFinite(n)) return "—";
   const pct = n * 100;
   const sign = pct >= 0 ? "+" : "";
-  return htmlEscape(`${sign}${pct.toFixed(pct >= 10 || pct <= -10 ? 0 : 1)}%`);
-}
-
-function renderSeverity(sev: any): string {
-  if (sev === "critical") return ` · <span style="color:#DC2626; font-weight:bold;">HIGH</span>`;
-  if (sev === "warning") return ``;
-  return ``;
+  return `${sign}${pct.toFixed(pct >= 10 || pct <= -10 ? 0 : 1)}%`;
 }
 
 function htmlEscape(s: any): string {
