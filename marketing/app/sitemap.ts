@@ -61,6 +61,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/best`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: `${SITE_URL}/partners`, lastModified: now, changeFrequency: "monthly", priority: 0.85 },
     { url: `${SITE_URL}/freight-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.95 },
+    { url: `${SITE_URL}/shipper-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${SITE_URL}/freight-broker-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     ...FEATURE_PAGES.map((f) => ({
       url: `${SITE_URL}/features/${f.slug}`,
       lastModified: now,

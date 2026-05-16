@@ -73,7 +73,28 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
         ]}
       />
 
-      <article>
+      <article className="relative">
+        {/* Sticky left-rail social share — desktop only (xl+). Sits in the
+            page gutter so the article column reads cleanly while the
+            rail follows the scroll. The same top + bottom inline share
+            rows stay in place for mobile + tablet users where the rail
+            has no room. */}
+        <aside
+          aria-label="Share this article"
+          className="pointer-events-none fixed left-4 top-1/2 z-30 hidden -translate-y-1/2 xl:block 2xl:left-8"
+        >
+          <div className="pointer-events-auto rounded-2xl border border-ink-100 bg-white/90 p-2 shadow-[0_8px_24px_-6px_rgba(15,23,42,0.18)] backdrop-blur">
+            <div className="font-display mb-1.5 px-1 text-[9.5px] font-bold uppercase tracking-[0.14em] text-ink-200">
+              Share
+            </div>
+            <SocialShare
+              variant="rail"
+              url={siteUrl(`/blog/${params.slug}`)}
+              title={post.title}
+            />
+          </div>
+        </aside>
+
         {/* Header — loosened from the previous "boxed-in" 760px column.
             Now uses max-w-[880px], drops the heavy border-on-share-row
             framing, and reduces the vertical pt/pb so the breadcrumb

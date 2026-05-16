@@ -6,18 +6,16 @@ import {
   LandingPageTemplate,
   type SanityLandingPageDoc,
 } from "@/components/sections/LandingPageTemplate";
-import { buildMetadata, siteUrl } from "@/lib/seo";
+import { buildMetadata } from "@/lib/seo";
 
 export const revalidate = 600;
 
 /**
- * /freight-leads — Sanity-driven landing page. The hand-coded version
- * was retired on 2026-05-16; the Cowork team now owns the content via
- * a `landingPage` doc with slug "freight-leads". Render is identical
- * shape across /freight-leads, /shipper-leads, /freight-broker-leads.
+ * /freight-broker-leads — Sanity-driven landing page. Content lives in
+ * the `landingPage` doc with slug "freight-broker-leads".
  */
 
-const SLUG = "freight-leads";
+const SLUG = "freight-broker-leads";
 
 const LANDING_PAGE_QUERY = groq`*[_type == "landingPage" && slug.current == $slug][0]{
   slug, eyebrow, h1, subhead, tldr, targetKeyword, audience,
@@ -31,8 +29,9 @@ export async function generateMetadata(): Promise<Metadata> {
     .catch(() => null);
   if (!doc) {
     return buildMetadata({
-      title: "Freight Leads | LIT",
-      description: "Find freight leads using shipment intelligence and verified buyer-side contacts.",
+      title: "Freight Broker Leads | LIT",
+      description:
+        "Find shippers actively moving freight on your lanes. Built for asset-light brokers, intermodal, and drayage teams.",
       path: `/${SLUG}`,
     });
   }
@@ -45,7 +44,7 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
-export default async function FreightLeadsPage() {
+export default async function FreightBrokerLeadsPage() {
   const doc = await sanityClient
     .fetch<SanityLandingPageDoc | null>(LANDING_PAGE_QUERY, { slug: SLUG })
     .catch(() => null);
