@@ -414,6 +414,31 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
         }}
       />
 
+      {/* FAQPage JSON-LD — derived from the body when an H2 "FAQ" section
+          is present. Each H3 inside that section becomes a Question; the
+          paragraph(s) between H3s become the Answer. Returns null if no
+          FAQ section is detected. */}
+      {(() => {
+        const faq = extractFaqFromBody(post.body);
+        if (!faq || faq.length === 0) return null;
+        return (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify({
+                "@context": "https://schema.org",
+                "@type": "FAQPage",
+                mainEntity: faq.map((q) => ({
+                  "@type": "Question",
+                  name: q.question,
+                  acceptedAnswer: { "@type": "Answer", text: q.answer },
+                })),
+              }),
+            }}
+          />
+        );
+      })()}
+
       {/* HowTo JSON-LD for procedural articles. Slug-keyed config keeps
           the corpus narrow + auditable. Google deprecated HowTo rich
           results in Sept 2023 for most categories, but ChatGPT Search,
@@ -503,6 +528,61 @@ function blogInternalLinkLabel(link: any): string {
     default:
       return link.title || link.h1 || link.headline || link.slug;
   }
+}
+
+/**
+ * Pull a FAQ Q&A list out of a blog post body. Looks for an H2 whose
+ * text is "FAQ" (case-insensitive). After that H2, every H3 starts a
+ * new Question; the normal-style paragraphs between H3s are the Answer.
+ * Stops at the next H2.
+ *
+ * Returns null if no FAQ section is found, or an empty array if the
+ * section exists but has no questions yet. Callers use the empty-check
+ * to decide whether to emit FAQPage JSON-LD.
+ */
+function extractFaqFromBody(
+  body: unknown,
+): Array<{ question: string; answer: string }> | null {
+  if (!Array.isArray(body)) return null;
+
+  function textOf(block: any): string {
+    if (!block || block._type !== "block") return "";
+    return (block.children || [])
+      .map((c: any) => (typeof c?.text === "string" ? c.text : ""))
+      .join("")
+      .trim();
+  }
+
+  // Find the FAQ H2 anchor.
+  let i = body.findIndex(
+    (b: any) => b?._type === "block" && b.style === "h2" && /^faq$/i.test(textOf(b)),
+  );
+  if (i < 0) return null;
+  i += 1;
+
+  const faq: Array<{ question: string; answer: string }> = [];
+  let current: { question: string; answer: string } | null = null;
+
+  while (i < body.length) {
+    const block: any = body[i];
+    if (block?._type === "block") {
+      if (block.style === "h2") {
+        // Next top-level section — stop collecting.
+        break;
+      }
+      if (block.style === "h3") {
+        if (current) faq.push(current);
+        current = { question: textOf(block), answer: "" };
+      } else if (current && (block.style === "normal" || !block.style)) {
+        const t = textOf(block);
+        if (t) current.answer = current.answer ? `${current.answer}\n\n${t}` : t;
+      }
+    }
+    i += 1;
+  }
+  if (current) faq.push(current);
+
+  return faq.filter((q) => q.question && q.answer);
 }
 
 function blogInternalLinkKind(type: string): string {

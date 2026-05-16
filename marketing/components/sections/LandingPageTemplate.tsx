@@ -21,7 +21,9 @@ import { PageShell } from "./PageShell";
 import { Section } from "./Section";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { CtaBanner } from "./CtaBanner";
+import { SocialShare } from "./SocialShare";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
+import { siteUrl } from "@/lib/seo";
 
 /**
  * Renders a Sanity `landingPage` document. Powers /freight-leads,
@@ -108,8 +110,27 @@ export function LandingPageTemplate({ doc }: { doc: SanityLandingPageDoc }) {
   const ctaSecondaryUrl = doc.cta?.secondaryCtaUrl || APP_SIGNUP_URL;
   const ctaSecondaryLabel = doc.cta?.secondaryCtaLabel || "Start free trial";
 
+  const shareUrl = siteUrl(`/${doc.slug.current}`);
+  const shareTitle = doc.h1;
+
   return (
     <PageShell>
+      {/* Sticky left-rail share — xl+ only. Mirrors the blog article
+          rail so the freight-leads / shipper-leads / freight-broker-leads
+          pages can be shared one-click from any scroll position. Hidden
+          on smaller viewports where the rail crowds the content column. */}
+      <aside
+        aria-label="Share this page"
+        className="pointer-events-none fixed left-4 top-1/2 z-30 hidden -translate-y-1/2 xl:block 2xl:left-8"
+      >
+        <div className="pointer-events-auto rounded-2xl border border-ink-100 bg-white/90 p-2 shadow-[0_8px_24px_-6px_rgba(15,23,42,0.18)] backdrop-blur">
+          <div className="font-display mb-1.5 px-1 text-[9.5px] font-bold uppercase tracking-[0.14em] text-ink-200">
+            Share
+          </div>
+          <SocialShare variant="rail" url={shareUrl} title={shareTitle} />
+        </div>
+      </aside>
+
       <BreadcrumbBar
         crumbs={[
           { label: "Home", href: "/" },
