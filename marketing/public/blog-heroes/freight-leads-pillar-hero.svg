@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" role="img" aria-label="What are freight leads in 2026 — the five-layer record">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1220"/>
+      <stop offset="60%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <radialGradient id="cyanGlow" cx="0.7" cy="0.3" r="0.7">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blueGlow" cx="0.3" cy="0.7" r="0.6">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="layerFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FBFCFE"/>
+      <stop offset="100%" stop-color="#F1F5F9"/>
+    </linearGradient>
+    <filter id="layerShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.38"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <circle cx="900" cy="220" r="380" fill="url(#cyanGlow)"/>
+  <circle cx="280" cy="540" r="320" fill="url(#blueGlow)"/>
+
+  <!-- Brand badge -->
+  <g transform="translate(40,32)">
+    <rect width="172" height="28" rx="14" fill="rgba(0,240,255,0.14)" stroke="#00F0FF" stroke-width="1"/>
+    <circle cx="20" cy="14" r="4" fill="#00F0FF"/>
+    <text x="36" y="19" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="800" fill="#E0F2FE" letter-spacing="0.16em">FIELD-TESTED DEFINITION</text>
+  </g>
+
+  <!-- Title block -->
+  <g transform="translate(40,150)">
+    <text font-family="Inter, system-ui, sans-serif" font-size="54" font-weight="800" fill="#F8FAFC" letter-spacing="-0.022em">
+      <tspan x="0" dy="0">What are</tspan>
+      <tspan x="0" dy="64"><tspan fill="#00F0FF">freight leads</tspan></tspan>
+      <tspan x="0" dy="64">in 2026?</tspan>
+    </text>
+    <text x="0" y="246" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="500" fill="#94A3B8" letter-spacing="-0.005em">
+      <tspan x="0" dy="0">A five-layer record. Built from live</tspan>
+      <tspan x="0" dy="28">customs data, contacts, and signal.</tspan>
+    </text>
+    <g transform="translate(0,330)">
+      <rect width="232" height="32" rx="16" fill="rgba(0,240,255,0.10)" stroke="#00F0FF" stroke-width="1"/>
+      <text x="116" y="20" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="700" fill="#E0F2FE" letter-spacing="0.14em">124M+ BOL · 60+ COUNTRIES</text>
+    </g>
+  </g>
+
+  <!-- Right side: five-layer stack illustration -->
+  <g transform="translate(630,90)" filter="url(#layerShadow)">
+    <!-- Layer 5 — top: outreach -->
+    <g transform="translate(40,0)">
+      <rect width="500" height="92" rx="12" fill="url(#layerFill)"/>
+      <g transform="translate(20,18)">
+        <rect width="36" height="36" rx="9" fill="#FCE7F3"/>
+        <text x="18" y="24" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="800" fill="#BE185D">05</text>
+      </g>
+      <text x="70" y="32" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="800" fill="#0F172A" letter-spacing="-0.005em">Outreach</text>
+      <text x="70" y="52" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">Drafted on the lane, the carrier mix, the moment.</text>
+      <text x="70" y="70" font-family="ui-monospace, SF Mono, monospace" font-size="10.5" font-weight="600" fill="#BE185D" letter-spacing="0.1em">EMAIL · LINKEDIN · CALL</text>
+    </g>
+
+    <!-- Layer 4: signal -->
+    <g transform="translate(28,108)">
+      <rect width="500" height="92" rx="12" fill="url(#layerFill)"/>
+      <g transform="translate(20,18)">
+        <rect width="36" height="36" rx="9" fill="#FEF3C7"/>
+        <text x="18" y="24" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="800" fill="#B45309">04</text>
+      </g>
+      <text x="70" y="32" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="800" fill="#0F172A">Signal</text>
+      <text x="70" y="52" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">Carrier pivot. Volume spike. New origin lane.</text>
+      <text x="70" y="70" font-family="ui-monospace, SF Mono, monospace" font-size="10.5" font-weight="600" fill="#B45309" letter-spacing="0.1em">WHY NOW</text>
+    </g>
+
+    <!-- Layer 3: contact -->
+    <g transform="translate(16,216)">
+      <rect width="500" height="92" rx="12" fill="url(#layerFill)"/>
+      <g transform="translate(20,18)">
+        <rect width="36" height="36" rx="9" fill="#DBEAFE"/>
+        <text x="18" y="24" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="800" fill="#1D4ED8">03</text>
+      </g>
+      <text x="70" y="32" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="800" fill="#0F172A">Contact</text>
+      <text x="70" y="52" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">Procurement · Supply chain · Logistics · Customs</text>
+      <text x="70" y="70" font-family="ui-monospace, SF Mono, monospace" font-size="10.5" font-weight="600" fill="#1D4ED8" letter-spacing="0.1em">42M VERIFIED · &gt;95% DELIVERABLE</text>
+    </g>
+
+    <!-- Layer 2: shipment behavior -->
+    <g transform="translate(8,324)">
+      <rect width="500" height="92" rx="12" fill="url(#layerFill)"/>
+      <g transform="translate(20,18)">
+        <rect width="36" height="36" rx="9" fill="#D1FAE5"/>
+        <text x="18" y="24" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="800" fill="#047857">02</text>
+      </g>
+      <text x="70" y="32" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="800" fill="#0F172A">Shipment behavior</text>
+      <text x="70" y="52" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">Lanes · Ports · HS mix · Carriers · Cadence</text>
+      <text x="70" y="70" font-family="ui-monospace, SF Mono, monospace" font-size="10.5" font-weight="600" fill="#047857" letter-spacing="0.1em">524K ACTIVE IMPORTERS</text>
+    </g>
+
+    <!-- Layer 1: identity (the bottom — what every legacy "lead" was) -->
+    <g transform="translate(0,432)">
+      <rect width="500" height="92" rx="12" fill="url(#layerFill)" opacity="0.85"/>
+      <g transform="translate(20,18)">
+        <rect width="36" height="36" rx="9" fill="#E2E8F0"/>
+        <text x="18" y="24" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="800" fill="#64748B">01</text>
+      </g>
+      <text x="70" y="32" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="800" fill="#0F172A">Identity</text>
+      <text x="70" y="52" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">Company name + address + a guess at industry.</text>
+      <text x="70" y="70" font-family="ui-monospace, SF Mono, monospace" font-size="10.5" font-weight="600" fill="#94A3B8" letter-spacing="0.1em">WHAT MOST LEAD LISTS STOP AT</text>
+    </g>
+  </g>
+</svg>
