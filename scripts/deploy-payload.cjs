@@ -5,6 +5,13 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 
 const FUNCTIONS = {
+  'freight-rate-fetcher': {
+    entrypoint: 'index.ts',
+    files: [
+      { name: 'index.ts',                 path: 'supabase/functions/freight-rate-fetcher/index.ts' },
+      { name: '../_shared/cron_auth.ts',  path: 'supabase/functions/_shared/cron_auth.ts' },
+    ],
+  },
   'importyeti-proxy': {
     entrypoint: 'index.ts',
     files: [
