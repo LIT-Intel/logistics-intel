@@ -1,17 +1,44 @@
-import { useMemo, useState } from "react";
-import { ArrowRight, Sparkles, Info, Container } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowRight,
+  Sparkles,
+  Info,
+  Container,
+} from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+} from "recharts";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitFlag from "@/components/ui/LitFlag";
 import LitPill from "@/components/ui/LitPill";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
+import { BolPreviewTable } from "@/components/bols/BolPreviewTable";
+import {
+  formatBolDate,
+  getBolCarrierString,
+  getBolDate,
+  getBolDescription,
+  getBolDestination,
+  getBolHs,
+  getBolOrigin,
+  getBolSupplier,
+  parseBolDate,
+  readCarrier,
+} from "@/lib/bols/helpers";
 
-type SubTabId = "summary" | "lanes" | "shipments" | "products";
+type SubTabId = "summary" | "lanes" | "products";
 
 const SUB_TABS: { id: SubTabId; label: string }[] = [
   { id: "summary", label: "Summary" },
   { id: "lanes", label: "Trade Lanes" },
-  { id: "shipments", label: "Shipments" },
   { id: "products", label: "Products" },
 ];
 
@@ -21,6 +48,7 @@ type CDPSupplyChainProps = {
   selectedYear?: number;
   years?: number[];
   onSelectYear?: (year: number) => void;
+  onOpenPulseLive?: () => void;
 };
 
 /**
@@ -48,6 +76,7 @@ export default function CDPSupplyChain({
   selectedYear,
   years,
   onSelectYear,
+  onOpenPulseLive,
 }: CDPSupplyChainProps) {
   const [sub, setSub] = useState<SubTabId>("summary");
 
@@ -207,13 +236,16 @@ export default function CDPSupplyChain({
       {/* Sub-tab content */}
       {sub === "summary" && (
         <SummaryView
+          profile={profile}
           cadence={cadence}
           modes={modes}
           containerProfile={containerProfile}
           recentBols={recentBols}
+          carriers={carriers}
           suppliers={suppliers}
           canonicalLanes={allLanes}
           globeLanes={globeLanes}
+          onOpenPulseLive={onOpenPulseLive}
         />
       )}
       {sub === "lanes" && (
@@ -315,37 +347,490 @@ function StrategicBriefBanner({
 /* ── Summary view ─────────────────────────────────────────────────────── */
 
 function SummaryView({
+  profile: _profile,
   cadence,
-  modes,
+  modes: _modes,
   containerProfile,
   recentBols,
-  suppliers,
+  carriers: _carriers,
+  suppliers: _suppliers,
   canonicalLanes,
   globeLanes,
+  onOpenPulseLive,
 }: {
+  profile: any;
   cadence: CadencePoint[];
   modes: ModeSlice[];
   containerProfile: ContainerProfile;
   recentBols: any[];
+  carriers: CarrierRow[];
   suppliers: SupplierRow[];
   canonicalLanes: any[];
   globeLanes: any[];
+  onOpenPulseLive?: () => void;
 }) {
+  const reducedMotion = usePrefersReducedMotion();
+
+  // Consolidated Summary order (post-feedback):
+  //   1. TopLanesCard — globe + ranked lane list + container-mix bar
+  //      (the equipment footprint card was removed; its container bar
+  //      is now merged into this hero card.)
+  //   2. CadenceAndModalMix — area chart + donut
+  //   3. RecentActivityCards — 5 BOL previews + Pulse LIVE link
+  // Removed: ShipperVitalsStrip (dup of CDPHeader), EquipmentAndLaneFootprint
+  // (dup of TopLanes), CarrierMixLive (lives in Pulse LIVE tab).
   return (
     <>
-      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1.3fr_1fr]">
-        <TopLanesCard canonicalLanes={canonicalLanes} globeLanes={globeLanes} />
-        <ImportsByModeCard modes={modes} cadence={cadence} />
-      </div>
-
-      <ContainerProfileCard profile={containerProfile} />
-
-      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1.3fr_1fr]">
-        <RecentBolsCompactCard recentBols={recentBols.slice(0, 5)} />
-        <TopSuppliersCard suppliers={suppliers} />
-      </div>
+      <TopLanesCard
+        canonicalLanes={canonicalLanes}
+        globeLanes={globeLanes}
+        recentBols={recentBols}
+        containerProfile={containerProfile}
+        reducedMotion={reducedMotion}
+      />
+      <CadenceAndModalMix
+        cadence={cadence}
+        containerProfile={containerProfile}
+        reducedMotion={reducedMotion}
+      />
+      <RecentActivityCards
+        recentBols={recentBols}
+        onOpenPulseLive={onOpenPulseLive}
+        reducedMotion={reducedMotion}
+      />
     </>
   );
+}
+
+/* ── Reduced-motion hook ──────────────────────────────────────────────── */
+
+function usePrefersReducedMotion(): boolean {
+  const [prefers, setPrefers] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setPrefers(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setPrefers(e.matches);
+    if (mq.addEventListener) {
+      mq.addEventListener("change", handler);
+      return () => mq.removeEventListener("change", handler);
+    }
+    // Safari < 14 fallback
+    mq.addListener(handler);
+    return () => mq.removeListener(handler);
+  }, []);
+  return prefers;
+}
+
+/* ── A. Cadence & Modal Mix ───────────────────────────────────────────── */
+
+function CadenceAndModalMix({
+  cadence,
+  containerProfile,
+  reducedMotion,
+}: {
+  cadence: CadencePoint[];
+  containerProfile: ContainerProfile;
+  reducedMotion: boolean;
+}) {
+  // Stacked area data: FCL/LCL come from cadence; Air defaults to 0 unless
+  // backend supplies it via cadence (it doesn't yet — graceful zero).
+  const chartData = cadence.map((c) => ({
+    label: c.label,
+    fcl: c.fcl,
+    lcl: c.lcl,
+    air: 0,
+  }));
+
+  const fcl = containerProfile.fcl;
+  const lcl = containerProfile.lcl;
+  // Air slice: 0 today (not derived). Donut keeps it for visual continuity.
+  const air = 0;
+  const total = fcl + lcl + air;
+  const donut = [
+    { name: "FCL", value: fcl, color: "#0EA5E9" },
+    { name: "LCL", value: lcl, color: "#F59E0B" },
+    { name: "Air", value: air, color: "#94A3B8" },
+  ].filter((s) => s.value > 0);
+
+  if (cadence.length === 0 && total === 0) {
+    return (
+      <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months">
+        <EmptyMessage text="No cadence data on file yet — try Refresh Intel to pull the latest shipments." />
+      </LitSectionCard>
+    );
+  }
+
+  return (
+    <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months">
+      <div className="flex flex-col gap-4 md:flex-row">
+        {/* Left 70% — stacked area */}
+        <div className="min-w-0 flex-1 md:basis-[70%]">
+          <div style={{ height: 240 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="cad-fcl" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#0EA5E9" stopOpacity={0.5} />
+                    <stop offset="100%" stopColor="#0EA5E9" stopOpacity={0.05} />
+                  </linearGradient>
+                  <linearGradient id="cad-lcl" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#F59E0B" stopOpacity={0.5} />
+                    <stop offset="100%" stopColor="#F59E0B" stopOpacity={0.05} />
+                  </linearGradient>
+                  <linearGradient id="cad-air" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#94A3B8" stopOpacity={0.5} />
+                    <stop offset="100%" stopColor="#94A3B8" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 10, fill: "#64748B" }}
+                  tickLine={false}
+                  axisLine={{ stroke: "#E2E8F0" }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    fontSize: 11,
+                    border: "1px solid #E2E8F0",
+                    borderRadius: 6,
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="fcl"
+                  stackId="1"
+                  stroke="#0EA5E9"
+                  fill="url(#cad-fcl)"
+                  name="FCL"
+                  isAnimationActive={!reducedMotion}
+                  animationDuration={reducedMotion ? 0 : 1600}
+                  animationBegin={0}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="lcl"
+                  stackId="1"
+                  stroke="#F59E0B"
+                  fill="url(#cad-lcl)"
+                  name="LCL"
+                  isAnimationActive={!reducedMotion}
+                  animationDuration={reducedMotion ? 0 : 1600}
+                  animationBegin={0}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="air"
+                  stackId="1"
+                  stroke="#94A3B8"
+                  fill="url(#cad-air)"
+                  name="Air"
+                  isAnimationActive={!reducedMotion}
+                  animationDuration={reducedMotion ? 0 : 1600}
+                  animationBegin={0}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <LegendDot color="#0EA5E9" label="FCL" />
+            <LegendDot color="#F59E0B" label="LCL" />
+            <LegendDot color="#94A3B8" label="Air" />
+          </div>
+        </div>
+
+        {/* Right 30% — donut */}
+        <div className="flex min-w-0 flex-col items-center justify-center md:basis-[30%]">
+          <div className="relative" style={{ width: 180, height: 180 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={donut.length > 0 ? donut : [{ name: "—", value: 1, color: "#E2E8F0" }]}
+                  innerRadius="60%"
+                  outerRadius="90%"
+                  paddingAngle={2}
+                  dataKey="value"
+                  isAnimationActive={!reducedMotion}
+                  animationDuration={reducedMotion ? 0 : 1200}
+                  animationBegin={reducedMotion ? 0 : 800}
+                  stroke="none"
+                >
+                  {(donut.length > 0 ? donut : [{ name: "—", value: 1, color: "#E2E8F0" }]).map(
+                    (s, i) => (
+                      <Cell key={i} fill={s.color} />
+                    ),
+                  )}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    fontSize: 11,
+                    border: "1px solid #E2E8F0",
+                    borderRadius: 6,
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+              <div className="font-display text-[22px] font-bold leading-none text-slate-900">
+                {formatCompactNumber(total)}
+              </div>
+              <div className="font-display mt-1 text-[9px] font-semibold uppercase tracking-wider text-slate-500">
+                Shipments
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </LitSectionCard>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span
+        className="inline-block h-2 w-2 rounded-full"
+        style={{ background: color }}
+      />
+      <span className="font-display text-[10px] font-semibold text-slate-600">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+/* ── Container Mix (merged into TopLanesCard) ─────────────────────────── */
+
+const CONTAINER_TYPE_COLORS: Record<string, string> = {
+  "20ST": "#3B82F6",
+  "40ST": "#8B5CF6",
+  "40HC": "#06B6D4",
+  "45HC": "#F59E0B",
+  LCL: "#64748B",
+};
+
+function classifyContainerType(raw: string): keyof typeof CONTAINER_TYPE_COLORS | null {
+  const s = String(raw || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!s) return null;
+  if (/LCL/.test(s)) return "LCL";
+  if (s.startsWith("45") && /HC|HQ/.test(s)) return "45HC";
+  if (s.startsWith("40") && /HC|HQ/.test(s)) return "40HC";
+  if (s.startsWith("40")) return "40ST";
+  if (s.startsWith("20")) return "20ST";
+  // ISO codes — 22G1=20ST, 42G1=40ST, 45G1=40HC, L5G1=45HC etc
+  if (/^22/.test(s)) return "20ST";
+  if (/^42/.test(s)) return "40ST";
+  if (/^45/.test(s)) return "40HC";
+  if (/^L5/.test(s)) return "45HC";
+  return null;
+}
+
+function ContainerMixBar({
+  counts,
+  total,
+  orderedKeys,
+  reducedMotion,
+}: {
+  counts: Record<string, number>;
+  total: number;
+  orderedKeys: string[];
+  reducedMotion: boolean;
+}) {
+  const [mounted, setMounted] = useState(reducedMotion);
+  useEffect(() => {
+    if (reducedMotion) {
+      setMounted(true);
+      return;
+    }
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, [reducedMotion]);
+
+  const present = orderedKeys
+    .map((k, i) => ({ key: k, count: counts[k] || 0, idx: i }))
+    .filter((seg) => seg.count > 0);
+
+  return (
+    <div>
+      <div className="flex h-6 w-full overflow-hidden rounded-md bg-slate-100">
+        {present.map((seg) => {
+          const target = total > 0 ? (seg.count / total) * 100 : 0;
+          return (
+            <div
+              key={seg.key}
+              title={`${seg.key} · ${seg.count} (${target.toFixed(0)}%)`}
+              style={{
+                width: mounted ? `${target}%` : "0%",
+                background: CONTAINER_TYPE_COLORS[seg.key],
+                transition: reducedMotion
+                  ? "none"
+                  : `width 1400ms ease-out ${seg.idx * 200}ms`,
+              }}
+              className="h-full"
+            />
+          );
+        })}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+        {present.map((seg) => {
+          const pct = total > 0 ? Math.round((seg.count / total) * 100) : 0;
+          return (
+            <div key={seg.key} className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2 w-2 rounded-sm"
+                style={{ background: CONTAINER_TYPE_COLORS[seg.key] }}
+              />
+              <span className="font-display text-[10px] font-semibold text-slate-700">
+                {seg.key}
+              </span>
+              <span className="font-mono text-[10px] text-slate-500">
+                {seg.count} · {pct}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── B. Recent Activity Cards ─────────────────────────────────────────── */
+
+function RecentActivityCards({
+  recentBols,
+  onOpenPulseLive,
+  reducedMotion,
+}: {
+  recentBols: any[];
+  onOpenPulseLive?: () => void;
+  reducedMotion: boolean;
+}) {
+  const cards = recentBols.slice(0, 5);
+  if (cards.length === 0) {
+    return (
+      <LitSectionCard title="Recent Activity" sub="Latest BOL records">
+        <EmptyMessage text="No recent BOLs to display." />
+      </LitSectionCard>
+    );
+  }
+  return (
+    <LitSectionCard title="Recent Activity" sub="Latest BOL records">
+      <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 lg:grid-cols-5">
+        {cards.map((bol, i) => (
+          <ActivityCard
+            key={i}
+            bol={bol}
+            index={i}
+            reducedMotion={reducedMotion}
+          />
+        ))}
+      </div>
+      <div className="mt-3 flex justify-end">
+        <a
+          href="?tab=live"
+          onClick={(e) => {
+            if (onOpenPulseLive) {
+              e.preventDefault();
+              onOpenPulseLive();
+            }
+          }}
+          className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+        >
+          See all BOLs in Pulse LIVE
+          <ArrowRight className="h-3 w-3" />
+        </a>
+      </div>
+    </LitSectionCard>
+  );
+}
+
+function ActivityCard({
+  bol,
+  index,
+  reducedMotion,
+}: {
+  bol: any;
+  index: number;
+  reducedMotion: boolean;
+}) {
+  const [mounted, setMounted] = useState(reducedMotion);
+  useEffect(() => {
+    if (reducedMotion) {
+      setMounted(true);
+      return;
+    }
+    const id = window.setTimeout(() => setMounted(true), 16 + index * 150);
+    return () => clearTimeout(id);
+  }, [reducedMotion, index]);
+
+  const dateStr = formatBolDate(bol);
+  const carrier = readCarrier(bol);
+  const scac =
+    carrier?.scac ||
+    (() => {
+      const raw = getBolCarrierString(bol);
+      return raw && raw !== "—" ? raw.slice(0, 6).toUpperCase() : null;
+    })();
+  const containerCount =
+    Number(bol?.container_count) ||
+    Number(bol?.containerCount) ||
+    Number(bol?.containers) ||
+    Number(bol?.container_qty) ||
+    null;
+  const ctype =
+    classifyContainerType(
+      String(bol?.container_type || bol?.containerType || bol?.iso_code || ""),
+    ) || null;
+  const origin = (() => {
+    const s = getBolOrigin(bol);
+    return s === "—" ? null : s;
+  })();
+  const destination = (() => {
+    const s = getBolDestination(bol);
+    return s === "—" ? null : s;
+  })();
+
+  return (
+    <div
+      className="flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-3 transition-colors hover:bg-slate-50/60"
+      style={{
+        opacity: mounted ? 1 : 0,
+        transform: mounted ? "translateY(0)" : "translateY(6px)",
+        transition: reducedMotion
+          ? "none"
+          : "opacity 560ms ease-out, transform 560ms ease-out",
+      }}
+    >
+      <div className="font-mono text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+        {dateStr}
+      </div>
+      <div className="flex flex-wrap items-center gap-1">
+        {scac && <LitPill tone="blue">{scac}</LitPill>}
+        {containerCount != null && (
+          <span className="font-mono text-[10px] text-slate-600">
+            {containerCount} ctr
+          </span>
+        )}
+        {ctype && (
+          <LitPill tone={ctype === "LCL" ? "slate" : "purple"}>{ctype}</LitPill>
+        )}
+      </div>
+      <div className="font-display truncate text-[11px] font-semibold text-slate-900">
+        {origin || "—"} <span className="text-slate-400">→</span>{" "}
+        {destination || "—"}
+      </div>
+    </div>
+  );
+}
+
+/* ── Shared formatting ────────────────────────────────────────────────── */
+
+function formatCompactNumber(n: number): string {
+  if (!Number.isFinite(n) || n === 0) return n === 0 ? "0" : "—";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (abs >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return String(Math.round(n));
 }
 
 /* ── Trade Lanes view ─────────────────────────────────────────────────── */
@@ -389,7 +874,7 @@ function ShipmentsView({ recentBols }: { recentBols: any[] }) {
       </LitSectionCard>
     );
   }
-  return <BolPreviewTable recentBols={recentBols.slice(0, 25)} />;
+  return <BolPreviewTable bols={recentBols.slice(0, 25)} />;
 }
 
 /* ── Products view ────────────────────────────────────────────────────── */
@@ -799,10 +1284,71 @@ function ContainerProfileCard({ profile }: { profile: ContainerProfile }) {
 function TopLanesCard({
   canonicalLanes,
   globeLanes: globeOnlyLanes,
+  recentBols = [],
+  containerProfile,
+  reducedMotion = false,
 }: {
   canonicalLanes: any[];
   globeLanes?: any[];
+  recentBols?: any[];
+  containerProfile?: ContainerProfile;
+  reducedMotion?: boolean;
 }) {
+  // Globe needs resolved coordinates; fall back to filtering canonicalLanes
+  // for backwards compatibility when globeLanes prop isn't passed.
+  const sourceForGlobe = (Array.isArray(globeOnlyLanes) && globeOnlyLanes.length > 0
+    ? globeOnlyLanes
+    : canonicalLanes.filter((l: any) => l.fromMeta?.coords && l.toMeta?.coords));
+  const globeLanes: GlobeLane[] = sourceForGlobe.slice(0, 8).map((l: any) => ({
+    id: l.displayLabel,
+    from: l.fromMeta.canonicalKey,
+    to: l.toMeta.canonicalKey,
+    coords: [l.fromMeta.coords, l.toMeta.coords],
+    fromMeta: l.fromMeta,
+    toMeta: l.toMeta,
+    shipments: Number(l.shipments) || 0,
+  }));
+  const initialSelected = globeLanes[0]?.id || canonicalLanes[0]?.displayLabel || null;
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelected);
+
+  // Container-mix bar data (merged from former EquipmentAndLaneFootprint).
+  const mix = useMemo(() => {
+    const counts: Record<string, number> = {
+      "20ST": 0,
+      "40ST": 0,
+      "40HC": 0,
+      "45HC": 0,
+      LCL: 0,
+    };
+    let sourceCounted = 0;
+    for (const bol of recentBols) {
+      const t = classifyContainerType(
+        String(bol?.container_type || bol?.containerType || bol?.iso_code || ""),
+      );
+      if (t) {
+        counts[t]! += 1;
+        sourceCounted += 1;
+      }
+    }
+    if (sourceCounted === 0 && containerProfile) {
+      for (const len of containerProfile.lengths) {
+        const t = classifyContainerType(len.label);
+        if (t) counts[t]! += len.count;
+      }
+      if (containerProfile.lcl > 0) counts.LCL += containerProfile.lcl;
+    }
+    const total = Object.values(counts).reduce((s, n) => s + n, 0);
+    return { counts, total };
+  }, [recentBols, containerProfile]);
+
+  const orderedKeys: Array<keyof typeof CONTAINER_TYPE_COLORS> = [
+    "20ST",
+    "40ST",
+    "40HC",
+    "45HC",
+    "LCL",
+  ];
+
   if (canonicalLanes.length === 0) {
     return (
       <LitSectionCard
@@ -813,58 +1359,102 @@ function TopLanesCard({
       </LitSectionCard>
     );
   }
-  // Globe needs resolved coordinates; fall back to filtering canonicalLanes
-  // for backwards compatibility when globeLanes prop isn't passed.
-  const sourceForGlobe = (Array.isArray(globeOnlyLanes) && globeOnlyLanes.length > 0
-    ? globeOnlyLanes
-    : canonicalLanes.filter((l: any) => l.fromMeta?.coords && l.toMeta?.coords));
-  const globeLanes: GlobeLane[] = sourceForGlobe.slice(0, 6).map((l: any) => ({
-    id: l.displayLabel,
-    from: l.fromMeta.canonicalKey,
-    to: l.toMeta.canonicalKey,
-    coords: [l.fromMeta.coords, l.toMeta.coords],
-    fromMeta: l.fromMeta,
-    toMeta: l.toMeta,
-    shipments: Number(l.shipments) || 0,
-  }));
-  const [selectedId, setSelectedId] = useState<string | null>(globeLanes[0]?.id || null);
+
+  // Top lanes for the ranked list — sorted by shipments. Keep up to 8 so
+  // the right-rail fills the card height on lg+ viewports.
+  const rankedLanes = canonicalLanes
+    .slice()
+    .sort((a: any, b: any) => (Number(b?.shipments) || 0) - (Number(a?.shipments) || 0))
+    .slice(0, 8);
+  const maxLaneShipments = Math.max(
+    1,
+    ...rankedLanes.map((l: any) => Number(l?.shipments) || 0),
+  );
 
   return (
     <LitSectionCard
       title="Top trade lanes"
-      sub="Globe + ranked share"
+      sub="Globe · ranked share · container mix"
       padded={false}
     >
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(220px,300px)_1fr]">
-        <div className="flex items-center justify-center bg-slate-50 p-3">
-          <GlobeCanvas
-            lanes={globeLanes}
-            selectedLane={selectedId}
-            size={260}
-            theme="trade"
-            showFlagPins
-          />
+      <div className="flex flex-col lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        {/* Left ~40% — interactive globe. Full-width on mobile/tablet. */}
+        <div className="flex items-center justify-center bg-slate-50 p-3 sm:p-4 lg:p-4">
+          <div className="aspect-square w-full max-w-[320px]">
+            <GlobeCanvas
+              lanes={globeLanes}
+              selectedLane={selectedId}
+              size={260}
+              theme="trade"
+              showFlagPins
+            />
+          </div>
         </div>
-        <div className="max-h-[320px] overflow-y-auto">
-          {canonicalLanes.slice(0, 8).map((lane: any, i: number) => (
-            <button
-              key={lane.displayLabel}
-              type="button"
-              onClick={() =>
-                setSelectedId(selectedId === lane.displayLabel ? null : lane.displayLabel)
-              }
-              className={[
-                "flex w-full items-center gap-2.5 border-b border-slate-100 px-4 py-2.5 text-left last:border-b-0",
-                selectedId === lane.displayLabel
-                  ? "border-l-2 border-l-blue-500 bg-blue-50"
-                  : "border-l-2 border-l-transparent hover:bg-slate-50/60",
-              ].join(" ")}
-            >
-              <LaneRowInner lane={lane} index={i} highlight={selectedId === lane.displayLabel} />
-            </button>
-          ))}
+
+        {/* Right ~60% — lane list. On mobile stacks below globe with its
+            own internal scroll so the card never overflows the viewport. */}
+        <div className="max-h-[340px] overflow-y-auto border-t border-slate-100 lg:max-h-[420px] lg:border-l lg:border-t-0">
+          {rankedLanes.map((lane: any, i: number) => {
+            const isSelected = selectedId === lane.displayLabel;
+            const shipments = Number(lane?.shipments) || 0;
+            const widthPct = (shipments / maxLaneShipments) * 100;
+            return (
+              <button
+                key={lane.displayLabel}
+                type="button"
+                onClick={() =>
+                  setSelectedId(isSelected ? null : lane.displayLabel)
+                }
+                className={[
+                  "flex w-full items-center gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left last:border-b-0 sm:px-4",
+                  isSelected
+                    ? "border-l-2 border-l-blue-500 bg-blue-50"
+                    : "border-l-2 border-l-transparent hover:bg-slate-50/60",
+                ].join(" ")}
+              >
+                <div className="flex w-full items-center gap-2.5">
+                  <LaneRowInner lane={lane} index={i} highlight={isSelected} />
+                </div>
+                {/* Inline share bar — visualises lane share-of-shipments
+                    so the founder gets the equipment/footprint affordance
+                    inside the same card. */}
+                <div className="hidden w-[68px] shrink-0 sm:block">
+                  <div className="h-1 overflow-hidden rounded bg-slate-100">
+                    <div
+                      className="h-full rounded bg-blue-500"
+                      style={{
+                        width: `${widthPct}%`,
+                        transition: reducedMotion
+                          ? "none"
+                          : `width 1400ms ease-out ${i * 150}ms`,
+                      }}
+                    />
+                  </div>
+                  <div className="font-mono mt-1 text-right text-[10px] font-semibold text-slate-600">
+                    {shipments.toLocaleString()}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {/* Container-mix bar — spans full width below the globe + lane list.
+          Replaces the deleted Equipment & Lane Footprint card. */}
+      {mix.total > 0 && (
+        <div className="border-t border-slate-100 px-3 py-3 sm:px-4">
+          <div className="font-display mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Container Mix
+          </div>
+          <ContainerMixBar
+            counts={mix.counts as Record<string, number>}
+            total={mix.total}
+            orderedKeys={orderedKeys as string[]}
+            reducedMotion={reducedMotion}
+          />
+        </div>
+      )}
     </LitSectionCard>
   );
 }
@@ -1425,147 +2015,6 @@ function RecentBolsCompactCard({ recentBols }: { recentBols: any[] }) {
         <ShipmentRow key={i} bol={bol} isLast={i === arr.length - 1} />
       ))}
     </LitSectionCard>
-  );
-}
-
-function BolPreviewTable({ recentBols }: { recentBols: any[] }) {
-  return (
-    <LitSectionCard
-      title="Recent BOLs"
-      sub={`${recentBols.length} latest records · expand to see HS / weight / quantity`}
-      padded={false}
-    >
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-[#FAFBFC]">
-              {[
-                "Date",
-                "Lane",
-                "Carrier",
-                "Supplier",
-                "Container",
-                "TEU",
-                "FCL/LCL",
-                "HS",
-              ].map((h) => (
-                <th
-                  key={h}
-                  className="font-display whitespace-nowrap border-b border-slate-100 px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400"
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {recentBols.map((bol, i, arr) => (
-              <BolPreviewRow key={i} bol={bol} isLast={i === arr.length - 1} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </LitSectionCard>
-  );
-}
-
-function BolPreviewRow({ bol, isLast }: { bol: any; isLast: boolean }) {
-  // Phase 6 — broad BOL helpers; the row never renders "Invalid Date" /
-  // empty lane / blank carrier when ANY of the multi-name fields are
-  // present in the raw row.
-  const dateLabel = formatBolDate(bol);
-  const carrierMeta = readCarrier(bol);
-  const carrierName = carrierMeta?.name || (() => {
-    const s = getBolCarrierString(bol);
-    return s === "—" ? null : s;
-  })();
-  const supplier = (() => {
-    const s = getBolSupplier(bol);
-    return s === "—" ? null : s;
-  })();
-  const teu = Number(bol?.teu) || Number(bol?.containers_teu) || null;
-  const isLcl =
-    Boolean(bol?.lcl) ||
-    /lcl/i.test(String(bol?.mode || bol?.fcl_lcl || bol?.loadType || ""));
-  const fclLcl = isLcl ? "LCL" : "FCL";
-  const containerCount =
-    Number(bol?.containers_count) ||
-    Number(bol?.containersCount) ||
-    Number(bol?.container_count) ||
-    null;
-  const containerType =
-    bol?.container_type ||
-    bol?.containerType ||
-    bol?.raw?.container_group ||
-    null;
-  const hs = (() => {
-    const s = getBolHs(bol);
-    return s === "—" ? null : s;
-  })();
-  const origin = (() => {
-    const s = getBolOrigin(bol);
-    return s === "—" ? null : s;
-  })();
-  const destination = (() => {
-    const s = getBolDestination(bol);
-    return s === "—" ? null : s;
-  })();
-  return (
-    <tr
-      className={[
-        "hover:bg-slate-50/60",
-        !isLast ? "border-b border-slate-100" : "",
-      ].join(" ")}
-    >
-      <td className="font-mono whitespace-nowrap px-3 py-2 text-[10px] text-slate-600">
-        {dateLabel}
-      </td>
-      <td className="px-3 py-2">
-        <span className="font-display whitespace-nowrap text-[11px] text-slate-700">
-          {origin || <span className="text-slate-300">—</span>}{" "}
-          <span className="text-slate-300">→</span>{" "}
-          {destination || <span className="text-slate-300">—</span>}
-        </span>
-      </td>
-      <td className="px-3 py-2">
-        {carrierName ? (
-          <span className="inline-flex items-center gap-1">
-            <span className="font-display text-[11px] font-semibold text-slate-900">
-              {carrierName}
-            </span>
-            {carrierMeta?.inferred && (
-              <span title="Inferred from Master Bill prefix">
-                <LitPill tone="amber" icon={<Info className="h-2 w-2" />}>
-                  MBL
-                </LitPill>
-              </span>
-            )}
-          </span>
-        ) : (
-          <span className="text-slate-300">—</span>
-        )}
-      </td>
-      <td className="font-body truncate px-3 py-2 text-[11px] text-slate-600">
-        {supplier || <span className="text-slate-300">—</span>}
-      </td>
-      <td className="px-3 py-2">
-        <span className="font-mono whitespace-nowrap text-[10px] text-slate-700">
-          {containerCount != null ? containerCount.toString() : "—"}
-          {containerType ? (
-            <span className="text-slate-400"> · {containerType}</span>
-          ) : null}
-        </span>
-      </td>
-      <td className="font-mono px-3 py-2 text-[11px] font-semibold text-slate-900">
-        {teu != null ? Number(teu).toFixed(1) : "—"}
-      </td>
-      <td className="px-3 py-2">
-        <LitPill tone={isLcl ? "purple" : "blue"}>{fclLcl}</LitPill>
-      </td>
-      <td className="font-mono px-3 py-2 text-[10px] text-slate-500">
-        {hs || <span className="text-slate-300">—</span>}
-      </td>
-    </tr>
   );
 }
 
@@ -2527,48 +2976,6 @@ function deriveProducts(profile: any, recentBols: any[] = []): ProductRow[] {
     .slice(0, 8);
 }
 
-function readCarrier(
-  bol: any,
-): { name: string; inferred: boolean } | null {
-  // v200 emits camelCase carrierName / nested carrier.carrierName as well
-  // as the legacy snake_case carrier_name. Prefer string fields, fall
-  // through to nested objects, then to inferred MBL prefix.
-  const directCandidate =
-    bol?.carrierName ||
-    bol?.carrier_name ||
-    bol?.normalized_carrier ||
-    (typeof bol?.carrier === "string" ? bol.carrier : null) ||
-    bol?.carrier?.carrierName ||
-    bol?.carrier?.name ||
-    bol?.shippingLine ||
-    bol?.shipping_line ||
-    bol?.steamshipLine ||
-    bol?.steamship_line ||
-    bol?.raw?.carrierName ||
-    bol?.raw?.carrier_name ||
-    bol?.raw?.shipping_line ||
-    null;
-  if (directCandidate && String(directCandidate).trim()) {
-    return { name: String(directCandidate).trim(), inferred: false };
-  }
-  // No code-side normalization of MBL prefixes per design directive — we
-  // surface the prefix verbatim so a future enrichment pass can map it to
-  // a canonical carrier name.
-  const mbl =
-    bol?.master_bill_of_lading_number ||
-    bol?.masterBillOfLadingNumber ||
-    bol?.mbl ||
-    bol?.raw?.master_bill_of_lading_number ||
-    null;
-  if (mbl) {
-    const prefix = String(mbl).slice(0, 4).toUpperCase();
-    if (/^[A-Z]{4}$/.test(prefix)) {
-      return { name: prefix, inferred: true };
-    }
-  }
-  return null;
-}
-
 function bolMatchesLane(bol: any, lane: any): boolean {
   const fromName = String(lane?.fromMeta?.countryName || "").toLowerCase();
   const toName = String(lane?.toMeta?.countryName || "").toLowerCase();
@@ -2585,226 +2992,6 @@ function bolMatchesLane(bol: any, lane: any): boolean {
     toName && destination && (destination.includes(toName) || toName.includes(destination)),
   );
   return matchFrom || matchTo;
-}
-
-// Phase 6 — broad BOL field helpers per QA brief. All accept the row OR
-// the row.raw object and return a string fallback "—" / null when the
-// field is genuinely missing. Never throw, never return "Invalid Date".
-function getBolDate(bol: any): string | null {
-  if (!bol) return null;
-  return (
-    bol?.shipmentDate ||
-    bol?.shipment_date ||
-    bol?.date_formatted ||
-    bol?.dateFormatted ||
-    bol?.Date ||
-    bol?.bill_of_lading_date ||
-    bol?.bill_of_lading_date_formatted ||
-    bol?.arrival_date ||
-    bol?.arrivalDate ||
-    bol?.Arrival_Date ||
-    bol?.entry_date ||
-    bol?.entryDate ||
-    bol?.bol_date ||
-    bol?.bolDate ||
-    bol?.bill_date ||
-    bol?.billDate ||
-    bol?.shipped_on ||
-    bol?.shippedOn ||
-    bol?.created_at ||
-    bol?.last_shipment_date ||
-    bol?.lastShipmentDate ||
-    bol?.date ||
-    bol?.raw?.bill_of_lading_date ||
-    bol?.raw?.shipment_date ||
-    bol?.raw?.arrival_date ||
-    null
-  );
-}
-
-function parseBolDate(value: string | null): Date | null {
-  if (!value) return null;
-  const s = String(value).trim();
-  if (!s) return null;
-  // v200 emits DD/MM/YYYY (e.g. "13/04/2026"). Try that first, then native Date.
-  const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slash) {
-    const a = Number(slash[1]);
-    const b = Number(slash[2]);
-    const y = Number(slash[3]);
-    if (a >= 1 && a <= 31 && b >= 1 && b <= 12) {
-      const d = new Date(Date.UTC(y, b - 1, a));
-      if (!Number.isNaN(d.getTime())) return d;
-    }
-    if (a >= 1 && a <= 12 && b >= 1 && b <= 31) {
-      const d = new Date(Date.UTC(y, a - 1, b));
-      if (!Number.isNaN(d.getTime())) return d;
-    }
-  }
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function formatBolDate(bol: any): string {
-  const value = getBolDate(bol);
-  const d = parseBolDate(value);
-  if (!d) return "—";
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function getBolOrigin(bol: any): string {
-  // v200: route="A → B"; if present, take left side
-  if (typeof bol?.route === "string" && bol.route.includes("→")) {
-    const left = bol.route.split("→")[0]?.trim();
-    if (left) return left;
-  }
-  return (
-    // v200 raw BOL emits origin_port / destination_port directly.
-    bol?.origin_port ||
-    bol?.originPort ||
-    bol?.Origin_Port ||
-    bol?.origin_name ||
-    bol?.origin ||
-    bol?.origin_country ||
-    bol?.originCountry ||
-    bol?.originCountryCode ||
-    bol?.Country ||
-    bol?.foreign_port ||
-    bol?.foreignPort ||
-    bol?.from_port ||
-    bol?.fromPort ||
-    bol?.port_of_lading ||
-    bol?.portOfLading ||
-    bol?.place_of_receipt ||
-    bol?.placeOfReceipt ||
-    bol?.supplier_address_country ||
-    bol?.shipper_country ||
-    bol?.supplier_country ||
-    bol?.raw?.origin_port ||
-    bol?.raw?.foreign_port ||
-    bol?.raw?.country ||
-    bol?.raw?.origin ||
-    "—"
-  );
-}
-
-function getBolDestination(bol: any): string {
-  // v200: route="A → B"; if present, take right side
-  if (typeof bol?.route === "string" && bol.route.includes("→")) {
-    const right = bol.route.split("→")[1]?.trim();
-    if (right) return right;
-  }
-  return (
-    // v200 raw BOL emits origin_port / destination_port directly.
-    bol?.destination_port ||
-    bol?.destinationPort ||
-    bol?.Destination_Port ||
-    bol?.destination_name ||
-    bol?.destination ||
-    bol?.destination_country ||
-    bol?.destinationCountry ||
-    bol?.destinationCountryCode ||
-    bol?.us_port ||
-    bol?.usPort ||
-    bol?.us_port_of_unlading ||
-    bol?.usPortOfUnlading ||
-    bol?.to_port ||
-    bol?.toPort ||
-    bol?.port_of_unlading ||
-    bol?.portOfUnlading ||
-    bol?.place_of_delivery ||
-    bol?.placeOfDelivery ||
-    bol?.company_address_country ||
-    bol?.consignee_country ||
-    bol?.raw?.destination_port ||
-    bol?.raw?.us_port ||
-    bol?.raw?.destination ||
-    "—"
-  );
-}
-
-function getBolCarrierString(bol: any): string {
-  return (
-    bol?.carrierName ||
-    bol?.carrier?.carrierName ||
-    (typeof bol?.carrier === "string" ? bol.carrier : null) ||
-    bol?.carrier_name ||
-    bol?.normalized_carrier ||
-    bol?.inferred_carrier ||
-    bol?.steamship_line ||
-    bol?.steamshipLine ||
-    bol?.shipping_line ||
-    bol?.shippingLine ||
-    bol?.carrierCode ||
-    bol?.carrier?.carrierCode ||
-    bol?.scac ||
-    bol?.master_bill_prefix ||
-    bol?.mbl_prefix ||
-    bol?.raw?.carrier_name ||
-    bol?.raw?.shipping_line ||
-    bol?.raw?.scac ||
-    "—"
-  );
-}
-
-function getBolSupplier(bol: any): string {
-  return (
-    bol?.supplierName ||
-    bol?.supplier_name ||
-    bol?.Shipper_Name ||
-    bol?.shipper_name ||
-    bol?.shipperName ||
-    bol?.shipper_basename ||
-    bol?.topServiceProvider ||
-    (typeof bol?.supplier === "string" ? bol.supplier : null) ||
-    (typeof bol?.shipper === "string" ? bol.shipper : null) ||
-    bol?.notify_party ||
-    bol?.notifyParty ||
-    bol?.notify_party_name ||
-    bol?.Notify_Party_Name ||
-    bol?.raw?.shipper_name ||
-    bol?.raw?.supplier_name ||
-    bol?.raw?.notify_party_name ||
-    "—"
-  );
-}
-
-function getBolHs(bol: any): string {
-  return (
-    bol?.hsCode ||
-    bol?.hs_code ||
-    bol?.HS_Code ||
-    bol?.hts_code ||
-    bol?.htsCode ||
-    bol?.HTS_Code ||
-    bol?.commodity_code ||
-    bol?.commodityCode ||
-    bol?.raw?.hs_code ||
-    bol?.raw?.hts_code ||
-    "—"
-  );
-}
-
-function getBolDescription(bol: any): string {
-  return (
-    bol?.description ||
-    bol?.product_description ||
-    bol?.productDescription ||
-    bol?.commodity ||
-    bol?.commodity_description ||
-    bol?.commodityDescription ||
-    bol?.goods_description ||
-    bol?.goodsDescription ||
-    bol?.cargo_description ||
-    bol?.cargoDescription ||
-    bol?.raw?.product_description ||
-    bol?.raw?.commodity_description ||
-    ""
-  );
 }
 
 function formatMonthLabel(month: any, _year: any) {

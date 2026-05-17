@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="Anatomy of a freight lead in 2026 — five layered cards showing BOL shipment record, carrier-pivot alert, verified buyer-side contact, lane rate benchmark, and revenue opportunity score">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- eyebrow -->
+  <text x="60" y="80" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="14" letter-spacing="2" font-weight="500">LIT · FREIGHT LEADS · 2026</text>
+
+  <!-- headline -->
+  <text x="60" y="138" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="42" font-weight="600">Anatomy of a freight lead.</text>
+  <text x="60" y="180" fill="#cbd5e1" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="400">Five layers, one record.</text>
+
+  <!-- layered cards -->
+  <!-- card 1: BOL -->
+  <g transform="translate(60, 240)">
+    <rect width="260" height="320" rx="16" fill="#ffffff" opacity="0.06" stroke="#1e293b" stroke-width="1"/>
+    <rect x="0" y="0" width="260" height="48" rx="16" fill="#1e293b"/>
+    <text x="20" y="30" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="11" letter-spacing="1.5" font-weight="500">LAYER 1 · BOL</text>
+    <text x="20" y="84" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="500">Live shipment record</text>
+    <text x="20" y="104" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="11">CBP ACE · daily refresh</text>
+
+    <text x="20" y="148" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="10" letter-spacing="1" font-weight="500">TRAILING 12M</text>
+    <text x="20" y="186" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="600">3,842</text>
+    <text x="20" y="210" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="11">TEU · 18 active lanes</text>
+
+    <text x="20" y="252" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="10" letter-spacing="1" font-weight="500">TOP HS</text>
+    <text x="20" y="276" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="500">85 · Electronics</text>
+
+    <text x="20" y="300" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="11">Yantian → Long Beach</text>
+  </g>
+
+  <!-- card 2: Signal alert -->
+  <g transform="translate(338, 240)">
+    <rect width="260" height="320" rx="16" fill="#ffffff" opacity="0.06" stroke="#1e293b" stroke-width="1"/>
+    <rect x="0" y="0" width="260" height="48" rx="16" fill="#1e293b"/>
+    <text x="20" y="30" fill="#fbbf24" font-family="Inter, system-ui, sans-serif" font-size="11" letter-spacing="1.5" font-weight="500">LAYER 2 · SIGNAL</text>
+    <text x="20" y="84" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="500">Inbox alert · carrier shift</text>
+    <text x="20" y="104" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="11">Pulse Coach · 8:14 AM</text>
+
+    <rect x="20" y="128" width="220" height="2" fill="#fbbf24" opacity="0.6"/>
+
+    <text x="20" y="158" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="500">Carrier mix shifted</text>
+    <text x="20" y="180" fill="#fbbf24" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="600">+31%</text>
+    <text x="20" y="202" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="11">prior 45 days · top-3 share</text>
+
+    <text x="20" y="248" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="11">From: Carrier A</text>
+    <text x="20" y="266" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="11">To: Carriers B + C</text>
+
+    <text x="20" y="300" fill="#cbd5e1" font-family="Inter, system-ui, sans-serif" font-size="11">Post-Gemini transition window</text>
+  </g>
+
+  <!-- card 3: Contact -->
+  <g transform="translate(616, 240)">
+    <rect width="260" height="320" rx="16" fill="#ffffff" opacity="0.06" stroke="#1e293b" stroke-width="1"/>
+    <rect x="0" y="0" width="260" height="48" rx="16" fill="#1e293b"/>
+    <text x="20" y="30" fill="#60a5fa" font-family="Inter, system-ui, sans-serif" font-size="11" letter-spacing="1.5" font-weight="500">LAYER 3 · CONTACT</text>
+    <text x="20" y="84" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="500">Verified buyer-side</text>
+    <text x="20" y="104" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="11">5 contacts · re-verified 12d ago</text>
+
+    <g transform="translate(20, 130)">
+      <circle cx="14" cy="14" r="14" fill="#1e293b"/>
+      <text x="14" y="19" fill="#60a5fa" font-family="Inter" font-size="11" font-weight="600" text-anchor="middle">D</text>
+      <text x="38" y="14" fill="#ffffff" font-family="Inter" font-size="12" font-weight="500">Director, Logistics</text>
+      <text x="38" y="28" fill="#94a3b8" font-family="Inter" font-size="10">deliverable · 98%</text>
+    </g>
+
+    <g transform="translate(20, 174)">
+      <circle cx="14" cy="14" r="14" fill="#1e293b"/>
+      <text x="14" y="19" fill="#60a5fa" font-family="Inter" font-size="11" font-weight="600" text-anchor="middle">M</text>
+      <text x="38" y="14" fill="#ffffff" font-family="Inter" font-size="12" font-weight="500">Manager, Procurement</text>
+      <text x="38" y="28" fill="#94a3b8" font-family="Inter" font-size="10">deliverable · 96%</text>
+    </g>
+
+    <g transform="translate(20, 218)">
+      <circle cx="14" cy="14" r="14" fill="#1e293b"/>
+      <text x="14" y="19" fill="#60a5fa" font-family="Inter" font-size="11" font-weight="600" text-anchor="middle">L</text>
+      <text x="38" y="14" fill="#ffffff" font-family="Inter" font-size="12" font-weight="500">Lead, Supply Chain Ops</text>
+      <text x="38" y="28" fill="#94a3b8" font-family="Inter" font-size="10">deliverable · 95%</text>
+    </g>
+
+    <text x="20" y="294" fill="#cbd5e1" font-family="Inter, system-ui, sans-serif" font-size="11">+ 2 more · all verified</text>
+  </g>
+
+  <!-- card 4: Rate -->
+  <g transform="translate(894, 240)">
+    <rect width="246" height="148" rx="16" fill="#ffffff" opacity="0.06" stroke="#1e293b" stroke-width="1"/>
+    <rect x="0" y="0" width="246" height="40" rx="16" fill="#1e293b"/>
+    <text x="20" y="26" fill="#34d399" font-family="Inter, system-ui, sans-serif" font-size="11" letter-spacing="1.5" font-weight="500">LAYER 4 · RATE</text>
+    <text x="20" y="70" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500">Lane benchmark</text>
+    <text x="20" y="100" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="600">$3,062</text>
+    <text x="20" y="120" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="11">Drewry WCI · Shanghai→LA</text>
+
+    <!-- card 5: Revenue -->
+    <rect x="0" y="172" width="246" height="148" rx="16" fill="#ffffff" opacity="0.06" stroke="#1e293b" stroke-width="1"/>
+    <rect x="0" y="172" width="246" height="40" rx="16" fill="#1e293b"/>
+    <text x="20" y="198" fill="#a78bfa" font-family="Inter, system-ui, sans-serif" font-size="11" letter-spacing="1.5" font-weight="500">LAYER 5 · REVENUE</text>
+    <text x="20" y="242" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500">Wallet estimate</text>
+    <text x="20" y="272" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="600">$11.8M</text>
+    <text x="20" y="292" fill="#94a3b8" font-family="Inter, system-ui, sans-serif" font-size="11">trailing 12m · this lane</text>
+  </g>
+
+  <!-- footer brand -->
+  <text x="60" y="600" fill="#64748b" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500">logisticintel.com</text>
+  <text x="1140" y="600" fill="#64748b" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" text-anchor="end">Freight revenue intelligence</text>
+</svg>

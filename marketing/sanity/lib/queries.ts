@@ -15,12 +15,16 @@ export const BLOG_INDEX_QUERY = groq`*[_type == "blogPost" && defined(publishedA
 
 /** Single blog post by slug. */
 export const BLOG_POST_QUERY = groq`*[_type == "blogPost" && slug.current == $slug][0]{
-  _id, title, slug, excerpt, heroImage, heroImageUrl, heroImageAlt, publishedAt, readingTime, body,
+  _id, _updatedAt, title, slug, excerpt, heroImage, heroImageUrl, heroImageAlt, publishedAt, readingTime, body,
+  cta, aliases,
   "author": author->{name, slug, avatar, role, bio, expertise, socialLinks, isAiAgent},
   "categories": categories[]->{title, slug, color},
   "tags": tags[]->{title, slug},
   "relatedPosts": relatedPosts[]->{title, slug, excerpt, heroImage, heroImageUrl, "author": author->{name}, "categories": categories[]->{title, color}},
   "relatedGlossary": relatedGlossary[]->{term, slug, shortDefinition},
+  "internalLinks": internalLinks[]->{
+    _type, _id, "slug": slug.current, title, headline, competitorName, topic, h1, subhead, tldr
+  },
   seo
 }`;
 
@@ -161,5 +165,8 @@ export const SITEMAP_QUERY = groq`{
   "ports": *[_type == "port" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
   "hsCodes": *[_type == "hsCode" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
   "freeTools": *[_type == "freeTool" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
-  "pages": *[_type == "page" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt }
+  "pages": *[_type == "page" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
+  "alternatives": *[_type == "alternative" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
+  "bestLists": *[_type == "bestList" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
+  "landingPages": *[_type == "landingPage" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt }
 }`;

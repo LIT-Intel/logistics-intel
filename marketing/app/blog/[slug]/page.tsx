@@ -73,7 +73,28 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
         ]}
       />
 
-      <article>
+      <article className="relative">
+        {/* Sticky left-rail social share — desktop only (xl+). Sits in the
+            page gutter so the article column reads cleanly while the
+            rail follows the scroll. The same top + bottom inline share
+            rows stay in place for mobile + tablet users where the rail
+            has no room. */}
+        <aside
+          aria-label="Share this article"
+          className="pointer-events-none fixed left-4 top-1/2 z-30 hidden -translate-y-1/2 xl:block 2xl:left-8"
+        >
+          <div className="pointer-events-auto rounded-2xl border border-ink-100 bg-white/90 p-2 shadow-[0_8px_24px_-6px_rgba(15,23,42,0.18)] backdrop-blur">
+            <div className="font-display mb-1.5 px-1 text-[9.5px] font-bold uppercase tracking-[0.14em] text-ink-200">
+              Share
+            </div>
+            <SocialShare
+              variant="rail"
+              url={siteUrl(`/blog/${params.slug}`)}
+              title={post.title}
+            />
+          </div>
+        </aside>
+
         {/* Header — loosened from the previous "boxed-in" 760px column.
             Now uses max-w-[880px], drops the heavy border-on-share-row
             framing, and reduces the vertical pt/pb so the breadcrumb
@@ -172,6 +193,46 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
 
         <ProseShell value={post.body} />
 
+        {/* Post-specific CTA — only renders if the post defines a
+            top-level cta object (Cowork-era schema addition; older posts
+            don't have this and fall through to the default CtaBanner
+            farther down). */}
+        {post.cta?.primaryCtaUrl && (post.cta?.headline || post.cta?.body) && (
+          <section className="px-5 sm:px-8 py-8">
+            <div className="mx-auto max-w-[760px]">
+              <div className="rounded-3xl border border-ink-100 bg-gradient-to-br from-brand-blue/[0.05] via-white to-cyan-50 p-7 shadow-sm sm:p-9">
+                {post.cta.headline && (
+                  <h2 className="font-display text-[22px] font-semibold tracking-[-0.015em] text-ink-900 sm:text-[26px]">
+                    {post.cta.headline}
+                  </h2>
+                )}
+                {post.cta.body && (
+                  <p className="font-body mt-3 text-[15px] leading-relaxed text-ink-700">
+                    {post.cta.body}
+                  </p>
+                )}
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <Link
+                    href={post.cta.primaryCtaUrl}
+                    className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[14.5px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)] transition hover:shadow-[0_10px_24px_rgba(37,99,235,0.45)]"
+                    style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
+                  >
+                    {post.cta.primaryCtaLabel || "Book a demo"}
+                  </Link>
+                  {post.cta.secondaryCtaUrl && (
+                    <Link
+                      href={post.cta.secondaryCtaUrl}
+                      className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white px-6 text-[14.5px] font-semibold text-ink-900 hover:bg-ink-25"
+                    >
+                      {post.cta.secondaryCtaLabel || "Learn more"}
+                    </Link>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Bottom-of-article share row — same component as the top-
             of-article placement so readers can share without scrolling
             back up. */}
@@ -183,6 +244,48 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
             />
           </div>
         </section>
+
+        {/* internalLinks — pillar posts reference adjacent pages in their
+            cluster (alternatives, best-of, landing pages, /vs). Renders
+            as a "Read across the cluster" block right after the social
+            share row. Skipped silently when post.internalLinks is empty. */}
+        {Array.isArray(post.internalLinks) && post.internalLinks.length > 0 && (
+          <section className="px-5 sm:px-8 py-10">
+            <div className="mx-auto max-w-[1000px]">
+              <div className="font-display mb-5 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-500">
+                Read across the cluster
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {post.internalLinks.map((link: any, idx: number) => {
+                  const href = blogInternalLinkHref(link);
+                  if (!href) return null;
+                  const label = blogInternalLinkLabel(link);
+                  const summary = link.tldr || link.subhead;
+                  const kind = blogInternalLinkKind(link._type);
+                  return (
+                    <Link
+                      key={link._id || idx}
+                      href={href}
+                      className="group block rounded-2xl border border-ink-100 bg-white p-5 transition hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-md"
+                    >
+                      <div className="font-display text-[10.5px] font-bold uppercase tracking-[0.1em] text-brand-blue-700">
+                        {kind}
+                      </div>
+                      <div className="font-display mt-2 text-[15px] font-semibold leading-snug text-ink-900 group-hover:text-brand-blue-700">
+                        {label}
+                      </div>
+                      {summary && (
+                        <p className="font-body mt-2 text-[12.5px] leading-relaxed text-ink-500 line-clamp-3">
+                          {summary}
+                        </p>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        )}
 
         {post.relatedGlossary?.length > 0 && (
           <section className="px-5 sm:px-8 py-10">
@@ -311,6 +414,31 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
         }}
       />
 
+      {/* FAQPage JSON-LD — derived from the body when an H2 "FAQ" section
+          is present. Each H3 inside that section becomes a Question; the
+          paragraph(s) between H3s become the Answer. Returns null if no
+          FAQ section is detected. */}
+      {(() => {
+        const faq = extractFaqFromBody(post.body);
+        if (!faq || faq.length === 0) return null;
+        return (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify({
+                "@context": "https://schema.org",
+                "@type": "FAQPage",
+                mainEntity: faq.map((q) => ({
+                  "@type": "Question",
+                  name: q.question,
+                  acceptedAnswer: { "@type": "Answer", text: q.answer },
+                })),
+              }),
+            }}
+          />
+        );
+      })()}
+
       {/* HowTo JSON-LD for procedural articles. Slug-keyed config keeps
           the corpus narrow + auditable. Google deprecated HowTo rich
           results in Sept 2023 for most categories, but ChatGPT Search,
@@ -352,4 +480,134 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
       })()}
     </PageShell>
   );
+}
+
+/**
+ * Map a blogPost.internalLinks reference (resolved to its target doc)
+ * to a public URL. Returns null when the doc type isn't routable —
+ * caller filters these out silently.
+ */
+function blogInternalLinkHref(link: any): string | null {
+  if (!link?.slug) return null;
+  switch (link._type) {
+    case "alternative":
+      return `/alternatives/${link.slug}`;
+    case "bestList":
+      return `/best/${link.slug}`;
+    case "landingPage":
+      return `/${link.slug}`;
+    case "blogPost":
+      return `/blog/${link.slug}`;
+    case "comparison":
+      return `/vs/${link.slug}`;
+    case "tradeLane":
+      return `/lanes/${link.slug}`;
+    case "industry":
+      return `/industries/${link.slug}`;
+    case "glossaryTerm":
+      return `/glossary/${link.slug}`;
+    case "useCase":
+      return `/use-cases/${link.slug}`;
+    case "caseStudy":
+      return `/customers/${link.slug}`;
+    default:
+      return null;
+  }
+}
+
+function blogInternalLinkLabel(link: any): string {
+  switch (link._type) {
+    case "alternative":
+      return link.headline || `${link.competitorName} alternatives`;
+    case "bestList":
+      return link.headline || `Best ${link.topic || ""}`;
+    case "landingPage":
+      return link.h1 || link.title || link.slug;
+    case "comparison":
+      return link.competitorName ? `LIT vs ${link.competitorName}` : link.title || link.slug;
+    default:
+      return link.title || link.h1 || link.headline || link.slug;
+  }
+}
+
+/**
+ * Pull a FAQ Q&A list out of a blog post body. Looks for an H2 whose
+ * text is "FAQ" (case-insensitive). After that H2, every H3 starts a
+ * new Question; the normal-style paragraphs between H3s are the Answer.
+ * Stops at the next H2.
+ *
+ * Returns null if no FAQ section is found, or an empty array if the
+ * section exists but has no questions yet. Callers use the empty-check
+ * to decide whether to emit FAQPage JSON-LD.
+ */
+function extractFaqFromBody(
+  body: unknown,
+): Array<{ question: string; answer: string }> | null {
+  if (!Array.isArray(body)) return null;
+
+  function textOf(block: any): string {
+    if (!block || block._type !== "block") return "";
+    return (block.children || [])
+      .map((c: any) => (typeof c?.text === "string" ? c.text : ""))
+      .join("")
+      .trim();
+  }
+
+  // Find the FAQ H2 anchor.
+  let i = body.findIndex(
+    (b: any) => b?._type === "block" && b.style === "h2" && /^faq$/i.test(textOf(b)),
+  );
+  if (i < 0) return null;
+  i += 1;
+
+  const faq: Array<{ question: string; answer: string }> = [];
+  let current: { question: string; answer: string } | null = null;
+
+  while (i < body.length) {
+    const block: any = body[i];
+    if (block?._type === "block") {
+      if (block.style === "h2") {
+        // Next top-level section — stop collecting.
+        break;
+      }
+      if (block.style === "h3") {
+        if (current) faq.push(current);
+        current = { question: textOf(block), answer: "" };
+      } else if (current && (block.style === "normal" || !block.style)) {
+        const t = textOf(block);
+        if (t) current.answer = current.answer ? `${current.answer}\n\n${t}` : t;
+      }
+    }
+    i += 1;
+  }
+  if (current) faq.push(current);
+
+  return faq.filter((q) => q.question && q.answer);
+}
+
+function blogInternalLinkKind(type: string): string {
+  switch (type) {
+    case "alternative":
+      return "Alternatives";
+    case "bestList":
+      return "Best of";
+    case "landingPage":
+      return "Solutions";
+    case "blogPost":
+      return "Blog";
+    case "comparison":
+      return "Compare";
+    case "tradeLane":
+      return "Lane";
+    case "industry":
+      return "Industry";
+    case "glossaryTerm":
+      return "Glossary";
+    case "useCase":
+      return "Use case";
+    case "caseStudy":
+      return "Case study";
+    default:
+      return "Read";
+  }
 }

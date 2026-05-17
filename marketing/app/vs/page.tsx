@@ -67,6 +67,11 @@ const CATEGORIES: { label: string; description: string; slugs: string[] }[] = [
     slugs: ["hubspot", "salesforce", "outreach", "salesloft"],
   },
   {
+    label: "Freight lead services",
+    description: "Companies that sell freight leads as a productized service — curated lists, qualified contacts, sometimes outbound.",
+    slugs: ["freight-genie", "freightleads", "primax-freight-leads"],
+  },
+  {
     label: "Freight-specific platforms",
     description: "Tools built for the freight motion specifically.",
     slugs: ["revenue-vessel", "optimus", "magaya"],

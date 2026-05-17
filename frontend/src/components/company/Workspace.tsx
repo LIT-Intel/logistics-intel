@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Building2, Package as PackageIcon, Ship as ShipIcon, Newspaper, Linkedin as LinkedinIcon, TrendingUp, DollarSign, Sparkles } from 'lucide-react';
 import PreCallBriefing from '../company/PreCallBriefing';
 import CompanyFirmographics from './CompanyFirmographics';
+import { ServiceModeIcon } from '@/components/pulse/ServiceModeIcon';
+import { PulseLIVETab } from '@/features/pulse/PulseLIVETab';
 import { exportCompanyPdf } from '../pdf/exportCompanyPdf';
 import { buildPreCallPrompt } from '../../lib/ai';
 import {
@@ -338,7 +340,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 </div>
               </div>
               <div className='mt-4'>
-                <Tabs tabs={["Overview", "Pre-Call", "Contacts", "Shipments", "RFP", "Activity", "Campaigns", "Settings"]} value={tab} onChange={setTab} />
+                <Tabs tabs={["Overview", "Pre-Call", "Contacts", "Shipments", "Pulse LIVE", "RFP", "Activity", "Campaigns", "Settings"]} value={tab} onChange={setTab} />
                 {loading && (<div className='text-sm text-slate-600'>Loading…</div>)}
                 {error && (<div className='text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3'>{error}</div>)}
                 {!loading && !error && tab === 'Overview' && overview && (
@@ -372,24 +374,51 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                       <div className='text-sm text-slate-600'>No recent shipments.</div>
                     ) : (
                       <div className='overflow-x-auto rounded border'>
-                        <table className='w-full text-sm'>
-                          <thead className='sticky top-0 bg-white'>
-                            <tr className='[&>th]:py-2 [&>th]:text-left'>
-                              <th>Date</th><th>Mode</th><th>Origin</th><th>Destination</th><th>Carrier</th><th>Value (USD)</th><th>Weight (kg)</th>
+                        <table className='min-w-full text-sm'>
+                          <thead className='sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-500'>
+                            <tr>
+                              <th className='px-3 py-2 text-left'>Service</th>
+                              <th className='px-3 py-2 text-left'>Date</th>
+                              <th className='px-3 py-2 text-left'>BOL</th>
+                              <th className='px-3 py-2 text-left'>MBL</th>
+                              <th className='px-3 py-2 text-left'>HS</th>
+                              <th className='px-3 py-2 text-right'>TEU</th>
+                              <th className='px-3 py-2 text-right'>Qty</th>
+                              <th className='px-3 py-2 text-left'>Origin Port</th>
+                              <th className='px-3 py-2 text-left'>POD</th>
+                              <th className='px-3 py-2 text-left'>Final Dest</th>
+                              <th className='px-3 py-2 text-left'>Arrival</th>
+                              <th className='px-3 py-2 text-left'>Shipper</th>
+                              <th className='px-3 py-2 text-left'>Consignee</th>
+                              <th className='px-3 py-2 text-right'>Cost</th>
                             </tr>
                           </thead>
-                          <tbody>
-                            {shipments.map((r: any, i: number) => (
-                              <tr key={i} className='border-t'>
-                                <td>{r.shipped_on || r.date || '—'}</td>
-                                <td className='capitalize'>{String(r.mode || '').toLowerCase()}</td>
-                                <td>{r.origin || r.origin_country || '—'}</td>
-                                <td>{r.destination || r.dest_country || '—'}</td>
-                                <td>{r.carrier || '—'}</td>
-                                <td>{(r.value_usd ? Number(r.value_usd).toLocaleString() : '—')}</td>
-                                <td>{(r.weight_kg ? Number(r.weight_kg).toLocaleString() : '—')}</td>
-                              </tr>
-                            ))}
+                          <tbody className='divide-y divide-slate-100'>
+                            {shipments.map((s: any, i: number) => {
+                              const dateVal = s.date || s.shipped_on;
+                              const finalDest = s.dest_city
+                                ? `${s.dest_city}${s.dest_country_code ? `, ${s.dest_country_code}` : ''}`
+                                : '—';
+                              const cost = s.shipping_cost_usd ?? s.value_usd;
+                              return (
+                                <tr key={i} className='bg-white'>
+                                  <td className='px-3 py-2 text-slate-700'><ServiceModeIcon shipment={s} /></td>
+                                  <td className='px-3 py-2 text-slate-700'>{dateVal ? new Date(dateVal).toLocaleDateString('en-US') : '—'}</td>
+                                  <td className='px-3 py-2 text-slate-700'>{s.bol || '—'}</td>
+                                  <td className='px-3 py-2 text-slate-600'>{s.mbl || '—'}</td>
+                                  <td className='px-3 py-2 text-slate-600'>{s.hs_code || '—'}</td>
+                                  <td className='px-3 py-2 text-right text-slate-800'>{s.teu != null ? Number(s.teu).toLocaleString() : '—'}</td>
+                                  <td className='px-3 py-2 text-right text-slate-800'>{s.qty != null ? Number(s.qty).toLocaleString() : '—'}</td>
+                                  <td className='px-3 py-2 text-slate-600'>{s.origin_port || '—'}</td>
+                                  <td className='px-3 py-2 text-slate-600'>{s.destination_port || '—'}</td>
+                                  <td className='px-3 py-2 text-slate-600'>{finalDest}</td>
+                                  <td className='px-3 py-2 text-slate-600'>{s.arrival_date ? new Date(s.arrival_date).toLocaleDateString('en-US') : '—'}</td>
+                                  <td className='px-3 py-2 text-slate-600'>{s.shipper_name || '—'}</td>
+                                  <td className='px-3 py-2 text-slate-600'>{s.consignee_name || '—'}</td>
+                                  <td className='px-3 py-2 text-right text-slate-800'>{cost != null ? Number(cost).toLocaleString() : '—'}</td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -468,6 +497,11 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                         <div className='text-xs text-slate-600'>No uploaded lanes for this company.</div>
                       )}
                     </div>
+                  </div>
+                )}
+                {!loading && !error && tab === 'Pulse LIVE' && (
+                  <div className='mt-3'>
+                    <PulseLIVETab sourceCompanyKey={active?.source_company_key || null} companyName={active?.name} />
                   </div>
                 )}
                 {!loading && !error && tab === 'Contacts' && (

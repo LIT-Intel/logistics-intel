@@ -4,7 +4,7 @@
 // so it feels native next to the Company Profile. Sections:
 //   - Identity        (logo, name, domain, location, status pill)
 //   - Key signals     (database membership, growth YoY, e-commerce stack,
-//                      hiring/sales signals, recent activity)
+//                      recent activity, buying signals)
 //   - Coach insight   (placeholder for AI-narrated growth reason)
 //   - Firmographics   (industry, employees, revenue, founded)
 //   - Contact         (phone, website, LinkedIn)
@@ -18,6 +18,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
+  ArrowRight,
   ArrowUpRight,
   BarChart3,
   Bookmark,
@@ -37,6 +38,7 @@ import {
   Phone,
   RefreshCw,
   Search,
+  Ship,
   ShoppingBag,
   Sparkles,
   Target,
@@ -61,8 +63,6 @@ import {
   computeVolumeSignal,
   DEFAULT_DM_SENIORITIES,
   fetchDecisionMakers,
-  fetchHiringSignal,
-  summarizeHiring,
 } from '@/features/pulse/pulseSignals';
 
 // Seniority chips the user can toggle. Apollo's documented values.
@@ -137,30 +137,7 @@ export default function PulseQuickCard({
   // Honest computation; not fabricated YoY growth.
   const volumeSignal = useMemo(() => computeVolumeSignal(company.kpis), [company.kpis]);
 
-  // Hiring signal — lazy-fetched per-company on rail open. Cache on the
-  // helper side keeps repeat opens free.
   const orgId = company.business_id || company.source_company_key || null;
-  const [hiring, setHiring] = useState(null);
-  const [hiringLoading, setHiringLoading] = useState(false);
-  const [hiringError, setHiringError] = useState(null);
-
-  useEffect(() => {
-    if (!open || !orgId) return;
-    let cancelled = false;
-    setHiringLoading(true);
-    setHiringError(null);
-    setHiring(null);
-    fetchHiringSignal(orgId).then((res) => {
-      if (cancelled) return;
-      if (res.ok) {
-        setHiring(res.signal);
-      } else {
-        setHiringError(res.code || 'UNAVAILABLE');
-      }
-      setHiringLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [open, orgId]);
 
   // Decision makers — lazy on user click, cached client-side for 6h
   const [decisionMakers, setDecisionMakers] = useState(null);
@@ -496,12 +473,6 @@ export default function PulseQuickCard({
               hint="Detection pending"
               accent={ecomPlatform ? 'blue' : 'mute'}
             />
-            <HiringSignalRow
-              loading={hiringLoading}
-              error={hiringError}
-              signal={hiring}
-              orgId={orgId}
-            />
             <SignalRow
               icon={Briefcase}
               label="Recent activity"
@@ -513,6 +484,39 @@ export default function PulseQuickCard({
               accent={recentDate ? 'blue' : 'mute'}
             />
           </Section>
+
+          {/* Supply-chain data nudge — Pulse is discovery; live BOL /
+              top-routes / suppliers / forwarders data lives on the Search
+              page where one explicit lookup pulls the full shipment history
+              for THIS company. Pulse never auto-fetches that on the user's
+              behalf to keep credits respected. */}
+          <div className="mx-3 mb-3 rounded-[10px] border border-blue-200 bg-blue-50 p-3">
+            <div className="flex items-start gap-2">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-100">
+                <Ship className="h-3 w-3 text-blue-700" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-display text-[12px] font-bold text-slate-900">
+                  {shipments != null
+                    ? 'See full supply-chain data'
+                    : 'No supply-chain data loaded yet'}
+                </div>
+                <div className="font-body mt-0.5 text-[11.5px] leading-snug text-slate-600">
+                  {shipments != null
+                    ? 'Open this company in Search to see top routes, suppliers, forwarders, and the last 12 months of BOL detail.'
+                    : 'Open this company in Search to fetch its top routes, suppliers, forwarders, and 12-month shipment history.'}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenInSearch?.(company)}
+                  className="font-display mt-2 inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-2.5 py-1 text-[11.5px] font-semibold text-white shadow-[0_1px_3px_rgba(59,130,246,0.35),inset_0_1px_0_rgba(255,255,255,0.18)] hover:from-blue-600 hover:to-blue-700"
+                >
+                  <ArrowRight className="h-3 w-3" />
+                  Open in Search
+                </button>
+              </div>
+            </div>
+          </div>
 
           {/* Tech stack — visual brand row */}
           <Section label="Tech stack">
@@ -590,7 +594,84 @@ export default function PulseQuickCard({
             <Row label="Employees" value={company.employee_count || '—'} />
             <Row label="Revenue band" value={company.annual_revenue || '—'} />
             <Row label="HQ" value={location || '—'} />
+            {company.firmographics?.founded_year ? (
+              <Row label="Founded" value={String(company.firmographics.founded_year)} />
+            ) : null}
+            {company.firmographics?.publicly_traded_symbol ? (
+              <Row
+                label="Public"
+                value={`${company.firmographics.publicly_traded_exchange || ''}${company.firmographics.publicly_traded_exchange ? ': ' : ''}${company.firmographics.publicly_traded_symbol}${company.firmographics.market_cap ? ` · ${company.firmographics.market_cap}` : ''}`.trim()}
+              />
+            ) : null}
+            {company.firmographics?.owned_by?.name ? (
+              <Row label="Parent" value={company.firmographics.owned_by.name} />
+            ) : null}
+            {typeof company.firmographics?.headcount_twelve_month_growth === 'number' ? (
+              <Row
+                label="Headcount 12mo"
+                value={`${company.firmographics.headcount_twelve_month_growth >= 0 ? '+' : ''}${(company.firmographics.headcount_twelve_month_growth * 100).toFixed(1)}%`}
+              />
+            ) : null}
           </Section>
+
+          {/* Funding (Apollo, free signal) */}
+          {(company.firmographics?.latest_funding_round_date || company.firmographics?.total_funding_printed) ? (
+            <Section label="Funding">
+              {company.firmographics?.latest_funding_stage ? (
+                <Row label="Latest round" value={company.firmographics.latest_funding_stage} />
+              ) : null}
+              {company.firmographics?.latest_funding_round_date ? (
+                <Row label="Round date" value={new Date(company.firmographics.latest_funding_round_date).toLocaleDateString()} />
+              ) : null}
+              {company.firmographics?.total_funding_printed ? (
+                <Row label="Total raised" value={company.firmographics.total_funding_printed} />
+              ) : null}
+            </Section>
+          ) : null}
+
+          {/* Tech stack (from Apollo technology_names) */}
+          {Array.isArray(company.tech_stack) && company.tech_stack.length > 0 ? (
+            <Section label="Tech stack">
+              <div className="flex flex-wrap gap-1.5 px-3 py-2">
+                {company.tech_stack.slice(0, 12).map((t) => (
+                  <span
+                    key={t}
+                    className="font-body inline-flex items-center rounded-full border border-violet-100 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </Section>
+          ) : null}
+
+          {/* Decision-makers (Apollo people search — free) */}
+          {Array.isArray(company.contacts) && company.contacts.length > 0 ? (
+            <Section label={`Decision-makers (${company.contacts.length})`}>
+              <div className="flex flex-col gap-1 px-3 py-2">
+                {company.contacts.slice(0, 5).map((c) => (
+                  <div key={c.id || c.full_name} className="flex items-center justify-between gap-2 text-[12px]">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-display truncate font-semibold text-slate-900">{c.full_name || 'Unknown'}</div>
+                      <div className="font-body truncate text-[11px] text-slate-500">
+                        {c.title || '—'}{c.seniority ? ` · ${c.seniority}` : ''}
+                      </div>
+                    </div>
+                    {c.linkedin_url ? (
+                      <a
+                        href={ensureHttp(c.linkedin_url)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-display inline-flex items-center gap-0.5 rounded-md border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-blue-700 hover:bg-blue-100"
+                      >
+                        <Linkedin className="h-3 w-3" />
+                      </a>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          ) : null}
 
           {/* Contact */}
           <Section label="Contact">
@@ -745,95 +826,6 @@ function SignalRow({ icon: Icon, label, value, hint, accent, brand }) {
         ) : (
           <div className="font-body text-[11px] italic text-slate-400">{hint || '—'}</div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// Hiring signal row — its own component because it has 4 states
-// (loading, error, empty, populated) and each renders differently.
-// Vendor-neutral copy: never references Apollo; says "hiring data
-// unavailable" or "no open roles".
-function HiringSignalRow({ loading, error, signal, orgId }) {
-  // No org id at all — show the row as detection-pending so the slot
-  // doesn't disappear (keeps the layout stable across companies)
-  if (!orgId) {
-    return (
-      <SignalRow
-        icon={Zap}
-        label="Hiring signal"
-        value={null}
-        hint="Detection pending"
-        accent="mute"
-      />
-    );
-  }
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 py-1.5">
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-50">
-          <Zap className="h-3 w-3 text-slate-500" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="font-body text-[11px] text-slate-500">Hiring signal</div>
-          <div className="font-body text-[11px] italic text-slate-400">Checking…</div>
-        </div>
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <SignalRow
-        icon={Zap}
-        label="Hiring signal"
-        value={null}
-        hint="Hiring data unavailable"
-        accent="mute"
-      />
-    );
-  }
-  if (!signal || !signal.total) {
-    return (
-      <SignalRow
-        icon={Zap}
-        label="Hiring signal"
-        value="No open roles"
-        hint=""
-        accent="mute"
-      />
-    );
-  }
-  const summary = summarizeHiring(signal);
-  const accent =
-    signal.freshness === 'hot' ? 'green' :
-    signal.freshness === 'warm' ? 'blue' :
-    'slate';
-  const valueColor =
-    accent === 'green' ? 'text-green-700' :
-    accent === 'blue' ? 'text-blue-700' :
-    'text-slate-900';
-  return (
-    <div className="flex items-center gap-2 py-1.5">
-      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-50">
-        <Zap className="h-3 w-3 text-slate-500" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="font-body text-[11px] text-slate-500">Hiring signal</div>
-        <div className={['font-mono text-[12.5px] font-semibold', valueColor].join(' ')}>
-          {summary}
-        </div>
-        {signal.departments?.length > 1 ? (
-          <div className="mt-0.5 flex flex-wrap gap-1">
-            {signal.departments.slice(1, 4).map((d) => (
-              <span
-                key={d.name}
-                className="font-display inline-flex rounded-full bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-semibold text-slate-600"
-              >
-                {d.name} · {d.count}
-              </span>
-            ))}
-          </div>
-        ) : null}
       </div>
     </div>
   );

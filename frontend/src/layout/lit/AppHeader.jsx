@@ -20,6 +20,7 @@ import { usePartnerStatus } from "@/lib/affiliate";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 import SidebarUsageChip from "@/components/shared/SidebarUsageChip";
 import "@/layout/lit/litLogo.css";
+import NotificationBell from "@/components/layout/NotificationBell";
 
 const BASE_MOBILE_SECTIONS = [
   {
@@ -225,9 +226,7 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
               />
             </div>
 
-            {/* Notifications bell intentionally hidden — the green dot
-                was promising a feature that doesn't exist. Re-enable
-                here once notifications ship. */}
+            <NotificationBell />
 
             <button
               type="button"

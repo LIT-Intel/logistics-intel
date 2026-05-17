@@ -230,15 +230,18 @@ function mapPulseV2ToRow(r, i) {
     linkedin_url: r.linkedin_url || '',
     summary: r.description || '',
     keywords: [],
-    tech_stack: [],
-    founded_year: null,
+    tech_stack: Array.isArray(r.tech_stack) ? r.tech_stack : [],
+    founded_year: r.firmographics?.founded_year ?? null,
+    // v9 — pass through the Apollo firmographics block so the QuickCard
+    // can render funding pills, headcount-growth chips, logo, ticker, etc.
+    firmographics: r.firmographics || null,
     status,
     provenance,
     source_badge: sourceBadgeFor(r.source),
     matched_reasons: Array.isArray(r.matched_reasons) ? r.matched_reasons : [],
     confidence_score: typeof r.confidence_score === 'number' ? r.confidence_score : 0.5,
-    contacts_count: 0,
-    contacts: [],
+    contacts_count: Array.isArray(r.contacts) ? r.contacts.length : 0,
+    contacts: Array.isArray(r.contacts) ? r.contacts : [],
     kpis: {
       shipments_12m: sm.shipments ?? null,
       teu_12m: sm.teu ?? null,

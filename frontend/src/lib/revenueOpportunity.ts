@@ -39,18 +39,19 @@ const DOMESTIC_FTL_PER_FCL_USD = 1200;
 /** Air freight effective per-kg rate (general cargo, transpac mid-2026). */
 const AIR_RATE_PER_KG_USD = 2.8;
 
-/** Warehouse storage: $7 per CBM per month, ~1 month average dwell. */
-const WAREHOUSE_PER_CBM_PER_MONTH_USD = 7;
-const WAREHOUSE_AVG_DWELL_MONTHS = 1;
-/** TEU → CBM conversion (1 TEU ≈ 28 cubic meters loaded). */
-const CBM_PER_TEU = 28;
-
 /** LCL benchmark $/TEU when no carrier-disclosed rate is available. */
 const LCL_BENCHMARK_USD_PER_TEU = 850;
 
 // ---------- Types --------------------------------------------------------
 
 export type ConfidenceLevel = "high" | "medium" | "low" | "insufficient_data";
+
+export interface DrayageRollup {
+  total_est_usd: number;
+  total_low_usd: number;
+  total_high_usd: number;
+  bol_count: number;
+}
 
 export type ServiceLineEstimate = {
   serviceLine: string;
@@ -86,7 +87,6 @@ export type RevenueOpportunityReport = {
     customs: ServiceLineEstimate;
     drayage: ServiceLineEstimate;
     air: ServiceLineEstimate;
-    warehousing: ServiceLineEstimate;
     trucking: ServiceLineEstimate;
   };
   crossSellSignals: CrossSellSignal[];
@@ -118,6 +118,8 @@ export type RevenueOpportunityInputs = {
   carrierMix?: any[] | null;
   /** Importer-reported total shipping cost (BOL customs value). */
   importerSelfReportedSpend12m?: number | null;
+  /** Drayage rollup from `lit_drayage_estimates` (Pulse LIVE). */
+  drayageRollup?: DrayageRollup | null;
 };
 
 // ---------- Helpers ------------------------------------------------------
@@ -159,159 +161,134 @@ function airLikelyShareFromHs(hsProfile: any[] | null | undefined): number {
   return airTotal / allTotal;
 }
 
-// ---------- Service-line sizers -----------------------------------------
+// ---------- Drayage revenue estimator (Pulse LIVE hook) ------------------
 
-function sizeOcean(
-  inputs: RevenueOpportunityInputs,
-  matches: TopRouteMatch[],
-): ServiceLineEstimate {
-  const totalSpend = matches.reduce((s, m) => s + (m.marketSpend || 0), 0);
-  if (totalSpend > 0) {
-    const exactMatches = matches.filter(
-      (m) => m.matched?.confidence === "exact",
-    ).length;
-    const partialMatches = matches.filter(
-      (m) => m.matched?.confidence === "partial",
-    ).length;
-    const fallbackMatches = matches.length - exactMatches - partialMatches;
-    const conf: ConfidenceLevel =
-      exactMatches >= matches.length * 0.6
-        ? "high"
-        : partialMatches + exactMatches >= matches.length * 0.6
-          ? "medium"
-          : "low";
+export function computeDrayageRevenue(args: {
+  rollup?: DrayageRollup | null;
+  fclShipments12m: number;
+}): { value: number; low: number; high: number; confidence: 'High' | 'Medium' | 'Low' } {
+  if (args.rollup && args.rollup.bol_count > 0) {
     return {
-      serviceLine: "Ocean freight",
-      value: Math.round(totalSpend),
-      confidence: conf,
-      reason: `Sum of ${matches.length} top lane${matches.length === 1 ? "" : "s"} matched to current FBX rates. ${exactMatches} exact / ${partialMatches} partial / ${fallbackMatches} fallback match${fallbackMatches === 1 ? "" : "es"}.`,
-      inputs: [
-        { label: "Lanes evaluated", value: String(matches.length) },
-        {
-          label: "Match quality",
-          value: `${exactMatches} exact, ${partialMatches} partial`,
-        },
-        {
-          label: "Methodology",
-          value: "TEU × matched FBX $/TEU + LCL bench (LCL-bounded)",
-        },
-      ],
+      value: args.rollup.total_est_usd,
+      low: args.rollup.total_low_usd,
+      high: args.rollup.total_high_usd,
+      confidence: 'Medium',
     };
   }
-  // Fallback: if benchmarks didn't load, use TEU × generic average rate.
+  const perShipment = 1200;
+  const value = args.fclShipments12m * perShipment;
+  return {
+    value,
+    low: Math.round(value * 0.75),
+    high: Math.round(value * 1.25),
+    confidence: 'Low',
+  };
+}
+
+// ---------- Service-line sizers -----------------------------------------
+
+function sizeOcean(inputs: RevenueOpportunityInputs, matches: TopRouteMatch[]): ServiceLineEstimate {
   const teu = safeNum(inputs.teu12m);
-  if (teu && Array.isArray(inputs.benchmarkLanes) && inputs.benchmarkLanes.length > 0) {
-    const avgPerTeu =
-      inputs.benchmarkLanes.reduce(
-        (s, l) => s + (Number(l.rate_usd_per_teu) || 0),
-        0,
-      ) / inputs.benchmarkLanes.length;
-    if (avgPerTeu > 0) {
-      const value = Math.round(teu * avgPerTeu);
-      return {
-        serviceLine: "Ocean freight",
-        value,
-        confidence: "low",
-        reason:
-          "Top-route lane match unavailable. Used global FBX average $/TEU as a placeholder.",
-        inputs: [
-          { label: "TEU 12m", value: teu.toLocaleString() },
-          {
-            label: "Avg lane $/TEU",
-            value: `$${Math.round(avgPerTeu).toLocaleString()}`,
-          },
-        ],
-      };
-    }
+  let fbxPerTeu = 0;
+  let matchNote = "";
+  if (matches.length > 0) {
+    const weighted = matches.reduce(
+      (acc, m) => {
+        const t = Number(m.ourTeu) || 0;
+        const r = Number(m.matched?.rate_usd_per_teu) || 0;
+        return { teu: acc.teu + t, spend: acc.spend + t * r };
+      },
+      { teu: 0, spend: 0 },
+    );
+    fbxPerTeu = weighted.teu > 0 ? weighted.spend / weighted.teu : 0;
+    const exact = matches.filter((m) => m.matched?.confidence === "exact").length;
+    const partial = matches.filter((m) => m.matched?.confidence === "partial").length;
+    matchNote = `${exact} exact / ${partial} partial lane matches`;
   }
+  if (fbxPerTeu === 0 && Array.isArray(inputs.benchmarkLanes) && inputs.benchmarkLanes.length > 0) {
+    fbxPerTeu = inputs.benchmarkLanes.reduce((s, l) => s + (Number(l.rate_usd_per_teu) || 0), 0) / inputs.benchmarkLanes.length;
+    matchNote = matchNote || "Global FBX average (no lane match)";
+  }
+  if (!teu || !fbxPerTeu) {
+    return { serviceLine: "Ocean freight", value: null, confidence: "insufficient_data", reason: "Need annual TEU + FBX benchmark.", inputs: [] };
+  }
+  const value = Math.round(teu * fbxPerTeu);
+  const conf: ConfidenceLevel = matches.length >= 3 ? "high" : matches.length >= 1 ? "medium" : "low";
   return {
     serviceLine: "Ocean freight",
-    value: null,
-    confidence: "insufficient_data",
-    reason:
-      "Need top routes plus current FBX benchmarks. Refresh the company snapshot or wait for the weekly rate fetch.",
-    inputs: [],
+    value,
+    confidence: conf,
+    reason: `Annual TEU × FBX $/TEU. ${matchNote}.`,
+    inputs: [
+      { label: "Annual TEU", value: teu.toLocaleString() },
+      { label: "FBX $/TEU", value: `$${Math.round(fbxPerTeu).toLocaleString()}` },
+      { label: "Lanes matched", value: String(matches.length) },
+    ],
   };
 }
 
 function sizeCustoms(inputs: RevenueOpportunityInputs): ServiceLineEstimate {
-  const fcl = safeNum(inputs.fclShipments12m);
-  const lcl = safeNum(inputs.lclShipments12m);
+  const fcl = safeNum(inputs.fclShipments12m) ?? 0;
+  const lcl = safeNum(inputs.lclShipments12m) ?? 0;
   if (!fcl && !lcl) {
-    const total = safeNum(inputs.shipments12m);
-    if (!total) {
-      return {
-        serviceLine: "Customs brokerage",
-        value: null,
-        confidence: "insufficient_data",
-        reason: "Need FCL/LCL ship counts (or total shipments).",
-        inputs: [],
-      };
-    }
-    // Assume 90% FCL when split is unknown — most ocean importers.
-    const assumedFcl = Math.round(total * 0.9);
-    const assumedLcl = total - assumedFcl;
-    const value =
-      assumedFcl * CUSTOMS_FEE_PER_FCL_ENTRY +
-      assumedLcl * CUSTOMS_FEE_PER_LCL_ENTRY;
-    return {
-      serviceLine: "Customs brokerage",
-      value,
-      confidence: "low",
-      reason:
-        "FCL/LCL split unknown — assumed 90/10 split based on industry default.",
-      inputs: [
-        { label: "Shipments 12m", value: total.toLocaleString() },
-        {
-          label: "FCL/LCL fees",
-          value: `$${CUSTOMS_FEE_PER_FCL_ENTRY}/$${CUSTOMS_FEE_PER_LCL_ENTRY} per entry`,
-        },
-      ],
-    };
+    return { serviceLine: "Customs brokerage", value: null, confidence: "insufficient_data", reason: "Need FCL/LCL counts.", inputs: [] };
   }
-  const fclEntries = fcl ?? 0;
-  const lclEntries = lcl ?? 0;
-  const value =
-    fclEntries * CUSTOMS_FEE_PER_FCL_ENTRY +
-    lclEntries * CUSTOMS_FEE_PER_LCL_ENTRY;
+  // Per-entry rates (mid-2026):
+  const ENTRY_FCL = 150;    // standard FCL entry
+  const ENTRY_LCL = 200;    // LCL entry (more lines typical)
+  const ISF_FEE = 35;       // ISF 10+2 filing per shipment
+  const BOND_FEE = 60;      // single-entry bond avg (continuous bond would shift)
+  const HMF_RATE = 0.00125; // Harbor Maintenance Fee 0.125% (applied to ocean only)
+  const MPF_AVG = 80;       // Merchandise Processing Fee (capped at $614.35, min $32; $80 avg per entry)
+  const totalEntries = fcl + lcl;
+  const base = fcl * ENTRY_FCL + lcl * ENTRY_LCL;
+  const isfTotal = totalEntries * ISF_FEE;
+  const bondTotal = totalEntries * BOND_FEE;
+  const mpfTotal = totalEntries * MPF_AVG;
+  const value = Math.round(base + isfTotal + bondTotal + mpfTotal);
   return {
     serviceLine: "Customs brokerage",
     value,
-    confidence: "high",
-    reason:
-      "Per-entry brokerage fee × actual FCL + LCL ship counts (industry-standard pricing).",
+    confidence: fcl + lcl >= 12 ? "high" : "medium",
+    reason: "Per-entry brokerage + ISF + bond + MPF accessorials.",
     inputs: [
-      { label: "FCL entries", value: fclEntries.toLocaleString() },
-      { label: "LCL entries", value: lclEntries.toLocaleString() },
-      {
-        label: "Per-entry fee",
-        value: `$${CUSTOMS_FEE_PER_FCL_ENTRY} FCL · $${CUSTOMS_FEE_PER_LCL_ENTRY} LCL`,
-      },
+      { label: "FCL entries", value: fcl.toLocaleString() },
+      { label: "LCL entries", value: lcl.toLocaleString() },
+      { label: "Brokerage", value: `$${base.toLocaleString()}` },
+      { label: "ISF + bond + MPF", value: `$${(isfTotal + bondTotal + mpfTotal).toLocaleString()}` },
     ],
   };
 }
 
 function sizeDrayage(inputs: RevenueOpportunityInputs): ServiceLineEstimate {
-  const fcl = safeNum(inputs.fclShipments12m);
-  if (!fcl) {
+  if (inputs.drayageRollup && inputs.drayageRollup.bol_count > 0) {
     return {
       serviceLine: "Drayage",
-      value: null,
-      confidence: "insufficient_data",
-      reason: "Need FCL container count to size drayage.",
-      inputs: [],
+      value: inputs.drayageRollup.total_est_usd,
+      confidence: "medium",
+      reason: `Drayage rollup from ${inputs.drayageRollup.bol_count} BOL estimates (PierPASS + chassis + fuel + linehaul).`,
+      inputs: [
+        { label: "BOLs estimated", value: String(inputs.drayageRollup.bol_count) },
+        { label: "Range", value: `$${inputs.drayageRollup.total_low_usd.toLocaleString()}–$${inputs.drayageRollup.total_high_usd.toLocaleString()}` },
+      ],
     };
   }
+  const fcl = safeNum(inputs.fclShipments12m);
+  if (!fcl) {
+    return { serviceLine: "Drayage", value: null, confidence: "insufficient_data", reason: "Need FCL count or drayage rollup.", inputs: [] };
+  }
+  // Fallback per-FCL drayage with accessorials baked in (~$1,200 avg coast-to-DC pulls).
+  // Includes: linehaul, chassis, fuel surcharge (22%), PierPASS (LA/LB), per-container fee.
+  const DRAYAGE_PER_FCL_USD = 1200;
   const value = fcl * DRAYAGE_PER_FCL_USD;
   return {
     serviceLine: "Drayage",
     value,
-    confidence: "high",
-    reason:
-      "FCL containers × blended US East/West coast drayage rate (~$450/pull).",
+    confidence: "low",
+    reason: "Per-FCL flat drayage (linehaul + chassis + fuel + PierPASS averaged).",
     inputs: [
-      { label: "FCL containers", value: fcl.toLocaleString() },
-      { label: "Per-pull rate", value: `$${DRAYAGE_PER_FCL_USD}` },
+      { label: "FCL pulls", value: fcl.toLocaleString() },
+      { label: "Avg per pull", value: `$${DRAYAGE_PER_FCL_USD.toLocaleString()}` },
     ],
   };
 }
@@ -361,60 +338,31 @@ function sizeAir(inputs: RevenueOpportunityInputs): ServiceLineEstimate {
   };
 }
 
-function sizeWarehousing(inputs: RevenueOpportunityInputs): ServiceLineEstimate {
-  const teu = safeNum(inputs.teu12m);
-  if (!teu) {
-    return {
-      serviceLine: "Warehousing",
-      value: null,
-      confidence: "insufficient_data",
-      reason: "Need TEU to derive cubic-meter throughput.",
-      inputs: [],
-    };
-  }
-  const cbm = teu * CBM_PER_TEU;
-  const value = Math.round(
-    cbm * WAREHOUSE_PER_CBM_PER_MONTH_USD * WAREHOUSE_AVG_DWELL_MONTHS,
-  );
-  return {
-    serviceLine: "Warehousing",
-    value,
-    confidence: "medium",
-    reason: `Annual TEU × ${CBM_PER_TEU} CBM/TEU × $${WAREHOUSE_PER_CBM_PER_MONTH_USD}/CBM/mo × ${WAREHOUSE_AVG_DWELL_MONTHS} mo dwell. Assumes domestic dwell — discount if buyer ships direct-to-store.`,
-    inputs: [
-      { label: "Annual CBM", value: Math.round(cbm).toLocaleString() },
-      {
-        label: "Storage rate",
-        value: `$${WAREHOUSE_PER_CBM_PER_MONTH_USD}/CBM/mo`,
-      },
-      { label: "Avg dwell", value: `${WAREHOUSE_AVG_DWELL_MONTHS} mo` },
-    ],
-  };
-}
-
 function sizeTrucking(inputs: RevenueOpportunityInputs): ServiceLineEstimate {
   const fcl = safeNum(inputs.fclShipments12m);
   if (!fcl) {
-    return {
-      serviceLine: "Domestic trucking",
-      value: null,
-      confidence: "insufficient_data",
-      reason: "Need FCL container count to size post-port trucking.",
-      inputs: [],
-    };
+    return { serviceLine: "Domestic trucking", value: null, confidence: "insufficient_data", reason: "Need FCL count.", inputs: [] };
   }
-  // Assume 60% of FCL containers do a post-port FTL move (the rest are
-  // local drayage to a near-port DC and stop there).
-  const ftlMoves = Math.round(fcl * 0.6);
-  const value = ftlMoves * DOMESTIC_FTL_PER_FCL_USD;
+  // Assume 60% of FCL containers do a post-port FTL move (rest stay at near-port DC).
+  // Avg 800 mi cross-state, $3.15/mi base + 22% fuel + $100 detention avg.
+  const FTL_PCT = 0.60;
+  const AVG_MILES = 800;
+  const RATE_PER_MILE = 3.15;
+  const FUEL_PCT = 0.22;
+  const DETENTION_AVG = 100;
+  const ftlMoves = Math.round(fcl * FTL_PCT);
+  const linehaul = AVG_MILES * RATE_PER_MILE;
+  const fuel = linehaul * FUEL_PCT;
+  const perMove = linehaul + fuel + DETENTION_AVG;
+  const value = Math.round(ftlMoves * perMove);
   return {
     serviceLine: "Domestic trucking",
     value,
     confidence: "medium",
-    reason: `60% of FCL containers assumed to do a post-port FTL move (~600 mi avg). Remaining 40% ship local-only.`,
+    reason: "60% of FCL × post-port FTL (linehaul + fuel + detention).",
     inputs: [
-      { label: "Estimated FTL moves", value: ftlMoves.toLocaleString() },
-      { label: "Per-move rate", value: `$${DOMESTIC_FTL_PER_FCL_USD}` },
+      { label: "FTL moves", value: ftlMoves.toLocaleString() },
+      { label: "Per move", value: `$${Math.round(perMove).toLocaleString()}` },
     ],
   };
 }
@@ -496,7 +444,6 @@ export function buildRevenueOpportunity(
   const customs = sizeCustoms(inputs);
   const drayage = sizeDrayage(inputs);
   const air = sizeAir(inputs);
-  const warehousing = sizeWarehousing(inputs);
   const trucking = sizeTrucking(inputs);
 
   const totalAddressableSpend = [
@@ -504,7 +451,6 @@ export function buildRevenueOpportunity(
     customs,
     drayage,
     air,
-    warehousing,
     trucking,
   ].reduce((s, line) => s + (line.value ?? 0), 0);
 
@@ -538,7 +484,7 @@ export function buildRevenueOpportunity(
     companyName: inputs.companyName ?? null,
     totalAddressableSpend: Math.round(totalAddressableSpend),
     scenarios,
-    serviceLines: { ocean, customs, drayage, air, warehousing, trucking },
+    serviceLines: { ocean, customs, drayage, air, trucking },
     crossSellSignals,
     benchmarkAsOf,
     hasUsableData: totalAddressableSpend > 0,

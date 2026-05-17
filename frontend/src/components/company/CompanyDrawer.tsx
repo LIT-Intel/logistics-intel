@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { iyFetchCompanyBols } from '@/lib/api';
 import { CompanyLite, ShipmentLite } from '@/types/importyeti';
+import { ServiceModeIcon } from '@/components/pulse/ServiceModeIcon';
 
 const formatNumber = (value?: number | null) => {
   if (value == null || Number.isNaN(value)) return '—';
@@ -112,38 +113,49 @@ export default function CompanyDrawer({ company, open, onOpenChange }: Props) {
                   <table className="min-w-full text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                       <tr>
+                        <th className="px-3 py-2 text-left">Service</th>
                         <th className="px-3 py-2 text-left">Date</th>
                         <th className="px-3 py-2 text-left">BOL</th>
                         <th className="px-3 py-2 text-left">MBL</th>
-                        <th className="px-3 py-2 text-left">HS Code</th>
+                        <th className="px-3 py-2 text-left">HS</th>
                         <th className="px-3 py-2 text-right">TEU</th>
                         <th className="px-3 py-2 text-right">Qty</th>
-                        <th className="px-3 py-2 text-left">Unit</th>
+                        <th className="px-3 py-2 text-left">Origin Port</th>
+                        <th className="px-3 py-2 text-left">POD</th>
+                        <th className="px-3 py-2 text-left">Final Dest</th>
+                        <th className="px-3 py-2 text-left">Arrival</th>
                         <th className="px-3 py-2 text-left">Shipper</th>
                         <th className="px-3 py-2 text-left">Consignee</th>
-                        <th className="px-3 py-2 text-left">Description</th>
-                        <th className="px-3 py-2 text-right">Cost (USD)</th>
+                        <th className="px-3 py-2 text-right">Cost</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {shipments.map((row, index) => (
-                        <tr key={`${row.bol}-${index}`} className="bg-white">
-                          <td className="px-3 py-2 text-slate-700">{formatDate(row.date)}</td>
-                          <td className="px-3 py-2 text-slate-700">{row.bol || '—'}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.mbl || '—'}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.hs_code || '—'}</td>
-                          <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.teu ?? null)}</td>
-                          <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.qty ?? null)}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.qty_unit || '—'}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.shipper_name || '—'}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.consignee_name || '—'}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.description || '—'}</td>
-                          <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.shipping_cost_usd ?? null)}</td>
-                        </tr>
-                      ))}
+                      {shipments.map((s, index) => {
+                        const finalDest = s.dest_city
+                          ? `${s.dest_city}${s.dest_country_code ? `, ${s.dest_country_code}` : ''}`
+                          : '—';
+                        return (
+                          <tr key={`${s.bol}-${index}`} className="bg-white">
+                            <td className="px-3 py-2 text-slate-700"><ServiceModeIcon shipment={s} /></td>
+                            <td className="px-3 py-2 text-slate-700">{formatDate(s.date)}</td>
+                            <td className="px-3 py-2 text-slate-700">{s.bol || '—'}</td>
+                            <td className="px-3 py-2 text-slate-600">{s.mbl || '—'}</td>
+                            <td className="px-3 py-2 text-slate-600">{s.hs_code || '—'}</td>
+                            <td className="px-3 py-2 text-right text-slate-800">{formatNumber(s.teu ?? null)}</td>
+                            <td className="px-3 py-2 text-right text-slate-800">{formatNumber(s.qty ?? null)}</td>
+                            <td className="px-3 py-2 text-slate-600">{s.origin_port || '—'}</td>
+                            <td className="px-3 py-2 text-slate-600">{s.destination_port || '—'}</td>
+                            <td className="px-3 py-2 text-slate-600">{finalDest}</td>
+                            <td className="px-3 py-2 text-slate-600">{s.arrival_date ? new Date(s.arrival_date).toLocaleDateString('en-US') : '—'}</td>
+                            <td className="px-3 py-2 text-slate-600">{s.shipper_name || '—'}</td>
+                            <td className="px-3 py-2 text-slate-600">{s.consignee_name || '—'}</td>
+                            <td className="px-3 py-2 text-right text-slate-800">{formatNumber(s.shipping_cost_usd ?? null)}</td>
+                          </tr>
+                        );
+                      })}
                       {!shipments.length && !loading && (
                         <tr>
-                          <td colSpan={11} className="px-3 py-6 text-center text-sm text-slate-500">No shipments found.</td>
+                          <td colSpan={14} className="px-3 py-6 text-center text-sm text-slate-500">No shipments found.</td>
                         </tr>
                       )}
                     </tbody>

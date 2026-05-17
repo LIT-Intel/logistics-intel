@@ -8,13 +8,16 @@
 //   Day 8: trial_tip_revenue_opportunity (always — "lead with $")
 //   Day 12: trial_ending_soon (always)
 //
-// Auth: NO bearer auth (matches lit-send-campaign-email-tick pattern).
+// Auth: X-Internal-Cron header against LIT_CRON_SECRET env (shared-secret
+// pattern used by all LIT cron-triggered edge fns — see _shared/cron_auth.ts).
+// pg_cron + pg_net injects the header from current_setting('app.lit_cron_secret').
 // Function uses its own SUPABASE_SERVICE_ROLE_KEY env to call
 // send-subscription-email (which IS strict about auth) internally.
 // Bounded blast radius: only sends to known users at known event types.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { verifyCronAuth } from "../_shared/cron_auth.ts";
 
 const ALLOWED_EVENTS = new Set([
   "trial_welcome",
@@ -31,7 +34,9 @@ const ALLOWED_EVENTS = new Set([
 ]);
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization, Content-Type" } });
+  if (req.method === "OPTIONS") return new Response(null, { headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Internal-Cron" } });
+  const auth = verifyCronAuth(req);
+  if (!auth.ok) return auth.response;
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const db = createClient(supabaseUrl, serviceRoleKey);

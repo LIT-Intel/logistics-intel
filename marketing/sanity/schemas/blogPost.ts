@@ -100,6 +100,63 @@ export const blogPost = defineType({
       of: [{ type: "reference", to: [{ type: "glossaryTerm" }] }],
       group: "related",
     }),
+    // Cowork-era extensions — mirror what's deployed via MCP. Keeps
+    // Studio editor parity with production. DO NOT push schema changes
+    // here via `sanity schema deploy` (would split source of truth).
+    defineField({
+      name: "internalLinks",
+      title: "Internal-link cluster",
+      type: "array",
+      of: [
+        {
+          type: "reference",
+          to: [
+            { type: "blogPost" },
+            { type: "alternative" },
+            { type: "bestList" },
+            { type: "landingPage" },
+            { type: "comparison" },
+            { type: "tradeLane" },
+            { type: "industry" },
+            { type: "glossaryTerm" },
+            { type: "useCase" },
+            { type: "caseStudy" },
+          ],
+        },
+      ],
+      description:
+        "Cluster of related pages — surfaced on the post as a 'Read across the cluster' grid below the body.",
+      group: "related",
+    }),
+    defineField({
+      name: "cta",
+      title: "Post-specific CTA",
+      type: "object",
+      group: "content",
+      description: "Optional override for the post's mid/end-of-article CTA.",
+      fields: [
+        { name: "headline", type: "string" },
+        { name: "body", type: "text", rows: 3 },
+        { name: "primaryCtaLabel", type: "string" },
+        { name: "primaryCtaUrl", type: "string" },
+        { name: "secondaryCtaLabel", type: "string" },
+        { name: "secondaryCtaUrl", type: "string" },
+        {
+          name: "variant",
+          type: "string",
+          description: "Visual variant — 'demo', 'trial', 'subscribe', etc. (used only by templates).",
+        },
+      ],
+    }),
+    defineField({
+      name: "aliases",
+      title: "URL aliases",
+      type: "array",
+      of: [{ type: "string" }],
+      description:
+        "Old or alternate URLs that should 308 to this post. Must begin with '/'. Wired to next.config.mjs redirects at build time.",
+      group: "meta",
+    }),
     defineField({
       name: "agentMetadata",
       title: "Agent metadata",

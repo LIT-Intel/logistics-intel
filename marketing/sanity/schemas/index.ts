@@ -29,6 +29,9 @@ import { faqItem } from "./objects/faqItem";
 import { contentBlock } from "./objects/contentBlock";
 import { demoRequest } from "./demoRequest";
 import { partnerApplication } from "./partnerApplication";
+import { alternative } from "./alternative";
+import { bestList } from "./bestList";
+import { landingPage } from "./landingPage";
 
 export const schemaTypes = [
   // singletons
@@ -57,6 +60,11 @@ export const schemaTypes = [
   freeTool,
   // generic
   page,
+  // programmatic SEO (MCP-managed in production — local files mirror the
+  // deployed shape so `npx sanity dev` shows the same fields)
+  alternative,
+  bestList,
+  landingPage,
   // inbox
   demoRequest,
   partnerApplication,

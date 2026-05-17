@@ -28,6 +28,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     hsCodes: SitemapItem[];
     freeTools: SitemapItem[];
     pages: SitemapItem[];
+    alternatives?: SitemapItem[];
+    bestLists?: SitemapItem[];
+    landingPages?: SitemapItem[];
   } | null;
 
   const now = new Date();
@@ -58,6 +61,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/best`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: `${SITE_URL}/partners`, lastModified: now, changeFrequency: "monthly", priority: 0.85 },
     { url: `${SITE_URL}/freight-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.95 },
+    { url: `${SITE_URL}/shipper-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${SITE_URL}/freight-broker-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     ...FEATURE_PAGES.map((f) => ({
       url: `${SITE_URL}/features/${f.slug}`,
       lastModified: now,
@@ -165,6 +170,30 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           lastModified: new Date(p.updatedAt),
           changeFrequency: "monthly" as const,
           priority: 0.5,
+        })),
+        // Sanity-backed alternatives (parallel to hand-coded ALTERNATIVE_PAGES;
+        // overlapping slugs auto-dedupe because Next.js / search engines treat
+        // duplicate sitemap entries idempotently).
+        ...(dynamic.alternatives || []).map((p) => ({
+          url: `${SITE_URL}/alternatives/${p.slug}`,
+          lastModified: new Date(p.updatedAt),
+          changeFrequency: "weekly" as const,
+          priority: 0.85,
+        })),
+        ...(dynamic.bestLists || []).map((p) => ({
+          url: `${SITE_URL}/best/${p.slug}`,
+          lastModified: new Date(p.updatedAt),
+          changeFrequency: "weekly" as const,
+          priority: 0.85,
+        })),
+        // landingPage docs render at top-level paths (/freight-leads, /shipper-leads,
+        // /freight-broker-leads). Currently they parallel hand-coded routes —
+        // these sitemap entries capture them either way.
+        ...(dynamic.landingPages || []).map((p) => ({
+          url: `${SITE_URL}/${p.slug}`,
+          lastModified: new Date(p.updatedAt),
+          changeFrequency: "weekly" as const,
+          priority: 0.9,
         })),
       ]
     : [];

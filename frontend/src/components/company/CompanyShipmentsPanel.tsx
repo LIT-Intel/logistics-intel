@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchCompanyShipments } from '@/lib/api';
+import { ServiceModeIcon } from '@/components/pulse/ServiceModeIcon';
 
 type Props = {
   companyId?: string | null;
@@ -90,25 +91,49 @@ export default function CompanyShipmentsPanel({ companyId, limit = 50 }: Props) 
       <table className="min-w-full text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           <tr>
+            <th className="px-3 py-2 text-left">Service</th>
             <th className="px-3 py-2 text-left">Date</th>
-            <th className="px-3 py-2 text-left">Origin</th>
-            <th className="px-3 py-2 text-left">Destination</th>
-            <th className="px-3 py-2 text-left">Carrier</th>
+            <th className="px-3 py-2 text-left">BOL</th>
+            <th className="px-3 py-2 text-left">MBL</th>
+            <th className="px-3 py-2 text-left">HS</th>
             <th className="px-3 py-2 text-right">TEU</th>
-            <th className="px-3 py-2 text-right">Value (USD)</th>
+            <th className="px-3 py-2 text-right">Qty</th>
+            <th className="px-3 py-2 text-left">Origin Port</th>
+            <th className="px-3 py-2 text-left">POD</th>
+            <th className="px-3 py-2 text-left">Final Dest</th>
+            <th className="px-3 py-2 text-left">Arrival</th>
+            <th className="px-3 py-2 text-left">Shipper</th>
+            <th className="px-3 py-2 text-left">Consignee</th>
+            <th className="px-3 py-2 text-right">Cost</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {rows.map((row, index) => (
-            <tr key={`${row.shipment_id || row.id || index}-${index}`} className="bg-white">
-              <td className="px-3 py-2 text-slate-700">{formatDate(row.shipped_on ?? row.date)}</td>
-              <td className="px-3 py-2 text-slate-600">{cleanLabel(row.origin_country || row.origin || row.origin_city)}</td>
-              <td className="px-3 py-2 text-slate-600">{cleanLabel(row.dest_country || row.destination || row.dest_city)}</td>
-              <td className="px-3 py-2 text-slate-600">{cleanCarrier(row.carrier)}</td>
-              <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.teu)}</td>
-              <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.value_usd)}</td>
-            </tr>
-          ))}
+          {rows.map((row, index) => {
+            const destCity = row.dest_city || row.destination_city;
+            const destCountry = row.dest_country_code || row.dest_country;
+            const finalDest = destCity
+              ? `${destCity}${destCountry ? `, ${destCountry}` : ''}`
+              : '—';
+            const cost = row.shipping_cost_usd ?? row.value_usd;
+            return (
+              <tr key={`${row.shipment_id || row.id || index}-${index}`} className="bg-white">
+                <td className="px-3 py-2 text-slate-700"><ServiceModeIcon shipment={row} /></td>
+                <td className="px-3 py-2 text-slate-700">{formatDate(row.shipped_on ?? row.date)}</td>
+                <td className="px-3 py-2 text-slate-700">{cleanLabel(row.bol)}</td>
+                <td className="px-3 py-2 text-slate-600">{cleanLabel(row.mbl)}</td>
+                <td className="px-3 py-2 text-slate-600">{cleanLabel(row.hs_code)}</td>
+                <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.teu)}</td>
+                <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.qty)}</td>
+                <td className="px-3 py-2 text-slate-600">{cleanLabel(row.origin_port || row.origin || row.origin_country)}</td>
+                <td className="px-3 py-2 text-slate-600">{cleanLabel(row.destination_port || row.destination || row.dest_country)}</td>
+                <td className="px-3 py-2 text-slate-600">{finalDest}</td>
+                <td className="px-3 py-2 text-slate-600">{row.arrival_date ? new Date(row.arrival_date).toLocaleDateString('en-US') : '—'}</td>
+                <td className="px-3 py-2 text-slate-600">{cleanLabel(row.shipper_name || row.shipper)}</td>
+                <td className="px-3 py-2 text-slate-600">{cleanLabel(row.consignee_name || row.consignee || row.carrier)}</td>
+                <td className="px-3 py-2 text-right text-slate-800">{formatNumber(cost)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

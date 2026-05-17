@@ -3521,6 +3521,40 @@ export async function getSavedCompanyShellOnly(
     };
   }
 
+  // CompanyProfileV2 may pass either a slug ("amazon-logistics") or a UUID
+  // (UUIDs flow in from Command Center navigation). The snapshot table is
+  // keyed by SLUG ("amazon-logistics"), never by UUID — so when the input
+  // is a UUID we must first resolve the slug via lit_companies, otherwise
+  // the snapshot lookup misses every time and the page falls back to the
+  // lit_companies shell with empty timeSeries → buildYearScopedProfile
+  // returns all-zero routeKpis → header + Supply Chain KPI cards render
+  // "—". Without this resolution step only `marketSpendBreakdown` renders
+  // because it reads the base profile, not the year-scoped one.
+  const SHELL_UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  let snapshotSlug: string = normalizedSlug;
+  if (SHELL_UUID_RE.test(normalizedSlug)) {
+    try {
+      const { data: companyRow } = await supabase
+        .from("lit_companies")
+        .select("source_company_key")
+        .eq("id", normalizedSlug)
+        .maybeSingle();
+      const sck = (companyRow as any)?.source_company_key as string | null;
+      if (sck) {
+        // source_company_key is stored as "company/<slug>"; the snapshot
+        // table uses the bare slug. Normalize through the same helper so
+        // edge cases (trailing slashes, casing) collapse identically.
+        snapshotSlug = normalizeCompanyIdToSlug(sck);
+      }
+    } catch (slugErr) {
+      console.warn(
+        "getSavedCompanyShellOnly: UUID→slug resolve failed",
+        slugErr,
+      );
+    }
+  }
+
   // System of record — `lit_importyeti_company_snapshot` keys on the slug
   // form (e.g. "samsung-electronics"), not the prefixed key form. The
   // importyeti-proxy writes the same slug shape on each refresh.
@@ -3532,7 +3566,7 @@ export async function getSavedCompanyShellOnly(
     const { data: snapshotRow, error: snapshotErr } = await supabase
       .from("lit_importyeti_company_snapshot")
       .select("company_id, parsed_summary, raw_payload, updated_at")
-      .eq("company_id", normalizedSlug)
+      .eq("company_id", snapshotSlug)
       .maybeSingle();
 
     if (snapshotErr) {
@@ -3549,7 +3583,7 @@ export async function getSavedCompanyShellOnly(
         try {
           parsedProfile = normalizeIyCompanyProfile(
             cachedSnapshot,
-            normalizedSlug,
+            snapshotSlug,
           );
           parsedRouteKpis = parsedProfile?.routeKpis ?? null;
         } catch (normErr) {

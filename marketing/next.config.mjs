@@ -11,6 +11,77 @@
  */
 const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_ORIGIN || "https://app.logisticintel.com";
 
+/**
+ * Fetch every Sanity doc with an `aliases[]` array and turn each alias
+ * into a permanent (308) redirect to the doc's canonical URL.
+ *
+ * Runs at build time only. If Sanity is unreachable or the request fails,
+ * we silently return an empty list so the build never breaks on a CMS
+ * outage. New aliases ship on the next deploy.
+ *
+ * Canonical-URL mapping per `_type`:
+ *   alternative  → /alternatives/{slug}
+ *   bestList     → /best/{slug}
+ *   landingPage  → /{slug}              (top-level, e.g. /freight-leads)
+ *   blogPost     → /blog/{slug}
+ *   comparison   → /vs/{slug}
+ */
+async function fetchSanityAliasRedirects() {
+  const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || "w0whm6ow";
+  const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET || "production";
+  const apiVersion = process.env.NEXT_PUBLIC_SANITY_API_VERSION || "2024-10-15";
+  const groq = `*[defined(aliases) && count(aliases) > 0]{
+    _type, "slug": slug.current, aliases
+  }`;
+  const url = `https://${projectId}.api.sanity.io/v${apiVersion}/data/query/${dataset}?query=${encodeURIComponent(groq)}`;
+
+  let rows = [];
+  try {
+    const r = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!r.ok) {
+      console.warn("[next.config] alias fetch non-2xx", r.status);
+      return [];
+    }
+    const data = await r.json();
+    rows = Array.isArray(data?.result) ? data.result : [];
+  } catch (e) {
+    console.warn("[next.config] alias fetch failed", e?.message || e);
+    return [];
+  }
+
+  const destForType = (_type, slug) => {
+    switch (_type) {
+      case "alternative":
+        return `/alternatives/${slug}`;
+      case "bestList":
+        return `/best/${slug}`;
+      case "landingPage":
+        return `/${slug}`;
+      case "blogPost":
+        return `/blog/${slug}`;
+      case "comparison":
+        return `/vs/${slug}`;
+      default:
+        return null;
+    }
+  };
+
+  const redirects = [];
+  const seen = new Set();
+  for (const row of rows) {
+    const dest = destForType(row._type, row.slug);
+    if (!dest || !Array.isArray(row.aliases)) continue;
+    for (const alias of row.aliases) {
+      if (typeof alias !== "string" || !alias.startsWith("/")) continue;
+      // Skip self-redirects + duplicates.
+      if (alias === dest || seen.has(alias)) continue;
+      seen.add(alias);
+      redirects.push({ source: alias, destination: dest, permanent: true });
+    }
+  }
+  return redirects;
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -47,6 +118,10 @@ const nextConfig = {
     }));
     // Bare /privacy and /terms — common shorthand pasted into OAuth consent
     // screens, footer copy, etc. Canonical home is /legal/*.
+    // Sanity-driven aliases — every doc's aliases[] becomes a permanent
+    // redirect to the canonical URL. Fetched at build time.
+    const sanityAliasRedirects = await fetchSanityAliasRedirects();
+
     return [
       ...appRedirects,
       { source: "/privacy", destination: "/legal/privacy", permanent: true },
@@ -56,6 +131,7 @@ const nextConfig = {
       { source: "/affiliate-program", destination: "/partners", permanent: true },
       // Old in-app affiliate apply URL — drive to the public landing.
       { source: "/partners/apply", destination: "/partners#apply", permanent: false },
+      ...sanityAliasRedirects,
     ];
   },
   async rewrites() {

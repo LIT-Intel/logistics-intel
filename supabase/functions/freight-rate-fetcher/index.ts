@@ -1,20 +1,17 @@
-// Phase 4 — freight-rate-fetcher
+// Phase 4 — freight-rate-fetcher (v2)
 //
-// Scrapes the 12 Freightos Baltic Index (FBX) public terminal pages for
-// current spot rates and upserts them into `lit_freight_rate_benchmarks`.
-// Designed to be invoked weekly via Supabase cron (Mondays after FBX
-// updates). Public Freightos pages render the current USD per 40' rate
-// in the server-rendered HTML; we extract via regex.
+// Pulls the current Freightos Baltic Index rates and upserts them into
+// `lit_freight_rate_benchmarks`. Designed for weekly invocation via
+// Supabase pg_cron + pg_net (Mondays 16:00 UTC, after FBX updates).
 //
-// Auth: requires service role bearer (cron uses the service role key).
-// Manual invocations also accepted with a super-admin email allowlist
-// for sanity checks. No user JWT required.
+// Implementation: Freightos embeds a JSON blob on every FBX terminal page
+// containing all current lane rates. We fetch ONE page (the index landing)
+// and parse the blob, rather than scraping 12 separate URLs.
 //
-// Body (optional):
-//   { lanes?: ("FBX01" | ... | "FBX12")[]  // restrict to a subset
-//     dry_run?: boolean }                  // return parsed values, do not write
+// Auth: X-Internal-Cron header against LIT_CRON_SECRET env.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { verifyCronAuth } from "../_shared/cron_auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,135 +27,92 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-type Lane = {
-  code: string;
-  slug: string;
-  label: string;
+const FREIGHTOS_INDEX_URL =
+  "https://www.freightos.com/enterprise/terminal/freightos-baltic-index-global-container-pricing-index/";
+
+// Map Freightos's current FBX-NN label to our stable LIT-internal lane code.
+// Freightos renumbered their labels in mid-2026 — we keep our internal codes
+// frozen so existing DB rows, charts, and queries don't churn. The semantic
+// meaning of each LIT code is preserved.
+type LaneSpec = {
+  lit_code: string;       // stable internal code (FBX01..FBX12)
+  freightos_label: string | null; // current Freightos label, or null if retired
+  label: string;          // human-readable
   origin: string;
   destination: string;
 };
 
-const LANES: Lane[] = [
-  { code: "FBX01", slug: "fbx-01-china-to-north-america-west-coast",   label: "China/East Asia → North America West Coast", origin: "China/East Asia",         destination: "North America West Coast" },
-  { code: "FBX02", slug: "fbx-02-china-to-north-america-east-coast",   label: "China/East Asia → North America East Coast", origin: "China/East Asia",         destination: "North America East Coast" },
-  { code: "FBX03", slug: "fbx-03-china-east-asia-to-north-europe",     label: "China/East Asia → North Europe",             origin: "China/East Asia",         destination: "North Europe" },
-  { code: "FBX04", slug: "fbx-04-china-east-asia-to-mediterranean",    label: "China/East Asia → Mediterranean",            origin: "China/East Asia",         destination: "Mediterranean" },
-  { code: "FBX05", slug: "fbx-05-north-america-west-coast-to-china",   label: "North America West Coast → China/East Asia", origin: "North America West Coast", destination: "China/East Asia" },
-  { code: "FBX06", slug: "fbx-06-north-america-east-coast-to-china",   label: "North America East Coast → China/East Asia", origin: "North America East Coast", destination: "China/East Asia" },
-  { code: "FBX07", slug: "fbx-07-north-europe-to-china",               label: "North Europe → China/East Asia",             origin: "North Europe",             destination: "China/East Asia" },
-  { code: "FBX08", slug: "fbx-08-mediterranean-to-china",              label: "Mediterranean → China/East Asia",            origin: "Mediterranean",            destination: "China/East Asia" },
-  { code: "FBX09", slug: "fbx-09-china-to-south-america-east-coast",   label: "China/East Asia → South America East Coast", origin: "China/East Asia",         destination: "South America East Coast" },
-  { code: "FBX10", slug: "fbx-10-europe-to-south-america-east-coast",  label: "Europe → South America East Coast",          origin: "Europe",                   destination: "South America East Coast" },
-  { code: "FBX11", slug: "fbx-11-north-america-east-coast-to-europe",  label: "North America East Coast → North Europe",    origin: "North America East Coast", destination: "North Europe" },
-  { code: "FBX12", slug: "fbx-12-northern-europe-to-north-america-east-coast", label: "North Europe → North America East Coast", origin: "North Europe", destination: "North America East Coast" },
+const LANES: LaneSpec[] = [
+  { lit_code: "FBX01", freightos_label: "FBX01", label: "China/East Asia → North America West Coast",        origin: "China/East Asia",         destination: "North America West Coast" },
+  { lit_code: "FBX02", freightos_label: "FBX03", label: "China/East Asia → North America East Coast",        origin: "China/East Asia",         destination: "North America East Coast" },
+  { lit_code: "FBX03", freightos_label: "FBX11", label: "China/East Asia → North Europe",                    origin: "China/East Asia",         destination: "North Europe" },
+  { lit_code: "FBX04", freightos_label: "FBX13", label: "China/East Asia → Mediterranean",                   origin: "China/East Asia",         destination: "Mediterranean" },
+  { lit_code: "FBX05", freightos_label: "FBX02", label: "North America West Coast → China/East Asia",        origin: "North America West Coast", destination: "China/East Asia" },
+  { lit_code: "FBX06", freightos_label: "FBX04", label: "North America East Coast → China/East Asia",        origin: "North America East Coast", destination: "China/East Asia" },
+  { lit_code: "FBX07", freightos_label: "FBX12", label: "North Europe → China/East Asia",                    origin: "North Europe",             destination: "China/East Asia" },
+  { lit_code: "FBX08", freightos_label: "FBX14", label: "Mediterranean → China/East Asia",                   origin: "Mediterranean",            destination: "China/East Asia" },
+  // FBX09 (China → South America East Coast) retired by Freightos. No replacement lane.
+  { lit_code: "FBX09", freightos_label: null,    label: "China/East Asia → South America East Coast",        origin: "China/East Asia",         destination: "South America East Coast" },
+  { lit_code: "FBX10", freightos_label: "FBX24", label: "Europe → South America East Coast",                 origin: "Europe",                   destination: "South America East Coast" },
+  { lit_code: "FBX11", freightos_label: "FBX21", label: "North America East Coast → North Europe",           origin: "North America East Coast", destination: "North Europe" },
+  { lit_code: "FBX12", freightos_label: "FBX22", label: "North Europe → North America East Coast",           origin: "North Europe",             destination: "North America East Coast" },
 ];
 
-const FREIGHTOS_BASE = "https://www.freightos.com/enterprise/terminal/";
+type FreightosRow = { label: string; value: string; change?: string; positive?: boolean };
 
-// Several patterns appear across the public pages; try each in order.
-// First match wins.
-const RATE_PATTERNS: RegExp[] = [
-  // "$2,725.00" inside a price-display span
-  /\$\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?)/,
-  // bare "2725.00 USD" or "2,725 USD"
-  /([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?)\s*USD/i,
-  // JSON-LD price field
-  /"price"\s*:\s*"?\$?\s*([0-9,]+(?:\.[0-9]+)?)"?/i,
-];
-
-async function fetchLaneRate(lane: Lane): Promise<{
+async function fetchFreightosIndex(): Promise<{
   ok: boolean;
-  lane: Lane;
-  rate_usd_per_40ft?: number;
+  byLabel: Record<string, number>;
   error?: string;
-  source_url: string;
+  raw_count: number;
 }> {
-  const url = `${FREIGHTOS_BASE}${lane.slug}/`;
+  const resp = await fetch(FREIGHTOS_INDEX_URL, {
+    method: "GET",
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+    redirect: "follow",
+  });
+  if (!resp.ok) return { ok: false, byLabel: {}, raw_count: 0, error: `HTTP ${resp.status}` };
+  const html = await resp.text();
+
+  // The page embeds a JSON array of {label, value, change, positive} entries.
+  // Locate the array by anchoring on the leading `[{"label":"FBX"`.
+  const blobMatch = html.match(/\[\{"label":"FBX"[^\]]+\]/);
+  if (!blobMatch) return { ok: false, byLabel: {}, raw_count: 0, error: "blob_not_found" };
+
+  let parsed: FreightosRow[] = [];
   try {
-    const resp = await fetch(url, {
-      method: "GET",
-      headers: {
-        // Look like a real browser — bot detection on these pages is light
-        // but lenient.
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-        "Accept":
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      redirect: "follow",
-    });
-
-    if (!resp.ok) {
-      return { ok: false, lane, error: `HTTP ${resp.status}`, source_url: url };
-    }
-    const html = await resp.text();
-
-    // Some pages embed the rate in a hero card; skip header/footer noise.
-    const heroSection =
-      html.match(/<main[\s\S]*?<\/main>/i)?.[0] ?? html;
-
-    for (const pattern of RATE_PATTERNS) {
-      const match = heroSection.match(pattern);
-      if (!match) continue;
-      const raw = match[1].replace(/,/g, "");
-      const num = Number(raw);
-      if (!Number.isFinite(num) || num <= 0 || num > 50000) continue;
-      return { ok: true, lane, rate_usd_per_40ft: num, source_url: url };
-    }
-    return {
-      ok: false,
-      lane,
-      error: "no rate pattern matched",
-      source_url: url,
-    };
+    parsed = JSON.parse(blobMatch[0]);
   } catch (e: any) {
-    return { ok: false, lane, error: String(e?.message ?? e), source_url: url };
+    return { ok: false, byLabel: {}, raw_count: 0, error: `parse_failed: ${String(e?.message ?? e)}` };
   }
-}
+  if (!Array.isArray(parsed)) {
+    return { ok: false, byLabel: {}, raw_count: 0, error: "blob_not_array" };
+  }
 
-async function authorizeRequest(req: Request, supabase: any): Promise<
-  | { ok: true; via: "service_role" | "admin_jwt"; userId: string | null }
-  | { ok: false; status: number; body: any }
-> {
-  const auth = req.headers.get("Authorization");
-  if (!auth || !auth.startsWith("Bearer ")) {
-    return {
-      ok: false,
-      status: 401,
-      body: { ok: false, error: "Missing authorization", code: "UNAUTHORIZED" },
-    };
-  }
-  const token = auth.replace(/^Bearer\s+/i, "").trim();
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (token === serviceKey) {
-    return { ok: true, via: "service_role", userId: null };
-  }
-  // Otherwise: super-admin JWT
-  try {
-    const { data } = await supabase.auth.getUser(token);
-    const email = String(data?.user?.email ?? "").toLowerCase();
-    const allow = new Set([
-      "vraymond@sparkfusiondigital.com",
-      "support@logisticintel.com",
-    ]);
-    if (allow.has(email)) {
-      return { ok: true, via: "admin_jwt", userId: data?.user?.id ?? null };
+  const byLabel: Record<string, number> = {};
+  for (const row of parsed) {
+    if (!row?.label || !row?.value) continue;
+    const cleaned = String(row.value).replace(/[$,\s]/g, "");
+    const num = Number(cleaned);
+    if (Number.isFinite(num) && num > 0 && num < 50000) {
+      byLabel[String(row.label).toUpperCase()] = num;
     }
-  } catch {
-    // fall through to forbidden
   }
-  return {
-    ok: false,
-    status: 403,
-    body: { ok: false, error: "Forbidden", code: "FORBIDDEN" },
-  };
+  return { ok: true, byLabel, raw_count: parsed.length };
 }
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
+
+  const auth = verifyCronAuth(req);
+  if (!auth.ok) return auth.response;
 
   const requestId = crypto.randomUUID();
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -171,91 +125,102 @@ Deno.serve(async (req: Request) => {
   }
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  const auth = await authorizeRequest(req, supabase);
-  if (!auth.ok) return jsonResponse(auth.body, auth.status);
-
   let body: any = {};
-  try {
-    body = await req.json();
-  } catch {
-    body = {};
-  }
+  try { body = await req.json(); } catch { /* allow empty body */ }
 
   const requestedLanes: string[] = Array.isArray(body?.lanes)
     ? body.lanes.map((l: any) => String(l).toUpperCase())
     : [];
   const dryRun = Boolean(body?.dry_run);
 
-  const lanesToFetch = requestedLanes.length
-    ? LANES.filter((l) => requestedLanes.includes(l.code))
+  const lanesToProcess = requestedLanes.length
+    ? LANES.filter((l) => requestedLanes.includes(l.lit_code))
     : LANES;
 
-  console.log("➡️ freight-rate-fetcher", {
+  console.log("➡️ freight-rate-fetcher v2", {
     requestId,
-    via: auth.via,
-    lane_count: lanesToFetch.length,
+    lane_count: lanesToProcess.length,
     dry_run: dryRun,
   });
+
+  const fetchRes = await fetchFreightosIndex();
+  if (!fetchRes.ok) {
+    return jsonResponse(
+      { ok: false, error: `freightos_fetch_failed: ${fetchRes.error}`, requestId },
+      502,
+    );
+  }
 
   const today = new Date().toISOString().slice(0, 10);
   const results: any[] = [];
   let upserts = 0;
   const errors: any[] = [];
 
-  for (const lane of lanesToFetch) {
-    const fetched = await fetchLaneRate(lane);
-    if (!fetched.ok || !fetched.rate_usd_per_40ft) {
-      errors.push({
-        lane_code: lane.code,
-        error: fetched.error ?? "fetch failed",
-        source_url: fetched.source_url,
+  for (const lane of lanesToProcess) {
+    if (!lane.freightos_label) {
+      results.push({
+        lit_code: lane.lit_code,
+        ok: false,
+        skipped: true,
+        reason: "no_freightos_source",
       });
-      results.push({ lane_code: lane.code, ok: false, error: fetched.error });
       continue;
     }
-    const ratePerTeu = Math.round((fetched.rate_usd_per_40ft / 2) * 100) / 100;
+    const rate = fetchRes.byLabel[lane.freightos_label];
+    if (!Number.isFinite(rate)) {
+      errors.push({
+        lit_code: lane.lit_code,
+        freightos_label: lane.freightos_label,
+        error: "rate_missing_in_blob",
+      });
+      results.push({
+        lit_code: lane.lit_code,
+        ok: false,
+        error: "rate_missing_in_blob",
+      });
+      continue;
+    }
+    const ratePerTeu = Math.round((rate / 2) * 100) / 100;
     const row = {
-      lane_code: lane.code,
+      lane_code: lane.lit_code,
       lane_label: lane.label,
       origin_region: lane.origin,
       destination_region: lane.destination,
-      rate_usd_per_40ft: fetched.rate_usd_per_40ft,
+      rate_usd_per_40ft: rate,
       rate_usd_per_teu: ratePerTeu,
       source: "freightos_fbx",
       as_of_date: today,
       fetched_at: new Date().toISOString(),
     };
-    results.push({ lane_code: lane.code, ok: true, ...row });
+    results.push({ lit_code: lane.lit_code, ok: true, ...row });
 
     if (!dryRun) {
       const { error } = await supabase
         .from("lit_freight_rate_benchmarks")
         .upsert(row, { onConflict: "source,lane_code,as_of_date" });
       if (error) {
-        errors.push({ lane_code: lane.code, error: error.message });
+        errors.push({ lit_code: lane.lit_code, error: error.message });
       } else {
         upserts++;
       }
     }
-
-    // Polite pacing — Freightos's CDN handles 12 sequential fetches fine
-    // but we sleep 200ms between requests to be a good citizen.
-    await new Promise((r) => setTimeout(r, 200));
   }
 
-  console.log("✅ freight-rate-fetcher complete", {
+  console.log("✅ freight-rate-fetcher v2 complete", {
     requestId,
-    fetched: lanesToFetch.length,
+    lanes_processed: lanesToProcess.length,
     upserts,
     errors: errors.length,
+    raw_freightos_rows: fetchRes.raw_count,
   });
 
   return jsonResponse({
     ok: true,
     fetched_at: new Date().toISOString(),
-    lanes_attempted: lanesToFetch.length,
+    lanes_attempted: lanesToProcess.length,
     upserts,
     errors,
     results,
+    raw_freightos_rows: fetchRes.raw_count,
   });
 });
