@@ -1701,6 +1701,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         kpis={headerKpis as any}
         starred={starred}
         onToggleStar={handleSaveCompany}
+        isSaved={
+          bundle?.identity?.sources?.saved?.present === true || starred
+        }
         panelOpen={panelOpen}
         onTogglePanel={() => setPanelOpen((v) => !v)}
         onBack={() => navigate("/app/command-center")}
@@ -2025,6 +2028,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             snapshotUpdatedAt={snapshotUpdatedAt}
             contacts={savedContacts}
             onOpenContactsTab={() => setTab("contacts")}
+            crmStage={
+              bundle?.identity?.sources?.saved?.present === true
+                ? (bundle?.identity?.sources?.saved?.stage ?? null)
+                : null
+            }
           />
         )}
       </div>

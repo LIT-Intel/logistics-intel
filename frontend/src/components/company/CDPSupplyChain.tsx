@@ -20,7 +20,6 @@ import LitFlag from "@/components/ui/LitFlag";
 import LitPill from "@/components/ui/LitPill";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
-import { BolPreviewTable } from "@/components/bols/BolPreviewTable";
 import {
   formatBolDate,
   getBolCarrierString,
@@ -187,7 +186,7 @@ export default function CDPSupplyChain({
       (top.displayLabel ? String(top.displayLabel).split(/→|->|>/).slice(1).join(" → ").trim() : null) ||
       "Destination";
     if (share != null) {
-      return `${fromName} → ${toName} carries ${share}% of trailing-12m volume.`;
+      return `${fromName} → ${toName} carries ${share}% of recent import volume.`;
     }
     return `${fromName} → ${toName} is the dominant lane.`;
   }, [allLanes]);
@@ -258,9 +257,6 @@ export default function CDPSupplyChain({
           recentBols={recentBols}
         />
       )}
-      {sub === "shipments" && (
-        <ShipmentsView recentBols={recentBols} />
-      )}
       {sub === "products" && <ProductsView products={products} />}
     </div>
   );
@@ -304,7 +300,7 @@ function StrategicBriefBanner({
         </span>
         <span className="h-px w-8" style={{ background: "rgba(0,240,255,0.3)" }} />
         <span className="font-display text-[9px] font-semibold text-slate-400">
-          Trailing 12 months
+          Recent activity
         </span>
       </div>
       <div
@@ -327,7 +323,7 @@ function StrategicBriefBanner({
               {canonicalLanes.length} active{" "}
               {canonicalLanes.length === 1 ? "lane" : "lanes"}
             </strong>{" "}
-            across this account's trailing-12m import history.
+            across this account's recent import history.
             {recentBols.length > 0 && (
               <>
                 {" "}
@@ -862,19 +858,6 @@ function LanesView({
       recentBols={recentBols}
     />
   );
-}
-
-/* ── Shipments view ───────────────────────────────────────────────────── */
-
-function ShipmentsView({ recentBols }: { recentBols: any[] }) {
-  if (recentBols.length === 0) {
-    return (
-      <LitSectionCard title="Recent shipments" sub="BOL records">
-        <EmptyMessage text="No recent shipments to display." />
-      </LitSectionCard>
-    );
-  }
-  return <BolPreviewTable bols={recentBols.slice(0, 25)} />;
 }
 
 /* ── Products view ────────────────────────────────────────────────────── */

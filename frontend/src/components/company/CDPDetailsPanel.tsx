@@ -86,6 +86,14 @@ type Profile = {
   lcl_shipments_all_time?: number | null;
 };
 
+type CrmStageValue =
+  | "lead"
+  | "prospect"
+  | "active"
+  | "customer"
+  | "churned"
+  | (string & {});
+
 type CDPDetailsPanelProps = {
   company: DetailsCompany;
   kpis: DetailsKpis;
@@ -94,6 +102,12 @@ type CDPDetailsPanelProps = {
   ownerInitials?: string | null;
   lists?: Array<{ id: string | number; name: string }> | null;
   campaigns?: Array<{ id: string | number; name: string }> | null;
+  /**
+   * Real CRM pipeline stage for this company under the current user
+   * (e.g., from `lit_saved_companies.stage`). When null / undefined,
+   * the "CRM stage" row is hidden — we never invent a stage value.
+   */
+  crmStage?: CrmStageValue | null;
   onRefresh: () => void;
   refreshing?: boolean;
   /** ISO timestamp of the most recent enrichment write (Phase B.15 cache row). */
@@ -129,6 +143,7 @@ export default function CDPDetailsPanel({
   snapshotUpdatedAt,
   contacts,
   onOpenContactsTab,
+  crmStage,
 }: CDPDetailsPanelProps) {
   const [open, setOpen] = useState({
     account: true,
@@ -364,9 +379,13 @@ export default function CDPDetailsPanel({
           <Row icon={<Clock />} label="Last activity">
             {formatRelative(kpis.lastShipment)}
           </Row>
-          <Row icon={<Briefcase />} label="CRM stage">
-            <LitPill tone="blue">Active</LitPill>
-          </Row>
+          {crmStage ? (
+            <Row icon={<Briefcase />} label="CRM stage">
+              <LitPill tone={crmStageTone(crmStage)}>
+                {crmStageLabel(crmStage)}
+              </LitPill>
+            </Row>
+          ) : null}
           <Row icon={<Target />} label="Imports to">
             {company.countryCode || company.countryName ? (
               <LitPill tone="slate">
@@ -869,6 +888,26 @@ function VerifiedContactsBlock({
       </div>
     </Section>
   );
+}
+
+/**
+ * Map a real CRM stage value onto a LitPill tone. Anything we don't
+ * recognize keeps the neutral slate tone so we never visually promote
+ * an unknown stage to a positive signal (green/blue).
+ */
+function crmStageTone(stage: string): import("@/components/ui/LitPill").LitPillTone {
+  const s = String(stage).toLowerCase().trim();
+  if (s === "lead" || s === "new") return "slate";
+  if (s === "prospect" || s === "active" || s === "open") return "blue";
+  if (s === "customer" || s === "won" || s === "closed_won") return "green";
+  if (s === "churned" || s === "lost" || s === "closed_lost") return "red";
+  return "slate";
+}
+
+function crmStageLabel(stage: string): string {
+  const s = String(stage).trim();
+  if (!s) return "—";
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase().replace(/_/g, " ");
 }
 
 function formatRelativeShort(iso: string): string {

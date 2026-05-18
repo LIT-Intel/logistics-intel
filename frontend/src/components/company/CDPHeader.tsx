@@ -62,6 +62,14 @@ type CDPHeaderProps = {
   kpis: HeaderKpis;
   starred: boolean;
   onToggleStar: () => void;
+  /**
+   * True when the company is saved to the current user's CRM
+   * (i.e., present in `lit_saved_companies`). Sourced from
+   * `bundle?.identity?.sources?.saved?.present` in CompanyProfileV2.
+   * When false the "In CRM" pill is hidden — viewing a company you
+   * haven't saved does NOT put it in your CRM.
+   */
+  isSaved?: boolean;
   panelOpen: boolean;
   onTogglePanel: () => void;
   onBack: () => void;
@@ -83,6 +91,7 @@ export default function CDPHeader({
   kpis,
   starred,
   onToggleStar,
+  isSaved,
   panelOpen,
   onTogglePanel,
   onBack,
@@ -132,12 +141,17 @@ export default function CDPHeader({
           : "—",
     },
     {
-      label: "EST. SPEND (ALL-TIME)",
+      // `kpis.spend` is the marketSpendBreakdown 12M figure from
+      // CompanyProfileV2 (lines 1047-1050); the tile label must match
+      // that scope. The all-time figure lives on `kpis.spendAllTime`
+      // but is not consistently populated, so we keep this tile bound
+      // to the 12M number and render "—" when it's not available
+      // rather than fabricating a trend line.
+      label: "EST. SPEND (12M)",
       value:
         kpis.spend != null && Number(kpis.spend) > 0
           ? formatSpend(Number(kpis.spend))
           : "—",
-      trend: "12M calculation pending",
     },
     {
       label: "TOTAL SHIPMENTS",
@@ -224,10 +238,12 @@ export default function CDPHeader({
                 strokeWidth={1.8}
               />
             </button>
-            <LitPill tone="green">
-              <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
-              In CRM
-            </LitPill>
+            {isSaved && (
+              <LitPill tone="green">
+                <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
+                In CRM
+              </LitPill>
+            )}
           </div>
 
           <div className="font-body mb-2 text-[12px] leading-relaxed text-slate-600">
