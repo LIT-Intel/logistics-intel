@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart2,
   Briefcase,
   Building2,
   Calendar,
+  Check,
   ChevronDown,
   ChevronUp,
   Clock,
@@ -25,6 +26,7 @@ import {
 } from "lucide-react";
 import LitPill from "@/components/ui/LitPill";
 import { resolveEndpoint } from "@/lib/laneGlobe";
+import { supabase } from "@/lib/supabase";
 
 /**
  * Phase 3 — Right-rail "Account Details" panel for the Company Profile.
@@ -86,6 +88,24 @@ type Profile = {
   lcl_shipments_all_time?: number | null;
 };
 
+/**
+ * The 7-stage CRM pipeline enforced by the `lit_saved_companies_stage_check`
+ * CHECK constraint and the `update_saved_company_stage(uuid, text)` RPC.
+ * Legacy values (prospect/active/customer/churned) are still rendered in
+ * a fallback tone if they slip in from stale cached payloads, but the
+ * selector only writes back canonical 7-stage values.
+ */
+export const CRM_STAGE_VALUES = [
+  "lead",
+  "prospecting",
+  "needs_analysis",
+  "quoting",
+  "contract_negotiation",
+  "closed_won",
+  "closed_lost",
+] as const;
+export type CrmStageValue = (typeof CRM_STAGE_VALUES)[number] | (string & {});
+
 type CDPDetailsPanelProps = {
   company: DetailsCompany;
   kpis: DetailsKpis;
@@ -94,6 +114,28 @@ type CDPDetailsPanelProps = {
   ownerInitials?: string | null;
   lists?: Array<{ id: string | number; name: string }> | null;
   campaigns?: Array<{ id: string | number; name: string }> | null;
+  /**
+   * Real CRM pipeline stage for this company under the current user
+   * (e.g., from `lit_saved_companies.stage`). When `savedPresent` is
+   * false (the company is not saved by the calling user), the CRM
+   * stage row is hidden entirely — there's nothing for the user to
+   * update until they save the company first.
+   */
+  crmStage?: CrmStageValue | null;
+  /** Canonical UUID for the company. Required to drive the
+   *  `update_saved_company_stage` RPC. When missing, the selector
+   *  falls back to a read-only pill so we never POST garbage to the
+   *  RPC. */
+  companyId?: string | null;
+  /** True when there's a `lit_saved_companies` row for this user +
+   *  company pair. Drives whether the interactive selector shows
+   *  (saved) or the row is hidden (unsaved). */
+  savedPresent?: boolean;
+  /** Called with the new stage after a successful RPC write. The
+   *  parent typically refetches the company bundle so any other
+   *  consumers of `bundle.identity.sources.saved.stage` see the new
+   *  value. */
+  onStageChange?: (nextStage: CrmStageValue) => void;
   onRefresh: () => void;
   refreshing?: boolean;
   /** ISO timestamp of the most recent enrichment write (Phase B.15 cache row). */
@@ -129,6 +171,10 @@ export default function CDPDetailsPanel({
   snapshotUpdatedAt,
   contacts,
   onOpenContactsTab,
+  crmStage,
+  companyId,
+  savedPresent,
+  onStageChange,
 }: CDPDetailsPanelProps) {
   const [open, setOpen] = useState({
     account: true,
@@ -364,9 +410,15 @@ export default function CDPDetailsPanel({
           <Row icon={<Clock />} label="Last activity">
             {formatRelative(kpis.lastShipment)}
           </Row>
-          <Row icon={<Briefcase />} label="CRM stage">
-            <LitPill tone="blue">Active</LitPill>
-          </Row>
+          {savedPresent ? (
+            <Row icon={<Briefcase />} label="CRM stage">
+              <CrmStageSelector
+                companyId={companyId ?? null}
+                stage={(crmStage as CrmStageValue) ?? "lead"}
+                onChanged={onStageChange}
+              />
+            </Row>
+          ) : null}
           <Row icon={<Target />} label="Imports to">
             {company.countryCode || company.countryName ? (
               <LitPill tone="slate">
@@ -869,6 +921,291 @@ function VerifiedContactsBlock({
       </div>
     </Section>
   );
+}
+
+/**
+ * Map the 7-stage pipeline onto LitPill tones. Legacy values that
+ * sneak in from stale cached payloads still resolve to a sensible
+ * tone so the pill never renders an undefined color class.
+ */
+function crmStageTone(stage: string): import("@/components/ui/LitPill").LitPillTone {
+  const s = String(stage).toLowerCase().trim();
+  switch (s) {
+    case "lead":
+    case "new":
+      return "slate";
+    case "prospecting":
+    case "prospect":
+    case "active":
+    case "open":
+      return "blue";
+    case "needs_analysis":
+      return "cyan";
+    case "quoting":
+      return "amber";
+    case "contract_negotiation":
+      return "purple";
+    case "closed_won":
+    case "customer":
+    case "won":
+      return "green";
+    case "closed_lost":
+    case "churned":
+    case "lost":
+      return "red";
+    default:
+      return "slate";
+  }
+}
+
+function crmStageLabel(stage: string): string {
+  const s = String(stage).toLowerCase().trim();
+  switch (s) {
+    case "lead":
+      return "Lead";
+    case "prospecting":
+      return "Prospecting";
+    case "needs_analysis":
+      return "Needs Analysis";
+    case "quoting":
+      return "Quoting";
+    case "contract_negotiation":
+      return "Contract / Negotiation";
+    case "closed_won":
+      return "Closed Won";
+    case "closed_lost":
+      return "Closed Lost";
+    // Legacy fallbacks — preserve a readable label until the next
+    // refetch surfaces the migrated value.
+    case "prospect":
+    case "active":
+      return "Prospecting";
+    case "customer":
+    case "won":
+      return "Closed Won";
+    case "churned":
+    case "lost":
+      return "Closed Lost";
+    default:
+      if (!s) return "—";
+      return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, " ");
+  }
+}
+
+/* ── Interactive CRM stage selector ──────────────────────────────────
+ *
+ * Click the pill → popover menu with all 7 stages. Selecting a stage
+ * fires `update_saved_company_stage(uuid, text)` on the Supabase
+ * backend (SECURITY DEFINER, scoped by auth.uid()). The pill flips
+ * optimistically; on RPC error we revert and surface a small inline
+ * error label so the user sees the change was rejected.
+ *
+ * Note on the popover: the codebase doesn't ship a shared Listbox /
+ * Popover primitive in `@/components/ui` yet (LitPill, LitPanel,
+ * LitSidebar, etc. are display-only). Rather than pull in a new
+ * dependency just for this control, we render a self-contained
+ * absolute-positioned menu with click-outside + Escape handlers,
+ * matching the visual language of LitPill so it slots into the
+ * right-rail without re-skinning the surrounding rows.
+ */
+function CrmStageSelector({
+  companyId,
+  stage,
+  onChanged,
+}: {
+  companyId: string | null;
+  stage: CrmStageValue;
+  onChanged?: (next: CrmStageValue) => void;
+}) {
+  const [displayStage, setDisplayStage] = useState<CrmStageValue>(stage);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // Re-sync local state when the parent prop changes (e.g. after a
+  // refetch lands the canonical value from the bundle).
+  useEffect(() => {
+    setDisplayStage(stage);
+  }, [stage]);
+
+  // Click-outside + Escape to dismiss.
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (!rootRef.current) return;
+      if (e.target instanceof Node && !rootRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const canEdit = Boolean(companyId);
+
+  async function selectStage(next: CrmStageValue) {
+    setOpen(false);
+    if (!canEdit) return;
+    if (next === displayStage) return;
+
+    const prev = displayStage;
+    setDisplayStage(next); // optimistic
+    setSaving(true);
+    setError(null);
+    try {
+      const { data, error: rpcError } = await supabase.rpc(
+        "update_saved_company_stage",
+        { p_company_id: companyId, p_stage: next },
+      );
+      if (rpcError) throw rpcError;
+      const row = Array.isArray(data) ? data[0] : data;
+      const persisted = (row?.stage as CrmStageValue | undefined) ?? next;
+      setDisplayStage(persisted);
+      onChanged?.(persisted);
+    } catch (err: any) {
+      // Revert optimistic update so the user sees the change was
+      // rejected. Surface a short, human-readable error label.
+      setDisplayStage(prev);
+      const msg = String(err?.message || err || "Failed to update");
+      setError(humanizeStageError(msg));
+      // Clear the inline error after a few seconds — it's not a
+      // toast, just a hint.
+      window.setTimeout(() => setError(null), 4000);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div ref={rootRef} className="relative inline-flex flex-col items-start">
+      <button
+        type="button"
+        onClick={() => canEdit && setOpen((v) => !v)}
+        disabled={!canEdit || saving}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={[
+          "inline-flex items-center gap-1 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-300/60",
+          canEdit ? "cursor-pointer hover:opacity-90" : "cursor-default",
+          saving ? "opacity-70" : "",
+        ].join(" ")}
+        title={canEdit ? "Change CRM stage" : "CRM stage"}
+      >
+        <LitPill tone={crmStageTone(displayStage)}>
+          {crmStageLabel(displayStage)}
+        </LitPill>
+        {canEdit && (
+          <span className="flex h-3 w-3 items-center justify-center text-slate-400">
+            {saving ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-label="Select CRM stage"
+          className="absolute left-0 top-[calc(100%+4px)] z-30 w-[200px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg"
+        >
+          <ul className="py-1">
+            {CRM_STAGE_VALUES.map((s) => {
+              const active = s === displayStage;
+              return (
+                <li key={s}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => selectStage(s)}
+                    className={[
+                      "font-display flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[11px] font-semibold",
+                      active
+                        ? "bg-slate-50 text-slate-900"
+                        : "text-slate-700 hover:bg-slate-50",
+                    ].join(" ")}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className={[
+                          "inline-block h-1.5 w-1.5 rounded-full",
+                          stageDotClass(crmStageTone(s)),
+                        ].join(" ")}
+                      />
+                      {crmStageLabel(s)}
+                    </span>
+                    {active && (
+                      <Check className="h-3 w-3 text-slate-500" />
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {error && (
+        <span
+          role="alert"
+          className="font-body mt-0.5 max-w-[220px] truncate text-[10px] text-red-600"
+          title={error}
+        >
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function stageDotClass(
+  tone: import("@/components/ui/LitPill").LitPillTone,
+): string {
+  switch (tone) {
+    case "slate":
+      return "bg-slate-400";
+    case "blue":
+      return "bg-blue-500";
+    case "cyan":
+      return "bg-cyan-500";
+    case "amber":
+      return "bg-amber-500";
+    case "purple":
+      return "bg-purple-500";
+    case "violet":
+      return "bg-violet-500";
+    case "green":
+      return "bg-green-500";
+    case "red":
+      return "bg-red-500";
+    default:
+      return "bg-slate-400";
+  }
+}
+
+function humanizeStageError(raw: string): string {
+  const msg = raw.toLowerCase();
+  if (msg.includes("company_not_saved_by_user")) {
+    return "Save this company before updating the stage.";
+  }
+  if (msg.includes("invalid_stage")) {
+    return "That stage isn't supported.";
+  }
+  if (msg.includes("unauthenticated")) {
+    return "Sign in again to update the stage.";
+  }
+  return "Couldn't update stage. Try again.";
 }
 
 function formatRelativeShort(iso: string): string {

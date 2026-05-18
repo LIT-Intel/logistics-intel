@@ -105,28 +105,19 @@ serve(async (req) => {
   const url = new URL(req.url);
   const fastMode = url.searchParams.get("fast") === "1";
 
-  // ?skipExisting=1 → only process BOLs that don't yet have an estimate.
-  // Lets multiple invocations make progress instead of always processing the same first N.
-  const skipExisting = url.searchParams.get("skipExisting") === "1";
-  let existingBols: Set<string> = new Set();
-  if (skipExisting) {
-    const { data: existingRows } = await supabase
-      .from("lit_drayage_estimates")
-      .select("bol_number")
-      .limit(10000);
-    existingBols = new Set((existingRows || []).map((x: any) => x.bol_number));
-  }
-
-  const { data: rows, error } = await supabase
-    .from("lit_unified_shipments")
-    .select("id, bol_number, company_id, destination_port, destination_country_code, dest_city, dest_state, container_count, load_type, lcl")
-    .not("dest_city", "is", null)
-    .limit(skipExisting ? BATCH_CAP * 8 : BATCH_CAP);
+  // Fetch only BOLs that don't yet have an estimate, via anti-join RPC.
+  // The previous PostgREST query had no ORDER BY + naive .limit() which
+  // returned the same first ~1000 rows on every call, leaving 6.5k+ BOLs
+  // structurally unreachable (capped coverage at ~13.5%). The RPC does a
+  // proper NOT EXISTS join against lit_drayage_estimates and ORDER BY s.id,
+  // so each invocation naturally moves the cursor forward.
+  const { data: rows, error } = await supabase.rpc("get_unestimated_us_bols", {
+    p_limit: BATCH_CAP * 8,
+  });
   if (error) return json({ ok: false, error: error.message }, 500);
 
   let computed = 0, skipped = 0, missing_coords = 0, inferred_pod_count = 0, already_done = 0;
-  for (const r of rows || []) {
-    if (skipExisting && existingBols.has(r.bol_number)) { already_done++; continue; }
+  for (const r of (rows as any[]) || []) {
     if (computed >= BATCH_CAP) break;
     let pod = r.destination_port?.toUpperCase();
     if (!pod || !PORT_COORDS[pod]) {

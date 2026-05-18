@@ -75,6 +75,7 @@ import {
   matchAllRoutesForCompany,
   type FreightLane,
 } from "@/lib/freightRateBenchmark";
+import { buildRevenueOpportunity } from "@/lib/revenueOpportunity";
 
 // =============================================================================
 // Constants & helpers — verbatim from Company.jsx 51–209.
@@ -389,7 +390,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   // the URL param + localStorage; V2 keeps that path AND additionally uses
   // the resolver to surface a clean directory-only state when the company
   // isn't in lit_companies.
-  const { data: bundle } = useCompanyProfile(rawId, {
+  const { data: bundle, refetch: refetchBundle } = useCompanyProfile(rawId, {
     include: ["identity", "contacts", "activity"],
   });
 
@@ -1028,6 +1029,100 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     })();
   }, [profile, companyId, benchmarkLanes.length, marketSpendBreakdown]);
 
+  // Year-aware EST. SPEND — founder directive:
+  //   - selectedYear === currentYear → trailing 12M (`marketSpendBreakdown`)
+  //   - selectedYear  <  currentYear → calendar-year sum of
+  //     timeSeries TEU × current FBX avg $/TEU + LCL bench (Tier-2 only;
+  //     per-lane TEU isn't year-scoped in the snapshot, so we use the same
+  //     teu-only fallback the 12M calc falls back to). Past-year rates are
+  //     CURRENT FBX rates (clearly labeled "current rates") since the
+  //     historical rate table only goes back ~12 months.
+  //
+  // Anti-zero: when the selected past year has no timeSeries rows, returns
+  // null so the tile renders "—" instead of fabricating a value.
+  const currentYearForSpend = new Date().getFullYear();
+
+  // EST. SPEND (ALL-TIME) — sum every month in the snapshot's timeSeries
+  // (normalized from `parsed_summary.monthly_volumes`) at current FBX
+  // $/TEU. Companion to `marketSpendBreakdown` (trailing-12M) and
+  // `pastYearSpend` (calendar-year). Founder spec: header tile 1 shows
+  // total importer freight spend across all available history; tile 2
+  // shows year-aware annual/12M spend.
+  //
+  // Outlier guard: a small number of ImportYeti snapshots have bogus
+  // monthly TEU values (e.g. Indorama 2024-04 reports 553,647 TEU on 1
+  // shipment — physically impossible). We drop any month whose
+  // TEU/shipments ratio exceeds 200 (the largest container ship holds
+  // ~24K TEU and no single importer-shipment moves that much). Without
+  // this guard the all-time tile would render >$1B for Indorama and
+  // similar offenders, which would be worse than the legacy bug.
+  //
+  // Rate methodology mirrors `pastYearSpend`: global FBX avg $/TEU
+  // applied to FCL TEU, $850/TEU for LCL (Tier-2 fallback). Honest
+  // limitation: current FBX rates are applied to historical TEU; we
+  // disclose this on the tile when older years dominate the mix.
+  const spendAllTime = useMemo(() => {
+    if (!benchmarkLanes.length) return null;
+    const series = Array.isArray((profile as any)?.timeSeries)
+      ? (profile as any).timeSeries
+      : [];
+    if (!series.length) return null;
+    let teuSum = 0;
+    let lclSum = 0;
+    for (const point of series) {
+      const teu = Number(point?.teu) || 0;
+      const ships = Number(point?.shipments) || 0;
+      if (teu <= 0) continue;
+      // Drop outlier months (data-quality guard — see comment above).
+      if (ships > 0 && teu / ships > 200) continue;
+      teuSum += teu;
+      lclSum += Number(point?.lclShipments) || 0;
+    }
+    if (!Number.isFinite(teuSum) || teuSum <= 0) return null;
+    const avgPerTeu =
+      benchmarkLanes.reduce(
+        (s, l) => s + (Number(l.rate_usd_per_teu) || 0),
+        0,
+      ) / benchmarkLanes.length;
+    if (!Number.isFinite(avgPerTeu) || avgPerTeu <= 0) return null;
+    const lclTeu = Math.min(Math.max(0, Math.round(lclSum)), teuSum * 0.15);
+    const fclTeu = Math.max(0, teuSum - lclTeu);
+    const total = Math.round(fclTeu * avgPerTeu + lclTeu * 850);
+    return total > 0 ? total : null;
+  }, [profile, benchmarkLanes]);
+
+  const pastYearSpend = useMemo(() => {
+    if (selectedYear === currentYearForSpend) return null;
+    if (!benchmarkLanes.length) return null;
+    const series = Array.isArray((profile as any)?.timeSeries)
+      ? (profile as any).timeSeries
+      : [];
+    if (!series.length) return null;
+    const yearPoints = series.filter(
+      (point: any) => Number(point?.year) === Number(selectedYear),
+    );
+    if (!yearPoints.length) return null;
+    const teu = yearPoints.reduce(
+      (s: number, p: any) => s + (Number(p?.teu) || 0),
+      0,
+    );
+    if (!Number.isFinite(teu) || teu <= 0) return null;
+    const lcl = yearPoints.reduce(
+      (s: number, p: any) => s + (Number(p?.lclShipments) || 0),
+      0,
+    );
+    const avgPerTeu =
+      benchmarkLanes.reduce(
+        (s, l) => s + (Number(l.rate_usd_per_teu) || 0),
+        0,
+      ) / benchmarkLanes.length;
+    if (!Number.isFinite(avgPerTeu) || avgPerTeu <= 0) return null;
+    const lclTeu = Math.min(Math.max(0, Math.round(lcl)), teu * 0.15);
+    const fclTeu = Math.max(0, teu - lclTeu);
+    const total = Math.round(fclTeu * avgPerTeu + lclTeu * 850);
+    return total > 0 ? total : null;
+  }, [selectedYear, currentYearForSpend, profile, benchmarkLanes]);
+
   // Header KPIs — verbatim from Company.jsx 628–713 (with marketSpend override).
   const headerKpis = useMemo(() => {
     const teu =
@@ -1043,8 +1138,18 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     // on 27,918 shipments). When `marketSpendBreakdown` hasn't resolved
     // yet (benchmarks loading, or company has zero TEU) we show "—" rather
     // than a misleading number.
-    const spend =
-      marketSpendBreakdown != null && marketSpendBreakdown > 0
+    //
+    // Year-aware: when a past year is selected, the spend value is
+    // sourced from `pastYearSpend` (calendar-year TEU × current FBX
+    // rates); when current year is selected, the trailing-12M
+    // `marketSpendBreakdown` is used. CDPHeader renders the appropriate
+    // label based on `spendYearLabel`.
+    const spendIsPastYear = selectedYear !== currentYearForSpend;
+    const spend = spendIsPastYear
+      ? pastYearSpend != null && pastYearSpend > 0
+        ? pastYearSpend
+        : null
+      : marketSpendBreakdown != null && marketSpendBreakdown > 0
         ? marketSpendBreakdown
         : null;
 
@@ -1062,8 +1167,13 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       shipmentsAllTime: activeProfile?.totalShipmentsAllTime ?? null,
       teu,
       spend,
-      spendAllTime:
-        activeProfile?.estSpendAllTime ?? activeProfile?.estSpendUsd ?? null,
+      // Founder directive (header v8): tile 1 = EST. SPEND (ALL-TIME) lead,
+      // tile 2 = EST. SPEND (ANNUAL/12M). We deliberately ignore the
+      // ImportYeti-derived `estSpendAllTime` / `estSpendUsd` fields here
+      // because they're customs-disclosed values (the same source that
+      // showed $82K for Old Navy on 27.9K shipments). The lane-rate
+      // proxy in `spendAllTime` is honest at the right order of magnitude.
+      spendAllTime,
       lastShipment: profileLatest || shellLatest,
       topRoute:
         activeRouteKpis?.topRouteLast12m ||
@@ -1101,8 +1211,101 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       contacts: bundle?.contacts?.count ?? null,
       contactsVerified:
         bundle?.contacts?.items.filter((x) => x.is_verified).length ?? null,
+      // Est. Annual Revenue Opportunity — same inputs as the Revenue tab so
+      // the lead KPI tile and the Revenue tab agree to the dollar. Returns
+      // 0 when no service line could be sized (insufficient inputs); the
+      // header renders "—" in that case rather than a fabricated zero.
+      estRevOpp: (() => {
+        const shipments12m =
+          activeRouteKpis?.shipmentsLast12m ??
+          activeProfile?.totalShipments ??
+          shellCompany?.kpis?.shipments ??
+          null;
+        const t =
+          activeRouteKpis?.teuLast12m ??
+          activeProfile?.teuLast12m ??
+          shellCompany?.kpis?.teu ??
+          null;
+        const fcl12 =
+          (activeProfile as any)?.containers?.fclShipments12m ??
+          (activeProfile as any)?.fcl_count ??
+          null;
+        const lcl12 =
+          (activeProfile as any)?.containers?.lclShipments12m ??
+          (activeProfile as any)?.lcl_count ??
+          null;
+        const topRoutes =
+          (Array.isArray(activeRouteKpis?.topRoutesLast12m) &&
+          activeRouteKpis!.topRoutesLast12m!.length > 0
+            ? activeRouteKpis!.topRoutesLast12m
+            : Array.isArray((activeProfile as any)?.topRoutes)
+              ? (activeProfile as any).topRoutes
+              : Array.isArray((activeProfile as any)?.top_routes)
+                ? (activeProfile as any).top_routes
+                : []) as any[];
+        const hsProfile =
+          (activeProfile as any)?.hsProfile ??
+          (activeProfile as any)?.hs_profile ??
+          (activeProfile as any)?.topProducts ??
+          (activeProfile as any)?.top_products ??
+          null;
+        const carrierMix =
+          (activeProfile as any)?.carrierMix ??
+          (activeProfile as any)?.carrier_mix ??
+          (activeProfile as any)?.topCarriers ??
+          (activeProfile as any)?.top_carriers ??
+          null;
+        const importerSpend =
+          Number(
+            (activeRouteKpis as any)?.estSpendUsd12m ??
+              (activeProfile as any)?.estSpendUsd12m ??
+              null,
+          ) || null;
+        try {
+          const report = buildRevenueOpportunity({
+            companyName: null,
+            shipments12m,
+            teu12m: t,
+            fclShipments12m: fcl12,
+            lclShipments12m: lcl12,
+            topRoutes,
+            benchmarkLanes,
+            hsProfile,
+            carrierMix,
+            importerSelfReportedSpend12m: importerSpend,
+          });
+          return report.totalAddressableSpend > 0
+            ? report.totalAddressableSpend
+            : null;
+        } catch {
+          return null;
+        }
+      })(),
+      // Year-aware label for the ANNUAL spend tile (tile 2). CDPHeader
+      // uses this verbatim so the tile label always agrees with the
+      // value's temporal scope.
+      //   - current year selected → "EST. SPEND (12M)" (trailing window)
+      //   - past year selected    → "EST. SPEND (2025)" (calendar year)
+      // The trailing-12M is more honest than "YTD" for the current-year
+      // case because `marketSpendBreakdown` is a trailing-12M figure,
+      // not a strict YTD sum. Past years use current FBX $/TEU applied
+      // to historical TEU — same limitation as `spendAllTime`.
+      spendLabel: spendIsPastYear
+        ? `EST. SPEND (${selectedYear})`
+        : "EST. SPEND (12M)",
     };
-  }, [activeProfile, activeRouteKpis, shellCompany, bundle, marketSpendBreakdown]);
+  }, [
+    activeProfile,
+    activeRouteKpis,
+    shellCompany,
+    bundle,
+    marketSpendBreakdown,
+    benchmarkLanes,
+    pastYearSpend,
+    spendAllTime,
+    selectedYear,
+    currentYearForSpend,
+  ]);
 
   const ownerName =
     fullName ||
@@ -1363,7 +1566,13 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                   : [],
               } as any,
               profile: fp as any,
-              stage: "prospect",
+              // Forward the user's current CRM stage so the writeback
+              // (which upserts into lit_saved_companies) never resets
+              // a stage the user explicitly chose. Default to "lead"
+              // for first-time saves; legacy values are mapped server-
+              // side by the save-company edge function.
+              stage:
+                bundle?.identity?.sources?.saved?.stage ?? "lead",
               source: "importyeti",
             } as any);
           }
@@ -1630,6 +1839,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         kpis={headerKpis as any}
         starred={starred}
         onToggleStar={handleSaveCompany}
+        isSaved={
+          bundle?.identity?.sources?.saved?.present === true || starred
+        }
         panelOpen={panelOpen}
         onTogglePanel={() => setPanelOpen((v) => !v)}
         onBack={() => navigate("/app/command-center")}
@@ -1644,6 +1856,20 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         refreshing={refreshing}
         manualRefreshing={manualRefreshing}
         snapshotUpdatedAt={snapshotUpdatedAt}
+        availableYears={(() => {
+          // 3-year window: current + 2 prior. Union with any years the
+          // snapshot's timeSeries actually has (so older history surfaces
+          // when available, but the selector is never hidden just because
+          // the snapshot lacks a 2025 row).
+          const cy = currentYearForSpend;
+          const base = [cy, cy - 1, cy - 2];
+          const merged = Array.from(new Set([...base, ...years])).sort(
+            (a, b) => b - a,
+          );
+          return merged.slice(0, 3);
+        })()}
+        selectedYear={selectedYear}
+        onSelectYear={setSelectedYear}
       />
 
       <CompanySignalsStrip
@@ -1954,6 +2180,26 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             snapshotUpdatedAt={snapshotUpdatedAt}
             contacts={savedContacts}
             onOpenContactsTab={() => setTab("contacts")}
+            crmStage={
+              bundle?.identity?.sources?.saved?.present === true
+                ? (bundle?.identity?.sources?.saved?.stage ?? null)
+                : null
+            }
+            companyId={bundle?.identity?.id ?? companyId ?? null}
+            savedPresent={
+              bundle?.identity?.sources?.saved?.present === true
+            }
+            onStageChange={() => {
+              // Refetch the company bundle so any other consumers of
+              // `bundle.identity.sources.saved.stage` see the new value
+              // (e.g. the writeback path in handleManualRefreshClick
+              // and the bottom Pulse rail that mirrors the same stage).
+              try {
+                refetchBundle?.();
+              } catch {
+                /* non-fatal */
+              }
+            }}
           />
         )}
       </div>
