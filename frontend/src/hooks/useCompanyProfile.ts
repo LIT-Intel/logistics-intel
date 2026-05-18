@@ -171,11 +171,16 @@ export function useCompanyProfile(
   options: UseCompanyProfileOptions = {},
 ): UseCompanyProfileResult {
   const enabled = options.enabled !== false;
+  // Stabilize include + hints by value, not reference. The parent may pass
+  // inline object/array literals which would otherwise change identity on
+  // every render and re-fire fetchProfile in an infinite loop.
+  const includeKey = JSON.stringify(options.include ?? null);
   const include = useMemo<IncludeKey[]>(
     () => options.include ?? ["identity", "shipments", "contacts", "activity"],
-    [options.include],
+    [includeKey],
   );
-  const hints = options.hints;
+  const hintsKey = JSON.stringify(options.hints ?? null);
+  const hints = useMemo(() => options.hints, [hintsKey]);
 
   const [data, setData] = useState<ProfileBundle | null>(null);
   const [loading, setLoading] = useState<boolean>(enabled && !!id);
