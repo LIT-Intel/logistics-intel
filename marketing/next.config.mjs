@@ -94,6 +94,8 @@ const nextConfig = {
       { protocol: "https", hostname: "cdn.sanity.io" },
       // logo.dev for company logos (mentioned in the strategic plan)
       { protocol: "https", hostname: "img.logo.dev" },
+      // Google favicon CDN — fallback when LOGO_DEV token is missing
+      { protocol: "https", hostname: "t3.gstatic.com" },
       // Unsplash for blog hero images until custom photography is shot
       { protocol: "https", hostname: "images.unsplash.com" },
       { protocol: "https", hostname: "plus.unsplash.com" },

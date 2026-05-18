@@ -14,6 +14,9 @@ import { buildCollectionPage } from "@/lib/jsonLd";
 import { portISO } from "@/lib/countries";
 import { groq } from "next-sanity";
 import { ArrowRight } from "lucide-react";
+import { StickyCTABar } from "@/components/lead-magnet/StickyCTABar";
+import { ExitIntentModal } from "@/components/lead-magnet/ExitIntentModal";
+import { HubFinalCtaForm } from "@/app/_shared/HubFinalCtaForm";
 
 export const revalidate = 1800;
 
@@ -34,6 +37,7 @@ export default async function LanesIndexPage() {
 
   return (
     <PageShell>
+      <StickyCTABar />
       <BreadcrumbBar
         crumbs={[
           { label: "Home", href: "/" },
@@ -97,6 +101,12 @@ export default async function LanesIndexPage() {
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
       />
 
+      <HubFinalCtaForm
+        source="lanes-hub-final"
+        headline="Track your specific lanes."
+        subhead="10 searches + 10 verified contacts. No credit card."
+      />
+
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -116,6 +126,8 @@ export default async function LanesIndexPage() {
           ),
         }}
       />
+
+      <ExitIntentModal />
     </PageShell>
   );
 }

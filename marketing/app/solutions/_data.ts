@@ -266,6 +266,115 @@ export const SOLUTION_PAGES: SolutionPage[] = [
     ],
   },
   {
+    slug: "nvoccs",
+    title: "LIT for NVOCCs —",
+    titleHighlight: "LCL + FCL importer signal in one view.",
+    eyebrow: "NVOCCs",
+    metaDescription:
+      "NVOCC sales platform: identify US importers running LCL and FCL flows, target by lane and equipment mix, reach verified ocean + procurement contacts.",
+    lede:
+      "NVOCCs use LIT to identify US importers actively running LCL and FCL flows, target by lane and equipment mix, and reach the ocean + procurement contacts who own the booking.",
+    shortAnswer:
+      "LIT for NVOCCs joins live BOL filings to a 525K-importer graph so NVOCC sales teams can target by LCL/FCL mix, lane, equipment, and carrier. Every match includes verified ocean transportation and procurement contacts with AI-drafted outreach grounded in real shipments.",
+    problem:
+      "NVOCC sales lives on knowing who's consolidating, who's running direct, and who's mid-shopping their ocean carrier. Generic prospecting tools have none of that.",
+    solution:
+      "LIT shows lane-level LCL/FCL mix per importer, flags carrier displacement, and routes to the booking contact — all from one tool.",
+    capabilities: [
+      { title: "LCL / FCL mix targeting", body: "Filter importers by their LCL vs FCL ratio, equipment, and lane volume." },
+      { title: "Carrier displacement signal", body: "See when an importer's carrier mix shifts — they're often shopping ocean." },
+      { title: "Buyer-side contacts", body: "Ocean transportation, logistics, and procurement contacts per importer." },
+      { title: "Pulse-AI sequences", body: "Outbound steps drafted from real BOL — lane, carrier, volume, recency." },
+    ],
+    whoItsFor: [
+      "NVOCCs building a direct BCO book.",
+      "Asset-light ocean providers running consolidation services.",
+      "International NVOCC partners prospecting US-inbound flows.",
+    ],
+    related: [
+      { label: "Shipper lead generation", href: "/features/shipper-lead-generation" },
+      { label: "Trade lane intelligence", href: "/features/trade-lane-intelligence" },
+      { label: "Freight sales CRM", href: "/features/freight-sales-crm" },
+    ],
+    faqs: [
+      { q: "Do you separate LCL and FCL volumes?", a: "Yes — every importer page splits LCL vs FCL by lane and 12-month rolling volume, with carrier and consolidator mix visible per shipment." },
+      { q: "Can we see consolidator vs direct?", a: "Where the BOL declares the consolidator, it's flagged on the shipment. Direct vs consolidated booking patterns are surfaced in the carrier-mix view." },
+    ],
+  },
+  {
+    slug: "3pls",
+    title: "LIT for 3PLs —",
+    titleHighlight: "warehousing + drayage prospecting in one motion.",
+    eyebrow: "3PLs",
+    metaDescription:
+      "3PL prospecting platform: bundled warehouse + drayage + fulfillment outreach. Surface BCO shippers by lane, mode, and SKU profile with verified contacts.",
+    lede:
+      "3PLs use LIT to bundle warehouse + drayage + fulfillment prospecting in one motion — surfacing BCO shippers by lane, mode, and SKU profile, then reaching the right contacts with shipment-grounded relevance.",
+    shortAnswer:
+      "LIT for 3PLs combines warehouse, drayage, and fulfillment prospecting into a single motion. Filter US importers by lane, mode, and SKU patterns; get verified supply chain + logistics contacts; run AI-drafted outreach grounded in real BOL.",
+    problem:
+      "3PLs sell a bundle, but the prospecting tools force you to research warehouse fit, drayage fit, and fulfillment fit separately. The motion gets sliced and slows down.",
+    solution:
+      "LIT joins BOL data to an enriched importer graph so a single account view tells you all three angles — lane, port, SKU mix, volume curve — without context-switching.",
+    capabilities: [
+      { title: "Lane × HS × volume targeting", body: "Filter by what your network actually serves." },
+      { title: "Seasonality signal", body: "12-month volume curve per importer — peak period visible." },
+      { title: "Drayage fit", body: "Port-of-entry × warehouse-DMA match scoring on every importer." },
+      { title: "Verified contacts", body: "Supply chain, logistics, and procurement roles, not generic CXOs." },
+    ],
+    whoItsFor: [
+      "Warehousing + fulfillment 3PLs.",
+      "Drayage-led 3PLs near major US ports.",
+      "Cold-chain and reefer specialists.",
+    ],
+    related: [
+      { label: "Shipper lead generation", href: "/features/shipper-lead-generation" },
+      { label: "Trade lane intelligence", href: "/features/trade-lane-intelligence" },
+      { label: "Solutions for freight forwarders", href: "/solutions/freight-forwarders" },
+    ],
+    faqs: [
+      { q: "Do you cover domestic-only 3PLs?", a: "BOL coverage is strongest on import-driven flows today. Domestic OTR signal is on the 2026 roadmap. Domestic 3PLs serving import-heavy BCOs already get strong fit." },
+      { q: "Can you score drayage fit?", a: "Yes — port-of-entry on the BOL is joined to your warehouse DMA so each importer carries a drayage-fit score for your network." },
+    ],
+  },
+  {
+    slug: "sales-leaders",
+    title: "LIT for sales leaders —",
+    titleHighlight: "pipeline visibility, rep ramp, and signal coverage.",
+    eyebrow: "Sales leaders",
+    metaDescription:
+      "Freight sales leadership platform: pipeline visibility, rep ramp dashboards, ICP coverage, and one-stack consolidation across forwarders + brokers + 3PLs.",
+    lede:
+      "Sales leaders use LIT to see pipeline, rep ramp, and ICP coverage in one view — and to consolidate the prospecting + enrichment + sequencer + CRM stack into a single contract.",
+    shortAnswer:
+      "LIT for sales leaders centralizes pipeline visibility, rep activation, and ICP coverage in one platform. Replaces ZoomInfo + Outreach + HubSpot with one freight-native system, cutting per-rep tooling cost and giving managers the dashboards their stack didn't.",
+    problem:
+      "Sales leaders run on dashboards their stack doesn't produce — pipeline by lane, signal coverage by rep, ramp time by cohort. Standard SaaS gives you activity volume; freight sales needs more.",
+    solution:
+      "LIT unifies the funnel so every rep, account, and shipment signal feeds one dashboard. Pipeline, activity, and ICP coverage at the rep + team level — out of the box.",
+    capabilities: [
+      { title: "Pipeline by lane × mode", body: "Pipeline rolled up by what you actually sell, not generic stages." },
+      { title: "Rep ramp dashboards", body: "Time-to-first-meeting + time-to-pipeline per rep cohort." },
+      { title: "ICP coverage", body: "Which accounts in your ICP have been touched, sequenced, or won." },
+      { title: "Per-rep $$ savings", body: "Replace ZoomInfo + Outreach + HubSpot for less than the cost of any one." },
+      { title: "SSO + SCIM", body: "SAML SSO and SCIM provisioning on Enterprise plans." },
+    ],
+    whoItsFor: [
+      "VPs of Sales running 5-50 freight reps.",
+      "RevOps teams centralizing on one stack.",
+      "Founders + GTM heads at logistics startups.",
+    ],
+    related: [
+      { label: "Logistics command center", href: "/features/logistics-command-center" },
+      { label: "Freight sales CRM", href: "/features/freight-sales-crm" },
+      { label: "LIT vs HubSpot", href: "/vs/hubspot" },
+    ],
+    faqs: [
+      { q: "Do you have SSO / SCIM?", a: "Yes — SAML SSO and SCIM provisioning on Enterprise plans. Google Workspace, Okta, and Microsoft Entra are supported." },
+      { q: "Can we replace Salesforce?", a: "For most freight sales motions, yes. Some teams keep Salesforce for finance/CS workflows and sync closed-won. We support either pattern." },
+    ],
+  },
+  {
     slug: "supply-chain-business-development",
     title: "LIT for supply chain business development —",
     titleHighlight: "signal-driven account selection.",
@@ -303,3 +412,55 @@ export const SOLUTION_PAGES: SolutionPage[] = [
 export function getSolutionBySlug(slug: string) {
   return SOLUTION_PAGES.find((s) => s.slug === slug);
 }
+
+/**
+ * Canonical money-page role roster — the five revenue motions LIT
+ * configures workspaces for. Order is intentional (forwarders first,
+ * leaders last) and drives the hub /solutions grid + Sanity mirror.
+ */
+export const SOLUTION_ROLE_SLUGS = [
+  "freight-forwarders",
+  "freight-brokers",
+  "nvoccs",
+  "3pls",
+  "sales-leaders",
+] as const;
+
+export type SolutionRoleSlug = (typeof SOLUTION_ROLE_SLUGS)[number];
+
+/** Hub card copy for the role router grid. Kept tight (2 sentences). */
+export const SOLUTION_ROLE_CARDS: Record<
+  SolutionRoleSlug,
+  { title: string; body: string; pillLabel: string; livePreviewMeta: string }
+> = {
+  "freight-forwarders": {
+    title: "Freight Forwarders",
+    body: "Find shippers actively moving 20+ TEU/month on your lanes — with verified ocean, air, and procurement contacts ready to sequence.",
+    pillLabel: "PLAYBOOK",
+    livePreviewMeta: "ICP-scored BCO importers · ocean + air · 20+ TEU/mo",
+  },
+  "freight-brokers": {
+    title: "Freight Brokers",
+    body: "Match domestic TL/LTL capacity to BCO shippers by lane, mode, and equipment fit. Verified procurement contacts on every match.",
+    pillLabel: "PLAYBOOK",
+    livePreviewMeta: "BCO shippers · TL + LTL · equipment-matched",
+  },
+  nvoccs: {
+    title: "NVOCCs",
+    body: "Identify importers running LCL and FCL by lane, equipment, and carrier mix. Flag carrier displacement so you reach the desk during the shopping window.",
+    pillLabel: "PLAYBOOK",
+    livePreviewMeta: "Active LCL + FCL importers · carrier-displacement flags",
+  },
+  "3pls": {
+    title: "3PLs",
+    body: "Bundled prospecting for warehouse, drayage, and fulfillment. Filter BCOs by lane, port, and SKU profile — every match scored against your network.",
+    pillLabel: "PLAYBOOK",
+    livePreviewMeta: "BCO importers · warehouse + drayage fit · seasonality",
+  },
+  "sales-leaders": {
+    title: "Sales Leaders",
+    body: "Pipeline visibility, rep ramp dashboards, ICP coverage. Consolidate the prospecting + sequencer + CRM stack into one freight-native contract.",
+    pillLabel: "PLAYBOOK",
+    livePreviewMeta: "Pipeline · activity · ICP coverage · rep ramp",
+  },
+};

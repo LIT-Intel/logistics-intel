@@ -9,6 +9,9 @@ import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
 import { buildCollectionPage } from "@/lib/jsonLd";
 import { ALTERNATIVE_PAGES } from "./_data";
+import { StickyCTABar } from "@/components/lead-magnet/StickyCTABar";
+import { ExitIntentModal } from "@/components/lead-magnet/ExitIntentModal";
+import { HubFinalCtaForm } from "@/app/_shared/HubFinalCtaForm";
 
 export const metadata: Metadata = buildMetadata({
   title: "Alternatives — LIT vs the freight-data + sales-intel stack",
@@ -28,6 +31,7 @@ export default function AlternativesHubPage() {
 
   return (
     <PageShell>
+      <StickyCTABar />
       <BreadcrumbBar
         crumbs={[
           { label: "Home", href: "/" },
@@ -82,6 +86,12 @@ export default function AlternativesHubPage() {
         secondaryCta={{ label: "Start free", href: "https://app.logisticintel.com/signup" }}
       />
 
+      <HubFinalCtaForm
+        source="alternatives-hub-final"
+        headline="See LIT on your own lanes."
+        subhead="10 searches + 10 verified contacts. No credit card."
+      />
+
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -98,6 +108,8 @@ export default function AlternativesHubPage() {
           ),
         }}
       />
+
+      <ExitIntentModal />
     </PageShell>
   );
 }
