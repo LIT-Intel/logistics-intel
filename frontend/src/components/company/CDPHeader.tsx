@@ -49,6 +49,12 @@ type HeaderKpis = {
   topRoute?: string | null;
   fclCount?: number | null;
   lclCount?: number | null;
+  /**
+   * Est. Annual Revenue Opportunity in USD — computed upstream via
+   * `buildRevenueOpportunity()` (ocean + customs + drayage + air + trucking
+   * service-line sum). Null/0 renders as "—"; never fabricate.
+   */
+  estRevOpp?: number | null;
 };
 
 type CDPHeaderProps = {
@@ -99,6 +105,18 @@ export default function CDPHeader({
   const updatedLabel = formatUpdated(snapshotUpdatedAt);
 
   const kpiCells = [
+    {
+      // Lead KPI — money number first. Brokers should see the size of the
+      // book of business before any volume metric. Sourced from
+      // `buildRevenueOpportunity()`; renders "—" when the formula returns
+      // 0/null so we never promote a fabricated zero to the lead slot.
+      label: "EST. ANNUAL REV OPP",
+      value:
+        kpis.estRevOpp != null && Number(kpis.estRevOpp) > 0
+          ? formatSpend(Number(kpis.estRevOpp))
+          : "—",
+      trend: "Annualized · all service lines",
+    },
     {
       label: "SHIPMENTS (12M)",
       value:

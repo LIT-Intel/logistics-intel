@@ -75,6 +75,7 @@ import {
   matchAllRoutesForCompany,
   type FreightLane,
 } from "@/lib/freightRateBenchmark";
+import { buildRevenueOpportunity } from "@/lib/revenueOpportunity";
 
 // =============================================================================
 // Constants & helpers — verbatim from Company.jsx 51–209.
@@ -1101,8 +1102,78 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       contacts: bundle?.contacts?.count ?? null,
       contactsVerified:
         bundle?.contacts?.items.filter((x) => x.is_verified).length ?? null,
+      // Est. Annual Revenue Opportunity — same inputs as the Revenue tab so
+      // the lead KPI tile and the Revenue tab agree to the dollar. Returns
+      // 0 when no service line could be sized (insufficient inputs); the
+      // header renders "—" in that case rather than a fabricated zero.
+      estRevOpp: (() => {
+        const shipments12m =
+          activeRouteKpis?.shipmentsLast12m ??
+          activeProfile?.totalShipments ??
+          shellCompany?.kpis?.shipments ??
+          null;
+        const t =
+          activeRouteKpis?.teuLast12m ??
+          activeProfile?.teuLast12m ??
+          shellCompany?.kpis?.teu ??
+          null;
+        const fcl12 =
+          (activeProfile as any)?.containers?.fclShipments12m ??
+          (activeProfile as any)?.fcl_count ??
+          null;
+        const lcl12 =
+          (activeProfile as any)?.containers?.lclShipments12m ??
+          (activeProfile as any)?.lcl_count ??
+          null;
+        const topRoutes =
+          (Array.isArray(activeRouteKpis?.topRoutesLast12m) &&
+          activeRouteKpis!.topRoutesLast12m!.length > 0
+            ? activeRouteKpis!.topRoutesLast12m
+            : Array.isArray((activeProfile as any)?.topRoutes)
+              ? (activeProfile as any).topRoutes
+              : Array.isArray((activeProfile as any)?.top_routes)
+                ? (activeProfile as any).top_routes
+                : []) as any[];
+        const hsProfile =
+          (activeProfile as any)?.hsProfile ??
+          (activeProfile as any)?.hs_profile ??
+          (activeProfile as any)?.topProducts ??
+          (activeProfile as any)?.top_products ??
+          null;
+        const carrierMix =
+          (activeProfile as any)?.carrierMix ??
+          (activeProfile as any)?.carrier_mix ??
+          (activeProfile as any)?.topCarriers ??
+          (activeProfile as any)?.top_carriers ??
+          null;
+        const importerSpend =
+          Number(
+            (activeRouteKpis as any)?.estSpendUsd12m ??
+              (activeProfile as any)?.estSpendUsd12m ??
+              null,
+          ) || null;
+        try {
+          const report = buildRevenueOpportunity({
+            companyName: null,
+            shipments12m,
+            teu12m: t,
+            fclShipments12m: fcl12,
+            lclShipments12m: lcl12,
+            topRoutes,
+            benchmarkLanes,
+            hsProfile,
+            carrierMix,
+            importerSelfReportedSpend12m: importerSpend,
+          });
+          return report.totalAddressableSpend > 0
+            ? report.totalAddressableSpend
+            : null;
+        } catch {
+          return null;
+        }
+      })(),
     };
-  }, [activeProfile, activeRouteKpis, shellCompany, bundle, marketSpendBreakdown]);
+  }, [activeProfile, activeRouteKpis, shellCompany, bundle, marketSpendBreakdown, benchmarkLanes]);
 
   const ownerName =
     fullName ||
