@@ -1049,7 +1049,15 @@ function CrmStageSelector({
     };
   }, [open]);
 
-  const canEdit = Boolean(companyId);
+  // Defense in depth: the `update_saved_company_stage` RPC requires a
+  // UUID for `p_company_id`. If the parent ever passes a slug or other
+  // non-UUID string (regressions are easy when wiring is touched), flip
+  // the selector to read-only mode so we never POST garbage that the RPC
+  // rejects with a cast error.
+  const isUuid = (s: string | null | undefined): s is string =>
+    !!s &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+  const canEdit = isUuid(companyId);
 
   async function selectStage(next: CrmStageValue) {
     setOpen(false);

@@ -2185,7 +2185,28 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 ? (bundle?.identity?.sources?.saved?.stage ?? null)
                 : null
             }
-            companyId={bundle?.identity?.id ?? companyId ?? null}
+            companyId={(() => {
+              // Wire the CRM stage selector to the canonical UUID from
+              // `lit_saved_companies.company_id` first — that's the value
+              // the `update_saved_company_stage` RPC expects. Fall back to
+              // `bundle.identity.id` only when it's a valid UUID. Never
+              // pass a slug; the RPC rejects non-UUID input and the
+              // selector's UUID regex would flip the button to read-only
+              // anyway. Returning null here puts the selector into its
+              // static-pill mode rather than rendering a broken chevron.
+              const UUID_RE =
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+              const savedCompanyId =
+                bundle?.identity?.sources?.saved?.company_id ?? null;
+              if (savedCompanyId && UUID_RE.test(savedCompanyId)) {
+                return savedCompanyId;
+              }
+              const identityId = bundle?.identity?.id ?? null;
+              if (identityId && UUID_RE.test(identityId)) {
+                return identityId;
+              }
+              return null;
+            })()}
             savedPresent={
               bundle?.identity?.sources?.saved?.present === true
             }

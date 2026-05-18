@@ -95,6 +95,77 @@ async function resolveInBrowser(
   };
 }
 
+/**
+ * Augment the bundle with the per-user `lit_saved_companies` row so the
+ * UI has access to the canonical UUID for the `update_saved_company_stage`
+ * RPC. The edge function currently sets `sources.saved.present` based on
+ * the `lit_companies` row (canonical identity), not the user-specific
+ * saved row — which means downstream consumers can't distinguish "company
+ * exists in our system" from "this user has saved the company". This
+ * augmentation reads `lit_saved_companies` for the current user and
+ * overwrites `present`, `stage`, and the new `company_id` field with
+ * what's actually persisted under that user.
+ *
+ * Falls back gracefully: if the user is not signed in, or the row does
+ * not exist, the existing `sources.saved` values are left alone except
+ * `present` which is set to false (since "saved by THIS user" is the
+ * semantic the CRM stage selector relies on).
+ */
+async function augmentSavedRow(bundle: ProfileBundle): Promise<ProfileBundle> {
+  try {
+    const companyUuid = bundle?.identity?.id;
+    if (!companyUuid) return bundle;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) return bundle;
+    const { data: saved } = await supabase
+      .from("lit_saved_companies")
+      .select("company_id, stage, notes, last_viewed_at, last_activity_at")
+      .eq("user_id", user.id)
+      .eq("company_id", companyUuid)
+      .maybeSingle();
+    if (!saved) {
+      // Authoritatively mark not-saved for this user so the CRM stage
+      // selector hides itself rather than rendering a static pill that
+      // can't be edited.
+      return {
+        ...bundle,
+        identity: {
+          ...bundle.identity,
+          sources: {
+            ...bundle.identity.sources,
+            saved: {
+              ...bundle.identity.sources.saved,
+              present: false,
+              company_id: null,
+              stage: null,
+            },
+          },
+        },
+      };
+    }
+    return {
+      ...bundle,
+      identity: {
+        ...bundle.identity,
+        sources: {
+          ...bundle.identity.sources,
+          saved: {
+            ...bundle.identity.sources.saved,
+            present: true,
+            company_id: (saved as any).company_id ?? null,
+            stage: (saved as any).stage ?? null,
+            notes: (saved as any).notes ?? null,
+            last_viewed_at: (saved as any).last_viewed_at ?? null,
+            last_activity_at: (saved as any).last_activity_at ?? null,
+          },
+        },
+      },
+    };
+  } catch {
+    return bundle;
+  }
+}
+
 export function useCompanyProfile(
   id: string | null | undefined,
   options: UseCompanyProfileOptions = {},
@@ -123,7 +194,9 @@ export function useCompanyProfile(
 
     if (fromEdge) {
       if (fromEdge.ok) {
-        setData(fromEdge.data);
+        const augmented = await augmentSavedRow(fromEdge.data);
+        if (reqId !== requestIdRef.current) return;
+        setData(augmented);
         setUsedFallback(false);
       } else {
         setData(null);
@@ -137,7 +210,9 @@ export function useCompanyProfile(
     const fallback = await resolveInBrowser(id, hints);
     if (reqId !== requestIdRef.current) return;
     if (fallback.ok) {
-      setData(fallback.data);
+      const augmented = await augmentSavedRow(fallback.data);
+      if (reqId !== requestIdRef.current) return;
+      setData(augmented);
       setError(null);
     } else {
       setData(null);
