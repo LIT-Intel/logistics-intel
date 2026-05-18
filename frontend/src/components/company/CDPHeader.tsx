@@ -58,8 +58,11 @@ type HeaderKpis = {
   lclCount?: number | null;
   /**
    * Est. Annual Revenue Opportunity in USD — computed upstream via
-   * `buildRevenueOpportunity()` (ocean + customs + drayage + air + trucking
-   * service-line sum). Null/0 renders as "—"; never fabricate.
+   * `buildRevenueOpportunity()` (ocean + customs + drayage + air +
+   * trucking service-line sum). Kept on the type for back-compat with
+   * the Revenue Opportunity tab; NOT rendered in the header strip
+   * since header v8 (founder split "EST. SPEND" into ALL-TIME + ANNUAL
+   * to remove confusion with broker revenue opportunity).
    */
   estRevOpp?: number | null;
 };
@@ -137,16 +140,36 @@ export default function CDPHeader({
 
   const kpiCells = [
     {
-      // Lead KPI — money number first. Brokers should see the size of the
-      // book of business before any volume metric. Sourced from
-      // `buildRevenueOpportunity()`; renders "—" when the formula returns
-      // 0/null so we never promote a fabricated zero to the lead slot.
-      label: "EST. ANNUAL REV OPP",
+      // Lead KPI (header v8) — total importer freight spend across all
+      // available history. Founder directive: brokers need to see the
+      // cumulative book size first, then drill into annual. Sourced from
+      // `spendAllTime` upstream (sum of every month in monthly_volumes
+      // × current FBX avg $/TEU, with an outlier-month guard).
+      // Renders "—" when the snapshot lacks monthly_volumes or
+      // benchmarks haven't loaded — never fabricate.
+      label: "EST. SPEND (ALL-TIME)",
       value:
-        kpis.estRevOpp != null && Number(kpis.estRevOpp) > 0
-          ? formatSpend(Number(kpis.estRevOpp))
+        kpis.spendAllTime != null && Number(kpis.spendAllTime) > 0
+          ? formatSpend(Number(kpis.spendAllTime))
           : "—",
-      trend: "Annualized · all service lines",
+      trend: "Cumulative · current rates",
+    },
+    {
+      // Annual / trailing-12M companion to ALL-TIME. Year-aware label
+      // driven by the year selector upstream:
+      //   - current year → "EST. SPEND (12M)"   (trailing window)
+      //   - past year    → "EST. SPEND (2025)"  (calendar year)
+      // Value source switches in CompanyProfileV2.headerKpis between
+      // `marketSpendBreakdown` (current) and `pastYearSpend` (past).
+      label: kpis.spendLabel || "EST. SPEND (12M)",
+      value:
+        kpis.spend != null && Number(kpis.spend) > 0
+          ? formatSpend(Number(kpis.spend))
+          : "—",
+      trend:
+        kpis.spendLabel && kpis.spendLabel.includes("(20")
+          ? "Calendar year · current rates"
+          : "Trailing 12 months",
     },
     {
       label: "SHIPMENTS (12M)",
@@ -160,23 +183,6 @@ export default function CDPHeader({
       value:
         kpis.teu != null && Number(kpis.teu) > 0
           ? formatTeu(Number(kpis.teu))
-          : "—",
-    },
-    {
-      // `kpis.spend` is the marketSpendBreakdown 12M figure from
-      // CompanyProfileV2 (lines 1047-1050); the tile label must match
-      // that scope. The all-time figure lives on `kpis.spendAllTime`
-      // but is not consistently populated, so we keep this tile bound
-      // to the 12M number and render "—" when it's not available
-      // rather than fabricating a trend line.
-      // Label is driven by the upstream year selector — current year
-      // selected → "EST. SPEND (12M)", past year → "EST. SPEND (2025 ·
-      // current rates)". Falls back to the 12M label for callers that
-      // haven't wired the year selector yet.
-      label: kpis.spendLabel || "EST. SPEND (12M)",
-      value:
-        kpis.spend != null && Number(kpis.spend) > 0
-          ? formatSpend(Number(kpis.spend))
           : "—",
     },
     {

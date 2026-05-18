@@ -1041,6 +1041,56 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   // Anti-zero: when the selected past year has no timeSeries rows, returns
   // null so the tile renders "—" instead of fabricating a value.
   const currentYearForSpend = new Date().getFullYear();
+
+  // EST. SPEND (ALL-TIME) — sum every month in the snapshot's timeSeries
+  // (normalized from `parsed_summary.monthly_volumes`) at current FBX
+  // $/TEU. Companion to `marketSpendBreakdown` (trailing-12M) and
+  // `pastYearSpend` (calendar-year). Founder spec: header tile 1 shows
+  // total importer freight spend across all available history; tile 2
+  // shows year-aware annual/12M spend.
+  //
+  // Outlier guard: a small number of ImportYeti snapshots have bogus
+  // monthly TEU values (e.g. Indorama 2024-04 reports 553,647 TEU on 1
+  // shipment — physically impossible). We drop any month whose
+  // TEU/shipments ratio exceeds 200 (the largest container ship holds
+  // ~24K TEU and no single importer-shipment moves that much). Without
+  // this guard the all-time tile would render >$1B for Indorama and
+  // similar offenders, which would be worse than the legacy bug.
+  //
+  // Rate methodology mirrors `pastYearSpend`: global FBX avg $/TEU
+  // applied to FCL TEU, $850/TEU for LCL (Tier-2 fallback). Honest
+  // limitation: current FBX rates are applied to historical TEU; we
+  // disclose this on the tile when older years dominate the mix.
+  const spendAllTime = useMemo(() => {
+    if (!benchmarkLanes.length) return null;
+    const series = Array.isArray((profile as any)?.timeSeries)
+      ? (profile as any).timeSeries
+      : [];
+    if (!series.length) return null;
+    let teuSum = 0;
+    let lclSum = 0;
+    for (const point of series) {
+      const teu = Number(point?.teu) || 0;
+      const ships = Number(point?.shipments) || 0;
+      if (teu <= 0) continue;
+      // Drop outlier months (data-quality guard — see comment above).
+      if (ships > 0 && teu / ships > 200) continue;
+      teuSum += teu;
+      lclSum += Number(point?.lclShipments) || 0;
+    }
+    if (!Number.isFinite(teuSum) || teuSum <= 0) return null;
+    const avgPerTeu =
+      benchmarkLanes.reduce(
+        (s, l) => s + (Number(l.rate_usd_per_teu) || 0),
+        0,
+      ) / benchmarkLanes.length;
+    if (!Number.isFinite(avgPerTeu) || avgPerTeu <= 0) return null;
+    const lclTeu = Math.min(Math.max(0, Math.round(lclSum)), teuSum * 0.15);
+    const fclTeu = Math.max(0, teuSum - lclTeu);
+    const total = Math.round(fclTeu * avgPerTeu + lclTeu * 850);
+    return total > 0 ? total : null;
+  }, [profile, benchmarkLanes]);
+
   const pastYearSpend = useMemo(() => {
     if (selectedYear === currentYearForSpend) return null;
     if (!benchmarkLanes.length) return null;
@@ -1117,8 +1167,13 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       shipmentsAllTime: activeProfile?.totalShipmentsAllTime ?? null,
       teu,
       spend,
-      spendAllTime:
-        activeProfile?.estSpendAllTime ?? activeProfile?.estSpendUsd ?? null,
+      // Founder directive (header v8): tile 1 = EST. SPEND (ALL-TIME) lead,
+      // tile 2 = EST. SPEND (ANNUAL/12M). We deliberately ignore the
+      // ImportYeti-derived `estSpendAllTime` / `estSpendUsd` fields here
+      // because they're customs-disclosed values (the same source that
+      // showed $82K for Old Navy on 27.9K shipments). The lane-rate
+      // proxy in `spendAllTime` is honest at the right order of magnitude.
+      spendAllTime,
       lastShipment: profileLatest || shellLatest,
       topRoute:
         activeRouteKpis?.topRouteLast12m ||
@@ -1226,15 +1281,17 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           return null;
         }
       })(),
-      // Year-aware EST. SPEND tile label. CDPHeader uses this verbatim
-      // so the tile label always agrees with the value's temporal scope.
-      //   - 2026 selected → "EST. SPEND (12M)"
-      //   - 2025 selected → "EST. SPEND (2025 · current rates)"
-      // The "current rates" suffix is honest disclosure that we apply
-      // current FBX $/TEU to historical TEU volumes (no historical FBX
-      // table yet).
+      // Year-aware label for the ANNUAL spend tile (tile 2). CDPHeader
+      // uses this verbatim so the tile label always agrees with the
+      // value's temporal scope.
+      //   - current year selected → "EST. SPEND (12M)" (trailing window)
+      //   - past year selected    → "EST. SPEND (2025)" (calendar year)
+      // The trailing-12M is more honest than "YTD" for the current-year
+      // case because `marketSpendBreakdown` is a trailing-12M figure,
+      // not a strict YTD sum. Past years use current FBX $/TEU applied
+      // to historical TEU — same limitation as `spendAllTime`.
       spendLabel: spendIsPastYear
-        ? `EST. SPEND (${selectedYear} · current rates)`
+        ? `EST. SPEND (${selectedYear})`
         : "EST. SPEND (12M)",
     };
   }, [
@@ -1245,6 +1302,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     marketSpendBreakdown,
     benchmarkLanes,
     pastYearSpend,
+    spendAllTime,
     selectedYear,
     currentYearForSpend,
   ]);
