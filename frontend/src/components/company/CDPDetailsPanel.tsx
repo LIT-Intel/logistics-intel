@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   BarChart2,
   Briefcase,
@@ -1022,6 +1023,13 @@ function CrmStageSelector({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  // Popover rendered into document.body via portal to escape ancestor
+  // overflow:hidden / overflow:auto clipping (the side panel uses both,
+  // plus the Row cell uses Tailwind `truncate` which sets overflow:hidden).
+  // Track the button's bounding rect so we can pin the popover to the
+  // correct screen position with `position:fixed`.
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
 
   // Re-sync local state when the parent prop changes (e.g. after a
   // refetch lands the canonical value from the bundle).
@@ -1029,14 +1037,45 @@ function CrmStageSelector({
     setDisplayStage(stage);
   }, [stage]);
 
-  // Click-outside + Escape to dismiss.
+  // When the popover opens, measure the button position so we can pin
+  // the portal'd popover to the right place. Re-measure on resize so the
+  // popover doesn't float away if the user resizes the window while open.
+  useEffect(() => {
+    if (!open) {
+      setPopoverPos(null);
+      return;
+    }
+    function measure() {
+      const el = rootRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setPopoverPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    // Close on scroll — popover-following-scroll feels finicky and a
+    // brief close-and-reopen is friendlier than a popover that drifts.
+    function onScroll() {
+      setOpen(false);
+    }
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]);
+
+  // Click-outside + Escape to dismiss. Now checks BOTH the trigger
+  // (rootRef) AND the portal'd popover (popoverRef) — otherwise clicking
+  // inside the popover would close it before the option's onClick fires.
   useEffect(() => {
     if (!open) return;
     function onDocClick(e: MouseEvent) {
-      if (!rootRef.current) return;
-      if (e.target instanceof Node && !rootRef.current.contains(e.target)) {
-        setOpen(false);
-      }
+      const t = e.target;
+      if (!(t instanceof Node)) return;
+      if (rootRef.current?.contains(t)) return;
+      if (popoverRef.current?.contains(t)) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -1121,48 +1160,57 @@ function CrmStageSelector({
         )}
       </button>
 
-      {open && (
-        <div
-          role="listbox"
-          aria-label="Select CRM stage"
-          className="absolute left-0 top-[calc(100%+4px)] z-30 w-[200px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg"
-        >
-          <ul className="py-1">
-            {CRM_STAGE_VALUES.map((s) => {
-              const active = s === displayStage;
-              return (
-                <li key={s}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={active}
-                    onClick={() => selectStage(s)}
-                    className={[
-                      "font-display flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[11px] font-semibold",
-                      active
-                        ? "bg-slate-50 text-slate-900"
-                        : "text-slate-700 hover:bg-slate-50",
-                    ].join(" ")}
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <span
-                        className={[
-                          "inline-block h-1.5 w-1.5 rounded-full",
-                          stageDotClass(crmStageTone(s)),
-                        ].join(" ")}
-                      />
-                      {crmStageLabel(s)}
-                    </span>
-                    {active && (
-                      <Check className="h-3 w-3 text-slate-500" />
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+      {open && popoverPos && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            role="listbox"
+            aria-label="Select CRM stage"
+            style={{
+              position: "fixed",
+              top: `${popoverPos.top}px`,
+              left: `${popoverPos.left}px`,
+              zIndex: 9999,
+            }}
+            className="w-[200px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg"
+          >
+            <ul className="py-1">
+              {CRM_STAGE_VALUES.map((s) => {
+                const active = s === displayStage;
+                return (
+                  <li key={s}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      onClick={() => selectStage(s)}
+                      className={[
+                        "font-display flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[11px] font-semibold",
+                        active
+                          ? "bg-slate-50 text-slate-900"
+                          : "text-slate-700 hover:bg-slate-50",
+                      ].join(" ")}
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className={[
+                            "inline-block h-1.5 w-1.5 rounded-full",
+                            stageDotClass(crmStageTone(s)),
+                          ].join(" ")}
+                        />
+                        {crmStageLabel(s)}
+                      </span>
+                      {active && (
+                        <Check className="h-3 w-3 text-slate-500" />
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>,
+          document.body,
+        )}
 
       {error && (
         <span
