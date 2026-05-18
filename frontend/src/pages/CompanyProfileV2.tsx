@@ -390,7 +390,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   // the URL param + localStorage; V2 keeps that path AND additionally uses
   // the resolver to surface a clean directory-only state when the company
   // isn't in lit_companies.
-  const { data: bundle } = useCompanyProfile(rawId, {
+  const { data: bundle, refetch: refetchBundle } = useCompanyProfile(rawId, {
     include: ["identity", "contacts", "activity"],
   });
 
@@ -1508,7 +1508,13 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                   : [],
               } as any,
               profile: fp as any,
-              stage: "prospect",
+              // Forward the user's current CRM stage so the writeback
+              // (which upserts into lit_saved_companies) never resets
+              // a stage the user explicitly chose. Default to "lead"
+              // for first-time saves; legacy values are mapped server-
+              // side by the save-company edge function.
+              stage:
+                bundle?.identity?.sources?.saved?.stage ?? "lead",
               source: "importyeti",
             } as any);
           }
@@ -2121,6 +2127,21 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 ? (bundle?.identity?.sources?.saved?.stage ?? null)
                 : null
             }
+            companyId={bundle?.identity?.id ?? companyId ?? null}
+            savedPresent={
+              bundle?.identity?.sources?.saved?.present === true
+            }
+            onStageChange={() => {
+              // Refetch the company bundle so any other consumers of
+              // `bundle.identity.sources.saved.stage` see the new value
+              // (e.g. the writeback path in handleManualRefreshClick
+              // and the bottom Pulse rail that mirrors the same stage).
+              try {
+                refetchBundle?.();
+              } catch {
+                /* non-fatal */
+              }
+            }}
           />
         )}
       </div>

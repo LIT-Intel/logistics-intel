@@ -45,7 +45,34 @@ Deno.serve(async (req: Request) => {
     }
 
     const body: SaveCompanyRequest = await req.json();
-    const { company_id, source_company_key, company_data, stage = 'prospect' } = body;
+    const { company_id, source_company_key, company_data } = body;
+
+    // Stage validation. The 7-stage CRM pipeline is enforced by a CHECK
+    // constraint on lit_saved_companies. We accept legacy aliases from
+    // older client builds (prospect/active → prospecting, customer →
+    // closed_won, churned → closed_lost) and map them onto the new
+    // vocabulary so refresh/save calls from stale clients keep working
+    // through the rollout window.
+    const VALID_STAGES = new Set([
+      'lead',
+      'prospecting',
+      'needs_analysis',
+      'quoting',
+      'contract_negotiation',
+      'closed_won',
+      'closed_lost',
+    ]);
+    const LEGACY_STAGE_MAP: Record<string, string> = {
+      prospect: 'prospecting',
+      active: 'prospecting',
+      customer: 'closed_won',
+      churned: 'closed_lost',
+    };
+    const rawStage = typeof body.stage === 'string' ? body.stage.trim().toLowerCase() : '';
+    let stage = rawStage && LEGACY_STAGE_MAP[rawStage] ? LEGACY_STAGE_MAP[rawStage] : rawStage;
+    if (!stage || !VALID_STAGES.has(stage)) {
+      stage = 'lead';
+    }
 
     console.log(JSON.stringify({ fn: 'save-company', requestId, user_id: user.id, company_id: company_id ?? null, source_company_key: source_company_key ?? null, stage, ts: new Date().toISOString() }));
 
@@ -163,15 +190,24 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Preserve the user's CRM stage on re-save. The stage column is
+    // user-driven (interactive selector on the company profile); only
+    // set it on the INSERT path. Re-saves (Refresh enrichment, save
+    // again from search) update activity timestamps but never overwrite
+    // the user's pipeline stage.
+    const upsertPayload: Record<string, unknown> = {
+      user_id: user.id,
+      company_id: companyRecord.id,
+      last_activity_at: now,
+      last_viewed_at: now,
+    };
+    if (!existingSave) {
+      upsertPayload.stage = stage;
+    }
+
     const { data: savedCompany, error: saveError } = await supabase
       .from('lit_saved_companies')
-      .upsert({
-        user_id: user.id,
-        company_id: companyRecord.id,
-        stage,
-        last_activity_at: now,
-        last_viewed_at: now,
-      }, {
+      .upsert(upsertPayload, {
         onConflict: 'user_id,company_id',
       })
       .select()
