@@ -32,6 +32,8 @@ import { partnerApplication } from "./partnerApplication";
 import { alternative } from "./alternative";
 import { bestList } from "./bestList";
 import { landingPage } from "./landingPage";
+import { customerStory } from "./customerStory";
+import { solutionRole } from "./solutionRole";
 
 export const schemaTypes = [
   // singletons
@@ -65,6 +67,8 @@ export const schemaTypes = [
   alternative,
   bestList,
   landingPage,
+  customerStory,
+  solutionRole,
   // inbox
   demoRequest,
   partnerApplication,

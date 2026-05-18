@@ -11,6 +11,9 @@ import { CustomerLogoTile } from "@/components/sections/CustomerLogoTile";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { ArrowRight } from "lucide-react";
 import { buildMetadata, siteUrl } from "@/lib/seo";
+import { StickyCTABar } from "@/components/lead-magnet/StickyCTABar";
+import { ExitIntentModal } from "@/components/lead-magnet/ExitIntentModal";
+import { HubFinalCtaForm } from "@/app/_shared/HubFinalCtaForm";
 
 export const revalidate = 3600; // ISR — comparisons change at most weekly
 
@@ -108,6 +111,7 @@ export default async function VsHubPage() {
 
   return (
     <PageShell>
+      <StickyCTABar />
       <PageHero
         eyebrow="Comparisons"
         title="LIT vs"
@@ -198,6 +202,12 @@ export default async function VsHubPage() {
         secondaryCta={{ label: "Start free trial", href: "https://app.logisticintel.com/signup" }}
       />
 
+      <HubFinalCtaForm
+        source="vs-hub-final"
+        headline="See LIT on your own lanes."
+        subhead="10 searches + 10 verified contacts. No credit card."
+      />
+
       {/* CollectionPage JSON-LD — links the hub into the broader site graph
           and lets Google understand /vs is the parent of /vs/[slug] pages. */}
       <script
@@ -218,6 +228,8 @@ export default async function VsHubPage() {
           }),
         }}
       />
+
+      <ExitIntentModal />
     </PageShell>
   );
 }

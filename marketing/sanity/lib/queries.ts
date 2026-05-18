@@ -153,6 +153,42 @@ export const HOMEPAGE_QUERY = groq`{
   }
 }`;
 
+/** Customer story — single page by slug. */
+export const CUSTOMER_STORY_QUERY = groq`*[_type == "customerStory" && slug.current == $slug][0]{
+  _id, _updatedAt, slug, customerName, industry, roleAtCustomer, anonymized,
+  eyebrow, headline, subhead, tldr,
+  heroOutcome,
+  outcomes,
+  quote,
+  body,
+  beforeAfter,
+  faq,
+  aliases, publishedAt, lastReviewedAt, seo
+}`;
+
+/** Customer stories index — card-safe projection for listing pages. */
+export const CUSTOMER_STORIES_INDEX_QUERY = groq`*[_type == "customerStory" && defined(slug.current)] | order(publishedAt desc){
+  _id, "slug": slug.current, customerName, industry, headline, heroOutcome, publishedAt
+}`;
+
+/** Solution / role — single page by slug. */
+export const SOLUTION_ROLE_QUERY = groq`*[_type == "solutionRole" && slug.current == $slug][0]{
+  _id, _updatedAt, slug, role, eyebrow, h1, subhead, tldr,
+  targetKeyword, audience,
+  livePreviewLabel, livePreviewPulseLabel, livePreviewUrlBar, livePreviewItems,
+  playbookSteps,
+  proofPoints,
+  outcomes,
+  cta,
+  faq,
+  aliases, publishedAt, lastReviewedAt, seo
+}`;
+
+/** Solution / role index — ordered by role for nav + listing. */
+export const SOLUTION_ROLES_INDEX_QUERY = groq`*[_type == "solutionRole" && defined(slug.current)] | order(role asc){
+  _id, "slug": slug.current, role, eyebrow, h1, subhead, targetKeyword
+}`;
+
 /** Sitemap.xml generator — yanks all slugs in a single query. */
 export const SITEMAP_QUERY = groq`{
   "blogPosts": *[_type == "blogPost" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
@@ -168,5 +204,7 @@ export const SITEMAP_QUERY = groq`{
   "pages": *[_type == "page" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
   "alternatives": *[_type == "alternative" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
   "bestLists": *[_type == "bestList" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
-  "landingPages": *[_type == "landingPage" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt }
+  "landingPages": *[_type == "landingPage" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
+  "customerStories": *[_type == "customerStory" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt },
+  "solutionRoles": *[_type == "solutionRole" && defined(slug.current)]{ "slug": slug.current, "updatedAt": _updatedAt }
 }`;

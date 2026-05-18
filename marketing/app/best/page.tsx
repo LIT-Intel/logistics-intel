@@ -9,6 +9,9 @@ import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
 import { buildCollectionPage } from "@/lib/jsonLd";
 import { BEST_LIST_PAGES } from "./_data";
+import { StickyCTABar } from "@/components/lead-magnet/StickyCTABar";
+import { ExitIntentModal } from "@/components/lead-magnet/ExitIntentModal";
+import { HubFinalCtaForm } from "@/app/_shared/HubFinalCtaForm";
 
 export const metadata: Metadata = buildMetadata({
   title: "Best of — calibrated rankings for freight + GTM tools",
@@ -21,6 +24,7 @@ export const metadata: Metadata = buildMetadata({
 export default function BestHubPage() {
   return (
     <PageShell>
+      <StickyCTABar />
       <BreadcrumbBar
         crumbs={[
           { label: "Home", href: "/" },
@@ -62,6 +66,12 @@ export default function BestHubPage() {
         secondaryCta={{ label: "Start free", href: "https://app.logisticintel.com/signup" }}
       />
 
+      <HubFinalCtaForm
+        source="best-hub-final"
+        headline="Skip the listicles — try #1 free."
+        subhead="10 searches + 10 verified contacts. No credit card."
+      />
+
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -79,6 +89,8 @@ export default function BestHubPage() {
           ),
         }}
       />
+
+      <ExitIntentModal />
     </PageShell>
   );
 }
