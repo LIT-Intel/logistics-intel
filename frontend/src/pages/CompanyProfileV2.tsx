@@ -1029,6 +1029,50 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     })();
   }, [profile, companyId, benchmarkLanes.length, marketSpendBreakdown]);
 
+  // Year-aware EST. SPEND — founder directive:
+  //   - selectedYear === currentYear → trailing 12M (`marketSpendBreakdown`)
+  //   - selectedYear  <  currentYear → calendar-year sum of
+  //     timeSeries TEU × current FBX avg $/TEU + LCL bench (Tier-2 only;
+  //     per-lane TEU isn't year-scoped in the snapshot, so we use the same
+  //     teu-only fallback the 12M calc falls back to). Past-year rates are
+  //     CURRENT FBX rates (clearly labeled "current rates") since the
+  //     historical rate table only goes back ~12 months.
+  //
+  // Anti-zero: when the selected past year has no timeSeries rows, returns
+  // null so the tile renders "—" instead of fabricating a value.
+  const currentYearForSpend = new Date().getFullYear();
+  const pastYearSpend = useMemo(() => {
+    if (selectedYear === currentYearForSpend) return null;
+    if (!benchmarkLanes.length) return null;
+    const series = Array.isArray((profile as any)?.timeSeries)
+      ? (profile as any).timeSeries
+      : [];
+    if (!series.length) return null;
+    const yearPoints = series.filter(
+      (point: any) => Number(point?.year) === Number(selectedYear),
+    );
+    if (!yearPoints.length) return null;
+    const teu = yearPoints.reduce(
+      (s: number, p: any) => s + (Number(p?.teu) || 0),
+      0,
+    );
+    if (!Number.isFinite(teu) || teu <= 0) return null;
+    const lcl = yearPoints.reduce(
+      (s: number, p: any) => s + (Number(p?.lclShipments) || 0),
+      0,
+    );
+    const avgPerTeu =
+      benchmarkLanes.reduce(
+        (s, l) => s + (Number(l.rate_usd_per_teu) || 0),
+        0,
+      ) / benchmarkLanes.length;
+    if (!Number.isFinite(avgPerTeu) || avgPerTeu <= 0) return null;
+    const lclTeu = Math.min(Math.max(0, Math.round(lcl)), teu * 0.15);
+    const fclTeu = Math.max(0, teu - lclTeu);
+    const total = Math.round(fclTeu * avgPerTeu + lclTeu * 850);
+    return total > 0 ? total : null;
+  }, [selectedYear, currentYearForSpend, profile, benchmarkLanes]);
+
   // Header KPIs — verbatim from Company.jsx 628–713 (with marketSpend override).
   const headerKpis = useMemo(() => {
     const teu =
@@ -1044,8 +1088,18 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     // on 27,918 shipments). When `marketSpendBreakdown` hasn't resolved
     // yet (benchmarks loading, or company has zero TEU) we show "—" rather
     // than a misleading number.
-    const spend =
-      marketSpendBreakdown != null && marketSpendBreakdown > 0
+    //
+    // Year-aware: when a past year is selected, the spend value is
+    // sourced from `pastYearSpend` (calendar-year TEU × current FBX
+    // rates); when current year is selected, the trailing-12M
+    // `marketSpendBreakdown` is used. CDPHeader renders the appropriate
+    // label based on `spendYearLabel`.
+    const spendIsPastYear = selectedYear !== currentYearForSpend;
+    const spend = spendIsPastYear
+      ? pastYearSpend != null && pastYearSpend > 0
+        ? pastYearSpend
+        : null
+      : marketSpendBreakdown != null && marketSpendBreakdown > 0
         ? marketSpendBreakdown
         : null;
 
@@ -1172,8 +1226,28 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           return null;
         }
       })(),
+      // Year-aware EST. SPEND tile label. CDPHeader uses this verbatim
+      // so the tile label always agrees with the value's temporal scope.
+      //   - 2026 selected → "EST. SPEND (12M)"
+      //   - 2025 selected → "EST. SPEND (2025 · current rates)"
+      // The "current rates" suffix is honest disclosure that we apply
+      // current FBX $/TEU to historical TEU volumes (no historical FBX
+      // table yet).
+      spendLabel: spendIsPastYear
+        ? `EST. SPEND (${selectedYear} · current rates)`
+        : "EST. SPEND (12M)",
     };
-  }, [activeProfile, activeRouteKpis, shellCompany, bundle, marketSpendBreakdown, benchmarkLanes]);
+  }, [
+    activeProfile,
+    activeRouteKpis,
+    shellCompany,
+    bundle,
+    marketSpendBreakdown,
+    benchmarkLanes,
+    pastYearSpend,
+    selectedYear,
+    currentYearForSpend,
+  ]);
 
   const ownerName =
     fullName ||
@@ -1718,6 +1792,20 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         refreshing={refreshing}
         manualRefreshing={manualRefreshing}
         snapshotUpdatedAt={snapshotUpdatedAt}
+        availableYears={(() => {
+          // 3-year window: current + 2 prior. Union with any years the
+          // snapshot's timeSeries actually has (so older history surfaces
+          // when available, but the selector is never hidden just because
+          // the snapshot lacks a 2025 row).
+          const cy = currentYearForSpend;
+          const base = [cy, cy - 1, cy - 2];
+          const merged = Array.from(new Set([...base, ...years])).sort(
+            (a, b) => b - a,
+          );
+          return merged.slice(0, 3);
+        })()}
+        selectedYear={selectedYear}
+        onSelectYear={setSelectedYear}
       />
 
       <CompanySignalsStrip

@@ -42,6 +42,13 @@ type HeaderKpis = {
   teu?: number | null;
   spend?: number | null;
   spendAllTime?: number | null;
+  /**
+   * Label for the EST. SPEND tile. Driven by the year selector upstream:
+   *   - current year selected → "EST. SPEND (12M)" (trailing window)
+   *   - past year selected    → "EST. SPEND (2025 · current rates)"
+   * When omitted, falls back to "EST. SPEND (12M)" for backward compat.
+   */
+  spendLabel?: string | null;
   tradeLanes?: number | null;
   contacts?: number | null;
   contactsVerified?: number | null;
@@ -84,6 +91,18 @@ type CDPHeaderProps = {
   manualRefreshing?: boolean;
   onRefresh: () => void;
   snapshotUpdatedAt?: string | null;
+  /**
+   * Year selector — affects the EST. SPEND tile only in this pass.
+   * - `availableYears` is the list of years the snapshot timeSeries has
+   *   data for (descending). Caller should cap at ~3 years.
+   * - `selectedYear` is the currently active year.
+   * - `onSelectYear` fires when the user picks a year.
+   * When `availableYears` is empty or has only one entry, the selector
+   * is hidden (no value in showing a single locked option).
+   */
+  availableYears?: number[];
+  selectedYear?: number;
+  onSelectYear?: (year: number) => void;
 };
 
 export default function CDPHeader({
@@ -106,6 +125,9 @@ export default function CDPHeader({
   manualRefreshing,
   onRefresh,
   snapshotUpdatedAt,
+  availableYears,
+  selectedYear,
+  onSelectYear,
 }: CDPHeaderProps) {
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -147,7 +169,11 @@ export default function CDPHeader({
       // but is not consistently populated, so we keep this tile bound
       // to the 12M number and render "—" when it's not available
       // rather than fabricating a trend line.
-      label: "EST. SPEND (12M)",
+      // Label is driven by the upstream year selector — current year
+      // selected → "EST. SPEND (12M)", past year → "EST. SPEND (2025 ·
+      // current rates)". Falls back to the 12M label for callers that
+      // haven't wired the year selector yet.
+      label: kpis.spendLabel || "EST. SPEND (12M)",
       value:
         kpis.spend != null && Number(kpis.spend) > 0
           ? formatSpend(Number(kpis.spend))
@@ -195,6 +221,19 @@ export default function CDPHeader({
           <span className="truncate font-semibold text-slate-900">{company.name}</span>
         </div>
         <div className="font-mono flex items-center gap-2 whitespace-nowrap text-[11px] text-slate-400">
+          {Array.isArray(availableYears) &&
+            availableYears.length > 1 &&
+            typeof selectedYear === "number" &&
+            typeof onSelectYear === "function" && (
+              <>
+                <YearSelector
+                  years={availableYears}
+                  selected={selectedYear}
+                  onSelect={onSelectYear}
+                />
+                <span className="text-slate-200">·</span>
+              </>
+            )}
           {company.id && (
             <>
               <span>ID · {String(company.id).slice(0, 8)}</span>
@@ -460,6 +499,58 @@ function formatTeu(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
   return Math.round(n).toLocaleString();
+}
+
+/**
+ * Minimal year segmented control. Drives the EST. SPEND tile's temporal
+ * scope. Style: text-only buttons separated by hairline dividers — stays
+ * inside the meta-row's font/size rhythm so it doesn't add visual noise.
+ * Selected year is highlighted in slate-900; others stay slate-400.
+ */
+function YearSelector({
+  years,
+  selected,
+  onSelect,
+}: {
+  years: number[];
+  selected: number;
+  onSelect: (year: number) => void;
+}) {
+  // Cap at 3 entries (current + 2 prior) so the control never grows wide.
+  const visible = years.slice(0, 3);
+  return (
+    <span
+      role="group"
+      aria-label="Spend year"
+      className="font-mono inline-flex items-center gap-1 text-[11px]"
+    >
+      {visible.map((year, i) => {
+        const active = year === selected;
+        return (
+          <span key={year} className="inline-flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onSelect(year)}
+              aria-pressed={active}
+              className={[
+                "rounded px-1 transition-colors",
+                active
+                  ? "font-semibold text-slate-900"
+                  : "text-slate-400 hover:text-slate-700",
+              ].join(" ")}
+            >
+              {year}
+            </button>
+            {i < visible.length - 1 && (
+              <span className="text-slate-200" aria-hidden>
+                |
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </span>
+  );
 }
 
 function formatSpend(n: number) {
