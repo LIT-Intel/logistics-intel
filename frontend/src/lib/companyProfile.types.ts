@@ -42,6 +42,14 @@ export type CompanyDisplay = {
 export type CompanySources = {
   saved: {
     present: boolean;
+    /**
+     * Canonical UUID from `lit_saved_companies.company_id` when the row
+     * exists for the current user. This is the source of truth for the
+     * `update_saved_company_stage` RPC's `p_company_id` argument — never
+     * pass a slug. Falsy / undefined means the company is not saved for
+     * this user (or the bundle was resolved without an auth context).
+     */
+    company_id?: string | null;
     stage?: string | null;
     notes?: string | null;
     last_viewed_at?: string | null;
