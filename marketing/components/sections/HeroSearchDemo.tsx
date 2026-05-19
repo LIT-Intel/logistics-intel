@@ -223,7 +223,7 @@ export function HeroSearchDemo({ className = "" }: { className?: string }) {
             >
               Pulse Coach reads your prompt
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
               <span className="font-display text-[12px] text-ink-150">Reading as</span>
               <span
                 className="font-mono inline-flex items-center rounded-md border px-2 py-0.5 text-[10.5px] font-semibold"

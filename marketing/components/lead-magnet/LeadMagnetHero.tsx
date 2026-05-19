@@ -48,7 +48,7 @@ export function LeadMagnetHero({
         }}
       />
 
-      <div className="relative mx-auto grid max-w-container grid-cols-1 gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_minmax(0,1fr)] lg:gap-16 lg:py-24">
+      <div className="relative mx-auto grid max-w-container grid-cols-1 gap-12 px-4 pb-16 pt-10 sm:px-6 sm:pt-14 lg:grid-cols-[1.05fr_minmax(0,1fr)] lg:gap-16 lg:py-24">
         {/* Left: copy + form */}
         <div className="flex min-w-0 flex-col justify-center">
           <span className="inline-flex w-fit items-center gap-2 rounded-full border border-brand-cyan/40 bg-brand-cyan/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-cyan">
@@ -82,7 +82,7 @@ export function LeadMagnetHero({
               required
               autoComplete="email"
               placeholder="you@company.com"
-              className="h-12 w-full min-w-0 flex-1 appearance-none rounded-lg border border-white/15 bg-white/[0.06] px-4 text-base text-white placeholder:text-white/40 focus:border-brand-cyan focus:outline-none focus:ring-1 focus:ring-brand-cyan sm:text-sm"
+              className="h-12 w-full min-w-0 flex-1 appearance-none rounded-lg border border-white/25 bg-slate-900/60 px-4 text-base text-white placeholder:text-white/60 focus:border-brand-cyan focus:bg-slate-900/80 focus:outline-none focus:ring-1 focus:ring-brand-cyan sm:text-sm"
             />
             <button
               type="submit"

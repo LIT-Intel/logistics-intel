@@ -57,7 +57,7 @@ export function Nav() {
           <a
             href={APP_LOGIN_URL}
             aria-label="Sign in"
-            className="font-display inline-flex h-9 items-center rounded-md border border-ink-100 bg-white/70 px-2.5 text-[12.5px] font-semibold text-ink-700 backdrop-blur transition hover:bg-white md:hidden"
+            className="font-display inline-flex h-9 items-center whitespace-nowrap rounded-md border border-ink-100 bg-white/70 px-2.5 text-[12.5px] font-semibold text-ink-700 backdrop-blur transition hover:bg-white md:hidden"
           >
             Sign in
           </a>
