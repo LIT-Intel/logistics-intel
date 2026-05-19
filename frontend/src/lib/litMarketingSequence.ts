@@ -790,75 +790,23 @@ export type LitBuilderStep = {
 };
 
 /**
- * Convert the LIT Marketing sequence into BuilderStep-compatible objects
- * for CampaignBuilder.
+ * Audience type for LIT Marketing sequence builders.
  *
- * Founder rebuild (2026-05-19): the 14-touch sequences (LIT_MARKETING_BROKER_14
- * + LIT_MARKETING_FORWARDER_14) used the original "operator voice" copy that
- * the founder rejected. Both arrays are retained for legacy compat with any
- * external consumer but are no longer used by this function.
+ * Note (2026-05-19 founder rebuild): the new 4-email
+ * `applyLitMarketingSequenceToBuilder` lives in `campaignEmailTemplates.ts`
+ * because it needs to read the founder-approved templates. Keeping it
+ * there avoids a circular import (campaignEmailTemplates imports wrapV7
+ * from this file; routing the builder back through here would create a
+ * cycle that browser ESM can't resolve at module-init time).
  *
- * The play cards now seed with the founder-approved 4-email sequence from
- * `freightBrokerTemplates` / `smallForwarderTemplates` in
- * `campaignEmailTemplates.ts`. Email-only cadence over 14 days:
- *   Day 1 — intro (Email 1)
- *   Day 4 — proof (Email 2)
- *   Day 8 — use-case (Email 3)
- *   Day 14 — reply-ask (Email 4)
- *
- * The caller is responsible for passing each email step's html through
- * resolveEmailTemplateHtml() before persisting it.
+ * The legacy 14-touch builder below is retained for any external consumer
+ * but no longer called by CampaignBuilder.
  */
 export type LitAudience = "broker" | "forwarder";
 
-export function applyLitMarketingSequenceToBuilder(
-  resolveHtml: (raw: string) => string,
-  audience: LitAudience = "broker",
-): LitBuilderStep[] {
-  function uid() {
-    if (
-      typeof crypto !== "undefined" &&
-      typeof crypto.randomUUID === "function"
-    ) {
-      return crypto.randomUUID();
-    }
-    return `step_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  }
-
-  // Lazy require to avoid a circular import between this file and
-  // campaignEmailTemplates.ts (which imports wrapV7 from here).
-  const { freightBrokerTemplates, smallForwarderTemplates } =
-    require("./campaignEmailTemplates") as typeof import("./campaignEmailTemplates");
-
-  const templates =
-    audience === "forwarder" ? smallForwarderTemplates : freightBrokerTemplates;
-
-  // Delay-days schedule per touch position. Step 1 = 0 (Day 1), step 2 = +3
-  // (Day 4), step 3 = +4 (Day 8), step 4 = +6 (Day 14). The CampaignBuilder
-  // schedule timer adds delayDays to the previous step's scheduled time.
-  const DELAY_DAYS = [0, 3, 4, 6];
-
-  const out: LitBuilderStep[] = templates.map((t, i) => ({
-    localId: uid(),
-    kind: "email" as const,
-    subject: t.subject,
-    body: resolveHtml(t.html),
-    title: t.name,
-    description: t.description,
-    waitDays: 0,
-    delayDays: DELAY_DAYS[i] ?? 0,
-    delayHours: 0,
-    delayMinutes: 0,
-    includeSignature: true,
-    expanded: i === 0,
-  }));
-
-  return out;
-}
-
 // Legacy 14-touch builder. Retained as an export for any external consumer
 // (or future fallback) but no longer called by CampaignBuilder — the play
-// cards now seed from the 4-email sequence via the function above.
+// cards now seed from the 4-email sequence in campaignEmailTemplates.ts.
 export function applyLitMarketing14TouchSequenceToBuilder(
   resolveHtml: (raw: string) => string,
   audience: LitAudience = "broker",
