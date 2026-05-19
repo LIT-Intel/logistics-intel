@@ -121,9 +121,12 @@ export function wrapV7(opts: {
 
   const previewBlock = `<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:${_MKT_COLOR.bg};mso-hide:all;">${previewText}${"&nbsp;&#847;".repeat(60)}</div>`;
 
-  // Header — LIT logo image + 2px cyan accent rule. No dark hero band.
-  // The header lives ON the warm shell, not on a separate background.
-  const headerBlock = `<tr><td style="padding:28px 32px 0 32px;"><img src="${_MKT_LOGO_URL}" width="130" height="29" alt="Logistics Intel" style="display:block;width:130px;height:29px;border:0;outline:none;text-decoration:none;" /><div style="height:2px;width:48px;background-color:${_MKT_COLOR.brandAccent};margin:14px 0 0 0;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td></tr>`;
+  // Header — LIT logo + thicker navy→cyan gradient brand band.
+  // Top padding 40px (was 28px) for more breathing room.
+  // The band uses linear-gradient for modern clients and a solid navy
+  // bgcolor fallback for Outlook desktop (Word renderer strips gradients).
+  // Band is full-content-width (matches the body's 32px side padding).
+  const headerBlock = `<tr><td style="padding:40px 32px 18px 32px;"><img src="${_MKT_LOGO_URL}" width="130" height="29" alt="Logistics Intel" style="display:block;width:130px;height:29px;border:0;outline:none;text-decoration:none;" /></td></tr><tr><td style="padding:0 32px 0 32px;font-size:0;line-height:0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;width:100%;"><tr><td bgcolor="${_MKT_COLOR.ctaBg}" height="6" style="height:6px;background-color:${_MKT_COLOR.ctaBg};background-image:linear-gradient(to right, ${_MKT_COLOR.ctaBg} 0%, ${_MKT_COLOR.brandAccent} 100%);font-size:0;line-height:0;border-radius:3px;mso-line-height-rule:exactly;">&nbsp;</td></tr></table></td></tr>`;
 
   // Pro tip card — warm amber tint, not cold blue. Reads as a sidenote
   // not a button. Renders inside the body cell, below the main copy.
