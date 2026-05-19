@@ -38,6 +38,19 @@ function wrapBrokerEmail(
   proTipHtml?: string,
   ctaText: string = "See a sample shipper profile",
   ctaUrl: string = "https://www.logisticintel.com",
+  extras?: {
+    headline?: string;
+    bullets?: string[];
+    resourceCard?: {
+      companyName: string;
+      teu12m: string;
+      topLane: string;
+      topCarrier: string;
+      trigger: string;
+      crmStage?: string;
+      caption: string;
+    };
+  },
 ): string {
   return wrapV7({
     bodyHtml,
@@ -46,6 +59,9 @@ function wrapBrokerEmail(
     previewText,
     subjectLine: subject,
     proTipHtml,
+    headline: extras?.headline,
+    bullets: extras?.bullets,
+    resourceCard: extras?.resourceCard,
   });
 }
 
@@ -94,6 +110,15 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
       undefined,
       "Start your 14-day free trial",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_broker_1_founder_intro",
+      {
+        headline: "Eight hours of tabs. Two real calls.",
+        bullets: [
+          "Every U.S. bill of lading, refreshed daily",
+          "Carrier shifts and lane launches as buying signals",
+          "Verified ops contacts, 95% deliverability",
+          "One workspace, not five disconnected tools",
+        ],
+      },
     ),
   },
   {
@@ -119,6 +144,24 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
       undefined,
       "See your accounts",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_broker_2_account_card",
+      {
+        headline: "Open an account. See the deal.",
+        bullets: [
+          "T-12m volume on TR → US",
+          "Trigger: 4 new origin ports activated",
+          "Trigger: rising single-carrier reliance",
+          "Pushes to your Command Center or external CRM",
+        ],
+        resourceCard: {
+          companyName: "Tesla, Inc.",
+          teu12m: "14,200 TEU",
+          topLane: "CN → US Long Beach",
+          topCarrier: "COSCO Shipping",
+          trigger: "+18% volume MoM",
+          crmStage: "Active",
+          caption: "Every signal cited to public source. 95% confidence. No hallucinated facts.",
+        },
+      },
     ),
   },
   {
@@ -144,6 +187,24 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
       undefined,
       "Try it free for 14 days",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_broker_3_signal_selling",
+      {
+        headline: "Targeting and timing. Just those two.",
+        bullets: [
+          "Live shipment patterns and T-12m volume",
+          "Carrier shifts and new origin ports surfaced as signals",
+          "\"Saw your VN → US spike 18% this quarter\" beats \"just checking in\"",
+          "Built for logistics, not a generic CRM",
+        ],
+        resourceCard: {
+          companyName: "Home Depot",
+          teu12m: "127,800 TEU",
+          topLane: "Multi-origin → US Savannah",
+          topCarrier: "Maersk",
+          trigger: "lane diversification active",
+          crmStage: "Active",
+          caption: "Buying signals on every importer, refreshed weekly.",
+        },
+      },
     ),
   },
   {
@@ -166,6 +227,9 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
       undefined,
       "Start your 14-day free trial",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_broker_4_quiet_close",
+      {
+        headline: "One question. One sentence back.",
+      },
     ),
   },
 ];
@@ -196,6 +260,15 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
       undefined,
       "Start your 14-day free trial",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_1_founder_intro",
+      {
+        headline: "Six years quoting freight. Same problem every Monday.",
+        bullets: [
+          "Every U.S. bill of lading, refreshed daily",
+          "Verified ops contacts on every importer",
+          "Filter by lane, carrier, volume, and TEU trend",
+          "One workspace built for logistics",
+        ],
+      },
     ),
   },
   {
@@ -221,6 +294,24 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
       undefined,
       "See it on your accounts",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_2_account_card",
+      {
+        headline: "Account research, in 30 seconds.",
+        bullets: [
+          "Trailing-12m volume, in TEU and shipment count",
+          "Top lane and current carrier",
+          "Buying signals: new origin ports, carrier shifts",
+          "CRM stage synced to your pipeline",
+        ],
+        resourceCard: {
+          companyName: "Tesla, Inc.",
+          teu12m: "14,200 TEU",
+          topLane: "CN → US Long Beach",
+          topCarrier: "COSCO Shipping",
+          trigger: "+18% volume MoM",
+          crmStage: "Active",
+          caption: "Open any importer. See the whole account in 30 seconds.",
+        },
+      },
     ),
   },
   {
@@ -246,6 +337,24 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
       undefined,
       "Try it free for 14 days",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_3_velocity",
+      {
+        headline: "Five days of research, twenty minutes.",
+        bullets: [
+          "Search by lane, HS code, or origin port",
+          "AI surfaces companies with volume up MoM",
+          "Auto-queue verified ops contacts",
+          "Launch a Day-1 sequence in the same tab",
+        ],
+        resourceCard: {
+          companyName: "Costco Wholesale",
+          teu12m: "89,400 TEU",
+          topLane: "CN → US LA/LB",
+          topCarrier: "OOCL",
+          trigger: "steady, +2% YoY",
+          crmStage: "Active",
+          caption: "Pulse Coach finds 27 matches. You launch to 12 in twenty minutes.",
+        },
+      },
     ),
   },
   {
@@ -267,6 +376,9 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
       undefined,
       "Start your 14-day free trial",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_4_quiet_close",
+      {
+        headline: "Last note from us.",
+      },
     ),
   },
 ];

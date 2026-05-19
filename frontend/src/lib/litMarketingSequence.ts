@@ -116,29 +116,82 @@ export function wrapV7(opts: {
   previewText: string;
   subjectLine: string;
   proTipHtml?: string;
+  // v8 (ZoomInfo-style) optional params — backwards compatible with the
+  // 14-touch sequence callers that don't supply these.
+  headline?: string;
+  bullets?: string[];
+  resourceCard?: {
+    companyName: string;
+    teu12m: string;
+    topLane: string;
+    topCarrier: string;
+    trigger: string;
+    crmStage?: string;
+    caption: string;
+  };
 }): string {
-  const { bodyHtml, ctaText, ctaUrl, previewText, subjectLine, proTipHtml } = opts;
+  const {
+    bodyHtml,
+    ctaText,
+    ctaUrl,
+    previewText,
+    subjectLine,
+    proTipHtml,
+    headline,
+    bullets,
+    resourceCard,
+  } = opts;
+
+  const HERO_BG = "#0B1220";
+  const HERO_TEXT = "#FFFFFF";
+  const CYAN = "#00F0FF";
+  const HERO_LOGO_URL = "https://app.logisticintel.com/logo_web_neon.png";
+  const heroHeadline = headline ?? subjectLine;
 
   const previewBlock = `<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:${_MKT_COLOR.bg};mso-hide:all;">${previewText}${"&nbsp;&#847;".repeat(60)}</div>`;
 
-  // Header — LIT logo + thicker navy→cyan gradient brand band.
-  // Top padding 40px (was 28px) for more breathing room.
-  // The band uses linear-gradient for modern clients and a solid navy
-  // bgcolor fallback for Outlook desktop (Word renderer strips gradients).
-  // Band is full-content-width (matches the body's 32px side padding).
-  const headerBlock = `<tr><td style="padding:40px 32px 18px 32px;"><img src="${_MKT_LOGO_URL}" width="130" height="29" alt="Logistics Intel" style="display:block;width:130px;height:29px;border:0;outline:none;text-decoration:none;" /></td></tr><tr><td style="padding:0 32px 0 32px;font-size:0;line-height:0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;width:100%;"><tr><td bgcolor="${_MKT_COLOR.ctaBg}" height="6" style="height:6px;background-color:${_MKT_COLOR.ctaBg};background-image:linear-gradient(to right, ${_MKT_COLOR.ctaBg} 0%, ${_MKT_COLOR.brandAccent} 100%);font-size:0;line-height:0;border-radius:3px;mso-line-height-rule:exactly;">&nbsp;</td></tr></table></td></tr>`;
+  // ROW 1 — hero band (navy). Wordmark + display H1 + cyan filled CTA.
+  const heroBlock = `<tr><td class="lit-hero" bgcolor="${HERO_BG}" style="background-color:${HERO_BG};padding:32px 32px 36px 32px;"><img src="${HERO_LOGO_URL}" width="180" height="51" alt="Logistics Intel" style="display:block;width:180px;height:51px;border:0;outline:none;text-decoration:none;" /><div style="height:28px;line-height:28px;font-size:0;">&nbsp;</div><h1 class="lit-h1" style="margin:0 0 24px 0;font-family:${_MKT_FONT};font-size:36px;line-height:1.2;font-weight:700;color:${HERO_TEXT};letter-spacing:-0.015em;text-wrap:balance;">${heroHeadline}</h1><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td bgcolor="${CYAN}" valign="middle" style="background-color:${CYAN};border-radius:10px;mso-padding-alt:14px 24px;"><a class="lit-cta-hero" href="${ctaUrl}" target="_blank" style="display:inline-block;padding:14px 24px;font-family:${_MKT_FONT};font-size:14px;font-weight:600;color:${HERO_BG};text-decoration:none;border-radius:10px;letter-spacing:0.01em;line-height:1;">${ctaText} &rarr;</a></td></tr></table></td></tr>`;
 
-  // Pro tip card — warm amber tint, not cold blue. Reads as a sidenote
-  // not a button. Renders inside the body cell, below the main copy.
-  const proTipBlock = proTipHtml
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate;margin:24px 0 0 0;width:100%;"><tr><td bgcolor="${_MKT_COLOR.tipBg}" style="background-color:${_MKT_COLOR.tipBg};border-radius:12px;padding:16px 20px;box-shadow:0 1px 2px rgba(146,64,14,0.04);"><div style="font-family:${_MKT_FONT};font-size:11px;font-weight:700;color:${_MKT_COLOR.tipLabel};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Pro tip</div><div style="font-family:${_MKT_FONT};font-size:15px;line-height:1.55;color:${_MKT_COLOR.text};">${proTipHtml}</div></td></tr></table>`
-    : "";
+  // ROW 2 — body content.
+  const bodyRow = `<tr><td class="lit-pad-x" style="padding:28px 32px 8px 32px;font-family:${_MKT_FONT};font-size:15px;line-height:1.65;color:${_MKT_COLOR.text};text-align:left;">${bodyHtml}${proTipHtml ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate;margin:24px 0 0 0;width:100%;"><tr><td bgcolor="${_MKT_COLOR.tipBg}" style="background-color:${_MKT_COLOR.tipBg};border-radius:12px;padding:16px 20px;"><div style="font-family:${_MKT_FONT};font-size:11px;font-weight:700;color:${_MKT_COLOR.tipLabel};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Pro tip</div><div style="font-family:${_MKT_FONT};font-size:15px;line-height:1.55;color:${_MKT_COLOR.text};">${proTipHtml}</div></td></tr></table>` : ""}</td></tr>`;
 
-  // CTA — navy pill with thin cyan border-bottom accent. Inline pill on
-  // desktop, full-width on mobile via the lit-cta-full class.
-  const ctaBlock = `<tr><td style="padding:8px 32px 32px 32px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td bgcolor="${_MKT_COLOR.ctaBg}" valign="middle" style="background-color:${_MKT_COLOR.ctaBg};border-radius:10px;mso-padding-alt:14px 24px;border-bottom:2px solid ${_MKT_COLOR.ctaAccent};"><a href="${ctaUrl}" target="_blank" style="display:inline-block;padding:14px 24px;font-family:${_MKT_FONT};font-size:14px;font-weight:600;color:${_MKT_COLOR.ctaText};text-decoration:none;border-radius:10px;letter-spacing:0.01em;line-height:1;">${ctaText} &rarr;</a></td></tr></table></td></tr>`;
+  // ROW 3 — bullets (conditional). Each bullet: cyan 18px circle with white
+  // &#10003; checkmark + 15px label. HTML entity (no inline SVG) for Outlook.
+  const bulletsRow =
+    bullets && bullets.length > 0
+      ? `<tr><td class="lit-pad-x" style="padding:4px 32px 8px 32px;">${bullets
+          .map(
+            (b) =>
+              `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;width:100%;"><tr><td width="24" valign="top" style="width:24px;padding-top:3px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" bgcolor="${CYAN}" width="18" height="18" style="width:18px;height:18px;background-color:${CYAN};border-radius:50%;mso-line-height-rule:exactly;"><tr><td align="center" valign="middle" style="color:${HERO_BG};font-size:11px;font-weight:700;line-height:18px;font-family:${_MKT_FONT};">&#10003;</td></tr></table></td><td style="padding:0 0 12px 12px;font-family:${_MKT_FONT};font-size:15px;line-height:1.55;color:${_MKT_COLOR.text};">${b}</td></tr></table>`,
+          )
+          .join("")}</td></tr>`
+      : "";
 
-  return `<!DOCTYPE html><html lang="en" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="x-apple-disable-message-reformatting" /><meta name="color-scheme" content="light only" /><meta name="supported-color-schemes" content="light only" /><title>${subjectLine}</title><style>@media only screen and (max-width:600px){.lit-shell{width:100% !important;max-width:100% !important;border-radius:0 !important;}.lit-pad-x{padding-left:18px !important;padding-right:18px !important;}}a{text-decoration:none;}img{-ms-interpolation-mode:bicubic;border:0;line-height:100%;outline:none;text-decoration:none;}</style><!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]--></head><body style="margin:0;padding:0;background-color:${_MKT_COLOR.pageBg};color:${_MKT_COLOR.text};font-family:${_MKT_FONT};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">${previewBlock}<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="${_MKT_COLOR.pageBg}" style="background-color:${_MKT_COLOR.pageBg};border-collapse:collapse;"><tr><td align="center" valign="top" style="padding:32px 12px 48px 12px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="lit-shell" bgcolor="${_MKT_COLOR.bg}" style="max-width:600px;width:100%;background-color:${_MKT_COLOR.bg};border-radius:16px;border-collapse:separate;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,0.04),0 2px 12px rgba(15,23,42,0.05);">${headerBlock}<tr><td class="lit-pad-x" style="padding:22px 32px 4px 32px;font-family:${_MKT_FONT};font-size:15px;line-height:1.65;color:${_MKT_COLOR.text};text-align:left;">${bodyHtml}${proTipBlock}</td></tr>${ctaBlock}<tr><td class="lit-pad-x" style="padding:0 32px;"><div style="height:1px;background-color:${_MKT_COLOR.divider};font-size:0;line-height:0;">&nbsp;</div></td></tr><tr><td class="lit-pad-x" style="padding:18px 32px 28px 32px;font-family:${_MKT_FONT};font-size:12px;line-height:1.65;color:${_MKT_COLOR.textMuted};text-align:left;">Logistics Intel &middot; Atlanta, GA &middot; <a href="https://app.logisticintel.com/unsubscribe?token={{unsubscribe_token}}" style="color:${_MKT_COLOR.textMuted};text-decoration:underline;">unsubscribe</a></td></tr></table></td></tr></table></body></html>`;
+  // ROW 4 — secondary CTA (cyan outline pill).
+  const secondaryCtaRow = `<tr><td class="lit-pad-x" style="padding:16px 32px 24px 32px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td valign="middle" style="background-color:#FFFFFF;border:2px solid ${CYAN};border-radius:10px;mso-padding-alt:12px 22px;"><a class="lit-cta-secondary" href="${ctaUrl}" target="_blank" style="display:inline-block;padding:12px 22px;font-family:${_MKT_FONT};font-size:14px;font-weight:600;color:${HERO_BG};text-decoration:none;border-radius:10px;letter-spacing:0.01em;line-height:1;">${ctaText} &rarr;</a></td></tr></table></td></tr>`;
+
+  // ROW 5 — resource card (conditional). Sky-50 tinted outer; white inner
+  // card with stats; amber trigger row; right-side caption.
+  let resourceRow = "";
+  if (resourceCard) {
+    const stage = resourceCard.crmStage ?? "Active";
+    const statRow = (label: string, value: string) =>
+      `<tr><td style="padding:6px 0;font-family:${_MKT_FONT};"><div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px;">${label}</div><div style="font-size:14px;color:#0F172A;line-height:1.4;">${value}</div></td></tr>`;
+    const innerCard = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#FFFFFF" style="background-color:#FFFFFF;border-radius:10px;border:1px solid #E2E8F0;border-collapse:separate;width:100%;"><tr><td style="padding:14px 16px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;width:100%;"><tr><td valign="middle" style="font-family:${_MKT_FONT};font-size:15px;font-weight:600;color:#0B1220;">${resourceCard.companyName}</td><td align="right" valign="middle"><span style="display:inline-block;background-color:#ECFDF5;color:#047857;padding:2px 8px;border-radius:11px;font-family:${_MKT_FONT};font-size:11px;font-weight:600;">&#10003; CRM: ${stage}</span></td></tr></table><div style="height:1px;background-color:#F1F5F9;font-size:0;line-height:0;margin:10px 0 4px 0;">&nbsp;</div><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;width:100%;">${statRow("Trailing 12m", resourceCard.teu12m)}${statRow("Top lane", resourceCard.topLane)}${statRow("Top carrier", resourceCard.topCarrier)}</table><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate;margin-top:10px;width:100%;"><tr><td bgcolor="#FFFBEB" style="background-color:#FFFBEB;border-radius:8px;padding:8px 12px;font-family:${_MKT_FONT};font-size:12px;color:#92400E;line-height:1.4;"><strong style="font-weight:700;">Trigger:</strong> ${resourceCard.trigger}</td></tr></table></td></tr></table>`;
+
+    resourceRow = `<tr><td class="lit-pad-x" style="padding:16px 32px 28px 32px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#F0F9FF" style="background-color:#F0F9FF;border-radius:14px;border-collapse:separate;width:100%;"><tr><td style="padding:22px 24px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;width:100%;"><tr><td class="lit-rc-left" valign="top" width="60%" style="width:60%;padding-right:16px;">${innerCard}</td><td class="lit-rc-right" valign="middle" width="40%" style="width:40%;font-family:${_MKT_FONT};font-size:14px;line-height:1.55;color:#0F172A;">${resourceCard.caption}</td></tr></table></td></tr></table></td></tr>`;
+  }
+
+  // ROW 6 — hairline divider.
+  const dividerRow = `<tr><td class="lit-pad-x" style="padding:0 32px;"><div style="height:1px;background-color:${_MKT_COLOR.divider};font-size:0;line-height:0;">&nbsp;</div></td></tr>`;
+
+  // ROW 7 — footer.
+  const footerRow = `<tr><td class="lit-pad-x" style="padding:18px 32px 26px 32px;font-family:${_MKT_FONT};font-size:12px;line-height:1.65;color:${_MKT_COLOR.textMuted};text-align:left;">Logistics Intel &middot; Atlanta, GA &middot; <a href="https://app.logisticintel.com/unsubscribe?token={{unsubscribe_token}}" style="color:${_MKT_COLOR.textMuted};text-decoration:underline;">unsubscribe</a></td></tr>`;
+
+  const mobileStyle = `@media only screen and (max-width:600px){.lit-shell{width:100% !important;max-width:100% !important;border-radius:0 !important;}.lit-pad-x{padding-left:18px !important;padding-right:18px !important;}.lit-hero{padding:24px 22px 28px 22px !important;}.lit-h1{font-size:28px !important;}.lit-cta-hero,.lit-cta-secondary{display:block !important;width:100% !important;text-align:center !important;box-sizing:border-box !important;}.lit-rc-left,.lit-rc-right{display:block !important;width:100% !important;padding-right:0 !important;padding-bottom:12px !important;}}a{text-decoration:none;}img{-ms-interpolation-mode:bicubic;border:0;line-height:100%;outline:none;text-decoration:none;}`;
+
+  return `<!DOCTYPE html><html lang="en" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="x-apple-disable-message-reformatting" /><meta name="color-scheme" content="light only" /><meta name="supported-color-schemes" content="light only" /><title>${subjectLine}</title><style>${mobileStyle}</style><!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]--></head><body style="margin:0;padding:0;background-color:${_MKT_COLOR.pageBg};color:${_MKT_COLOR.text};font-family:${_MKT_FONT};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">${previewBlock}<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="${_MKT_COLOR.pageBg}" style="background-color:${_MKT_COLOR.pageBg};border-collapse:collapse;"><tr><td align="center" valign="top" style="padding:16px 12px 48px 12px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="lit-shell" bgcolor="${_MKT_COLOR.bg}" style="max-width:600px;width:100%;background-color:${_MKT_COLOR.bg};border-radius:16px;border-collapse:separate;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,0.04),0 2px 12px rgba(15,23,42,0.05);">${heroBlock}${bodyRow}${bulletsRow}${secondaryCtaRow}${resourceRow}${dividerRow}${footerRow}</table></td></tr></table></body></html>`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

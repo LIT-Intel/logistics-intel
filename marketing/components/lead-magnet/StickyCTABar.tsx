@@ -112,7 +112,7 @@ export function StickyCTABar({
               required
               autoComplete="email"
               placeholder="you@company.com"
-              className="h-9 min-w-0 flex-1 appearance-none rounded-md border border-white/10 bg-white/5 px-3 text-base text-white placeholder:text-white/40 focus:border-brand-cyan focus:outline-none focus:ring-1 focus:ring-brand-cyan sm:w-64 sm:text-[13px]"
+              className="h-9 min-w-0 flex-1 appearance-none rounded-md border border-white/20 bg-slate-900/60 px-3 text-base text-white placeholder:text-white/55 focus:border-brand-cyan focus:bg-slate-900/80 focus:outline-none focus:ring-1 focus:ring-brand-cyan sm:w-64 sm:text-[13px]"
             />
             <button
               type="submit"
