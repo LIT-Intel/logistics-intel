@@ -82,12 +82,12 @@ export function LeadMagnetHero({
               required
               autoComplete="email"
               placeholder="you@company.com"
-              className="h-12 min-w-0 flex-1 rounded-lg border border-white/15 bg-white/[0.06] px-4 text-sm text-white placeholder:text-white/40 focus:border-brand-cyan focus:outline-none focus:ring-1 focus:ring-brand-cyan"
+              className="h-12 w-full min-w-0 flex-1 rounded-lg border border-white/15 bg-white/[0.06] px-4 text-sm text-white placeholder:text-white/40 focus:border-brand-cyan focus:outline-none focus:ring-1 focus:ring-brand-cyan"
             />
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex h-12 items-center justify-center rounded-lg bg-brand-cyan px-6 text-sm font-semibold text-dark-0 shadow-glow-cyan transition hover:bg-brand-cyan-dim disabled:opacity-60"
+              className="inline-flex h-12 w-full items-center justify-center rounded-lg bg-brand-cyan px-6 text-sm font-semibold text-dark-0 shadow-glow-cyan transition hover:bg-brand-cyan-dim disabled:opacity-60 sm:w-auto"
             >
               {submitting ? "Starting…" : ctaLabel}
             </button>

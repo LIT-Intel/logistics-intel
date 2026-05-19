@@ -30,19 +30,19 @@ export function FinalCtaBand({
           {heading}
         </h2>
         <p className="mx-auto mt-4 max-w-xl text-[17px] leading-[1.55] text-slate-600">{body}</p>
-        <form onSubmit={onSubmit} className="mx-auto mt-8 flex max-w-md flex-col gap-2 sm:flex-row">
+        <form onSubmit={onSubmit} className="mx-auto mt-8 flex w-full max-w-md flex-col gap-2 sm:flex-row">
           <input
             type="email"
             name="email"
             placeholder="Your work email"
             required
             aria-label="Work email"
-            className="flex-1 rounded-xl border-[1.5px] border-slate-300 bg-white px-4 py-3.5 text-[15px] outline-none transition-all focus:border-blue-600 focus:shadow-[0_0_0_4px_rgba(37,99,235,0.12)]"
+            className="w-full min-w-0 flex-1 rounded-xl border-[1.5px] border-slate-300 bg-white px-4 py-3.5 text-[15px] outline-none transition-all focus:border-blue-600 focus:shadow-[0_0_0_4px_rgba(37,99,235,0.12)]"
           />
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-xl bg-gradient-to-b from-blue-600 to-blue-800 px-6 py-3.5 font-display text-[15px] font-bold text-white shadow-[0_4px_14px_rgba(37,99,235,0.32)] transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(37,99,235,0.42)] disabled:opacity-60"
+            className="w-full rounded-xl bg-gradient-to-b from-blue-600 to-blue-800 px-6 py-3.5 font-display text-[15px] font-bold text-white shadow-[0_4px_14px_rgba(37,99,235,0.32)] transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(37,99,235,0.42)] disabled:opacity-60 sm:w-auto"
           >
             {submitting ? "Sending…" : ctaLabel}
           </button>
