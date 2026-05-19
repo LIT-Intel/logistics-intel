@@ -36,7 +36,8 @@ import {
   Youtube,
 } from "lucide-react";
 import DOMPurify from "dompurify";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { fontDisplay, fontBody, fontMono } from "@/features/outbound/tokens";
 import { sendTestEmail } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
@@ -205,6 +206,16 @@ export default function EmailComposerModal({
   // Transient toast (errors / status from toolbar actions)
   const [toolbarMsg, setToolbarMsg] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
 
+  // Image resize popover state. When the user clicks an <img> inside the
+  // visual editor, we open a small floating toolbar anchored above it with
+  // 33% / 66% / 100% width presets + a Remove pill. Drag-resize on
+  // contenteditable images is fragile across browsers (Firefox/Chrome
+  // differ, Safari has selection bugs, edits can drop the image
+  // reference mid-drag), so presets win on reliability.
+  const [resizeTarget, setResizeTarget] = useState<HTMLImageElement | null>(null);
+  const [resizeRect, setResizeRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const resizePopoverRef = useRef<HTMLDivElement | null>(null);
+
   const sourceRef = useRef<HTMLTextAreaElement | null>(null);
   const visualRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -230,6 +241,8 @@ export default function EmailComposerModal({
     setYtError(null);
     setImageUrlInput("");
     lastVisualBodyRef.current = "";
+    setResizeTarget(null);
+    setResizeRect(null);
   }, [open, initialSubject, initialBody]);
 
   // When entering visual mode (or when body changes from outside the
@@ -348,6 +361,107 @@ export default function EmailComposerModal({
     if (!sel) return;
     sel.removeAllRanges();
     sel.addRange(range);
+  }
+
+  // Compute popover anchor from the image's bounding rect (viewport
+  // coords) plus document scroll offsets so the portal at document.body
+  // sits in the right place when the page or modal body is scrolled.
+  const recomputeResizeRect = useCallback((img: HTMLImageElement) => {
+    const r = img.getBoundingClientRect();
+    setResizeRect({
+      top: r.top + window.scrollY,
+      left: r.left + window.scrollX,
+      width: r.width,
+    });
+  }, []);
+
+  // Click anywhere inside the visual editor — if the target is an <img>,
+  // open the resize popover. Otherwise close it.
+  function handleEditorClick(e: React.MouseEvent<HTMLDivElement>) {
+    const target = e.target as HTMLElement;
+    if (target.tagName === "IMG") {
+      const img = target as HTMLImageElement;
+      setResizeTarget(img);
+      recomputeResizeRect(img);
+    } else {
+      setResizeTarget(null);
+      setResizeRect(null);
+    }
+  }
+
+  // Close on Escape; close on click outside both the popover and the
+  // currently-selected image; re-anchor on window resize and on scroll
+  // events within the editor / modal body (capture-phase listener catches
+  // scroll on any ancestor since scroll doesn't bubble).
+  useEffect(() => {
+    if (!resizeTarget) return;
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (resizePopoverRef.current?.contains(t)) return;
+      if (resizeTarget.contains(t) || resizeTarget === t) return;
+      setResizeTarget(null);
+      setResizeRect(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setResizeTarget(null);
+        setResizeRect(null);
+      }
+    };
+    const onReanchor = () => recomputeResizeRect(resizeTarget);
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onReanchor);
+    // capture=true: scroll events don't bubble, so we listen at the root
+    // to catch the editor's overflow:auto container scrolling.
+    window.addEventListener("scroll", onReanchor, true);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onReanchor);
+      window.removeEventListener("scroll", onReanchor, true);
+    };
+  }, [resizeTarget, recomputeResizeRect]);
+
+  // Always close the popover when leaving visual mode or closing the modal.
+  useEffect(() => {
+    if (mode !== "visual" || !open) {
+      setResizeTarget(null);
+      setResizeRect(null);
+    }
+  }, [mode, open]);
+
+  // Apply a width preset to the currently-selected image. We patch the
+  // inline style's `width` (keeping the other declarations from
+  // buildImageTag intact) and serialize the editor HTML back to state so
+  // the change persists through save.
+  function applyImageWidth(percent: number) {
+    const img = resizeTarget;
+    const root = visualRef.current;
+    if (!img || !root) return;
+    img.style.width = `${percent}%`;
+    // max-width:100% is already set by buildImageTag; the explicit width
+    // takes precedence when smaller. height:auto preserves aspect ratio.
+    const next = root.innerHTML;
+    lastVisualBodyRef.current = next;
+    setBody(next);
+    setDirty(true);
+    // Re-anchor after the layout shifts.
+    requestAnimationFrame(() => recomputeResizeRect(img));
+  }
+
+  function removeImage() {
+    const img = resizeTarget;
+    const root = visualRef.current;
+    if (!img || !root) return;
+    img.remove();
+    setResizeTarget(null);
+    setResizeRect(null);
+    const next = root.innerHTML;
+    lastVisualBodyRef.current = next;
+    setBody(next);
+    setDirty(true);
   }
 
   // Toolbar commands (visual mode only). Most lean on execCommand —
@@ -807,6 +921,7 @@ table{max-width:100%;}
                 onKeyUp={saveSelection}
                 onMouseUp={saveSelection}
                 onBlur={saveSelection}
+                onClick={handleEditorClick}
               />
             )}
           </div>
@@ -975,6 +1090,48 @@ table{max-width:100%;}
           </div>
         ) : null}
       </div>
+      {resizeTarget && resizeRect
+        ? createPortal(
+            <div
+              ref={resizePopoverRef}
+              role="toolbar"
+              aria-label="Resize image"
+              className="pointer-events-auto absolute z-[90] inline-flex items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5 shadow-[0_8px_24px_rgba(15,23,42,0.18)]"
+              style={{
+                // Anchor above the image; clamp left to viewport edge.
+                // 36px height + 8px gap keeps clear of the image top edge.
+                top: Math.max(resizeRect.top - 44, 8 + window.scrollY),
+                left: Math.max(resizeRect.left, 8),
+                fontFamily: fontDisplay,
+              }}
+              // Don't steal focus from the contenteditable on click.
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              {[33, 66, 100].map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => applyImageWidth(p)}
+                  className="inline-flex h-7 items-center justify-center rounded-[4px] px-2 text-[10.5px] font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                  title={`Resize to ${p}%`}
+                >
+                  {p}%
+                </button>
+              ))}
+              <span className="mx-0.5 inline-block h-4 w-px bg-slate-200" aria-hidden />
+              <button
+                type="button"
+                onClick={removeImage}
+                className="inline-flex h-7 items-center justify-center rounded-[4px] px-2 text-[10.5px] font-semibold text-rose-600 hover:bg-rose-50"
+                title="Remove image"
+              >
+                <Trash2 className="mr-1 h-3 w-3" />
+                Remove
+              </button>
+            </div>,
+            document.body,
+          )
+        : null}
       <StarterTemplateGallery
         open={galleryOpen}
         onClose={() => setGalleryOpen(false)}
