@@ -263,67 +263,79 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
 export const smallForwarderTemplates: CampaignEmailTemplate[] = [
   {
     id: "lit_marketing_forwarder_1_founder_intro",
-    name: "Forwarder Email 1 · Founder Intro",
+    name: "Forwarder Email 1 · Problem Awareness",
     audience: "small_forwarder",
     stepNumber: 1,
-    subject: "live shipper intel, built for forwarders",
-    previewText: "Every U.S. bill of lading, joined to verified ops contacts, refreshed daily.",
+    subject: "Freight leads built for forwarders",
+    previewText: "Trade intelligence designed for freight sales teams.",
     imageAssetKey: "company_intelligence",
     tokensUsed: ["{{first_name}}"],
-    description: "Day 0 welcome intro for freight forwarders. Positioning-led headline; founder-voice body.",
+    description: "Day 0 educational intro for freight forwarders. Problem-awareness opener; positioning middle; capability bullets.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">Welcome to Logistics Intel — the trade intelligence platform built specifically for freight forwarders.</p>
-<p style="margin:0 0 16px 0;">After six years quoting freight at a forwarder in Atlanta, I knew there had to be a better way than opening seven tabs every Monday morning trying to figure out who was actually moving freight that week. The lists were always wrong by a quarter, the contacts were stale, and the lanes were guesswork.</p>
-<p style="margin:0 0 16px 0;">So we built it. Every U.S. bill of lading, joined to verified ops contacts, refreshed daily. Filter by lane, see who's moving freight right now, and stop chasing companies that haven't imported in two years.</p>
-<p style="margin:0;">— the Logistics Intel team</p>`,
-      "live shipper intel, built for forwarders",
-      "Every U.S. bill of lading, joined to verified ops contacts, refreshed daily.",
+<p style="margin:0 0 16px 0;">Finding freight leads is easy. Finding the right freight leads is the hard part.</p>
+<p style="margin:0 0 16px 0;">Most forwarders are still working from stale account lists, outdated contacts, and generic company data that does not show whether a shipper is actually active, growing, or worth pursuing.</p>
+<p style="margin:0 0 16px 0;">That is why we built Logistics Intel — a trade intelligence platform designed for freight sales teams.</p>
+<p style="margin:0 0 16px 0;">Logistics Intel helps forwarders see which companies are actively importing or exporting, where their freight is moving, who they may be using today, and what changes may create a reason to reach out.</p>
+<p style="margin:0 0 16px 0;">Your team can walk into outreach with better context around lanes, ports, shipment volume, carrier activity, and verified decision-maker contacts.</p>
+<p style="margin:0;">What Logistics Intel helps forwarders uncover:</p>`,
+      "Freight leads built for forwarders",
+      "Trade intelligence designed for freight sales teams.",
       undefined,
       "Start your 14-day free trial",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_1_founder_intro",
       {
-        headline: "Live shipper intel, built for forwarders.",
+        headline: "Freight leads built for forwarders.",
         bullets: [
-          "Every U.S. bill of lading, refreshed daily",
-          "Verified ops contacts on every importer",
-          "Filter by lane, carrier, volume, and TEU trend",
-          "One workspace built for logistics",
+          "Import and export shipment activity",
+          "Active trade lanes and port pairs",
+          "Volume trends and shipment frequency",
+          "Carrier and forwarder signals",
+          "Verified operations and logistics contacts",
         ],
+        bodyAfterBullets: `<p style="margin:0;">If your team is looking for a better way to find and prioritize freight opportunities, Logistics Intel was built for that.</p>`,
+        signoff: `— The Logistics Intel Team`,
       },
     ),
   },
   {
     id: "lit_marketing_forwarder_2_account_card",
-    name: "Forwarder Email 2 · What 30 Seconds Looks Like",
+    name: "Forwarder Email 2 · Account Intelligence",
     audience: "small_forwarder",
     stepNumber: 2,
-    subject: "what 30 seconds of research looks like",
-    previewText: "One account profile, one click. Lane, volume, carrier, signal.",
+    subject: "Know the account before the first call",
+    previewText: "Volume, lanes, ports, carrier signals — all in one account view.",
     imageAssetKey: "pulse_ai",
     tokensUsed: ["{{first_name}}"],
-    description: "Day +3 follow-up. Concrete account-card proof, not features.",
+    description: "Day +3 follow-up. Pre-call account research framing with a concrete account brief example.",
     html: wrapBrokerEmail(
-      `<p style="margin:0 0 16px 0;">{{first_name}}, this is what an account profile looks like inside Logistics Intel — one card, one click.</p>
-<p style="margin:0 0 8px 0;">• Trailing 12m volume: 18.9K TEU</p>
-<p style="margin:0 0 8px 0;">• Top lane: TR → US, 4 new origin ports activated</p>
-<p style="margin:0 0 8px 0;">• Top carrier: Hapag-Lloyd, growing single-carrier reliance</p>
-<p style="margin:0 0 16px 0;">• CRM stage: synced to your pipeline</p>
-<p style="margin:0 0 16px 0;">Every claim cited to a public source, refreshed weekly, no hallucinated facts. Run it on your own top 25 accounts and tell us if anything looks off.</p>
-<p style="margin:0;">— the Logistics Intel team</p>`,
-      "what 30 seconds of research looks like",
-      "One account profile, one click. Lane, volume, carrier, signal.",
+      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
+<p style="margin:0 0 16px 0;">Before a forwarder reaches out to a prospect, they usually need to answer a few important questions:</p>
+<p style="margin:0 0 8px 0;">What are they shipping?</p>
+<p style="margin:0 0 8px 0;">Which lanes are active?</p>
+<p style="margin:0 0 8px 0;">How often are they moving freight?</p>
+<p style="margin:0 0 8px 0;">Which ports are they using?</p>
+<p style="margin:0 0 16px 0;">Is there a reason they may be open to a new forwarding partner?</p>
+<p style="margin:0 0 16px 0;">Most teams have to piece that together across multiple tools.</p>
+<p style="margin:0 0 16px 0;">Logistics Intel puts that account research in one place.</p>
+<p style="margin:0 0 16px 0;">When your reps open a company profile, they can quickly see shipment volume, active lanes, port activity, carrier or forwarder signals, and recent changes that may point to a real opportunity.</p>
+<p style="margin:0;">For example, an account brief may show:</p>`,
+      "Know the account before the first call",
+      "Volume, lanes, ports, carrier signals — all in one account view.",
       undefined,
-      "See it on your accounts",
+      "See your accounts",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_2_account_card",
       {
-        headline: "Account research, in 30 seconds.",
+        headline: "Know the account before the first call.",
         bullets: [
-          "Trailing-12m volume, in TEU and shipment count",
-          "Top lane and current carrier",
-          "Buying signals: new origin ports, carrier shifts",
-          "CRM stage synced to your pipeline",
+          "Trailing 12-month shipment volume",
+          "Top origin and destination lanes",
+          "Port activity and shipment frequency",
+          "Carrier or forwarder changes",
+          "Verified logistics contacts",
         ],
+        bodyAfterBullets: `<p style="margin:0;">Every signal is tied back to public source data, refreshed regularly, and built to help forwarders walk into outreach with better context.</p>`,
+        signoff: `— The Logistics Intel Team`,
         resourceCard: {
           companyName: "Tesla, Inc.",
           teu12m: "14,200 TEU",
@@ -331,75 +343,84 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
           topCarrier: "COSCO Shipping",
           trigger: "+18% volume MoM",
           crmStage: "Active",
-          caption: "Open any importer. See the whole account in 30 seconds.",
+          caption: "A real account brief inside the workspace — public BOL data, refreshed regularly.",
         },
       },
     ),
   },
   {
     id: "lit_marketing_forwarder_3_velocity",
-    name: "Forwarder Email 3 · Search to Campaign in 20 Min",
+    name: "Forwarder Email 3 · Timing & Outreach Relevance",
     audience: "small_forwarder",
     stepNumber: 3,
-    subject: "from a search bar to a campaign in 20 minutes",
-    previewText: "What used to take a sales team five days.",
+    subject: "A better reason to reach out",
+    previewText: "Real shipping activity gives reps a more relevant reason to start the conversation.",
     imageAssetKey: "campaign_builder",
     tokensUsed: ["{{first_name}}"],
-    description: "Day +7 follow-up. Workflow compression — Pulse → Coach → Triggers → Campaign → Replies.",
+    description: "Day +7 follow-up. Timing-based outreach framing; concrete India→Savannah example vs generic 'do you have any freight' anti-example.",
     html: wrapBrokerEmail(
-      `<p style="margin:0 0 16px 0;">{{first_name}}, the work that used to take a sales team five days now takes twenty minutes.</p>
-<p style="margin:0 0 8px 0;">• Search "EV battery importers shipping from Korea" — Pulse finds 27 matches</p>
-<p style="margin:0 0 8px 0;">• Pulse Coach flags 8 with volume up month-over-month</p>
-<p style="margin:0 0 8px 0;">• Auto-save companies, queue verified ops contacts</p>
-<p style="margin:0 0 16px 0;">• Launch a Day-1 sequence to all 12 buyers from inside the same tab</p>
-<p style="margin:0 0 16px 0;">One workspace, one round of research, one launch. The free trial gets you the full thing for fourteen days.</p>
-<p style="margin:0;">— the Logistics Intel team</p>`,
-      "from a search bar to a campaign in 20 minutes",
-      "What used to take a sales team five days.",
+      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
+<p style="margin:0 0 16px 0;">Good freight prospecting usually comes down to two things: targeting and timing.</p>
+<p style="margin:0 0 16px 0;">For forwarders, the best opportunities often show up before a shipper sends out an RFQ. A new origin country, a lane expansion, increased shipment frequency, or a carrier change can all signal that something is moving inside the account.</p>
+<p style="margin:0 0 16px 0;">That is where better account intelligence can make a difference.</p>
+<p style="margin:0 0 16px 0;">Instead of reaching out with a generic &ldquo;just checking in,&rdquo; your team can use real shipping activity to start a more relevant conversation.</p>
+<p style="margin:0 0 16px 0;">For example:</p>
+<p style="margin:0 0 16px 0;font-style:italic;color:#475569;">&ldquo;Saw your imports from India to Savannah have increased this quarter &mdash; are you reviewing options for ocean freight or customs support on that lane?&rdquo;</p>
+<p style="margin:0 0 16px 0;">That lands better than:</p>
+<p style="margin:0 0 16px 0;font-style:italic;color:#475569;">&ldquo;Do you have any freight we can quote?&rdquo;</p>
+<p style="margin:0;">What your team can see inside Logistics Intel:</p>`,
+      "A better reason to reach out",
+      "Real shipping activity gives reps a more relevant reason to start the conversation.",
       undefined,
       "Try it free for 14 days",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_3_velocity",
       {
-        headline: "Five days of research, twenty minutes.",
+        headline: "A better reason to reach out.",
         bullets: [
-          "Search by lane, HS code, or origin port",
-          "AI surfaces companies with volume up MoM",
-          "Auto-queue verified ops contacts",
-          "Launch a Day-1 sequence in the same tab",
+          "Active import and export lanes",
+          "Shipment volume and frequency changes",
+          "New origin or destination activity",
+          "Carrier and routing shifts",
+          "Contact enrichment for logistics decision-makers",
         ],
+        bodyAfterBullets: `<p style="margin:0;">The 14-day free trial gives your team access to the workspace so you can test it against the accounts you are already pursuing.</p>`,
+        signoff: `— The Logistics Intel Team`,
         resourceCard: {
           companyName: "Costco Wholesale",
           teu12m: "89,400 TEU",
-          topLane: "CN → US LA/LB",
+          topLane: "Multi-origin → US (LA/LB + Savannah)",
           topCarrier: "OOCL",
-          trigger: "steady, +2% YoY",
+          trigger: "Savannah inbound volume up this quarter",
           crmStage: "Active",
-          caption: "Pulse Coach finds 27 matches. You launch to 12 in twenty minutes.",
+          caption: "Lane expansions and port shifts like this become a real reason to start a conversation.",
         },
       },
     ),
   },
   {
     id: "lit_marketing_forwarder_4_quiet_close",
-    name: "Forwarder Email 4 · Quiet Close",
+    name: "Forwarder Email 4 · Quiet Close (Reply Ask)",
     audience: "small_forwarder",
     stepNumber: 4,
-    subject: "one last note",
-    previewText: "If the shipper feed isn't useful, that's a fair answer.",
+    subject: "One quick question",
+    previewText: "What is the hardest part of finding new shipper accounts right now?",
     tokensUsed: ["{{first_name}}"],
-    description: "Day +14 final touch. Short, no image, soft close.",
+    description: "Day +14 final touch. Single-question close. Soft trial CTA.",
     html: wrapBrokerEmail(
-      `<p style="margin:0 0 16px 0;">{{first_name}}, last note from us.</p>
-<p style="margin:0 0 16px 0;">If the shipper feed isn't useful, that's a fair answer and we won't keep pinging. The trial is fourteen days, no card, no auto-renew. If you'd like to see it on your own top three lanes, it's right here.</p>
-<p style="margin:0 0 16px 0;">Either way — appreciate you reading this far.</p>
-<p style="margin:0;">— the Logistics Intel team</p>`,
-      "one last note",
-      "If the shipper feed isn't useful, that's a fair answer.",
+      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
+<p style="margin:0 0 16px 0;">One quick question, and then we'll get out of your inbox.</p>
+<p style="margin:0 0 16px 0;">What is the hardest part of finding new shipper accounts for your forwarding team right now?</p>
+<p style="margin:0 0 16px 0;">Is it stale lead lists, bad contact data, not knowing who is actively shipping, or not having a clear reason to reach out?</p>
+<p style="margin:0 0 16px 0;">One sentence is enough — we read every reply.</p>
+<p style="margin:0;">If it is easier to just take a look, the trial is 14 days with no card required.</p>`,
+      "One quick question",
+      "What is the hardest part of finding new shipper accounts right now?",
       undefined,
       "Start your 14-day free trial",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_4_quiet_close",
       {
-        headline: "Last note from us.",
+        headline: "One quick question.",
+        signoff: `— The Logistics Intel Team`,
       },
     ),
   },
