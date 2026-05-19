@@ -5,6 +5,7 @@ import { groq } from "next-sanity";
 import { ArrowRight, Check } from "lucide-react";
 import { StickyCTABar } from "@/components/lead-magnet/StickyCTABar";
 import { ExitIntentModal } from "@/components/lead-magnet/ExitIntentModal";
+import { MoneyPageShell } from "@/components/lead-magnet/MoneyPageShell";
 import { LeadMagnetHero } from "@/components/lead-magnet/LeadMagnetHero";
 import { LiveProductPreview } from "@/components/lead-magnet/LiveProductPreview";
 import { ProofStrip } from "@/components/lead-magnet/ProofStrip";
@@ -375,6 +376,7 @@ export default async function SolutionDetailPage({
   return (
     <>
       <StickyCTABar />
+      <MoneyPageShell>
 
       <LeadMagnetHero
         eyebrow={eyebrow}
@@ -518,6 +520,7 @@ export default async function SolutionDetailPage({
         </div>
       </section>
 
+      </MoneyPageShell>
       <ExitIntentModal />
 
       <script

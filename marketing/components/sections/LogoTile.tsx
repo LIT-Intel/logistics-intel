@@ -10,7 +10,13 @@
  * Falls back to a two-letter initials monogram when no domain is known.
  */
 
-const LOGO_DEV_TOKEN = process.env.NEXT_PUBLIC_LOGO_DEV_TOKEN;
+// Read whichever env-var name the deployment uses. Historical names in
+// Vercel: NEXT_PUBLIC_LOGO_DEV_KEY (current), VITE_LOGO_DEV_TOKEN (legacy
+// pre-Next.js Vite frontend), NEXT_PUBLIC_LOGO_DEV_TOKEN (docs default).
+const LOGO_DEV_TOKEN =
+  process.env.NEXT_PUBLIC_LOGO_DEV_TOKEN ||
+  process.env.NEXT_PUBLIC_LOGO_DEV_KEY ||
+  process.env.VITE_LOGO_DEV_TOKEN;
 
 function logoUrl(domain: string, size: number): string {
   if (LOGO_DEV_TOKEN) {

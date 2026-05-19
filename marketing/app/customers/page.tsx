@@ -5,7 +5,7 @@ import {
   CUSTOMERS_INDEX_QUERY,
   CUSTOMER_STORIES_INDEX_QUERY,
 } from "@/sanity/lib/queries";
-import { PageShell } from "@/components/sections/PageShell";
+import { MoneyPageShell } from "@/components/lead-magnet/MoneyPageShell";
 import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { StickyCTABar } from "@/components/lead-magnet/StickyCTABar";
@@ -108,7 +108,7 @@ export default async function CustomersPage() {
   const featured = stories[0];
 
   return (
-    <PageShell>
+    <MoneyPageShell>
       <StickyCTABar />
 
       <BreadcrumbBar
@@ -231,7 +231,7 @@ export default async function CustomersPage() {
           ),
         }}
       />
-    </PageShell>
+    </MoneyPageShell>
   );
 }
 

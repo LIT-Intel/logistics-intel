@@ -11,6 +11,7 @@ import {
   Sparkles,
   TrendingUp,
 } from "lucide-react";
+import { MoneyPageShell } from "@/components/lead-magnet/MoneyPageShell";
 import { StickyCTABar } from "@/components/lead-magnet/StickyCTABar";
 import { ExitIntentModal } from "@/components/lead-magnet/ExitIntentModal";
 import { LeadMagnetHero } from "@/components/lead-magnet/LeadMagnetHero";
@@ -71,6 +72,7 @@ export default function PartnersPage() {
   return (
     <>
       <StickyCTABar />
+      <MoneyPageShell>
 
       <LeadMagnetHero
         eyebrow="Partner program · Now open"
@@ -324,6 +326,7 @@ export default function PartnersPage() {
         </div>
       </section>
 
+      </MoneyPageShell>
       <ExitIntentModal />
     </>
   );
