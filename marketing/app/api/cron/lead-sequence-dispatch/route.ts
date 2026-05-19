@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { SEQUENCES, type SequenceKey, type SequenceStep } from "@/lib/lead-sequences";
+import { signPreferencesToken } from "@/lib/preferences-token";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -158,7 +159,12 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-async function sendOne(row: QueueRow): Promise<{ ok: boolean; status: number; reason?: string }> {
+type PickedVariant = { variantId: string; templateId: string } | null;
+
+async function sendOne(
+  row: QueueRow,
+  pickedVariant: PickedVariant,
+): Promise<{ ok: boolean; status: number; reason?: string }> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     return { ok: false, status: 0, reason: "resend_api_key_unset" };
@@ -167,6 +173,16 @@ async function sendOne(row: QueueRow): Promise<{ ok: boolean; status: number; re
   const seqStep = findSequenceStep(row.sequence_key, row.step);
   const firstName = parseFirstName(row.email);
   const competitor = parseCompetitorFromSource(row.source);
+  // HMAC-signed preferences URL — appears in every marketing email
+  // footer as {{{preferences_url}}}. signPreferencesToken returns null
+  // if PREFERENCES_TOKEN_SECRET is unset; in that case we fall back to
+  // the generic /email-preferences URL which will render the
+  // "link no longer valid" state. Operators must set the secret before
+  // the first send for the link to be usable.
+  const preferencesToken = signPreferencesToken(row.email);
+  const preferencesUrl = preferencesToken
+    ? `https://logisticintel.com/email-preferences?token=${preferencesToken}`
+    : "https://logisticintel.com/email-preferences";
   const vars: Record<string, string> = {
     firstName,
     competitor,
@@ -174,12 +190,20 @@ async function sendOne(row: QueueRow): Promise<{ ok: boolean; status: number; re
     sequenceKey: row.sequence_key,
     step: String(row.step),
     offer: row.offer ?? "",
+    preferences_url: preferencesUrl,
   };
 
-  // Prefer template id from the queue row, then fall back to the env var
-  // that the sequence step declares (so dashboard rotations work without
-  // re-enqueuing). If still nothing, drop to inline HTML.
+  // Variant resolution order (highest precedence first):
+  //   1. A/B variant pick — when the operator has active rows in
+  //      public.lit_template_variants for this sequence-step's env-var, the
+  //      cron does a weighted-random pick via lit_pick_variant() (resolved
+  //      one level up, before sendOne). The chosen variant's resend
+  //      template_id wins so the send fires against the variant template.
+  //   2. Queue row's template_id (snapshot at enqueue time).
+  //   3. Sequence-step env-var lookup (the historical default).
+  //   4. Inline HTML fallback (renderFallbackHtml).
   const resolvedTemplateId =
+    pickedVariant?.templateId ||
     row.template_id ||
     (seqStep?.envTemplateVar ? process.env[seqStep.envTemplateVar] || null : null);
 
@@ -271,14 +295,120 @@ export async function GET(req: NextRequest) {
   // Process sequentially. Resend's free/paid tiers cap around ~10 rps and
   // sequential processing keeps a single cron invocation well under the
   // 60-second maxDuration for typical batches (100 rows * ~300ms = 30s).
+  let suppressed = 0;
   for (const row of queue) {
-    const result = await sendOne(row);
+    // Suppression check — fires BEFORE every send. Three reasons we skip:
+    //   converted  — lead has a profiles row (signed up at app). Only
+    //                applies to trial-welcome steps 2+. The existing app
+    //                send-subscription-email pipeline handles post-signup
+    //                comms; doubling them up is bad UX.
+    //   bounced    — any prior lit_resend_events row marks this email
+    //                bounced. Continuing to send harms sender reputation.
+    //   complained — recipient marked our mail as spam at any point.
+    //                Continuing is a deliverability + legal risk.
+    // RPC returns one row with three booleans; security definer lets the
+    // anon-role cron call without table-level SELECT grants.
+    const { data: supData } = await supabase
+      .rpc("lit_email_suppression_status", { p_email: row.email });
+    const sup = (Array.isArray(supData) ? supData[0] : supData) as
+      | { converted: boolean; bounced: boolean; complained: boolean }
+      | undefined;
+
+    const shouldSuppress =
+      sup &&
+      (sup.bounced ||
+        sup.complained ||
+        (sup.converted && row.sequence_key === "trial-welcome" && row.step >= 2));
+
+    if (shouldSuppress) {
+      const reason = sup.complained
+        ? "suppressed_complained"
+        : sup.bounced
+        ? "suppressed_bounced"
+        : "suppressed_lead_converted";
+      const { error: upErr } = await supabase
+        .from("lit_lead_sequence_queue")
+        .update({ failed_at: new Date().toISOString(), failure_reason: reason })
+        .eq("id", row.id)
+        .is("sent_at", null);
+      if (upErr) {
+        console.error("[lead-sequence-dispatch] mark-suppressed failed", row.id, upErr.message);
+      }
+      suppressed++;
+      continue;
+    }
+
+    // Preferences opt-out check — runs after the bounce/complaint/
+    // conversion suppression above so harder signals win the reason
+    // label. The RPC returns true when the recipient has either flipped
+    // the master kill switch OR toggled OFF this specific sequence on
+    // /email-preferences. The /api/email-preferences POST already
+    // trims pending rows, but new rows enqueued AFTER a save still
+    // need this gate.
+    const { data: optedOutRaw } = await supabase.rpc("lit_email_is_unsubscribed", {
+      p_email: row.email,
+      p_sequence_key: row.sequence_key,
+    });
+    const optedOut = optedOutRaw === true;
+    if (optedOut) {
+      const { error: upErr } = await supabase
+        .from("lit_lead_sequence_queue")
+        .update({
+          failed_at: new Date().toISOString(),
+          failure_reason: "preferences_opted_out",
+        })
+        .eq("id", row.id)
+        .is("sent_at", null);
+      if (upErr) {
+        console.error("[lead-sequence-dispatch] mark-pref-opt-out failed", row.id, upErr.message);
+      }
+      suppressed++;
+      continue;
+    }
+
+    // Resolve A/B variant BEFORE the send so we can stamp the chosen
+    // variant id alongside sent_at in a single update. The RPC returns
+    // zero rows when no active variants exist — sendOne handles that
+    // gracefully by falling through to the env-var template.
+    const seqStep = findSequenceStep(row.sequence_key, row.step);
+    let pickedVariant: PickedVariant = null;
+    if (seqStep?.envTemplateVar) {
+      const { data: variantData, error: variantErr } = await supabase.rpc(
+        "lit_pick_variant",
+        { p_parent_env_var: seqStep.envTemplateVar },
+      );
+      if (variantErr) {
+        // Variant pick failure is non-fatal — log and fall through to the
+        // default env-var template. We never block a send on the A/B layer.
+        console.error(
+          "[lead-sequence-dispatch] variant pick failed",
+          row.id,
+          variantErr.message,
+        );
+      } else {
+        const v = (Array.isArray(variantData) ? variantData[0] : variantData) as
+          | { variant_id: string; template_id: string }
+          | undefined;
+        if (v?.variant_id && v?.template_id) {
+          pickedVariant = { variantId: v.variant_id, templateId: v.template_id };
+        }
+      }
+    }
+
+    const result = await sendOne(row, pickedVariant);
     if (result.ok) {
       // Conditional update: only flip sent_at when it's still null. This
       // is our soft idempotency guard against concurrent invocations.
+      // template_variant_id captures which A/B variant was actually sent
+      // so the dashboard can do per-variant performance rollups later.
       const { error: upErr } = await supabase
         .from("lit_lead_sequence_queue")
-        .update({ sent_at: new Date().toISOString(), failed_at: null, failure_reason: null })
+        .update({
+          sent_at: new Date().toISOString(),
+          failed_at: null,
+          failure_reason: null,
+          template_variant_id: pickedVariant?.variantId ?? null,
+        })
         .eq("id", row.id)
         .is("sent_at", null);
       if (upErr) {
@@ -301,7 +431,7 @@ export async function GET(req: NextRequest) {
 
   const durationMs = Date.now() - startedAt;
   console.log(
-    `[lead-sequence-dispatch] processed=${queue.length} succeeded=${succeeded} failed=${failed} durationMs=${durationMs}`,
+    `[lead-sequence-dispatch] processed=${queue.length} succeeded=${succeeded} failed=${failed} suppressed=${suppressed} durationMs=${durationMs}`,
   );
 
   return json({
@@ -309,6 +439,7 @@ export async function GET(req: NextRequest) {
     processed: queue.length,
     succeeded,
     failed,
+    suppressed,
     durationMs,
   });
 }

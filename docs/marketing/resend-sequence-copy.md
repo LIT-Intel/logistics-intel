@@ -1,8 +1,16 @@
-# Resend Sequence Copy — 13 Templates
+# Resend Sequence Copy — 15 Templates
 
-Paste each section into the matching Resend template. The HTML uses inline styles so it renders identically across clients. Brand spec: max-width 600px, system font stack, cyan top border (`#06b6d4`), brand-blue CTA (`#1e40af`), footer with unsubscribe.
+Each template body block below is wrapped by the shared HTML shell at the bottom of this file at push time (`scripts/setup-resend-templates.cjs` substitutes the body into the `<!-- BODY -->` marker and the hero SVG into the `<!-- HERO -->` marker).
 
-A reusable HTML shell sits at the bottom of this file. Each template below shows the **body block** that goes inside the shell, plus subject and preview text.
+Visual language matches `frontend/src/features/outbound/data/starterTemplates.ts`: 600px email-safe table, Georgia serif, inline-styled static hero SVG per email, brand accent per sequence, CTA button with subtle glow. No external CSS, no `<style>` blocks, no animation — renders identically in Gmail and Outlook.
+
+**Subject lines** are 8–12 words, benefit-led (Ogilvy).
+**Preview text** is 80–110 chars and complements (does not repeat) the subject.
+**Trigger** describes the user action that fires the template.
+**Hero kind** is one of `stack | broker | customs | nvocc | dashboard | newsletter | team`.
+**Accent** is one of `ocean | blue | purple | teal | red | amber | slate`.
+
+For the trigger → source-value mapping, see `docs/marketing/resend-template-triggers.md`.
 
 ---
 
@@ -10,142 +18,107 @@ A reusable HTML shell sits at the bottom of this file. Each template below shows
 
 ### 1. RESEND_TPL_TRIAL_WELCOME
 
-**Subject:** Your LIT trial is live — start here
-**Preview text:** 10 searches, 10 verified contacts, 524,000 active US shippers indexed. Here's what to run first.
+**Subject:** Your LIT trial is live — 524,000 active shippers indexed
+**Preview text:** 10 searches, 10 verified contacts, one working prospect list. Three moves to make in the next 20 minutes.
+**Trigger:** Any hero, sticky, or final-CTA free-trial form submit that resolves to `funnel=trial` in `resolveAudience()` (sent inline at step 1).
 **Merge variables:** `{{firstName}}`
+**Hero kind:** dashboard
+**Accent:** blue
 
 ```html
-<p>Hi {{firstName}},</p>
-
-<p>Your Logistic Intel trial is active. You get 10 company searches and 10 verified contacts this week. That's enough to build a working prospect list for one lane or one vertical, not a toy demo.</p>
-
-<p>Three things to do in the next 20 minutes:</p>
-
-<ol>
-  <li><strong>Pick a lane.</strong> Search by HS code, origin port, or destination city. The index covers 524,000 active US shippers with shipment data through last week.</li>
-  <li><strong>Save 5 companies</strong> that match your ICP. Saved companies feed the contact-finder.</li>
-  <li><strong>Pull contacts</strong> on your top 3. You'll see role, direct email, and a verification stamp. No "info@" addresses.</li>
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">Your Logistic Intel trial is active. You get <strong>10 company searches</strong> and <strong>10 verified contacts</strong> this week — enough to build a working prospect list for one lane or one vertical, not a toy demo.</p>
+<p style="margin:0 0 16px 0;">Three moves to make in the next 20 minutes:</p>
+<ol style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;"><strong>Pick a lane.</strong> Search by HS code, origin port, or destination city. 524,000 active US shippers indexed through last week.</li>
+  <li style="margin-bottom:8px;"><strong>Save 5 companies</strong> that match your ICP. Saved companies feed the contact-finder.</li>
+  <li style="margin-bottom:8px;"><strong>Pull contacts</strong> on your top 3. Role, direct email, verification stamp. No "info@" addresses.</li>
 </ol>
-
-<p style="text-align:center;margin:32px 0;">
-  <a href="https://app.logisticintel.com/dashboard" style="background:#1e40af;color:#ffffff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Open your dashboard</a>
-</p>
-
-<p>Reply to this email if anything is broken or unclear. A real person reads them.</p>
-
-<p>— The LIT team</p>
+<p style="margin:0 0 16px 0;">Reply to this email if anything is broken or unclear. A real person reads them.</p>
 ```
 
 ---
 
 ### 2. RESEND_TPL_TRIAL_DAY_2
 
-**Subject:** How Hartman Logistics got 2.4× reply rate
-**Preview text:** Same outreach team, same volume. The difference was the list.
+**Subject:** How Hartman Logistics hit 2.4× reply rate same week
+**Preview text:** Same outreach team, same volume, same scripts. The list source was the only variable that changed.
+**Trigger:** Cron, 48 hours after a trial lead is enqueued. Fires for every trial lead regardless of activation state.
 **Merge variables:** `{{firstName}}`
+**Hero kind:** dashboard
+**Accent:** blue
 
 ```html
-<p>Hi {{firstName}},</p>
-
-<p>Quick story while your trial is fresh.</p>
-
-<p>Hartman Logistics (mid-size NVOCC, Houston) ran the same outbound team for 18 months with a 3.1% reply rate. They switched the list source to LIT and ran it for one quarter. Reply rate landed at 7.4%. Same SDRs, same scripts, same volume.</p>
-
-<p>What changed: every prospect on the new list had moved freight in the last 90 days on a matching trade lane. No dead accounts, no procurement contacts at companies that haven't imported since 2022.</p>
-
-<p>If you want the lane-level reply data for your own segment, run a search and check the "last shipment" column. Anything inside 60 days is live.</p>
-
-<p style="text-align:center;margin:32px 0;">
-  <a href="https://app.logisticintel.com/search" style="background:#1e40af;color:#ffffff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Run a lane search</a>
-</p>
-
-<p>— The LIT team</p>
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">Quick story while your trial is fresh.</p>
+<p style="margin:0 0 16px 0;"><strong>Hartman Logistics</strong> (mid-size NVOCC, Houston) ran the same outbound team for 18 months at a 3.1% reply rate. They switched the list source to LIT. One quarter later: <strong>7.4% reply rate</strong>. Same SDRs, same scripts, same volume.</p>
+<p style="margin:0 0 16px 0;">What changed: every prospect on the new list had moved freight in the last 90 days on a matching trade lane. No dead accounts, no procurement contacts at companies that haven't imported since 2022.</p>
+<p style="margin:0 0 16px 0;">Want the lane-level reply data on your own segment? Run a search and check the "last shipment" column. Anything inside 60 days is live.</p>
 ```
 
 ---
 
 ### 3. RESEND_TPL_TRIAL_DAY_5
 
-**Subject:** 9 searches left on your trial
-**Preview text:** Five days in. Here's how trial users who convert spend their last week.
+**Subject:** Five days in — here's the pattern that converts
+**Preview text:** Trial users who upgrade run a specific play in the back half of week one. Worth copying.
+**Trigger:** Cron, 120 hours (5 days) after trial lead capture. Fires for everyone in the trial sequence.
 **Merge variables:** `{{firstName}}`
+**Hero kind:** dashboard
+**Accent:** blue
 
 ```html
-<p>Hi {{firstName}},</p>
-
-<p>You're five days into the trial. Most users who upgrade follow a similar pattern in the back half:</p>
-
-<ul>
-  <li><strong>Day 5–7:</strong> Use 3 to 4 searches to validate a second lane or vertical.</li>
-  <li><strong>Day 7–10:</strong> Pull contacts on the top 10 companies and start an outreach test.</li>
-  <li><strong>Day 10–14:</strong> Watch for the first reply. If the list is right, it lands inside two weeks.</li>
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">You're five days in. Trial users who upgrade follow the same pattern in the back half:</p>
+<ul style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;"><strong>Day 5–7:</strong> 3–4 searches to validate a second lane or vertical.</li>
+  <li style="margin-bottom:8px;"><strong>Day 7–10:</strong> Pull contacts on the top 10 saved companies and start an outreach test.</li>
+  <li style="margin-bottom:8px;"><strong>Day 10–14:</strong> Watch for the first reply. If the list is right, it lands inside two weeks.</li>
 </ul>
-
-<p>If you haven't pulled contacts yet, that's the next move. Saved companies are already in your account — the contact-finder runs against them in one click.</p>
-
-<p style="text-align:center;margin:32px 0;">
-  <a href="https://app.logisticintel.com/contacts" style="background:#1e40af;color:#ffffff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Find contacts on saved companies</a>
-</p>
-
-<p>— The LIT team</p>
+<p style="margin:0 0 16px 0;">If you haven't pulled contacts yet, that's the next move. Saved companies are already in your account — the contact-finder runs against them in one click.</p>
 ```
 
 ---
 
 ### 4. RESEND_TPL_TRIAL_DAY_9
 
-**Subject:** Want a 20-minute walkthrough?
-**Preview text:** Bring a real lane. We'll build the list together and you keep it.
+**Subject:** Want 20 minutes on your real lane this week?
+**Preview text:** Bring one lane you're trying to win. We'll build the prospect list with you. You keep it either way.
+**Trigger:** Cron, 216 hours (9 days) after trial lead capture. Fires for everyone — assumes most need a nudge by now.
 **Merge variables:** `{{firstName}}`
+**Hero kind:** dashboard
+**Accent:** blue
 
 ```html
-<p>Hi {{firstName}},</p>
-
-<p>Day 9. Two options for the rest of the trial.</p>
-
-<p><strong>Option A:</strong> Keep running solo. The product is built so you don't need a call.</p>
-
-<p><strong>Option B:</strong> Book 20 minutes with us. Bring one lane you're trying to win. We'll build the prospect list with you on the call — saved searches, verified contacts, suggested outreach order. You keep the list in your account whether you upgrade or not.</p>
-
-<p style="text-align:center;margin:32px 0;">
-  <a href="https://cal.com/logisticintel/trial-walkthrough" style="background:#1e40af;color:#ffffff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Grab a 20-min slot</a>
-</p>
-
-<p>If option A is working, ignore this email.</p>
-
-<p>— The LIT team</p>
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">Day 9. Two options for the rest of the trial.</p>
+<p style="margin:0 0 16px 0;"><strong>Option A — Keep running solo.</strong> The product is built so you don't need a call.</p>
+<p style="margin:0 0 16px 0;"><strong>Option B — Book 20 minutes.</strong> Bring one lane you're trying to win. We'll build the prospect list with you on the call: saved searches, verified contacts, suggested outreach order. You keep the list in your account whether you upgrade or not.</p>
+<p style="margin:0 0 16px 0;">If option A is working, ignore this email.</p>
 ```
 
 ---
 
 ### 5. RESEND_TPL_TRIAL_DAY_14
 
-**Subject:** Last day on the free trial
-**Preview text:** Here's what you used. Here's what comes next.
+**Subject:** Last day on trial — three paths from here
+**Preview text:** Recap of what you used, what each plan unlocks, and how to tell us if LIT didn't fit.
+**Trigger:** Cron, 336 hours (14 days) after trial lead capture. Fires for everyone in the trial sequence regardless of activation.
 **Merge variables:** `{{firstName}}`
+**Hero kind:** dashboard
+**Accent:** blue
 
 ```html
-<p>Hi {{firstName}},</p>
-
-<p>The trial wraps today. Quick recap of what you got: 10 company searches and 10 verified contacts, against an index of 524,000 active US shippers refreshed weekly.</p>
-
-<p>If the data held up, the upgrade is straightforward:</p>
-
-<ul>
-  <li><strong>Starter ($149/mo):</strong> 200 searches, 200 contacts. Right for one SDR or owner-operator.</li>
-  <li><strong>Growth ($399/mo):</strong> 1,000 searches, 1,000 contacts, team seats. Right for a 3–5 person sales team.</li>
-  <li><strong>Scale (custom):</strong> Unlimited search, API access, dedicated CSM.</li>
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">The trial wraps today. Quick recap: 10 company searches, 10 verified contacts, against an index of 524,000 active US shippers refreshed weekly.</p>
+<p style="margin:0 0 16px 0;">If the data held up, three plans:</p>
+<ul style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;"><strong>Starter ($149/mo):</strong> 200 searches, 200 contacts. One SDR or owner-operator.</li>
+  <li style="margin-bottom:8px;"><strong>Growth ($399/mo):</strong> 1,000 searches, 1,000 contacts, team seats. 3–5 person sales team.</li>
+  <li style="margin-bottom:8px;"><strong>Scale (custom):</strong> Unlimited search, API access, dedicated CSM.</li>
 </ul>
-
-<p>Annual billing knocks 20% off all three.</p>
-
-<p style="text-align:center;margin:32px 0;">
-  <a href="https://logisticintel.com/pricing" style="background:#1e40af;color:#ffffff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Pick a plan</a>
-</p>
-
-<p>If LIT didn't fit, reply and tell us why. Honest feedback is the only way the next version gets better.</p>
-
-<p>— The LIT team</p>
+<p style="margin:0 0 16px 0;">Annual billing knocks 20% off all three.</p>
+<p style="margin:0 0 16px 0;">If LIT didn't fit, reply and tell us why. Honest feedback is the only way the next version gets better.</p>
 ```
 
 ---
@@ -154,95 +127,71 @@ A reusable HTML shell sits at the bottom of this file. Each template below shows
 
 ### 1. RESEND_TPL_TOP_100_DELIVERY
 
-**Subject:** Your Top 100 US Importers list (PDF)
-**Preview text:** Ranked by 2026 YTD container volume. Refreshed every Monday.
+**Subject:** Your Top 100 US importers PDF — ranked by 2026 volume
+**Preview text:** HS-code mix, primary origin ports, and three ways to read it before your next outbound block.
+**Trigger:** Exit-intent modal submit (or any form) with `offer=top-100-shippers-pdf`. Resolves to `funnel=top-100-followup`. Sent inline at step 1.
 **Merge variables:** `{{firstName}}`
+**Hero kind:** newsletter
+**Accent:** ocean
 
 ```html
-<p>Hi {{firstName}},</p>
-
-<p>Here's the file you requested: the Top 100 US Importers ranked by 2026 YTD container volume, with HS-code mix and primary origin ports.</p>
-
-<p style="text-align:center;margin:32px 0;">
-  <a href="https://logisticintel.com/downloads/top-100-us-importers.pdf" style="background:#1e40af;color:#ffffff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Download the PDF</a>
-</p>
-
-<p>A few notes on how to use it:</p>
-
-<ul>
-  <li><strong>Column 4 (HS mix)</strong> tells you what a company actually moves. Targeting Walmart on apparel is different from targeting Walmart on consumer electronics.</li>
-  <li><strong>Column 5 (origin port)</strong> matters more than column 1 (name) for forwarder lane positioning.</li>
-  <li>The list is a snapshot. The same data, plus 524,000 smaller shippers and verified contacts, is in the LIT trial.</li>
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">Here's the file you requested: the <strong>Top 100 US Importers</strong> ranked by 2026 YTD container volume, with HS-code mix and primary origin ports.</p>
+<p style="margin:0 0 16px 0;">A few notes on how to use it:</p>
+<ul style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;"><strong>Column 4 (HS mix)</strong> tells you what a company actually moves. Targeting Walmart on apparel is different from targeting Walmart on consumer electronics.</li>
+  <li style="margin-bottom:8px;"><strong>Column 5 (origin port)</strong> matters more than column 1 (name) for forwarder lane positioning.</li>
+  <li style="margin-bottom:8px;">The list is a snapshot. The same data, plus 524,000 smaller shippers and verified contacts, is in the LIT trial.</li>
 </ul>
-
-<p style="text-align:center;margin:32px 0;">
-  <a href="https://logisticintel.com/free-trial" style="background:#06b6d4;color:#0a0a0a;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Start the free trial</a>
-</p>
-
-<p>— The LIT team</p>
+<p style="margin:0 0 16px 0;">PDF is on the dashboard. Tap the CTA to grab it.</p>
 ```
 
 ---
 
 ### 2. RESEND_TPL_TOP_100_DAY_3
 
-**Subject:** 6 ways our customers use the Top 100
-**Preview text:** Most of these aren't obvious from looking at the list cold.
+**Subject:** Six ways freight reps actually use the Top 100
+**Preview text:** Most of these aren't obvious from looking at the list cold. Lane scouting, RFP timing, account expansion.
+**Trigger:** Cron, 72 hours (3 days) after the Top 100 PDF was delivered.
 **Merge variables:** `{{firstName}}`
+**Hero kind:** newsletter
+**Accent:** ocean
 
 ```html
-<p>Hi {{firstName}},</p>
-
-<p>The Top 100 PDF is a starting point, not a prospect list. Here's how customers actually use it:</p>
-
-<ol>
-  <li><strong>Lane scouting.</strong> Filter column 5 for your origin port. The companies left are the ones with shipping volume on your lane.</li>
-  <li><strong>Vertical mapping.</strong> Group by HS code prefix. You'll see who dominates each category.</li>
-  <li><strong>Forwarder gap analysis.</strong> Cross-reference against your current book. The gap is your TAM.</li>
-  <li><strong>RFP timing.</strong> The bottom third of the list churns forwarders the most. Highest reply rates land there.</li>
-  <li><strong>Account expansion.</strong> If a customer is on the list at #84, their three biggest competitors probably are too.</li>
-  <li><strong>Pricing benchmarks.</strong> Knowing a target's container volume sets a realistic floor on what a contract is worth.</li>
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">The Top 100 PDF is a starting point, not a prospect list. Here's how customers actually use it:</p>
+<ol style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;"><strong>Lane scouting.</strong> Filter column 5 for your origin port. Names left are the ones with volume on your lane.</li>
+  <li style="margin-bottom:8px;"><strong>Vertical mapping.</strong> Group by HS code prefix. You'll see who dominates each category.</li>
+  <li style="margin-bottom:8px;"><strong>Forwarder gap analysis.</strong> Cross-reference against your current book. The gap is your TAM.</li>
+  <li style="margin-bottom:8px;"><strong>RFP timing.</strong> The bottom third churns forwarders the most. Highest reply rates land there.</li>
+  <li style="margin-bottom:8px;"><strong>Account expansion.</strong> If a customer sits at #84, their three biggest competitors probably are too.</li>
+  <li style="margin-bottom:8px;"><strong>Pricing benchmarks.</strong> Knowing target container volume sets a realistic floor on contract value.</li>
 </ol>
-
-<p>The list shows the names. The trial shows the contacts and the smaller shippers (everything below the Top 100 cutoff — that's where the winnable accounts live).</p>
-
-<p style="text-align:center;margin:32px 0;">
-  <a href="https://logisticintel.com/free-trial" style="background:#1e40af;color:#ffffff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Try LIT free</a>
-</p>
-
-<p>— The LIT team</p>
+<p style="margin:0 0 16px 0;">The list shows the names. The trial shows the contacts and the smaller shippers below the Top 100 cutoff — where the winnable accounts live.</p>
 ```
 
 ---
 
 ### 3. RESEND_TPL_TOP_100_DAY_7
 
-**Subject:** The list refreshes Mondays — see this week's
-**Preview text:** Three new entries this week. One $2B importer fell out.
+**Subject:** The list refreshes every Monday — this week moved hard
+**Preview text:** Three new entries in the bottom 20. One $2B importer dropped out. Sourcing shifts are showing up live.
+**Trigger:** Cron, 168 hours (7 days) after the Top 100 PDF was delivered.
 **Merge variables:** `{{firstName}}`
+**Hero kind:** newsletter
+**Accent:** ocean
 
 ```html
-<p>Hi {{firstName}},</p>
-
-<p>The Top 100 refreshes every Monday from the previous week's customs filings. The version you downloaded a week ago is already stale.</p>
-
-<p>This week's changes:</p>
-
-<ul>
-  <li>Three new entries in the bottom 20 (smaller importers ramping fast).</li>
-  <li>One $2B-volume importer dropped out — sourcing shift away from China.</li>
-  <li>Average top-10 container volume up 4% week-over-week.</li>
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">The Top 100 refreshes every Monday from the previous week's customs filings. The version you downloaded a week ago is already stale.</p>
+<p style="margin:0 0 16px 0;">This week's changes:</p>
+<ul style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;">Three new entries in the bottom 20 (smaller importers ramping fast).</li>
+  <li style="margin-bottom:8px;">One $2B-volume importer dropped out — sourcing shift away from China.</li>
+  <li style="margin-bottom:8px;">Average top-10 container volume up <strong>4% week-over-week</strong>.</li>
 </ul>
-
-<p>The live version is inside LIT. Same list, filterable by lane, port, HS code, and last shipment date. Plus the 523,900 shippers that don't make the public Top 100.</p>
-
-<p style="text-align:center;margin:32px 0;">
-  <a href="https://logisticintel.com/free-trial" style="background:#1e40af;color:#ffffff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Start the free trial</a>
-</p>
-
-<p>10 searches, 10 verified contacts, no card required.</p>
-
-<p>— The LIT team</p>
+<p style="margin:0 0 16px 0;">The live version is inside LIT. Same list, filterable by lane, port, HS code, and last shipment date. Plus the 523,900 shippers that don't make the public Top 100. 10 searches, 10 verified contacts, no card required.</p>
 ```
 
 ---
@@ -251,98 +200,78 @@ A reusable HTML shell sits at the bottom of this file. Each template below shows
 
 ### 1. RESEND_TPL_PARTNER_RECEIVED
 
-**Subject:** Got your partner application
-**Preview text:** Quick review on our end. 48 hours, real human.
+**Subject:** Got your LIT partner application — 48h human review
+**Preview text:** What we look for, what moves applications to approved fastest, and the fallback referral track if not.
+**Trigger:** Any form submit with `source` starting `partners-` (resolves to `funnel=partner-onboarding`). Sent inline at step 1.
 **Merge variables:** `{{firstName}}`
+**Hero kind:** team
+**Accent:** teal
 
 ```html
-<p>Hi {{firstName}},</p>
-
-<p>Got your partner application. Here's what happens next.</p>
-
-<p>One of us (probably me, Vince) reads it inside 48 hours and either approves it or comes back with a clarifying question. We do not do auto-approval — partner quality matters more than partner count.</p>
-
-<p>While you wait, the things that move applications to "approved" fastest:</p>
-
-<ul>
-  <li>You already advise or sell to forwarders, NVOCCs, or import-side ops teams.</li>
-  <li>You have a list or audience that fits — newsletter, LinkedIn following, podcast, paid community.</li>
-  <li>You're not running 30 other affiliate programs in the same lane.</li>
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">Got your partner application. Here's what happens next.</p>
+<p style="margin:0 0 16px 0;">One of us (probably me, Vince) reads it inside <strong>48 hours</strong> and either approves it or comes back with a clarifying question. We do not do auto-approval — partner quality matters more than partner count.</p>
+<p style="margin:0 0 16px 0;">What moves applications to approved fastest:</p>
+<ul style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;">You already advise or sell to forwarders, NVOCCs, or import-side ops teams.</li>
+  <li style="margin-bottom:8px;">You have a list or audience that fits — newsletter, LinkedIn following, podcast, paid community.</li>
+  <li style="margin-bottom:8px;">You're not running 30 other affiliate programs in the same lane.</li>
 </ul>
-
-<p>If any of those are weak, we'll still talk — there's usually a path. Worst case we route you to the referral track (one-off commissions, no portal access).</p>
-
-<p>Talk soon.</p>
-
-<p>— Vince and the LIT team</p>
+<p style="margin:0 0 16px 0;">If any of those are weak, we'll still talk — there's usually a path. Worst case we route you to the referral track (one-off commissions, no portal access).</p>
 ```
 
 ---
 
 ### 2. RESEND_TPL_PARTNER_APPROVED
 
-**Subject:** You're in — your partner link is below
-**Preview text:** 15% recurring, 90-day cookie. Portal access too.
+**Subject:** You're in — your LIT partner link is live
+**Preview text:** 15% recurring, 90-day cookie, monthly Stripe payouts. Portal access, swipe file, and the tier-2 path inside.
+**Trigger:** Cron, 48 hours after partner application. (Stand-in for manual approval flow — see open question in trigger doc.)
 **Merge variables:** `{{firstName}}`
+**Hero kind:** team
+**Accent:** teal
 
 ```html
-<p>Hi {{firstName}},</p>
-
-<p>Approved. Welcome to the LIT partner program.</p>
-
-<p>Terms recap so we're on the same page:</p>
-
-<ul>
-  <li><strong>15% recurring commission</strong> for the lifetime of the customer (as long as they're active).</li>
-  <li><strong>90-day cookie window.</strong> If they sign up inside 90 days of clicking your link, you get credit.</li>
-  <li>Payouts monthly via Stripe, $50 minimum.</li>
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">Approved. Welcome to the LIT partner program.</p>
+<p style="margin:0 0 16px 0;">Terms recap so we're on the same page:</p>
+<ul style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;"><strong>15% recurring commission</strong> for the lifetime of the customer (as long as they're active).</li>
+  <li style="margin-bottom:8px;"><strong>90-day cookie window.</strong> If they sign up inside 90 days of clicking your link, you get credit.</li>
+  <li style="margin-bottom:8px;">Payouts monthly via Stripe, $50 minimum.</li>
 </ul>
-
-<p>Your partner link and dashboard:</p>
-
-<p style="text-align:center;margin:32px 0;">
-  <a href="https://logisticintel.com/partners/dashboard" style="background:#1e40af;color:#ffffff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Open your partner dashboard</a>
-</p>
-
-<p>Inside you'll find your unique link, real-time click and conversion stats, and a swipe file of copy that's worked for other partners (LinkedIn posts, newsletter blurbs, podcast read scripts).</p>
-
-<p>Email me directly if you want to bounce ideas. I read every reply.</p>
-
-<p>— Vince</p>
+<p style="margin:0 0 16px 0;">Inside the partner dashboard you'll find your unique link, real-time click and conversion stats, and a swipe file of copy that's worked for other partners (LinkedIn posts, newsletter blurbs, podcast read scripts).</p>
+<p style="margin:0 0 16px 0;">Email me directly if you want to bounce ideas. I read every reply.</p>
 ```
 
 ---
 
 ### 3. RESEND_TPL_PARTNER_DAY_7
 
-**Subject:** Best audiences to send + the tier-2 path
-**Preview text:** What's converting at 11%, what's converting at 1%, and how to unlock 25% recurring.
+**Subject:** Week one debrief — what's converting at 11% right now
+**Preview text:** Niche operator newsletters and specific use-case posts beat generic carousels. The tier-2 path explained.
+**Trigger:** Cron, 168 hours (7 days) after partner application.
 **Merge variables:** `{{firstName}}`
+**Hero kind:** team
+**Accent:** teal
 
 ```html
-<p>Hi {{firstName}},</p>
-
-<p>Week one debrief. Here's what's working across the partner program right now:</p>
-
-<p><strong>Converting well (8–11% click-to-trial):</strong></p>
-<ul>
-  <li>NVOCC owner-operator newsletters under 5,000 subscribers.</li>
-  <li>LinkedIn posts from operators (not founders) sharing a specific use case.</li>
-  <li>Niche freight podcasts with a tight import/export focus.</li>
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">Week one debrief. What's working across the partner program right now:</p>
+<p style="margin:0 0 16px 0;"><strong>Converting well (8–11% click-to-trial):</strong></p>
+<ul style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;">NVOCC owner-operator newsletters under 5,000 subscribers.</li>
+  <li style="margin-bottom:8px;">LinkedIn posts from operators (not founders) sharing a specific use case.</li>
+  <li style="margin-bottom:8px;">Niche freight podcasts with a tight import/export focus.</li>
 </ul>
-
-<p><strong>Converting poorly (under 2%):</strong></p>
-<ul>
-  <li>Generic logistics newsletters that cover everything.</li>
-  <li>Broad LinkedIn carousels with no operator angle.</li>
-  <li>"Top 10 tools" listicles. LIT shows up but gets ignored.</li>
+<p style="margin:0 0 16px 0;"><strong>Converting poorly (under 2%):</strong></p>
+<ul style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;">Generic logistics newsletters that cover everything.</li>
+  <li style="margin-bottom:8px;">Broad LinkedIn carousels with no operator angle.</li>
+  <li style="margin-bottom:8px;">"Top 10 tools" listicles. LIT shows up but gets ignored.</li>
 </ul>
-
-<p>The pattern: specificity wins. "Here's how I built a 40-account prospect list for the Long Beach → Mexico City lane in 30 minutes" beats "check out this cool tool."</p>
-
-<p><strong>Tier-2 path.</strong> Hit 5 paying conversions in any 90-day window and you move to 25% recurring (up from 15%). No application, automatic.</p>
-
-<p>— Vince</p>
+<p style="margin:0 0 16px 0;">The pattern: specificity wins. "How I built a 40-account list for the Long Beach → Mexico City lane in 30 minutes" beats "check out this cool tool."</p>
+<p style="margin:0 0 16px 0;"><strong>Tier-2 path:</strong> Hit 5 paying conversions in any 90-day window and you move to <strong>25% recurring</strong> (up from 15%). No application, automatic.</p>
 ```
 
 ---
@@ -351,70 +280,113 @@ A reusable HTML shell sits at the bottom of this file. Each template below shows
 
 ### 1. RESEND_TPL_COMPARISON_WELCOME
 
-**Subject:** LIT vs {{competitor}} — the honest version
-**Preview text:** Where LIT wins, where it loses, and which one to pick based on what you're actually doing.
+**Subject:** LIT vs {{competitor}} — the version we never publish
+**Preview text:** Where LIT loses on archival depth and country count. Where it wins on workflow. Pick the right tool.
+**Trigger:** Form submit where `source` starts `vs-`, `alternatives-`, `best-`, or `customers-`. Cron resolves `{{competitor}}` from the source token. Sent inline at step 1.
 **Merge variables:** `{{firstName}}`, `{{competitor}}` (fallback: "the other guys")
+**Hero kind:** stack
+**Accent:** purple
 
 ```html
-<p>Hi {{firstName}},</p>
-
-<p>You looked at the {{competitor}} comparison page, which means you're doing real diligence. Here's the version we don't put on the marketing site:</p>
-
-<p><strong>Where LIT loses to {{competitor}}:</strong></p>
-<ul>
-  <li>Raw BOL depth on shipments older than 2 years. Parity with ImportGenius at best, behind on archival.</li>
-  <li>Number of countries indexed. {{competitor}} covers more origin markets if you're chasing global trade flows.</li>
-  <li>Brand recognition. {{competitor}} has been around longer.</li>
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">You looked at the {{competitor}} comparison page, which means you're doing real diligence. Here's the version we don't put on the marketing site:</p>
+<p style="margin:0 0 16px 0;"><strong>Where LIT loses to {{competitor}}:</strong></p>
+<ul style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;">Raw BOL depth on shipments older than 2 years. Parity at best, behind on archival.</li>
+  <li style="margin-bottom:8px;">Number of countries indexed. {{competitor}} covers more origin markets if you're chasing global trade flows.</li>
+  <li style="margin-bottom:8px;">Brand recognition. {{competitor}} has been around longer.</li>
 </ul>
-
-<p><strong>Where LIT wins:</strong></p>
-<ul>
-  <li>Verified contact data on the shippers, not just the shipments. {{competitor}} shows you who imported what; LIT shows you who to email.</li>
-  <li>Weekly refresh. {{competitor}} updates monthly or slower.</li>
-  <li>Workflow tools — saved searches, contact verification, outreach-ready exports. {{competitor}} is a database; LIT is a workflow.</li>
+<p style="margin:0 0 16px 0;"><strong>Where LIT wins:</strong></p>
+<ul style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;">Verified contact data on the shippers, not just the shipments. {{competitor}} shows who imported what; LIT shows who to email.</li>
+  <li style="margin-bottom:8px;">Weekly refresh. {{competitor}} updates monthly or slower.</li>
+  <li style="margin-bottom:8px;">Workflow tools — saved searches, contact verification, outreach-ready exports. {{competitor}} is a database; LIT is a workflow.</li>
 </ul>
-
-<p>If you're doing trade research, {{competitor}} is fine. If you're doing outbound sales to importers, LIT is built for that specifically.</p>
-
-<p style="text-align:center;margin:32px 0;">
-  <a href="https://logisticintel.com/free-trial" style="background:#1e40af;color:#ffffff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Try LIT free for 14 days</a>
-</p>
-
-<p>10 searches, 10 verified contacts. Run it side-by-side with {{competitor}} on the same lane and see which list closes.</p>
-
-<p>— The LIT team</p>
+<p style="margin:0 0 16px 0;">If you're doing trade research, {{competitor}} is fine. If you're doing outbound sales to importers, LIT is built for that specifically. Run it side-by-side with {{competitor}} on the same lane and see which list closes.</p>
 ```
 
 ---
 
 ### 2. RESEND_TPL_COMPARISON_DAY_4
 
-**Subject:** Why teams leave {{competitor}} around month 6
-**Preview text:** It's almost always the same reason. Worth knowing before you sign.
+**Subject:** Why teams leave {{competitor}} around month six
+**Preview text:** It's almost never the data. It's what happens after the data — the 70% list-building tax that piles up.
+**Trigger:** Cron, 96 hours (4 days) after comparison-page lead capture.
 **Merge variables:** `{{firstName}}`, `{{competitor}}` (fallback: "legacy trade data tools")
+**Hero kind:** stack
+**Accent:** purple
+
+```html
+<p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
+<p style="margin:0 0 16px 0;">Pattern we see in customer interviews when teams switch from {{competitor}} to LIT: it's almost never about the data. The data is fine. It's about what happens <em>after</em> the data.</p>
+<p style="margin:0 0 16px 0;">The story usually goes:</p>
+<ol style="margin:0 0 16px 0;padding-left:20px;">
+  <li style="margin-bottom:8px;"><strong>Month 1–2:</strong> Excited. The trade data is rich, the search is fun.</li>
+  <li style="margin-bottom:8px;"><strong>Month 3:</strong> Reps start asking "okay, who do I actually email?"</li>
+  <li style="margin-bottom:8px;"><strong>Month 4–5:</strong> SDR team builds a manual workflow — export CSV, run through ZoomInfo or Apollo, dedupe, re-import.</li>
+  <li style="margin-bottom:8px;"><strong>Month 6:</strong> Someone calculates the time cost. About 70% of SDR time is now list-building, not outreach.</li>
+  <li style="margin-bottom:8px;"><strong>Month 7:</strong> They start looking for an alternative.</li>
+</ol>
+<p style="margin:0 0 16px 0;">LIT was built to skip steps 3–6. Contacts come with the shippers. Verification is in-product. Exports are outreach-ready. The 70% list-building tax goes back to outreach time.</p>
+<p style="margin:0 0 16px 0;">If your team is in month 5 with {{competitor}} right now, you already know what we're describing.</p>
+```
+
+---
+
+## E. Re-Engagement Sequence
+
+### 14. RESEND_TPL_REENGAGE_WINBACK
+
+**Subject:** We've been quiet — quick question?
+**Preview text:** It's been a few weeks. Are LIT updates still useful, or want us to stop?
+**Trigger:** Daily re-engagement cron (`/api/cron/reengagement-enroll`) enrolls leads with no opens in 30d, not suppressed, not unsubscribed. Sent inline at step 1 with `delayHours: 0`.
+**Merge variables:** `{{firstName}}`
+**Hero kind:** dashboard
+**Accent:** slate
 
 ```html
 <p>Hi {{firstName}},</p>
 
-<p>Pattern we see in customer interviews when teams switch from {{competitor}} to LIT: it's almost never about the data. The data is fine. It's about what happens after the data.</p>
+<p>We noticed you haven't opened a Logistic Intel email in a while. That's fine — but before we keep sending, we wanted to ask: are these still useful?</p>
 
-<p>The story usually goes:</p>
+<p>If yes, no action needed. The weekly cadence continues.</p>
 
-<ol>
-  <li>Month 1–2: Excited. The trade data is rich, the search is fun.</li>
-  <li>Month 3: Reps start asking "okay, who do I actually email?"</li>
-  <li>Month 4–5: SDR team builds a manual workflow — export CSV, run through ZoomInfo or Apollo, dedupe, re-import.</li>
-  <li>Month 6: Someone calculates the time cost. About 70% of SDR time is now list-building, not outreach.</li>
-  <li>Month 7: They start looking for an alternative.</li>
-</ol>
+<p>If you'd rather hear less from us (or nothing), one click below adjusts what you get:</p>
 
-<p>LIT was built to skip steps 3–6. Contacts come with the shippers. Verification is in-product. Exports are outreach-ready. The 70% list-building tax goes back to outreach time.</p>
-
-<p>If your team is in month 5 with {{competitor}} right now, you already know what we're describing.</p>
-
-<p style="text-align:center;margin:32px 0;">
-  <a href="https://logisticintel.com/free-trial" style="background:#1e40af;color:#ffffff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:600;display:inline-block;">Run the side-by-side</a>
+<p style="text-align:center;margin:24px 0;">
+  <a href="{{{preferences_url}}}" style="display:inline-block;padding:13px 24px;background:#475569;color:#FFFFFF;font-family:Georgia,serif;font-weight:700;font-size:15px;text-decoration:none;border-radius:8px;">Manage what I get</a>
 </p>
+
+<p>Or stay subscribed — your next freight intel update lands as usual.</p>
+
+<p>— The LIT team</p>
+```
+
+---
+
+### 15. RESEND_TPL_REENGAGE_FINAL
+
+**Subject:** Last email from us unless you tell us otherwise
+**Preview text:** No reply means we'll keep you on the list. One-click out if you'd rather stop.
+**Trigger:** Cron drain, 168 hours (7 days) after RESEND_TPL_REENGAGE_WINBACK.
+**Merge variables:** `{{firstName}}`
+**Hero kind:** dashboard
+**Accent:** slate
+
+```html
+<p>Hi {{firstName}},</p>
+
+<p>Sent you a check-in last week — wanted to follow up once more.</p>
+
+<p>If our updates aren't useful, one click unsubscribes you from all marketing emails. Your account (if any) and transactional emails are unaffected.</p>
+
+<p style="text-align:center;margin:24px 0;">
+  <a href="{{{unsubscribe_url}}}" style="display:inline-block;padding:13px 24px;background:#DC2626;color:#FFFFFF;font-family:Georgia,serif;font-weight:700;font-size:15px;text-decoration:none;border-radius:8px;">Yes, unsubscribe me</a>
+  &nbsp;&nbsp;
+  <a href="{{{preferences_url}}}" style="display:inline-block;padding:13px 24px;background:#FFFFFF;color:#475569;font-family:Georgia,serif;font-weight:700;font-size:15px;text-decoration:none;border:1.5px solid #CBD5E1;border-radius:8px;">No, keep me</a>
+</p>
+
+<p>If you don't reply or click, you stay subscribed and the next freight intel update arrives on schedule. Either way — thanks for the time you've already given us.</p>
 
 <p>— The LIT team</p>
 ```
@@ -423,7 +395,7 @@ A reusable HTML shell sits at the bottom of this file. Each template below shows
 
 ## Reusable HTML shell
 
-Wrap every body block above in this shell when pasting into Resend. The body blocks slot into the `<!-- BODY -->` marker.
+This shell wraps every body block. `scripts/setup-resend-templates.cjs` reads the html block immediately below "## Reusable HTML shell" and substitutes the body into the `<!-- BODY -->` marker. The hero SVG and accent color are templated per sequence (substitute `<!-- HERO -->`, `__ACCENT__`, and `__CTA_TEXT__` per template family when generating the final HTML; the current push script ships them as static placeholders — until heroes are wired into the script, the shell renders accent-only with no hero illustration so deliverability is not affected).
 
 ```html
 <!doctype html>
@@ -433,29 +405,73 @@ Wrap every body block above in this shell when pasting into Resend. The body blo
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Logistic Intel</title>
 </head>
-<body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7fa;padding:32px 16px;">
+<body style="margin:0;padding:0;background:#F8FAFC;font-family:Georgia,'Times New Roman',serif;color:#0F172A;">
+  <!-- preheader (hidden) -->
+  <div style="display:none;font-size:0;color:#F8FAFC;line-height:0;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">Logistic Intel — 524,000 active US shippers, refreshed weekly.</div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F8FAFC" style="background:#F8FAFC;">
     <tr>
-      <td align="center">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-top:4px solid #06b6d4;border-radius:8px;box-shadow:0 1px 3px rgba(15,23,42,0.06);">
+      <td align="center" style="padding:24px 12px;">
+
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.06);">
+
+          <!-- Brand header -->
           <tr>
-            <td style="padding:32px 40px 8px 40px;">
-              <a href="https://logisticintel.com" style="text-decoration:none;color:#0f172a;font-weight:700;font-size:18px;letter-spacing:-0.01em;">Logistic Intel</a>
+            <td style="padding:20px 32px 16px 32px;border-bottom:1px solid #F1F5F9;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="left" valign="middle">
+                    <a href="https://logisticintel.com" style="text-decoration:none;color:#0F172A;">
+                      <span style="display:inline-block;width:28px;height:28px;background:#0EA5E9;border-radius:6px;color:#FFFFFF;font-family:Georgia,serif;font-weight:700;font-size:14px;line-height:28px;text-align:center;vertical-align:middle;">L</span>
+                      <span style="font-family:Georgia,'Times New Roman',serif;font-weight:700;font-size:18px;letter-spacing:-0.01em;color:#0F172A;vertical-align:middle;margin-left:10px;">Logistic Intel</span>
+                    </a>
+                  </td>
+                  <td align="right" valign="middle" style="font-family:Georgia,serif;font-size:11px;color:#64748B;">
+                    Trade Intel · Weekly Refresh
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
+
+          <!-- Hero SVG slot (the push script substitutes the per-template SVG here) -->
           <tr>
-            <td style="padding:16px 40px 32px 40px;font-size:15px;line-height:1.6;">
+            <td style="padding:0;line-height:0;">
+              <!-- HERO -->
+            </td>
+          </tr>
+
+          <!-- Body slot -->
+          <tr>
+            <td style="padding:28px 32px 8px 32px;color:#0F172A;font-family:Georgia,'Times New Roman',serif;font-size:16px;line-height:1.6;">
               <!-- BODY -->
             </td>
           </tr>
+
+          <!-- CTA block -->
           <tr>
-            <td style="padding:24px 40px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;line-height:1.5;">
-              Logistic Intel · 524,000 active US shippers, refreshed weekly.<br>
-              You're getting this because you signed up at logisticintel.com.<br>
-              <a href="{{unsubscribe_url}}" style="color:#64748b;text-decoration:underline;">Unsubscribe</a>
+            <td align="left" style="padding:8px 32px 28px 32px;">
+              <a href="https://logisticintel.com" style="display:inline-block;padding:13px 24px;background:#0EA5E9;color:#FFFFFF;font-family:Georgia,'Times New Roman',serif;font-weight:700;font-size:15px;text-decoration:none;border-radius:8px;box-shadow:0 4px 14px rgba(14,165,233,0.32);">Open Logistic Intel</a>
             </td>
           </tr>
+
+          <!-- Sign-off + CAN-SPAM compliant footer -->
+          <tr>
+            <td style="padding:20px 32px;border-top:1px solid #E2E8F0;background:#F8FAFC;color:#64748B;font-family:Georgia,'Times New Roman',serif;font-size:12px;line-height:1.6;">
+              — The LIT team<br>
+              Reply to this email or book time at <a href="https://logisticintel.com" style="color:#0EA5E9;text-decoration:none;">logisticintel.com</a>.
+              <br><br>
+              <strong style="color:#475569;">Logistic Intel, Inc.</strong><br>
+              Atlanta, GA · USA<br>
+              <br>
+              You're receiving this because you signed up at <a href="https://logisticintel.com" style="color:#64748B;text-decoration:underline;">logisticintel.com</a> or requested information about LIT.
+              Don't want these? <a href="{{unsubscribe_url}}" style="color:#64748B;text-decoration:underline;">Unsubscribe</a>
+              or <a href="{{{preferences_url}}}" style="color:#64748B;text-decoration:underline;">manage preferences</a>.
+            </td>
+          </tr>
+
         </table>
+
       </td>
     </tr>
   </table>
@@ -463,4 +479,4 @@ Wrap every body block above in this shell when pasting into Resend. The body blo
 </html>
 ```
 
-`{{unsubscribe_url}}` is Resend's built-in token. Do not hardcode an unsubscribe link.
+`{{unsubscribe_url}}` is declared as a Resend variable at push time by `scripts/setup-resend-templates.cjs`. Do not hardcode an unsubscribe URL.

@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
+import Script from "next/script";
+import { Suspense } from "react";
 import "./globals.css";
 import RefBoot from "@/components/RefBoot";
+import TrackPageView from "@/components/analytics/TrackPageView.client";
+import AttributionBoot from "@/components/analytics/AttributionBoot.client";
+import LinkedInInsightTag from "@/components/analytics/LinkedInInsightTag.client";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://logisticintel.com";
 
@@ -141,7 +146,32 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             .logisticintel.com so app.logisticintel.com reads the same
             value when the visitor signs up later. */}
         <RefBoot />
+        {/* First-party attribution capture — writes utm + referrer +
+            click-ids from the landing URL into lit_first_touch /
+            lit_last_touch cookies + sessionStorage so later form
+            submits attach the original click attribution, not the
+            (often clean) URL at submit time. */}
+        <AttributionBoot />
+        {/* Plausible Analytics — tagged-events build so we can fire
+            window.plausible(name, { props }) from lib/events.ts. */}
+        {process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN && (
+          <Script
+            strategy="afterInteractive"
+            data-domain={process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN}
+            src="https://plausible.io/js/script.tagged-events.js"
+          />
+        )}
+        {/* page_view + engagement signals (time_on_page_30s,
+            scroll_depth_75) + outbound_click. Suspense boundary required
+            because TrackPageView uses useSearchParams(). */}
+        <Suspense fallback={null}>
+          <TrackPageView />
+        </Suspense>
         {children}
+        {/* LinkedIn Insight Tag — primary paid B2B channel. Conditional
+            on NEXT_PUBLIC_LINKEDIN_PARTNER_ID; renders nothing if unset.
+            Placed at the bottom of <body> per LinkedIn's recommendation. */}
+        <LinkedInInsightTag />
       </body>
     </html>
   );

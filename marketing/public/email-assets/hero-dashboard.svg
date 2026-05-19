@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 220" width="600" height="220" role="img" aria-label="LIT dashboard">
+<defs><linearGradient id="bgd" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#DBEAFE"/><stop offset="100%" stop-color="#FFFFFF"/></linearGradient></defs>
+<rect x="0" y="0" width="600" height="220" rx="14" fill="url(#bgd)"/>
+<rect x="32" y="32" width="240" height="14" rx="4" fill="#3B82F6"/>
+<rect x="32" y="56" width="180" height="10" rx="3" fill="#94A3B8"/>
+<rect x="32" y="96" width="160" height="84" rx="10" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+<rect x="46" y="110" width="60" height="6" rx="2" fill="#3B82F6"/>
+<rect x="46" y="126" width="120" height="14" rx="3" fill="#0F172A"/>
+<rect x="46" y="148" width="100" height="6" rx="2" fill="#94A3B8"/>
+<rect x="46" y="160" width="80" height="6" rx="2" fill="#94A3B8"/>
+<rect x="216" y="96" width="160" height="84" rx="10" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+<rect x="230" y="110" width="60" height="6" rx="2" fill="#3B82F6"/>
+<rect x="230" y="126" width="120" height="14" rx="3" fill="#0F172A"/>
+<rect x="230" y="148" width="100" height="6" rx="2" fill="#94A3B8"/>
+<rect x="230" y="160" width="80" height="6" rx="2" fill="#94A3B8"/>
+<rect x="400" y="96" width="168" height="84" rx="10" fill="#3B82F6"/>
+<rect x="416" y="110" width="60" height="6" rx="2" fill="#FFFFFF" opacity="0.8"/>
+<rect x="416" y="126" width="120" height="14" rx="3" fill="#FFFFFF"/>
+<rect x="416" y="148" width="80" height="6" rx="2" fill="#FFFFFF" opacity="0.6"/>
+<text x="568" y="54" text-anchor="end" fill="#0F172A" font-family="Georgia,serif" font-size="13" font-weight="700">LIT</text>
+</svg>

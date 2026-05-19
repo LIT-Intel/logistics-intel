@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { useLeadMagnetForm } from "./useLeadMagnetForm";
+import { track } from "@/lib/events";
 import styles from "./lead-magnet.module.css";
 
 const STORAGE_KEY = "lit-exit-shown";
@@ -30,6 +31,11 @@ export function ExitIntentModal() {
       if (sessionStorage.getItem(STORAGE_KEY)) return;
       sessionStorage.setItem(STORAGE_KEY, "1");
       setOpen(true);
+      try {
+        track("exit_intent_shown", { offer: "top-100-shippers-pdf" });
+      } catch {
+        /* analytics is best-effort */
+      }
     };
 
     const isMobile = window.matchMedia("(max-width: 767px)").matches;
