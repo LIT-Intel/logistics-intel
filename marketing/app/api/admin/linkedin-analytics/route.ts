@@ -98,17 +98,56 @@ export async function GET(req: NextRequest) {
   // Windsor uses date_preset shorthand "last_Nd".
   const datePreset = `last_${days}d`;
 
-  // ----- 3. Windsor key gate ------------------------------------------------
+  // ----- 3. Snapshot fallback (Windsor MCP path) ----------------------------
+  // Windsor is read-only via the Claude MCP connector — there's no REST API
+  // key on the operator's plan. A scheduled Claude routine writes a daily
+  // snapshot to public.lit_linkedin_snapshots; serve that when WINDSOR_API_KEY
+  // isn't configured. The snapshot row's payload already matches the response
+  // contract, so the dashboard renders identically either way.
   const windsorKey = process.env.WINDSOR_API_KEY;
   if (!windsorKey) {
-    return reply(
+    const { data: snap, error: snapErr } = await supabase
+      .from("lit_linkedin_snapshots")
+      .select("snapshot_date, window_days, ads, organic, partial_failures, generated_at")
+      .eq("window_days", days)
+      .order("snapshot_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (snapErr) {
+      console.error("[linkedin-analytics] snapshot read failed", snapErr.message);
+      return reply({ ok: false, error: "snapshot_read_failed" }, 500);
+    }
+    if (!snap) {
+      // Still no snapshot has run — surface the not-configured shape so the
+      // dashboard renders its empty-state panel.
+      return reply(
+        {
+          ok: false,
+          error: "windsor_not_configured",
+          message:
+            "No LinkedIn snapshot has been written yet. The daily Windsor → Supabase routine will populate this on its next run.",
+        },
+        503,
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        days: snap.window_days,
+        generated_at: snap.generated_at,
+        ads: snap.ads,
+        organic: snap.organic,
+        partial_failures: snap.partial_failures ?? undefined,
+        source: "snapshot",
+      }),
       {
-        ok: false,
-        error: "windsor_not_configured",
-        message:
-          "Set WINDSOR_API_KEY in the marketing Vercel project to enable LinkedIn analytics.",
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "private, max-age=300, s-maxage=3600",
+          ...corsHeaders(origin),
+        },
       },
-      503,
     );
   }
 
