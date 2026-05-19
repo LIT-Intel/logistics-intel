@@ -253,6 +253,121 @@ export function computeSequencePerformance(
   return rows;
 }
 
+// ────────────────────── Lead scoring + A/B variants ──────────────────────
+
+export type LeadScoreRow = {
+  id: string;
+  email: string;
+  source: string | null;
+  offer: string | null;
+  first_touch: Record<string, unknown> | null;
+  created_at: string;
+  score: number;
+};
+
+/**
+ * Pull the top-N hottest leads from public.lit_lead_scores. The view
+ * computes the score on demand via lit_lead_score(email) — cheap at LIT
+ * scale (single-digit thousands of leads). We sort here (not in the view)
+ * because supabase-js can't compose ORDER BY on a function column inside
+ * the view definition reliably across client versions.
+ */
+export async function fetchTopLeadScores(limit = 20): Promise<LeadScoreRow[]> {
+  const { data, error } = await supabase
+    .from("lit_lead_scores")
+    .select("id,email,source,offer,first_touch,created_at,score")
+    .order("score", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return (data || []) as LeadScoreRow[];
+}
+
+export type TemplateVariantRow = {
+  id: string;
+  parent_template_env_var: string;
+  resend_template_id: string;
+  label: string;
+  weight: number;
+  active: boolean;
+  created_at: string;
+};
+
+export async function fetchTemplateVariants(): Promise<TemplateVariantRow[]> {
+  const { data, error } = await supabase
+    .from("lit_template_variants")
+    .select(
+      "id,parent_template_env_var,resend_template_id,label,weight,active,created_at",
+    )
+    .order("parent_template_env_var", { ascending: true })
+    .order("label", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data || []) as TemplateVariantRow[];
+}
+
+export type VariantPerformance = {
+  variantId: string;
+  parentEnvVar: string;
+  label: string;
+  weight: number;
+  active: boolean;
+  resendTemplateId: string;
+  sent: number;
+  delivered: number;
+  uniqueOpens: number;
+  uniqueClicks: number;
+  bounced: number;
+  openRate: number;
+  clickRate: number;
+};
+
+/**
+ * Roll per-variant performance by joining variant rows against the same
+ * `events` slice the rest of the dashboard already loaded. We match by
+ * resend_template_id — that's what the cron actually sends, so it's also
+ * what the Resend webhook will tag every event with.
+ *
+ * If a parent_template_env_var has multiple variants (a + b), they end
+ * up as separate rows here, side-by-side, with the same parent label —
+ * the table renderer groups them visually.
+ */
+export function computeVariantPerformance(
+  variants: TemplateVariantRow[],
+  events: EmailEvent[],
+): VariantPerformance[] {
+  const byTpl = new Map<string, EmailEvent[]>();
+  for (const e of events) {
+    if (!e.template_id) continue;
+    const bucket = byTpl.get(e.template_id);
+    if (bucket) bucket.push(e);
+    else byTpl.set(e.template_id, [e]);
+  }
+  return variants
+    .map((v) => {
+      const k = computeKpis(byTpl.get(v.resend_template_id) || []);
+      return {
+        variantId: v.id,
+        parentEnvVar: v.parent_template_env_var,
+        label: v.label,
+        weight: v.weight,
+        active: v.active,
+        resendTemplateId: v.resend_template_id,
+        sent: k.sent,
+        delivered: k.delivered,
+        uniqueOpens: k.uniqueOpens,
+        uniqueClicks: k.uniqueClicks,
+        bounced: k.bounced,
+        openRate: k.openRate,
+        clickRate: k.clickRate,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.parentEnvVar.localeCompare(b.parentEnvVar) ||
+        a.label.localeCompare(b.label),
+    );
+}
+
 /** Day-bucket sent counts for the trend chart. */
 export function computeDailyVolume(
   events: EmailEvent[],

@@ -17,6 +17,7 @@ import {
   Lock,
   ChevronLeft,
   Menu,
+  Send,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { canAccessFeature } from "@/lib/planLimits";
@@ -277,6 +278,13 @@ export default function AppShell({ currentPageName, children }) {
                     label={collapsed ? "" : "Marketing analytics"}
                   />
                 )}
+                {isSuperAdmin && (
+                  <SideLink
+                    to="/app/admin/marketing-broadcasts"
+                    icon={Send}
+                    label={collapsed ? "" : "Marketing broadcasts"}
+                  />
+                )}
                 <SideLink to="/app/cms" icon={Database} label={collapsed ? "" : "CMS"} />
                 <SideLink to="/app/diagnostic" icon={Bug} label={collapsed ? "" : "Debug Agent"} />
               </nav>
@@ -413,6 +421,9 @@ export default function AppShell({ currentPageName, children }) {
                   )}
                   {isSuperAdmin && (
                     <SideLink to="/app/admin/marketing-analytics" icon={BarChart3} label="Marketing analytics" />
+                  )}
+                  {isSuperAdmin && (
+                    <SideLink to="/app/admin/marketing-broadcasts" icon={Send} label="Marketing broadcasts" />
                   )}
                   <SideLink to="/app/cms" icon={Database} label="CMS" />
                   <SideLink to="/app/diagnostic" icon={Bug} label="Debug Agent" />

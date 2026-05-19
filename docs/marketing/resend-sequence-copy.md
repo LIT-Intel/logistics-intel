@@ -1,4 +1,4 @@
-# Resend Sequence Copy — 13 Templates
+# Resend Sequence Copy — 15 Templates
 
 Each template body block below is wrapped by the shared HTML shell at the bottom of this file at push time (`scripts/setup-resend-templates.cjs` substitutes the body into the `<!-- BODY -->` marker and the hero SVG into the `<!-- HERO -->` marker).
 
@@ -333,6 +333,66 @@ For the trigger → source-value mapping, see `docs/marketing/resend-template-tr
 
 ---
 
+## E. Re-Engagement Sequence
+
+### 14. RESEND_TPL_REENGAGE_WINBACK
+
+**Subject:** We've been quiet — quick question?
+**Preview text:** It's been a few weeks. Are LIT updates still useful, or want us to stop?
+**Trigger:** Daily re-engagement cron (`/api/cron/reengagement-enroll`) enrolls leads with no opens in 30d, not suppressed, not unsubscribed. Sent inline at step 1 with `delayHours: 0`.
+**Merge variables:** `{{firstName}}`
+**Hero kind:** dashboard
+**Accent:** slate
+
+```html
+<p>Hi {{firstName}},</p>
+
+<p>We noticed you haven't opened a Logistic Intel email in a while. That's fine — but before we keep sending, we wanted to ask: are these still useful?</p>
+
+<p>If yes, no action needed. The weekly cadence continues.</p>
+
+<p>If you'd rather hear less from us (or nothing), one click below adjusts what you get:</p>
+
+<p style="text-align:center;margin:24px 0;">
+  <a href="{{{preferences_url}}}" style="display:inline-block;padding:13px 24px;background:#475569;color:#FFFFFF;font-family:Georgia,serif;font-weight:700;font-size:15px;text-decoration:none;border-radius:8px;">Manage what I get</a>
+</p>
+
+<p>Or stay subscribed — your next freight intel update lands as usual.</p>
+
+<p>— The LIT team</p>
+```
+
+---
+
+### 15. RESEND_TPL_REENGAGE_FINAL
+
+**Subject:** Last email from us unless you tell us otherwise
+**Preview text:** No reply means we'll keep you on the list. One-click out if you'd rather stop.
+**Trigger:** Cron drain, 168 hours (7 days) after RESEND_TPL_REENGAGE_WINBACK.
+**Merge variables:** `{{firstName}}`
+**Hero kind:** dashboard
+**Accent:** slate
+
+```html
+<p>Hi {{firstName}},</p>
+
+<p>Sent you a check-in last week — wanted to follow up once more.</p>
+
+<p>If our updates aren't useful, one click unsubscribes you from all marketing emails. Your account (if any) and transactional emails are unaffected.</p>
+
+<p style="text-align:center;margin:24px 0;">
+  <a href="{{{unsubscribe_url}}}" style="display:inline-block;padding:13px 24px;background:#DC2626;color:#FFFFFF;font-family:Georgia,serif;font-weight:700;font-size:15px;text-decoration:none;border-radius:8px;">Yes, unsubscribe me</a>
+  &nbsp;&nbsp;
+  <a href="{{{preferences_url}}}" style="display:inline-block;padding:13px 24px;background:#FFFFFF;color:#475569;font-family:Georgia,serif;font-weight:700;font-size:15px;text-decoration:none;border:1.5px solid #CBD5E1;border-radius:8px;">No, keep me</a>
+</p>
+
+<p>If you don't reply or click, you stay subscribed and the next freight intel update arrives on schedule. Either way — thanks for the time you've already given us.</p>
+
+<p>— The LIT team</p>
+```
+
+---
+
 ## Reusable HTML shell
 
 This shell wraps every body block. `scripts/setup-resend-templates.cjs` reads the html block immediately below "## Reusable HTML shell" and substitutes the body into the `<!-- BODY -->` marker. The hero SVG and accent color are templated per sequence (substitute `<!-- HERO -->`, `__ACCENT__`, and `__CTA_TEXT__` per template family when generating the final HTML; the current push script ships them as static placeholders — until heroes are wired into the script, the shell renders accent-only with no hero illustration so deliverability is not affected).
@@ -402,7 +462,7 @@ This shell wraps every body block. `scripts/setup-resend-templates.cjs` reads th
               Reply to this email or book time at <a href="https://logisticintel.com" style="color:#0EA5E9;text-decoration:none;">logisticintel.com</a>.
               <br><br>
               <strong style="color:#475569;">Logistic Intel, Inc.</strong><br>
-              228 Park Ave S, PMB 81632 · New York, NY 10003 · USA<br>
+              Atlanta, GA · USA<br>
               <br>
               You're receiving this because you signed up at <a href="https://logisticintel.com" style="color:#64748B;text-decoration:underline;">logisticintel.com</a> or requested information about LIT.
               Don't want these? <a href="{{unsubscribe_url}}" style="color:#64748B;text-decoration:underline;">Unsubscribe</a>

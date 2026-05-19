@@ -26,7 +26,8 @@ export type SequenceKey =
   | "trial-welcome"
   | "top-100-followup"
   | "partner-onboarding"
-  | "comparison-nurture";
+  | "comparison-nurture"
+  | "re-engagement";
 
 export type SequenceStep = {
   /** 1-indexed step number, unique within a sequence. */
@@ -156,6 +157,24 @@ export const SEQUENCES: Record<SequenceKey, SequenceStep[]> = {
       templateId: null,
       subject: "Why teams leave {{competitor}} after 6 months",
       purpose: "Churn-driver narrative + customer quote",
+    },
+  ],
+  "re-engagement": [
+    {
+      step: 1,
+      delayHours: 0,
+      envTemplateVar: "RESEND_TPL_REENGAGE_WINBACK",
+      templateId: null,
+      subject: "We've been quiet — quick question?",
+      purpose: "Win-back nudge — single CTA, manage preferences",
+    },
+    {
+      step: 2,
+      delayHours: 168,
+      envTemplateVar: "RESEND_TPL_REENGAGE_FINAL",
+      templateId: null,
+      subject: "Last email from us unless you tell us otherwise",
+      purpose: "Final call — explicit unsubscribe vs keep-me choice",
     },
   ],
 };

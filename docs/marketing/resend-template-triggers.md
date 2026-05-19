@@ -1,4 +1,4 @@
-# Resend Template Triggers — 13 Templates
+# Resend Template Triggers — 15 Templates
 
 Maps every Resend template env var to the user action that fires it, the source values that route there, the delay after capture, and the sequence key.
 
@@ -44,6 +44,15 @@ Source-resolution logic lives in `marketing/lib/resend-audiences.ts` (`resolveAu
 |---|---|---|---|---|---|
 | 1 | `RESEND_TPL_COMPARISON_WELCOME` | Inline send when a competitor / alternatives / best-of comparison page captures a lead | `vs-zoominfo-*`, `vs-importgenius-*`, `vs-panjiva-*`, `alternatives-apollo`, `alternatives-zoominfo`, `best-import-export-data-*`, `customers-final` (when routed via comparison rule) | 0 (inline) | `comparison-nurture` |
 | 2 | `RESEND_TPL_COMPARISON_DAY_4` | Cron drain — fires 96h after comparison lead capture (churn-driver narrative) | n/a (cron-fired) | 96 | `comparison-nurture` |
+
+## E. Re-Engagement
+
+`funnel.sequenceKey = "re-engagement"` — NOT triggered by any form submit. Enrolled by a daily cron (`/api/cron/reengagement-enroll`, 16:00 UTC) that scans `lit_leads` for dormant addresses. Trigger color in the map: `gray-500` (muted/contemplative).
+
+| # | Template env var | Trigger | Source values that route here | Hours after trigger | Sequence key |
+|---|---|---|---|---|---|
+| 1 | `RESEND_TPL_REENGAGE_WINBACK` | Daily cron enrolls leads with: lit_leads.created_at older than 30d, no 'opened' event in last 30d, not bounced/complained, not in unsubscribed_all. Enqueues both steps; step 1 fires on next dispatcher run. | n/a (cron-enrolled) — queue row's `source` is set to `re-engagement-cron` | 0 (cron-fired) | `re-engagement` |
+| 2 | `RESEND_TPL_REENGAGE_FINAL` | Cron drain — fires 168h (7 days) after the winback step. Explicit "yes unsubscribe me / no keep me" two-button UX. | n/a (cron-fired) | 168 | `re-engagement` |
 
 ## Open questions / assumptions
 

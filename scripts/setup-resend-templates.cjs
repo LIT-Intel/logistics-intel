@@ -2,7 +2,7 @@
 /* eslint-disable no-console */
 
 /**
- * Creates (or reuses) all 13 LIT marketing drip-sequence templates in Resend
+ * Creates (or reuses) all 15 LIT marketing drip-sequence templates in Resend
  * by parsing docs/marketing/resend-sequence-copy.md. Each ### N. RESEND_TPL_X
  * section becomes one Resend template, wrapped in the shared HTML shell
  * defined at the bottom of the same file.
@@ -14,7 +14,7 @@
  *   RESEND_API_KEY=re_... node scripts/setup-resend-templates.cjs
  *
  * Outputs:
- *   - Console: paste-ready env block for the 13 RESEND_TPL_* vars
+ *   - Console: paste-ready env block for the 15 RESEND_TPL_* vars
  *   - File:    .env.templates.ready (gitignored)
  */
 
@@ -46,6 +46,7 @@ const ACCENT = {
   blue: "#3B82F6",
   purple: "#7C3AED",
   teal: "#0F766E",
+  slate: "#475569",
 };
 
 function heroDashboard(accent) {
@@ -85,6 +86,8 @@ const TEMPLATE_VISUALS = {
   RESEND_TPL_PARTNER_DAY_7:      { hero: "team",       accent: "teal"   },
   RESEND_TPL_COMPARISON_WELCOME: { hero: "stack",      accent: "purple" },
   RESEND_TPL_COMPARISON_DAY_4:   { hero: "stack",      accent: "purple" },
+  RESEND_TPL_REENGAGE_WINBACK:   { hero: "dashboard",  accent: "slate"  },
+  RESEND_TPL_REENGAGE_FINAL:     { hero: "dashboard",  accent: "slate"  },
 };
 
 function renderHero(envVar) {
@@ -109,6 +112,8 @@ const EXPECTED_TEMPLATES = [
   "RESEND_TPL_PARTNER_DAY_7",
   "RESEND_TPL_COMPARISON_WELCOME",
   "RESEND_TPL_COMPARISON_DAY_4",
+  "RESEND_TPL_REENGAGE_WINBACK",
+  "RESEND_TPL_REENGAGE_FINAL",
 ];
 
 function parseDoc(md) {
@@ -309,6 +314,12 @@ async function main() {
   lines.push("");
   lines.push("# Comparison nurture (2 steps: 0h, 96h)");
   for (const k of ["RESEND_TPL_COMPARISON_WELCOME","RESEND_TPL_COMPARISON_DAY_4"]) {
+    const r = results.find((x) => x.envVar === k);
+    lines.push(`${k}=${r?.id ?? "<FAILED-RECREATE-MANUALLY>"}`);
+  }
+  lines.push("");
+  lines.push("# Re-engagement (2 steps: 0h, 168h — daily cron enrolls dormant leads)");
+  for (const k of ["RESEND_TPL_REENGAGE_WINBACK","RESEND_TPL_REENGAGE_FINAL"]) {
     const r = results.find((x) => x.envVar === k);
     lines.push(`${k}=${r?.id ?? "<FAILED-RECREATE-MANUALLY>"}`);
   }
