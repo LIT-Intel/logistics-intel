@@ -271,7 +271,49 @@ export async function GET(req: NextRequest) {
   // Process sequentially. Resend's free/paid tiers cap around ~10 rps and
   // sequential processing keeps a single cron invocation well under the
   // 60-second maxDuration for typical batches (100 rows * ~300ms = 30s).
+  let suppressed = 0;
   for (const row of queue) {
+    // Suppression check — fires BEFORE every send. Three reasons we skip:
+    //   converted  — lead has a profiles row (signed up at app). Only
+    //                applies to trial-welcome steps 2+. The existing app
+    //                send-subscription-email pipeline handles post-signup
+    //                comms; doubling them up is bad UX.
+    //   bounced    — any prior lit_resend_events row marks this email
+    //                bounced. Continuing to send harms sender reputation.
+    //   complained — recipient marked our mail as spam at any point.
+    //                Continuing is a deliverability + legal risk.
+    // RPC returns one row with three booleans; security definer lets the
+    // anon-role cron call without table-level SELECT grants.
+    const { data: supData } = await supabase
+      .rpc("lit_email_suppression_status", { p_email: row.email });
+    const sup = (Array.isArray(supData) ? supData[0] : supData) as
+      | { converted: boolean; bounced: boolean; complained: boolean }
+      | undefined;
+
+    const shouldSuppress =
+      sup &&
+      (sup.bounced ||
+        sup.complained ||
+        (sup.converted && row.sequence_key === "trial-welcome" && row.step >= 2));
+
+    if (shouldSuppress) {
+      const reason = sup.complained
+        ? "suppressed_complained"
+        : sup.bounced
+        ? "suppressed_bounced"
+        : "suppressed_lead_converted";
+      const { error: upErr } = await supabase
+        .from("lit_lead_sequence_queue")
+        .update({ failed_at: new Date().toISOString(), failure_reason: reason })
+        .eq("id", row.id)
+        .is("sent_at", null);
+      if (upErr) {
+        console.error("[lead-sequence-dispatch] mark-suppressed failed", row.id, upErr.message);
+      }
+      suppressed++;
+      continue;
+    }
+
     const result = await sendOne(row);
     if (result.ok) {
       // Conditional update: only flip sent_at when it's still null. This
@@ -301,7 +343,7 @@ export async function GET(req: NextRequest) {
 
   const durationMs = Date.now() - startedAt;
   console.log(
-    `[lead-sequence-dispatch] processed=${queue.length} succeeded=${succeeded} failed=${failed} durationMs=${durationMs}`,
+    `[lead-sequence-dispatch] processed=${queue.length} succeeded=${succeeded} failed=${failed} suppressed=${suppressed} durationMs=${durationMs}`,
   );
 
   return json({
@@ -309,6 +351,7 @@ export async function GET(req: NextRequest) {
     processed: queue.length,
     succeeded,
     failed,
+    suppressed,
     durationMs,
   });
 }

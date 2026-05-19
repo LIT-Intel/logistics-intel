@@ -1,6 +1,11 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { track } from "@/lib/events";
+import {
+  readAttribution,
+  type Attribution,
+} from "@/lib/attribution";
 
 /**
  * Shared submit handler for every lead-magnet form on the site (sticky bar,
@@ -9,13 +14,24 @@ import { useCallback, useState } from "react";
  * redirects so we never lose the lead — the email is captured client-side
  * and forwarded via the URL.
  *
- * Attribution captured on every submit:
- *   - utm_source / utm_medium / utm_campaign read from the current URL
- *     (the click-through URL, not the form action). Allows PPC/SEO/social
- *     attribution all the way through to the Resend Audience routing.
- *   - document.referrer for fallback channel inference when no utm tags.
- *   - Optional `role` (the page passes "forwarders" | "brokers" | etc.
- *     when the form is rendered on a role-specific landing page).
+ * Attribution comes from `lib/attribution.ts` (cookie-backed), NOT the
+ * current URL. That fixes the previous bug where landing on
+ * /freight-leads?utm_source=linkedin-ads then submitting on /customers
+ * lost the utm. We send BOTH snapshots:
+ *
+ *   - lastTouch utm/referrer is flattened into the legacy fields the API
+ *     already supports (utmSource, utmMedium, utmCampaign, referrer) so
+ *     the audience-routing in lib/resend-audiences.ts keeps working.
+ *   - The full firstTouch + lastTouch objects are also sent as the
+ *     `firstTouch` / `lastTouch` fields so the API can persist both
+ *     attribution snapshots for downstream reporting.
+ *
+ * If no cookie attribution exists yet (e.g. brand-new tab, storage
+ * blocked, AttributionBoot race), we fall back to reading utm + referrer
+ * from the current URL so we never send an empty attribution payload.
+ *
+ * Optional `role` lets a role-specific page (forwarders / brokers / etc.)
+ * tag every submission for downstream Resend audience routing.
  */
 export type LeadMagnetSubmitOpts = {
   source: string;
@@ -26,14 +42,26 @@ export type LeadMagnetSubmitOpts = {
   endpoint?: string;
 };
 
-function readAttribution(): {
+type FlatAttribution = {
   utmSource?: string;
   utmMedium?: string;
   utmCampaign?: string;
   referrer?: string;
-} {
+};
+
+function flatten(a: Attribution | null): FlatAttribution {
+  if (!a) return {};
+  const out: FlatAttribution = {};
+  if (a.utmSource) out.utmSource = a.utmSource;
+  if (a.utmMedium) out.utmMedium = a.utmMedium;
+  if (a.utmCampaign) out.utmCampaign = a.utmCampaign;
+  if (a.referrer) out.referrer = a.referrer;
+  return out;
+}
+
+function readUrlFallback(): FlatAttribution {
   if (typeof window === "undefined") return {};
-  const out: ReturnType<typeof readAttribution> = {};
+  const out: FlatAttribution = {};
   try {
     const params = new URLSearchParams(window.location.search);
     const utmSource = params.get("utm_source")?.trim();
@@ -76,10 +104,35 @@ export function useLeadMagnetForm(opts: LeadMagnetSubmitOpts) {
       }
 
       setSubmitting(true);
-      const attribution = readAttribution();
+
+      const { first, last } = readAttribution();
+      const flatLast = flatten(last);
+      // Belt-and-suspenders: if cookie attribution missed (e.g. brand-new
+      // tab, storage disabled, AttributionBoot race), fall back to URL.
+      const flatAttribution: FlatAttribution =
+        flatLast.utmSource ||
+        flatLast.utmMedium ||
+        flatLast.utmCampaign ||
+        flatLast.referrer
+          ? flatLast
+          : readUrlFallback();
+
       const params = new URLSearchParams({ email, source });
       if (offer) params.set("offer", offer);
       const redirect = `/signup?${params.toString()}`;
+
+      // Fire form_submit BEFORE the redirect — track() uses sendBeacon
+      // when available so it survives the unload below.
+      try {
+        track("form_submit", {
+          source,
+          offer: offer ?? undefined,
+          role: role ?? undefined,
+          email,
+        });
+      } catch {
+        /* analytics is best-effort */
+      }
 
       try {
         await fetch(endpoint, {
@@ -90,7 +143,9 @@ export function useLeadMagnetForm(opts: LeadMagnetSubmitOpts) {
             source,
             ...(offer ? { offer } : {}),
             ...(role ? { role } : {}),
-            ...attribution,
+            ...flatAttribution,
+            ...(first ? { firstTouch: first } : {}),
+            ...(last ? { lastTouch: last } : {}),
           }),
           keepalive: true,
         });

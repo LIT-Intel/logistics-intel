@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 220" width="600" height="220" role="img" aria-label="LIT vs the alternatives">
+<defs><linearGradient id="bgs" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#EDE9FE"/><stop offset="100%" stop-color="#FFFFFF"/></linearGradient></defs>
+<rect x="0" y="0" width="600" height="220" rx="14" fill="url(#bgs)"/>
+<rect x="60" y="186" width="480" height="6" rx="3" fill="#0F172A" opacity="0.16"/>
+<g>
+  <rect x="80" y="142" width="72" height="42" rx="3" fill="#0F172A"/>
+  <rect x="160" y="142" width="72" height="42" rx="3" fill="#7C3AED"/>
+  <rect x="240" y="142" width="72" height="42" rx="3" fill="#64748B"/>
+  <rect x="320" y="142" width="72" height="42" rx="3" fill="#7C3AED"/>
+  <rect x="400" y="142" width="72" height="42" rx="3" fill="#0F172A"/>
+  <rect x="120" y="92" width="72" height="42" rx="3" fill="#7C3AED" opacity="0.92"/>
+  <rect x="200" y="92" width="72" height="42" rx="3" fill="#7C3AED" opacity="0.92"/>
+  <rect x="280" y="92" width="72" height="42" rx="3" fill="#0F172A" opacity="0.92"/>
+  <rect x="360" y="92" width="72" height="42" rx="3" fill="#7C3AED" opacity="0.92"/>
+  <rect x="240" y="42" width="72" height="42" rx="3" fill="#7C3AED"/>
+  <line x1="276" y1="14" x2="276" y2="42" stroke="#0F172A" stroke-width="3"/>
+  <line x1="262" y1="14" x2="290" y2="14" stroke="#0F172A" stroke-width="3"/>
+</g>
+<text x="510" y="40" fill="#0F172A" font-family="Georgia,serif" font-size="14" font-weight="700">LIT</text>
+<text x="510" y="58" fill="#64748B" font-family="Georgia,serif" font-size="10">vs the rest</text>
+</svg>

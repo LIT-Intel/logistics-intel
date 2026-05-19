@@ -270,6 +270,13 @@ export default function AppShell({ currentPageName, children }) {
                     label={collapsed ? "" : "Partner program"}
                   />
                 )}
+                {isSuperAdmin && (
+                  <SideLink
+                    to="/app/admin/marketing-analytics"
+                    icon={BarChart3}
+                    label={collapsed ? "" : "Marketing analytics"}
+                  />
+                )}
                 <SideLink to="/app/cms" icon={Database} label={collapsed ? "" : "CMS"} />
                 <SideLink to="/app/diagnostic" icon={Bug} label={collapsed ? "" : "Debug Agent"} />
               </nav>
@@ -403,6 +410,9 @@ export default function AppShell({ currentPageName, children }) {
                   <SideLink to="/app/admin" icon={Shield} label="Admin Dashboard" />
                   {isSuperAdmin && (
                     <SideLink to="/app/admin/partner-program" icon={Users2} label="Partner program" />
+                  )}
+                  {isSuperAdmin && (
+                    <SideLink to="/app/admin/marketing-analytics" icon={BarChart3} label="Marketing analytics" />
                   )}
                   <SideLink to="/app/cms" icon={Database} label="CMS" />
                   <SideLink to="/app/diagnostic" icon={Bug} label="Debug Agent" />

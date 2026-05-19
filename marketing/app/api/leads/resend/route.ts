@@ -52,6 +52,20 @@ const TOP_100_PDF_URL =
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+type AttributionSnapshot = {
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmTerm?: string;
+  utmContent?: string;
+  gclid?: string;
+  fbclid?: string;
+  liFatId?: string;
+  referrer?: string;
+  landingPage?: string;
+  capturedAt?: string;
+};
+
 type LeadBody = {
   email: string;
   source: string;
@@ -61,6 +75,8 @@ type LeadBody = {
   utmCampaign?: string;
   referrer?: string;
   role?: string;
+  firstTouch?: AttributionSnapshot;
+  lastTouch?: AttributionSnapshot;
 };
 
 export async function POST(req: NextRequest) {
@@ -91,6 +107,29 @@ export async function POST(req: NextRequest) {
     return t ? t.slice(0, 500) : undefined;
   };
 
+  const cleanAttribution = (
+    raw: unknown,
+  ): AttributionSnapshot | undefined => {
+    if (!raw || typeof raw !== "object") return undefined;
+    const r = raw as Record<string, unknown>;
+    const out: AttributionSnapshot = {
+      utmSource: trimOrUndef(r.utmSource ?? r.utm_source),
+      utmMedium: trimOrUndef(r.utmMedium ?? r.utm_medium),
+      utmCampaign: trimOrUndef(r.utmCampaign ?? r.utm_campaign),
+      utmTerm: trimOrUndef(r.utmTerm ?? r.utm_term),
+      utmContent: trimOrUndef(r.utmContent ?? r.utm_content),
+      gclid: trimOrUndef(r.gclid),
+      fbclid: trimOrUndef(r.fbclid),
+      liFatId: trimOrUndef(r.liFatId ?? r.li_fat_id),
+      referrer: trimOrUndef(r.referrer),
+      landingPage: trimOrUndef(r.landingPage ?? r.landing_page),
+      capturedAt: trimOrUndef(r.capturedAt ?? r.captured_at),
+    };
+    // Drop the object entirely if every field is empty.
+    const hasAny = Object.values(out).some((v) => typeof v === "string" && v);
+    return hasAny ? out : undefined;
+  };
+
   const lead: LeadBody = {
     email: email.slice(0, 254),
     source: source.slice(0, 200),
@@ -100,6 +139,8 @@ export async function POST(req: NextRequest) {
     utmCampaign: trimOrUndef(body?.utmCampaign ?? body?.utm_campaign),
     referrer: trimOrUndef(body?.referrer),
     role: trimOrUndef(body?.role),
+    firstTouch: cleanAttribution(body?.firstTouch ?? body?.first_touch),
+    lastTouch: cleanAttribution(body?.lastTouch ?? body?.last_touch),
   };
 
   const supa = getSupabase();
@@ -122,6 +163,8 @@ export async function POST(req: NextRequest) {
       email: lead.email,
       source: lead.source,
       offer: lead.offer ?? null,
+      first_touch: lead.firstTouch ?? null,
+      last_touch: lead.lastTouch ?? null,
     });
     if (error) {
       console.error("[leads/resend] insert failed", error.message);
@@ -222,7 +265,33 @@ async function enrollLead(
     );
   }
 
-  // 2. Enqueue the drip sequence. Skip step 1 when it would fire now —
+  // 2. Dedup — if this email already has an unsent pending row for the
+  // same sequence, the lead is mid-flight and we shouldn't re-enroll
+  // (would cause duplicate sends to the same recipient). Common cause:
+  // a user submits the same form twice or pastes their email on multiple
+  // money pages within a few minutes. We check on the email column
+  // (not lead_id) because every form submit mints a fresh lead_id, so
+  // the unique constraint on (lead_id, sequence_key, step) wouldn't fire.
+  const { data: existingPending } = await supa
+    .from("lit_lead_sequence_queue")
+    .select("id")
+    .eq("email", lead.email)
+    .eq("sequence_key", sequenceKey)
+    .is("sent_at", null)
+    .is("failed_at", null)
+    .limit(1);
+
+  if (existingPending && existingPending.length > 0) {
+    console.log(
+      "[leads/resend] dedup: existing pending sequence for",
+      lead.email,
+      sequenceKey,
+      "— skipping enroll",
+    );
+    return;
+  }
+
+  // 3. Enqueue the drip sequence. Skip step 1 when it would fire now —
   // the inline welcome send above already covered it.
   const steps = SEQUENCES[sequenceKey] ?? [];
   const now = Date.now();

@@ -29,11 +29,71 @@ const COPY_DOC = path.resolve(
   "marketing",
   "resend-sequence-copy.md",
 );
-const SHELL_MARKER = "<!-- BODY -->";
+const SHELL_BODY_MARKER = "<!-- BODY -->";
+const SHELL_HERO_MARKER = "<!-- HERO -->";
 
 // Resend rate limit is 5 req/sec; we serialize with a tiny delay between
 // creates so a 12-template run can't trip the cap.
 const CREATE_DELAY_MS = 350;
+
+// ─── Hero SVG registry ───────────────────────────────────────────────
+// Mirrors frontend/src/features/outbound/data/starterTemplates.ts. Each
+// kind returns a 600×220 SVG that slots into the shell's <!-- HERO -->
+// marker. Animation-free + table-friendly so Gmail/Outlook render identical.
+
+const ACCENT = {
+  ocean: "#0EA5E9",
+  blue: "#3B82F6",
+  purple: "#7C3AED",
+  teal: "#0F766E",
+};
+
+function heroDashboard(accent) {
+  return `<img src="https://logisticintel.com/email-assets/hero-dashboard.svg" alt="" width="600" height="220" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;" />`;
+}
+function heroNewsletter(accent) {
+  return `<img src="https://logisticintel.com/email-assets/hero-newsletter.svg" alt="" width="600" height="220" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;" />`;
+}
+function heroTeam(accent) {
+  return `<img src="https://logisticintel.com/email-assets/hero-team.svg" alt="" width="600" height="220" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;" />`;
+}
+function heroStack(accent) {
+  return `<img src="https://logisticintel.com/email-assets/hero-stack.svg" alt="" width="600" height="220" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;" />`;
+}
+
+const HERO_RENDERERS = {
+  dashboard: heroDashboard,
+  newsletter: heroNewsletter,
+  team: heroTeam,
+  stack: heroStack,
+};
+
+// Per-template visual config (matches Agent 3's trigger map).
+// hero  = SVG kind (which renderer above)
+// accent = ACCENT color name (used by some renderers; also drives the CTA button color via tripleBrace tokens later)
+const TEMPLATE_VISUALS = {
+  RESEND_TPL_TRIAL_WELCOME:      { hero: "dashboard",  accent: "blue"   },
+  RESEND_TPL_TRIAL_DAY_2:        { hero: "dashboard",  accent: "blue"   },
+  RESEND_TPL_TRIAL_DAY_5:        { hero: "dashboard",  accent: "blue"   },
+  RESEND_TPL_TRIAL_DAY_9:        { hero: "dashboard",  accent: "blue"   },
+  RESEND_TPL_TRIAL_DAY_14:       { hero: "dashboard",  accent: "blue"   },
+  RESEND_TPL_TOP_100_DELIVERY:   { hero: "newsletter", accent: "ocean"  },
+  RESEND_TPL_TOP_100_DAY_3:      { hero: "newsletter", accent: "ocean"  },
+  RESEND_TPL_TOP_100_DAY_7:      { hero: "newsletter", accent: "ocean"  },
+  RESEND_TPL_PARTNER_RECEIVED:   { hero: "team",       accent: "teal"   },
+  RESEND_TPL_PARTNER_APPROVED:   { hero: "team",       accent: "teal"   },
+  RESEND_TPL_PARTNER_DAY_7:      { hero: "team",       accent: "teal"   },
+  RESEND_TPL_COMPARISON_WELCOME: { hero: "stack",      accent: "purple" },
+  RESEND_TPL_COMPARISON_DAY_4:   { hero: "stack",      accent: "purple" },
+};
+
+function renderHero(envVar) {
+  const cfg = TEMPLATE_VISUALS[envVar];
+  if (!cfg) return ""; // unknown template → no hero (graceful)
+  const renderer = HERO_RENDERERS[cfg.hero];
+  if (!renderer) return "";
+  return renderer(ACCENT[cfg.accent] || ACCENT.blue);
+}
 
 const EXPECTED_TEMPLATES = [
   "RESEND_TPL_TRIAL_WELCOME",
@@ -58,8 +118,8 @@ function parseDoc(md) {
     throw new Error("Could not find reusable HTML shell in copy doc");
   }
   const shell = shellMatch[1];
-  if (!shell.includes(SHELL_MARKER)) {
-    throw new Error(`Reusable HTML shell is missing the ${SHELL_MARKER} marker`);
+  if (!shell.includes(SHELL_BODY_MARKER)) {
+    throw new Error(`Reusable HTML shell is missing the ${SHELL_BODY_MARKER} marker`);
   }
 
   // Strip everything from "## Reusable HTML shell" onwards so it doesn't
@@ -169,7 +229,13 @@ async function main() {
   // here is purely a schema requirement.
   const results = [];
   for (const tpl of templates) {
-    const merged = shell.replace(SHELL_MARKER, tpl.body);
+    // Substitute both markers: HERO first (so the body can reference it
+    // if needed), then BODY. Falls back to empty string for unknown
+    // templates so the email still renders without the illustration.
+    const heroHtml = renderHero(tpl.envVar);
+    const merged = shell
+      .replace(SHELL_HERO_MARKER, heroHtml)
+      .replace(SHELL_BODY_MARKER, tpl.body);
     // Resend requires triple-brace Mustache syntax ({{{var}}}) for merge
     // variables, not the double-brace {{var}} the copy doc uses. Convert in
     // both html body AND subject. Idempotent: {{{x}}} stays {{{x}}}.
