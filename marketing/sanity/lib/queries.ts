@@ -9,8 +9,10 @@ export const SITE_SETTINGS_QUERY = groq`*[_type == "siteSettings"][0]{
 /** All blog posts for the index, newest first. */
 export const BLOG_INDEX_QUERY = groq`*[_type == "blogPost" && defined(publishedAt)] | order(publishedAt desc){
   _id, title, slug, excerpt, heroImage, heroImageUrl, heroImageAlt, publishedAt, readingTime, featured,
-  "author": author->{name, slug, avatar, role},
-  "categories": categories[]->{title, slug, color}
+  "author": author->{name, slug, avatar, role, isAiAgent},
+  "categories": categories[]->{title, slug, color},
+  "tags": tags[]->{title, slug},
+  agentMetadata{draftedBy}
 }`;
 
 /** Single blog post by slug. */

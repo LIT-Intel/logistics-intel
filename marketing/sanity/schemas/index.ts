@@ -34,10 +34,12 @@ import { bestList } from "./bestList";
 import { landingPage } from "./landingPage";
 import { customerStory } from "./customerStory";
 import { solutionRole } from "./solutionRole";
+import { featuredReport } from "./featuredReport";
 
 export const schemaTypes = [
   // singletons
   siteSettings,
+  featuredReport,
   // taxonomy
   author,
   category,
