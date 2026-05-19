@@ -48,9 +48,9 @@ export function LeadMagnetHero({
         }}
       />
 
-      <div className="relative mx-auto grid max-w-container gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:gap-16 lg:py-24">
+      <div className="relative mx-auto grid max-w-container grid-cols-1 gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_minmax(0,1fr)] lg:gap-16 lg:py-24">
         {/* Left: copy + form */}
-        <div className="flex flex-col justify-center">
+        <div className="flex min-w-0 flex-col justify-center">
           <span className="inline-flex w-fit items-center gap-2 rounded-full border border-brand-cyan/40 bg-brand-cyan/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-cyan">
             <span className="h-1.5 w-1.5 rounded-full bg-brand-cyan" aria-hidden />
             {eyebrow}
@@ -82,12 +82,12 @@ export function LeadMagnetHero({
               required
               autoComplete="email"
               placeholder="you@company.com"
-              className="h-12 min-w-0 flex-1 rounded-lg border border-white/15 bg-white/[0.06] px-4 text-sm text-white placeholder:text-white/40 focus:border-brand-cyan focus:outline-none focus:ring-1 focus:ring-brand-cyan"
+              className="h-12 w-full min-w-0 flex-1 rounded-lg border border-white/15 bg-white/[0.06] px-4 text-sm text-white placeholder:text-white/40 focus:border-brand-cyan focus:outline-none focus:ring-1 focus:ring-brand-cyan"
             />
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex h-12 items-center justify-center rounded-lg bg-brand-cyan px-6 text-sm font-semibold text-dark-0 shadow-glow-cyan transition hover:bg-brand-cyan-dim disabled:opacity-60"
+              className="inline-flex h-12 w-full items-center justify-center rounded-lg bg-brand-cyan px-6 text-sm font-semibold text-dark-0 shadow-glow-cyan transition hover:bg-brand-cyan-dim disabled:opacity-60 sm:w-auto"
             >
               {submitting ? "Starting…" : ctaLabel}
             </button>
@@ -125,9 +125,12 @@ export function LeadMagnetHero({
           </div>
         </div>
 
-        {/* Right: product preview slot */}
-        <div className="relative flex items-center justify-center">
-          {children}
+        {/* Right: product preview slot. min-w-0 + w-full lets the child
+         *  respect the grid cell width on every breakpoint — without it,
+         *  flex/grid children with intrinsic widths (typewriter text,
+         *  result-card rows) can push past the viewport on mobile. */}
+        <div className="relative flex min-w-0 items-center justify-center">
+          <div className="w-full max-w-[560px]">{children}</div>
         </div>
       </div>
     </section>

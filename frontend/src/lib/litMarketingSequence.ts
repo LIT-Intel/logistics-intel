@@ -54,36 +54,60 @@ export interface LitMarketingTouch {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// v7 design tokens — matches the deployed send-subscription-email layout.
-// These are USER-COMPOSED outbound emails, NOT LIT subscription emails.
-// The dark hero band uses {{sender_company_name}} as the wordmark so
-// recipients see the sender's company, not "Logistic Intel".
+// v8 design tokens — warm-paper LIT brand. Matches the weekly digest email
+// aesthetic founder approved on commit ad756c45. Replaces the dark-slate v7
+// hero band, which did not represent the LIT brand well.
+//
+// Palette:
+//   Outer page bg     #F1F0EC  warm paper
+//   Shell bg          #FFFBF6  warm off-white (NOT sterile white)
+//   Card / hero block #FFFFFF  on warm shell, with layered shadows
+//   Brand accent      #00F0FF  neon cyan (used as a thin 2px rule, never heavy)
+//   Navy primary      #0B1220  CTA bg + key headings
+//   Body text         #0F172A  near-black
+//   Muted text        #475569  meta lines
+//   Faint text        #94A3B8  footer
+//   Hairline          #E2E8F0  divider
+//
+// Hero treatment: top-of-shell row carries the LIT logo image (left-aligned)
+// followed by a 48px-wide cyan accent rule. No dark slate band, no separate
+// hero color block. The shell's warm off-white runs edge-to-edge so the
+// header reads as the same surface as the body.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const _MKT_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
-const _MKT_LIT_ICON = "https://raw.githubusercontent.com/LIT-Intel/logistics-intel/main/frontend/public/icon_256.png";
+const _MKT_LOGO_URL = "https://app.logisticintel.com/logo_email.png";
 const _MKT_COLOR = {
-  text: "#0F172A", textSubtle: "#475569", textMuted: "#94A3B8",
-  divider: "#E2E8F0", ctaBg: "#2563EB", ctaBgDark: "#1E40AF", ctaText: "#FFFFFF",
-  bg: "#FFFFFF", pageBg: "#F1F5F9", heroBg: "#0A1024",
-  tipBg: "#EFF6FF", tipBorder: "#DBEAFE", tipLabel: "#1E40AF",
+  text: "#0F172A",
+  textSubtle: "#475569",
+  textMuted: "#94A3B8",
+  divider: "#E2E8F0",
+  ctaBg: "#0B1220",       // navy CTA — professional, brand-aligned
+  ctaText: "#FFFFFF",
+  ctaAccent: "#00F0FF",   // cyan underline accent on CTA
+  bg: "#FFFBF6",          // warm off-white shell
+  pageBg: "#F1F0EC",      // warm paper outer
+  tipBg: "#FFFBEB",       // amber-50 — warm pro tip, not cold blue
+  tipBorder: "#FDE68A",   // amber-300
+  tipLabel: "#92400E",    // amber-800 for the "Pro tip" eyebrow
+  brandAccent: "#00F0FF", // cyan brand rule under header
 };
 
 /**
- * v7 layout for outbound marketing emails.
+ * v8 layout for outbound marketing emails — warm-paper LIT-brand chrome.
  *
- * The hero band displays `{{sender_company_name}}` as the wordmark so
- * recipients see the sender's brand, not Logistic Intel. The LIT icon
- * is included as a small badge (38×38) — reps can swap it out in the
- * campaign builder by editing the HTML.
+ * The header reads as one continuous warm surface (no dark slate band).
+ * LIT logo image left-aligned, then a 48px cyan accent rule below it,
+ * then the body. The CTA is a navy pill with a thin cyan border-bottom
+ * accent. Pro tip cards use a warm amber tint instead of cold blue.
  *
  * Parameters:
- *   bodyHtml   — pre-built HTML body content (paragraphs, lists, etc.)
- *   ctaText    — button label
- *   ctaUrl     — button URL (send-time token OK, e.g. "https://www.logisticintel.com")
+ *   bodyHtml    — pre-built HTML body content (paragraphs, lists, etc.)
+ *   ctaText     — button label
+ *   ctaUrl      — button URL (send-time token OK, e.g. "https://app.logisticintel.com/...")
  *   previewText — inbox preview snippet (100 chars max)
  *   subjectLine — used for <title> only
- *   showProTip — wrap the last paragraph in the Pro Tip tinted card
+ *   proTipHtml  — optional tinted-card body rendered below the main body
  */
 export function wrapV7(opts: {
   bodyHtml: string;
@@ -95,17 +119,23 @@ export function wrapV7(opts: {
 }): string {
   const { bodyHtml, ctaText, ctaUrl, previewText, subjectLine, proTipHtml } = opts;
 
-  const previewBlock = `<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#FFFFFF;mso-hide:all;">${previewText}${"&nbsp;&#847;".repeat(60)}</div>`;
+  const previewBlock = `<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:${_MKT_COLOR.bg};mso-hide:all;">${previewText}${"&nbsp;&#847;".repeat(60)}</div>`;
 
-  const heroBlock = `<tr><td bgcolor="${_MKT_COLOR.heroBg}" style="background-color:${_MKT_COLOR.heroBg};padding:28px 40px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr><td valign="middle" style="padding-right:12px;"><img src="${_MKT_LIT_ICON}" width="38" height="38" alt="" style="display:block;width:38px;height:38px;border-radius:8px;border:0;outline:none;" /></td><td valign="middle" style="font-family:${_MKT_FONT};font-size:20px;font-weight:700;color:#FFFFFF;letter-spacing:-0.01em;line-height:1;">{{sender_company_name}}</td></tr></table></td></tr>`;
+  // Header — LIT logo image + 2px cyan accent rule. No dark hero band.
+  // The header lives ON the warm shell, not on a separate background.
+  const headerBlock = `<tr><td style="padding:28px 32px 0 32px;"><img src="${_MKT_LOGO_URL}" width="130" height="29" alt="Logistics Intel" style="display:block;width:130px;height:29px;border:0;outline:none;text-decoration:none;" /><div style="height:2px;width:48px;background-color:${_MKT_COLOR.brandAccent};margin:14px 0 0 0;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td></tr>`;
 
+  // Pro tip card — warm amber tint, not cold blue. Reads as a sidenote
+  // not a button. Renders inside the body cell, below the main copy.
   const proTipBlock = proTipHtml
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate;margin:20px 0 0 0;width:100%;"><tr><td bgcolor="${_MKT_COLOR.tipBg}" style="background-color:${_MKT_COLOR.tipBg};border:1px solid ${_MKT_COLOR.tipBorder};border-radius:12px;padding:16px 20px;"><div style="font-family:${_MKT_FONT};font-size:11px;font-weight:700;color:${_MKT_COLOR.tipLabel};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Pro tip</div><div style="font-family:${_MKT_FONT};font-size:15px;line-height:1.55;color:${_MKT_COLOR.text};">${proTipHtml}</div></td></tr></table>`
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate;margin:24px 0 0 0;width:100%;"><tr><td bgcolor="${_MKT_COLOR.tipBg}" style="background-color:${_MKT_COLOR.tipBg};border-radius:12px;padding:16px 20px;box-shadow:0 1px 2px rgba(146,64,14,0.04);"><div style="font-family:${_MKT_FONT};font-size:11px;font-weight:700;color:${_MKT_COLOR.tipLabel};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Pro tip</div><div style="font-family:${_MKT_FONT};font-size:15px;line-height:1.55;color:${_MKT_COLOR.text};">${proTipHtml}</div></td></tr></table>`
     : "";
 
-  const ctaBlock = `<tr><td style="padding:8px 40px 36px 40px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td bgcolor="${_MKT_COLOR.ctaBg}" valign="middle" style="background-color:${_MKT_COLOR.ctaBg};border-radius:10px;mso-padding-alt:14px 28px;border-bottom:2px solid ${_MKT_COLOR.ctaBgDark};"><a href="${ctaUrl}" target="_blank" style="display:inline-block;padding:14px 28px;font-family:${_MKT_FONT};font-size:15px;font-weight:600;color:${_MKT_COLOR.ctaText};text-decoration:none;border-radius:10px;letter-spacing:0.01em;line-height:1;">${ctaText} →</a></td></tr></table></td></tr>`;
+  // CTA — navy pill with thin cyan border-bottom accent. Inline pill on
+  // desktop, full-width on mobile via the lit-cta-full class.
+  const ctaBlock = `<tr><td style="padding:8px 32px 32px 32px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td bgcolor="${_MKT_COLOR.ctaBg}" valign="middle" style="background-color:${_MKT_COLOR.ctaBg};border-radius:10px;mso-padding-alt:14px 24px;border-bottom:2px solid ${_MKT_COLOR.ctaAccent};"><a href="${ctaUrl}" target="_blank" style="display:inline-block;padding:14px 24px;font-family:${_MKT_FONT};font-size:14px;font-weight:600;color:${_MKT_COLOR.ctaText};text-decoration:none;border-radius:10px;letter-spacing:0.01em;line-height:1;">${ctaText} &rarr;</a></td></tr></table></td></tr>`;
 
-  return `<!DOCTYPE html><html lang="en" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="color-scheme" content="light only" /><meta name="supported-color-schemes" content="light only" /><title>${subjectLine}</title><!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]--></head><body style="margin:0;padding:0;background-color:${_MKT_COLOR.pageBg};color:${_MKT_COLOR.text};font-family:${_MKT_FONT};-webkit-font-smoothing:antialiased;">${previewBlock}<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="${_MKT_COLOR.pageBg}" style="background-color:${_MKT_COLOR.pageBg};border-collapse:collapse;"><tr><td align="center" valign="top" style="padding:40px 16px 56px 16px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" bgcolor="${_MKT_COLOR.bg}" style="max-width:600px;width:100%;background-color:${_MKT_COLOR.bg};border-radius:18px;border-collapse:separate;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.04),0 8px 24px rgba(15,23,42,0.06);">${heroBlock}<tr><td style="padding:28px 40px 8px 40px;font-family:${_MKT_FONT};font-size:16px;line-height:1.65;color:${_MKT_COLOR.text};text-align:left;">${bodyHtml}${proTipBlock}</td></tr>${ctaBlock}<tr><td style="padding:0 40px;"><div style="height:1px;background-color:${_MKT_COLOR.divider};font-size:0;line-height:0;">&nbsp;</div></td></tr><tr><td style="padding:20px 40px 28px 40px;font-family:${_MKT_FONT};font-size:13px;line-height:1.65;color:${_MKT_COLOR.textMuted};text-align:left;">{{sender_name}} · {{sender_company_name}}<br/>You received this because we thought our service might be a fit for {{company_name}}.</td></tr></table></td></tr></table></body></html>`;
+  return `<!DOCTYPE html><html lang="en" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="x-apple-disable-message-reformatting" /><meta name="color-scheme" content="light only" /><meta name="supported-color-schemes" content="light only" /><title>${subjectLine}</title><style>@media only screen and (max-width:600px){.lit-shell{width:100% !important;max-width:100% !important;border-radius:0 !important;}.lit-pad-x{padding-left:18px !important;padding-right:18px !important;}}a{text-decoration:none;}img{-ms-interpolation-mode:bicubic;border:0;line-height:100%;outline:none;text-decoration:none;}</style><!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]--></head><body style="margin:0;padding:0;background-color:${_MKT_COLOR.pageBg};color:${_MKT_COLOR.text};font-family:${_MKT_FONT};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">${previewBlock}<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="${_MKT_COLOR.pageBg}" style="background-color:${_MKT_COLOR.pageBg};border-collapse:collapse;"><tr><td align="center" valign="top" style="padding:32px 12px 48px 12px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="lit-shell" bgcolor="${_MKT_COLOR.bg}" style="max-width:600px;width:100%;background-color:${_MKT_COLOR.bg};border-radius:16px;border-collapse:separate;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,0.04),0 2px 12px rgba(15,23,42,0.05);">${headerBlock}<tr><td class="lit-pad-x" style="padding:22px 32px 4px 32px;font-family:${_MKT_FONT};font-size:15px;line-height:1.65;color:${_MKT_COLOR.text};text-align:left;">${bodyHtml}${proTipBlock}</td></tr>${ctaBlock}<tr><td class="lit-pad-x" style="padding:0 32px;"><div style="height:1px;background-color:${_MKT_COLOR.divider};font-size:0;line-height:0;">&nbsp;</div></td></tr><tr><td class="lit-pad-x" style="padding:18px 32px 28px 32px;font-family:${_MKT_FONT};font-size:12px;line-height:1.65;color:${_MKT_COLOR.textMuted};text-align:left;">Logistics Intel &middot; Atlanta, GA &middot; <a href="https://app.logisticintel.com/unsubscribe?token={{unsubscribe_token}}" style="color:${_MKT_COLOR.textMuted};text-decoration:underline;">unsubscribe</a></td></tr></table></td></tr></table></body></html>`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
