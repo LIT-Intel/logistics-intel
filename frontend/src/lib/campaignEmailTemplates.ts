@@ -94,24 +94,24 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
     name: "Broker Email 1 · Founder Intro",
     audience: "freight_broker",
     stepNumber: 1,
-    subject: "your reps and the tab problem",
-    previewText: "Eight hours of tab-switching for two real conversations.",
+    subject: "the freight intel built for brokers",
+    previewText: "Live shipment patterns, verified contacts, and buying signals — in one workspace.",
     imageAssetKey: "company_intelligence",
     tokensUsed: ["{{first_name}}"],
-    description: "Day 0 founder intro for freight brokers. Personal-bio open, broker-pain framing.",
+    description: "Day 0 welcome intro for freight brokers. Positioning-led headline; founder-voice body.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">I spent six years at a forwarder in Atlanta watching the brokerage team chase the same companies as every other broker in the market. Eight hours of tab-switching for two real conversations.</p>
-<p style="margin:0 0 16px 0;">So we built Logistics Intel: every U.S. bill of lading joined to verified ops contacts, with the buying signals already surfaced. Your reps walk into every call knowing the shipper's lanes, current carrier, and volume direction.</p>
-<p style="margin:0 0 16px 0;">Worth a 30-second look?</p>
-<p style="margin:0;">— founder, Logistics Intel</p>`,
-      "your reps and the tab problem",
-      "Eight hours of tab-switching for two real conversations.",
+<p style="margin:0 0 16px 0;">Welcome to Logistics Intel — the trade intelligence platform built specifically for freight brokers.</p>
+<p style="margin:0 0 16px 0;">After six years inside a forwarder in Atlanta, I watched too many brokerage reps chase the same accounts as every other broker in the market. The lists were stale, the contacts were wrong, and the signals — the ones that tell you which shipper is actually ready to switch carriers — never made it into anyone's CRM.</p>
+<p style="margin:0 0 16px 0;">So we built it. Every U.S. bill of lading, joined to verified ops contacts, with the buying signals already surfaced. Your reps walk into every call knowing the shipper's lanes, current carrier, and volume direction.</p>
+<p style="margin:0;">— the Logistics Intel team</p>`,
+      "the freight intel built for brokers",
+      "Live shipment patterns, verified contacts, and buying signals — in one workspace.",
       undefined,
       "Start your 14-day free trial",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_broker_1_founder_intro",
       {
-        headline: "Eight hours of tabs. Two real calls.",
+        headline: "The freight intel built for brokers.",
         bullets: [
           "Every U.S. bill of lading, refreshed daily",
           "Carrier shifts and lane launches as buying signals",
@@ -244,24 +244,24 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
     name: "Forwarder Email 1 · Founder Intro",
     audience: "small_forwarder",
     stepNumber: 1,
-    subject: "the shipper data hiding in plain sight",
-    previewText: "Six years at a forwarder in Atlanta. Built what I wished I'd had.",
+    subject: "live shipper intel, built for forwarders",
+    previewText: "Every U.S. bill of lading, joined to verified ops contacts, refreshed daily.",
     imageAssetKey: "company_intelligence",
     tokensUsed: ["{{first_name}}"],
-    description: "Day 0 founder intro for freight forwarders. Personal-bio open, soft CTA.",
+    description: "Day 0 welcome intro for freight forwarders. Positioning-led headline; founder-voice body.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">I spent six years quoting freight at a forwarder in Atlanta. Every Monday morning I'd open ZoomInfo, Apollo, Sales Navigator, and four other tabs trying to figure out who was actually moving freight that week. The lists were always wrong by a quarter.</p>
-<p style="margin:0 0 16px 0;">So I built Logistics Intel. Every U.S. bill of lading, joined to verified ops contacts, refreshed daily. You filter by lane, see who's moving freight right now, and stop chasing companies that haven't imported in two years.</p>
-<p style="margin:0 0 16px 0;">Worth a 30-second look?</p>
-<p style="margin:0;">— founder, Logistics Intel</p>`,
-      "the shipper data hiding in plain sight",
-      "Six years at a forwarder in Atlanta. Built what I wished I'd had.",
+<p style="margin:0 0 16px 0;">Welcome to Logistics Intel — the trade intelligence platform built specifically for freight forwarders.</p>
+<p style="margin:0 0 16px 0;">After six years quoting freight at a forwarder in Atlanta, I knew there had to be a better way than opening seven tabs every Monday morning trying to figure out who was actually moving freight that week. The lists were always wrong by a quarter, the contacts were stale, and the lanes were guesswork.</p>
+<p style="margin:0 0 16px 0;">So we built it. Every U.S. bill of lading, joined to verified ops contacts, refreshed daily. Filter by lane, see who's moving freight right now, and stop chasing companies that haven't imported in two years.</p>
+<p style="margin:0;">— the Logistics Intel team</p>`,
+      "live shipper intel, built for forwarders",
+      "Every U.S. bill of lading, joined to verified ops contacts, refreshed daily.",
       undefined,
       "Start your 14-day free trial",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_1_founder_intro",
       {
-        headline: "Six years quoting freight. Same problem every Monday.",
+        headline: "Live shipper intel, built for forwarders.",
         bullets: [
           "Every U.S. bill of lading, refreshed daily",
           "Verified ops contacts on every importer",
