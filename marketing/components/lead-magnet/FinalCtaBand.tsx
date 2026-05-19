@@ -37,7 +37,7 @@ export function FinalCtaBand({
             placeholder="Your work email"
             required
             aria-label="Work email"
-            className="w-full min-w-0 flex-1 appearance-none rounded-xl border-[1.5px] border-slate-300 bg-white px-4 py-3.5 text-base outline-none transition-all focus:border-blue-600 focus:shadow-[0_0_0_4px_rgba(37,99,235,0.12)] sm:text-[15px]"
+            className="w-full min-w-0 appearance-none rounded-xl border-[1.5px] border-slate-300 bg-white px-4 py-3.5 text-base outline-none transition-all focus:border-blue-600 focus:shadow-[0_0_0_4px_rgba(37,99,235,0.12)] sm:flex-1 sm:text-[15px]"
           />
           <button
             type="submit"
