@@ -89,7 +89,11 @@ export default async function HomePage() {
 
   return (
     <>
-      <StickyCTABar source="home-sticky" hideOnVisibleSelector="#home-sticky-end" />
+      <StickyCTABar
+        source="home-sticky"
+        heroFormSelector="#lit-hero-email"
+        hideOnVisibleSelector="#home-sticky-end"
+      />
       <Nav />
       <main>
         <Hero hero={hero} />
