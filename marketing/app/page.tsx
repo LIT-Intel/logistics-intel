@@ -7,6 +7,7 @@ import { Footer } from "@/components/nav/Footer";
 import { ArrowRight, Calendar, CheckCircle2, MapPin, RefreshCcw, ShieldCheck, type LucideIcon } from "lucide-react";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import { HeroSearchDemo } from "@/components/sections/HeroSearchDemo";
+import { LeadMagnetHero } from "@/components/lead-magnet/LeadMagnetHero";
 import { CompanyIntelMock } from "@/components/sections/CompanyIntelMock";
 import { PulseBriefMock } from "@/components/sections/PulseBriefMock";
 import { ContactDiscoveryMock } from "@/components/sections/ContactDiscoveryMock";
@@ -142,73 +143,21 @@ export default async function HomePage() {
 
 function Hero({ hero }: { hero: any }) {
   return (
-    <section className="relative px-5 pt-[64px] pb-12 sm:px-8 sm:pt-[72px] sm:pb-[80px]">
-      <div className="mx-auto grid max-w-container gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center">
-        <div className="min-w-0">
-          <div className="lit-pill">
-            <span className="dot" />
-            {hero.pillText}
-          </div>
-          <h1 className="display-xl mt-6">
-            {hero.headline}{" "}
-            <span className="grad-text-cyan">{hero.headlineHighlight}</span>
-            {hero.headlineSuffix ? <> {hero.headlineSuffix}</> : null}
-          </h1>
-          <p className="lead mt-6 max-w-[560px]">{hero.subhead}</p>
-          {hero.noteBelow ? (
-            <div className="font-body mt-3 max-w-[520px] text-[13.5px] leading-snug text-ink-500">
-              {hero.noteBelow}
-            </div>
-          ) : null}
-          {/* Trust badges — Sanity-driven, falls back to FALLBACK_HERO.badges */}
-          {hero.badges?.length ? (
-            <div className="mt-5 flex flex-wrap gap-2">
-              {hero.badges.map((b: any, i: number) => {
-                const Icon = b.icon ? HERO_BADGE_ICONS[b.icon] : null;
-                const tone = HERO_BADGE_TONES[b.tone] ?? HERO_BADGE_TONES.cyan;
-                return (
-                  <span
-                    key={`${b.label}-${i}`}
-                    className={`font-display inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone}`}
-                  >
-                    {Icon ? <Icon className="h-3.5 w-3.5" aria-hidden /> : null}
-                    {b.label}
-                  </span>
-                );
-              })}
-            </div>
-          ) : null}
-          <div className="mt-7 flex flex-wrap gap-3">
-            <Link
-              href={APP_SIGNUP_URL}
-              className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
-              style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
-            >
-              Start Prospecting <ArrowRight className="h-4 w-4" />
-            </Link>
-            <Link
-              href="/demo"
-              className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white/80 px-6 text-[15px] font-semibold text-ink-900 backdrop-blur transition hover:bg-white"
-            >
-              <Calendar className="h-4 w-4" /> Book a Demo
-            </Link>
-          </div>
-          {/* Trial reassurance microcopy — Sanity-driven */}
-          {hero.trialNote ? (
-            <div className="font-display mt-4 inline-flex items-center gap-1.5 text-[12.5px] text-ink-500">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
-              {hero.trialNote}
-            </div>
-          ) : null}
-        </div>
-
-        <div
-          className="relative min-h-[520px] overflow-hidden sm:min-h-[540px] lg:min-h-0"
-          style={{ contain: "layout paint", maxWidth: "100%" }}
-        >
-          <HeroSearchDemo />
-        </div>
-      </div>
+    <section className="relative">
+      <LeadMagnetHero
+        eyebrow={hero.pillText}
+        headline={
+          <>
+            Freight revenue intelligence — <em>from signal to booked freight</em>.
+          </>
+        }
+        lede={hero.subhead}
+        ctaLabel="Start Prospecting →"
+        formSource="home-hero"
+        formNote={hero.trialNote || "14-day free trial · Full feature access · Cancel anytime"}
+      >
+        <HeroSearchDemo />
+      </LeadMagnetHero>
 
       {/* 4-card stats strip — design-pack hero-stats treatment. */}
       {hero.kpis?.length ? (
