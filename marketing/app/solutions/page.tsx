@@ -4,6 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { groq } from "next-sanity";
 import { StickyCTABar } from "@/components/lead-magnet/StickyCTABar";
 import { ExitIntentModal } from "@/components/lead-magnet/ExitIntentModal";
+import { MoneyPageShell } from "@/components/lead-magnet/MoneyPageShell";
 import { LeadMagnetHero } from "@/components/lead-magnet/LeadMagnetHero";
 import { LiveProductPreview } from "@/components/lead-magnet/LiveProductPreview";
 import { ProofStrip } from "@/components/lead-magnet/ProofStrip";
@@ -107,6 +108,7 @@ export default async function SolutionsHubPage() {
   return (
     <>
       <StickyCTABar />
+      <MoneyPageShell>
 
       <LeadMagnetHero
         eyebrow="Built for every freight revenue role"
@@ -273,6 +275,7 @@ export default async function SolutionsHubPage() {
         </div>
       </section>
 
+      </MoneyPageShell>
       <ExitIntentModal />
 
       <script

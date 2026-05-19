@@ -74,96 +74,98 @@ export interface CampaignEmailTemplate {
 
 export const freightBrokerTemplates: CampaignEmailTemplate[] = [
   {
-    id: "lit_marketing_broker_1_company_intel",
-    name: "Broker Email 1 · Company Intelligence Intro",
+    id: "lit_marketing_broker_1_founder_intro",
+    name: "Broker Email 1 · Founder Intro",
     audience: "freight_broker",
     stepNumber: 1,
-    subject: "Saw your {{top_lane}} moves this quarter",
-    previewText:
-      "Two questions on the cadence shift, peer to peer.",
+    subject: "your reps and the tab problem",
+    previewText: "Eight hours of tab-switching for two real conversations.",
     imageAssetKey: "company_intelligence",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
-    description: "Cold intro built around a specific lane observation.",
+    tokensUsed: ["{{first_name}}"],
+    description: "Day 0 founder intro for freight brokers. Personal-bio open, broker-pain framing.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">Pulled {{company_name}}'s footprint on {{top_lane}} this morning. Cadence shifted in the last 60 days — new consignee names on a few of the boxes, which usually means a partner shipper came on or a re-route is in play.</p>
-<p style="margin:0 0 16px 0;">Two questions, operator to operator:</p>
-<p style="margin:0 0 16px 0;">1. Is the new consignee mix something you brought on, or did it land in your laps via an NVO partner?</p>
-<p style="margin:0 0 16px 0;">2. Are you seeing the LA/LB dwell drift on your inbounds? A couple of your boxes ran past 7 days at terminal.</p>
-<p style="margin:0 0 16px 0;">Not pitching anything yet — just curious whether you're seeing what I'm seeing.</p>
-<p style="margin:0;">— {{sender_name}}</p>`,
-      "Saw your {{top_lane}} moves this quarter",
-      "Two questions on the cadence shift, peer to peer.",
-      `If dwell on {{top_lane}} is creeping past 5 days, the rate sheet matters less than the demurrage exposure on the back end. Worth flagging before peak GRI lands.`,
-      "Pull up my lane",
+<p style="margin:0 0 16px 0;">I spent six years at a forwarder in Atlanta watching the brokerage team chase the same companies as every other broker in the market. Eight hours of tab-switching for two real conversations.</p>
+<p style="margin:0 0 16px 0;">So we built Logistics Intel: every U.S. bill of lading joined to verified ops contacts, with the buying signals already surfaced. Your reps walk into every call knowing the shipper's lanes, current carrier, and volume direction.</p>
+<p style="margin:0 0 16px 0;">Worth a 30-second look?</p>
+<p style="margin:0;">— founder, Logistics Intel</p>`,
+      "your reps and the tab problem",
+      "Eight hours of tab-switching for two real conversations.",
+      undefined,
+      "Start your 14-day free trial",
+      "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_broker_1_founder_intro",
     ),
   },
   {
-    id: "lit_marketing_broker_2_manual_pain",
-    name: "Broker Email 2 · Manual Prospecting Pain",
+    id: "lit_marketing_broker_2_account_card",
+    name: "Broker Email 2 · First 30 Seconds of Research",
     audience: "freight_broker",
     stepNumber: 2,
-    subject: "One more thing on the consignee cluster",
-    previewText:
-      "Backhaul math worth checking before the next bid cycle.",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
-    description: "Operator follow-up on a specific lane observation.",
+    subject: "the first 30 seconds of account research, done",
+    previewText: "What your reps see when they open any account.",
+    imageAssetKey: "pulse_ai",
+    tokensUsed: ["{{first_name}}"],
+    description: "Day +3 follow-up. Concrete account-card proof with two trigger callouts.",
     html: wrapBrokerEmail(
-      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">Quick follow-up. One more pattern that jumped out on {{company_name}}'s {{top_lane}} book:</p>
-<p style="margin:0 0 16px 0;">Your top three consignees on that lane cluster within roughly 200 miles of each other inland. If you've got a backhaul shipper anywhere in that radius, the drayage round-trip math usually pencils out at $400–$600 per box once you back out the empty repo cost.</p>
-<p style="margin:0 0 16px 0;font-weight:600;">Is the inland leg something you control, or is it on the consignee's account?</p>
-<p style="margin:0 0 16px 0;">That's the only question that changes whether the play is yours to make or whether the consignee's incumbent locks it down first. Either way the BOL footprint is telling on this one.</p>
-<p style="margin:0 0 16px 0;">Hit reply if you want to talk through it.</p>
-<p style="margin:0;">— {{sender_name}}</p>`,
-      "One more thing on the consignee cluster",
-      "Backhaul math worth checking before the next bid cycle.",
-      `Drayage round-trips on clustered consignees are one of the cleanest margin plays on a domestic-inland leg. Most operators miss them because the BOL data is split across the headhaul and the empty repo.`,
-      "Look at the cluster",
+      `<p style="margin:0 0 16px 0;">{{first_name}}, this is what your reps see when they open any account inside Logistics Intel.</p>
+<p style="margin:0 0 8px 0;">• Trailing 12m: 18.9K TEU on TR → US</p>
+<p style="margin:0 0 8px 0;">• Trigger: 4 new origin ports activated, volume up 18% — capacity expansion</p>
+<p style="margin:0 0 8px 0;">• Trigger: rising single-carrier reliance — pricing-leverage moment</p>
+<p style="margin:0 0 16px 0;">• CRM stage: pushes to your Command Center or external CRM</p>
+<p style="margin:0 0 16px 0;">Every signal cited to a public source. Refreshed weekly. Ninety-five percent confidence. No hallucinated facts.</p>
+<p style="margin:0;">— the Logistics Intel team</p>`,
+      "the first 30 seconds of account research, done",
+      "What your reps see when they open any account.",
+      undefined,
+      "See your accounts",
+      "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_broker_2_account_card",
     ),
   },
   {
-    id: "lit_marketing_broker_3_contact_discovery",
-    name: "Broker Email 3 · Contact Discovery",
+    id: "lit_marketing_broker_3_signal_selling",
+    name: "Broker Email 3 · Signal-Based Selling",
     audience: "freight_broker",
     stepNumber: 3,
-    subject: "Briefly — what we actually do",
-    previewText: "Lane signals, the right person on the BCO side, one screen.",
-    imageAssetKey: "contact_discovery",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
-    description: "First touch that explains the service, after two signal-only emails.",
+    subject: "stop guessing who's shipping right now",
+    previewText: "Targeting and timing — the only two things that matter.",
+    imageAssetKey: "pulse_workflow",
+    tokensUsed: ["{{first_name}}"],
+    description: "Day +7 follow-up. Comparison frame: blind prospecting vs signal-based.",
     html: wrapBrokerEmail(
-      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">If the last two notes were useful, here's the bit where I tell you what I'm actually using.</p>
-<p style="margin:0 0 16px 0;">Short version: we pull BOL records and layer in lane, mode, cadence, and carrier mix per shipper — same data I referenced when I flagged {{company_name}}'s {{top_lane}} cadence shift. We also keep the decision-maker contact info next to each account, so the rep can move from "I want to talk to procurement at this shipper" to a sequenced touch without leaving the screen.</p>
-<p style="margin:0 0 16px 0;">For a broker desk, the value is the handoff — the gap between spotting a signal and getting a contextual outreach in front of the right person on the BCO side. That gap is where most desks lose deals to whoever moved faster.</p>
-<p style="margin:0 0 16px 0;">Worth a 20-minute walkthrough on three of {{company_name}}'s active lanes? You keep the screenshots either way.</p>
-<p style="margin:0;">— {{sender_name}}</p>`,
-      "Briefly — what we actually do",
-      "Lane signals, the right person on the BCO side, one screen.",
-      `The right title without freight context is still a cold call. The right title with "your cadence on {{top_lane}} shifted last month" is a meeting.`,
-      "Walk me through three lanes",
+      `<p style="margin:0 0 16px 0;">{{first_name}}, the difference between a broker who hits quota and one who chases lists comes down to two things: targeting and timing.</p>
+<p style="margin:0 0 8px 0;">• Live shipment patterns and trailing-12m volume on every importer</p>
+<p style="margin:0 0 8px 0;">• Carrier shifts, new origin ports, and lane launches surfaced as buying signals</p>
+<p style="margin:0 0 8px 0;">• "Saw your VN → US volume spike 18% this quarter" beats "just checking in"</p>
+<p style="margin:0 0 16px 0;">• One workspace built for logistics, not a generic CRM</p>
+<p style="margin:0 0 16px 0;">The free trial gets your team the full workspace for fourteen days. Bring your top accounts and tell us what's missing.</p>
+<p style="margin:0;">— the Logistics Intel team</p>`,
+      "stop guessing who's shipping right now",
+      "Targeting and timing — the only two things that matter.",
+      undefined,
+      "Try it free for 14 days",
+      "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_broker_3_signal_selling",
     ),
   },
   {
-    id: "lit_marketing_broker_4_breakup",
-    name: "Broker Email 4 · Close the Loop",
+    id: "lit_marketing_broker_4_quiet_close",
+    name: "Broker Email 4 · Quiet Close (Question Lead)",
     audience: "freight_broker",
     stepNumber: 4,
-    subject: "Closing the loop — last one",
-    previewText: "If the timing's off I'll back off.",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
-    description: "Breakup email — leaves the door open without pressure.",
+    subject: "one quick question",
+    previewText: "What's the hardest part of finding new accounts right now?",
+    tokensUsed: ["{{first_name}}"],
+    description: "Day +14 final touch. Single-question close. Soft trial CTA.",
     html: wrapBrokerEmail(
-      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">Not going to keep landing in your inbox if the timing isn't there.</p>
-<p style="margin:0 0 16px 0;">For what it's worth: the thing I'd really want you to see is the cadence-drift read on {{company_name}}'s {{top_lane}} consignees. That one signal has been worth catching RFPs ~30 days before they hit your inbox on books like yours. Whether you'd ever do anything about it with us is a separate question.</p>
-<p style="margin:0 0 16px 0;">If next quarter makes more sense, ping me. Otherwise — good selling.</p>
-<p style="margin:0;">— {{sender_name}}</p>`,
-      "Closing the loop — last one",
-      "If the timing's off I'll back off.",
+      `<p style="margin:0 0 16px 0;">{{first_name}}, one quick question and then we'll get out of your inbox.</p>
+<p style="margin:0 0 16px 0;">What's the hardest part of finding new accounts for your team right now? Stale lists, no signal, contact data drift, something else?</p>
+<p style="margin:0 0 16px 0;">One sentence is enough. We read every reply.</p>
+<p style="margin:0 0 16px 0;">If it's easier to just poke around, the trial is fourteen days, no card.</p>
+<p style="margin:0;">— the Logistics Intel team</p>`,
+      "one quick question",
+      "What's the hardest part of finding new accounts right now?",
       undefined,
-      "Send the lane snapshot",
+      "Start your 14-day free trial",
+      "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_broker_4_quiet_close",
     ),
   },
 ];
@@ -174,93 +176,97 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
 
 export const smallForwarderTemplates: CampaignEmailTemplate[] = [
   {
-    id: "lit_marketing_forwarder_1_company_intel",
-    name: "Forwarder Email 1 · Company Intelligence Intro",
+    id: "lit_marketing_forwarder_1_founder_intro",
+    name: "Forwarder Email 1 · Founder Intro",
     audience: "small_forwarder",
     stepNumber: 1,
-    subject: "{{top_lane}} — quick mode-split question",
-    previewText: "Saw your consol vs FCL ratio. Curious how you decided.",
+    subject: "the shipper data hiding in plain sight",
+    previewText: "Six years at a forwarder in Atlanta. Built what I wished I'd had.",
     imageAssetKey: "company_intelligence",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
-    description: "Cold intro built on a mode-split observation.",
+    tokensUsed: ["{{first_name}}"],
+    description: "Day 0 founder intro for freight forwarders. Personal-bio open, soft CTA.",
     html: wrapBrokerEmail(
       `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">Was looking at {{company_name}}'s {{top_lane}} pattern this morning. Mode split looks heavier on consol than I'd expect for the volume bands you're hitting. Wanted to ask, operator to operator:</p>
-<p style="margin:0 0 16px 0;">Is that a service-level call (transit predictability over cost), or did the FCL math just not pencil out this quarter at current rates?</p>
-<p style="margin:0 0 16px 0;">Asking because the consol-vs-FCL break point on that pair has moved ~2 CBM in the wrong direction since Q3. Most operators I talk to are quietly re-running the calc.</p>
-<p style="margin:0 0 16px 0;">Not pitching anything — just curious whether you've already had to make the call.</p>
-<p style="margin:0;">— {{sender_name}}</p>`,
-      "{{top_lane}} — quick mode-split question",
-      "Saw your consol vs FCL ratio. Curious how you decided.",
-      `If LCL is winning on the rate sheet but FCL buys back a week of transit, that's worth re-modeling — usually pencils out around the 8-CBM mark, but the threshold has shifted this quarter.`,
-      "Pull up the lane",
+<p style="margin:0 0 16px 0;">I spent six years quoting freight at a forwarder in Atlanta. Every Monday morning I'd open ZoomInfo, Apollo, Sales Navigator, and four other tabs trying to figure out who was actually moving freight that week. The lists were always wrong by a quarter.</p>
+<p style="margin:0 0 16px 0;">So I built Logistics Intel. Every U.S. bill of lading, joined to verified ops contacts, refreshed daily. You filter by lane, see who's moving freight right now, and stop chasing companies that haven't imported in two years.</p>
+<p style="margin:0 0 16px 0;">Worth a 30-second look?</p>
+<p style="margin:0;">— founder, Logistics Intel</p>`,
+      "the shipper data hiding in plain sight",
+      "Six years at a forwarder in Atlanta. Built what I wished I'd had.",
+      undefined,
+      "Start your 14-day free trial",
+      "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_1_founder_intro",
     ),
   },
   {
-    id: "lit_marketing_forwarder_2_better_signals",
-    name: "Forwarder Email 2 · Better Signals",
+    id: "lit_marketing_forwarder_2_account_card",
+    name: "Forwarder Email 2 · What 30 Seconds Looks Like",
     audience: "small_forwarder",
     stepNumber: 2,
-    subject: "Two shippers on your book went quiet",
-    previewText: "60+ days, no boxes — usually means one of two things.",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
-    description: "Follow-up flagging a specific cadence-drift signal.",
+    subject: "what 30 seconds of research looks like",
+    previewText: "One account profile, one click. Lane, volume, carrier, signal.",
+    imageAssetKey: "pulse_ai",
+    tokensUsed: ["{{first_name}}"],
+    description: "Day +3 follow-up. Concrete account-card proof, not features.",
     html: wrapBrokerEmail(
-      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">Following up on the {{top_lane}} note. Went a layer deeper on {{company_name}}'s consignee mix and one pattern is worth flagging.</p>
-<p style="margin:0 0 16px 0;">Two of your inbound shippers haven't moved a box in 60+ days. That window is almost always one of two things:</p>
-<p style="margin:0 0 16px 0;">1. They're ramping for a seasonal pulse and bookings are about to land.<br>2. They're quietly testing another forwarder and the relationship's already drifting.</p>
-<p style="margin:0 0 16px 0;">Either one is a phone call this week, not next month. By the time the next BOL hits, the answer to which it was is already locked in.</p>
-<p style="margin:0 0 16px 0;">Want the specific BCO names so you can prioritize?</p>
-<p style="margin:0;">— {{sender_name}}</p>`,
-      "Two shippers on your book went quiet",
-      "60+ days, no boxes — usually means one of two things.",
-      `Quiet shipper > active shipper for outbound timing. Active ones are too busy to take the call. The quiet quarter is when the incumbent forwarder is either ramping rates or already losing the relationship.`,
-      "Send the BCO names",
+      `<p style="margin:0 0 16px 0;">{{first_name}}, this is what an account profile looks like inside Logistics Intel — one card, one click.</p>
+<p style="margin:0 0 8px 0;">• Trailing 12m volume: 18.9K TEU</p>
+<p style="margin:0 0 8px 0;">• Top lane: TR → US, 4 new origin ports activated</p>
+<p style="margin:0 0 8px 0;">• Top carrier: Hapag-Lloyd, growing single-carrier reliance</p>
+<p style="margin:0 0 16px 0;">• CRM stage: synced to your pipeline</p>
+<p style="margin:0 0 16px 0;">Every claim cited to a public source, refreshed weekly, no hallucinated facts. Run it on your own top 25 accounts and tell us if anything looks off.</p>
+<p style="margin:0;">— the Logistics Intel team</p>`,
+      "what 30 seconds of research looks like",
+      "One account profile, one click. Lane, volume, carrier, signal.",
+      undefined,
+      "See it on your accounts",
+      "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_2_account_card",
     ),
   },
   {
-    id: "lit_marketing_forwarder_3_pulse_ai",
-    name: "Forwarder Email 3 · Pulse AI Brief",
+    id: "lit_marketing_forwarder_3_velocity",
+    name: "Forwarder Email 3 · Search to Campaign in 20 Min",
     audience: "small_forwarder",
     stepNumber: 3,
-    subject: "Briefly — what we actually do",
-    previewText: "How the cadence read works and why it's worth a look.",
-    imageAssetKey: "pulse_ai",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
-    description: "Explains the service after two pure-signal emails.",
+    subject: "from a search bar to a campaign in 20 minutes",
+    previewText: "What used to take a sales team five days.",
+    imageAssetKey: "campaign_builder",
+    tokensUsed: ["{{first_name}}"],
+    description: "Day +7 follow-up. Workflow compression — Pulse → Coach → Triggers → Campaign → Replies.",
     html: wrapBrokerEmail(
-      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">If the last two notes were useful, here's the bit where I tell you what I'm actually using.</p>
-<p style="margin:0 0 16px 0;">We work off BOL records — every container that lands has a consignee, shipper, carrier, port pair, and date attached to it. Layer that into a cadence model per account and you get the patterns I was flagging on {{company_name}}: who pulses seasonally, who's drifted off, who switched carriers, and which lanes have a mode-split worth re-examining.</p>
-<p style="margin:0 0 16px 0;">For your reps, that turns into a one-card brief per shipper before each call. Open the account, glance at the card (cadence, top lanes, recent shifts, suggested opener), dial. 30 seconds of prep instead of 12 minutes — and the opener actually lands because it's about their freight, not "any capacity needs?"</p>
-<p style="margin:0 0 16px 0;">Want me to run a brief on one {{top_lane}} shipper so you can see the format?</p>
-<p style="margin:0;">— {{sender_name}}</p>`,
-      "Briefly — what we actually do",
-      "How the cadence read works and why it's worth a look.",
-      `30 seconds of context beats 12 minutes of tab-switching. The rep who walks in with one specific signal — not a longer dossier — books the meeting.`,
-      "Send a sample brief",
+      `<p style="margin:0 0 16px 0;">{{first_name}}, the work that used to take a sales team five days now takes twenty minutes.</p>
+<p style="margin:0 0 8px 0;">• Search "EV battery importers shipping from Korea" — Pulse finds 27 matches</p>
+<p style="margin:0 0 8px 0;">• Pulse Coach flags 8 with volume up month-over-month</p>
+<p style="margin:0 0 8px 0;">• Auto-save companies, queue verified ops contacts</p>
+<p style="margin:0 0 16px 0;">• Launch a Day-1 sequence to all 12 buyers from inside the same tab</p>
+<p style="margin:0 0 16px 0;">One workspace, one round of research, one launch. The free trial gets you the full thing for fourteen days.</p>
+<p style="margin:0;">— the Logistics Intel team</p>`,
+      "from a search bar to a campaign in 20 minutes",
+      "What used to take a sales team five days.",
+      undefined,
+      "Try it free for 14 days",
+      "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_3_velocity",
     ),
   },
   {
-    id: "lit_marketing_forwarder_4_breakup",
-    name: "Forwarder Email 4 · Useful or Not a Fit",
+    id: "lit_marketing_forwarder_4_quiet_close",
+    name: "Forwarder Email 4 · Quiet Close",
     audience: "small_forwarder",
     stepNumber: 4,
-    subject: "Closing the loop — last one",
-    previewText: "If the timing's off I'll back off.",
-    tokensUsed: ["{{first_name}}", "{{company_name}}", "{{top_lane}}", "{{sender_name}}"],
-    description: "Breakup email — closes the loop with a clean ask.",
+    subject: "one last note",
+    previewText: "If the shipper feed isn't useful, that's a fair answer.",
+    tokensUsed: ["{{first_name}}"],
+    description: "Day +14 final touch. Short, no image, soft close.",
     html: wrapBrokerEmail(
-      `<p style="margin:0 0 16px 0;">Hi {{first_name}},</p>
-<p style="margin:0 0 16px 0;">Not going to keep landing in your inbox if the timing isn't there.</p>
-<p style="margin:0 0 16px 0;">For what it's worth: the read I'd really want you to see is the cadence-drift signal on {{company_name}}'s {{top_lane}} shippers — that one read alone has been worth catching BCOs ~30 days before their incumbent forwarder loses them. Whether you'd do anything about it with us is a separate question.</p>
-<p style="margin:0 0 16px 0;">If next quarter makes more sense, ping me. Otherwise — good selling.</p>
-<p style="margin:0;">— {{sender_name}}</p>`,
-      "Closing the loop — last one",
-      "If the timing's off I'll back off.",
+      `<p style="margin:0 0 16px 0;">{{first_name}}, last note from us.</p>
+<p style="margin:0 0 16px 0;">If the shipper feed isn't useful, that's a fair answer and we won't keep pinging. The trial is fourteen days, no card, no auto-renew. If you'd like to see it on your own top three lanes, it's right here.</p>
+<p style="margin:0 0 16px 0;">Either way — appreciate you reading this far.</p>
+<p style="margin:0;">— the Logistics Intel team</p>`,
+      "one last note",
+      "If the shipper feed isn't useful, that's a fair answer.",
       undefined,
-      "Send the lane snapshot",
+      "Start your 14-day free trial",
+      "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_4_quiet_close",
     ),
   },
 ];
