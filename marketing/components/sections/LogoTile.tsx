@@ -1,27 +1,35 @@
+import { LogoImage } from "./LogoImage.client";
+
 /**
- * Brand logo tile — used on the /companies hub and the /companies/[slug]
- * profile page. Two image sources:
+ * Brand logo tile — used on /companies, money pages (via ProofStrip),
+ * and anywhere else we render a company mark. Two image sources, in
+ * priority:
  *
- *   1. logo.dev — sharp brand logos (256x256 PNGs); requires a free token.
- *      Set NEXT_PUBLIC_LOGO_DEV_TOKEN in Vercel and we'll prefer this.
- *   2. Google's favicon CDN — fallback that works without a token. Lower
- *      quality but free + no signup.
+ *   1. logo.dev — sharp brand logos; requires NEXT_PUBLIC_LOGO_DEV_KEY
+ *      (or NEXT_PUBLIC_LOGO_DEV_TOKEN / VITE_LOGO_DEV_TOKEN).
+ *   2. Google's favicon CDN — free fallback used when logo.dev fails
+ *      (e.g. key revoked, referrer restriction, plan limits). The
+ *      fallback swap happens client-side via the LogoImage client
+ *      component's onError handler.
  *
  * Falls back to a two-letter initials monogram when no domain is known.
+ *
+ * Kept as a Server Component (the client subtree is just the <img>);
+ * adding "use client" to LogoTile itself broke /companies/[slug]
+ * prerendering with a minified TypeError during static generation.
  */
 
-// Read whichever env-var name the deployment uses. Historical names in
-// Vercel: NEXT_PUBLIC_LOGO_DEV_KEY (current), VITE_LOGO_DEV_TOKEN (legacy
-// pre-Next.js Vite frontend), NEXT_PUBLIC_LOGO_DEV_TOKEN (docs default).
 const LOGO_DEV_TOKEN =
   process.env.NEXT_PUBLIC_LOGO_DEV_TOKEN ||
   process.env.NEXT_PUBLIC_LOGO_DEV_KEY ||
   process.env.VITE_LOGO_DEV_TOKEN;
 
-function logoUrl(domain: string, size: number): string {
-  if (LOGO_DEV_TOKEN) {
-    return `https://img.logo.dev/${domain}?token=${LOGO_DEV_TOKEN}&size=${size * 2}&format=png&retina=true`;
-  }
+function logoDevUrl(domain: string, size: number): string | null {
+  if (!LOGO_DEV_TOKEN) return null;
+  return `https://img.logo.dev/${domain}?token=${LOGO_DEV_TOKEN}&size=${size * 2}&format=png&retina=true`;
+}
+
+function faviconUrl(domain: string, size: number): string {
   // Direct gstatic URL skips the google.com/s2 redirect — saves a hop.
   return `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${domain}&size=${size * 2}`;
 }
@@ -66,19 +74,18 @@ export function LogoTile({
     );
   }
 
+  const fallback = faviconUrl(domain, px);
+  const primary = logoDevUrl(domain, px) ?? fallback;
+
   return (
     <div
       className={`flex shrink-0 items-center justify-center overflow-hidden border border-ink-100 bg-white ${cls}`}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={logoUrl(domain, px)}
+      <LogoImage
+        primarySrc={primary}
+        fallbackSrc={fallback}
         alt={`${name} logo`}
-        width={px}
-        height={px}
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        className="h-[80%] w-[80%] object-contain"
+        px={px}
       />
     </div>
   );

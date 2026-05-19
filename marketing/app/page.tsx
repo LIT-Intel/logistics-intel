@@ -8,6 +8,7 @@ import { ArrowRight, Calendar, CheckCircle2, MapPin, RefreshCcw, ShieldCheck, ty
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import { HeroSearchDemo } from "@/components/sections/HeroSearchDemo";
 import { LeadMagnetHero } from "@/components/lead-magnet/LeadMagnetHero";
+import { StickyCTABar } from "@/components/lead-magnet/StickyCTABar";
 import { CompanyIntelMock } from "@/components/sections/CompanyIntelMock";
 import { PulseBriefMock } from "@/components/sections/PulseBriefMock";
 import { ContactDiscoveryMock } from "@/components/sections/ContactDiscoveryMock";
@@ -88,6 +89,7 @@ export default async function HomePage() {
 
   return (
     <>
+      <StickyCTABar source="home-sticky" hideOnVisibleSelector="#home-sticky-end" />
       <Nav />
       <main>
         <Hero hero={hero} />
@@ -111,6 +113,9 @@ export default async function HomePage() {
         <ContactDiscoveryShowcase />
         <SequenceBuilderShowcase />
         <ProblemSection />
+        {/* End-of-middle-band marker — when this scrolls into view the
+            sticky CTA bar slides away (per home-page glide spec). */}
+        <div id="home-sticky-end" aria-hidden className="h-px" />
         <SignalToPipelineSection />
       </main>
       <Footer />
