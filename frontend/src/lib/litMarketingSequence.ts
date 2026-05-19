@@ -120,6 +120,15 @@ export function wrapV7(opts: {
   // 14-touch sequence callers that don't supply these.
   headline?: string;
   bullets?: string[];
+  // Optional closing paragraph that renders BETWEEN bullets and the
+  // secondary CTA. Use when the email reads: "...here's what you'll
+  // see:  ● ● ● ●  And that's how this lands for your team." vs the
+  // simpler "body then bullets then CTA" flow.
+  bodyAfterBullets?: string;
+  // Optional signoff that renders BELOW the secondary CTA and ABOVE the
+  // hairline divider. Multi-line OK (use <br/>). Default: no signoff
+  // (legacy templates put it inline in bodyHtml).
+  signoff?: string;
   resourceCard?: {
     companyName: string;
     teu12m: string;
@@ -139,6 +148,8 @@ export function wrapV7(opts: {
     proTipHtml,
     headline,
     bullets,
+    bodyAfterBullets,
+    signoff,
     resourceCard,
   } = opts;
 
@@ -191,8 +202,22 @@ export function wrapV7(opts: {
           .join("")}</td></tr>`
       : "";
 
+  // ROW 3.5 — body-after-bullets (conditional). Closing paragraph that
+  // bridges the bullets and the secondary CTA. Same typographic treatment
+  // as the main body so the reader doesn't perceive a section break.
+  const bodyAfterBulletsRow = bodyAfterBullets
+    ? `<tr><td class="lit-pad-x" style="padding:8px 32px 0 32px;font-family:${_MKT_FONT};font-size:15px;line-height:1.65;color:${_MKT_COLOR.text};text-align:left;">${bodyAfterBullets}</td></tr>`
+    : "";
+
   // ROW 4 — secondary CTA (cyan outline pill).
-  const secondaryCtaRow = `<tr><td class="lit-pad-x" style="padding:16px 32px 24px 32px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td valign="middle" style="background-color:#FFFFFF;border:2px solid ${CYAN};border-radius:10px;mso-padding-alt:12px 22px;"><a class="lit-cta-secondary" href="${ctaUrl}" target="_blank" style="display:inline-block;padding:12px 22px;font-family:${_MKT_FONT};font-size:14px;font-weight:600;color:${HERO_BG};text-decoration:none;border-radius:10px;letter-spacing:0.01em;line-height:1;">${ctaText} &rarr;</a></td></tr></table></td></tr>`;
+  const secondaryCtaRow = `<tr><td class="lit-pad-x" style="padding:16px 32px 16px 32px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td valign="middle" style="background-color:#FFFFFF;border:2px solid ${CYAN};border-radius:10px;mso-padding-alt:12px 22px;"><a class="lit-cta-secondary" href="${ctaUrl}" target="_blank" style="display:inline-block;padding:12px 22px;font-family:${_MKT_FONT};font-size:14px;font-weight:600;color:${HERO_BG};text-decoration:none;border-radius:10px;letter-spacing:0.01em;line-height:1;">${ctaText} &rarr;</a></td></tr></table></td></tr>`;
+
+  // ROW 4.5 — signoff (conditional). Below the CTA, above the divider.
+  // Multi-line supported via <br/>. Renders as muted text so it reads
+  // like a closing nod, not another CTA.
+  const signoffRow = signoff
+    ? `<tr><td class="lit-pad-x" style="padding:0 32px 24px 32px;font-family:${_MKT_FONT};font-size:14px;line-height:1.5;color:${_MKT_COLOR.textSubtle};text-align:left;">${signoff}</td></tr>`
+    : "";
 
   // ROW 5 — resource card (conditional). Sky-50 tinted outer; white inner
   // card with stats; amber trigger row; right-side caption.
@@ -218,7 +243,7 @@ export function wrapV7(opts: {
   // [data-ogsc] = Outlook.com dark-mode selector. [data-ogsb] is the body.
   const mobileStyle = `@media only screen and (max-width:600px){.lit-shell{width:100% !important;max-width:100% !important;border-radius:0 !important;}.lit-pad-x{padding-left:18px !important;padding-right:18px !important;}.lit-hero-keep-dark{padding:24px 22px 28px 22px !important;}.lit-h1{font-size:28px !important;}.lit-cta-hero,.lit-cta-secondary{display:block !important;width:100% !important;text-align:center !important;box-sizing:border-box !important;}.lit-rc-left,.lit-rc-right{display:block !important;width:100% !important;padding-right:0 !important;padding-bottom:12px !important;}}@media (prefers-color-scheme:dark){.lit-hero-keep-dark{background-color:#0B1220 !important;background-image:linear-gradient(#0B1220,#0B1220) !important;}.lit-hero-text-keep-light,.lit-hero-text-keep-light *{color:#FFFFFF !important;}}[data-ogsc] .lit-hero-keep-dark{background-color:#0B1220 !important;}[data-ogsc] .lit-hero-text-keep-light,[data-ogsc] .lit-hero-text-keep-light *{color:#FFFFFF !important;}u + .body .lit-hero-keep-dark{background-color:#0B1220 !important;}u + .body .lit-hero-text-keep-light{color:#FFFFFF !important;}a{text-decoration:none;}img{-ms-interpolation-mode:bicubic;border:0;line-height:100%;outline:none;text-decoration:none;}`;
 
-  return `<!DOCTYPE html><html lang="en" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="x-apple-disable-message-reformatting" /><meta name="color-scheme" content="light only" /><meta name="supported-color-schemes" content="light only" /><title>${subjectLine}</title><style>${mobileStyle}</style><!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]--></head><body style="margin:0;padding:0;background-color:${_MKT_COLOR.pageBg};color:${_MKT_COLOR.text};font-family:${_MKT_FONT};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">${previewBlock}<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="${_MKT_COLOR.pageBg}" style="background-color:${_MKT_COLOR.pageBg};border-collapse:collapse;"><tr><td align="center" valign="top" style="padding:16px 12px 48px 12px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="lit-shell" bgcolor="${_MKT_COLOR.bg}" style="max-width:600px;width:100%;background-color:${_MKT_COLOR.bg};border-radius:16px;border-collapse:separate;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,0.04),0 2px 12px rgba(15,23,42,0.05);">${heroBlock}${bodyRow}${bulletsRow}${secondaryCtaRow}${resourceRow}${dividerRow}${footerRow}</table></td></tr></table></body></html>`;
+  return `<!DOCTYPE html><html lang="en" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="x-apple-disable-message-reformatting" /><meta name="color-scheme" content="light only" /><meta name="supported-color-schemes" content="light only" /><title>${subjectLine}</title><style>${mobileStyle}</style><!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]--></head><body style="margin:0;padding:0;background-color:${_MKT_COLOR.pageBg};color:${_MKT_COLOR.text};font-family:${_MKT_FONT};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">${previewBlock}<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="${_MKT_COLOR.pageBg}" style="background-color:${_MKT_COLOR.pageBg};border-collapse:collapse;"><tr><td align="center" valign="top" style="padding:16px 12px 48px 12px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="lit-shell" bgcolor="${_MKT_COLOR.bg}" style="max-width:600px;width:100%;background-color:${_MKT_COLOR.bg};border-radius:16px;border-collapse:separate;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,0.04),0 2px 12px rgba(15,23,42,0.05);">${heroBlock}${bodyRow}${bulletsRow}${bodyAfterBulletsRow}${secondaryCtaRow}${signoffRow}${resourceRow}${dividerRow}${footerRow}</table></td></tr></table></body></html>`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
