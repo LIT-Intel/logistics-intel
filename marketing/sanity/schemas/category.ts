@@ -22,5 +22,14 @@ export const category = defineType({
       validation: (R) => R.regex(/^#[0-9a-fA-F]{6}$/, { name: "hex color" }).warning(),
     }),
     defineField({ name: "seo", type: "seoFields" }),
+    // Reserved for Phase 2 — named icons on the `ExploreMoreTopics`
+    // tiles. Left optional + unused in the MVP redesign; added now to
+    // avoid a second schema migration when Phase 2 lands.
+    defineField({
+      name: "iconSlug",
+      title: "Icon slug (reserved for Phase 2)",
+      type: "string",
+      description: "Reserved — not yet rendered.",
+    }),
   ],
 });
