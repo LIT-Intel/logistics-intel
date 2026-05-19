@@ -54,25 +54,25 @@ export interface LitMarketingTouch {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// v8 design tokens — warm-paper LIT brand. Matches the weekly digest email
-// aesthetic founder approved on commit ad756c45. Replaces the dark-slate v7
-// hero band, which did not represent the LIT brand well.
+// v8 design tokens — soft-white LIT brand. Founder rejected v7's dark slate
+// hero band and v8a's warm-paper background (logo didn't blend with cream).
+// This is v8b: clean off-white outer page, pure-white shell so the logo
+// reads cleanly on the same surface its PNG was authored for.
 //
 // Palette:
-//   Outer page bg     #F1F0EC  warm paper
-//   Shell bg          #FFFBF6  warm off-white (NOT sterile white)
-//   Card / hero block #FFFFFF  on warm shell, with layered shadows
-//   Brand accent      #00F0FF  neon cyan (used as a thin 2px rule, never heavy)
-//   Navy primary      #0B1220  CTA bg + key headings
+//   Outer page bg     #F5F7FA  soft cool off-white (subtle separation from shell)
+//   Shell bg          #FFFFFF  pure clean white — logo blends, no fringe
+//   Brand accent      #00F0FF  neon cyan (2px rule under logo)
+//   Navy primary      #0B1220  CTA bg
 //   Body text         #0F172A  near-black
 //   Muted text        #475569  meta lines
 //   Faint text        #94A3B8  footer
 //   Hairline          #E2E8F0  divider
+//   Pro tip           #F0F9FF / #0369A1  light-blue cool tint, brand-consistent
 //
-// Hero treatment: top-of-shell row carries the LIT logo image (left-aligned)
-// followed by a 48px-wide cyan accent rule. No dark slate band, no separate
-// hero color block. The shell's warm off-white runs edge-to-edge so the
-// header reads as the same surface as the body.
+// Hero treatment: shell's clean white runs edge-to-edge from header to body.
+// LIT logo top-left, 48px cyan accent rule below — no dark band, no separate
+// color block.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const _MKT_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
@@ -85,11 +85,11 @@ const _MKT_COLOR = {
   ctaBg: "#0B1220",       // navy CTA — professional, brand-aligned
   ctaText: "#FFFFFF",
   ctaAccent: "#00F0FF",   // cyan underline accent on CTA
-  bg: "#FFFBF6",          // warm off-white shell
-  pageBg: "#F1F0EC",      // warm paper outer
-  tipBg: "#FFFBEB",       // amber-50 — warm pro tip, not cold blue
-  tipBorder: "#FDE68A",   // amber-300
-  tipLabel: "#92400E",    // amber-800 for the "Pro tip" eyebrow
+  bg: "#FFFFFF",          // pure white shell — logo blends seamlessly
+  pageBg: "#F5F7FA",      // soft cool off-white outer
+  tipBg: "#F0F9FF",       // sky-50 — cool brand-consistent
+  tipBorder: "#BAE6FD",   // sky-200
+  tipLabel: "#0369A1",    // sky-700 for "Pro tip" eyebrow
   brandAccent: "#00F0FF", // cyan brand rule under header
 };
 
