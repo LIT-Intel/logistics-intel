@@ -538,8 +538,59 @@ export function asOutreachTemplate(t: CampaignEmailTemplate): {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 14-touch sequence adapter — re-exported from litMarketingSequence.ts
+// LIT Marketing sequence builder — defined here (not in litMarketingSequence.ts)
+// because it needs to read freightBrokerTemplates / smallForwarderTemplates
+// above. Putting it here keeps the import direction one-way:
+// campaignEmailTemplates → litMarketingSequence (for wrapV7). The reverse
+// direction would create a circular import that browser ESM can't resolve.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { applyLitMarketingSequenceToBuilder } from "./litMarketingSequence";
 export type { LitMarketingTouch, LitTouchKind, LitBuilderStep } from "./litMarketingSequence";
+import type { LitAudience, LitBuilderStep } from "./litMarketingSequence";
+
+/**
+ * Convert the LIT Marketing 4-email sequence into BuilderStep-compatible
+ * objects for CampaignBuilder. Picking the broker play seeds B1-B4; picking
+ * the forwarder play seeds F1-F4. Email-only cadence over 14 days:
+ *   Day 1  — intro (Email 1)
+ *   Day 4  — proof (Email 2)
+ *   Day 8  — use-case (Email 3)
+ *   Day 14 — reply-ask (Email 4)
+ */
+export function applyLitMarketingSequenceToBuilder(
+  resolveHtml: (raw: string) => string,
+  audience: LitAudience = "broker",
+): LitBuilderStep[] {
+  function uid(): string {
+    if (
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+    ) {
+      return crypto.randomUUID();
+    }
+    return `step_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  const templates =
+    audience === "forwarder" ? smallForwarderTemplates : freightBrokerTemplates;
+
+  // Delay-days per step: step 1 = 0 (Day 1), step 2 = +3 (Day 4),
+  // step 3 = +4 (Day 8), step 4 = +6 (Day 14). CampaignBuilder schedules
+  // each step relative to the previous step's send time.
+  const DELAY_DAYS = [0, 3, 4, 6];
+
+  return templates.map((t, i): LitBuilderStep => ({
+    localId: uid(),
+    kind: "email",
+    subject: t.subject,
+    body: resolveHtml(t.html),
+    title: t.name,
+    description: t.description,
+    waitDays: 0,
+    delayDays: DELAY_DAYS[i] ?? 0,
+    delayHours: 0,
+    delayMinutes: 0,
+    includeSignature: true,
+    expanded: i === 0,
+  }));
+}
