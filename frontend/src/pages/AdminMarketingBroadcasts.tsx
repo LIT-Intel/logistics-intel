@@ -14,7 +14,7 @@
  * Route guard: <RequireSuperAdmin> in App.jsx.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CalendarClock,
@@ -629,16 +629,10 @@ function ComposerDrawer({
 }
 
 function HtmlPreviewModal({ html, onClose }: { html: string; onClose: () => void }) {
-  const ref = useRef<HTMLIFrameElement | null>(null);
-  useEffect(() => {
-    const f = ref.current;
-    if (!f) return;
-    const doc = f.contentDocument;
-    if (!doc) return;
-    doc.open();
-    doc.write(html || "<p style=\"color:#94a3b8;font-family:system-ui;padding:24px\">(empty)</p>");
-    doc.close();
-  }, [html]);
+  const srcDoc =
+    html && html.trim()
+      ? html
+      : "<p style=\"color:#94a3b8;font-family:system-ui;padding:24px\">(empty)</p>";
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4">
       <div className="flex h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -655,11 +649,17 @@ function HtmlPreviewModal({ html, onClose }: { html: string; onClose: () => void
             <X className="h-4 w-4" />
           </button>
         </header>
+        {/*
+          srcDoc renders inline HTML reliably across browsers without the
+          cross-origin trap that doc.write hits when sandbox="" strips
+          allow-same-origin. We sandbox to disable scripts/forms — this is
+          marketing HTML, not interactive code.
+        */}
         <iframe
-          ref={ref}
+          srcDoc={srcDoc}
           title="Broadcast HTML preview"
           className="h-full w-full flex-1 bg-white"
-          sandbox=""
+          sandbox="allow-same-origin"
         />
       </div>
     </div>

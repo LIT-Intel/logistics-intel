@@ -13,7 +13,16 @@
  */
 import { supabase } from "@/lib/supabase";
 
-const PROXY_BASE = "/api/admin/broadcasts";
+// The proxy lives on the marketing site (Next.js at logisticintel.com),
+// NOT in this Vite SPA. Hitting "/api/admin/broadcasts" from app.logisticintel.com
+// would return the SPA's index.html fallback and the JSON parse would
+// silently fail with a "200" status — hence the absolute base.
+const DEFAULT_MARKETING_BASE = "https://logisticintel.com";
+const MARKETING_API_BASE =
+  (import.meta as any)?.env?.VITE_MARKETING_API_BASE_URL?.toString().trim() ||
+  DEFAULT_MARKETING_BASE;
+
+const PROXY_BASE = `${MARKETING_API_BASE.replace(/\/$/, "")}/api/admin/broadcasts`;
 
 export type BroadcastStatus =
   | "draft"
