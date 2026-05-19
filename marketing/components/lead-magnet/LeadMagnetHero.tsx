@@ -82,7 +82,7 @@ export function LeadMagnetHero({
               required
               autoComplete="email"
               placeholder="you@company.com"
-              className="h-12 w-full min-w-0 flex-1 appearance-none rounded-lg border border-white/25 bg-slate-900/60 px-4 text-base text-white placeholder:text-white/60 focus:border-brand-cyan focus:bg-slate-900/80 focus:outline-none focus:ring-1 focus:ring-brand-cyan sm:text-sm"
+              className="h-12 w-full min-w-0 flex-1 appearance-none rounded-lg border-0 bg-white px-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-cyan sm:text-sm"
             />
             <button
               type="submit"

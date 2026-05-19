@@ -8,6 +8,11 @@ type Props = {
   /** Element whose visibility controls the bar — typically the hero form
    *  wrapper. When this element is in view, the bar stays hidden. */
   heroFormRef?: RefObject<HTMLElement>;
+  /** Same as heroFormRef but takes a CSS selector — for Server Components
+   *  that can't pass refs. Resolved with document.querySelector at mount.
+   *  Prefer this over the fallback sentinel which is position-based and
+   *  can show the bar on initial load if viewport height < sentinel top. */
+  heroFormSelector?: string;
   /** Optional: when this element scrolls INTO the viewport (e.g. the
    *  section right after the middle band — footer or final CTA), the
    *  sticky bar slides away. Used on the homepage to bound the sticky to
@@ -36,6 +41,7 @@ type Props = {
  */
 export function StickyCTABar({
   heroFormRef,
+  heroFormSelector,
   hideOnVisibleRef,
   hideOnVisibleSelector,
   source = "sticky-bar",
@@ -46,15 +52,20 @@ export function StickyCTABar({
   const { onSubmit, submitting } = useLeadMagnetForm({ source });
 
   useEffect(() => {
-    const target = heroFormRef?.current ?? fallbackSentinel.current;
+    const target =
+      heroFormRef?.current ??
+      (heroFormSelector
+        ? (document.querySelector(heroFormSelector) as HTMLElement | null)
+        : null) ??
+      fallbackSentinel.current;
     if (!target) return;
     const io = new IntersectionObserver(
       ([entry]) => setPastHero(!entry.isIntersecting),
-      { threshold: 0, rootMargin: "0px 0px -40% 0px" },
+      { threshold: 0, rootMargin: "0px" },
     );
     io.observe(target);
     return () => io.disconnect();
-  }, [heroFormRef]);
+  }, [heroFormRef, heroFormSelector]);
 
   useEffect(() => {
     const end =

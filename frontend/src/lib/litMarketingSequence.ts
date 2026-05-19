@@ -145,13 +145,36 @@ export function wrapV7(opts: {
   const HERO_BG = "#0B1220";
   const HERO_TEXT = "#FFFFFF";
   const CYAN = "#00F0FF";
-  const HERO_LOGO_URL = "https://app.logisticintel.com/logo_web_neon.png";
+  // Icon (not wordmark) — icon_glow_256.png already has its own dark-navy
+  // background with a subtle glow, so it stays readable even if the hero
+  // bg gets stripped by Gmail mobile / Outlook.com dark mode handling.
+  const HERO_LOGO_URL = "https://app.logisticintel.com/icon_glow_256.png";
   const heroHeadline = headline ?? subjectLine;
 
   const previewBlock = `<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:${_MKT_COLOR.bg};mso-hide:all;">${previewText}${"&nbsp;&#847;".repeat(60)}</div>`;
 
-  // ROW 1 — hero band (navy). Wordmark + display H1 + cyan filled CTA.
-  const heroBlock = `<tr><td class="lit-hero" bgcolor="${HERO_BG}" style="background-color:${HERO_BG};padding:32px 32px 36px 32px;"><img src="${HERO_LOGO_URL}" width="180" height="51" alt="Logistics Intel" style="display:block;width:180px;height:51px;border:0;outline:none;text-decoration:none;" /><div style="height:28px;line-height:28px;font-size:0;">&nbsp;</div><h1 class="lit-h1" style="margin:0 0 24px 0;font-family:${_MKT_FONT};font-size:36px;line-height:1.2;font-weight:700;color:${HERO_TEXT};letter-spacing:-0.015em;text-wrap:balance;">${heroHeadline}</h1><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td bgcolor="${CYAN}" valign="middle" style="background-color:${CYAN};border-radius:10px;mso-padding-alt:14px 24px;"><a class="lit-cta-hero" href="${ctaUrl}" target="_blank" style="display:inline-block;padding:14px 24px;font-family:${_MKT_FONT};font-size:14px;font-weight:600;color:${HERO_BG};text-decoration:none;border-radius:10px;letter-spacing:0.01em;line-height:1;">${ctaText} &rarr;</a></td></tr></table></td></tr>`;
+  // ROW 1 — hero band (navy). Bulletproof dark background:
+  //   1. bgcolor attribute + inline background-color (handles most clients)
+  //   2. Outlook VML <v:rect> fill (Outlook strips bg colors on td in certain
+  //      Word renderer paths — VML fills the cell with the right color)
+  //   3. Dark-mode-keep class so Gmail/Apple Mail dark mode don't invert it
+  //   4. background-image as a self-referential gradient (some clients
+  //      preserve background-image when they strip background-color)
+  //
+  // Print-to-PDF (Gmail's @media print stylesheet strips bg images AND
+  // colors) is unfixable from the email side. Recipients reading in their
+  // inbox will see the dark hero correctly.
+  const heroBlock = `<tr><td class="lit-hero-keep-dark" bgcolor="${HERO_BG}" background="${HERO_BG}" style="background-color:${HERO_BG};background-image:linear-gradient(${HERO_BG}, ${HERO_BG});padding:32px 32px 36px 32px;mso-line-height-rule:exactly;">
+<!--[if mso | IE]>
+<v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="mso-position-horizontal:left;position:absolute;left:0;top:0;width:600px;height:240px;z-index:-1;">
+  <v:fill type="solid" color="${HERO_BG}" />
+</v:rect>
+<![endif]-->
+<img src="${HERO_LOGO_URL}" width="56" height="56" alt="Logistics Intel" style="display:block;width:56px;height:56px;border:0;outline:none;text-decoration:none;border-radius:12px;" />
+<div style="height:24px;line-height:24px;font-size:0;">&nbsp;</div>
+<h1 class="lit-h1 lit-hero-text-keep-light" style="margin:0 0 24px 0;font-family:${_MKT_FONT};font-size:36px;line-height:1.2;font-weight:700;color:${HERO_TEXT};letter-spacing:-0.015em;text-wrap:balance;mso-line-height-rule:exactly;">${heroHeadline}</h1>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td bgcolor="${CYAN}" valign="middle" style="background-color:${CYAN};border-radius:10px;mso-padding-alt:14px 24px;"><a class="lit-cta-hero" href="${ctaUrl}" target="_blank" style="display:inline-block;padding:14px 24px;font-family:${_MKT_FONT};font-size:14px;font-weight:600;color:${HERO_BG};text-decoration:none;border-radius:10px;letter-spacing:0.01em;line-height:1;">${ctaText} &rarr;</a></td></tr></table>
+</td></tr>`;
 
   // ROW 2 — body content.
   const bodyRow = `<tr><td class="lit-pad-x" style="padding:28px 32px 8px 32px;font-family:${_MKT_FONT};font-size:15px;line-height:1.65;color:${_MKT_COLOR.text};text-align:left;">${bodyHtml}${proTipHtml ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate;margin:24px 0 0 0;width:100%;"><tr><td bgcolor="${_MKT_COLOR.tipBg}" style="background-color:${_MKT_COLOR.tipBg};border-radius:12px;padding:16px 20px;"><div style="font-family:${_MKT_FONT};font-size:11px;font-weight:700;color:${_MKT_COLOR.tipLabel};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Pro tip</div><div style="font-family:${_MKT_FONT};font-size:15px;line-height:1.55;color:${_MKT_COLOR.text};">${proTipHtml}</div></td></tr></table>` : ""}</td></tr>`;
@@ -189,7 +212,11 @@ export function wrapV7(opts: {
   // ROW 7 — footer.
   const footerRow = `<tr><td class="lit-pad-x" style="padding:18px 32px 26px 32px;font-family:${_MKT_FONT};font-size:12px;line-height:1.65;color:${_MKT_COLOR.textMuted};text-align:left;">Logistics Intel &middot; Atlanta, GA &middot; <a href="https://app.logisticintel.com/unsubscribe?token={{unsubscribe_token}}" style="color:${_MKT_COLOR.textMuted};text-decoration:underline;">unsubscribe</a></td></tr>`;
 
-  const mobileStyle = `@media only screen and (max-width:600px){.lit-shell{width:100% !important;max-width:100% !important;border-radius:0 !important;}.lit-pad-x{padding-left:18px !important;padding-right:18px !important;}.lit-hero{padding:24px 22px 28px 22px !important;}.lit-h1{font-size:28px !important;}.lit-cta-hero,.lit-cta-secondary{display:block !important;width:100% !important;text-align:center !important;box-sizing:border-box !important;}.lit-rc-left,.lit-rc-right{display:block !important;width:100% !important;padding-right:0 !important;padding-bottom:12px !important;}}a{text-decoration:none;}img{-ms-interpolation-mode:bicubic;border:0;line-height:100%;outline:none;text-decoration:none;}`;
+  // Mobile + dark-mode-keep CSS. The dark-mode rules force the hero band
+  // to STAY dark in Gmail / Apple Mail / Outlook.com auto-dark-mode
+  // (which would otherwise invert it to light, leaving white text on white).
+  // [data-ogsc] = Outlook.com dark-mode selector. [data-ogsb] is the body.
+  const mobileStyle = `@media only screen and (max-width:600px){.lit-shell{width:100% !important;max-width:100% !important;border-radius:0 !important;}.lit-pad-x{padding-left:18px !important;padding-right:18px !important;}.lit-hero-keep-dark{padding:24px 22px 28px 22px !important;}.lit-h1{font-size:28px !important;}.lit-cta-hero,.lit-cta-secondary{display:block !important;width:100% !important;text-align:center !important;box-sizing:border-box !important;}.lit-rc-left,.lit-rc-right{display:block !important;width:100% !important;padding-right:0 !important;padding-bottom:12px !important;}}@media (prefers-color-scheme:dark){.lit-hero-keep-dark{background-color:#0B1220 !important;background-image:linear-gradient(#0B1220,#0B1220) !important;}.lit-hero-text-keep-light,.lit-hero-text-keep-light *{color:#FFFFFF !important;}}[data-ogsc] .lit-hero-keep-dark{background-color:#0B1220 !important;}[data-ogsc] .lit-hero-text-keep-light,[data-ogsc] .lit-hero-text-keep-light *{color:#FFFFFF !important;}u + .body .lit-hero-keep-dark{background-color:#0B1220 !important;}u + .body .lit-hero-text-keep-light{color:#FFFFFF !important;}a{text-decoration:none;}img{-ms-interpolation-mode:bicubic;border:0;line-height:100%;outline:none;text-decoration:none;}`;
 
   return `<!DOCTYPE html><html lang="en" xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="x-apple-disable-message-reformatting" /><meta name="color-scheme" content="light only" /><meta name="supported-color-schemes" content="light only" /><title>${subjectLine}</title><style>${mobileStyle}</style><!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]--></head><body style="margin:0;padding:0;background-color:${_MKT_COLOR.pageBg};color:${_MKT_COLOR.text};font-family:${_MKT_FONT};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">${previewBlock}<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="${_MKT_COLOR.pageBg}" style="background-color:${_MKT_COLOR.pageBg};border-collapse:collapse;"><tr><td align="center" valign="top" style="padding:16px 12px 48px 12px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="lit-shell" bgcolor="${_MKT_COLOR.bg}" style="max-width:600px;width:100%;background-color:${_MKT_COLOR.bg};border-radius:16px;border-collapse:separate;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,0.04),0 2px 12px rgba(15,23,42,0.05);">${heroBlock}${bodyRow}${bulletsRow}${secondaryCtaRow}${resourceRow}${dividerRow}${footerRow}</table></td></tr></table></body></html>`;
 }
