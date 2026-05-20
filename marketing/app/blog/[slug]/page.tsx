@@ -10,9 +10,12 @@ import { ArticleHeader } from "@/components/sections/ArticleHeader";
 import { InArticleDemoCta } from "@/components/sections/InArticleDemoCta";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { SocialShare } from "@/components/sections/SocialShare";
+import { ArticleSidenav } from "@/components/sections/ArticleSidenav.client";
+import { AuthorBioCard } from "@/components/sections/AuthorBioCard";
 import { howToFor } from "@/lib/blog/howToConfig";
 import { buildMetadata, siteUrl } from "@/lib/seo";
 import { imgUrl } from "@/lib/sanityImage";
+import { portableTextToc } from "@/lib/portableText";
 
 export const revalidate = 600;
 
@@ -87,6 +90,12 @@ export default async function BlogPostPage({
   const bodyTop = body.slice(0, splitIdx);
   const bodyRest = body.slice(splitIdx);
 
+  // Build the sidenav TOC from H2 headings in the body. Sub-H3s are
+  // omitted to keep the rail clean; posts with no H2s collapse the
+  // rail (the sidenav itself short-circuits when the list is empty).
+  const toc = portableTextToc(body, ["h2"]);
+  const articleUrl = siteUrl(`/blog/${params.slug}`);
+
   return (
     <PageShell>
       <BreadcrumbBar
@@ -115,97 +124,64 @@ export default async function BlogPostPage({
           </div>
         )}
 
-        {bodyTop.length > 0 && <ProseShell value={bodyTop} />}
-
-        <InArticleDemoCta />
-
-        {bodyRest.length > 0 && <ProseShell value={bodyRest} />}
-
-        {/* Author bio card — keeps the E-E-A-T signal at the foot of
-            every post. Avatar + name + role + 2-line bio + social links;
-            all fields already exist on the Sanity `author` document. */}
-        {author?.name && (
-          <section className="px-5 sm:px-8 py-8">
-            <div className="mx-auto flex max-w-[760px] flex-col gap-4 rounded-2xl border border-ink-100 bg-white p-6 sm:flex-row sm:items-start">
-              {(() => {
-                const avatarUrl = imgUrl(author.avatar, { width: 128 });
-                return avatarUrl ? (
-                  <Image
-                    src={avatarUrl}
-                    alt={author.name}
-                    width={64}
-                    height={64}
-                    className="h-16 w-16 rounded-full border border-ink-100 object-cover"
-                  />
-                ) : (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-blue text-[20px] font-semibold text-white">
-                    {author.name?.[0] || "?"}
-                  </div>
-                );
-              })()}
-              <div className="flex-1">
-                <div className="font-display text-[16px] font-semibold text-ink-900">
-                  {author.name}
-                </div>
-                {author.role && (
-                  <div className="font-body mt-0.5 text-[13px] text-ink-500">
-                    {author.role}
-                  </div>
-                )}
-                {author.bio && (
-                  <p className="font-body mt-2 text-[14px] leading-relaxed text-ink-700">
-                    {author.bio}
-                  </p>
-                )}
-                {author.socialLinks && (
-                  <div className="font-display mt-3 flex flex-wrap items-center gap-3 text-[12.5px] font-semibold text-brand-blue-700">
-                    {author.socialLinks.twitter && (
-                      <a
-                        href={author.socialLinks.twitter}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-brand-blue"
-                      >
-                        Twitter
-                      </a>
-                    )}
-                    {author.socialLinks.linkedin && (
-                      <a
-                        href={author.socialLinks.linkedin}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-brand-blue"
-                      >
-                        LinkedIn
-                      </a>
-                    )}
-                    {author.socialLinks.website && (
-                      <a
-                        href={author.socialLinks.website}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-brand-blue"
-                      >
-                        Website
-                      </a>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* Bottom-of-article share row — keep so readers can share
-            without scrolling back up. */}
-        <section className="px-5 sm:px-8 py-8">
-          <div className="mx-auto max-w-[760px] border-t border-ink-100 pt-6">
-            <SocialShare
-              url={siteUrl(`/blog/${params.slug}`)}
-              title={post.title}
+        {/* Two-column article layout — 240px sidenav (sticky) + 760px
+            content. Collapses to one column ≤980px where the sidenav
+            becomes a styled card above the body. */}
+        <div className="article-layout">
+          {toc.length > 0 ? (
+            <ArticleSidenav
+              items={toc}
+              shareUrl={articleUrl}
+              shareTitle={post.title}
             />
+          ) : (
+            <div aria-hidden />
+          )}
+
+          <div className="article-content min-w-0">
+            {bodyTop.length > 0 && (
+              <div className="prose-segment">
+                <ProseShell value={bodyTop} />
+              </div>
+            )}
+
+            <InArticleDemoCta />
+
+            {bodyRest.length > 0 && (
+              <div className="prose-segment">
+                <ProseShell value={bodyRest} />
+              </div>
+            )}
+
+            {/* Author bio card — keeps the E-E-A-T signal at the foot of
+                every post. Avatar + name + role + bio + social links; all
+                fields already exist on the Sanity `author` document. The
+                cyan→blue→violet top stripe is the ONE permitted cyan
+                touch on a light-bg surface (decorative stripe, not
+                text). */}
+            {author?.name && (
+              <section className="py-10">
+                <AuthorBioCard
+                  author={{
+                    name: author.name,
+                    role: author.role,
+                    bio: author.bio,
+                    avatarUrl: imgUrl(author.avatar, { width: 320 }) || null,
+                    socialLinks: author.socialLinks,
+                  }}
+                />
+              </section>
+            )}
+
+            {/* Bottom-of-article share row — keep so readers can share
+                without scrolling back up. */}
+            <section className="py-6">
+              <div className="border-t border-ink-100 pt-6">
+                <SocialShare url={articleUrl} title={post.title} />
+              </div>
+            </section>
           </div>
-        </section>
+        </div>
       </article>
 
       <CtaBanner />

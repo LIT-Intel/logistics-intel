@@ -14,6 +14,10 @@ import { buildMetadata, siteUrl } from "@/lib/seo";
 import { StickyCTABar } from "@/components/lead-magnet/StickyCTABar";
 import { ExitIntentModal } from "@/components/lead-magnet/ExitIntentModal";
 import { HubFinalCtaForm } from "@/app/_shared/HubFinalCtaForm";
+import { ProductShowcase } from "@/components/sections/ProductShowcase";
+import { StepsRow } from "@/components/sections/StepsRow";
+import { QuoteGrid } from "@/components/sections/QuoteGrid";
+import { fetchTeamAuthors } from "@/lib/team-authors";
 
 export const revalidate = 3600; // ISR — comparisons change at most weekly
 
@@ -82,8 +86,11 @@ const CATEGORIES: { label: string; description: string; slugs: string[] }[] = [
 ];
 
 export default async function VsHubPage() {
-  const items =
-    (await sanityClient.fetch<Comparison[]>(VS_HUB_QUERY).catch(() => [])) || [];
+  const [rawItems, team] = await Promise.all([
+    sanityClient.fetch<Comparison[]>(VS_HUB_QUERY).catch(() => [] as Comparison[]),
+    fetchTeamAuthors(),
+  ]);
+  const items = rawItems || [];
 
   // Build a slug → comparison map for O(1) lookup, then bucket. Anything
   // unmapped falls into "Other" so we don't lose comparisons.
@@ -119,6 +126,20 @@ export default async function VsHubPage() {
         subtitle="Horizontal sales tools miss freight. Trade-data tools stop at the export. See exactly where LIT fits — and where it leaves the alternatives behind. Every page is honest, kept current, and lists when each tool wins."
         primaryCta={{ label: "Book a demo", href: "/demo", icon: "calendar" }}
         secondaryCta={{ label: "Start free", href: "https://app.logisticintel.com/signup" }}
+      />
+
+      {/* Glossy injection #1 — dark product showcase. Anchors the
+          comparison narrative on what's actually inside the workspace. */}
+      <ProductShowcase
+        eyebrow="What you get inside LIT"
+        heading="Shipment data + verified contacts — joined in one screen."
+        lede="Other tools give you one half: trade data OR contacts. LIT joins them so the workflow goes from search → meeting without leaving the platform."
+        urlBarText="app.logisticintel.com / pulse / briefing"
+        callouts={[
+          { kpi: "120M+", label: "BOL records" },
+          { kpi: "Joined", label: "Shipments + contacts" },
+          { kpi: "1 stack", label: "Replaces 3 tools" },
+        ]}
       />
 
       <Section bottom="lg" width="container">
@@ -193,6 +214,75 @@ export default async function VsHubPage() {
           </div>
         )}
       </Section>
+
+      {/* Glossy injection #2 — "How switching works." Trial → pilot →
+          consolidate. The three-step pattern customers actually walk
+          through when they swap an existing tool for LIT. */}
+      <StepsRow
+        eyebrow="How switching works"
+        heading="Trial → pilot → consolidate."
+        lede="No rip-and-replace. Run LIT alongside your current stack for two weeks, then keep what works."
+        steps={[
+          {
+            eyebrow: "01 · Trial",
+            title: "10 free searches + 10 contacts",
+            body: "No credit card. Run real account searches and pull verified contacts. See if the data lines up with your lanes.",
+            meta: "Day 0 · Free forever tier",
+          },
+          {
+            eyebrow: "02 · Pilot",
+            title: "Run alongside your current stack",
+            body: "Two-week paid pilot on your top 10 target accounts. Compare LIT's results to your existing list vendor head-to-head.",
+            meta: "Week 1–2 · Side-by-side",
+          },
+          {
+            eyebrow: "03 · Consolidate",
+            title: "Cut the tools that lost",
+            body: "When LIT covers the workflow, customers cancel their old list vendor + BOL viewer + contact tool. One platform, one budget line.",
+            meta: "Day 30 · Stack reduced",
+          },
+        ]}
+      />
+
+      {/* Glossy injection #3 — LIT team perspective on why the product
+          exists vs each category of competitor. NOT customer testimonials. */}
+      <QuoteGrid
+        eyebrow="From the LIT team"
+        heading="Why we built LIT — from the team"
+        ariaLabel="LIT team perspective on building against existing alternatives"
+        quotes={[
+          {
+            text: "Horizontal sales tools — ZoomInfo, Apollo — stop at the export. They don't know who's actively shipping. We built LIT because freight teams kept reverse-engineering BOL filings to fill the gap, and they shouldn't have to.",
+            stats: [
+              { num: "524K", label: "Active shippers" },
+              { num: "Joined", label: "BOL + contacts" },
+            ],
+            name: team["gabriel-reyes"].name,
+            role: team["gabriel-reyes"].role,
+            avatarUrl: team["gabriel-reyes"].avatarUrl,
+          },
+          {
+            text: "Trade-data tools — ImportGenius, Panjiva — show you what shipped, but stop there. No contacts, no sequences, no pipeline. Reps end up exporting CSVs and rebuilding the workflow in another tool. LIT collapses that into one platform.",
+            stats: [
+              { num: "1 stack", label: "Not three" },
+              { num: "70%", label: "Less data prep" },
+            ],
+            name: team["jennifer-okafor"].name,
+            role: team["jennifer-okafor"].role,
+            avatarUrl: team["jennifer-okafor"].avatarUrl,
+          },
+          {
+            text: "Freight CRMs handle pipeline but not prospecting. We don't want to be everyone's CRM — we want to be the layer that feeds qualified, in-context opportunities INTO whatever CRM you already use. That's the integration story, not the replacement story.",
+            stats: [
+              { num: "API", label: "First-class" },
+              { num: "8 min", label: "To first meeting" },
+            ],
+            name: team["nikki-patel"].name,
+            role: team["nikki-patel"].role,
+            avatarUrl: team["nikki-patel"].avatarUrl,
+          },
+        ]}
+      />
 
       <CtaBanner
         eyebrow="Stop comparing — start booking freight"

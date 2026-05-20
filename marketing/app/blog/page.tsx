@@ -5,8 +5,12 @@ import { PageShell } from "@/components/sections/PageShell";
 import { FeaturedPostHero } from "@/components/sections/FeaturedPostHero";
 import { BlogGrid } from "@/components/sections/BlogGrid.client";
 import { ReportPromoBanner } from "@/components/sections/ReportPromoBanner";
-import { ShipperInsightsRow } from "@/components/sections/ShipperInsightsRow";
-import { ExploreMoreTopics } from "@/components/sections/ExploreMoreTopics";
+import { ShipperStrip } from "@/components/sections/ShipperStrip";
+import { TopicExplorer } from "@/components/sections/TopicExplorer";
+import { BlogTrendingGrid } from "@/components/sections/BlogTrendingGrid";
+import { BlogLatestSection } from "@/components/sections/BlogLatestSection";
+import { ReportCta } from "@/components/sections/ReportCta";
+import { NewsletterStrip } from "@/components/sections/NewsletterStrip";
 import { Section } from "@/components/sections/Section";
 import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { CtaBanner } from "@/components/sections/CtaBanner";
@@ -67,7 +71,18 @@ export default async function BlogIndexPage() {
   // Top row = first 3 cards at desktop. Sliced exactly so the
   // ReportPromoBanner inserts cleanly between row 1 and the rest.
   const firstRow = gridPosts.slice(0, 3);
-  const restRows = gridPosts.slice(3);
+  // The new section rhythm under the bracketed-chip grid:
+  //   Trending  (3-up)  → posts[3..6]
+  //   Report CTA        → static
+  //   Latest    (2+4)   → posts[6..12]
+  //   ShipperStrip      → real data
+  //   TopicExplorer     → categories
+  //   NewsletterStrip   → dark CTA
+  // Anything beyond index 12 falls back into the existing "Browse all
+  // stories" grid so nothing is dropped from the index.
+  const trendingPosts = gridPosts.slice(3, 6);
+  const latestPosts = gridPosts.slice(6, 12);
+  const overflowPosts = gridPosts.slice(12);
 
   return (
     <PageShell>
@@ -110,13 +125,32 @@ export default async function BlogIndexPage() {
           returns null and the page flows directly from row 1 → row 2+. */}
       <ReportPromoBanner />
 
-      {restRows.length > 0 && (
+      {trendingPosts.length > 0 && (
+        <BlogTrendingGrid posts={trendingPosts} />
+      )}
+
+      <ReportCta
+        eyebrow="2026 Trade Report"
+        heading="What 4.1B BOL records reveal about 2026 sourcing."
+        body="Tariff resets, port lane shifts, top-100 importer concentration, NVOCC consolidation — the full data picture in one downloadable brief."
+        ctaLabel="Get the report →"
+        ctaUrl="/resources/2026-trade-report"
+        reportTitle="2026 Trade Outlook"
+        reportSubtitle="LIT data · BOL graph · 12-month forecast"
+        reportTag="LIT Report"
+      />
+
+      {latestPosts.length > 0 && (
+        <BlogLatestSection posts={latestPosts} />
+      )}
+
+      {overflowPosts.length > 0 && (
         <Section top="md" bottom="lg">
           <div className="font-display mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-ink-500">
             Browse all stories
           </div>
           <BlogGrid
-            posts={restRows}
+            posts={overflowPosts}
             variant="trending"
             showFilter={false}
           />
@@ -124,14 +158,12 @@ export default async function BlogIndexPage() {
       )}
 
       {shippers.length > 0 && (
-        <Section top="md" bottom="md">
-          <ShipperInsightsRow companies={shippers} />
-        </Section>
+        <ShipperStrip companies={shippers} />
       )}
 
-      <Section top="md" bottom="lg">
-        <ExploreMoreTopics />
-      </Section>
+      <TopicExplorer heading="Explore by topic" />
+
+      <NewsletterStrip source="blog-newsletter" />
 
       <CtaBanner
         eyebrow="Stay in the loop"
