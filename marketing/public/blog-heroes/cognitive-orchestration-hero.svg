@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" role="img" aria-label="Six-layer AI operating stack for global trade in 2026 — visibility, intelligence, semantic intake, decision, execution, and governance layers stacked with the main problem flagged at each level">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1220"/>
+      <stop offset="60%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <radialGradient id="cyanGlow" cx="0.85" cy="0.2" r="0.5">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="violetGlow" cx="0.85" cy="0.95" r="0.6">
+      <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="layerFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(15,23,42,0.95)"/>
+      <stop offset="100%" stop-color="rgba(11,18,32,0.95)"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <circle cx="1020" cy="144" r="360" fill="url(#cyanGlow)"/>
+  <circle cx="1020" cy="684" r="420" fill="url(#violetGlow)"/>
+
+  <!-- Top-left brand badge -->
+  <g transform="translate(40,32)">
+    <rect width="130" height="28" rx="14" fill="rgba(0,240,255,0.14)" stroke="#00F0FF" stroke-width="1"/>
+    <path d="M 16 14 L 19 8 L 22 14 L 28 14 L 23 18 L 25 24 L 19 21 L 13 24 L 15 18 L 10 14 Z" fill="#00F0FF"/>
+    <text x="36" y="19" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#E0F2FE" letter-spacing="0.16em">TRADE AI · 2026</text>
+  </g>
+
+  <!-- Left: title block -->
+  <g transform="translate(40,168)">
+    <text font-family="Inter, system-ui, sans-serif" font-size="58" font-weight="800" fill="#F8FAFC" letter-spacing="-0.022em">
+      <tspan x="0" dy="0">Six layers of</tspan>
+      <tspan x="0" dy="68">decision velocity.</tspan>
+    </text>
+    <text x="0" y="190" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="500" fill="#94A3B8" letter-spacing="-0.005em">
+      <tspan x="0" dy="0">The cognitive stack global trade is rebuilding</tspan>
+      <tspan x="0" dy="32">around — from raw visibility to governed action.</tspan>
+    </text>
+
+    <!-- Outcome pill -->
+    <g transform="translate(0,256)">
+      <rect width="280" height="34" rx="17" fill="rgba(139,92,246,0.14)" stroke="#8B5CF6" stroke-width="1"/>
+      <circle cx="20" cy="17" r="4" fill="#A78BFA"/>
+      <text x="34" y="22" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#EDE9FE" letter-spacing="0.06em">DAYS TO MINUTES · LAYER BY LAYER</text>
+    </g>
+  </g>
+
+  <!-- Right: 6-layer stacked diagram, bottom (Visibility) → top (Governance) -->
+  <g transform="translate(660,80)" filter="url(#cardShadow)">
+    <!-- Layer 06: GOVERNANCE (top) -->
+    <rect x="0" y="0" width="500" height="86" rx="12" fill="url(#layerFill)" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+    <text x="22" y="32" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#FBBF24" letter-spacing="0.18em">06 · GOVERNANCE</text>
+    <text x="22" y="58" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Audit · policy · trust</text>
+    <text x="22" y="76" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#94A3B8">Every action explainable</text>
+    <circle cx="478" cy="32" r="4" fill="#FBBF24"/>
+
+    <!-- Layer 05: EXECUTION -->
+    <rect x="0" y="96" width="500" height="86" rx="12" fill="url(#layerFill)" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+    <text x="22" y="128" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#A78BFA" letter-spacing="0.18em">05 · EXECUTION</text>
+    <text x="22" y="154" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Outreach · booking · ops</text>
+    <text x="22" y="172" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#94A3B8">Sequences fire, lanes book</text>
+    <circle cx="478" cy="128" r="4" fill="#A78BFA"/>
+
+    <!-- Layer 04: DECISION -->
+    <rect x="0" y="192" width="500" height="86" rx="12" fill="url(#layerFill)" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+    <text x="22" y="224" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#60A5FA" letter-spacing="0.18em">04 · DECISION</text>
+    <text x="22" y="250" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Next best move</text>
+    <text x="22" y="268" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#94A3B8">Ranked plays per account</text>
+    <circle cx="478" cy="224" r="4" fill="#60A5FA"/>
+
+    <!-- Layer 03: SEMANTIC INTAKE -->
+    <rect x="0" y="288" width="500" height="86" rx="12" fill="url(#layerFill)" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+    <text x="22" y="320" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#34D399" letter-spacing="0.18em">03 · SEMANTIC INTAKE</text>
+    <text x="22" y="346" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Resolve · normalize · join</text>
+    <text x="22" y="364" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#94A3B8">Filings to entities to people</text>
+    <circle cx="478" cy="320" r="4" fill="#34D399"/>
+
+    <!-- Layer 02: INTELLIGENCE -->
+    <rect x="0" y="384" width="500" height="86" rx="12" fill="url(#layerFill)" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+    <text x="22" y="416" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#22D3EE" letter-spacing="0.18em">02 · INTELLIGENCE</text>
+    <text x="22" y="442" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Patterns · cohorts · signals</text>
+    <text x="22" y="460" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#94A3B8">Lane shifts surface in hours</text>
+    <circle cx="478" cy="416" r="4" fill="#22D3EE"/>
+
+    <!-- Layer 01: VISIBILITY (bottom) -->
+    <rect x="0" y="480" width="500" height="86" rx="12" fill="url(#layerFill)" stroke="rgba(0,240,255,0.4)" stroke-width="1.5"/>
+    <text x="22" y="512" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#00F0FF" letter-spacing="0.18em">01 · VISIBILITY</text>
+    <text x="22" y="538" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Raw filings · refreshed daily</text>
+    <text x="22" y="556" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#94A3B8">124M BOL · 524K importers</text>
+    <circle cx="478" cy="512" r="4" fill="#00F0FF"/>
+  </g>
+</svg>
