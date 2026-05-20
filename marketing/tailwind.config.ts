@@ -99,7 +99,7 @@ const config: Config = {
         // default Section width; `container` for wider product/data
         // sections; `container-narrow` and `prose` for long-form copy.
         content: "1120px",
-        container: "1240px",
+        container: "1360px",
         "container-narrow": "960px",
         prose: "780px",
       },

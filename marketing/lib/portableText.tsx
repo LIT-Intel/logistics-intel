@@ -9,21 +9,57 @@ import { urlFor } from "@/sanity/lib/client";
  * styled in the LIT brand voice (slate body, cyan accents on code,
  * dark Pulse-Coach-style callouts for premium hooks).
  */
+function textFromChildren(children: any): string {
+  if (!children) return "";
+  if (typeof children === "string") return children;
+  if (Array.isArray(children))
+    return children.map(textFromChildren).join("");
+  if (typeof children === "object" && "props" in children)
+    return textFromChildren(children.props?.children);
+  return "";
+}
+
+/**
+ * Slugify a heading's text content so the `ArticleSidenav` TOC can
+ * deep-link to it via `#id`. Kept identical to `portableTextToc()`
+ * below so the in-DOM `id` always matches what the sidenav emits.
+ */
+export function headingSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 const components: PortableTextComponents = {
   block: {
     normal: ({ children }) => (
       <p className="font-body my-5 text-[17px] leading-[1.7] text-ink-700">{children}</p>
     ),
-    h2: ({ children }) => (
-      <h2 className="font-display mt-12 mb-3 text-[28px] font-semibold leading-tight tracking-[-0.02em] text-ink-900">
-        {children}
-      </h2>
-    ),
-    h3: ({ children }) => (
-      <h3 className="font-display mt-9 mb-2 text-[22px] font-semibold leading-tight tracking-[-0.015em] text-ink-900">
-        {children}
-      </h3>
-    ),
+    h2: ({ children }) => {
+      const id = headingSlug(textFromChildren(children));
+      return (
+        <h2
+          id={id}
+          className="font-display mt-12 mb-3 scroll-mt-[100px] text-[28px] font-semibold leading-tight tracking-[-0.02em] text-ink-900"
+        >
+          {children}
+        </h2>
+      );
+    },
+    h3: ({ children }) => {
+      const id = headingSlug(textFromChildren(children));
+      return (
+        <h3
+          id={id}
+          className="font-display mt-9 mb-2 scroll-mt-[100px] text-[22px] font-semibold leading-tight tracking-[-0.015em] text-ink-900"
+        >
+          {children}
+        </h3>
+      );
+    },
     h4: ({ children }) => (
       <h4 className="font-display mt-7 mb-2 text-[18px] font-semibold text-ink-900">{children}</h4>
     ),
@@ -185,4 +221,31 @@ const components: PortableTextComponents = {
 export function ProseRenderer({ value }: { value: any }) {
   if (!value) return null;
   return <PortableText value={value} components={components} />;
+}
+
+/**
+ * Extract a TOC (id + label) list from a Portable Text body. Picks up
+ * `h2` blocks by default; pass `levels: ['h2', 'h3']` to include H3s.
+ * Kept in sync with the heading renderers above — both call
+ * `headingSlug()` so anchors always match.
+ */
+export function portableTextToc(
+  body: unknown,
+  levels: Array<"h2" | "h3"> = ["h2"],
+): Array<{ id: string; label: string }> {
+  if (!Array.isArray(body)) return [];
+  const out: Array<{ id: string; label: string }> = [];
+  for (const block of body as any[]) {
+    if (block?._type !== "block") continue;
+    if (!levels.includes(block.style)) continue;
+    const text = (block.children || [])
+      .map((c: any) => (typeof c?.text === "string" ? c.text : ""))
+      .join("")
+      .trim();
+    if (!text) continue;
+    const id = headingSlug(text);
+    if (!id) continue;
+    out.push({ id, label: text });
+  }
+  return out;
 }

@@ -14,6 +14,10 @@ import { LeadMagnetHero } from "@/components/lead-magnet/LeadMagnetHero";
 import { LiveProductPreview } from "@/components/lead-magnet/LiveProductPreview";
 import { ProofStrip } from "@/components/lead-magnet/ProofStrip";
 import { OutcomesBand } from "@/components/lead-magnet/OutcomesBand";
+import { ProductShowcase } from "@/components/sections/ProductShowcase";
+import { StepsRow } from "@/components/sections/StepsRow";
+import { QuoteGrid } from "@/components/sections/QuoteGrid";
+import { fetchTeamAuthors } from "@/lib/team-authors";
 import { buildMetadata } from "@/lib/seo";
 import { buildCollectionPage } from "@/lib/jsonLd";
 
@@ -82,13 +86,14 @@ function normalizeCustomerStory(s: any): Story {
 }
 
 export default async function CustomersPage() {
-  const [legacy, fresh] = await Promise.all([
+  const [legacy, fresh, team] = await Promise.all([
     sanityClient
       .fetch<any>(CUSTOMERS_INDEX_QUERY)
       .catch(() => ({ caseStudies: [], logos: [] })),
     sanityClient
       .fetch<any[]>(CUSTOMER_STORIES_INDEX_QUERY)
       .catch(() => []),
+    fetchTeamAuthors(),
   ]);
 
   const caseStudies: any[] = legacy?.caseStudies || [];
@@ -144,6 +149,20 @@ export default async function CustomersPage() {
 
       <ProofStrip />
 
+      {/* Glossy injection #1 — dark product showcase. Outbound-focused
+          callouts that match the customer-stories framing. */}
+      <ProductShowcase
+        eyebrow="Inside the workspace"
+        heading="Where outbound becomes outcomes."
+        lede="Saved searches, sequences, replies, and pipeline — joined to the shipment record. Reps stop tab-switching and start having conversations."
+        urlBarText="app.logisticintel.com / campaigns / outbound"
+        callouts={[
+          { kpi: "4.1×", label: "More first meetings" },
+          { kpi: "94%", label: "Email deliverability" },
+          { kpi: "70%", label: "Less time list-building" },
+        ]}
+      />
+
       {stories.length > 0 && (
         <section className="px-5 sm:px-8 py-20">
           <div className="mx-auto max-w-container">
@@ -164,6 +183,34 @@ export default async function CustomersPage() {
         </section>
       )}
 
+      {/* Glossy injection #2 — 3-step "How customers ramp." Day 0–3 →
+          Week 2–3 → Day 30, the canonical onboarding rhythm. */}
+      <StepsRow
+        eyebrow="How customers ramp"
+        heading="From signup to first meeting in days, not quarters."
+        lede="No 12-week onboarding plan. Every customer hits the same milestones — usually faster than they expected."
+        steps={[
+          {
+            eyebrow: "01 · Day 0–3",
+            title: "First booked meeting",
+            body: "Workspace + lane templates ship within an hour of signup. Average time to first qualified reply: under 72 hours.",
+            meta: "Day 0 · Workspace live",
+          },
+          {
+            eyebrow: "02 · Week 2–3",
+            title: "Full team activated",
+            body: "Onboarding loops in the whole revenue team — reps, SDRs, managers. 80% rep activation within 14 days is the target.",
+            meta: "Week 2 · 80% activation",
+          },
+          {
+            eyebrow: "03 · Day 30",
+            title: "Pipeline + stack consolidated",
+            body: "Old list vendors, BOL viewers, and contact tools get cut. Pipeline is measurable, predictable, and tied to lane activity.",
+            meta: "Day 30 · Tools consolidated",
+          },
+        ]}
+      />
+
       <OutcomesBand
         items={[
           {
@@ -180,6 +227,47 @@ export default async function CustomersPage() {
             num: "94%",
             label: "Email deliverability",
             body: "Validated across 4,200 outbound sends at a top-50 NVOCC. Hard bounce rate under 6%.",
+          },
+        ]}
+      />
+
+      {/* Glossy injection #3 — the LIT team voicing how each new customer
+          onboards. NOT customer testimonials. Heading per show-stopper
+          A: "How we onboard every customer." */}
+      <QuoteGrid
+        eyebrow="From the LIT team"
+        heading="How we onboard every customer"
+        ariaLabel="LIT team perspective on the customer onboarding rhythm"
+        quotes={[
+          {
+            text: "Every new customer gets a Day-3 milestone — first booked meeting from real BOL signal, not a list. We sit in the workspace with them. If that meeting doesn't happen, that's our problem to fix, not theirs.",
+            stats: [
+              { num: "Day 3", label: "First meeting" },
+              { num: "100%", label: "White-glove" },
+            ],
+            name: team["gabriel-reyes"].name,
+            role: team["gabriel-reyes"].role,
+            avatarUrl: team["gabriel-reyes"].avatarUrl,
+          },
+          {
+            text: "We treat onboarding the way we treat product — measured, instrumented, iterated. We know which playbook works for forwarders versus brokers because we ran the experiment, not because we guessed.",
+            stats: [
+              { num: "14 days", label: "Full team" },
+              { num: "80%", label: "Rep activation" },
+            ],
+            name: team["jennifer-okafor"].name,
+            role: team["jennifer-okafor"].role,
+            avatarUrl: team["jennifer-okafor"].avatarUrl,
+          },
+          {
+            text: "The single best onboarding signal is whether the customer cancels their old list vendor by Day 30. When they do, we know the platform earned the swap. When they don't, we go figure out what's missing.",
+            stats: [
+              { num: "Day 30", label: "Stack swap" },
+              { num: "94%", label: "Deliverability" },
+            ],
+            name: team["nikki-patel"].name,
+            role: team["nikki-patel"].role,
+            avatarUrl: team["nikki-patel"].avatarUrl,
           },
         ]}
       />

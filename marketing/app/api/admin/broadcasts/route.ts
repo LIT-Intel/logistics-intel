@@ -59,11 +59,14 @@ type ResendBroadcastResponse = {
 };
 
 export async function GET(req: NextRequest) {
+  const origin = req.headers.get("origin");
+  const reply = (b: unknown, s = 200) => json(b, s, origin);
+
   const auth = await requireAdmin(req);
-  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
+  if (!auth.ok) return reply({ ok: false, error: auth.error }, auth.status);
 
   const supa = serviceClient();
-  if (!supa) return json({ ok: false, error: "supabase_not_configured" }, 500);
+  if (!supa) return reply({ ok: false, error: "supabase_not_configured" }, 500);
 
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
@@ -74,9 +77,9 @@ export async function GET(req: NextRequest) {
       .select("*")
       .eq("id", id)
       .maybeSingle();
-    if (error) return json({ ok: false, error: error.message }, 500);
-    if (!data) return json({ ok: false, error: "not_found" }, 404);
-    return json({ ok: true, broadcast: data });
+    if (error) return reply({ ok: false, error: error.message }, 500);
+    if (!data) return reply({ ok: false, error: "not_found" }, 404);
+    return reply({ ok: true, broadcast: data });
   }
 
   const limit = Math.min(Number(url.searchParams.get("limit")) || 100, 500);
@@ -87,19 +90,22 @@ export async function GET(req: NextRequest) {
     )
     .order("created_at", { ascending: false })
     .limit(limit);
-  if (error) return json({ ok: false, error: error.message }, 500);
-  return json({ ok: true, broadcasts: data || [] });
+  if (error) return reply({ ok: false, error: error.message }, 500);
+  return reply({ ok: true, broadcasts: data || [] });
 }
 
 export async function POST(req: NextRequest) {
+  const origin = req.headers.get("origin");
+  const reply = (b: unknown, s = 200) => json(b, s, origin);
+
   const auth = await requireAdmin(req);
-  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
+  if (!auth.ok) return reply({ ok: false, error: auth.error }, auth.status);
 
   let body: BroadcastBody;
   try {
     body = (await req.json()) as BroadcastBody;
   } catch {
-    return json({ ok: false, error: "invalid_json" }, 400);
+    return reply({ ok: false, error: "invalid_json" }, 400);
   }
 
   const name = (body.name || "").trim();
@@ -112,16 +118,16 @@ export async function POST(req: NextRequest) {
   const audienceName = (body.audience_name || "").trim() || null;
   const scheduledAt = parseScheduledAt(body.scheduled_at);
 
-  if (!name) return json({ ok: false, error: "missing_name" }, 400);
-  if (!audience_id) return json({ ok: false, error: "missing_audience_id" }, 400);
-  if (!subject) return json({ ok: false, error: "missing_subject" }, 400);
-  if (!html.trim()) return json({ ok: false, error: "missing_html" }, 400);
+  if (!name) return reply({ ok: false, error: "missing_name" }, 400);
+  if (!audience_id) return reply({ ok: false, error: "missing_audience_id" }, 400);
+  if (!subject) return reply({ ok: false, error: "missing_subject" }, 400);
+  if (!html.trim()) return reply({ ok: false, error: "missing_html" }, 400);
 
   const supa = serviceClient();
-  if (!supa) return json({ ok: false, error: "supabase_not_configured" }, 500);
+  if (!supa) return reply({ ok: false, error: "supabase_not_configured" }, 500);
 
   const resendKey = process.env.RESEND_API_KEY;
-  if (!resendKey) return json({ ok: false, error: "resend_not_configured" }, 500);
+  if (!resendKey) return reply({ ok: false, error: "resend_not_configured" }, 500);
 
   // Build Resend broadcast payload. Resend's /broadcasts endpoint accepts:
   //   { name, audience_id, from, subject, html, reply_to?, preview_text?,
@@ -211,7 +217,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (resendError) {
-    return json(
+    return reply(
       {
         ok: false,
         error: resendError,
@@ -222,15 +228,48 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return json({ ok: true, broadcast: saved, resend: resendResp });
+  return reply({ ok: true, broadcast: saved, resend: resendResp });
 }
 
 // ───────────── helpers ─────────────
 
-function json(body: unknown, status = 200) {
+// app.logisticintel.com (LIT React app) calls this route cross-origin. We
+// only allow the two known LIT origins — leaving "*" off intentionally so
+// random sites can't probe the admin endpoint, even though the route
+// itself still requires a Supabase admin JWT.
+const ALLOWED_ORIGINS = new Set([
+  "https://app.logisticintel.com",
+  "https://logisticintel.com",
+  "http://localhost:5173",
+  "http://localhost:3000",
+]);
+
+function corsHeaders(origin: string | null): Record<string, string> {
+  const allowed = origin && ALLOWED_ORIGINS.has(origin) ? origin : "";
+  if (!allowed) return {};
+  return {
+    "access-control-allow-origin": allowed,
+    "access-control-allow-credentials": "true",
+    "access-control-allow-headers": "authorization, content-type",
+    "access-control-allow-methods": "GET, POST, OPTIONS",
+    vary: "origin",
+  };
+}
+
+export async function OPTIONS(req: NextRequest) {
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders(req.headers.get("origin")),
+  });
+}
+
+function json(body: unknown, status = 200, origin: string | null = null) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...corsHeaders(origin),
+    },
   });
 }
 

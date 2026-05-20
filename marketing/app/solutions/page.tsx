@@ -9,6 +9,10 @@ import { LeadMagnetHero } from "@/components/lead-magnet/LeadMagnetHero";
 import { LiveProductPreview } from "@/components/lead-magnet/LiveProductPreview";
 import { ProofStrip } from "@/components/lead-magnet/ProofStrip";
 import { OutcomesBand } from "@/components/lead-magnet/OutcomesBand";
+import { ProductShowcase } from "@/components/sections/ProductShowcase";
+import { StepsRow } from "@/components/sections/StepsRow";
+import { QuoteGrid } from "@/components/sections/QuoteGrid";
+import { fetchTeamAuthors } from "@/lib/team-authors";
 import { sanityClient } from "@/sanity/lib/client";
 import { buildMetadata, siteUrl } from "@/lib/seo";
 import { buildCollectionPage } from "@/lib/jsonLd";
@@ -84,12 +88,14 @@ function buildRoleCards(sanity: SanityRoleIndexItem[]): RoleCardData[] {
 }
 
 export default async function SolutionsHubPage() {
-  const sanityRoles =
-    (await sanityClient
+  const [sanityRoles, team] = await Promise.all([
+    sanityClient
       .fetch<SanityRoleIndexItem[]>(SOLUTION_ROLES_INDEX_QUERY)
-      .catch(() => [])) || [];
+      .catch(() => []),
+    fetchTeamAuthors(),
+  ]);
 
-  const cards = buildRoleCards(sanityRoles);
+  const cards = buildRoleCards(sanityRoles || []);
 
   const breadcrumb = {
     "@context": "https://schema.org",
@@ -165,6 +171,20 @@ export default async function SolutionsHubPage() {
 
       <ProofStrip />
 
+      {/* Glossy injection #1 — dark product showcase. Frame renders a
+          CSS-only placeholder until screenshots clear PII review. */}
+      <ProductShowcase
+        eyebrow="Inside the workspace"
+        heading="One screen. Every shipment, contact, and account in motion."
+        lede="Search by buyer, lane, HS code, or signal. Pull verified decision-makers. Trigger a sequence — all inside LIT, no tab-switching."
+        urlBarText="app.logisticintel.com / company / home depot"
+        callouts={[
+          { kpi: "524K", label: "Active US shippers" },
+          { kpi: "120M+", label: "BOL records" },
+          { kpi: "8 min", label: "To first booked meeting" },
+        ]}
+      />
+
       {/* Role router */}
       <section className="bg-white">
         <div className="mx-auto max-w-content px-4 py-20 sm:px-6 lg:py-24">
@@ -223,6 +243,35 @@ export default async function SolutionsHubPage() {
         </div>
       </section>
 
+      {/* Glossy injection #2 — 3-step "how it works." Bridges the role
+          router and the outcomes band, so visitors who scroll past the
+          grid still see a single canonical motion. */}
+      <StepsRow
+        eyebrow="How it works"
+        heading="Pick your motion. LIT configures the rest."
+        lede="Same platform, three muscle movements — find, qualify, engage. Configured around the way you sell freight."
+        steps={[
+          {
+            eyebrow: "01 · Pick your motion",
+            title: "Tell us how you sell freight",
+            body: "Forwarder, broker, NVOCC, 3PL, or sales leader. The workspace adapts: signals, searches, sequences, and dashboards.",
+            meta: "30 seconds · No credit card",
+          },
+          {
+            eyebrow: "02 · Discover + understand",
+            title: "Find shippers actively moving freight",
+            body: "Search 524K active US shippers by lane, HS code, port, or buyer. Drill into shipment cadence + verified decision-makers.",
+            meta: "Live data · Refreshed weekly",
+          },
+          {
+            eyebrow: "03 · Engage + close",
+            title: "Trigger a sequence — book the meeting",
+            body: "Validated emails. Personalized hooks pulled from shipment history. Track replies, meetings, and pipeline in one place.",
+            meta: "94% deliverability · 4.1× reply rate",
+          },
+        ]}
+      />
+
       <OutcomesBand
         items={[
           {
@@ -239,6 +288,48 @@ export default async function SolutionsHubPage() {
             num: "14 days",
             label: "To full team activation",
             body: "Most teams reach 80% rep activation within two weeks. Onboarding is included in every paid plan.",
+          },
+        ]}
+      />
+
+      {/* Glossy injection #3 — LIT-team voices. NOT customer
+          testimonials (those live in the existing TestimonialTrio).
+          Cards present how the LIT team thinks about onboarding,
+          motion-fit, and the product loop. */}
+      <QuoteGrid
+        eyebrow="From the LIT team"
+        heading="From the LIT team"
+        ariaLabel="LIT team perspective on how each motion onboards"
+        quotes={[
+          {
+            text: "We don't ship five products — we ship one platform that knows what motion you're in. Forwarders see lanes first. Brokers see shippers first. Sales leaders see pipeline first. Same data, different surface.",
+            stats: [
+              { num: "5", label: "Role workspaces" },
+              { num: "8 min", label: "To first meeting" },
+            ],
+            name: team["gabriel-reyes"].name,
+            role: team["gabriel-reyes"].role,
+            avatarUrl: team["gabriel-reyes"].avatarUrl,
+          },
+          {
+            text: "Onboarding is part of the product. Every plan ships with a workspace tour, lane templates, and sample sequences — so reps aren't staring at a blank dashboard on day one.",
+            stats: [
+              { num: "14 days", label: "Full team active" },
+              { num: "80%", label: "Rep activation" },
+            ],
+            name: team["jennifer-okafor"].name,
+            role: team["jennifer-okafor"].role,
+            avatarUrl: team["jennifer-okafor"].avatarUrl,
+          },
+          {
+            text: "We watch every search, every save, every reply. When a workflow earns its keep, it becomes a default. When it doesn't, it gets cut. The product gets better every week because the operators using it tell us what's working.",
+            stats: [
+              { num: "Weekly", label: "Ship cadence" },
+              { num: "94%", label: "Email deliverability" },
+            ],
+            name: team["nikki-patel"].name,
+            role: team["nikki-patel"].role,
+            avatarUrl: team["nikki-patel"].avatarUrl,
           },
         ]}
       />

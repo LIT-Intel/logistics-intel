@@ -11,6 +11,8 @@ import {
   Lock,
   Users,
   Inbox,
+  BarChart3,
+  Send,
 } from "lucide-react";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 import { useAuth } from "@/auth/AuthProvider";
@@ -100,6 +102,8 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
               { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
               { label: "Demo requests", href: "/app/admin/demo-requests", icon: Inbox },
               { label: "Partner program", href: "/app/admin/partner-program", icon: Users },
+              { label: "Marketing analytics", href: "/app/admin/marketing-analytics", icon: BarChart3 },
+              { label: "Marketing broadcasts", href: "/app/admin/marketing-broadcasts", icon: Send },
               { label: "Team", href: "/app/settings?tab=team", icon: Users },
             ],
           },

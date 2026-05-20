@@ -52,17 +52,20 @@ const ADS_ACCOUNT = process.env.LINKEDIN_ADS_ACCOUNT || "536270862";
 const ORG_ACCOUNT = process.env.LINKEDIN_ORG_ACCOUNT || "115993203";
 
 export async function GET(req: NextRequest) {
+  const origin = req.headers.get("origin");
+  const reply = (b: unknown, s = 200) => json(b, s, origin);
+
   // ----- 1. Auth ------------------------------------------------------------
   const authHeader = req.headers.get("authorization") || "";
   const m = /^Bearer\s+(.+)$/i.exec(authHeader);
-  if (!m) return json({ ok: false, error: "unauthorized" }, 401);
+  if (!m) return reply({ ok: false, error: "unauthorized" }, 401);
   const accessToken = m[1].trim();
 
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
-    return json({ ok: false, error: "supabase_not_configured" }, 500);
+    return reply({ ok: false, error: "supabase_not_configured" }, 500);
   }
 
   const supabase = createClient(supabaseUrl, serviceKey, {
@@ -73,7 +76,7 @@ export async function GET(req: NextRequest) {
   // Verify the token resolves to a real user and that user is an admin.
   const { data: userData, error: userErr } = await supabase.auth.getUser(accessToken);
   if (userErr || !userData?.user) {
-    return json({ ok: false, error: "invalid_token" }, 401);
+    return reply({ ok: false, error: "invalid_token" }, 401);
   }
 
   // The is_admin_caller() RPC checks JWT claims server-side. We pass the
@@ -81,10 +84,10 @@ export async function GET(req: NextRequest) {
   const { data: isAdmin, error: rpcErr } = await supabase.rpc("is_admin_caller");
   if (rpcErr) {
     console.error("[linkedin-analytics] is_admin_caller rpc failed", rpcErr);
-    return json({ ok: false, error: "admin_check_failed" }, 500);
+    return reply({ ok: false, error: "admin_check_failed" }, 500);
   }
   if (isAdmin !== true) {
-    return json({ ok: false, error: "forbidden" }, 403);
+    return reply({ ok: false, error: "forbidden" }, 403);
   }
 
   // ----- 2. Param parsing ---------------------------------------------------
@@ -95,17 +98,56 @@ export async function GET(req: NextRequest) {
   // Windsor uses date_preset shorthand "last_Nd".
   const datePreset = `last_${days}d`;
 
-  // ----- 3. Windsor key gate ------------------------------------------------
+  // ----- 3. Snapshot fallback (Windsor MCP path) ----------------------------
+  // Windsor is read-only via the Claude MCP connector — there's no REST API
+  // key on the operator's plan. A scheduled Claude routine writes a daily
+  // snapshot to public.lit_linkedin_snapshots; serve that when WINDSOR_API_KEY
+  // isn't configured. The snapshot row's payload already matches the response
+  // contract, so the dashboard renders identically either way.
   const windsorKey = process.env.WINDSOR_API_KEY;
   if (!windsorKey) {
-    return json(
+    const { data: snap, error: snapErr } = await supabase
+      .from("lit_linkedin_snapshots")
+      .select("snapshot_date, window_days, ads, organic, partial_failures, generated_at")
+      .eq("window_days", days)
+      .order("snapshot_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (snapErr) {
+      console.error("[linkedin-analytics] snapshot read failed", snapErr.message);
+      return reply({ ok: false, error: "snapshot_read_failed" }, 500);
+    }
+    if (!snap) {
+      // Still no snapshot has run — surface the not-configured shape so the
+      // dashboard renders its empty-state panel.
+      return reply(
+        {
+          ok: false,
+          error: "windsor_not_configured",
+          message:
+            "No LinkedIn snapshot has been written yet. The daily Windsor → Supabase routine will populate this on its next run.",
+        },
+        503,
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        days: snap.window_days,
+        generated_at: snap.generated_at,
+        ads: snap.ads,
+        organic: snap.organic,
+        partial_failures: snap.partial_failures ?? undefined,
+        source: "snapshot",
+      }),
       {
-        ok: false,
-        error: "windsor_not_configured",
-        message:
-          "Set WINDSOR_API_KEY in the marketing Vercel project to enable LinkedIn analytics.",
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "private, max-age=300, s-maxage=3600",
+          ...corsHeaders(origin),
+        },
       },
-      503,
     );
   }
 
@@ -193,7 +235,7 @@ export async function GET(req: NextRequest) {
   // If all three failed Windsor is likely down or the key is bad.
   if (failures.length === 3) {
     console.error("[linkedin-analytics] all windsor calls failed", failures);
-    return json(
+    return reply(
       {
         ok: false,
         error: "windsor_fetch_failed",
@@ -223,6 +265,7 @@ export async function GET(req: NextRequest) {
       "content-type": "application/json",
       // Windsor refreshes daily; one-hour edge cache keeps the dashboard snappy.
       "cache-control": "private, max-age=300, s-maxage=3600",
+      ...corsHeaders(origin),
     },
   });
 }
@@ -439,9 +482,41 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-function json(body: unknown, status = 200) {
+// app.logisticintel.com calls this cross-origin — keep the allowlist tight
+// (route still requires a Supabase admin JWT, but exposing the endpoint to
+// any origin would let third-party scripts probe for the error shape).
+const ALLOWED_ORIGINS = new Set([
+  "https://app.logisticintel.com",
+  "https://logisticintel.com",
+  "http://localhost:5173",
+  "http://localhost:3000",
+]);
+
+function corsHeaders(origin: string | null): Record<string, string> {
+  const allowed = origin && ALLOWED_ORIGINS.has(origin) ? origin : "";
+  if (!allowed) return {};
+  return {
+    "access-control-allow-origin": allowed,
+    "access-control-allow-credentials": "true",
+    "access-control-allow-headers": "authorization, content-type",
+    "access-control-allow-methods": "GET, OPTIONS",
+    vary: "origin",
+  };
+}
+
+export async function OPTIONS(req: NextRequest) {
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders(req.headers.get("origin")),
+  });
+}
+
+function json(body: unknown, status = 200, origin: string | null = null) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...corsHeaders(origin),
+    },
   });
 }
