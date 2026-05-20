@@ -1584,6 +1584,67 @@ serve(async (req) => {
     orgId = prof?.organization_id || "";
   } catch {}
 
+  // Trial-expiry gate — independent of the usage cap. A free_trial user
+  // whose 14-day window has elapsed should be blocked even if they still
+  // have unused search credits. Returns a LIMIT_EXCEEDED-shaped payload
+  // so the existing UI upgrade banner can render without a new code path.
+  try {
+    const { data: sub } = await supa
+      .from("subscriptions")
+      .select("plan_code, trial_ends_at, status")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (
+      sub?.plan_code === "free_trial" &&
+      sub?.trial_ends_at &&
+      new Date(sub.trial_ends_at).getTime() < Date.now()
+    ) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          code: "LIMIT_EXCEEDED",
+          feature: "pulse_search",
+          plan: "free_trial",
+          used: 0,
+          limit: 0,
+          reset_at: null,
+          upgrade_url: "/app/billing",
+          upgrade_required: true,
+          message:
+            "Your 14-day free trial has ended. Upgrade to keep running Pulse searches.",
+        }),
+        { status: 403, headers: { ...corsHeaders(), "Content-Type": "application/json" } },
+      );
+    }
+  } catch (e) {
+    console.error("[pulse-search] trial-expiry check failed (non-fatal):", e);
+  }
+
+  // Usage gate — maps to `pulse_search` feature_key.
+  // Limits per plan (from public.plans.pulse_search_limit):
+  //   free_trial = 10 (per the 14-day trial — calendar month is the
+  //                    rolling window per resolve_feature_limit, but
+  //                    trial expires before a new month begins)
+  //   starter    = 0  (paywalled, upgrade prompt)
+  //   growth     = 100 / month
+  //   scale      = 500 / month
+  //   enterprise = unlimited
+  // Returned on LIMIT_EXCEEDED so the UI can render an upgrade card.
+  const { data: gateData, error: gateErr } = await supa.rpc("check_usage_limit", {
+    p_org_id: orgId || null,
+    p_user_id: userId,
+    p_feature_key: "pulse_search",
+    p_quantity: 1,
+  });
+  if (gateErr) {
+    console.error("[pulse-search] gate rpc failed", gateErr);
+  } else if (gateData && gateData.ok === false) {
+    return new Response(JSON.stringify(gateData), {
+      status: 403,
+      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+    });
+  }
+
   // 1. Parse
   const t0 = Date.now();
   const { intent: parsedRaw, model: parserModel } = await parseQuery(rawQuery);
@@ -1665,6 +1726,21 @@ serve(async (req) => {
     });
   } catch (err) {
     console.warn("[pulse-search] telemetry insert failed:", err);
+  }
+
+  // Consume usage AFTER successful search so failed/empty parses don't
+  // burn a trial credit. Non-fatal — a logging failure shouldn't break
+  // the response.
+  try {
+    await supa.rpc("consume_usage", {
+      p_org_id: orgId || null,
+      p_user_id: userId,
+      p_feature_key: "pulse_search",
+      p_quantity: 1,
+      p_metadata: { query: rawQuery.slice(0, 200), result_count: ranked.length },
+    });
+  } catch (consumeErr) {
+    console.error("[pulse-search] consume_usage failed (non-fatal):", consumeErr);
   }
 
   const coachSummary = buildCoachSummary(intent, sourceCounts, ranked, textTerms);

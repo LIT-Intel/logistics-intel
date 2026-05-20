@@ -63,6 +63,7 @@ import {
 } from '@/features/pulse/pulseCoachClassify';
 import QueryInterpretation from '@/features/pulse/QueryInterpretation';
 import PulseMap from '@/features/pulse/PulseMap';
+import { UpgradeRequiredInline } from '@/components/common/UpgradeRequired';
 
 const PLACEHOLDER_EXAMPLES = [
   'Find marketing directors at SaaS companies in California',
@@ -168,6 +169,9 @@ export default function Pulse() {
   const [searchPerformed, setSearchPerformed] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [localCount, setLocalCount] = useState(0);
+  // LimitExceeded contract from check_usage_limit RPC (free_trial = 10
+  // Pulse searches; surfaces an upgrade banner instead of an empty grid).
+  const [searchLimit, setSearchLimit] = useState(null);
 
   // — selection / actions —
   const [activeCompany, setActiveCompany] = useState(null);
@@ -251,6 +255,8 @@ export default function Pulse() {
     setSearchPerformed(false);
     setActiveCompany(null);
 
+    setSearchLimit(null);
+
     try {
       // v2 owns search end-to-end: parses, hits saved → directory → Apollo,
       // merges + ranks server-side. Single round trip. No legacy fallback —
@@ -259,6 +265,20 @@ export default function Pulse() {
       const v2 = await searchPulseV2({ query: trimmed, limit: 50 }).catch(
         (err) => ({ ok: false, error: err?.message || 'pulse_search_failed' }),
       );
+
+      // 403 LIMIT_EXCEEDED — trial user has burned all 10 searches, or
+      // a paid plan has hit its monthly cap. Render the inline upgrade
+      // banner rather than a fake error.
+      if (v2 && v2.code === 'LIMIT_EXCEEDED' && v2.limit) {
+        setSearchLimit(v2.limit);
+        setResults([]);
+        setResultMode(null);
+        setMeta(null);
+        setApiStatus('connected');
+        setSubmittedQuery(trimmed);
+        setSearchPerformed(true);
+        return;
+      }
 
       if (v2 && v2.ok && Array.isArray(v2.rows)) {
         setLocalCount(v2.sources?.saved + v2.sources?.directory || 0);
@@ -946,8 +966,15 @@ export default function Pulse() {
         {/* Empty / explore */}
         {!isSearching && !searchPerformed ? <ExploreState onPick={runSearch} /> : null}
 
+        {/* Plan-limit hit (free_trial = 10 Pulse searches / month) */}
+        {searchPerformed && !isSearching && searchLimit ? (
+          <div className="mt-4">
+            <UpgradeRequiredInline limit={searchLimit} />
+          </div>
+        ) : null}
+
         {/* Errors */}
-        {searchPerformed && !isSearching && errorMessage && !isSetupError && !isPermissionError ? (
+        {searchPerformed && !isSearching && !searchLimit && errorMessage && !isSetupError && !isPermissionError ? (
           <div className="mt-4">
             <ErrorBanner message={errorMessage} />
           </div>

@@ -9,16 +9,20 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 
-// Per-event routing. demo_request feeds the sales inbox; signups,
-// affiliate apps, and system events feed the support inbox. Founder
-// gets cc'd on everything.
-const ROUTING: Record<string, { to: string; cc: string }> = {
-  demo_request:    { to: "sales@logisticintel.com",   cc: "vraymond@sparkfusiondigital.com" },
-  signup:          { to: "support@logisticintel.com", cc: "vraymond@sparkfusiondigital.com" },
-  affiliate_apply: { to: "sales@logisticintel.com",   cc: "vraymond@sparkfusiondigital.com" },
+// Per-event routing. Founder is the primary recipient until dedicated
+// Workspace mailboxes (sales@/support@/alerts@) are provisioned with real
+// MX records. Background: 2026-05-20 audit found support@logisticintel.com
+// (and hello@/updates@) hard-bouncing every send because no Gmail/Workspace
+// mailbox exists for those local-parts — that was burning Resend reputation
+// AND silently dropping internal alerts (m.shaikh's new-signup notice was
+// suppressed). Until the mailboxes exist, route everything to the founder.
+const ROUTING: Record<string, { to: string; cc: string | null }> = {
+  demo_request:    { to: "vraymond@sparkfusiondigital.com", cc: null },
+  signup:          { to: "vraymond@sparkfusiondigital.com", cc: null },
+  affiliate_apply: { to: "vraymond@sparkfusiondigital.com", cc: null },
 };
-const DEFAULT_TO = "support@logisticintel.com";
-const DEFAULT_CC = "vraymond@sparkfusiondigital.com";
+const DEFAULT_TO = "vraymond@sparkfusiondigital.com";
+const DEFAULT_CC: string | null = null;
 const FROM_ADDRESS = "Logistic Intel Ops <ops@updates.logisticintel.com>";
 // lit_outreach_history.user_id is NOT NULL. Pinning every admin-notify
 // audit row to the founder user keeps the column happy and gives the
@@ -98,19 +102,25 @@ serve(async (req) => {
   // Pick recipients based on event type. Caller can override with body.to / body.cc.
   const route = ROUTING[event] || { to: DEFAULT_TO, cc: DEFAULT_CC };
   const recipientTo = typeof body?.to === "string" ? body.to : route.to;
-  const recipientCc = typeof body?.cc === "string" ? body.cc : route.cc;
+  const recipientCc =
+    typeof body?.cc === "string" && body.cc.trim() ? body.cc : route.cc;
 
   let resendId: string | null = null;
   let resendError: string | null = null;
   try {
+    const sendPayload: Record<string, unknown> = {
+      from: FROM_ADDRESS,
+      to: [recipientTo],
+      subject,
+      html,
+      reply_to: recipientCc || recipientTo,
+    };
+    if (recipientCc) sendPayload.cc = [recipientCc];
+
     const resp = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: FROM_ADDRESS,
-        to: [recipientTo], cc: [recipientCc],
-        subject, html, reply_to: recipientCc,
-      }),
+      body: JSON.stringify(sendPayload),
     });
     const respJson: any = await resp.json().catch(() => ({}));
     if (!resp.ok) {

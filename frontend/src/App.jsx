@@ -578,10 +578,16 @@ export default function App() {
         <Route
           path="/app/prospecting"
           element={
+            // Trial users CAN reach Pulse — they get 10 searches during
+            // the 14-day trial (enforced server-side via check_usage_limit
+            // on the pulse-search edge fn, sourced from plans.pulse_search_limit).
+            // After 10 uses OR 14 days expire, the per-search gate returns
+            // 403 LIMIT_EXCEEDED and the page shows an upgrade card.
+            // requiredPlan stays "growth" for the upgrade messaging copy.
             <RequirePlan
-              feature="lead_prospecting"
+              feature="search"
               featureName="Pulse — Lead Prospecting"
-              description="Discover and monitor shippers based on freight signals, import activity, and AI-driven scoring. Available on Growth and above."
+              description="Discover and monitor shippers based on freight signals, import activity, and AI-driven scoring. Trial users get 10 searches; Growth and above include 100/month."
               requiredPlan="growth"
             >
               <LITPage>
