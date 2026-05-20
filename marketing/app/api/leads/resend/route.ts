@@ -149,6 +149,22 @@ export async function POST(req: NextRequest) {
     return json({ error: "store_unavailable" }, 500);
   }
 
+  // Production incident 2026-05-20: app signups that happen seconds after
+  // a marketing form fill caused every new signup to receive TWO emails —
+  // the marketing-side "Your LIT trial is ready" (this route's inline send
+  // below) and Supabase Auth's "Confirm your LIT account". If this email
+  // is already an app user (lives in public.profiles via the auth.users
+  // trigger), short-circuit: still record the lead row for attribution,
+  // but skip the inline welcome and skip queue enrollment. The app's own
+  // post-signup onboarding will take it from here.
+  const { data: supData } = await supa.rpc("lit_email_suppression_status", {
+    p_email: email,
+  });
+  const supRow = (Array.isArray(supData) ? supData[0] : supData) as
+    | { converted: boolean; bounced: boolean; complained: boolean }
+    | null;
+  const alreadyAppUser = Boolean(supRow?.converted);
+
   // Generate the UUID server-side so we don't need a SELECT-back after
   // INSERT — anon role has INSERT-only on lit_leads (no SELECT), which is
   // the right security posture for a public capture endpoint.
@@ -174,6 +190,19 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error("[leads/resend] insert threw", e?.message || e);
     return json({ error: "store_failed" }, 500);
+  }
+
+  // Skip the welcome email + funnel enrollment for emails that already
+  // belong to an app user. They'll get the in-app onboarding instead, and
+  // we don't want to duplicate the "Your LIT trial is ready" send. The
+  // lead row above is still kept so attribution + first/last-touch carry
+  // through to the existing account.
+  if (alreadyAppUser) {
+    console.log(
+      "[leads/resend] skipping welcome + enrollment — already an app user",
+      lead.email,
+    );
+    return json({ ok: true, deduped: "already_app_user" });
   }
 
   // Email is best-effort — wrap so any failure is logged but never blocks
