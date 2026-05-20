@@ -164,7 +164,28 @@ export async function searchPulseV2(payload = {}) {
     body: { query: trimmed, limit, includeApollo, includeSaved, includeDirectory },
   });
 
+  // supabase-js wraps non-2xx responses in FunctionsHttpError; the actual
+  // body lives on `error.context` (a Response). For 403 LIMIT_EXCEEDED we
+  // want to surface the structured contract to the caller so the UI can
+  // render the upgrade card instead of a generic failure.
   if (error) {
+    let parsedBody = null;
+    try {
+      const ctx = error?.context;
+      const cloned = ctx?.clone?.();
+      parsedBody = await cloned?.json?.();
+    } catch { /* non-JSON body */ }
+    if (parsedBody && parsedBody.ok === false && parsedBody.code === 'LIMIT_EXCEEDED') {
+      return {
+        ok: false,
+        code: 'LIMIT_EXCEEDED',
+        limit: parsedBody,
+        query: trimmed,
+        rows: [],
+        sources: { saved: 0, directory: 0, apollo: 0, merged: 0 },
+        coach_summary: parsedBody.message || 'Pulse search limit reached.',
+      };
+    }
     console.error('[Pulse v2] pulse-search invocation failed:', error);
     throw new Error(error.message || 'Pulse search failed');
   }
