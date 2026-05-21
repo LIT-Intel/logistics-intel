@@ -52,6 +52,7 @@ import BrandIcon from '@/features/pulse/BrandIcon';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
 import { extractDomain } from '@/lib/logo';
 import { supabase } from '@/lib/supabase';
+import SendToOutreachModal from '@/features/pulse/SendToOutreachModal';
 
 // Stable cache key for a discovered contact. Mirrors the {key} used by
 // the per-row render below so toggleReveal can find the row in
@@ -227,6 +228,9 @@ export default function PulseQuickCard({
 
   // Per-contact in-flight tracking for the Reveal-as-Enrich flow below.
   const [enrichingKeys, setEnrichingKeys] = useState(new Set());
+
+  // "Send to outreach" modal — composes campaign + recipients in 2 clicks.
+  const [outreachModalOpen, setOutreachModalOpen] = useState(false);
 
   /**
    * Reveal-as-Enrich. The Apollo people-SEARCH endpoint returns locked
@@ -740,8 +744,8 @@ export default function PulseQuickCard({
               onClick={() => onOpenInSearch?.(company)}
             />
           )}
-          {/* Secondary actions — Save / Add to list / Add to Campaign */}
-          <div className="mt-2 grid grid-cols-3 gap-2">
+          {/* Secondary actions — Save / Add to list / Send to outreach / Campaign */}
+          <div className="mt-2 grid grid-cols-2 gap-2">
             <ActionButton
               icon={Bookmark}
               label="Save"
@@ -756,6 +760,12 @@ export default function PulseQuickCard({
               title="Save and add to a named list"
             />
             <ActionButton
+              icon={Mail}
+              label="Send to outreach"
+              onClick={() => setOutreachModalOpen(true)}
+              title="Launch a 4-email sequence to the decision makers at this company"
+            />
+            <ActionButton
               icon={Target}
               label="Campaign"
               onClick={() => onAddToCampaign?.(company)}
@@ -764,6 +774,32 @@ export default function PulseQuickCard({
           </div>
         </footer>
       </aside>
+
+      {outreachModalOpen && (
+        <SendToOutreachModal
+          company={company}
+          contacts={
+            Array.isArray(decisionMakers) && decisionMakers.length > 0
+              ? decisionMakers
+              : Array.isArray(company.contacts)
+                ? company.contacts
+                : []
+          }
+          onClose={() => setOutreachModalOpen(false)}
+          onSuccess={({ campaignId: _campaignId, queued }) => {
+            setOutreachModalOpen(false);
+            window.dispatchEvent(
+              new CustomEvent('lit:toast', {
+                detail: {
+                  title: 'Outreach started',
+                  body: `${queued} contact(s) queued. Day 1 email goes out within 60 seconds.`,
+                  tone: 'success',
+                },
+              }),
+            );
+          }}
+        />
+      )}
     </>
   );
 }
