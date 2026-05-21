@@ -100,7 +100,12 @@ const PULSE_ERROR_COPY: Record<string, string> = {
 const EXPORT_ERROR_COPY: Record<string, string> = {
   STORAGE_NOT_PROVISIONED:
     "Storage bucket not configured. Page link copied instead.",
+  // PDF_NOT_AVAILABLE kept for backwards-compat: edge fn v34+ no longer
+  // returns it (PDF and HTML both emit the same printable HTML URL), but
+  // a stale-cache response from v33 could still surface this code.
   PDF_NOT_AVAILABLE: "PDF render not available — open HTML version?",
+  LIMIT_EXCEEDED:
+    "You've hit this month's export limit. Upgrade your plan or wait until your quota resets.",
   COMPANY_NOT_FOUND: "We couldn't find this company in the database.",
   COMPANY_FETCH_FAILED:
     "Couldn't load company details for export. Try again in a moment.",
@@ -1643,6 +1648,12 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             ...(isUuid ? { company_id: companyId } : {}),
             ...(sourceKey ? { source_company_key: sourceKey } : {}),
             format: "html",
+            // intent='share' tells the edge fn to bypass the export_pdf
+            // quota gate — Share Link is acquisition (recipients see LIT
+            // branding), so we don't bill the user for it. Without this
+            // flag, free-trial users would hit a silent 403 and the
+            // button would appear to do nothing.
+            intent: "share",
             include_pulse_brief: Boolean(pulseBrief),
           },
         },
@@ -1717,18 +1728,47 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       const effective: any = parsedErr || data;
       if (invokeError && !parsedErr) throw invokeError;
       if (effective?.ok && effective.url) {
-        if (typeof window !== "undefined") window.open(effective.url, "_blank");
+        // Edge fn v34+ returns the same printable HTML URL for format=pdf
+        // and format=html. Open it in a new tab — the page ships with
+        // @media print + @page CSS so the browser's native Save-as-PDF
+        // dialog produces a clean export.
+        if (typeof window !== "undefined") {
+          const w = window.open(effective.url, "_blank");
+          if (!w) {
+            // Popup blocked — fall back to copying the URL so the user can
+            // paste it manually rather than losing the export entirely.
+            await copyToClipboardSafe(effective.url);
+            showShareToast(
+              "Popup blocked — export link copied to clipboard.",
+              "warning",
+            );
+          } else {
+            showShareToast(
+              "Export opened — use the browser's Save as PDF.",
+              "success",
+            );
+          }
+        }
       } else if (
         effective?.code === "PDF_NOT_AVAILABLE" &&
         effective?.fallback?.url
       ) {
-        const open =
-          typeof window !== "undefined" &&
-          window.confirm(
-            "PDF render not available — open the branded HTML version instead?",
-          );
-        if (open) window.open(effective.fallback.url, "_blank");
-        else showShareToast("PDF export not available yet", "warning");
+        // Defensive: v33 stale-cache fallback. v34+ doesn't return this.
+        if (typeof window !== "undefined") {
+          window.open(effective.fallback.url, "_blank");
+        }
+      } else if (effective?.code === "LIMIT_EXCEEDED") {
+        // User has hit their monthly export quota. Surface the upgrade
+        // path the same way the Pulse-refresh handler does at L1590.
+        const gate: any = effective?.gate || effective || {};
+        setRefreshLimitState({
+          feature: gate.feature || "export_pdf",
+          plan: gate.plan || null,
+          used: gate.used ?? null,
+          limit: gate.limit ?? null,
+          reset_at: gate.reset_at ?? null,
+          upgrade_url: gate.upgrade_url || "/app/billing",
+        });
       } else if (effective?.code === "STORAGE_NOT_PROVISIONED") {
         const url = typeof window !== "undefined" ? window.location.href : "";
         await copyToClipboardSafe(url);
