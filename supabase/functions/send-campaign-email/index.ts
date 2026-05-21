@@ -987,10 +987,16 @@ async function sendEmail(args: {
     // through the user's Gmail mailbox. Plaintext bodies still ship as
     // text/plain to avoid the spam-flag bump from unnecessary HTML.
     const isHtml = /^<[a-z!]/i.test(body.trim()) || /<table|<div|<p[\s>]/i.test(body);
+    // Inject a stable Message-ID we generate so reply-receiver can match
+    // `In-Reply-To` headers from inbound replies. Gmail otherwise auto-
+    // generates a Message-ID that we'd have to fetch back with a second
+    // API call — wasteful and racy.
+    const messageId = `<litcamp-${crypto.randomUUID()}@logisticintel.com>`;
     const raw = [
       `From: ${fromLine}`,
       `To: ${to}`,
       `Subject: ${subject}`,
+      `Message-ID: ${messageId}`,
       `MIME-Version: 1.0`,
       `Content-Type: ${isHtml ? "text/html" : "text/plain"}; charset=UTF-8`,
       ``,
@@ -1015,38 +1021,61 @@ async function sendEmail(args: {
           error: `gmail_${resp.status}:${respJson?.error?.message || ""}`,
         };
       }
-      return { ok: true, messageId: respJson.id ?? null };
+      // Return our injected Message-ID (not respJson.id which is Gmail's
+      // internal thread message ID and never appears in reply headers).
+      return { ok: true, messageId };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "gmail_threw" };
     }
   }
-  // Outlook / Microsoft Graph
+  // Outlook / Microsoft Graph — draft-then-send so we can read the
+  // auto-generated `internetMessageId` back before sending. Graph
+  // rejects setting Message-ID via internetMessageHeaders (allow-list
+  // doesn't include it), so we accept Graph's value and persist that
+  // for reply correlation.
   const outlookIsHtml = /^<[a-z!]/i.test(body.trim()) || /<table|<div|<p[\s>]/i.test(body);
   try {
-    const resp = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+    // 1. Create draft to capture internetMessageId
+    const draftResp = await fetch("https://graph.microsoft.com/v1.0/me/messages", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        message: {
-          subject,
-          body: { contentType: outlookIsHtml ? "HTML" : "Text", content: body },
-          toRecipients: [{ emailAddress: { address: to } }],
-        },
-        saveToSentItems: true,
+        subject,
+        body: { contentType: outlookIsHtml ? "HTML" : "Text", content: body },
+        toRecipients: [{ emailAddress: { address: to } }],
       }),
     });
-    if (!resp.ok) {
+    if (!draftResp.ok) {
       let errBody: any = {};
-      try { errBody = await resp.json(); } catch { /* empty */ }
+      try { errBody = await draftResp.json(); } catch { /* empty */ }
       return {
         ok: false,
-        error: `outlook_${resp.status}:${errBody?.error?.message || ""}`,
+        error: `outlook_draft_${draftResp.status}:${errBody?.error?.message || ""}`,
       };
     }
-    return { ok: true, messageId: resp.headers.get("client-request-id") };
+    const draft = await draftResp.json();
+    const internetMessageId: string | null = draft?.internetMessageId ?? null;
+    const draftId: string = draft.id;
+
+    // 2. Send the draft
+    const sendResp = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${draftId}/send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!sendResp.ok) {
+      let errBody: any = {};
+      try { errBody = await sendResp.json(); } catch { /* empty */ }
+      return {
+        ok: false,
+        error: `outlook_send_${sendResp.status}:${errBody?.error?.message || ""}`,
+      };
+    }
+    // internetMessageId is the RFC 5322 Message-ID Outlook will use in
+    // outbound headers; reply In-Reply-To will reference this value.
+    return { ok: true, messageId: internetMessageId };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "outlook_threw" };
   }
