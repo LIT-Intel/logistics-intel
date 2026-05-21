@@ -74,9 +74,18 @@ function htmlToText(html: string): string {
 }
 
 /**
- * Wrap the operator's note + the brief body in a single styled email shell.
- * The brief is the primary content; the operator's note (if any) goes above
- * it as a short preamble so the recipient sees the human touch first.
+ * Build the final email body.
+ *
+ * The frontend now ships a COMPLETE styled HTML document in `body_html`
+ * (see frontend/src/lib/pulse/pulseBriefHtml.ts renderPulseBriefEmailHtml).
+ * We must NOT wrap it in another shell — nested <html>/<body> tags get
+ * stripped by Gmail's HTML sanitizer, which dumps the inline body styles
+ * and the recipient sees a plain-text-looking email. Pass it through and
+ * inject the operator's preamble (if any) immediately after the opening
+ * <body> tag so the human note appears above the branded brief.
+ *
+ * If body_html is empty / fragment-only, fall back to wrapping the
+ * preamble + fragment in a minimal shell (preserves the v1 behaviour).
  */
 function renderEmailHtml(args: {
   companyName: string;
@@ -84,11 +93,9 @@ function renderEmailHtml(args: {
   briefHtml: string | null;
 }): string {
   const { companyName, preambleMarkdown, briefHtml } = args;
-  // Markdown → simple HTML: just wrap paragraphs and respect line breaks.
-  // Operator notes for a one-off brief send don't justify a full markdown
-  // dependency in the edge function.
+
   const preambleHtml = preambleMarkdown
-    ? `<div style="font-size:14px;line-height:1.55;color:#0f172a;margin:0 0 24px;">${preambleMarkdown
+    ? `<div style="font-size:14px;line-height:1.55;color:#0f172a;padding:18px 22px;background:#FFFFFF;border-bottom:1px solid #E2E8F0;">${preambleMarkdown
         .split(/\n{2,}/)
         .map((p) =>
           `<p style="margin:0 0 12px;">${escapeHtml(p).replace(/\n/g, "<br>")}</p>`,
@@ -96,6 +103,19 @@ function renderEmailHtml(args: {
         .join("")}</div>`
     : "";
 
+  // Pass-through path: body_html is already a complete document. Inject
+  // the preamble right after the opening <body ...> tag so the operator's
+  // note appears above the branded brief, then return the (still-valid)
+  // single document. Regex tolerates whitespace/attrs/newlines.
+  if (briefHtml && /<body[\s>]/i.test(briefHtml)) {
+    if (!preambleHtml) return briefHtml;
+    return briefHtml.replace(
+      /<body([^>]*)>/i,
+      (_m, attrs) => `<body${attrs}>${preambleHtml}`,
+    );
+  }
+
+  // Fallback wrap (fragment-only body_html, or operator-text-only sends).
   const briefBody = briefHtml
     ? briefHtml
     : `<p style="color:#64748b;font-size:14px;">No brief content was attached. Open Logistic Intel and re-run the Pulse Brief, then resend.</p>`;
@@ -120,6 +140,24 @@ Shared via <a href="https://logisticintel.com" style="color:#2563eb;text-decorat
 </td></tr>
 </table>
 </body></html>`;
+}
+
+/**
+ * RFC 2047 MIME-encode a header value when it contains non-ASCII so Gmail
+ * doesn't mojibake em-dashes / smart quotes / etc. Only needed for the
+ * Gmail RFC822 raw send path — Outlook Graph takes UTF-8 JSON natively.
+ *
+ * Output: `=?UTF-8?B?<base64>?=` when non-ASCII detected; original string
+ * otherwise.
+ */
+function encodeMimeHeader(value: string): string {
+  // ASCII-only — Gmail accepts as-is.
+  // eslint-disable-next-line no-control-regex
+  if (!/[^\x00-\x7F]/.test(value)) return value;
+  const bytes = new TextEncoder().encode(value);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return `=?UTF-8?B?${btoa(bin)}?=`;
 }
 
 interface BriefEmailBody {
@@ -206,16 +244,26 @@ serve(async (req) => {
   // ---- Provider dispatch ----------------------------------------------------
   let providerMessageId: string | null = null;
   if (account.provider === "gmail") {
-    const fromLine = account.display_name
-      ? `"${account.display_name}" <${account.email}>`
+    // Gmail's send API takes a raw RFC 822 message. Headers that contain
+    // non-ASCII (em-dashes in the subject, accented display names, etc.)
+    // MUST be MIME-encoded per RFC 2047, otherwise Gmail forwards the
+    // bytes verbatim and the recipient sees mojibake ("â€"" for "—").
+    const displayName = account.display_name
+      ? encodeMimeHeader(account.display_name)
+      : null;
+    const fromLine = displayName
+      ? `${displayName} <${account.email}>`
       : account.email;
     const headers: string[] = [
       `From: ${fromLine}`,
       `To: ${to}`,
       ...(cc ? [`Cc: ${cc}`] : []),
-      `Subject: ${subject}`,
+      `Subject: ${encodeMimeHeader(subject)}`,
       `MIME-Version: 1.0`,
       `Content-Type: text/html; charset=UTF-8`,
+      // Marking the body 8bit + base64 is overkill for HTML — quoted-printable
+      // would also work — but most providers accept raw UTF-8 in the body
+      // as long as the Content-Type charset is correct. Leave body raw.
     ];
     const raw = [...headers, "", emailHtml].join("\r\n");
     const resp = await fetch(

@@ -63,6 +63,7 @@ import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import CDPSupplyChain from "@/components/company/CDPSupplyChain";
 import CDPContacts from "@/components/company/CDPContacts";
 import CDPResearch from "@/components/company/CDPResearch";
+import { renderPulseBriefPrintHtml } from "@/lib/pulse/pulseBriefHtml";
 import CDPActivity from "@/components/company/CDPActivity";
 import CDPRateBenchmark from "@/components/company/CDPRateBenchmark";
 import CDPRevenueOpportunity from "@/components/company/CDPRevenueOpportunity";
@@ -1699,88 +1700,62 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     if (!companyId || exportLoading) return;
     setExportLoading(true);
     try {
-      const isUuid =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-          String(companyId),
-        );
-      const sourceKey = isUuid
-        ? activeProfile?.source_company_key ||
-          activeProfile?.sourceCompanyKey ||
-          bundle?.identity?.key ||
-          null
-        : String(companyId).startsWith("company/")
-          ? companyId
-          : `company/${companyId}`;
-      const { data, error: invokeError } = await supabase.functions.invoke(
-        "export-company-profile",
-        {
-          body: {
-            ...(isUuid ? { company_id: companyId } : {}),
-            ...(sourceKey ? { source_company_key: sourceKey } : {}),
-            format: "pdf",
-            include_pulse_brief: Boolean(pulseBrief),
-          },
-        },
-      );
-      const parsedErr = invokeError
-        ? await parseEdgeFunctionError(invokeError)
-        : null;
-      const effective: any = parsedErr || data;
-      if (invokeError && !parsedErr) throw invokeError;
-      if (effective?.ok && effective.url) {
-        // Edge fn v34+ returns the same printable HTML URL for format=pdf
-        // and format=html. Open it in a new tab — the page ships with
-        // @media print + @page CSS so the browser's native Save-as-PDF
-        // dialog produces a clean export.
-        if (typeof window !== "undefined") {
-          const w = window.open(effective.url, "_blank");
-          if (!w) {
-            // Popup blocked — fall back to copying the URL so the user can
-            // paste it manually rather than losing the export entirely.
-            await copyToClipboardSafe(effective.url);
-            showShareToast(
-              "Popup blocked — export link copied to clipboard.",
-              "warning",
-            );
-          } else {
-            showShareToast(
-              "Export opened — use the browser's Save as PDF.",
-              "success",
-            );
-          }
-        }
-      } else if (
-        effective?.code === "PDF_NOT_AVAILABLE" &&
-        effective?.fallback?.url
-      ) {
-        // Defensive: v33 stale-cache fallback. v34+ doesn't return this.
-        if (typeof window !== "undefined") {
-          window.open(effective.fallback.url, "_blank");
-        }
-      } else if (effective?.code === "LIMIT_EXCEEDED") {
-        // User has hit their monthly export quota. Surface the upgrade
-        // path the same way the Pulse-refresh handler does at L1590.
-        const gate: any = effective?.gate || effective || {};
-        setRefreshLimitState({
-          feature: gate.feature || "export_pdf",
-          plan: gate.plan || null,
-          used: gate.used ?? null,
-          limit: gate.limit ?? null,
-          reset_at: gate.reset_at ?? null,
-          upgrade_url: gate.upgrade_url || "/app/billing",
-        });
-      } else if (effective?.code === "STORAGE_NOT_PROVISIONED") {
-        const url = typeof window !== "undefined" ? window.location.href : "";
-        await copyToClipboardSafe(url);
-        showShareToast(EXPORT_ERROR_COPY.STORAGE_NOT_PROVISIONED, "warning");
-      } else {
-        const friendly =
-          effective?.message ||
-          EXPORT_ERROR_COPY[effective?.code] ||
-          effective?.error ||
-          "PDF export failed.";
-        showShareToast(friendly, "error");
+      // Client-side print export — mirrors the approach used by
+      // exportPulseLiveReportPdf() on the Pulse LIVE tab. We render the
+      // brief HTML in a new window and trigger window.print() on load,
+      // which lets the user "Save as PDF" via the browser's native
+      // print dialog. No Supabase Storage round-trip, no
+      // Content-Type / signed-URL headaches, no edge function dependency
+      // — and the WYSIWYG output exactly matches what the email body
+      // contains (reportToHtml is the single source of truth for the
+      // branded brief HTML).
+      if (typeof window === "undefined") return;
+      if (!pulseBrief) {
+        showShareToast("Generate the Pulse brief first.", "warning");
+        return;
       }
+      const companyDisplayName =
+        bundle?.identity?.display?.name ||
+        activeProfile?.company_name ||
+        activeProfile?.name ||
+        "Company";
+      const briefHtml = renderPulseBriefPrintHtml(
+        companyDisplayName,
+        pulseBrief as any,
+      );
+      const w = window.open("", "_blank", "noopener,noreferrer");
+      if (!w) {
+        showShareToast(
+          "Popup blocked — allow popups for app.logisticintel.com and try again.",
+          "warning",
+        );
+        return;
+      }
+      w.document.open();
+      w.document.write(briefHtml);
+      w.document.close();
+      // Defer print to next tick so fonts/images settle. Closing the
+      // window after print is intentionally left to the user — keeping
+      // it open also lets them re-print without re-exporting.
+      const triggerPrint = () => {
+        try {
+          w.focus();
+          w.print();
+        } catch (e) {
+          // Some browsers throw if print() fires before the document
+          // is fully parsed — best-effort, no toast needed.
+          console.warn("[export-pdf] print dispatch failed:", e);
+        }
+      };
+      if (w.document.readyState === "complete") {
+        setTimeout(triggerPrint, 200);
+      } else {
+        w.addEventListener("load", () => setTimeout(triggerPrint, 200));
+      }
+      showShareToast(
+        "Brief opened — use the browser's Save as PDF.",
+        "success",
+      );
     } catch (err: any) {
       showShareToast(err?.message || "PDF export error.", "error");
     } finally {
