@@ -64,14 +64,16 @@ function buildGmailAuthUrl(state: string) {
       "email",
       "profile",
       "https://www.googleapis.com/auth/gmail.send",
-      // gmail.metadata required for users.watch (reply detection via Pub/Sub).
-      // Deliberately NOT gmail.readonly — that's a RESTRICTED scope requiring
-      // Google CASA verification, which would block OAuth consent for new
-      // users. gmail.metadata is SENSITIVE (same tier as gmail.send, already
-      // verified). It returns message headers + threadId + snippet, which
-      // is exactly what reply-receiver needs (format=metadata with
-      // metadataHeaders=In-Reply-To,References,From,Subject).
-      "https://www.googleapis.com/auth/gmail.metadata",
+      // Gmail reply detection (users.watch) is DISABLED until we resolve
+      // the scope dilemma:
+      //   - gmail.metadata: SENSITIVE but MUTUALLY EXCLUSIVE with gmail.send
+      //     (can only be used alone — combining with gmail.send breaks OAuth
+      //     consent, bouncing users out of the signup/login flow)
+      //   - gmail.readonly / gmail.modify / mail.google.com: all RESTRICTED,
+      //     require Google CASA verification (months-long process)
+      // For now, Gmail OAuth grants gmail.send ONLY. The Watch registration
+      // in oauth-gmail-callback will 403 silently and log a warning.
+      // Outlook reply detection is unaffected (Mail.Read coexists with Mail.Send).
     ].join(" "),
     state,
   });
