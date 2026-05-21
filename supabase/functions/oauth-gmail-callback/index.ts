@@ -196,5 +196,55 @@ serve(async (req) => {
     return redirectError("token_persist_failed");
   }
 
+  // Register Gmail Watch so we receive push notifications for new messages
+  // (replies). Pub/Sub topic provisioned operator-side per Task 1 spec.
+  try {
+    const watchResp = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/watch`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${tokenJson.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topicName: Deno.env.get("GMAIL_PUBSUB_TOPIC")!,
+          labelIds: ["INBOX"],
+          labelFilterBehavior: "INCLUDE",
+        }),
+      },
+    );
+    if (watchResp.ok) {
+      const w = await watchResp.json();
+      // Initialize warmup_started_at on first connect (null-only filter so
+      // re-connects don't reset the 30-day ramp). Separate update because
+      // PostgREST .update doesn't combine .is(null) filter with other column
+      // writes safely.
+      await admin
+        .from("lit_email_accounts")
+        .update({ warmup_started_at: new Date().toISOString() })
+        .eq("id", account.id)
+        .is("warmup_started_at", null);
+
+      const expirationMs = Number(w.expiration);
+      await admin
+        .from("lit_email_accounts")
+        .update({
+          gmail_watch_expiration: new Date(expirationMs).toISOString(),
+          gmail_history_id: String(w.historyId),
+        })
+        .eq("id", account.id);
+
+      console.log(`[oauth-gmail-callback] watch registered: expiration=${new Date(expirationMs).toISOString()}, historyId=${w.historyId}`);
+    } else {
+      const txt = await watchResp.text().catch(() => "");
+      console.error(`[oauth-gmail-callback] watch registration failed: ${watchResp.status} ${txt.slice(0, 300)}`);
+      // Non-fatal: mailbox still works for sending; reply detection just
+      // won't work until next reconnect or until Task 11 renewal cron retries.
+    }
+  } catch (err) {
+    console.error("[oauth-gmail-callback] watch registration threw:", err);
+  }
+
   return redirectSuccess();
 });
