@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/auth/AuthProvider";
+import RepliesTab from "@/pages/campaigns/RepliesTab";
 
 function pct(num, denom) {
   if (!denom) return 0;
@@ -95,6 +96,8 @@ export default function CampaignAnalyticsPage() {
   const [events, setEvents] = useState([]);
   const [rangeId, setRangeId] = useState("30d");
   const [expanded, setExpanded] = useState(null);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [orgUserIds, setOrgUserIds] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,6 +110,7 @@ export default function CampaignAnalyticsPage() {
           .from("org_members").select("user_id").eq("org_id", orgId);
         if (membersErr) throw membersErr;
         const orgUserIds = (members ?? []).map((m) => m.user_id).filter(Boolean);
+        if (!cancelled) setOrgUserIds(orgUserIds);
 
         const recPromise = supabase
           .from("lit_campaign_contacts")
@@ -244,7 +248,43 @@ export default function CampaignAnalyticsPage() {
           </div>
         </div>
 
-        {loading ? (
+        {/* Tab navigation */}
+        <div className="mb-4 flex items-center gap-1 border-b border-slate-200">
+          {[
+            { id: "overview", label: "Overview" },
+            { id: "replies", label: "Replies" },
+          ].map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setActiveTab(t.id)}
+              className={[
+                "-mb-px border-b-2 px-3 py-2 text-[12px] font-semibold transition-colors",
+                activeTab === t.id
+                  ? "border-blue-600 text-blue-700"
+                  : "border-transparent text-slate-500 hover:text-slate-700",
+              ].join(" ")}
+              aria-selected={activeTab === t.id}
+              role="tab"
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "replies" ? (
+          <section className="rounded-xl border border-slate-200 bg-white">
+            <div className="border-b border-slate-100 px-4 py-3">
+              <div className="text-[12px] font-bold uppercase tracking-wider text-slate-500">
+                Replies
+              </div>
+              <div className="mt-0.5 text-[11px] text-slate-500">
+                Inbound responses across your campaigns.
+              </div>
+            </div>
+            <RepliesTab orgUserIds={orgUserIds} />
+          </section>
+        ) : loading ? (
           <div className="flex items-center justify-center rounded-xl border border-slate-200 bg-white py-16">
             <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
           </div>
