@@ -286,8 +286,20 @@ If all 7 work end-to-end, Phase 1 ships.
 
 ---
 
-## Open questions
+## Resolved decisions (2026-05-20)
 
-1. **Resend allowlist** — is the existing super-admin-only Resend sender path staying for admin broadcasts (per recent commits), or is it being deprecated in favor of user mailboxes only? (Affects whether dispatcher needs to keep the Resend code path.)
-2. **Pub/Sub topic** — does the GCP project already have a topic + service account set up for Gmail Watch? If not, that's a one-time infra task adjacent to Phase 1.
-3. **Daily-cap defaults** — current spec uses 50/day post-warmup. Some operators run 100-200/day on warmed mailboxes. Confirm default + whether per-user override lives in Settings or just `lit_email_accounts`.
+1. **Resend stays internal-only.** Resend is the LIT-side channel for marketing emails and platform comms (signup, trial, lifecycle). It is **not** a user-selectable sender for outreach campaigns. The dispatcher does NOT need a Resend send code path — campaign sending is Gmail/Outlook only. Existing Resend edge functions (`subscription-email-cron`, marketing dispatchers) are unaffected.
+
+2. **Daily send cap default = 50/day.** Post-warmup. Conservative to protect deliverability. Per-mailbox override stored on `lit_email_accounts.daily_send_cap` so users can raise it manually for known-good mailboxes. No Settings UI for it in Phase 1 — admin can edit directly via SQL or we expose later.
+
+3. **Pub/Sub topic for Gmail Watch — investigation task.** Unknown whether the GCP project has a topic + service account set up. First implementation task should verify and, if missing, provision: one topic `lit-gmail-replies` + push subscription pointing at `/reply-receiver` edge fn + service-account permissions for Gmail Watch to publish.
+
+## Implications of decision 1 (Resend only internal)
+
+Component A dispatcher loop step 4 (**Send**) — simplifies to:
+```
+provider = sender_account.provider  // 'gmail' | 'outlook'
+if provider === 'gmail':  send via gmail.users.messages.send (existing OAuth token)
+if provider === 'outlook': send via Microsoft Graph /me/sendMail (existing OAuth token)
+```
+No `else` branch — campaigns without a connected Gmail/Outlook mailbox cannot launch. Campaign Builder UI should hide/disable the launch button until a user mailbox is connected.
