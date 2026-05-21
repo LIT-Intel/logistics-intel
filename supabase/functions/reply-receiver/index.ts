@@ -40,6 +40,18 @@ serve(async (req) => {
 
   const url = new URL(req.url);
   const source = url.searchParams.get("source"); // 'gmail' | 'outlook'
+  const action = url.searchParams.get("action");
+
+  // Renewal action: invoked by pg_cron every 6h to refresh expiring
+  // Gmail Watch / Graph subscriptions. Handled before any source/method
+  // gating so the cron can POST without a source param.
+  if (action === "renew") {
+    if (req.method !== "POST") {
+      return new Response("method_not_allowed", { status: 405 });
+    }
+    const supaRenew = createClient(SUPABASE_URL, SERVICE_ROLE);
+    return await handleRenewal(supaRenew);
+  }
 
   // Graph validation handshake comes via GET or POST with ?validationToken=.
   // Handle it before any auth / method gating so subscription creation in
@@ -452,4 +464,108 @@ async function getMailboxAccessToken(
     })
     .eq("id", tokenRow.id);
   return { ok: true, accessToken: newAccessToken };
+}
+
+// ── Subscription renewal (cron-driven) ────────────────────────────────
+//
+// Gmail Watch lasts at most 7 days; Graph subscriptions on /messages
+// last at most ~71h59m. A pg_cron job posts to ?action=renew every 6h
+// and we renew any subscription expiring within the next 24h. This
+// keeps reply detection alive indefinitely without manual reconnects.
+
+async function handleRenewal(supa: any): Promise<Response> {
+  const renewBefore = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  let renewed = 0;
+  let failed = 0;
+
+  // Gmail Watch renewals. Skip silently if the pubsub topic env var
+  // hasn't been configured yet (Task 7 prereq) — that means there are
+  // no Gmail Watches in flight anyway.
+  const pubsubTopic = Deno.env.get("GMAIL_PUBSUB_TOPIC");
+  if (pubsubTopic) {
+    const { data: gmailMboxes } = await supa
+      .from("lit_email_accounts")
+      .select("id, email, gmail_watch_expiration")
+      .eq("provider", "gmail")
+      .lt("gmail_watch_expiration", renewBefore);
+
+    for (const mailbox of (gmailMboxes || [])) {
+      try {
+        const tokenRes = await getMailboxAccessToken(supa, mailbox.id, "gmail");
+        if (!tokenRes.ok) { failed++; continue; }
+        const accessToken = tokenRes.accessToken;
+        const resp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/watch`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            topicName: pubsubTopic,
+            labelIds: ["INBOX"],
+            labelFilterBehavior: "INCLUDE",
+          }),
+        });
+        if (resp.ok) {
+          const w = await resp.json();
+          await supa.from("lit_email_accounts").update({
+            gmail_watch_expiration: new Date(Number(w.expiration)).toISOString(),
+            gmail_history_id: String(w.historyId),
+          }).eq("id", mailbox.id);
+          renewed++;
+        } else {
+          console.warn(`[renew] gmail watch renew failed for ${mailbox.email}: ${resp.status}`);
+          failed++;
+        }
+      } catch (err) {
+        console.error(`[renew] gmail mailbox ${mailbox.id} threw:`, err);
+        failed++;
+      }
+    }
+  }
+
+  // Outlook Graph subscription renewals (max 71h59m for /messages).
+  const { data: outlookMboxes } = await supa
+    .from("lit_email_accounts")
+    .select("id, email, graph_subscription_id, graph_subscription_expiration")
+    .eq("provider", "outlook")
+    .not("graph_subscription_id", "is", null)
+    .lt("graph_subscription_expiration", renewBefore);
+
+  for (const mailbox of (outlookMboxes || [])) {
+    try {
+      const tokenRes = await getMailboxAccessToken(supa, mailbox.id, "outlook");
+      if (!tokenRes.ok) { failed++; continue; }
+      const accessToken = tokenRes.accessToken;
+      const newExp = new Date(Date.now() + 60 * 60 * 60 * 1000).toISOString();
+      const resp = await fetch(
+        `https://graph.microsoft.com/v1.0/subscriptions/${mailbox.graph_subscription_id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ expirationDateTime: newExp }),
+        },
+      );
+      if (resp.ok) {
+        await supa.from("lit_email_accounts").update({
+          graph_subscription_expiration: newExp,
+        }).eq("id", mailbox.id);
+        renewed++;
+      } else {
+        console.warn(`[renew] graph subscription renew failed for ${mailbox.email}: ${resp.status}`);
+        failed++;
+      }
+    } catch (err) {
+      console.error(`[renew] outlook mailbox ${mailbox.id} threw:`, err);
+      failed++;
+    }
+  }
+
+  return new Response(JSON.stringify({ ok: true, renewed, failed }), {
+    status: 200,
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
+  });
 }
