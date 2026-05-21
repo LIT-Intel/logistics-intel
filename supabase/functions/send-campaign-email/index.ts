@@ -671,6 +671,8 @@ serve(async (req) => {
         to: r.email,
         subject,
         body,
+        campaignId: r.campaign_id,
+        recipientId: r.id,
       });
 
       // 2i. Persist history row + advance/fail recipient.
@@ -938,8 +940,16 @@ async function sendEmail(args: {
   to: string;
   subject: string;
   body: string;
+  campaignId: string;
+  recipientId: string;
 }): Promise<{ ok: true; messageId: string | null } | { ok: false; error: string }> {
-  const { provider, accessToken, from, to, subject, body } = args;
+  const { provider, accessToken, from, to, subject, body, campaignId, recipientId } = args;
+  // RFC 8058 one-click unsubscribe URL. Gmail/Yahoo bulk-sender policy
+  // (Feb 2024) requires List-Unsubscribe + List-Unsubscribe-Post for high-
+  // volume senders; missing them lands campaign mail in spam/promotions.
+  const supabaseUrlForUnsub = Deno.env.get("SUPABASE_URL")!;
+  const unsubUrl = `${supabaseUrlForUnsub}/functions/v1/email-unsubscribe?campaign=${encodeURIComponent(campaignId)}&recipient=${encodeURIComponent(recipientId)}`;
+  const listUnsubHeader = `<${unsubUrl}>, <mailto:unsubscribe@logisticintel.com?subject=unsubscribe>`;
   if (provider === "resend") {
     const apiKey = Deno.env.get("LIT_RESEND_API_KEY");
     if (!apiKey) return { ok: false, error: "resend_api_key_missing" };
@@ -997,6 +1007,8 @@ async function sendEmail(args: {
       `To: ${to}`,
       `Subject: ${subject}`,
       `Message-ID: ${messageId}`,
+      `List-Unsubscribe: ${listUnsubHeader}`,
+      `List-Unsubscribe-Post: List-Unsubscribe=One-Click`,
       `MIME-Version: 1.0`,
       `Content-Type: ${isHtml ? "text/html" : "text/plain"}; charset=UTF-8`,
       ``,
@@ -1046,6 +1058,11 @@ async function sendEmail(args: {
         subject,
         body: { contentType: outlookIsHtml ? "HTML" : "Text", content: body },
         toRecipients: [{ emailAddress: { address: to } }],
+        // Graph allow-list permits List-Unsubscribe + -Post via internetMessageHeaders.
+        internetMessageHeaders: [
+          { name: "List-Unsubscribe", value: listUnsubHeader },
+          { name: "List-Unsubscribe-Post", value: "List-Unsubscribe=One-Click" },
+        ],
       }),
     });
     if (!draftResp.ok) {
