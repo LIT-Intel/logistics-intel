@@ -302,35 +302,48 @@ If all 7 work end-to-end, Phase 1 ships.
 
    **Why this is incomplete:** The Supabase MCP exposes no tool to list edge-function secrets. The operator must verify env-var state via the dashboard. We also do not have `gcloud` access from this environment.
 
-   **Remaining user actions (must be done before Task 7 — Gmail Watch — can be implemented):**
-   1. **Identify the GCP project hosting the LIT Gmail OAuth client.**
-      - Supabase dashboard → Project `jkmrfiaefxwgbvftohrb` → Edge Functions → Manage secrets → copy `GMAIL_CLIENT_ID`.
-      - The numeric prefix before the first `-` is the GCP project number. Translate to project ID via `gcloud projects list --filter="projectNumber=<n>"` or the GCP Console.
-   2. **Create the Pub/Sub topic** in that GCP project:
-      ```
-      gcloud pubsub topics create lit-gmail-replies --project=<project-id>
-      ```
-   3. **Grant Gmail API permission to publish to the topic** (Gmail uses a fixed service account):
-      ```
-      gcloud pubsub topics add-iam-policy-binding lit-gmail-replies \
-        --member=serviceAccount:gmail-api-push@system.gserviceaccount.com \
-        --role=roles/pubsub.publisher \
-        --project=<project-id>
-      ```
-   4. **Create a push subscription** pointing at the reply-receiver edge function with OIDC JWT auth:
-      ```
-      gcloud pubsub subscriptions create lit-gmail-replies-push \
-        --topic=lit-gmail-replies \
-        --push-endpoint=https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/reply-receiver \
-        --push-auth-service-account=<service-account>@<project-id>.iam.gserviceaccount.com \
-        --push-auth-token-audience=https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/reply-receiver \
-        --project=<project-id>
-      ```
-      (Create the service account first if it doesn't exist: `gcloud iam service-accounts create lit-pubsub-pusher --project=<project-id>`.)
-   5. **Set Supabase edge-function secrets** (dashboard → Edge Functions → Manage secrets, or CLI `supabase secrets set --project-ref jkmrfiaefxwgbvftohrb`):
-      - `GMAIL_PUBSUB_TOPIC=projects/<project-id>/topics/lit-gmail-replies`
-      - `GMAIL_PUBSUB_AUDIENCE=https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/reply-receiver`
-   6. **Report the project ID back** so this decision can be amended with the concrete value (replacing `<project-id>` above).
+   **GCP project (provided by operator 2026-05-21):**
+   - **Client ID**: `187580267283-aodq5cp9jfog69doov0ubc2glhqr66iu.apps.googleusercontent.com`
+   - **Project number**: `187580267283`
+   - Project ID slug TBD — operator can fetch via `gcloud projects list --filter="projectNumber=187580267283" --format="value(projectId)"` or read it from the GCP Console URL.
+
+   **Remaining user actions (must be done before Task 7 — Gmail Watch — can be implemented).** Copy-paste-ready commands assuming the project ID is captured into `PROJECT_ID`:
+
+   ```bash
+   # 0. Resolve project ID from the number
+   PROJECT_ID=$(gcloud projects list --filter="projectNumber=187580267283" --format="value(projectId)")
+   echo "Using $PROJECT_ID"
+
+   # 1. Create the topic
+   gcloud pubsub topics create lit-gmail-replies --project=$PROJECT_ID
+
+   # 2. Grant Gmail API permission to publish (Gmail uses a fixed service account)
+   gcloud pubsub topics add-iam-policy-binding lit-gmail-replies \
+     --member=serviceAccount:gmail-api-push@system.gserviceaccount.com \
+     --role=roles/pubsub.publisher \
+     --project=$PROJECT_ID
+
+   # 3. Create a service account for the push subscription
+   gcloud iam service-accounts create lit-pubsub-pusher \
+     --display-name="LIT Pub/Sub push to reply-receiver" \
+     --project=$PROJECT_ID
+
+   # 4. Allow the SA to invoke the OIDC endpoint (no Cloud Run binding needed
+   #    since Supabase Edge accepts any signed Google OIDC token at the
+   #    correct audience; the SA just needs to exist)
+   gcloud pubsub subscriptions create lit-gmail-replies-push \
+     --topic=lit-gmail-replies \
+     --push-endpoint=https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/reply-receiver?source=gmail \
+     --push-auth-service-account=lit-pubsub-pusher@$PROJECT_ID.iam.gserviceaccount.com \
+     --push-auth-token-audience=https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/reply-receiver \
+     --project=$PROJECT_ID
+   ```
+
+   Then in **Supabase dashboard → Project `jkmrfiaefxwgbvftohrb` → Edge Functions → Manage secrets**, add:
+   - `GMAIL_PUBSUB_TOPIC=projects/<PROJECT_ID>/topics/lit-gmail-replies`
+   - `GMAIL_PUBSUB_AUDIENCE=https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/reply-receiver`
+
+   Once both env vars are set, Task 7 (Gmail Watch registration in oauth-gmail-callback) becomes implementable.
 
 ## Implications of decision 1 (Resend only internal)
 
