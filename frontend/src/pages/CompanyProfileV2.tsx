@@ -1723,35 +1723,46 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         companyDisplayName,
         pulseBrief as any,
       );
-      const w = window.open("", "_blank", "noopener,noreferrer");
+      // Blob-URL approach. Earlier we used `window.open("", "_blank",
+      // "noopener,noreferrer")` + document.write — that fails silently
+      // in modern browsers because `noopener` strips the opener's ability
+      // to script the new window (returns null or a sandboxed Window),
+      // which is what produced the blank-white page the user reported.
+      //
+      // With a blob URL the browser navigates to the HTML natively and
+      // renders it the same way it'd render any served page. We keep
+      // the opener reference (no noopener) so we can call w.print() on
+      // load. The blob URL is revoked after print to avoid leaks.
+      const blob = new Blob([briefHtml], { type: "text/html;charset=utf-8" });
+      const blobUrl = URL.createObjectURL(blob);
+      const w = window.open(blobUrl, "_blank");
       if (!w) {
+        URL.revokeObjectURL(blobUrl);
         showShareToast(
           "Popup blocked — allow popups for app.logisticintel.com and try again.",
           "warning",
         );
         return;
       }
-      w.document.open();
-      w.document.write(briefHtml);
-      w.document.close();
-      // Defer print to next tick so fonts/images settle. Closing the
-      // window after print is intentionally left to the user — keeping
-      // it open also lets them re-print without re-exporting.
       const triggerPrint = () => {
         try {
           w.focus();
           w.print();
         } catch (e) {
-          // Some browsers throw if print() fires before the document
-          // is fully parsed — best-effort, no toast needed.
           console.warn("[export-pdf] print dispatch failed:", e);
         }
       };
-      if (w.document.readyState === "complete") {
-        setTimeout(triggerPrint, 200);
-      } else {
-        w.addEventListener("load", () => setTimeout(triggerPrint, 200));
-      }
+      // The new tab loads the blob URL asynchronously. Wait for `load`
+      // before firing print so fonts/CSS are applied. Belt-and-braces:
+      // also schedule a fallback in case the load event already fired
+      // before our listener attached.
+      w.addEventListener("load", () => setTimeout(triggerPrint, 250));
+      setTimeout(() => {
+        if (w.document?.readyState === "complete") triggerPrint();
+      }, 1200);
+      // Revoke after a comfortable window so the print preview/render
+      // doesn't lose the source. 60s is plenty for a one-page brief.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
       showShareToast(
         "Brief opened — use the browser's Save as PDF.",
         "success",
