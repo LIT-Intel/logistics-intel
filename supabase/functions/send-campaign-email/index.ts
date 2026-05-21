@@ -322,10 +322,12 @@ serve(async (req) => {
       //     paying for an OAuth token refresh + send roundtrip.
       //
       // Primary check: lit_email_suppression_status RPC (returns
-      //   { converted, bounced, complained }). 'converted' here means
-      //   the address is already a paying LIT customer — don't market
-      //   to them via campaigns. 'bounced' and 'complained' are CAN-SPAM /
-      //   reputation gates.
+      //   { converted, bounced, complained, unsubscribed }). 'converted'
+      //   here means the address is already a paying LIT customer — don't
+      //   market to them via campaigns. 'bounced' and 'complained' are
+      //   CAN-SPAM / reputation gates. 'unsubscribed' is true when the
+      //   recipient one-click-unsubscribed from any prior campaign
+      //   (cross-campaign suppression via lit_email_preferences.unsubscribed_all).
       // Fallback check: legacy lit_email_suppression_list table for org-
       //   level manual unsubscribes; kept so the manual-suppress UX
       //   continues to work until we migrate it to the RPC backend.
@@ -335,7 +337,8 @@ serve(async (req) => {
           p_email: r.email,
         });
         const supp = Array.isArray(rpcRow) ? rpcRow[0] : rpcRow;
-        if (supp?.bounced) suppressedReason = "bounced";
+        if (supp?.unsubscribed) suppressedReason = "unsubscribed";
+        else if (supp?.bounced) suppressedReason = "bounced";
         else if (supp?.complained) suppressedReason = "complained";
         else if (supp?.converted) suppressedReason = "converted";
       } catch (e) {
