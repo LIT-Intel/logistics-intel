@@ -20,6 +20,9 @@ const corsHeaders = {
 const OUTLOOK_SCOPES = [
   "https://graph.microsoft.com/Mail.Send",
   "https://graph.microsoft.com/User.Read",
+  // Mail.Read required for Graph subscription on me/mailFolders('Inbox')/messages
+  // (reply detection).
+  "https://graph.microsoft.com/Mail.Read",
   "offline_access",
 ];
 

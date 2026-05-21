@@ -64,6 +64,14 @@ function buildGmailAuthUrl(state: string) {
       "email",
       "profile",
       "https://www.googleapis.com/auth/gmail.send",
+      // gmail.metadata required for users.watch (reply detection via Pub/Sub).
+      // Deliberately NOT gmail.readonly — that's a RESTRICTED scope requiring
+      // Google CASA verification, which would block OAuth consent for new
+      // users. gmail.metadata is SENSITIVE (same tier as gmail.send, already
+      // verified). It returns message headers + threadId + snippet, which
+      // is exactly what reply-receiver needs (format=metadata with
+      // metadataHeaders=In-Reply-To,References,From,Subject).
+      "https://www.googleapis.com/auth/gmail.metadata",
     ].join(" "),
     state,
   });
@@ -95,6 +103,8 @@ function buildOutlookAuthUrl(state: string) {
       "offline_access",
       "User.Read",
       "Mail.Send",
+      // Mail.Read required for Graph subscription on inbox (reply detection).
+      "Mail.Read",
     ].join(" "),
     state,
   });

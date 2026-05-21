@@ -19,6 +19,9 @@ const corsHeaders = {
 
 const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
+  // gmail.metadata required for users.watch (reply detection via Pub/Sub).
+  // NOT gmail.readonly — that's a restricted scope requiring CASA review.
+  "https://www.googleapis.com/auth/gmail.metadata",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ];
