@@ -8,10 +8,11 @@
 import { supabase } from "@/lib/supabase";
 
 export type NotificationStatus = "unread" | "read" | "dismissed";
-export type NotificationSeverity = "low" | "medium" | "high" | "critical";
+export type NotificationSeverity = "info" | "low" | "medium" | "high" | "critical";
 export type NotificationKind =
   | "signal"
   | "reply"
+  | "campaign_reply"
   | "campaign"
   | "billing"
   | "system"
