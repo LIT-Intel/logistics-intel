@@ -292,7 +292,45 @@ If all 7 work end-to-end, Phase 1 ships.
 
 2. **Daily send cap default = 50/day.** Post-warmup. Conservative to protect deliverability. Per-mailbox override stored on `lit_email_accounts.daily_send_cap` so users can raise it manually for known-good mailboxes. No Settings UI for it in Phase 1 — admin can edit directly via SQL or we expose later.
 
-3. **Pub/Sub topic for Gmail Watch — investigation task.** Unknown whether the GCP project has a topic + service account set up. First implementation task should verify and, if missing, provision: one topic `lit-gmail-replies` + push subscription pointing at `/reply-receiver` edge fn + service-account permissions for Gmail Watch to publish.
+3. **Pub/Sub topic for Gmail Watch — audit findings (2026-05-20).**
+
+   **Repository audit (what we can determine from code):**
+   - Gmail OAuth client ID is loaded exclusively from the Supabase secret `GMAIL_CLIENT_ID`. It is referenced by `supabase/functions/oauth-gmail-start/index.ts`, `supabase/functions/oauth-gmail-callback/index.ts`, `supabase/functions/email-oauth-start/index.ts`, `supabase/functions/email-oauth-callback/index.ts`, `supabase/functions/send-test-email/index.ts`, and `supabase/functions/send-campaign-email/index.ts`.
+   - **No literal `*.apps.googleusercontent.com` client ID is committed anywhere in the repo** (verified with grep). Therefore the GCP project number cannot be derived from code — only the operator with Supabase dashboard access can read the secret and extract the numeric prefix.
+   - No `GMAIL_PUBSUB_TOPIC` or `GMAIL_PUBSUB_AUDIENCE` references exist outside of this plan/spec (verified). Neither edge functions nor the Watch flow exist yet, confirming Pub/Sub is unprovisioned on the LIT side.
+   - Supabase project (target for env-var configuration): **ref `jkmrfiaefxwgbvftohrb`** (`Logistic Intel`, region us-west-2). Reply-receiver audience will therefore be `https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/reply-receiver`.
+
+   **Why this is incomplete:** The Supabase MCP exposes no tool to list edge-function secrets. The operator must verify env-var state via the dashboard. We also do not have `gcloud` access from this environment.
+
+   **Remaining user actions (must be done before Task 7 — Gmail Watch — can be implemented):**
+   1. **Identify the GCP project hosting the LIT Gmail OAuth client.**
+      - Supabase dashboard → Project `jkmrfiaefxwgbvftohrb` → Edge Functions → Manage secrets → copy `GMAIL_CLIENT_ID`.
+      - The numeric prefix before the first `-` is the GCP project number. Translate to project ID via `gcloud projects list --filter="projectNumber=<n>"` or the GCP Console.
+   2. **Create the Pub/Sub topic** in that GCP project:
+      ```
+      gcloud pubsub topics create lit-gmail-replies --project=<project-id>
+      ```
+   3. **Grant Gmail API permission to publish to the topic** (Gmail uses a fixed service account):
+      ```
+      gcloud pubsub topics add-iam-policy-binding lit-gmail-replies \
+        --member=serviceAccount:gmail-api-push@system.gserviceaccount.com \
+        --role=roles/pubsub.publisher \
+        --project=<project-id>
+      ```
+   4. **Create a push subscription** pointing at the reply-receiver edge function with OIDC JWT auth:
+      ```
+      gcloud pubsub subscriptions create lit-gmail-replies-push \
+        --topic=lit-gmail-replies \
+        --push-endpoint=https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/reply-receiver \
+        --push-auth-service-account=<service-account>@<project-id>.iam.gserviceaccount.com \
+        --push-auth-token-audience=https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/reply-receiver \
+        --project=<project-id>
+      ```
+      (Create the service account first if it doesn't exist: `gcloud iam service-accounts create lit-pubsub-pusher --project=<project-id>`.)
+   5. **Set Supabase edge-function secrets** (dashboard → Edge Functions → Manage secrets, or CLI `supabase secrets set --project-ref jkmrfiaefxwgbvftohrb`):
+      - `GMAIL_PUBSUB_TOPIC=projects/<project-id>/topics/lit-gmail-replies`
+      - `GMAIL_PUBSUB_AUDIENCE=https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/reply-receiver`
+   6. **Report the project ID back** so this decision can be amended with the concrete value (replacing `<project-id>` above).
 
 ## Implications of decision 1 (Resend only internal)
 
