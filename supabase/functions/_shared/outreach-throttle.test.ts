@@ -105,3 +105,81 @@ Deno.test("computeDailyCap — day 31+ honors lower override cap", () => {
   });
   if (cap !== 30) throw new Error(`expected 30, got ${cap}`);
 });
+
+import { canSendNow } from "./outreach-throttle.ts";
+
+Deno.test("canSendNow — fresh mailbox under both caps returns allowed", () => {
+  const r = canSendNow({
+    now: new Date("2026-05-20T12:00:00Z"),
+    sentToday: 0,
+    sentThisHour: 0,
+    effectiveDailyCap: 50,
+    hourlySendCap: 20,
+    lastSendAt: null,
+  });
+  if (r.allowed !== true) throw new Error(`expected allowed=true, got ${JSON.stringify(r)}`);
+});
+
+Deno.test("canSendNow — at hourly cap returns blocked + retry next hour boundary", () => {
+  const now = new Date("2026-05-20T12:15:00Z");
+  const r = canSendNow({
+    now,
+    sentToday: 18,
+    sentThisHour: 20,
+    effectiveDailyCap: 50,
+    hourlySendCap: 20,
+    lastSendAt: now,
+  });
+  if (r.allowed !== false) throw new Error("expected blocked");
+  const expected = new Date("2026-05-20T13:00:00Z").getTime();
+  if (r.retryAt?.getTime() !== expected) {
+    throw new Error(`expected retry at 13:00Z, got ${r.retryAt?.toISOString()}`);
+  }
+});
+
+Deno.test("canSendNow — at daily cap returns blocked + retry tomorrow 00:00 UTC", () => {
+  const now = new Date("2026-05-20T18:00:00Z");
+  const r = canSendNow({
+    now,
+    sentToday: 50,
+    sentThisHour: 3,
+    effectiveDailyCap: 50,
+    hourlySendCap: 20,
+    lastSendAt: now,
+  });
+  if (r.allowed !== false) throw new Error("expected blocked");
+  const expected = new Date("2026-05-21T00:00:00Z").getTime();
+  if (r.retryAt?.getTime() !== expected) {
+    throw new Error(`expected retry at next-day 00:00Z, got ${r.retryAt?.toISOString()}`);
+  }
+});
+
+Deno.test("canSendNow — effectiveDailyCap of 10 (during warmup) blocks at 10", () => {
+  const now = new Date("2026-05-20T12:00:00Z");
+  const r = canSendNow({
+    now,
+    sentToday: 10,
+    sentThisHour: 0,
+    effectiveDailyCap: 10,
+    hourlySendCap: 20,
+    lastSendAt: now,
+  });
+  if (r.allowed !== false) throw new Error("expected blocked at warmup day-1 cap");
+});
+
+Deno.test("canSendNow — daily cap takes precedence when both caps hit", () => {
+  const now = new Date("2026-05-20T18:00:00Z");
+  const r = canSendNow({
+    now,
+    sentToday: 50,
+    sentThisHour: 20,
+    effectiveDailyCap: 50,
+    hourlySendCap: 20,
+    lastSendAt: now,
+  });
+  if (r.allowed !== false) throw new Error("expected blocked");
+  const tomorrow = new Date("2026-05-21T00:00:00Z").getTime();
+  if (r.retryAt?.getTime() !== tomorrow) {
+    throw new Error(`expected next-day retry when daily exhausted, got ${r.retryAt?.toISOString()}`);
+  }
+});

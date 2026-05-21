@@ -35,3 +35,51 @@ export function computeDailyCap(input: ComputeDailyCapInput): number {
 
   return Math.min(rampCap, dailySendCap);
 }
+
+export type CanSendNowInput = {
+  now: Date;
+  sentToday: number;
+  sentThisHour: number;
+  effectiveDailyCap: number;
+  hourlySendCap: number;
+  lastSendAt: Date | null;
+};
+
+export type CanSendNowResult =
+  | { allowed: true; retryAt: null }
+  | { allowed: false; retryAt: Date };
+
+/**
+ * Decides whether the mailbox can send one more email right now. If
+ * blocked, returns the next time a send slot opens — caller pushes
+ * `next_send_at` to that timestamp so the recipient is re-queued.
+ *
+ * Daily cap takes precedence: when sent_today >= effectiveDailyCap we
+ * push to next-day 00:00 UTC even if hourly has room (we won't have
+ * room when the new hour arrives either).
+ */
+export function canSendNow(input: CanSendNowInput): CanSendNowResult {
+  const { now, sentToday, sentThisHour, effectiveDailyCap, hourlySendCap } = input;
+
+  if (sentToday >= effectiveDailyCap) {
+    const nextDay = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() + 1,
+      0, 0, 0, 0,
+    ));
+    return { allowed: false, retryAt: nextDay };
+  }
+
+  if (sentThisHour >= hourlySendCap) {
+    const nextHour = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      now.getUTCHours() + 1, 0, 0, 0,
+    ));
+    return { allowed: false, retryAt: nextHour };
+  }
+
+  return { allowed: true, retryAt: null };
+}
