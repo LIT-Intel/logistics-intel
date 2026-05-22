@@ -38,6 +38,9 @@ import { canonicalContainerCode } from "@/lib/containerUtils";
 import { UpgradeModal } from "@/components/billing/UpgradeModal";
 import type { LimitExceeded } from "@/lib/usage";
 import { LimitExceededError } from "@/lib/saveCompany";
+import SearchHero from "@/features/search/SearchHero";
+import SearchTypeahead from "@/features/search/SearchTypeahead";
+import PopularShippers from "@/features/search/PopularShippers";
 
 function getCountryFlag(countryCode?: string): string {
   if (!countryCode || countryCode.length !== 2) return "";
@@ -107,6 +110,7 @@ export default function SearchPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [savedCompanyIds, setSavedCompanyIds] = useState<string[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
 
   // Phase D client-side filters. Every chip maps to a field that's already
   // populated on the mapped company rows — nothing fetched, nothing mocked.
@@ -1077,56 +1081,80 @@ export default function SearchPage() {
           )}
         </div>
 
-        <form
-          onSubmit={handleSearch}
-          className="overflow-hidden rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.03)] sm:p-3.5"
-        >
-          <div className="flex flex-col gap-2.5 sm:flex-row">
-            <div className="relative flex-1">
-              <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search by company name…"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="font-body h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-10 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={handleClear}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
-                  aria-label="Clear search"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
+        <SearchHero showHero={!hasSearched} />
 
-            <button
-              type="submit"
-              disabled={!authReady || searchQuery.length < 2 || searching}
-              className="font-display inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-b from-blue-500 to-blue-600 px-5 text-[13px] font-semibold text-white shadow-sm transition hover:from-blue-600 hover:to-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {searching ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Searching…
-                </>
-              ) : !authReady ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Authenticating…
-                </>
-              ) : (
-                <>
-                  <SearchIcon className="h-3.5 w-3.5" />
-                  Search
-                </>
-              )}
-            </button>
-          </div>
-        </form>
+        <div className="relative mx-auto max-w-3xl">
+          <form
+            onSubmit={handleSearch}
+            className="overflow-hidden rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.03)] focus-within:ring-2 focus-within:ring-brand-cyan/40 focus-within:shadow-glow-cyan transition sm:p-3.5"
+          >
+            <div className="flex flex-col gap-2.5 sm:flex-row">
+              <div className="relative flex-1">
+                <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by company name…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => setInputFocused(true)}
+                  onBlur={() => {
+                    // Delay so click handlers inside SearchTypeahead can fire
+                    // before the dropdown unmounts.
+                    setTimeout(() => setInputFocused(false), 150);
+                  }}
+                  className="font-body h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-10 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-brand-cyan focus:outline-none focus:ring-2 focus:ring-brand-cyan/20"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={handleClear}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={!authReady || searchQuery.length < 2 || searching}
+                className="font-display inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-brand-cyan px-5 text-[13px] font-semibold text-dark-0 shadow-glow-cyan transition hover:bg-brand-cyan-dim disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {searching ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Searching…
+                  </>
+                ) : !authReady ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Authenticating…
+                  </>
+                ) : (
+                  <>
+                    <SearchIcon className="h-3.5 w-3.5" />
+                    Search
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+          <SearchTypeahead
+            query={searchQuery}
+            isOpen={inputFocused}
+            onFallbackSubmit={() => {
+              setInputFocused(false);
+              // Synthetic event mirrors the existing `?q=` auto-run path
+              // (see useEffect above that calls handleSearch with a fake
+              // event), so this is a proven-safe call shape.
+              handleSearch({ preventDefault: () => {} } as React.FormEvent);
+            }}
+            onClose={() => setInputFocused(false)}
+          />
+        </div>
+
+        <PopularShippers showGrid={!hasSearched} />
 
         {/* Phase D — Inline filter chips. Only shown after a search, and
             only for filters backed by real fields already on the mapped
