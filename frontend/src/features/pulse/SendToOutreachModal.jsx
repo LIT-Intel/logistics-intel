@@ -40,11 +40,14 @@ export default function SendToOutreachModal({ company, contacts = [], onClose, o
       } = await supabase.auth.getUser();
       if (!user) return;
 
+      // status canonically reads 'connected' on healthy mailboxes per
+      // the OAuth callbacks; some legacy rows may use 'active'. Accept
+      // either so the modal finds the user's mailbox in both cases.
       const { data: mb } = await supabase
         .from("lit_email_accounts")
         .select("id, email, provider, status, is_primary")
         .eq("user_id", user.id)
-        .eq("status", "active")
+        .in("status", ["connected", "active"])
         .order("is_primary", { ascending: false });
       const mailboxList = mb || [];
       setMailboxes(mailboxList);
