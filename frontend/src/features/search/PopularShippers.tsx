@@ -47,7 +47,7 @@ export default function PopularShippers({ showGrid }: Props) {
   const navigate = useNavigate();
   if (!showGrid) return null;
   return (
-    <div className="mx-auto mt-12 max-w-3xl px-4">
+    <div className="mx-auto mt-12 max-w-5xl px-4">
       <div className="font-display mb-4 text-center text-[12px] font-semibold uppercase tracking-[0.18em] text-ink-500">
         Popular shippers
       </div>

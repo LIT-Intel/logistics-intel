@@ -16,7 +16,7 @@ type Props = {
 export default function SearchHero({ showHero }: Props) {
   if (!showHero) return null;
   return (
-    <div className="mx-auto mt-2 mb-6 max-w-3xl px-4 text-center">
+    <div className="mx-auto mt-2 mb-6 max-w-5xl px-4 text-center">
       <span
         className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700"
       >

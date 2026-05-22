@@ -982,7 +982,7 @@ export default function SearchPage() {
             render simultaneously — clean state separation. */}
         <SearchHero showHero={!hasSearched} />
 
-        <div className="relative mx-auto max-w-3xl">
+        <div className="relative mx-auto max-w-5xl">
           <form
             onSubmit={handleSearch}
             className="overflow-hidden rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.03)] focus-within:border-blue-300 focus-within:shadow-[0_6px_18px_rgba(37,99,235,0.18)] transition sm:p-3.5"
