@@ -25,9 +25,24 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { applyMergeVars, buildMergeContext } from "../_shared/merge-vars.ts";
+import { canSendNow, computeDailyCap } from "../_shared/outreach-throttle.ts";
 
 const BATCH_SIZE = 25;
 const DEFAULT_DAILY_CAP = 50;
+const DEFAULT_HOURLY_CAP = 20;
+
+/**
+ * Derive a stable 63-bit signed-int advisory-lock key from a UUID. Postgres
+ * pg_try_advisory_xact_lock takes a bigint; collisions are acceptable
+ * (worst case: two recipients serialize through the same lock for one tick).
+ */
+function hashRecipientLockKey(recipientId: string): number {
+  let h = 0;
+  for (let i = 0; i < recipientId.length; i++) {
+    h = ((h << 5) - h + recipientId.charCodeAt(i)) | 0;
+  }
+  return h;
+}
 
 /** Generate a short opaque slug for click-tracking URLs. */
 function makeSlug(): string {
@@ -200,8 +215,21 @@ serve(async (req) => {
   const senderCache = new Map<string, Account | null>();
   // Cache keyed by company_id.
   const companyCache = new Map<string, { name?: string | null; domain?: string | null; website?: string | null; country_code?: string | null } | null>();
-  // Cache keyed by sender email_account_id for the daily-cap gate.
-  const capCache = new Map<string, { sentToday: number; dailyCap: number }>();
+  // Cache keyed by sender email_account_id for the throttle gate. Holds
+  // the live mailbox row (with warmup + counter fields) so we can call
+  // computeDailyCap/canSendNow on every recipient without re-fetching.
+  // sent_today/sent_this_hour are mutated in-place after each successful
+  // send so subsequent recipients in this same tick see the updated count.
+  const mailboxCache = new Map<string, {
+    id: string;
+    daily_send_cap: number;
+    hourly_send_cap: number;
+    warmup_started_at: string | null;
+    warmup_complete: boolean;
+    sent_today: number;
+    sent_this_hour: number;
+    last_send_at: string | null;
+  }>();
   // Cache keyed by user_id — saved sender signature pulled from
   // lit_user_preferences. Loaded lazily the first time we encounter a
   // step with include_signature !== false.
@@ -210,6 +238,20 @@ serve(async (req) => {
   // ─── 2. Process each recipient ───────────────────────────────────────────
   for (const r of recipients) {
     try {
+      // 2.0 Per-recipient advisory lock. Prevents double-send when two
+      //     overlapping cron ticks pick the same row. The lock is held
+      //     until the RPC's implicit transaction ends — that's only the
+      //     RPC call itself, NOT the whole loop iteration — so this is a
+      //     "did anyone else just claim this row in the last few ms"
+      //     check, not a true mutex. Good enough for the cron contention
+      //     window (~60s) since the subsequent UPDATE of the row pushes
+      //     next_send_at forward, taking the recipient out of the ready
+      //     set for the next tick.
+      const { data: lockOk } = await admin.rpc("lit_try_recipient_lock", {
+        p_key: hashRecipientLockKey(r.id),
+      });
+      if (lockOk === false) continue;
+
       // 2a. Steps for this campaign.
       let steps = stepsCache.get(r.campaign_id);
       if (!steps) {
@@ -278,26 +320,55 @@ serve(async (req) => {
       // 2e. Email step. Suppression gate first — catches anyone the
       //     org has marked unsubscribe / bounce / complaint without
       //     paying for an OAuth token refresh + send roundtrip.
-      const { data: supRows } = await admin
-        .from("lit_email_suppression_list")
-        .select("reason, org_id")
-        .eq("email", r.email)
-        .limit(5);
-      const matchedSup = (supRows ?? []).find(
-        (s: any) => s.org_id === null || s.org_id === r.org_id,
-      );
-      if (matchedSup) {
+      //
+      // Primary check: lit_email_suppression_status RPC (returns
+      //   { converted, bounced, complained, unsubscribed }). 'converted'
+      //   here means the address is already a paying LIT customer — don't
+      //   market to them via campaigns. 'bounced' and 'complained' are
+      //   CAN-SPAM / reputation gates. 'unsubscribed' is true when the
+      //   recipient one-click-unsubscribed from any prior campaign
+      //   (cross-campaign suppression via lit_email_preferences.unsubscribed_all).
+      // Fallback check: legacy lit_email_suppression_list table for org-
+      //   level manual unsubscribes; kept so the manual-suppress UX
+      //   continues to work until we migrate it to the RPC backend.
+      let suppressedReason: string | null = null;
+      try {
+        const { data: rpcRow } = await admin.rpc("lit_email_suppression_status", {
+          p_email: r.email,
+        });
+        const supp = Array.isArray(rpcRow) ? rpcRow[0] : rpcRow;
+        if (supp?.unsubscribed) suppressedReason = "unsubscribed";
+        else if (supp?.bounced) suppressedReason = "bounced";
+        else if (supp?.complained) suppressedReason = "complained";
+        else if (supp?.converted) suppressedReason = "converted";
+      } catch (e) {
+        console.warn("[send-campaign-email] suppression RPC failed (continuing with table fallback)", e);
+      }
+      if (!suppressedReason) {
+        const { data: supRows } = await admin
+          .from("lit_email_suppression_list")
+          .select("reason, org_id")
+          .eq("email", r.email)
+          .limit(5);
+        const matchedSup = (supRows ?? []).find(
+          (s: any) => s.org_id === null || s.org_id === r.org_id,
+        );
+        if (matchedSup) suppressedReason = matchedSup.reason || "suppressed";
+      }
+      if (suppressedReason) {
         await admin.from("lit_outreach_history").insert({
           user_id: r.user_id, campaign_id: r.campaign_id, campaign_step_id: step.id,
           company_id: r.company_id, contact_id: r.contact_id,
           channel: "email", event_type: "suppressed", status: "skipped",
           subject: step.subject, provider: null,
           occurred_at: new Date().toISOString(),
-          metadata: { recipient_email: r.email, reason: matchedSup.reason },
+          metadata: { recipient_email: r.email, reason: suppressedReason },
         });
         await admin.from("lit_campaign_contacts").update({
-          status: "skipped", next_send_at: null,
-          last_error: `suppressed:${matchedSup.reason}`,
+          status: "skipped",
+          next_send_at: null,
+          suppressed_reason: suppressedReason,
+          last_error: `suppressed:${suppressedReason}`,
           updated_at: new Date().toISOString(),
         }).eq("id", r.id);
         summary.skipped += 1;
@@ -428,36 +499,63 @@ serve(async (req) => {
         continue;
       }
 
-      // 2g. Daily cap gate. If this mailbox has hit the configured (or
-      //     default) per-day quota, re-queue this recipient for next
-      //     UTC midnight and continue to the next batch entry.
-      let cap = capCache.get(sender.id);
-      if (!cap) {
-        const { data: countRow } = await admin.rpc("lit_inbox_sent_count_today", {
-          p_account: sender.id,
-        });
-        const { data: capRow } = await admin
-          .from("lit_inbox_sender_caps")
-          .select("daily_cap")
-          .eq("email_account_id", sender.id)
+      // 2g. Throttle gate. Combines (a) the 30-day warmup ramp from
+      //     computeDailyCap with (b) the live daily + hourly counters
+      //     stored on lit_email_accounts. canSendNow returns either
+      //     { allowed: true } or { allowed: false, retryAt: <next slot> }.
+      //     When blocked, push the recipient's next_send_at to retryAt
+      //     so the next tick re-evaluates after the cap window resets.
+      //
+      //     Resend ("internal-only" provider) skips the per-mailbox
+      //     throttle entirely — it has its own platform-level limits
+      //     enforced upstream by Resend itself.
+      let mailboxState = mailboxCache.get(sender.id);
+      if (!mailboxState) {
+        const { data: mb } = await admin
+          .from("lit_email_accounts")
+          .select("id, daily_send_cap, hourly_send_cap, warmup_started_at, warmup_complete, sent_today, sent_this_hour, last_send_at")
+          .eq("id", sender.id)
           .maybeSingle();
-        cap = {
-          sentToday: Number(countRow ?? 0),
-          dailyCap: capRow?.daily_cap != null ? Number(capRow.daily_cap) : DEFAULT_DAILY_CAP,
-        };
-        capCache.set(sender.id, cap);
+        if (mb) {
+          mailboxState = {
+            id: mb.id as string,
+            daily_send_cap: Number(mb.daily_send_cap ?? DEFAULT_DAILY_CAP),
+            hourly_send_cap: Number(mb.hourly_send_cap ?? DEFAULT_HOURLY_CAP),
+            warmup_started_at: (mb.warmup_started_at as string | null) ?? null,
+            warmup_complete: Boolean(mb.warmup_complete),
+            sent_today: Number(mb.sent_today ?? 0),
+            sent_this_hour: Number(mb.sent_this_hour ?? 0),
+            last_send_at: (mb.last_send_at as string | null) ?? null,
+          };
+          mailboxCache.set(sender.id, mailboxState);
+        }
       }
-      if (cap.sentToday >= cap.dailyCap) {
-        const tomorrow = new Date();
-        tomorrow.setUTCHours(24, 0, 0, 0);
-        await admin.from("lit_campaign_contacts").update({
-          status: "queued",
-          next_send_at: tomorrow.toISOString(),
-          last_error: `throttled:${cap.dailyCap}`,
-          updated_at: new Date().toISOString(),
-        }).eq("id", r.id);
-        summary.throttled += 1;
-        continue;
+      if (mailboxState && sender.provider !== "resend") {
+        const now = new Date();
+        const effectiveDailyCap = computeDailyCap({
+          now,
+          warmupStartedAt: mailboxState.warmup_started_at ? new Date(mailboxState.warmup_started_at) : null,
+          warmupComplete: mailboxState.warmup_complete,
+          dailySendCap: mailboxState.daily_send_cap,
+        });
+        const throttle = canSendNow({
+          now,
+          sentToday: mailboxState.sent_today,
+          sentThisHour: mailboxState.sent_this_hour,
+          effectiveDailyCap,
+          hourlySendCap: mailboxState.hourly_send_cap,
+          lastSendAt: mailboxState.last_send_at ? new Date(mailboxState.last_send_at) : null,
+        });
+        if (!throttle.allowed) {
+          await admin.from("lit_campaign_contacts").update({
+            status: "queued",
+            next_send_at: throttle.retryAt.toISOString(),
+            last_error: `throttled:cap=${effectiveDailyCap}/${mailboxState.hourly_send_cap}`,
+            updated_at: new Date().toISOString(),
+          }).eq("id", r.id);
+          summary.throttled += 1;
+          continue;
+        }
       }
 
       // 2h. Resolve company info for merge context.
@@ -576,6 +674,8 @@ serve(async (req) => {
         to: r.email,
         subject,
         body,
+        campaignId: r.campaign_id,
+        recipientId: r.id,
       });
 
       // 2i. Persist history row + advance/fail recipient.
@@ -605,7 +705,21 @@ serve(async (req) => {
 
       if (sendRes.ok) {
         await advance(admin, r, step, steps[stepIndex + 1] ?? null, /* sent */ true);
-        cap.sentToday += 1;
+        // Bump mailbox counters: in-memory (so subsequent recipients
+        // in this same tick see the new state) AND persisted (so the
+        // next tick / next dispatcher invocation sees it too). The
+        // hourly/daily counters are reset by the mailbox-hourly-reset
+        // and mailbox-daily-reset cron jobs (Task 6).
+        if (mailboxState && sender.provider !== "resend") {
+          mailboxState.sent_today += 1;
+          mailboxState.sent_this_hour += 1;
+          mailboxState.last_send_at = new Date().toISOString();
+          await admin.from("lit_email_accounts").update({
+            sent_today: mailboxState.sent_today,
+            sent_this_hour: mailboxState.sent_this_hour,
+            last_send_at: mailboxState.last_send_at,
+          }).eq("id", sender.id);
+        }
         summary.sent += 1;
       } else {
         // Auto-suppress on hard bounce signals so retries don't waste
@@ -665,6 +779,11 @@ async function advance(
   // status stays "queued" between steps so the dispatcher re-picks the
   // recipient on its next tick when next_send_at <= now. The terminal
   // "completed" status is set by complete() once the sequence runs out.
+  //
+  // next_step_order mirrors the step_order of the NEXT step to fire
+  // (1-based). Reply-receiver and analytics tooling read this column
+  // to figure out where in the sequence each recipient is without
+  // having to chase the current_step_id → step_order join.
   const update: Record<string, unknown> = {
     current_step_id: step.id,
     next_send_at: nextSendAt,
@@ -672,6 +791,11 @@ async function advance(
     last_error: null,
     updated_at: new Date().toISOString(),
   };
+  if (nextStep) {
+    update.next_step_order = nextStep.step_order;
+  } else {
+    update.next_step_order = (step.step_order ?? 0) + 1;
+  }
   if (sent) {
     update.last_sent_at = new Date().toISOString();
   }
@@ -819,8 +943,16 @@ async function sendEmail(args: {
   to: string;
   subject: string;
   body: string;
+  campaignId: string;
+  recipientId: string;
 }): Promise<{ ok: true; messageId: string | null } | { ok: false; error: string }> {
-  const { provider, accessToken, from, to, subject, body } = args;
+  const { provider, accessToken, from, to, subject, body, campaignId, recipientId } = args;
+  // RFC 8058 one-click unsubscribe URL. Gmail/Yahoo bulk-sender policy
+  // (Feb 2024) requires List-Unsubscribe + List-Unsubscribe-Post for high-
+  // volume senders; missing them lands campaign mail in spam/promotions.
+  const supabaseUrlForUnsub = Deno.env.get("SUPABASE_URL")!;
+  const unsubUrl = `${supabaseUrlForUnsub}/functions/v1/email-unsubscribe?campaign=${encodeURIComponent(campaignId)}&recipient=${encodeURIComponent(recipientId)}`;
+  const listUnsubHeader = `<${unsubUrl}>, <mailto:unsubscribe@logisticintel.com?subject=unsubscribe>`;
   if (provider === "resend") {
     const apiKey = Deno.env.get("LIT_RESEND_API_KEY");
     if (!apiKey) return { ok: false, error: "resend_api_key_missing" };
@@ -868,10 +1000,18 @@ async function sendEmail(args: {
     // through the user's Gmail mailbox. Plaintext bodies still ship as
     // text/plain to avoid the spam-flag bump from unnecessary HTML.
     const isHtml = /^<[a-z!]/i.test(body.trim()) || /<table|<div|<p[\s>]/i.test(body);
+    // Inject a stable Message-ID we generate so reply-receiver can match
+    // `In-Reply-To` headers from inbound replies. Gmail otherwise auto-
+    // generates a Message-ID that we'd have to fetch back with a second
+    // API call — wasteful and racy.
+    const messageId = `<litcamp-${crypto.randomUUID()}@logisticintel.com>`;
     const raw = [
       `From: ${fromLine}`,
       `To: ${to}`,
       `Subject: ${subject}`,
+      `Message-ID: ${messageId}`,
+      `List-Unsubscribe: ${listUnsubHeader}`,
+      `List-Unsubscribe-Post: List-Unsubscribe=One-Click`,
       `MIME-Version: 1.0`,
       `Content-Type: ${isHtml ? "text/html" : "text/plain"}; charset=UTF-8`,
       ``,
@@ -896,38 +1036,66 @@ async function sendEmail(args: {
           error: `gmail_${resp.status}:${respJson?.error?.message || ""}`,
         };
       }
-      return { ok: true, messageId: respJson.id ?? null };
+      // Return our injected Message-ID (not respJson.id which is Gmail's
+      // internal thread message ID and never appears in reply headers).
+      return { ok: true, messageId };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "gmail_threw" };
     }
   }
-  // Outlook / Microsoft Graph
+  // Outlook / Microsoft Graph — draft-then-send so we can read the
+  // auto-generated `internetMessageId` back before sending. Graph
+  // rejects setting Message-ID via internetMessageHeaders (allow-list
+  // doesn't include it), so we accept Graph's value and persist that
+  // for reply correlation.
   const outlookIsHtml = /^<[a-z!]/i.test(body.trim()) || /<table|<div|<p[\s>]/i.test(body);
   try {
-    const resp = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+    // 1. Create draft to capture internetMessageId
+    const draftResp = await fetch("https://graph.microsoft.com/v1.0/me/messages", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        message: {
-          subject,
-          body: { contentType: outlookIsHtml ? "HTML" : "Text", content: body },
-          toRecipients: [{ emailAddress: { address: to } }],
-        },
-        saveToSentItems: true,
+        subject,
+        body: { contentType: outlookIsHtml ? "HTML" : "Text", content: body },
+        toRecipients: [{ emailAddress: { address: to } }],
+        // Graph allow-list permits List-Unsubscribe + -Post via internetMessageHeaders.
+        internetMessageHeaders: [
+          { name: "List-Unsubscribe", value: listUnsubHeader },
+          { name: "List-Unsubscribe-Post", value: "List-Unsubscribe=One-Click" },
+        ],
       }),
     });
-    if (!resp.ok) {
+    if (!draftResp.ok) {
       let errBody: any = {};
-      try { errBody = await resp.json(); } catch { /* empty */ }
+      try { errBody = await draftResp.json(); } catch { /* empty */ }
       return {
         ok: false,
-        error: `outlook_${resp.status}:${errBody?.error?.message || ""}`,
+        error: `outlook_draft_${draftResp.status}:${errBody?.error?.message || ""}`,
       };
     }
-    return { ok: true, messageId: resp.headers.get("client-request-id") };
+    const draft = await draftResp.json();
+    const internetMessageId: string | null = draft?.internetMessageId ?? null;
+    const draftId: string = draft.id;
+
+    // 2. Send the draft
+    const sendResp = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${draftId}/send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!sendResp.ok) {
+      let errBody: any = {};
+      try { errBody = await sendResp.json(); } catch { /* empty */ }
+      return {
+        ok: false,
+        error: `outlook_send_${sendResp.status}:${errBody?.error?.message || ""}`,
+      };
+    }
+    // internetMessageId is the RFC 5322 Message-ID Outlook will use in
+    // outbound headers; reply In-Reply-To will reference this value.
+    return { ok: true, messageId: internetMessageId };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "outlook_threw" };
   }

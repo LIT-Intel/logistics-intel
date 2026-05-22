@@ -88,6 +88,7 @@ const TEMPLATE_VISUALS = {
   RESEND_TPL_COMPARISON_DAY_4:   { hero: "stack",      accent: "purple" },
   RESEND_TPL_REENGAGE_WINBACK:   { hero: "dashboard",  accent: "slate"  },
   RESEND_TPL_REENGAGE_FINAL:     { hero: "dashboard",  accent: "slate"  },
+  RESEND_TPL_BOOK_DEMO:          { hero: "team",       accent: "blue"   },
 };
 
 function renderHero(envVar) {
@@ -114,11 +115,12 @@ const EXPECTED_TEMPLATES = [
   "RESEND_TPL_COMPARISON_DAY_4",
   "RESEND_TPL_REENGAGE_WINBACK",
   "RESEND_TPL_REENGAGE_FINAL",
+  "RESEND_TPL_BOOK_DEMO",
 ];
 
 function parseDoc(md) {
   // Pull the reusable shell first
-  const shellMatch = md.match(/## Reusable HTML shell[\s\S]*?```html\n([\s\S]*?)\n```/);
+  const shellMatch = md.match(/## Reusable HTML shell[\s\S]*?```html\r?\n([\s\S]*?)\r?\n```/);
   if (!shellMatch) {
     throw new Error("Could not find reusable HTML shell in copy doc");
   }
@@ -140,7 +142,7 @@ function parseDoc(md) {
   //   <body html>
   //   ```
   const blockRe =
-    /### \d+\.\s+(RESEND_TPL_[A-Z0-9_]+)\s*\n+(?:\*\*Subject:\*\*\s*([^\n]+)\s*\n)?(?:\*\*Preview text:\*\*\s*([^\n]+)\s*\n)?[\s\S]*?```html\n([\s\S]*?)\n```/g;
+    /### \d+\.\s+(RESEND_TPL_[A-Z0-9_]+)\s*\r?\n+(?:\*\*Subject:\*\*\s*([^\r\n]+)\s*\r?\n)?(?:\*\*Preview text:\*\*\s*([^\r\n]+)\s*\r?\n)?[\s\S]*?```html\r?\n([\s\S]*?)\r?\n```/g;
 
   const templates = [];
   let m;

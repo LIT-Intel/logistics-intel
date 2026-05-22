@@ -88,6 +88,15 @@ interface ExportRequest {
   source_company_key?: string | null;
   format?: string;
   include_pulse_brief?: boolean;
+  /**
+   * 'share'  → produce a signed HTML URL the user can copy/send. Bypasses
+   *            the export quota gate (acquisition surface; recipients see
+   *            LIT branding, so we don't charge the user to share).
+   * 'export' → produce a printable HTML the user can Save as PDF in the
+   *            browser. Consumes one unit of the `export_pdf` quota.
+   * Default 'export' for backwards-compatibility with v33 callers.
+   */
+  intent?: "share" | "export";
 }
 
 function isUuid(value: unknown): value is string {
@@ -316,6 +325,37 @@ function renderHtml(
   ul.sources .snippet { color: var(--muted); font-size: 12px; margin-top: 2px; }
   .brief-empty { color: var(--muted); }
   footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 24px; }
+
+  /*
+   * Print layer — used by the browser's native Save-as-PDF dialog. Deno
+   * Edge can't run headless Chromium, so we hand the user a printable
+   * HTML and let the OS render the PDF. Tuned for US Letter portrait.
+   *  - 0.5in margins keep the dark hero gradient inside the printable
+   *    area on Chrome/Edge/Safari.
+   *  - Cards never split across pages so a section header isn't
+   *    orphaned at the bottom of a page.
+   *  - Source URLs surface inline because most print dialogs strip
+   *    hover state.
+   */
+  @page { size: Letter; margin: 0.5in; }
+  @media print {
+    html, body { background: #ffffff !important; }
+    body { padding: 0; }
+    .wrap { max-width: none; }
+    .hero {
+      background: #0f172a !important;
+      color: #f8fafc !important;
+      border-radius: 12px;
+      page-break-after: avoid;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .card { box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
+    .kpi { background: #f1f5f9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .brief-section { page-break-inside: avoid; break-inside: avoid; }
+    ul.sources a::after { content: " (" attr(href) ")"; color: var(--muted); font-size: 11px; }
+    footer { margin-top: 16px; }
+  }
 </style>
 </head>
 <body>
@@ -473,13 +513,12 @@ Deno.serve(async (req: Request) => {
     });
   }
   const includeBrief = Boolean(body.include_pulse_brief);
+  const intent = body.intent === "share" ? "share" : "export";
 
   // ---- Plan-limit gate -----------------------------------------------------
-  // Free trial: export_pdf = 0. Generating an export consumes quota
-  // even when the upstream call ultimately fails — so we only consume on
-  // the success path below. The pre-flight check here blocks free users
-  // before any storage work. Admin overrides return ok:true and admin
-  // actions are still recorded in the ledger for audit.
+  // intent='share' bypasses the quota — Share Link is an acquisition surface
+  // (recipients see LIT branding), so we don't charge the sharer. Only the
+  // user-initiated "Export" / "Save as PDF" path consumes export_pdf quota.
   let exportOrgId: string | null = null;
   try {
     const { data: orgRow } = await adminClient
@@ -494,22 +533,24 @@ Deno.serve(async (req: Request) => {
     exportOrgId = null;
   }
 
-  const { data: gateData, error: gateErr } = await adminClient.rpc(
-    "check_usage_limit",
-    {
-      p_org_id: exportOrgId,
-      p_user_id: user.id,
-      p_feature_key: "export_pdf",
-      p_quantity: 1,
-    },
-  );
-  if (gateErr) {
-    console.error("[export-company-profile] gate rpc failed", gateErr);
-  } else if (gateData && (gateData as any).ok === false) {
-    return new Response(JSON.stringify(gateData), {
-      status: 403,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  if (intent === "export") {
+    const { data: gateData, error: gateErr } = await adminClient.rpc(
+      "check_usage_limit",
+      {
+        p_org_id: exportOrgId,
+        p_user_id: user.id,
+        p_feature_key: "export_pdf",
+        p_quantity: 1,
+      },
+    );
+    if (gateErr) {
+      console.error("[export-company-profile] gate rpc failed", gateErr);
+    } else if (gateData && (gateData as any).ok === false) {
+      return new Response(JSON.stringify(gateData), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
   }
 
   // ---- Resolve company -----------------------------------------------------
@@ -606,41 +647,32 @@ Deno.serve(async (req: Request) => {
   const expiresAt = new Date(
     Date.now() + SIGNED_URL_EXPIRY_SECONDS * 1000,
   ).toISOString();
-  const htmlPayload = {
-    format: "html" as const,
+  // The renderer now emits @media print + @page CSS, so the same signed
+  // HTML URL is the answer for both formats: the browser handles the
+  // "Save as PDF" via its native print dialog. format=pdf and format=html
+  // therefore return the same payload — the response always echoes the
+  // request format so the frontend can label the button correctly.
+  const payload = {
+    format,
     url: signed.signedUrl,
     expires_at: expiresAt,
   };
 
-  // ---- HTML success path --------------------------------------------------
-  if (format === "html") {
-    // Consume export_pdf quota on success only. Failures above already
-    // short-circuited without consuming. Admin overrides are still
-    // recorded for audit.
+  // Consume export_pdf quota for intent='export' only. Share-intent calls
+  // already bypassed the gate above and don't consume.
+  if (intent === "export") {
     try {
       await adminClient.rpc("consume_usage", {
         p_org_id: exportOrgId,
         p_user_id: user.id,
         p_feature_key: "export_pdf",
         p_quantity: 1,
-        p_metadata: { company_id: companyRow.id, format: "html" },
+        p_metadata: { company_id: companyRow.id, format },
       });
     } catch (err) {
       console.warn("[export-company-profile] consume_usage failed (non-fatal):", err);
     }
-
-    return jsonResponse(200, {
-      ok: true,
-      ...htmlPayload,
-    });
   }
 
-  // ---- PDF: honest unavailable + HTML fallback ---------------------------
-  return jsonResponse(200, {
-    ok: false,
-    code: "PDF_NOT_AVAILABLE",
-    error:
-      'PDF generation requires a runtime that can render HTML→PDF (puppeteer/chromium not available in Deno Edge Functions). Use format="html" or wire a PDF service (DocRaptor, Browserless).',
-    fallback: htmlPayload,
-  });
+  return jsonResponse(200, { ok: true, ...payload });
 });

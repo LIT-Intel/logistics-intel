@@ -64,6 +64,16 @@ function buildGmailAuthUrl(state: string) {
       "email",
       "profile",
       "https://www.googleapis.com/auth/gmail.send",
+      // Gmail reply detection (users.watch) is DISABLED until we resolve
+      // the scope dilemma:
+      //   - gmail.metadata: SENSITIVE but MUTUALLY EXCLUSIVE with gmail.send
+      //     (can only be used alone — combining with gmail.send breaks OAuth
+      //     consent, bouncing users out of the signup/login flow)
+      //   - gmail.readonly / gmail.modify / mail.google.com: all RESTRICTED,
+      //     require Google CASA verification (months-long process)
+      // For now, Gmail OAuth grants gmail.send ONLY. The Watch registration
+      // in oauth-gmail-callback will 403 silently and log a warning.
+      // Outlook reply detection is unaffected (Mail.Read coexists with Mail.Send).
     ].join(" "),
     state,
   });
@@ -95,6 +105,8 @@ function buildOutlookAuthUrl(state: string) {
       "offline_access",
       "User.Read",
       "Mail.Send",
+      // Mail.Read required for Graph subscription on inbox (reply detection).
+      "Mail.Read",
     ].join(" "),
     state,
   });

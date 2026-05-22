@@ -63,6 +63,7 @@ import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import CDPSupplyChain from "@/components/company/CDPSupplyChain";
 import CDPContacts from "@/components/company/CDPContacts";
 import CDPResearch from "@/components/company/CDPResearch";
+import { renderPulseBriefPrintHtml } from "@/lib/pulse/pulseBriefHtml";
 import CDPActivity from "@/components/company/CDPActivity";
 import CDPRateBenchmark from "@/components/company/CDPRateBenchmark";
 import CDPRevenueOpportunity from "@/components/company/CDPRevenueOpportunity";
@@ -100,7 +101,12 @@ const PULSE_ERROR_COPY: Record<string, string> = {
 const EXPORT_ERROR_COPY: Record<string, string> = {
   STORAGE_NOT_PROVISIONED:
     "Storage bucket not configured. Page link copied instead.",
+  // PDF_NOT_AVAILABLE kept for backwards-compat: edge fn v34+ no longer
+  // returns it (PDF and HTML both emit the same printable HTML URL), but
+  // a stale-cache response from v33 could still surface this code.
   PDF_NOT_AVAILABLE: "PDF render not available — open HTML version?",
+  LIMIT_EXCEEDED:
+    "You've hit this month's export limit. Upgrade your plan or wait until your quota resets.",
   COMPANY_NOT_FOUND: "We couldn't find this company in the database.",
   COMPANY_FETCH_FAILED:
     "Couldn't load company details for export. Try again in a moment.",
@@ -1643,6 +1649,12 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             ...(isUuid ? { company_id: companyId } : {}),
             ...(sourceKey ? { source_company_key: sourceKey } : {}),
             format: "html",
+            // intent='share' tells the edge fn to bypass the export_pdf
+            // quota gate — Share Link is acquisition (recipients see LIT
+            // branding), so we don't bill the user for it. Without this
+            // flag, free-trial users would hit a silent 403 and the
+            // button would appear to do nothing.
+            intent: "share",
             include_pulse_brief: Boolean(pulseBrief),
           },
         },
@@ -1688,59 +1700,73 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     if (!companyId || exportLoading) return;
     setExportLoading(true);
     try {
-      const isUuid =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-          String(companyId),
-        );
-      const sourceKey = isUuid
-        ? activeProfile?.source_company_key ||
-          activeProfile?.sourceCompanyKey ||
-          bundle?.identity?.key ||
-          null
-        : String(companyId).startsWith("company/")
-          ? companyId
-          : `company/${companyId}`;
-      const { data, error: invokeError } = await supabase.functions.invoke(
-        "export-company-profile",
-        {
-          body: {
-            ...(isUuid ? { company_id: companyId } : {}),
-            ...(sourceKey ? { source_company_key: sourceKey } : {}),
-            format: "pdf",
-            include_pulse_brief: Boolean(pulseBrief),
-          },
-        },
-      );
-      const parsedErr = invokeError
-        ? await parseEdgeFunctionError(invokeError)
-        : null;
-      const effective: any = parsedErr || data;
-      if (invokeError && !parsedErr) throw invokeError;
-      if (effective?.ok && effective.url) {
-        if (typeof window !== "undefined") window.open(effective.url, "_blank");
-      } else if (
-        effective?.code === "PDF_NOT_AVAILABLE" &&
-        effective?.fallback?.url
-      ) {
-        const open =
-          typeof window !== "undefined" &&
-          window.confirm(
-            "PDF render not available — open the branded HTML version instead?",
-          );
-        if (open) window.open(effective.fallback.url, "_blank");
-        else showShareToast("PDF export not available yet", "warning");
-      } else if (effective?.code === "STORAGE_NOT_PROVISIONED") {
-        const url = typeof window !== "undefined" ? window.location.href : "";
-        await copyToClipboardSafe(url);
-        showShareToast(EXPORT_ERROR_COPY.STORAGE_NOT_PROVISIONED, "warning");
-      } else {
-        const friendly =
-          effective?.message ||
-          EXPORT_ERROR_COPY[effective?.code] ||
-          effective?.error ||
-          "PDF export failed.";
-        showShareToast(friendly, "error");
+      // Client-side print export — mirrors the approach used by
+      // exportPulseLiveReportPdf() on the Pulse LIVE tab. We render the
+      // brief HTML in a new window and trigger window.print() on load,
+      // which lets the user "Save as PDF" via the browser's native
+      // print dialog. No Supabase Storage round-trip, no
+      // Content-Type / signed-URL headaches, no edge function dependency
+      // — and the WYSIWYG output exactly matches what the email body
+      // contains (reportToHtml is the single source of truth for the
+      // branded brief HTML).
+      if (typeof window === "undefined") return;
+      if (!pulseBrief) {
+        showShareToast("Generate the Pulse brief first.", "warning");
+        return;
       }
+      const companyDisplayName =
+        bundle?.identity?.display?.name ||
+        activeProfile?.company_name ||
+        activeProfile?.name ||
+        "Company";
+      const briefHtml = renderPulseBriefPrintHtml(
+        companyDisplayName,
+        pulseBrief as any,
+      );
+      // Blob-URL approach. Earlier we used `window.open("", "_blank",
+      // "noopener,noreferrer")` + document.write — that fails silently
+      // in modern browsers because `noopener` strips the opener's ability
+      // to script the new window (returns null or a sandboxed Window),
+      // which is what produced the blank-white page the user reported.
+      //
+      // With a blob URL the browser navigates to the HTML natively and
+      // renders it the same way it'd render any served page. We keep
+      // the opener reference (no noopener) so we can call w.print() on
+      // load. The blob URL is revoked after print to avoid leaks.
+      const blob = new Blob([briefHtml], { type: "text/html;charset=utf-8" });
+      const blobUrl = URL.createObjectURL(blob);
+      const w = window.open(blobUrl, "_blank");
+      if (!w) {
+        URL.revokeObjectURL(blobUrl);
+        showShareToast(
+          "Popup blocked — allow popups for app.logisticintel.com and try again.",
+          "warning",
+        );
+        return;
+      }
+      const triggerPrint = () => {
+        try {
+          w.focus();
+          w.print();
+        } catch (e) {
+          console.warn("[export-pdf] print dispatch failed:", e);
+        }
+      };
+      // The new tab loads the blob URL asynchronously. Wait for `load`
+      // before firing print so fonts/CSS are applied. Belt-and-braces:
+      // also schedule a fallback in case the load event already fired
+      // before our listener attached.
+      w.addEventListener("load", () => setTimeout(triggerPrint, 250));
+      setTimeout(() => {
+        if (w.document?.readyState === "complete") triggerPrint();
+      }, 1200);
+      // Revoke after a comfortable window so the print preview/render
+      // doesn't lose the source. 60s is plenty for a one-page brief.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+      showShareToast(
+        "Brief opened — use the browser's Save as PDF.",
+        "success",
+      );
     } catch (err: any) {
       showShareToast(err?.message || "PDF export error.", "error");
     } finally {

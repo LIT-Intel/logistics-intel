@@ -206,5 +206,47 @@ serve(async (req) => {
     return redirectError("token_persist_failed");
   }
 
+  // Register Microsoft Graph subscription for inbox push notifications.
+  // Reply-receiver edge fn handles the incoming POST.
+  try {
+    const subExpiresAt = new Date(Date.now() + 60 * 60 * 60 * 1000); // 60 hours (Graph max is 71h59m for messages)
+    const subResp = await fetch(
+      "https://graph.microsoft.com/v1.0/subscriptions",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${tokenJson.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          changeType: "created",
+          notificationUrl: `${supabaseUrl}/functions/v1/reply-receiver?source=outlook`,
+          resource: "me/mailFolders('Inbox')/messages",
+          expirationDateTime: subExpiresAt.toISOString(),
+          clientState: account.id, // echoed back; identifies the mailbox
+        }),
+      },
+    );
+    if (subResp.ok) {
+      const s = await subResp.json();
+      // Initialize warmup_started_at on first connect (null-only filter
+      // so re-connects don't reset the ramp).
+      await admin.from("lit_email_accounts").update({
+        warmup_started_at: new Date().toISOString(),
+      }).eq("id", account.id).is("warmup_started_at", null);
+      await admin.from("lit_email_accounts").update({
+        graph_subscription_id: s.id,
+        graph_subscription_expiration: s.expirationDateTime,
+      }).eq("id", account.id);
+      console.log(`[oauth-outlook-callback] graph subscription registered: id=${s.id}, expires=${s.expirationDateTime}`);
+    } else {
+      const txt = await subResp.text().catch(() => "");
+      console.error(`[oauth-outlook-callback] subscription registration failed: ${subResp.status} ${txt.slice(0, 300)}`);
+      // Non-fatal — mailbox still works for sending; reply detection silently disabled until next reconnect or until Task 11 renewal cron tries again
+    }
+  } catch (err) {
+    console.error("[oauth-outlook-callback] subscription registration threw:", err);
+  }
+
   return redirectSuccess();
 });

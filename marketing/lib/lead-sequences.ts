@@ -27,7 +27,8 @@ export type SequenceKey =
   | "top-100-followup"
   | "partner-onboarding"
   | "comparison-nurture"
-  | "re-engagement";
+  | "re-engagement"
+  | "post-signup-demo";
 
 export type SequenceStep = {
   /** 1-indexed step number, unique within a sequence. */
@@ -175,6 +176,21 @@ export const SEQUENCES: Record<SequenceKey, SequenceStep[]> = {
       templateId: null,
       subject: "Last email from us unless you tell us otherwise",
       purpose: "Final call — explicit unsubscribe vs keep-me choice",
+    },
+  ],
+  // Fires once after a NEW APP USER confirms their email. Enqueued by the
+  // `enqueue_post_signup_demo` trigger on auth.users (transition of
+  // email_confirmed_at NULL → NOT NULL, or INSERT with confirmed_at set
+  // for OAuth signups). One CTA: book a 15-min demo via Cal.com on the
+  // marketing-site /book-a-demo page.
+  "post-signup-demo": [
+    {
+      step: 1,
+      delayHours: 24,
+      envTemplateVar: "RESEND_TPL_BOOK_DEMO",
+      templateId: null,
+      subject: "Want to see LIT in action? Book a 15-min walkthrough",
+      purpose: "Post-confirmation demo invite — single Cal.com CTA",
     },
   ],
 };

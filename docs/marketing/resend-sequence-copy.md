@@ -1,4 +1,4 @@
-# Resend Sequence Copy — 15 Templates
+# Resend Sequence Copy — 16 Templates
 
 Each template body block below is wrapped by the shared HTML shell at the bottom of this file at push time (`scripts/setup-resend-templates.cjs` substitutes the body into the `<!-- BODY -->` marker and the hero SVG into the `<!-- HERO -->` marker).
 
@@ -387,6 +387,33 @@ For the trigger → source-value mapping, see `docs/marketing/resend-template-tr
 </p>
 
 <p>If you don't reply or click, you stay subscribed and the next freight intel update arrives on schedule. Either way — thanks for the time you've already given us.</p>
+
+<p>— The LIT team</p>
+```
+
+---
+
+### 16. RESEND_TPL_BOOK_DEMO
+
+**Subject:** Want to see LIT in action? Book a 15-min walkthrough
+**Preview text:** No pitch, no slides — we'll show LIT on your real lanes and your real contacts.
+**Trigger:** Postgres trigger `enqueue_post_signup_demo` on `auth.users` (fires when `email_confirmed_at` transitions NULL → NOT NULL, or on INSERT for OAuth users). Cron drains 24 hours later.
+**Merge variables:** `{{firstName}}`
+**Hero kind:** team
+**Accent:** blue
+
+```html
+<p>Hi {{firstName}},</p>
+
+<p>Quick note now that your LIT trial is live: most teams get the most out of the platform after a short walkthrough on their real lanes and verified buyer-side contacts.</p>
+
+<p>If you'd like a 15-minute look together — no pitch, no slides, just LIT on your data — pick a slot that works:</p>
+
+<p style="text-align:center;margin:24px 0;">
+  <a href="https://logisticintel.com/book-a-demo" style="display:inline-block;padding:13px 28px;background:#2563EB;color:#FFFFFF;font-family:Georgia,serif;font-weight:700;font-size:15px;text-decoration:none;border-radius:8px;box-shadow:0 4px 14px rgba(37,99,235,0.32);">Book 15 minutes →</a>
+</p>
+
+<p>Already exploring? Skip this one — we'll be here when you're ready. And if email is easier, just reply to this thread.</p>
 
 <p>— The LIT team</p>
 ```

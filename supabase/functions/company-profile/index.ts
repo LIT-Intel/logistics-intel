@@ -268,11 +268,16 @@ function buildIdentity(saved: any | null, directory: any | null, resolvedVia: st
 
 async function loadShipments(client: SupabaseClient, companyId: string | null, companyKey: string | null) {
   if (!companyId && !companyKey) return null;
-  const filter = companyId ?? companyKey!;
+  // lit_importyeti_company_snapshot.company_id is TEXT (the bare ImportYeti
+  // slug, e.g. "bmw-manufacturing"), NOT the lit_companies UUID. Always
+  // prefer the slug; fall back to companyId only when no slug is available
+  // (rare — only when resolution hit lit_company_directory without a slug).
+  const snapshotKey = (companyKey ?? "").replace(/^company\//i, "") || companyId;
+  if (!snapshotKey) return null;
   const { data: snap } = await client
     .from("lit_importyeti_company_snapshot")
     .select("parsed_summary, raw_payload, updated_at")
-    .eq("company_id", filter)
+    .eq("company_id", snapshotKey)
     .maybeSingle();
 
   if (snap) {

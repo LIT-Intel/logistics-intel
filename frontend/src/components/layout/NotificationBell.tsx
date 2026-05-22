@@ -17,6 +17,7 @@ import {
 } from "@/lib/notifications";
 
 const SEV_DOT: Record<NotificationSeverity, string> = {
+  info: "bg-blue-400",
   low: "bg-slate-300",
   medium: "bg-amber-400",
   high: "bg-orange-500",
