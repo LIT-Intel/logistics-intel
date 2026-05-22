@@ -114,6 +114,34 @@ function toBase64Url(str: string): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+/**
+ * Inline-MIME body encoder for Gmail RFC822 raw messages.
+ *
+ * The body is UTF-8 encoded, base64-encoded (NOT base64url), and wrapped
+ * at 76 chars per RFC 2045. Pairs with `Content-Transfer-Encoding: base64`
+ * in the header block.
+ *
+ * Why: previously the body was inlined verbatim with no transfer-encoding
+ * header. When the body contains non-ASCII bytes (em-dashes, NBSP entities,
+ * the &#847; zero-width separator chars used in marketing-template
+ * preheaders), Gmail's MIME parser couldn't reliably interpret the
+ * content as HTML and downgraded the email to plain-text rendering —
+ * recipients saw raw `<!DOCTYPE html>…&nbsp;&#847;` instead of the
+ * styled email.
+ */
+function encodeBodyMimeBase64(body: string): string {
+  const bytes = new TextEncoder().encode(body);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  const b64 = btoa(bin);
+  // RFC 2045 caps base64 body lines at 76 chars.
+  const lines: string[] = [];
+  for (let i = 0; i < b64.length; i += 76) {
+    lines.push(b64.slice(i, i + 76));
+  }
+  return lines.join("\r\n");
+}
+
 type Recipient = {
   id: string;
   campaign_id: string;
@@ -1005,6 +1033,10 @@ async function sendEmail(args: {
     // generates a Message-ID that we'd have to fetch back with a second
     // API call — wasteful and racy.
     const messageId = `<litcamp-${crypto.randomUUID()}@logisticintel.com>`;
+    // Body goes through Content-Transfer-Encoding: base64 so non-ASCII
+    // bytes (em-dashes, NBSP entities, &#847; preheader spacers) can't
+    // confuse Gmail's MIME parser into downgrading the message to
+    // plain-text rendering. Pairs with encodeBodyMimeBase64 below.
     const raw = [
       `From: ${fromLine}`,
       `To: ${to}`,
@@ -1014,8 +1046,9 @@ async function sendEmail(args: {
       `List-Unsubscribe-Post: List-Unsubscribe=One-Click`,
       `MIME-Version: 1.0`,
       `Content-Type: ${isHtml ? "text/html" : "text/plain"}; charset=UTF-8`,
+      `Content-Transfer-Encoding: base64`,
       ``,
-      body,
+      encodeBodyMimeBase64(body),
     ].join("\r\n");
     try {
       const resp = await fetch(
