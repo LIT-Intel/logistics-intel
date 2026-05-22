@@ -83,7 +83,7 @@ serve(async (req) => {
     // Always return 200 — Pub/Sub + Graph retry on non-2xx and we don't
     // want them retrying a permanently broken payload.
     return new Response(
-      JSON.stringify({ ok: false, error: String(err) }),
+      JSON.stringify({ ok: false, error: "internal_error" }),
       {
         status: 200,
         headers: { ...corsHeaders(), "Content-Type": "application/json" },
