@@ -15,7 +15,6 @@ import {
 import { motion } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import LitSectionCard from "@/components/ui/LitSectionCard";
-import LitKpiStrip from "@/components/ui/LitKpiStrip";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
@@ -978,31 +977,129 @@ export default function SearchPage() {
   return (
     <div className="min-h-screen bg-slate-50 px-3 py-4 sm:px-6 sm:py-6">
       <div className="mx-auto max-w-7xl space-y-4">
-        {/* Hero — eyebrow + title + view-mode + year picker */}
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-          <div className="flex flex-col gap-3 px-4 py-3.5 md:flex-row md:items-end md:justify-between md:px-5 md:py-4">
-            <div className="min-w-0">
-              <div className="font-display text-[10px] font-bold uppercase tracking-[0.18em] text-blue-500">
-                Discover
+        {/* Empty state owns the SearchHero. Results state owns the
+            compact ResultsHeader below the form. The two surfaces never
+            render simultaneously — clean state separation. */}
+        <SearchHero showHero={!hasSearched} />
+
+        <div className="relative mx-auto max-w-3xl">
+          <form
+            onSubmit={handleSearch}
+            className="overflow-hidden rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.03)] focus-within:border-blue-300 focus-within:shadow-[0_6px_18px_rgba(37,99,235,0.18)] transition sm:p-3.5"
+          >
+            <div className="flex flex-col gap-2.5 sm:flex-row">
+              <div className="relative flex-1">
+                <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by company name…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => setInputFocused(true)}
+                  onBlur={() => {
+                    // Delay so click handlers inside SearchTypeahead can fire
+                    // before the dropdown unmounts.
+                    setTimeout(() => setInputFocused(false), 150);
+                  }}
+                  className="font-body h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-10 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={handleClear}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
-              <h1 className="font-display mt-1 text-[18px] font-bold tracking-tight text-slate-900 md:text-[20px]">
-                Discover Companies
-              </h1>
-              <p className="font-body mt-0.5 text-[11.5px] text-slate-500">
-                Global shipment and company intelligence
-                {hasSearched && !searching && filteredResults.length > 0 ? (
+
+              <button
+                type="submit"
+                disabled={!authReady || searchQuery.length < 2 || searching}
+                className="font-display inline-flex h-11 items-center justify-center gap-1.5 rounded-lg px-5 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)] transition hover:shadow-[0_10px_24px_rgba(37,99,235,0.45)] disabled:cursor-not-allowed disabled:opacity-60"
+                style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
+              >
+                {searching ? (
                   <>
-                    <span className="mx-1.5 text-slate-300">·</span>
-                    <span className="font-mono font-semibold text-slate-700">
-                      {filteredResults.length.toLocaleString()}
-                    </span>{" "}
-                    {filteredResults.length === 1 ? "company" : "companies"} shown
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Searching…
                   </>
-                ) : null}
-              </p>
+                ) : !authReady ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Authenticating…
+                  </>
+                ) : (
+                  <>
+                    <SearchIcon className="h-3.5 w-3.5" />
+                    Search
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+          <SearchTypeahead
+            query={searchQuery}
+            isOpen={inputFocused}
+            onFallbackSubmit={() => {
+              setInputFocused(false);
+              // Synthetic event mirrors the existing `?q=` auto-run path
+              // (see useEffect above that calls handleSearch with a fake
+              // event), so this is a proven-safe call shape.
+              handleSearch({ preventDefault: () => {} } as React.FormEvent);
+            }}
+            onClose={() => setInputFocused(false)}
+          />
+        </div>
+
+        <PopularShippers showGrid={!hasSearched} />
+
+        {/* Compact results header — view-mode toggle + year picker + KPI
+            chips. Only on results state. Replaces the old card-style
+            "Discover Companies" hero block. */}
+        {hasSearched && (
+          <div className="mx-auto flex max-w-7xl flex-col gap-3 px-1 md:flex-row md:items-center md:justify-between">
+            <div className="font-body min-w-0 text-[13px] text-slate-600">
+              {searching ? (
+                <span>Searching…</span>
+              ) : filteredResults.length > 0 ? (
+                <>
+                  <span className="font-mono font-semibold text-slate-900">
+                    {filteredResults.length.toLocaleString()}
+                  </span>{" "}
+                  {filteredResults.length === 1 ? "company" : "companies"} shown
+                  <span className="mx-2 text-slate-300">·</span>
+                  <span className="font-mono text-slate-500">
+                    {kpiActive.toLocaleString()}
+                  </span>{" "}
+                  active
+                  {kpiAvgTeu != null && kpiAvgTeu > 0 ? (
+                    <>
+                      <span className="mx-2 text-slate-300">·</span>
+                      <span className="font-mono text-slate-500">
+                        {kpiAvgTeu.toLocaleString()}
+                      </span>{" "}
+                      avg TEU/yr
+                    </>
+                  ) : null}
+                  {kpiSaved > 0 ? (
+                    <>
+                      <span className="mx-2 text-slate-300">·</span>
+                      <span className="font-mono text-slate-500">
+                        {kpiSaved.toLocaleString()}
+                      </span>{" "}
+                      in Command Center
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                <span>No companies match your search.</span>
+              )}
             </div>
 
-            <div className="flex shrink-0 items-center gap-1.5 self-start md:self-auto">
+            <div className="flex shrink-0 items-center gap-1.5">
               <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 p-0.5">
                 <button
                   type="button"
@@ -1052,109 +1149,7 @@ export default function SearchPage() {
               </div>
             </div>
           </div>
-
-          {/* KPI strip — only after a search completes; pre-search the hero stays calm */}
-          {hasSearched && (
-            <LitKpiStrip
-              cells={[
-                {
-                  label: "Total companies",
-                  value: kpiTotal > 0 ? kpiTotal.toLocaleString() : "—",
-                },
-                {
-                  label: "Active shippers",
-                  value: kpiActive > 0 ? kpiActive.toLocaleString() : "—",
-                },
-                {
-                  label: "Avg TEU / yr",
-                  value:
-                    kpiAvgTeu != null && kpiAvgTeu > 0
-                      ? kpiAvgTeu.toLocaleString()
-                      : "—",
-                },
-                {
-                  label: "In command center",
-                  value: kpiSaved > 0 ? kpiSaved.toLocaleString() : "—",
-                },
-              ]}
-            />
-          )}
-        </div>
-
-        <SearchHero showHero={!hasSearched} />
-
-        <div className="relative mx-auto max-w-3xl">
-          <form
-            onSubmit={handleSearch}
-            className="overflow-hidden rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.03)] focus-within:ring-2 focus-within:ring-brand-cyan/40 focus-within:shadow-glow-cyan transition sm:p-3.5"
-          >
-            <div className="flex flex-col gap-2.5 sm:flex-row">
-              <div className="relative flex-1">
-                <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search by company name…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onFocus={() => setInputFocused(true)}
-                  onBlur={() => {
-                    // Delay so click handlers inside SearchTypeahead can fire
-                    // before the dropdown unmounts.
-                    setTimeout(() => setInputFocused(false), 150);
-                  }}
-                  className="font-body h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-10 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-brand-cyan focus:outline-none focus:ring-2 focus:ring-brand-cyan/20"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={handleClear}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
-                    aria-label="Clear search"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-
-              <button
-                type="submit"
-                disabled={!authReady || searchQuery.length < 2 || searching}
-                className="font-display inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-brand-cyan px-5 text-[13px] font-semibold text-dark-0 shadow-glow-cyan transition hover:bg-brand-cyan-dim disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {searching ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Searching…
-                  </>
-                ) : !authReady ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Authenticating…
-                  </>
-                ) : (
-                  <>
-                    <SearchIcon className="h-3.5 w-3.5" />
-                    Search
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-          <SearchTypeahead
-            query={searchQuery}
-            isOpen={inputFocused}
-            onFallbackSubmit={() => {
-              setInputFocused(false);
-              // Synthetic event mirrors the existing `?q=` auto-run path
-              // (see useEffect above that calls handleSearch with a fake
-              // event), so this is a proven-safe call shape.
-              handleSearch({ preventDefault: () => {} } as React.FormEvent);
-            }}
-            onClose={() => setInputFocused(false)}
-          />
-        </div>
-
-        <PopularShippers showGrid={!hasSearched} />
+        )}
 
         {/* Phase D — Inline filter chips. Only shown after a search, and
             only for filters backed by real fields already on the mapped

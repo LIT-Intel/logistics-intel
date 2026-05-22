@@ -132,7 +132,7 @@ export default function SearchTypeahead({
               onMouseEnter={() => setSelectedIndex(i)}
               onClick={() => navigate(`/app/companies/${r.company_id}`)}
               className={`flex cursor-pointer items-start gap-3 px-4 py-3 transition ${
-                selected ? "bg-brand-cyan/10" : "hover:bg-brand-cyan/5"
+                selected ? "bg-blue-50" : "hover:bg-slate-50"
               }`}
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-500">
@@ -160,8 +160,8 @@ export default function SearchTypeahead({
             onClick={onFallbackSubmit}
             className={`flex cursor-pointer items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-xs italic transition ${
               selectedIndex === rows.length
-                ? "bg-brand-cyan/10 text-ink-900"
-                : "text-ink-500 hover:bg-brand-cyan/5"
+                ? "bg-blue-50 text-ink-900"
+                : "text-ink-500 hover:bg-slate-50"
             }`}
           >
             <span className="text-slate-400">↓</span>

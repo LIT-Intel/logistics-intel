@@ -57,9 +57,9 @@ export default function PopularShippers({ showGrid }: Props) {
             key={s.id}
             type="button"
             onClick={() => navigate(`/app/companies/${s.id}`)}
-            className="group flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-5 transition hover:border-brand-cyan/40 hover:shadow-glow-cyan"
+            className="group flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-5 transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-[0_6px_18px_rgba(37,99,235,0.18)]"
           >
-            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-brand-cyan/10 group-hover:text-brand-cyan-dim">
+            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-blue-50 group-hover:text-blue-600">
               <s.Icon size={22} />
             </div>
             <div className="font-display text-[13px] font-semibold tracking-tight text-ink-900">
