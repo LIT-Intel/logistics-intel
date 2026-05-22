@@ -63,7 +63,7 @@ import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import CDPSupplyChain from "@/components/company/CDPSupplyChain";
 import CDPContacts from "@/components/company/CDPContacts";
 import CDPResearch from "@/components/company/CDPResearch";
-import { renderPulseBriefPrintHtml } from "@/lib/pulse/pulseBriefHtml";
+import { exportPulseBriefPdf } from "@/lib/pulse/exportPulseBriefPdf";
 import CDPActivity from "@/components/company/CDPActivity";
 import CDPRateBenchmark from "@/components/company/CDPRateBenchmark";
 import CDPRevenueOpportunity from "@/components/company/CDPRevenueOpportunity";
@@ -1700,16 +1700,13 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     if (!companyId || exportLoading) return;
     setExportLoading(true);
     try {
-      // Client-side print export — mirrors the approach used by
-      // exportPulseLiveReportPdf() on the Pulse LIVE tab. We render the
-      // brief HTML in a new window and trigger window.print() on load,
-      // which lets the user "Save as PDF" via the browser's native
-      // print dialog. No Supabase Storage round-trip, no
-      // Content-Type / signed-URL headaches, no edge function dependency
-      // — and the WYSIWYG output exactly matches what the email body
-      // contains (reportToHtml is the single source of truth for the
-      // branded brief HTML).
-      if (typeof window === "undefined") return;
+      // Direct client-side jsPDF export — same approach Pulse LIVE uses
+      // for exportPulseLiveReportPdf(). Earlier attempts went through
+      // Supabase Storage (text/plain content-type bug) and then through
+      // a blob-URL + window.print() flow (browser-print clipping cut
+      // the brief off after ~2 paragraphs). jsPDF draws the document
+      // section-by-section so the output is byte-for-byte deterministic
+      // regardless of browser, zoom, popup blocker, or print dialog.
       if (!pulseBrief) {
         showShareToast("Generate the Pulse brief first.", "warning");
         return;
@@ -1719,54 +1716,14 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         activeProfile?.company_name ||
         activeProfile?.name ||
         "Company";
-      const briefHtml = renderPulseBriefPrintHtml(
-        companyDisplayName,
-        pulseBrief as any,
-      );
-      // Blob-URL approach. Earlier we used `window.open("", "_blank",
-      // "noopener,noreferrer")` + document.write — that fails silently
-      // in modern browsers because `noopener` strips the opener's ability
-      // to script the new window (returns null or a sandboxed Window),
-      // which is what produced the blank-white page the user reported.
-      //
-      // With a blob URL the browser navigates to the HTML natively and
-      // renders it the same way it'd render any served page. We keep
-      // the opener reference (no noopener) so we can call w.print() on
-      // load. The blob URL is revoked after print to avoid leaks.
-      const blob = new Blob([briefHtml], { type: "text/html;charset=utf-8" });
-      const blobUrl = URL.createObjectURL(blob);
-      const w = window.open(blobUrl, "_blank");
-      if (!w) {
-        URL.revokeObjectURL(blobUrl);
-        showShareToast(
-          "Popup blocked — allow popups for app.logisticintel.com and try again.",
-          "warning",
-        );
-        return;
-      }
-      const triggerPrint = () => {
-        try {
-          w.focus();
-          w.print();
-        } catch (e) {
-          console.warn("[export-pdf] print dispatch failed:", e);
-        }
-      };
-      // The new tab loads the blob URL asynchronously. Wait for `load`
-      // before firing print so fonts/CSS are applied. Belt-and-braces:
-      // also schedule a fallback in case the load event already fired
-      // before our listener attached.
-      w.addEventListener("load", () => setTimeout(triggerPrint, 250));
-      setTimeout(() => {
-        if (w.document?.readyState === "complete") triggerPrint();
-      }, 1200);
-      // Revoke after a comfortable window so the print preview/render
-      // doesn't lose the source. 60s is plenty for a one-page brief.
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-      showShareToast(
-        "Brief opened — use the browser's Save as PDF.",
-        "success",
-      );
+      exportPulseBriefPdf({
+        companyName: companyDisplayName,
+        brief: pulseBrief as any,
+        generatedAt: pulseBrief?.generatedAt
+          ? new Date(pulseBrief.generatedAt)
+          : new Date(),
+      });
+      showShareToast("PDF download started.", "success");
     } catch (err: any) {
       showShareToast(err?.message || "PDF export error.", "error");
     } finally {
