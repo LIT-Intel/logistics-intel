@@ -10,6 +10,20 @@ module.exports = {
   			sm: 'calc(var(--radius) - 4px)'
   		},
       		colors: {
+          // Brand tokens mirrored from marketing/tailwind.config.ts so the
+          // in-app pages can use the marketing-site visual language.
+          'brand-cyan': '#00F0FF',
+          'brand-cyan-dim': '#00c8d4',
+          'brand-blue': '#3b82f6',
+          'brand-blue-600': '#2563eb',
+          'brand-blue-700': '#1d4ed8',
+          'brand-violet': '#8b5cf6',
+          'brand-indigo': '#6366f1',
+          'ink-900': '#0b1220',
+          'ink-700': '#1e293b',
+          'ink-500': '#475569',
+          'ink-100': '#e5ebf5',
+          'dark-0': '#020617',
           intel: {
             DEFAULT: '#23135b',
             dark: '#1a0f45',
@@ -87,6 +101,14 @@ module.exports = {
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
   			'accordion-up': 'accordion-up 0.2s ease-out'
+  		},
+  		fontFamily: {
+  			display: ['"Space Grotesk"', 'Outfit', 'system-ui', 'sans-serif'],
+  			body: ['"DM Sans"', 'system-ui', 'sans-serif'],
+  		},
+  		boxShadow: {
+  			'glow-cyan': '0 0 24px rgba(0, 240, 255, 0.35)',
+  			'glow-cyan-strong': '0 0 32px rgba(0, 240, 255, 0.55)',
   		}
   	}
   },
