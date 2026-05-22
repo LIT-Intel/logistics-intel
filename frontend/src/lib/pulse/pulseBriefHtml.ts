@@ -70,14 +70,14 @@ function safeMultiline(s: unknown): string {
   return escapeHtml(s).replace(/\n/g, "<br/>");
 }
 
-function sectionText(section: SectionShape): string {
+export function sectionText(section: SectionShape): string {
   if (!section) return "";
   if (typeof section === "string") return section.trim();
   const summary = typeof section.summary === "string" ? section.summary.trim() : "";
   return summary;
 }
 
-function sectionAllBullets(section: SectionShape): string[] {
+export function sectionAllBullets(section: SectionShape): string[] {
   if (!section || typeof section === "string") return [];
   const list = section.bullets || section.points || section.items || [];
   return (list || [])
@@ -85,7 +85,7 @@ function sectionAllBullets(section: SectionShape): string[] {
     .filter((s) => !!s.trim());
 }
 
-function mergeText(a: SectionShape, b: SectionShape): string {
+export function mergeText(a: SectionShape, b: SectionShape): string {
   const left = sectionText(a);
   const right = sectionText(b);
   if (left && right) return `${left}\n\n${right}`;
