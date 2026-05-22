@@ -85,14 +85,19 @@ export async function registerWithEmailPassword({
 export async function signInWithGoogle(redirectPath = "/app/dashboard") {
   if (!auth) throw new Error('Auth not configured');
 
-  const dest = redirectPath.startsWith('/')
-    ? `${window.location.origin}${redirectPath}`
-    : redirectPath;
+  const appUrl =
+    import.meta.env.VITE_APP_URL ||
+    import.meta.env.VITE_PUBLIC_APP_URL ||
+    "https://app.logisticintel.com";
+
+  const cleanRedirectPath = redirectPath.startsWith("/")
+    ? redirectPath
+    : `/${redirectPath}`;
 
   const { data, error } = await auth.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: `${window.location.origin}${redirectPath.startsWith("/") ? redirectPath : `/${redirectPath}`}`,
+      redirectTo: `${appUrl}/auth/callback?next=${encodeURIComponent(cleanRedirectPath)}`,
     },
   });
 
@@ -104,14 +109,19 @@ export async function signInWithGoogle(redirectPath = "/app/dashboard") {
 export async function signInWithMicrosoft(redirectPath = "/app/dashboard") {
   if (!auth) throw new Error('Auth not configured');
 
-  const dest = redirectPath.startsWith('/')
-    ? `${window.location.origin}${redirectPath}`
-    : redirectPath;
+  const appUrl =
+    import.meta.env.VITE_APP_URL ||
+    import.meta.env.VITE_PUBLIC_APP_URL ||
+    "https://app.logisticintel.com";
+
+  const cleanRedirectPath = redirectPath.startsWith("/")
+    ? redirectPath
+    : `/${redirectPath}`;
 
   const { data, error } = await auth.auth.signInWithOAuth({
     provider: 'azure',
     options: {
-      redirectTo: `${window.location.origin}${redirectPath.startsWith("/") ? redirectPath : `/${redirectPath}`}`,
+      redirectTo: `${appUrl}/auth/callback?next=${encodeURIComponent(cleanRedirectPath)}`,
       scopes: 'email profile openid',
     },
   });
