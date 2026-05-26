@@ -19,7 +19,7 @@ import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
 export const revalidate = 600; // ISR — refresh every 10 min
 
 const FALLBACK_HERO = {
-  pillText: "Pulse AI · Freight revenue intelligence",
+  pillText: "Pulse AI · Global Supply Chain Research Intelligence",
   headline: "Freight Prospecting Software for Brokers,",
   headlineHighlight: "Forwarders &amp; 3PLs.",
   headlineSuffix: "",
