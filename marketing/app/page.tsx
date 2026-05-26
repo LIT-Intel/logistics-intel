@@ -20,8 +20,8 @@ export const revalidate = 600; // ISR — refresh every 10 min
 
 const FALLBACK_HERO = {
   pillText: "Pulse AI · Freight revenue intelligence",
-  headline: "Freight revenue intelligence —",
-  headlineHighlight: "from signal to booked freight.",
+  headline: "Freight Prospecting Software for Brokers,",
+  headlineHighlight: "Forwarders &amp; 3PLs.",
   headlineSuffix: "",
   subhead:
     "LIT helps freight forwarders, brokers, and logistics sales teams find active shippers, understand their trade activity, enrich verified contacts, and launch multichannel outreach — from one connected workspace built on 124M+ live Bill of Lading records.",
