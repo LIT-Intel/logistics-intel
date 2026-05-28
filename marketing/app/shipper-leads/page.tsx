@@ -22,12 +22,26 @@ const SEO_QUERY = groq`*[_type == "landingPage" && slug.current == $slug][0]{
   h1, subhead, tldr, eyebrow, seo
 }`;
 
+/**
+ * Tighten an H1 (which may include <em>/<strong> HTML for visual highlight)
+ * down to a meta-title-safe string ≤60 chars. Strips tags + entity-decodes
+ * &amp;, then clips with ellipsis if needed.
+ */
+function tightenH1(h1: string | undefined, max = 60): string | undefined {
+  if (!h1) return undefined;
+  const stripped = h1.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
+  return stripped.length > max ? `${stripped.slice(0, max - 1).trimEnd()}…` : stripped;
+}
+
 export async function generateMetadata(): Promise<Metadata> {
   const doc = await sanityClient
     .fetch<any | null>(SEO_QUERY, { slug: SLUG })
     .catch(() => null);
   return buildMetadata({
-    title: doc?.h1 || "Shipper Leads — Find direct importers on your lanes",
+    title:
+      doc?.seo?.metaTitle ||
+      tightenH1(doc?.h1) ||
+      "Shipper Leads — Find direct importers on your lanes",
     description:
       doc?.tldr ||
       doc?.subhead ||
@@ -47,7 +61,7 @@ export default function ShipperLeadsPage() {
           eyebrow="Shipper leads — refreshed daily from CBP"
           headline={
             <>
-              Find <em>direct shippers</em> moving freight on your lanes — this week.
+              Find <strong>direct shippers</strong> moving freight on your lanes — this week.
             </>
           }
           lede="Skip the middlemen. Search every active US importer by origin port, destination, HS code, or carrier. Open each profile to see real shipment cadence, top contracts, and the Logistics + Supply Chain decision makers ready to take your call."

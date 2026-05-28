@@ -56,10 +56,12 @@ export function LeadMagnetHero({
             {eyebrow}
           </span>
 
-          {/* Any <em> inside the headline gets the cyan→blue gradient.
-           *  Callers can pass plain strings or ReactNodes with <em>…</em>
-           *  around the phrase they want highlighted. */}
-          <h1 className="font-display mt-5 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl [&_em]:not-italic [&_em]:bg-[linear-gradient(90deg,#00F0FF_0%,#3b82f6_60%,#2563eb_100%)] [&_em]:bg-clip-text [&_em]:text-transparent">
+          {/* Any <em> OR <strong> inside the headline gets the cyan→blue
+           *  gradient. Callers prefer <strong> on money pages (carries
+           *  more SEO weight for the highlighted noun phrase) and <em> on
+           *  the home hero (rhetorical emphasis). Both render identically
+           *  via the parallel selectors below. */}
+          <h1 className="font-display mt-5 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl [&_em]:not-italic [&_em]:bg-[linear-gradient(90deg,#00F0FF_0%,#3b82f6_60%,#2563eb_100%)] [&_em]:bg-clip-text [&_em]:text-transparent [&_strong]:font-bold [&_strong]:bg-[linear-gradient(90deg,#00F0FF_0%,#3b82f6_60%,#2563eb_100%)] [&_strong]:bg-clip-text [&_strong]:text-transparent">
             {headline}
           </h1>
 

@@ -91,6 +91,7 @@ export function LogoImage({
             src={imageUrl}
             alt=""
             loading="lazy"
+            decoding="async"
             onLoad={() => setImageLoaded(true)}
             onError={() => {
               if (!primaryFailed && src) {
