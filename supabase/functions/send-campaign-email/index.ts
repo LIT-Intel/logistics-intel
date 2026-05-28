@@ -26,6 +26,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { applyMergeVars, buildMergeContext } from "../_shared/merge-vars.ts";
 import { canSendNow, computeDailyCap } from "../_shared/outreach-throttle.ts";
+import { verifyCronAuth } from "../_shared/cron_auth.ts";
 
 const BATCH_SIZE = 25;
 const DEFAULT_DAILY_CAP = 50;
@@ -188,6 +189,12 @@ serve(async (req) => {
   if (req.method !== "POST" && req.method !== "GET") {
     return json({ ok: false, error: "method_not_allowed" }, 405);
   }
+
+  // Cron-only auth. Was previously open to anyone with the anon key, which
+  // allowed Resend cost amplification + bypass of the 60s cron tick cadence.
+  // See /cso audit 2026-05-28 finding F-A1.
+  const cronAuth = verifyCronAuth(req);
+  if (!cronAuth.ok) return cronAuth.response;
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
