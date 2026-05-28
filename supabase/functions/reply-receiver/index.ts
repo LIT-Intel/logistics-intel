@@ -478,16 +478,27 @@ async function handleRenewal(supa: any): Promise<Response> {
   let renewed = 0;
   let failed = 0;
 
-  // Gmail Watch renewals. Skip silently if the pubsub topic env var
-  // hasn't been configured yet (Task 7 prereq) — that means there are
-  // no Gmail Watches in flight anyway.
+  // Gmail Watch renewals — also handles INITIAL PROVISIONING for any
+  // connected Gmail mailbox that has no watch yet. The .or() picks up
+  // both:
+  //   (a) expiring soon (renewal case — gmail_watch_expiration < now+24h)
+  //   (b) never provisioned (gmail_watch_expiration IS NULL — typically
+  //       mailboxes connected before the oauth-gmail-callback Watch
+  //       registration was deployed, OR cases where the callback's
+  //       Watch POST failed and was logged but not retried)
+  // Without this, mailboxes connected before Task 7 shipped never get
+  // a Watch and silently drop all replies.
+  //
+  // Skip silently if GMAIL_PUBSUB_TOPIC env var isn't set — no point
+  // calling users/me/watch without a topic to publish to.
   const pubsubTopic = Deno.env.get("GMAIL_PUBSUB_TOPIC");
   if (pubsubTopic) {
     const { data: gmailMboxes } = await supa
       .from("lit_email_accounts")
-      .select("id, email, gmail_watch_expiration")
+      .select("id, email, gmail_watch_expiration, warmup_started_at")
       .eq("provider", "gmail")
-      .lt("gmail_watch_expiration", renewBefore);
+      .eq("status", "connected")
+      .or(`gmail_watch_expiration.is.null,gmail_watch_expiration.lt.${renewBefore}`);
 
     for (const mailbox of (gmailMboxes || [])) {
       try {
@@ -508,13 +519,21 @@ async function handleRenewal(supa: any): Promise<Response> {
         });
         if (resp.ok) {
           const w = await resp.json();
+          // Initialize warmup_started_at on first-time provisioning
+          // (null-only — re-watches don't reset the 30-day ramp).
+          if (!mailbox.warmup_started_at) {
+            await supa.from("lit_email_accounts").update({
+              warmup_started_at: new Date().toISOString(),
+            }).eq("id", mailbox.id).is("warmup_started_at", null);
+          }
           await supa.from("lit_email_accounts").update({
             gmail_watch_expiration: new Date(Number(w.expiration)).toISOString(),
             gmail_history_id: String(w.historyId),
           }).eq("id", mailbox.id);
           renewed++;
         } else {
-          console.warn(`[renew] gmail watch renew failed for ${mailbox.email}: ${resp.status}`);
+          const txt = await resp.text().catch(() => "");
+          console.warn(`[renew] gmail watch failed for ${mailbox.email}: ${resp.status} ${txt.slice(0, 200)}`);
           failed++;
         }
       } catch (err) {
@@ -524,13 +543,21 @@ async function handleRenewal(supa: any): Promise<Response> {
     }
   }
 
-  // Outlook Graph subscription renewals (max 71h59m for /messages).
+  // Outlook Graph subscription renewals AND initial provisioning (max
+  // 71h59m for /messages). Same back-fill pattern as Gmail above:
+  //   (a) subscription exists + expiring soon  → PATCH to extend
+  //   (b) subscription_id IS NULL  → POST to create
+  // Mailboxes connected before the oauth-outlook-callback subscription
+  // registration was deployed (or where that registration's initial
+  // POST failed because reply-receiver didn't exist yet to answer the
+  // Graph validation handshake) fall into case (b).
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const { data: outlookMboxes } = await supa
     .from("lit_email_accounts")
-    .select("id, email, graph_subscription_id, graph_subscription_expiration")
+    .select("id, email, graph_subscription_id, graph_subscription_expiration, warmup_started_at")
     .eq("provider", "outlook")
-    .not("graph_subscription_id", "is", null)
-    .lt("graph_subscription_expiration", renewBefore);
+    .eq("status", "connected")
+    .or(`graph_subscription_id.is.null,graph_subscription_expiration.lt.${renewBefore}`);
 
   for (const mailbox of (outlookMboxes || [])) {
     try {
@@ -538,24 +565,48 @@ async function handleRenewal(supa: any): Promise<Response> {
       if (!tokenRes.ok) { failed++; continue; }
       const accessToken = tokenRes.accessToken;
       const newExp = new Date(Date.now() + 60 * 60 * 60 * 1000).toISOString();
-      const resp = await fetch(
-        `https://graph.microsoft.com/v1.0/subscriptions/${mailbox.graph_subscription_id}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ expirationDateTime: newExp }),
-        },
-      );
+      const needsCreate = !mailbox.graph_subscription_id;
+      const resp = needsCreate
+        ? await fetch("https://graph.microsoft.com/v1.0/subscriptions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              changeType: "created",
+              notificationUrl: `${supabaseUrl}/functions/v1/reply-receiver?source=outlook`,
+              resource: "me/mailFolders('Inbox')/messages",
+              expirationDateTime: newExp,
+              clientState: mailbox.id,
+            }),
+          })
+        : await fetch(
+            `https://graph.microsoft.com/v1.0/subscriptions/${mailbox.graph_subscription_id}`,
+            {
+              method: "PATCH",
+              headers: {
+                "Authorization": `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ expirationDateTime: newExp }),
+            },
+          );
       if (resp.ok) {
+        const respJson = needsCreate ? await resp.json() : null;
+        if (!mailbox.warmup_started_at) {
+          await supa.from("lit_email_accounts").update({
+            warmup_started_at: new Date().toISOString(),
+          }).eq("id", mailbox.id).is("warmup_started_at", null);
+        }
         await supa.from("lit_email_accounts").update({
-          graph_subscription_expiration: newExp,
+          graph_subscription_id: needsCreate ? respJson?.id : mailbox.graph_subscription_id,
+          graph_subscription_expiration: needsCreate ? respJson?.expirationDateTime : newExp,
         }).eq("id", mailbox.id);
         renewed++;
       } else {
-        console.warn(`[renew] graph subscription renew failed for ${mailbox.email}: ${resp.status}`);
+        const txt = await resp.text().catch(() => "");
+        console.warn(`[renew] graph ${needsCreate ? "create" : "renew"} failed for ${mailbox.email}: ${resp.status} ${txt.slice(0, 200)}`);
         failed++;
       }
     } catch (err) {
