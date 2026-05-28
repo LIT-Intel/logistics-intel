@@ -121,37 +121,11 @@ export const findCompanyContacts = httpCall('/functions/findCompanyContacts', {
   contacts: [],
 });
 
-export const phantombusterLinkedIn = async (payload = {}) =>
-  invokeSupabaseFunction('phantombuster-linkedin', payload);
+// Outreach domain entry point (typed module: ./outreach.ts).
+export { phantombusterLinkedIn } from './outreach';
 
-const rawSearchLeads = async (payload = {}) =>
-  invokeSupabaseFunction('searchLeads', payload);
-
-export const searchLeads = async (payload = {}) => {
-  const response = await rawSearchLeads(payload);
-  const data = response?.data ?? response ?? {};
-
-  const rawResults =
-    data?.results ??
-    data?.data?.results ??
-    data?.items ??
-    response?.results ??
-    [];
-
-  const normalizedResults = normalizeLeadResults(rawResults);
-
-  return {
-    ...response,
-    ok: response?.ok ?? data?.ok ?? true,
-    status: response?.status ?? 200,
-    error: response?.error ?? data?.error ?? null,
-    data: {
-      ...data,
-      results: normalizedResults,
-      total: data?.total ?? normalizedResults.length,
-    },
-  };
-};
+// Search domain entry point (typed module: ./search.ts).
+export { searchLeads } from './search';
 
 export const toggleCompanySave = httpCall('/functions/toggleCompanySave', {
   ok: true,
