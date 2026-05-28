@@ -123,18 +123,37 @@ const components: PortableTextComponents = {
   },
   types: {
     image: ({ value }) => {
-      if (!value?.asset) return null;
-      const url = urlFor(value).width(1280).fit("max").auto("format").url();
+      // External-URL fallback (e.g. SVGs served from marketing/public/) —
+      // lets editors embed assets that aren't uploaded to Sanity. Falls
+      // through to the Sanity asset pipeline when an asset ref exists.
+      const externalUrl: string | undefined = value?.externalUrl;
+      if (!value?.asset && !externalUrl) return null;
+      const url = value?.asset
+        ? urlFor(value).width(1280).fit("max").auto("format").url()
+        : externalUrl!;
       return (
-        <figure className="my-9 overflow-hidden rounded-2xl border border-ink-100">
-          <Image
-            src={url}
-            alt={value.alt || ""}
-            width={1280}
-            height={720}
-            sizes="(min-width: 768px) 720px, 100vw"
-            className="h-auto w-full"
-          />
+        <figure className="my-9 overflow-hidden rounded-2xl border border-ink-100 bg-white">
+          {externalUrl && !value?.asset ? (
+            // External SVG / image — bypass next/image since the file lives
+            // on our own public/ and may not be a fixed-size raster.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={url}
+              alt={value.alt || ""}
+              loading="lazy"
+              decoding="async"
+              className="block h-auto w-full"
+            />
+          ) : (
+            <Image
+              src={url}
+              alt={value.alt || ""}
+              width={1280}
+              height={720}
+              sizes="(min-width: 768px) 720px, 100vw"
+              className="h-auto w-full"
+            />
+          )}
           {value.caption && (
             <figcaption className="font-body bg-ink-25 px-4 py-3 text-center text-[12.5px] text-ink-500">
               {value.caption}
