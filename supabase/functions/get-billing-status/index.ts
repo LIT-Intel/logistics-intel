@@ -126,12 +126,44 @@ serve(async (req) => {
   if (authErr || !authData?.user) return json({ ok: false, error: "Unauthorized" }, 401);
   const user = authData.user;
 
-  // Subscription row (user-keyed).
-  const { data: sub } = await admin
+  // Subscription resolution.
+  //
+  // The `subscriptions` table is currently keyed `UNIQUE user_id` (see
+  // 20260403_006_create_subscriptions_table.sql). That breaks invited-member
+  // billing: only the org owner has a row. For invited members we fall back
+  // to the org owner's subscription so the page reflects the org's real plan.
+  //
+  // Tactical fix; the durable fix is to add `subscriptions.org_id` and pivot
+  // RLS + lookups to org-keyed. Tracked at
+  // docs/superpowers/plans/2026-05-28-subscriptions-org-keyed-design.md.
+  let { data: sub } = await admin
     .from("subscriptions")
     .select("plan_code, status, stripe_customer_id, stripe_subscription_id, current_period_start, current_period_end, cancel_at_period_end, trial_ends_at, seat_quantity")
     .eq("user_id", user.id)
     .maybeSingle();
+
+  let subscriptionOwner: "self" | "org_owner" | "none" = sub ? "self" : "none";
+
+  if (!sub) {
+    const { data: ownerMember } = await admin
+      .from("org_members")
+      .select("org_id, organizations:org_id(owner_user_id)")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
+    const ownerId = (ownerMember as any)?.organizations?.owner_user_id;
+    if (ownerId && ownerId !== user.id) {
+      const { data: ownerSub } = await admin
+        .from("subscriptions")
+        .select("plan_code, status, stripe_customer_id, stripe_subscription_id, current_period_start, current_period_end, cancel_at_period_end, trial_ends_at, seat_quantity")
+        .eq("user_id", ownerId)
+        .maybeSingle();
+      if (ownerSub) {
+        sub = ownerSub;
+        subscriptionOwner = "org_owner";
+      }
+    }
+  }
 
   // Plan row for trial_days + included_seats.
   const planCode = sub?.plan_code || "free_trial";
@@ -188,6 +220,7 @@ serve(async (req) => {
     ok: true,
     user_id: user.id,
     org_id: orgId,
+    subscription_owner: subscriptionOwner,
     plan: {
       code: planCode,
       name: plan?.name ?? null,

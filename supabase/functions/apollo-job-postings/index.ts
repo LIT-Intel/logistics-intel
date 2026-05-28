@@ -9,6 +9,7 @@
 // limit hook is wired so we can add a usage row later if needed).
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { requireUser } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -88,6 +89,12 @@ Deno.serve(async (req) => {
       405,
     );
   }
+
+  // Auth: paid Apollo hiring-signal endpoint — was open to anyone holding the
+  // anon key (/cso F-002). Lock to authenticated users; plan-gating still
+  // happens at the caller layer (Pulse Quick Card) via /get-entitlements.
+  const auth = await requireUser(req);
+  if (auth instanceof Response) return auth;
 
   if (!APOLLO_API_KEY) {
     return jsonResponse(

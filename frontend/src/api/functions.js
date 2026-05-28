@@ -116,9 +116,11 @@ export const cancelStripeSubscription = async (payload = {}) =>
 export const stripeWebhookHandler = async (payload = {}) =>
   invokeSupabaseFunction('billing-webhook', payload);
 
-// ✅ NEW: Server-side entitlement checking
-export const checkEntitlements = async (payload = {}) =>
-  invokeSupabaseFunction('check-entitlements', payload);
+// Server-authoritative entitlements snapshot (JWT-verified, single fetch).
+// Replaces the deprecated `check-entitlements` per-check function which was
+// unauthenticated and spoofable.
+export const getEntitlements = async (payload = {}) =>
+  invokeSupabaseFunction('get-entitlements', payload);
 
 export const sendEmail = httpCall('/functions/sendEmail', {
   ok: false,

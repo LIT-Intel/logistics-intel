@@ -1,33 +1,24 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { handlePreflight, json as jsonResp, requireUserOrService } from "../_shared/auth.ts";
 
 const ANTHROPIC_MODEL = "claude-sonnet-4-20250514";
 
-function jsonResp(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  const preflight = handlePreflight(req);
+  if (preflight) return preflight;
   if (req.method !== "POST") {
     return jsonResp({ error: "Method not allowed" }, 405);
   }
+
+  // Auth: this function spends Anthropic credits per call and writes back to
+  // lit_companies. Locked to authenticated users + the service role. Was
+  // previously open to anyone holding the anon key — see /cso F-001.
+  const auth = await requireUserOrService(req);
+  if (auth instanceof Response) return auth;
+
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
-    const admin = createClient(supabaseUrl, serviceKey);
+    const admin = auth.admin;
 
     const body = await req.json();
     const company_id: string | undefined = body?.company_id;
