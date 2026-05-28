@@ -85,9 +85,11 @@ export async function requireUserOrService(
   }
   const env = getEnv();
   const token = authHeader.slice(7).trim();
-  const admin = createClient(env.supabaseUrl, env.serviceKey);
-  // Service-role token presented? Trust it.
-  if (token === env.serviceKey) return { mode: "service", admin };
+  // Service-role token presented? Trust it. Create the admin client lazily —
+  // creating it eagerly leaks a fetch-retry timer for the service path.
+  if (token === env.serviceKey) {
+    return { mode: "service", admin: createClient(env.supabaseUrl, env.serviceKey) };
+  }
   // Otherwise validate as a user JWT.
   const userClient = createClient(env.supabaseUrl, env.anonKey, {
     global: { headers: { Authorization: authHeader } },
@@ -96,6 +98,7 @@ export async function requireUserOrService(
   if (error || !data?.user) {
     return json({ ok: false, error: "Unauthorized" }, 401);
   }
+  const admin = createClient(env.supabaseUrl, env.serviceKey);
   return { mode: "user", user: data.user, admin, userClient };
 }
 
