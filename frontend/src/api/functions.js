@@ -127,6 +127,33 @@ export { phantombusterLinkedIn } from './outreach';
 // Search domain entry point (typed module: ./search.ts).
 export { searchLeads } from './search';
 
+// AI domain entry point (typed module: ./ai.ts). normalizeCompany requires JWT
+// since 2026-05-28 (was unauthenticated and amplified Anthropic spend).
+export { normalizeCompany, geminiBrief, geminiEnrichment, pulseAiEnrich } from './ai';
+
+// Admin domain entry point (typed module: ./admin.ts).
+export { adminApi, adminAuditExport, adminNotify } from './admin';
+
+// Affiliate / partner program entry point (typed module: ./affiliate.ts).
+export {
+  affiliateApply,
+  affiliateInviteLookup,
+  acceptAffiliateInvite,
+  affiliateReview,
+  sendAffiliateInvite,
+  claimAffiliateReferral,
+  affiliateAdmin,
+} from './affiliate';
+
+// Campaign-side edge fns (typed module: ./campaigns.ts). The cron-only
+// send-campaign-email is NOT exported here — invoke from pg_cron only.
+export {
+  pulseRefreshLists,
+  pulseListDigestEmail,
+  sendPulseBriefEmail,
+  pulseBrief,
+} from './campaigns';
+
 export const toggleCompanySave = httpCall('/functions/toggleCompanySave', {
   ok: true,
   saved: false,
