@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { sanityClient } from "@/sanity/lib/client";
 import { HOMEPAGE_QUERY } from "@/sanity/lib/queries";
+import { buildMetadata } from "@/lib/seo";
 import { Nav } from "@/components/nav/Nav";
 import { Footer } from "@/components/nav/Footer";
 import { ArrowRight, Calendar, CheckCircle2, MapPin, RefreshCcw, ShieldCheck, type LucideIcon } from "lucide-react";
@@ -21,7 +22,7 @@ export const revalidate = 600; // ISR — refresh every 10 min
 const FALLBACK_HERO = {
   pillText: "Pulse AI · Global Supply Chain Research Intelligence",
   headline: "Freight Prospecting Software for Brokers,",
-  headlineHighlight: "Forwarders &amp; 3PLs.",
+  headlineHighlight: "Forwarders & 3PLs.",
   headlineSuffix: "",
   subhead:
     "LIT helps freight forwarders, brokers, and logistics sales teams find active shippers, understand their trade activity, enrich verified contacts, and launch multichannel outreach — from one connected workspace built on 124M+ live Bill of Lading records.",
@@ -70,11 +71,14 @@ const HERO_BADGE_ICONS: Record<string, LucideIcon> = {
   CheckCircle2,
 };
 
-export const metadata: Metadata = {
-  title: "LIT | Freight Revenue Intelligence for Logistics Sales Teams",
+export const metadata: Metadata = buildMetadata({
+  path: "/",
+  title:
+    "Freight Prospecting Software for Brokers, Forwarders & 3PLs | Logistic Intel",
   description:
-    "Find active shippers, analyze trade activity, enrich decision makers, and launch outreach from one freight revenue intelligence platform built for logistics sales teams.",
-};
+    "Logistic Intel turns live shipment data, verified contacts, and Pulse AI into pipeline — the freight prospecting platform for brokers, forwarders, and 3PLs.",
+  eyebrow: "Freight prospecting platform",
+});
 
 export default async function HomePage() {
   // NOTE — temporary Sanity bypass for the home hero. The bootstrapped
@@ -157,7 +161,7 @@ function Hero({ hero }: { hero: any }) {
         eyebrow={hero.pillText}
         headline={
           <>
-            Freight revenue intelligence — <em>from signal to booked freight</em>.
+            Freight Prospecting Software for <em>Brokers, Forwarders &amp; 3PLs</em>.
           </>
         }
         lede={hero.subhead}

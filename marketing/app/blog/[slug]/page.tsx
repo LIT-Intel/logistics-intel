@@ -96,6 +96,23 @@ export default async function BlogPostPage({
   const toc = portableTextToc(body, ["h2"]);
   const articleUrl = siteUrl(`/blog/${params.slug}`);
 
+  // Derive Article JSON-LD enhancements. wordCount is approximated from
+  // readingTime (× ~200 wpm) when available, otherwise by walking the
+  // portable-text body and counting span text. keywords prefers tags, then
+  // falls back to category titles. articleSection is the first category.
+  const wordCount =
+    typeof post.readingTime === "number" && post.readingTime > 0
+      ? Math.round(post.readingTime * 200)
+      : countWords(body);
+  const keywords =
+    (Array.isArray(post.tags) && post.tags.length > 0
+      ? post.tags.map((t: any) => t?.title).filter(Boolean)
+      : Array.isArray(post.categories)
+        ? post.categories.map((c: any) => c?.title).filter(Boolean)
+        : []
+    ).join(", ") || undefined;
+  const articleSection = post.categories?.[0]?.title;
+
   return (
     <PageShell>
       <BreadcrumbBar
@@ -197,7 +214,13 @@ export default async function BlogPostPage({
             image: heroSrc,
             datePublished: post.publishedAt,
             dateModified: post._updatedAt || post.publishedAt,
-            mainEntityOfPage: siteUrl(`/blog/${params.slug}`),
+            mainEntityOfPage: {
+              "@type": "WebPage",
+              "@id": articleUrl,
+            },
+            ...(wordCount > 0 ? { wordCount } : {}),
+            ...(keywords ? { keywords } : {}),
+            ...(articleSection ? { articleSection } : {}),
             author: author?.name
               ? {
                   "@type": author.isAiAgent ? "Organization" : "Person",
@@ -339,4 +362,23 @@ function extractFaqFromBody(
   if (current) faq.push(current);
 
   return faq.filter((q) => q.question && q.answer);
+}
+
+/**
+ * Approximate word count across a portable-text body. Walks every block,
+ * concatenates child span text, and splits on whitespace. Used to provide
+ * `wordCount` to the Article JSON-LD payload when `readingTime` is absent.
+ */
+function countWords(body: unknown): number {
+  if (!Array.isArray(body)) return 0;
+  let text = "";
+  for (const block of body) {
+    if (block && (block as any)._type === "block" && Array.isArray((block as any).children)) {
+      for (const child of (block as any).children) {
+        if (child && typeof child.text === "string") text += ` ${child.text}`;
+      }
+    }
+  }
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  return words.length;
 }

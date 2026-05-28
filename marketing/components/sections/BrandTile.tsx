@@ -115,6 +115,7 @@ function CompetitorTile({
             src={imageUrl}
             alt=""
             loading="lazy"
+            decoding="async"
             onLoad={() => setImageLoaded(true)}
             onError={() => {
               if (!primaryFailed && logoSrc) {

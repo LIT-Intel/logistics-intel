@@ -31,6 +31,7 @@ export function LogoImage({
       width={px}
       height={px}
       loading="lazy"
+      decoding="async"
       referrerPolicy="no-referrer"
       className="h-[80%] w-[80%] object-contain"
       onError={() => {

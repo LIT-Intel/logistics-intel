@@ -1,0 +1,221 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1400" width="1200" height="1400" role="img" aria-label="USMCA cross-border freight compliance workflow — commercial quote through origin qualification, IEEPA/Section 232 duty modeling, broker packet, border gateway, and document-match outcome">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1220"/>
+      <stop offset="60%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <radialGradient id="cyanGlow" cx="0.85" cy="0.08" r="0.45">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="brandGlow" cx="0.10" cy="0.92" r="0.40">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="nodeFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(15,23,42,0.95)"/>
+      <stop offset="100%" stop-color="rgba(11,18,32,0.95)"/>
+    </linearGradient>
+    <linearGradient id="emeraldFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(16,185,129,0.20)"/>
+      <stop offset="100%" stop-color="rgba(6,95,70,0.20)"/>
+    </linearGradient>
+    <linearGradient id="amberFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(245,158,11,0.18)"/>
+      <stop offset="100%" stop-color="rgba(180,83,9,0.18)"/>
+    </linearGradient>
+    <linearGradient id="violetFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(139,92,246,0.18)"/>
+      <stop offset="100%" stop-color="rgba(76,29,149,0.18)"/>
+    </linearGradient>
+    <linearGradient id="blueFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(59,130,246,0.18)"/>
+      <stop offset="100%" stop-color="rgba(30,58,138,0.18)"/>
+    </linearGradient>
+    <linearGradient id="roseFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(251,113,133,0.20)"/>
+      <stop offset="100%" stop-color="rgba(159,18,57,0.20)"/>
+    </linearGradient>
+    <linearGradient id="arrowGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00F0FF"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <marker id="arrowHead" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 6 L 0 12 Z" fill="#3B82F6"/>
+    </marker>
+    <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.40"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="1400" fill="url(#bg)"/>
+  <circle cx="1020" cy="120" r="380" fill="url(#cyanGlow)"/>
+  <circle cx="120" cy="1280" r="320" fill="url(#brandGlow)"/>
+
+  <!-- Title row -->
+  <g transform="translate(60,46)">
+    <rect width="190" height="26" rx="13" fill="rgba(0,240,255,0.14)" stroke="#00F0FF" stroke-width="1"/>
+    <text x="95" y="17" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="800" fill="#E0F2FE" letter-spacing="0.16em">COMPLIANCE WORKFLOW</text>
+  </g>
+  <text x="60" y="110" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="800" fill="#F8FAFC" letter-spacing="-0.018em">USMCA cross-border freight · compliance flow</text>
+  <text x="60" y="138" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="500" fill="#94A3B8" letter-spacing="-0.005em">Resolve tariff, origin, supplier, and documentation logic before the shipment reaches the border.</text>
+
+  <!-- ============== FLOW (vertical) ============== -->
+
+  <!-- Node 01: Commercial quote / PO (start, top center) -->
+  <g transform="translate(490,190)" filter="url(#cardShadow)">
+    <rect width="220" height="74" rx="14" fill="url(#nodeFill)" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+    <text x="20" y="28" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#94A3B8" letter-spacing="0.16em">01 · START</text>
+    <text x="20" y="54" font-family="Inter, system-ui, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Commercial quote / PO</text>
+  </g>
+
+  <!-- Arrow 01 → 02 -->
+  <line x1="600" y1="268" x2="600" y2="304" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowHead)"/>
+
+  <!-- Node 02: Assign HS code + product exposure -->
+  <g transform="translate(470,308)" filter="url(#cardShadow)">
+    <rect width="260" height="74" rx="14" fill="url(#nodeFill)" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+    <text x="20" y="28" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#94A3B8" letter-spacing="0.16em">02 · CLASSIFY</text>
+    <text x="20" y="54" font-family="Inter, system-ui, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Assign HS code + product exposure</text>
+  </g>
+
+  <!-- Arrow 02 → 03 -->
+  <line x1="600" y1="386" x2="600" y2="426" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowHead)"/>
+
+  <!-- Decision 03: USMCA-originating? (diamond) -->
+  <g transform="translate(600,478)">
+    <polygon points="0,-50 140,0 0,50 -140,0" fill="rgba(11,18,32,0.95)" stroke="#00F0FF" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <text x="0" y="-10" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#00F0FF" letter-spacing="0.16em">DECISION 03</text>
+    <text x="0" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">USMCA-originating?</text>
+  </g>
+
+  <!-- YES/NO labels -->
+  <text x="358" y="490" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="800" fill="#34D399" letter-spacing="0.16em">YES</text>
+  <text x="842" y="490" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="800" fill="#FB7185" letter-spacing="0.16em">NO</text>
+
+  <!-- Branch lines from decision 03 -->
+  <path d="M 460 478 L 240 478 L 240 528" fill="none" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowHead)"/>
+  <path d="M 740 478 L 960 478 L 960 528" fill="none" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowHead)"/>
+
+  <!-- Node 04a: emerald (USMCA path) -->
+  <g transform="translate(110,532)" filter="url(#cardShadow)">
+    <rect width="260" height="92" rx="14" fill="url(#emeraldFill)" stroke="rgba(52,211,153,0.55)" stroke-width="1"/>
+    <text x="20" y="28" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#34D399" letter-spacing="0.16em">04A · USMCA PATH</text>
+    <text x="20" y="56" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Prepare origin support +</text>
+    <text x="20" y="76" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">9 data elements</text>
+  </g>
+
+  <!-- Node 04b: amber/rose (non-USMCA) with chips -->
+  <g transform="translate(830,532)" filter="url(#cardShadow)">
+    <rect width="260" height="120" rx="14" fill="url(#amberFill)" stroke="rgba(251,113,133,0.5)" stroke-width="1"/>
+    <text x="20" y="28" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#F59E0B" letter-spacing="0.16em">04B · NON-USMCA PATH</text>
+    <text x="20" y="56" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Model IEEPA + Section 232</text>
+    <text x="20" y="76" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">duties</text>
+    <!-- Inline chips -->
+    <g transform="translate(20,90)">
+      <rect width="104" height="22" rx="11" fill="rgba(245,158,11,0.22)" stroke="#F59E0B" stroke-width="1"/>
+      <text x="52" y="15" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" font-weight="800" fill="#FCD34D" letter-spacing="0.08em">25% IEEPA</text>
+    </g>
+    <g transform="translate(132,90)">
+      <rect width="118" height="22" rx="11" fill="rgba(251,113,133,0.22)" stroke="#FB7185" stroke-width="1"/>
+      <text x="59" y="15" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" font-weight="800" fill="#FECDD3" letter-spacing="0.08em">50% SECTION 232</text>
+    </g>
+  </g>
+
+  <!-- Converge 04a/04b → Decision 05 -->
+  <path d="M 240 624 L 240 696 L 600 696" fill="none" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M 960 652 L 960 696 L 600 696" fill="none" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="600" y1="696" x2="600" y2="734" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowHead)"/>
+
+  <!-- Decision 05: High-risk sector or supplier? -->
+  <g transform="translate(600,788)">
+    <polygon points="0,-50 160,0 0,50 -160,0" fill="rgba(11,18,32,0.95)" stroke="#00F0FF" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <text x="0" y="-10" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#00F0FF" letter-spacing="0.16em">DECISION 05</text>
+    <text x="0" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">High-risk sector or supplier?</text>
+  </g>
+
+  <!-- YES/NO labels D5 -->
+  <text x="338" y="800" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="800" fill="#A78BFA" letter-spacing="0.16em">YES</text>
+  <text x="862" y="800" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="800" fill="#60A5FA" letter-spacing="0.16em">NO</text>
+
+  <!-- Branch lines from decision 05 -->
+  <path d="M 440 788 L 240 788 L 240 838" fill="none" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowHead)"/>
+  <path d="M 760 788 L 960 788 L 960 838" fill="none" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowHead)"/>
+
+  <!-- Node 06a: violet (high risk) -->
+  <g transform="translate(110,842)" filter="url(#cardShadow)">
+    <rect width="260" height="92" rx="14" fill="url(#violetFill)" stroke="rgba(167,139,250,0.55)" stroke-width="1"/>
+    <text x="20" y="28" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#A78BFA" letter-spacing="0.16em">06A · HIGH RISK</text>
+    <text x="20" y="56" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Collect BOM, affidavits, certs,</text>
+    <text x="20" y="76" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">labor-risk checks</text>
+  </g>
+
+  <!-- Node 06b: blue (standard) -->
+  <g transform="translate(830,842)" filter="url(#cardShadow)">
+    <rect width="260" height="92" rx="14" fill="url(#blueFill)" stroke="rgba(96,165,250,0.55)" stroke-width="1"/>
+    <text x="20" y="28" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#60A5FA" letter-spacing="0.16em">06B · STANDARD</text>
+    <text x="20" y="56" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Build broker packet +</text>
+    <text x="20" y="76" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">commercial invoice</text>
+  </g>
+
+  <!-- Converge 06a/06b → Node 07 -->
+  <path d="M 240 934 L 240 994 L 600 994" fill="none" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M 960 934 L 960 994 L 600 994" fill="none" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="600" y1="994" x2="600" y2="1024" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowHead)"/>
+
+  <!-- Node 07: Coordinate U.S. entry + Mexican customs docs -->
+  <g transform="translate(440,1028)" filter="url(#cardShadow)">
+    <rect width="320" height="74" rx="14" fill="url(#blueFill)" stroke="rgba(96,165,250,0.50)" stroke-width="1"/>
+    <text x="20" y="28" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#60A5FA" letter-spacing="0.16em">07 · COORDINATE</text>
+    <text x="20" y="54" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">U.S. entry + Mexican customs docs</text>
+  </g>
+
+  <!-- Arrow 07 → 08 -->
+  <line x1="600" y1="1106" x2="600" y2="1136" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowHead)"/>
+
+  <!-- Node 08: Move by truck/rail through border gateway -->
+  <g transform="translate(420,1140)" filter="url(#cardShadow)">
+    <rect width="360" height="80" rx="14" fill="url(#blueFill)" stroke="rgba(96,165,250,0.50)" stroke-width="1"/>
+    <text x="20" y="28" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#60A5FA" letter-spacing="0.16em">08 · GATEWAY</text>
+    <text x="20" y="54" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Move by truck or rail across border</text>
+    <text x="20" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="700" fill="#A5F3FC" letter-spacing="0.08em">LAREDO · 38.8% INBOUND</text>
+  </g>
+
+  <!-- Arrow 08 → Decision 09 -->
+  <line x1="600" y1="1222" x2="600" y2="1252" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowHead)"/>
+
+  <!-- Decision 09: Documents match + supplier cleared? -->
+  <g transform="translate(600,1300)">
+    <polygon points="0,-44 170,0 0,44 -170,0" fill="rgba(11,18,32,0.95)" stroke="#00F0FF" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <text x="0" y="-10" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#00F0FF" letter-spacing="0.16em">DECISION 09</text>
+    <text x="0" y="12" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Docs match + supplier cleared?</text>
+  </g>
+
+  <!-- YES/NO labels D9 -->
+  <text x="328" y="1310" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="800" fill="#34D399" letter-spacing="0.16em">YES</text>
+  <text x="872" y="1310" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="800" fill="#FB7185" letter-spacing="0.16em">NO</text>
+
+  <!-- Branch lines from decision 09 to terminal pills (rendered to the sides) -->
+  <path d="M 430 1300 L 240 1300" fill="none" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowHead)"/>
+  <path d="M 770 1300 L 960 1300" fill="none" stroke="url(#arrowGrad)" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowHead)"/>
+
+  <!-- Node 10a: terminal — Release to consignee (emerald) -->
+  <g transform="translate(50,1264)" filter="url(#cardShadow)">
+    <rect width="190" height="74" rx="14" fill="url(#emeraldFill)" stroke="rgba(52,211,153,0.6)" stroke-width="1.2"/>
+    <text x="16" y="26" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#34D399" letter-spacing="0.16em">10A · RELEASE</text>
+    <text x="16" y="52" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Release to consignee</text>
+  </g>
+
+  <!-- Node 10b: terminal — Hold, exam, reclass, duty adjustment (rose) -->
+  <g transform="translate(960,1252)" filter="url(#cardShadow)">
+    <rect width="190" height="96" rx="14" fill="url(#roseFill)" stroke="rgba(251,113,133,0.6)" stroke-width="1.2"/>
+    <text x="16" y="26" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#FB7185" letter-spacing="0.16em">10B · HOLD</text>
+    <text x="16" y="52" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">Hold, exam, reclass,</text>
+    <text x="16" y="72" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC" letter-spacing="-0.012em">duty adjustment</text>
+  </g>
+
+  <!-- Footer source line (mono, very small) -->
+  <text x="60" y="1380" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="600" fill="#64748B" letter-spacing="0.06em">Source: Logistic Intel · USMCA Cross-Border Freight Compliance Flow · 2026</text>
+</svg>
