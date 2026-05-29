@@ -811,7 +811,7 @@ export function BillingSection(props: BillingSectionProps) {
     setPortalLoading(true);
     setPortalError(null);
     try {
-      const { createStripePortalSession } = await import("@/api/functions");
+      const { createStripePortalSession } = await import("@/api/billing");
       const result: any = await createStripePortalSession();
       if (result?.url) {
         window.location.href = result.url;

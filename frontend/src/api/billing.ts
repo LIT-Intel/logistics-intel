@@ -138,7 +138,7 @@ export interface CancelResponse {
 // ──────────────────────────────────────────────────────────────────────────
 
 /** Authoritative billing snapshot (plan + subscription + payment method + seats). */
-export async function getBillingStatus(): Promise<BillingStatus> {
+export async function getBillingStatus(_payload: Record<string, unknown> = {}): Promise<BillingStatus> {
   return invokeEdge<BillingStatus>("get-billing-status", {});
 }
 
@@ -157,8 +157,10 @@ export async function createStripePortalSession(
 }
 
 /** List Stripe invoices + MTD/YTD totals for the in-app invoice table. */
-export async function listStripeInvoices(): Promise<InvoicesResponse> {
-  return invokeEdge<InvoicesResponse>("list-invoices", {});
+export async function listStripeInvoices(
+  payload: { limit?: number; starting_after?: string } = {},
+): Promise<InvoicesResponse> {
+  return invokeEdge<InvoicesResponse>("list-invoices", payload);
 }
 
 /**

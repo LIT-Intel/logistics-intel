@@ -12,7 +12,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
-import { createStripeCheckout, createStripePortalSession, listStripeInvoices, getBillingStatus } from '@/api/functions';
+import {
+  createStripeCheckout,
+  createStripePortalSession,
+  listStripeInvoices,
+  getBillingStatus,
+} from '@/api/billing';
 import type { InvoiceRow } from '@/components/billing/sections/BillingInvoices';
 import { supabase } from '@/lib/supabase';
 import {

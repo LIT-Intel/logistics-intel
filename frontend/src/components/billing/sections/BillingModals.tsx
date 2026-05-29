@@ -24,7 +24,7 @@ import {
 import {
   previewUpcomingInvoice,
   cancelStripeSubscription,
-} from "@/api/functions";
+} from "@/api/billing";
 import type { PlanCode, BillingInterval } from "@/lib/planLimits";
 import { getPlanConfig } from "@/lib/planLimits";
 

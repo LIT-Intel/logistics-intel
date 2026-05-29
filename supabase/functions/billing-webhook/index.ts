@@ -227,6 +227,35 @@ async function resolveUserId(sub: Stripe.Subscription): Promise<string | null> {
   return rows[0]?.user_id ?? null;
 }
 
+/**
+ * Resolve the org_id for a user, preferring metadata then falling back to
+ * the user's earliest org_members row. Returns null when the user has no
+ * org membership yet (e.g. signup that hasn't run the org bootstrap trigger).
+ *
+ * Phase 4 of the subscriptions org-keyed migration: every webhook event
+ * writes org_id alongside user_id so the pivot in Phase 5/6 has clean data.
+ * Forward-compatible with Phase 1 — the column is nullable until the
+ * constraint switch in Phase 6.
+ */
+async function resolveOrgId(
+  sub: Stripe.Subscription,
+  userId: string,
+): Promise<string | null> {
+  const metaOrgId = (sub as any).metadata?.supabase_org_id;
+  if (metaOrgId) return String(metaOrgId);
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/org_members?user_id=eq.${userId}&select=org_id&order=joined_at.asc&limit=1`,
+    {
+      headers: {
+        apikey: supabaseServiceRoleKey!,
+        Authorization: `Bearer ${supabaseServiceRoleKey}`,
+      },
+    },
+  );
+  const rows: Array<{ org_id: string }> = await res.json().catch(() => []);
+  return rows[0]?.org_id ?? null;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Per-event handlers. Each one writes plan_code ONLY when
 // getPlanCodeForPrice returns a non-null code. That guarantees the only
@@ -285,6 +314,18 @@ async function handleSubscriptionEvent(sub: Stripe.Subscription, eventLabel: str
   const seatQuantity = getSubscriptionSeatQuantity(sub);
   if (seatQuantity !== null) {
     update.seat_quantity = seatQuantity;
+  }
+
+  // Phase 4 of subscriptions org-keyed migration: also write org_id +
+  // created_by_user_id. Both columns are nullable additions from migration
+  // 20260528120000. Gated behind LIT_BILLING_WEBHOOK_WRITE_ORG_ID — flip to
+  // "true" ONLY after the migration ships. Writing to non-existent columns
+  // would make every webhook event 400, which would cascade into Stripe
+  // retries + drift between Stripe and our subscriptions table.
+  if (Deno.env.get("LIT_BILLING_WEBHOOK_WRITE_ORG_ID") === "true") {
+    const orgId = await resolveOrgId(sub, userId);
+    if (orgId) update.org_id = orgId;
+    update.created_by_user_id = userId;
   }
 
   await upsertSubscription(userId, update);

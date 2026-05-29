@@ -3,7 +3,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { updateProfile } from "@/auth/supabaseAuthClient";
 import { UploadFile } from "@/api/integrations";
-import { getBillingStatus } from "@/api/functions";
+import { getBillingStatus } from "@/api/billing";
 import SettingsLayout from "@/components/settings/SettingsLayout";
 import type { PlanCode } from "@/lib/planLimits";
 
