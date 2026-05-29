@@ -10,6 +10,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { createLogger, requestId } from "../_shared/logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -67,6 +68,7 @@ async function resolveOrgId(adminClient: SupabaseClient, userId: string): Promis
 }
 
 serve(async (req) => {
+  const log = createLogger("get-entitlements", { request_id: requestId() });
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST" && req.method !== "GET") {
     return json({ ok: false, error: "Method not allowed" }, 405);
@@ -83,7 +85,7 @@ serve(async (req) => {
     p_user_id: user.id,
   });
   if (error) {
-    console.error("[get-entitlements] rpc failed", error);
+    log.error("get_entitlements_rpc_failed", { detail: error.message, user_id: user.id, org_id: orgId });
     return json({ ok: false, error: error.message }, 500);
   }
 

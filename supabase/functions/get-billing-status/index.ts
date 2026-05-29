@@ -19,6 +19,8 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@16.5.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { createLogger, requestId } from "../_shared/logger.ts";
+import { resolveSubscriptionForUser, type SubscriptionRow, type MinimalSubsDb } from "../_shared/subscription_resolve.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -109,13 +111,17 @@ async function resolveDefaultPaymentMethod(customerId: string): Promise<PaymentM
 }
 
 serve(async (req) => {
+  const log = createLogger("get-billing-status", { request_id: requestId() });
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST" && req.method !== "GET") {
     return json({ ok: false, error: "Method not allowed" }, 405);
   }
 
   const authHeader = req.headers.get("Authorization");
-  if (!authHeader) return json({ ok: false, error: "Missing Authorization header" }, 401);
+  if (!authHeader) {
+    log.warn("missing_authorization_header");
+    return json({ ok: false, error: "Missing Authorization header" }, 401);
+  }
 
   const userClient = createClient(supabaseUrl!, anonKey!, {
     global: { headers: { Authorization: authHeader } },
@@ -123,47 +129,39 @@ serve(async (req) => {
   const admin = createClient(supabaseUrl!, serviceKey!);
 
   const { data: authData, error: authErr } = await userClient.auth.getUser();
-  if (authErr || !authData?.user) return json({ ok: false, error: "Unauthorized" }, 401);
+  if (authErr || !authData?.user) {
+    log.warn("unauthorized", { detail: authErr?.message });
+    return json({ ok: false, error: "Unauthorized" }, 401);
+  }
   const user = authData.user;
 
-  // Subscription resolution.
-  //
-  // The `subscriptions` table is currently keyed `UNIQUE user_id` (see
-  // 20260403_006_create_subscriptions_table.sql). That breaks invited-member
-  // billing: only the org owner has a row. For invited members we fall back
-  // to the org owner's subscription so the page reflects the org's real plan.
-  //
-  // Tactical fix; the durable fix is to add `subscriptions.org_id` and pivot
-  // RLS + lookups to org-keyed. Tracked at
-  // docs/superpowers/plans/2026-05-28-subscriptions-org-keyed-design.md.
-  let { data: sub } = await admin
-    .from("subscriptions")
-    .select("plan_code, status, stripe_customer_id, stripe_subscription_id, current_period_start, current_period_end, cancel_at_period_end, trial_ends_at, seat_quantity")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  let subscriptionOwner: "self" | "org_owner" | "none" = sub ? "self" : "none";
-
-  if (!sub) {
-    const { data: ownerMember } = await admin
-      .from("org_members")
-      .select("org_id, organizations:org_id(owner_user_id)")
-      .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle();
-    const ownerId = (ownerMember as any)?.organizations?.owner_user_id;
-    if (ownerId && ownerId !== user.id) {
-      const { data: ownerSub } = await admin
+  // Subscription resolution via the canonical helper. self → invited-member
+  // fallback through the org owner → none. Covered by Deno tests in
+  // _shared/subscription_resolve.test.ts. The durable fix is the org-keyed
+  // pivot (docs/superpowers/plans/2026-05-28-subscriptions-org-keyed-design.md);
+  // until Phase 6 lands this helper is the seam everyone shares.
+  const SUB_COLUMNS = "plan_code, status, stripe_customer_id, stripe_subscription_id, current_period_start, current_period_end, cancel_at_period_end, trial_ends_at, seat_quantity";
+  const subsDb: MinimalSubsDb = {
+    findByUserId: async (uid: string) => {
+      const { data } = await admin
         .from("subscriptions")
-        .select("plan_code, status, stripe_customer_id, stripe_subscription_id, current_period_start, current_period_end, cancel_at_period_end, trial_ends_at, seat_quantity")
-        .eq("user_id", ownerId)
+        .select(SUB_COLUMNS)
+        .eq("user_id", uid)
         .maybeSingle();
-      if (ownerSub) {
-        sub = ownerSub;
-        subscriptionOwner = "org_owner";
-      }
-    }
-  }
+      return (data as SubscriptionRow | null) ?? null;
+    },
+    findOrgOwner: async (uid: string) => {
+      const { data } = await admin
+        .from("org_members")
+        .select("organizations:org_id(owner_user_id)")
+        .eq("user_id", uid)
+        .limit(1)
+        .maybeSingle();
+      return { ownerUserId: (data as any)?.organizations?.owner_user_id ?? null };
+    },
+  };
+
+  const { sub, owner: subscriptionOwner } = await resolveSubscriptionForUser(user.id, subsDb);
 
   // Plan row for trial_days + included_seats.
   const planCode = sub?.plan_code || "free_trial";
@@ -212,7 +210,7 @@ serve(async (req) => {
     try {
       paymentMethod = await resolveDefaultPaymentMethod(sub.stripe_customer_id);
     } catch (err) {
-      console.warn("[get-billing-status] Stripe PM lookup failed:", err);
+      log.warn("stripe_pm_lookup_failed", { err: String(err) });
     }
   }
 
