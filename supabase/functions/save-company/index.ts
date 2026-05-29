@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createLogger } from '../_shared/logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,6 +20,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const requestId = crypto.randomUUID();
+  const log = createLogger('save-company', { request_id: requestId });
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -27,7 +29,7 @@ Deno.serve(async (req: Request) => {
 
     const authHeader = req.headers.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.error(JSON.stringify({ fn: 'save-company', requestId, error: 'Missing authorization header' }));
+      log.error('missing_authorization_header');
       return new Response(
         JSON.stringify({ ok: false, error: 'Authorization header is required', code: 'UNAUTHORIZED' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -37,7 +39,7 @@ Deno.serve(async (req: Request) => {
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     if (userError || !user) {
-      console.error(JSON.stringify({ fn: 'save-company', requestId, error: 'Unauthorized', detail: userError?.message }));
+      log.error('unauthorized', { detail: userError?.message });
       return new Response(
         JSON.stringify({ ok: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -74,7 +76,12 @@ Deno.serve(async (req: Request) => {
       stage = 'lead';
     }
 
-    console.log(JSON.stringify({ fn: 'save-company', requestId, user_id: user.id, company_id: company_id ?? null, source_company_key: source_company_key ?? null, stage, ts: new Date().toISOString() }));
+    log.info('save_attempt', {
+      user_id: user.id,
+      company_id: company_id ?? null,
+      source_company_key: source_company_key ?? null,
+      stage,
+    });
 
     if (!company_id && !source_company_key) {
       return new Response(
@@ -181,7 +188,7 @@ Deno.serve(async (req: Request) => {
         p_quantity: 1,
       });
       if (gateError) {
-        console.error(JSON.stringify({ fn: 'save-company', requestId, gateError: gateError.message }));
+        log.error('usage_gate_failed', { gate_error: gateError.message });
       } else if (gateData && gateData.ok === false) {
         return new Response(
           JSON.stringify(gateData),

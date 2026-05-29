@@ -52,6 +52,22 @@ Before doing anything non-trivial, read the relevant brief from `docs/agents/`:
 
 Starter/Growth/Scale annual price IDs live in [docs/agents/](docs/agents/) and the `plans` table. Use the `plans` table at runtime; never hardcode price IDs in app code.
 
+## Required edge-function env vars
+
+| Env var | Required by | Purpose |
+|---|---|---|
+| `STRIPE_SECRET_KEY` | billing-webhook, billing-checkout, billing-portal, get-billing-status, list-invoices, cancel-subscription, upcoming-invoice | Stripe API access |
+| `STRIPE_WEBHOOK_SECRET` | billing-webhook | Signature verification (function fails at boot if unset) |
+| `LIT_CRON_SECRET` | every `_shared/cron_auth.ts` consumer (pulse-*-tick, pulse-*-cron, send-campaign-email, subscription-email-cron, etc.) | Shared secret in `X-Internal-Cron` header that gates cron-only functions |
+| `LIT_PUBSUB_AUDIENCE` | reply-receiver (Gmail Pub/Sub branch) | OIDC `aud` claim expected on Google Pub/Sub push tokens. Typically the function URL OR a service-account email. Without it, all Pub/Sub pushes 401 |
+| `LIT_BILLING_WEBHOOK_WRITE_ORG_ID` | billing-webhook (Phase 4 of subs org-keyed migration) | Set to exact literal `"true"` AFTER migration `20260528120000_subscriptions_add_org_id` ships. Flip to enable org_id + created_by_user_id writes on every webhook event. Default off — safe to leave unset until then |
+| `ANTHROPIC_API_KEY` | normalize-company | Claude API access for company enrichment |
+| `LIT_RESEND_API_KEY` | send-subscription-email, send-campaign-email | Resend API for outbound email |
+| `LIT_INTERNAL_SECRETS` (table) | admin-notify | `admin_notify_secret` row authorizes platform notifications |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | every edge function | Standard Supabase env (auto-set in Supabase env) |
+
+When adding a new edge function: prefer `_shared/auth.ts` (`requireUser` or `requireUserOrService`) over re-implementing the JWT check, `_shared/logger.ts` (`createLogger("<fn-name>")`) for structured logs, and `_shared/cron_auth.ts` (`verifyCronAuth`) for any function called by pg_cron.
+
 ## Workflow expectations
 
 - **Quality over shortcuts.** Default to the properly-modeled path. Real tables over JSONB views. Real RLS over hacks. Enterprise SaaS principle.
