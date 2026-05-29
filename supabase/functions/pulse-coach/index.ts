@@ -1,5 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("pulse-coach");
 
 /**
  * Pulse Coach — workspace-wide proactive nudges.
@@ -489,7 +492,7 @@ Deno.serve(async (req: Request) => {
     });
     const oaiData = await oaiRes.json().catch(() => ({}));
     if (!oaiRes.ok) {
-      console.error("[pulse-coach] OpenAI error", oaiData);
+      log.error("openai_error", { detail: oaiData });
       const drafts = campaigns.filter((c: any) =>
         /draft/i.test(String(c.status || "")),
       ).length;
@@ -544,7 +547,7 @@ Deno.serve(async (req: Request) => {
       },
     });
   } catch (error: any) {
-    console.error("[pulse-coach] fatal", error);
+    log.error("fatal", { err: String(error?.message ?? error) });
     return jsonResponse(
       {
         ok: false,

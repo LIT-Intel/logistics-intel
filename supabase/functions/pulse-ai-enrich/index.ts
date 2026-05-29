@@ -1,5 +1,8 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("pulse-ai-enrich");
 
 type PulseAiMode = "company_profile" | "pulse_page";
 
@@ -1031,14 +1034,14 @@ async function callOpenAi(payload: {
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    console.error("[pulse-ai-enrich] OpenAI error", data);
+    log.error("openai_error", { detail: data });
     throw new Error(data?.error?.message || `OpenAI request failed: ${res.status}`);
   }
 
   // Model refusal — surface a friendly error rather than "invalid JSON".
   const refusal = extractRefusal(data);
   if (refusal) {
-    console.error("[pulse-ai-enrich] OpenAI refusal", { refusal });
+    log.error("openai_refusal", { refusal });
     throw new Error(
       `Pulse AI couldn't generate this report (model refusal): ${refusal.slice(0, 200)}`,
     );
@@ -1050,11 +1053,7 @@ async function callOpenAi(payload: {
   const incompleteReason = data?.incomplete_details?.reason ||
     data?.incomplete_details?.code || null;
   if (status === "incomplete" || incompleteReason) {
-    console.error("[pulse-ai-enrich] OpenAI response incomplete", {
-      status,
-      incompleteReason,
-      usage: data?.usage,
-    });
+    log.error("openai_response_incomplete", { status, incomplete_reason: incompleteReason, usage: data?.usage });
     if (incompleteReason === "max_output_tokens" || status === "incomplete") {
       throw new Error(
         "Pulse AI response was truncated before completion. Please retry — if this persists, the report scope is too large for the current token budget.",
@@ -1065,7 +1064,7 @@ async function callOpenAi(payload: {
   const rawOutputText = extractOutputText(data);
 
   if (!rawOutputText) {
-    console.error("[pulse-ai-enrich] OpenAI returned empty output", {
+    log.error("openai_returned_empty_output", {
       status: data?.status,
       output_types: safeArray(data?.output).map((o: any) => o?.type),
     });
@@ -1080,12 +1079,12 @@ async function callOpenAi(payload: {
     report = JSON.parse(sanitized);
   } catch (error) {
     const snippet = rawOutputText.slice(0, 200).replace(/\s+/g, " ");
-    console.error("[pulse-ai-enrich] Failed to parse OpenAI JSON", {
-      error: error instanceof Error ? error.message : String(error),
-      rawLength: rawOutputText.length,
-      sanitizedLength: sanitized.length,
-      rawHead: rawOutputText.slice(0, 500),
-      rawTail: rawOutputText.slice(-200),
+    log.error("openai_json_parse_failed", {
+      err: error instanceof Error ? error.message : String(error),
+      raw_length: rawOutputText.length,
+      sanitized_length: sanitized.length,
+      raw_head: rawOutputText.slice(0, 500),
+      raw_tail: rawOutputText.slice(-200),
     });
     throw new Error(
       `OpenAI returned invalid JSON (first 200 chars: ${snippet})`,
@@ -1306,7 +1305,7 @@ serve(async (req) => {
       .single();
 
     if (insertError) {
-      console.error("[pulse-ai-enrich] Insert error", insertError);
+      log.error("insert_error", { err: String(insertError?.message ?? insertError) });
       return jsonResponse(
         {
           ok: false,
@@ -1341,7 +1340,7 @@ serve(async (req) => {
       limit,
     });
   } catch (error) {
-    console.error("[pulse-ai-enrich] Fatal error", error);
+    log.error("fatal", { err: String((error as Error)?.message ?? error) });
 
     return jsonResponse(
       {

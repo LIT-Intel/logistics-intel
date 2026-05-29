@@ -20,6 +20,9 @@
 // exists we still return the brief but skip the write (and log it).
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("pulse-brief");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -659,7 +662,7 @@ Deno.serve(async (req: Request) => {
         }
       }
     } catch (err) {
-      console.warn("pulse-brief cache lookup failed:", err);
+      log.warn("cache_lookup_failed", { err: String(err) });
     }
   }
 
@@ -691,7 +694,7 @@ Deno.serve(async (req: Request) => {
     },
   );
   if (gateErr) {
-    console.error("[pulse-brief] gate rpc failed", gateErr);
+    log.error("gate_rpc_failed", { err: String(gateErr?.message ?? gateErr) });
   } else if (gateData && gateData.ok === false) {
     return new Response(JSON.stringify(gateData), {
       status: 403,
@@ -716,7 +719,7 @@ Deno.serve(async (req: Request) => {
   } logistics shipping company news`;
   const web = await callWebSearch(webSearchKey, query);
   if (!web.ok) {
-    console.error("pulse-brief web search failed:", web.error);
+    log.error("web_search_failed", { err: String(web.error) });
     return jsonResponse(200, {
       ok: false,
       code: "TAVILY_FAILED",
@@ -747,10 +750,7 @@ Deno.serve(async (req: Request) => {
         };
       }
     } catch (err) {
-      console.warn(
-        "pulse-brief AI synthesis threw, using templates:",
-        err,
-      );
+      log.warn("ai_synthesis_threw_using_templates", { err: String(err) });
     }
   }
 
@@ -765,7 +765,7 @@ Deno.serve(async (req: Request) => {
       })
       .eq("id", savedRowId);
     if (updErr) {
-      console.warn("pulse-brief cache write failed:", updErr);
+      log.warn("cache_write_failed", { err: String(updErr?.message ?? updErr) });
       cacheNote = "Cache write failed; brief returned uncached.";
     }
   } else if (companyId && !savedRowId) {
@@ -786,7 +786,7 @@ Deno.serve(async (req: Request) => {
       p_metadata: { company_id: companyId, company_name: companyName },
     });
   } catch (err) {
-    console.warn("[pulse-brief] consume_usage failed (non-fatal):", err);
+    log.warn("consume_usage_failed", { err: String(err), nonfatal: true });
   }
 
   return jsonResponse(200, {
