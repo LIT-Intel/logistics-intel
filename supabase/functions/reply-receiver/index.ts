@@ -12,15 +12,21 @@
 //      created; see TODO in persistReply.
 //
 // Auth: Pub/Sub + Graph callbacks do not carry user JWTs. This function
-// is deployed with verify_jwt=false; authenticity comes from the signed
-// Pub/Sub OIDC token (TODO: verify) and Graph's clientState echo.
+// is deployed with verify_jwt=false; authenticity comes from:
+//   - For Gmail/Pub/Sub: the signed Google OIDC token in the Authorization
+//     header (verified via _shared/pubsub_oidc.ts against Google's JWKS).
+//   - For Outlook/Graph: the clientState echo (each notification carries the
+//     mailbox UUID set during subscription creation; the .eq("id", mailboxId)
+//     lookup fails for invalid IDs, providing defense-in-depth).
 //
 // Always returns 2xx so Pub/Sub / Graph do not retry permanently-broken
-// payloads indefinitely.
+// payloads indefinitely. Auth failures return 401 — Pub/Sub retries on
+// 401 too but with backoff, and the alternative (open endpoint) is worse.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { correlateReplyHeaders } from "../_shared/reply-correlate.ts";
+import { verifyPubsubOidc } from "../_shared/pubsub_oidc.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -95,6 +101,18 @@ serve(async (req) => {
 // ── Gmail (Pub/Sub) ───────────────────────────────────────────────────
 
 async function handleGmailPush(req: Request, supa: any): Promise<Response> {
+  // Verify the OIDC bearer token before doing any work. Closes /cso F-A3.
+  // LIT_PUBSUB_AUDIENCE must be configured on the function — typically the
+  // Pub/Sub subscription's pushConfig.oidcToken.audience value.
+  const oidc = await verifyPubsubOidc(req);
+  if (!oidc.ok) {
+    console.warn(`[reply-receiver] gmail oidc verify failed: ${oidc.reason}`);
+    return new Response(
+      JSON.stringify({ ok: false, error: "unauthorized", reason: oidc.reason }),
+      { status: 401, headers: { ...corsHeaders(), "Content-Type": "application/json" } },
+    );
+  }
+
   const body = await req.json().catch(() => ({}));
   // Pub/Sub envelope: { message: { data: base64, attributes, messageId, publishTime } }
   const dataBase64 = body?.message?.data;
