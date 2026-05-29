@@ -58,7 +58,26 @@ serve(async (req: Request) => {
     };
   }
 
-  const select = "id, user_id, organization_id, plan_code, started_at, trial_ends_at";
+  // org_id was added in 20260528120000_subscriptions_add_org_id.sql.
+  // The previous select listed `organization_id`, a column that never
+  // existed — PostgREST silently dropped it, leaving org_id null in the
+  // payload sent to send-subscription-email. Subscription lifecycle
+  // emails that rely on org_id (digest targeting, billing receipts)
+  // were therefore landing in the wrong workspace context.
+  //
+  // Gated by LIT_BILLING_WEBHOOK_WRITE_ORG_ID (re-used as the canonical
+  // "Phase 1 migration is live" sentinel) so this function stays safe to
+  // deploy before the migration ships. PostgREST returns 400 on selects
+  // of nonexistent columns; without the gate, every cron tick would fail
+  // on the staging-before-migration window.
+  const orgIdReady = Deno.env.get("LIT_BILLING_WEBHOOK_WRITE_ORG_ID") === "true";
+  const subColumns = orgIdReady
+    ? "id, user_id, org_id, plan_code, started_at, trial_ends_at"
+    : "id, user_id, plan_code, started_at, trial_ends_at";
+  const day12Columns = orgIdReady
+    ? "id, user_id, org_id, plan_code, trial_ends_at"
+    : "id, user_id, plan_code, trial_ends_at";
+  const select = subColumns;
   const day2 = dayWindow(3, 2);
   const day3 = dayWindow(4, 3);
   const day4 = dayWindow(5, 4);
@@ -70,7 +89,7 @@ serve(async (req: Request) => {
   const { data: day4c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day4.gte).lte("started_at", day4.lte);
   const { data: day6c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day6.gte).lte("started_at", day6.lte);
   const { data: day8c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day8.gte).lte("started_at", day8.lte);
-  const { data: day12c } = await db.from("subscriptions").select("id, user_id, organization_id, plan_code, trial_ends_at").eq("status", "trialing").gte("trial_ends_at", new Date().toISOString()).lte("trial_ends_at", new Date(Date.now() + 2 * 86400 * 1000).toISOString());
+  const { data: day12c } = await db.from("subscriptions").select(day12Columns).eq("status", "trialing").gte("trial_ends_at", new Date().toISOString()).lte("trial_ends_at", new Date(Date.now() + 2 * 86400 * 1000).toISOString());
 
   async function getRecipientInfo(userId: string | null): Promise<{ email: string | null; firstName: string | null }> {
     if (!userId) return { email: null, firstName: null };
@@ -100,7 +119,7 @@ serve(async (req: Request) => {
       const { count } = await db.from("lit_activity_events").select("id", { count: "exact", head: true }).eq("user_id", sub.user_id).gte("created_at", sub.started_at);
       if ((count ?? 0) > 0) { stats.skipped_day_2_active++; continue; }
     }
-    const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.organization_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type: "trial_day_2_activation" });
+    const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.org_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type: "trial_day_2_activation" });
     if (r.skipped) continue;
     if (r.ok) stats.day_2++; else errors.push(`day2 ${email}: ${r.error}`);
   }
@@ -110,7 +129,7 @@ serve(async (req: Request) => {
     for (const sub of candidates) {
       const { email, firstName } = await getRecipientInfo(sub.user_id);
       if (!email) continue;
-      const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.organization_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type });
+      const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.org_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type });
       if (r.skipped) continue;
       if (r.ok) stats[statKey]++; else errors.push(`${event_type} ${email}: ${r.error}`);
     }
@@ -127,7 +146,7 @@ serve(async (req: Request) => {
     if (!email) continue;
     let trialEndsDate: string | undefined;
     if (sub.trial_ends_at) { try { trialEndsDate = new Date(sub.trial_ends_at).toLocaleDateString("en-US", { month: "long", day: "numeric" }); } catch {} }
-    const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.organization_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type: "trial_ending_soon", trial_ends_date: trialEndsDate });
+    const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.org_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type: "trial_ending_soon", trial_ends_date: trialEndsDate });
     if (r.skipped) continue;
     if (r.ok) stats.day_12++; else errors.push(`day12 ${email}: ${r.error}`);
   }

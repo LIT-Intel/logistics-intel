@@ -60,7 +60,7 @@ Starter/Growth/Scale annual price IDs live in [docs/agents/](docs/agents/) and t
 | `STRIPE_WEBHOOK_SECRET` | billing-webhook | Signature verification (function fails at boot if unset) |
 | `LIT_CRON_SECRET` | every `_shared/cron_auth.ts` consumer (pulse-*-tick, pulse-*-cron, send-campaign-email, subscription-email-cron, etc.) | Shared secret in `X-Internal-Cron` header that gates cron-only functions |
 | `LIT_PUBSUB_AUDIENCE` | reply-receiver (Gmail Pub/Sub branch) | OIDC `aud` claim expected on Google Pub/Sub push tokens. Typically the function URL OR a service-account email. Without it, all Pub/Sub pushes 401 |
-| `LIT_BILLING_WEBHOOK_WRITE_ORG_ID` | billing-webhook (Phase 4 of subs org-keyed migration) | Set to exact literal `"true"` AFTER migration `20260528120000_subscriptions_add_org_id` ships. Flip to enable org_id + created_by_user_id writes on every webhook event. Default off — safe to leave unset until then |
+| `LIT_BILLING_WEBHOOK_WRITE_ORG_ID` | billing-webhook + subscription-email-cron (subs org-keyed migration Phases 4–5) | Set to exact literal `"true"` AFTER migrations `20260528120000_subscriptions_add_org_id` AND `20260528130000_subscriptions_lifecycle_trigger_use_org_id` ship. Acts as the canonical "Phase 1 is live" sentinel — flips billing-webhook to write org_id + created_by_user_id, and flips subscription-email-cron to select org_id from `subscriptions`. Default off — safe to leave unset until then |
 | `ANTHROPIC_API_KEY` | normalize-company | Claude API access for company enrichment |
 | `LIT_RESEND_API_KEY` | send-subscription-email, send-campaign-email | Resend API for outbound email |
 | `LIT_INTERNAL_SECRETS` (table) | admin-notify | `admin_notify_secret` row authorizes platform notifications |

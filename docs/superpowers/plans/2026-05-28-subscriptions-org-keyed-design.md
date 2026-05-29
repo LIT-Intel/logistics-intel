@@ -37,6 +37,29 @@ RLS is scoped to `user_id = auth.uid()`. Every read in the codebase uses `.eq('u
 
 **Schema map drift:** [LIT_SCHEMA_MAP.md](../../agents/LIT_SCHEMA_MAP.md) documents `subscriptions.org_id` as the canonical key. The doc is aspirational; the migration never landed.
 
+## Migration files (all committed this session, awaiting apply)
+
+In order:
+
+1. `20260528120000_subscriptions_add_org_id.sql` — Phase 1: schema + backfill (additive, zero downtime).
+2. `20260528130000_subscriptions_lifecycle_trigger_use_org_id.sql` — Phase 2: fix the lifecycle-email trigger functions that referenced the nonexistent `NEW.organization_id`. Replaces with `NEW.org_id`.
+3. `20260528140000_subscriptions_org_id_rls.sql` — Phase 3: dual-policy RLS. Adds the org_members-based read policy alongside the legacy user_id one. Both active during transition.
+4. `20260528150000_subscriptions_pivot_to_org_unique.sql` — Phase 6 cutover: drops the legacy user_id policy, makes `org_id NOT NULL`, swaps the UNIQUE constraint from user_id to org_id. APPLY ONLY AFTER backfill is verified and Phases 4–5 have been live for 7+ days.
+
+Phase 4 code (billing-webhook writes org_id) is committed, gated behind `LIT_BILLING_WEBHOOK_WRITE_ORG_ID=true`. Phase 5 code (read migration in subscription-email-cron) is also committed and gated by the same flag.
+
+**Deployment order:**
+
+```
+Apply migration 20260528120000  (Phase 1)
+Apply migration 20260528130000  (Phase 2 trigger fix)
+Verify backfill: `select count(*) from subscriptions where org_id is null;` should be 0 for active subs
+Flip LIT_BILLING_WEBHOOK_WRITE_ORG_ID=true (Phase 4 + 5 reads activate)
+Apply migration 20260528140000  (Phase 3 dual-policy RLS)
+Wait 7 days, monitor billing-webhook + cron logs
+Apply migration 20260528150000  (Phase 6 cutover, IRREVERSIBLE)
+```
+
 ## Tactical patch already shipped (2026-05-28)
 
 `get-billing-status` now falls back to the org-owner subscription when no row exists for the current user. `BillingNew.tsx` and `SettingsPage.tsx` no longer query `subscriptions` directly — they go through `get-billing-status`. Frontend rule documented in [CLAUDE.md](../../../CLAUDE.md).
