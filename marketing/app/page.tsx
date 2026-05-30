@@ -16,6 +16,7 @@ import { ContactDiscoveryMock } from "@/components/sections/ContactDiscoveryMock
 import { SequenceBuilderMock } from "@/components/sections/SequenceBuilderMock";
 import { CustomerLogosRail } from "@/components/sections/CustomerLogosRail";
 import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
+import { BigNumberStrip, HOME_BIG_NUMBER_DEFAULTS } from "@/components/sections/BigNumberStrip";
 
 export const revalidate = 600; // ISR — refresh every 10 min
 
@@ -171,6 +172,11 @@ function Hero({ hero }: { hero: any }) {
       >
         <HeroSearchDemo />
       </LeadMagnetHero>
+
+      {/* Big-number proof strip — three typographic anchors between the
+          dark hero and the light KPI/showcase band. Honest directional
+          numbers, not fabricated product claims. */}
+      <BigNumberStrip stats={HOME_BIG_NUMBER_DEFAULTS} />
 
       {/* 4-card stats strip — design-pack hero-stats treatment. */}
       {hero.kpis?.length ? (
