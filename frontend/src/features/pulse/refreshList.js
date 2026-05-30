@@ -8,7 +8,7 @@
 // no schema. Honors the gated save-company edge fn so plan limits
 // still apply when adding "discovered" companies.
 
-import { searchPulse } from '@/api/pulse';
+import { searchPulse } from '@/api/pulse-search';
 import { saveCompany, isLimitExceeded, LimitExceededError } from '@/lib/saveCompany';
 import { searchLocalCompanies, mergeResults } from '@/features/pulse/pulseLocalSearch';
 import {

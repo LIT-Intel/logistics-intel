@@ -35,7 +35,7 @@ import {
   X,
 } from 'lucide-react';
 
-import { searchPulse, searchPulseV2 } from '@/api/pulse';
+import { searchPulse, searchPulseV2 } from '@/api/pulse-search';
 import { supabase } from '@/lib/supabase';
 import AddToCampaignModal from '@/components/command-center/AddToCampaignModal';
 import { saveCompany, isLimitExceeded, LimitExceededError } from '@/lib/saveCompany';
