@@ -149,10 +149,11 @@ export function ProductDropdown() {
       {open && (
         <div
           role="menu"
-          // Centered under the trigger via -translate-x to anchor at the
-          // button while letting the wide mega-menu breathe past the
-          // edges of "Product". 880px hits the spec target band.
-          className="absolute left-1/2 top-full z-50 mt-2 w-[880px] -translate-x-1/2 overflow-hidden rounded-2xl border border-ink-100/80 bg-white/95 p-6 shadow-2xl backdrop-blur-md"
+          // Anchored to the trigger's LEFT edge so the wide panel extends
+          // rightward into the available viewport. Centering via
+          // -translate-x ran the left edge off-screen because the Product
+          // trigger sits near the left of the nav.
+          className="absolute left-0 top-full z-50 mt-2 w-[880px] overflow-hidden rounded-2xl border border-ink-100/80 bg-white/95 p-6 shadow-2xl backdrop-blur-md"
         >
           <div className="grid grid-cols-[1.4fr_1fr] gap-8">
             {/* Left column: product links */}

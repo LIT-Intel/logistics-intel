@@ -120,10 +120,10 @@ export function CompanyDropdown() {
       {open && (
         <div
           role="menu"
-          // Centered under the trigger so the wide mega-menu breathes
-          // past the edges of "Company". 820px is slightly narrower than
-          // Product (880px) since Company has fewer links.
-          className="absolute left-1/2 top-full z-50 mt-2 w-[820px] -translate-x-1/2 overflow-hidden rounded-2xl border border-ink-100/80 bg-white/95 p-6 shadow-2xl backdrop-blur-md"
+          // Anchored to the trigger's RIGHT edge so the wide panel extends
+          // leftward into the available viewport. Company sits near the
+          // right of the nav, so centering ran the panel off the right edge.
+          className="absolute right-0 top-full z-50 mt-2 w-[820px] overflow-hidden rounded-2xl border border-ink-100/80 bg-white/95 p-6 shadow-2xl backdrop-blur-md"
         >
           <div className="grid grid-cols-[1.4fr_1fr] gap-8">
             {/* Left column: company links */}
