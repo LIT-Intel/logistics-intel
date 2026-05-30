@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import { Suspense } from "react";
+import { Space_Grotesk, DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import RefBoot from "@/components/RefBoot";
 import TrackPageView from "@/components/analytics/TrackPageView.client";
@@ -8,6 +9,32 @@ import AttributionBoot from "@/components/analytics/AttributionBoot.client";
 import LinkedInInsightTag from "@/components/analytics/LinkedInInsightTag.client";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://logisticintel.com";
+
+// Self-hosted fonts via next/font/google. Removes fonts.googleapis.com
+// from the critical render path, eliminates FOUT/FOIT, and lets Next
+// inline the @font-face declarations with display: swap. CSS variables
+// are consumed by tailwind.config.ts (font-display / font-body / font-mono)
+// and by recipe classes in app/globals.css.
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-space-grotesk",
+});
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-dm-sans",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  display: "swap",
+  variable: "--font-jetbrains-mono",
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -96,7 +123,10 @@ export const viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      className={`${spaceGrotesk.variable} ${dmSans.variable} ${jetbrainsMono.variable}`}
+    >
       <head>
         {/* Organization schema — once at the root, applies site-wide. */}
         <script

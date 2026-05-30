@@ -15,9 +15,13 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        display: ["var(--font-display)", "Space Grotesk", "system-ui", "sans-serif"],
-        body: ["var(--font-body)", "DM Sans", "system-ui", "sans-serif"],
-        mono: ["var(--font-mono)", "JetBrains Mono", "monospace"],
+        // Variables are provided by next/font/google in app/layout.tsx.
+        // The intermediate --font-display / --font-body / --font-mono
+        // aliases (defined in app/globals.css) point at the next/font
+        // variables and supply the system-ui fallback chain.
+        display: ["var(--font-space-grotesk)", "system-ui", "sans-serif"],
+        body: ["var(--font-dm-sans)", "system-ui", "sans-serif"],
+        mono: ["var(--font-jetbrains-mono)", "ui-monospace", "monospace"],
       },
       colors: {
         brand: {

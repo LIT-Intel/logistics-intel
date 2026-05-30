@@ -2,12 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
+/* Fonts are loaded via next/font/google in app/layout.tsx — the
+   self-hosted @font-face declarations are injected by Next and exposed
+   as the --font-space-grotesk / --font-dm-sans / --font-jetbrains-mono
+   CSS variables on <html>. These aliases keep the existing
+   --font-display / --font-body / --font-mono naming used throughout
+   this file and the design system. */
 :root {
-  --font-display: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-display: var(--font-space-grotesk), system-ui, -apple-system, sans-serif;
+  --font-body: var(--font-dm-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), 'Fira Code', monospace;
 
   /* Brand color tokens (extend Tailwind brand.*). Cyan-dim is the
      "cyan-flavored" dark-surface accent; never use raw #00F0FF for text
