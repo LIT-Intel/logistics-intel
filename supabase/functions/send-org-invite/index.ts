@@ -1,5 +1,8 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("send-org-invite");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -117,7 +120,7 @@ serve(async (req) => {
       .maybeSingle();
 
     if (inviteError) {
-      console.error("[send-org-invite] invite load failed", inviteError);
+      log.error("invite_load_failed", { err: String(inviteError?.message ?? inviteError) });
       return json({ error: inviteError.message || "Failed loading invite" }, 500);
     }
 
@@ -138,7 +141,7 @@ serve(async (req) => {
       .maybeSingle();
 
     if (membershipError) {
-      console.error("[send-org-invite] membership check failed", membershipError);
+      log.error("membership_check_failed", { err: String(membershipError?.message ?? membershipError) });
       return json({ error: membershipError.message || "Failed checking membership" }, 500);
     }
 
@@ -149,19 +152,19 @@ serve(async (req) => {
     const membershipRole = String(membership?.role || "").toLowerCase();
     const canManageInvites = isPlatformAdmin || allowedRoles.includes(membershipRole);
 
-    console.log("[send-org-invite] permission-check", {
-      inviterEmail,
-      membershipRole,
-      inviteOrgId: invite.org_id,
-      isPlatformAdmin,
-      canManageInvites,
+    log.info("permission_check", {
+      inviter_email: inviterEmail,
+      membership_role: membershipRole,
+      invite_org_id: invite.org_id,
+      is_platform_admin: isPlatformAdmin,
+      can_manage_invites: canManageInvites,
     });
 
     if (!canManageInvites) {
-      console.error("[send-org-invite] permission denied", {
-        inviterEmail,
-        membershipRole,
-        inviteOrgId: invite.org_id,
+      log.error("permission_denied", {
+        inviter_email: inviterEmail,
+        membership_role: membershipRole,
+        invite_org_id: invite.org_id,
       });
 
       return json(
@@ -177,7 +180,7 @@ serve(async (req) => {
       .maybeSingle();
 
     if (orgError || !org) {
-      console.error("[send-org-invite] org lookup failed", orgError);
+      log.error("org_lookup_failed", { err: String(orgError?.message ?? orgError) });
       return json({ error: "Organization not found" }, 404);
     }
 
@@ -317,11 +320,11 @@ serve(async (req) => {
       `If you were not expecting this email, you can ignore it.`,
     ].join("\n");
 
-    console.log("[send-org-invite] sending email", {
+    log.info("sending_email", {
       to: invite.email,
       from: `Logistics Intel <${inviteFromEmail}>`,
-      workspaceName,
-      logoUrl,
+      workspace_name: workspaceName,
+      logo_url: logoUrl,
     });
 
     const resendResponse = await fetch("https://api.resend.com/emails", {
@@ -342,10 +345,10 @@ serve(async (req) => {
 
     const resendResult = await resendResponse.json();
 
-    console.log("[send-org-invite] resend response", resendResult);
+    log.info("resend_response", { detail: resendResult });
 
     if (!resendResponse.ok) {
-      console.error("[send-org-invite] resend failed", resendResult);
+      log.error("resend_failed", { detail: resendResult });
 
       return json(
         {
@@ -369,7 +372,7 @@ serve(async (req) => {
       emailId: resendResult?.id ?? null,
     });
   } catch (error) {
-    console.error("[send-org-invite] fatal error", error);
+    log.error("fatal", { err: String((error as Error)?.message ?? error) });
 
     return json(
       {

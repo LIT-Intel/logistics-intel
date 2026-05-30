@@ -10,6 +10,9 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("accept-affiliate-invite");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -97,7 +100,7 @@ serve(async (req) => {
     .eq("token", token)
     .maybeSingle();
   if (loadErr) {
-    console.error("[accept-affiliate-invite] load failed", loadErr);
+    log.error("load_failed", { err: String(loadErr?.message ?? loadErr) });
     return json({ ok: false, error: "Failed to load invite" }, 500);
   }
   if (!invite) return json({ ok: false, code: "INVITE_NOT_FOUND" }, 404);
@@ -140,7 +143,7 @@ serve(async (req) => {
   try {
     refCode = await generateUniqueRefCode(adminClient);
   } catch (err) {
-    console.error("[accept-affiliate-invite] ref_code allocation failed", err);
+    log.error("ref_code_allocation_failed", { err: String((err as Error)?.message ?? err) });
     return json({ ok: false, error: "Failed to allocate ref_code" }, 500);
   }
 
@@ -166,7 +169,7 @@ serve(async (req) => {
     .select("id, user_id, ref_code, tier, status, commission_pct, commission_months, stripe_status, joined_at, referral_link_status")
     .maybeSingle();
   if (partnerErr || !partner) {
-    console.error("[accept-affiliate-invite] partner insert failed", partnerErr);
+    log.error("partner_insert_failed", { err: String(partnerErr?.message ?? partnerErr) });
     return json({
       ok: false,
       error: "Failed to create partner record",
@@ -185,7 +188,7 @@ serve(async (req) => {
     })
     .eq("id", invite.id);
   if (invUpdErr) {
-    console.error("[accept-affiliate-invite] invite update failed", invUpdErr);
+    log.error("invite_update_failed", { err: String(invUpdErr?.message ?? invUpdErr) });
     // Partner is created — surface a warning rather than hard fail.
   }
 

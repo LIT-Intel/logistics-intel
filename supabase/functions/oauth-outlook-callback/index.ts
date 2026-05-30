@@ -19,6 +19,9 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { verifyState } from "../_shared/oauth-state.ts";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("oauth-outlook-callback");
 
 const OUTLOOK_SCOPES = [
   "https://graph.microsoft.com/Mail.Send",
@@ -76,7 +79,7 @@ serve(async (req) => {
   }
 
   if (oauthError) {
-    console.warn("[oauth-outlook-callback] provider error", oauthError);
+    log.warn("provider_error", { detail: oauthError });
     return redirectError(oauthError);
   }
   if (!code || !state) {
@@ -85,7 +88,7 @@ serve(async (req) => {
 
   const verified = await verifyState(state, "outlook", stateSecret);
   if (!verified.ok) {
-    console.warn("[oauth-outlook-callback] bad state", verified.reason);
+    log.warn("bad_state", { reason: verified.reason });
     return redirectError(verified.reason);
   }
   const userId = verified.uid;
@@ -110,11 +113,11 @@ serve(async (req) => {
     );
     tokenJson = await tokenResp.json();
     if (!tokenResp.ok || !tokenJson?.access_token) {
-      console.warn("[oauth-outlook-callback] token exchange failed", tokenResp.status, tokenJson?.error);
+      log.warn("token_exchange_failed", { status: tokenResp.status, error: tokenJson?.error });
       return redirectError("token_exchange_failed");
     }
   } catch (e) {
-    console.error("[oauth-outlook-callback] token exchange threw", e);
+    log.error("token_exchange_threw", { err: String((e as Error)?.message ?? e) });
     return redirectError("token_exchange_threw");
   }
 
@@ -127,19 +130,19 @@ serve(async (req) => {
     });
     const profile = await profileResp.json();
     if (!profileResp.ok) {
-      console.warn("[oauth-outlook-callback] graph profile failed", profileResp.status, profile?.error?.code);
+      log.warn("graph_profile_failed", { status: profileResp.status, code: profile?.error?.code });
       return redirectError("userinfo_failed");
     }
     // Microsoft returns email in `mail` (preferred) or `userPrincipalName` (fallback).
     const rawEmail = profile.mail || profile.userPrincipalName;
     if (!rawEmail) {
-      console.warn("[oauth-outlook-callback] no email in graph profile");
+      log.warn("no_email_in_graph_profile");
       return redirectError("userinfo_no_email");
     }
     email = String(rawEmail).toLowerCase();
     displayName = profile.displayName || null;
   } catch (e) {
-    console.error("[oauth-outlook-callback] graph profile threw", e);
+    log.error("graph_profile_threw", { err: String((e as Error)?.message ?? e) });
     return redirectError("userinfo_threw");
   }
 
@@ -168,7 +171,7 @@ serve(async (req) => {
     .select("id")
     .single();
   if (acctErr || !account?.id) {
-    console.error("[oauth-outlook-callback] account upsert failed", acctErr);
+    log.error("account_upsert_failed", { err: String(acctErr?.message ?? acctErr) });
     return redirectError("account_upsert_failed");
   }
 
@@ -202,7 +205,7 @@ serve(async (req) => {
     ? await admin.from("lit_oauth_tokens").update(tokenRow).eq("id", existingTok.id)
     : await admin.from("lit_oauth_tokens").insert(tokenRow);
   if (tokErr) {
-    console.error("[oauth-outlook-callback] token upsert failed", tokErr);
+    log.error("token_upsert_failed", { err: String(tokErr?.message ?? tokErr) });
     return redirectError("token_persist_failed");
   }
 
@@ -238,14 +241,14 @@ serve(async (req) => {
         graph_subscription_id: s.id,
         graph_subscription_expiration: s.expirationDateTime,
       }).eq("id", account.id);
-      console.log(`[oauth-outlook-callback] graph subscription registered: id=${s.id}, expires=${s.expirationDateTime}`);
+      log.info("graph_subscription_registered", { subscription_id: s.id, expires: s.expirationDateTime });
     } else {
       const txt = await subResp.text().catch(() => "");
-      console.error(`[oauth-outlook-callback] subscription registration failed: ${subResp.status} ${txt.slice(0, 300)}`);
+      log.error("subscription_registration_failed", { status: subResp.status, body: txt.slice(0, 300) });
       // Non-fatal — mailbox still works for sending; reply detection silently disabled until next reconnect or until Task 11 renewal cron tries again
     }
   } catch (err) {
-    console.error("[oauth-outlook-callback] subscription registration threw:", err);
+    log.error("subscription_registration_threw", { err: String((err as Error)?.message ?? err) });
   }
 
   return redirectSuccess();

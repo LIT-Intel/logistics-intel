@@ -15,6 +15,9 @@
 //     INSERT does not need a user policy).
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("export-company-profile");
 
 // Phase B.15 — helpers inlined from _shared/companyBriefHelpers.ts so
 // `supabase functions deploy <name>` doesn't fail on missing _shared
@@ -544,7 +547,7 @@ Deno.serve(async (req: Request) => {
       },
     );
     if (gateErr) {
-      console.error("[export-company-profile] gate rpc failed", gateErr);
+      log.error("gate_rpc_failed", { err: String(gateErr?.message ?? gateErr) });
     } else if (gateData && (gateData as any).ok === false) {
       return new Response(JSON.stringify(gateData), {
         status: 403,
@@ -565,7 +568,7 @@ Deno.serve(async (req: Request) => {
       ? await baseQuery.eq("id", companyId).maybeSingle()
       : await baseQuery.eq("source_company_key", sourceKey).maybeSingle();
     if (error) {
-      console.error("export-company-profile company fetch failed:", error);
+      log.error("company_fetch_failed", { err: String(error?.message ?? error) });
       // Phase B.16 — business-state error: return 200 with a code the
       // frontend can map through EXPORT_ERROR_COPY.
       return jsonResponse(200, {
@@ -621,7 +624,7 @@ Deno.serve(async (req: Request) => {
       upsert: false,
     });
   if (uploadErr) {
-    console.error("export-company-profile upload failed:", uploadErr);
+    log.error("upload_failed", { err: String(uploadErr?.message ?? uploadErr) });
     // Phase B.16 — business-state error: 200 + code so frontend can
     // surface a friendly toast via EXPORT_ERROR_COPY.
     return jsonResponse(200, {
@@ -635,7 +638,7 @@ Deno.serve(async (req: Request) => {
     .from(BUCKET_NAME)
     .createSignedUrl(path, SIGNED_URL_EXPIRY_SECONDS);
   if (signErr || !signed?.signedUrl) {
-    console.error("export-company-profile sign failed:", signErr);
+    log.error("sign_failed", { err: String(signErr?.message ?? signErr) });
     // Phase B.16 — business-state error: 200 + code.
     return jsonResponse(200, {
       ok: false,
@@ -670,7 +673,7 @@ Deno.serve(async (req: Request) => {
         p_metadata: { company_id: companyRow.id, format },
       });
     } catch (err) {
-      console.warn("[export-company-profile] consume_usage failed (non-fatal):", err);
+      log.warn("consume_usage_failed", { err: String(err), nonfatal: true });
     }
   }
 

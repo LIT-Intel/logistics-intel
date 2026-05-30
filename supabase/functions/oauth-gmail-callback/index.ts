@@ -17,6 +17,9 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { verifyState } from "../_shared/oauth-state.ts";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("oauth-gmail-callback");
 
 function settingsUrl() {
   // The SPA is deployed at app.logisticintel.com with React Router routes
@@ -73,7 +76,7 @@ serve(async (req) => {
   }
 
   if (oauthError) {
-    console.warn("[oauth-gmail-callback] provider error", oauthError);
+    log.warn("provider_error", { detail: oauthError });
     return redirectError(oauthError);
   }
   if (!code || !state) {
@@ -82,7 +85,7 @@ serve(async (req) => {
 
   const verified = await verifyState(state, "gmail", stateSecret);
   if (!verified.ok) {
-    console.warn("[oauth-gmail-callback] bad state", verified.reason);
+    log.warn("bad_state", { reason: verified.reason });
     return redirectError(verified.reason);
   }
   const userId = verified.uid;
@@ -103,11 +106,11 @@ serve(async (req) => {
     });
     tokenJson = await tokenResp.json();
     if (!tokenResp.ok || !tokenJson?.access_token) {
-      console.warn("[oauth-gmail-callback] token exchange failed", tokenResp.status, tokenJson);
+      log.warn("token_exchange_failed", { status: tokenResp.status, detail: tokenJson });
       return redirectError("token_exchange_failed");
     }
   } catch (e) {
-    console.error("[oauth-gmail-callback] token exchange threw", e);
+    log.error("token_exchange_threw", { err: String((e as Error)?.message ?? e) });
     return redirectError("token_exchange_threw");
   }
 
@@ -120,13 +123,13 @@ serve(async (req) => {
     });
     const profile = await profileResp.json();
     if (!profileResp.ok || !profile?.email) {
-      console.warn("[oauth-gmail-callback] userinfo failed", profileResp.status, profile);
+      log.warn("userinfo_failed", { status: profileResp.status, detail: profile });
       return redirectError("userinfo_failed");
     }
     email = String(profile.email).toLowerCase();
     displayName = profile.name || profile.given_name || null;
   } catch (e) {
-    console.error("[oauth-gmail-callback] userinfo threw", e);
+    log.error("userinfo_threw", { err: String((e as Error)?.message ?? e) });
     return redirectError("userinfo_threw");
   }
 
@@ -155,7 +158,7 @@ serve(async (req) => {
     .select("id")
     .single();
   if (acctErr || !account?.id) {
-    console.error("[oauth-gmail-callback] account upsert failed", acctErr);
+    log.error("account_upsert_failed", { err: String(acctErr?.message ?? acctErr) });
     return redirectError("account_upsert_failed");
   }
 
@@ -192,7 +195,7 @@ serve(async (req) => {
     ? await admin.from("lit_oauth_tokens").update(tokenRow).eq("id", existingTok.id)
     : await admin.from("lit_oauth_tokens").insert(tokenRow);
   if (tokErr) {
-    console.error("[oauth-gmail-callback] token upsert failed", tokErr);
+    log.error("token_upsert_failed", { err: String(tokErr?.message ?? tokErr) });
     return redirectError("token_persist_failed");
   }
 
@@ -235,15 +238,15 @@ serve(async (req) => {
         })
         .eq("id", account.id);
 
-      console.log(`[oauth-gmail-callback] watch registered: expiration=${new Date(expirationMs).toISOString()}, historyId=${w.historyId}`);
+      log.info("watch_registered", { expiration: new Date(expirationMs).toISOString(), history_id: w.historyId });
     } else {
       const txt = await watchResp.text().catch(() => "");
-      console.error(`[oauth-gmail-callback] watch registration failed: ${watchResp.status} ${txt.slice(0, 300)}`);
+      log.error("watch_registration_failed", { status: watchResp.status, body: txt.slice(0, 300) });
       // Non-fatal: mailbox still works for sending; reply detection just
       // won't work until next reconnect or until Task 11 renewal cron retries.
     }
   } catch (err) {
-    console.error("[oauth-gmail-callback] watch registration threw:", err);
+    log.error("watch_registration_threw", { err: String((err as Error)?.message ?? err) });
   }
 
   return redirectSuccess();
