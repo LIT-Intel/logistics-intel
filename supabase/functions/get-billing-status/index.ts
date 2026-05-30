@@ -151,13 +151,15 @@ serve(async (req) => {
       return (data as SubscriptionRow | null) ?? null;
     },
     findOrgOwner: async (uid: string) => {
+      // organizations.owner_id (NOT owner_user_id — the schema map was wrong;
+      // confirmed against live database 2026-05-30).
       const { data } = await admin
         .from("org_members")
-        .select("organizations:org_id(owner_user_id)")
+        .select("organizations:org_id(owner_id)")
         .eq("user_id", uid)
         .limit(1)
         .maybeSingle();
-      return { ownerUserId: (data as any)?.organizations?.owner_user_id ?? null };
+      return { ownerUserId: (data as any)?.organizations?.owner_id ?? null };
     },
   };
 
