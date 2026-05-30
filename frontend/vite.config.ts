@@ -1,7 +1,29 @@
+// NOTE: this .ts file is a duplicate of vite.config.js and is currently
+// IGNORED by Vite — Vite's config resolution picks vite.config.js first when
+// both exist (vite.config.js > vite.config.mjs > vite.config.ts in order).
+// The .js file is the source of truth. Kept in sync here so renaming/deleting
+// either file in the future is straightforward.
+//
+// To make this file authoritative, delete vite.config.js. (Auto-mode blocked
+// that deletion when first discovered on 2026-05-30, so we kept both.)
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import path from 'path'
+
+const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN || ''
+const sentryOrg = process.env.SENTRY_ORG || 'lit-g0'
+const sentryProject = process.env.SENTRY_PROJECT || 'lit-frontend'
+const sentryRelease =
+  process.env.VITE_SENTRY_RELEASE ||
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.SENTRY_RELEASE ||
+  ''
+
+process.stdout.write(
+  `[sentry-vite-plugin] auth_token=${Boolean(sentryAuthToken)} org=${sentryOrg} project=${sentryProject} release=${sentryRelease || '(none)'} sourcemap_upload=${sentryAuthToken ? 'enabled' : 'disabled'}\n`,
+)
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const gatewayTarget = (env.API_GATEWAY_BASE || env.VITE_API_BASE || env.NEXT_PUBLIC_API_BASE || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev').trim()
@@ -10,35 +32,9 @@ export default defineConfig(({ mode }) => {
     console.warn('⚠️  No API gateway env var found, using default:', gatewayTarget)
   }
 
-  // Sentry source-map upload: only runs when SENTRY_AUTH_TOKEN is present in
-  // the build environment (set in Vercel for production / preview). The plugin
-  // is a no-op without the token — local dev builds keep working without it.
-  //
-  // IMPORTANT: read from process.env (NOT loadEnv). Vite's loadEnv reads from
-  // .env* files in envDir, not from the runtime process env. Vercel injects
-  // env vars into process.env at build time and does NOT write .env files —
-  // so loadEnv would return empty for SENTRY_AUTH_TOKEN even when set in
-  // Vercel. Same for VERCEL_GIT_COMMIT_SHA which Vercel auto-sets.
-  // Release name preference: VITE_SENTRY_RELEASE > VERCEL_GIT_COMMIT_SHA > SENTRY_RELEASE.
-  const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN || ''
-  const sentryOrg = process.env.SENTRY_ORG || 'lit-g0'
-  const sentryProject = process.env.SENTRY_PROJECT || 'lit-frontend'
-  const sentryRelease =
-    process.env.VITE_SENTRY_RELEASE ||
-    process.env.VERCEL_GIT_COMMIT_SHA ||
-    process.env.SENTRY_RELEASE ||
-    ''
-
-  // Debug line — visible in Vercel build logs so we can confirm the plugin is
-  // configured correctly without checking env-var UI. Just emits a boolean.
-  console.log(`[sentry-vite-plugin] auth_token=${Boolean(sentryAuthToken)} org=${sentryOrg} project=${sentryProject} release=${sentryRelease || '(none)'}`)
-
   return {
     plugins: [
       react(),
-      // Plugin auto-skips when authToken is empty (silentWhenNoAuth handles
-      // the warning). Source maps are emitted via build.sourcemap then
-      // uploaded + deleted from the dist bundle so they don't ship to users.
       sentryVitePlugin({
         org: sentryOrg,
         project: sentryProject,
@@ -68,9 +64,6 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       target: 'esnext',
-      // Emit source maps so the Sentry plugin can upload them. The plugin
-      // deletes the .map files from dist/ after upload (filesToDeleteAfterUpload
-      // above), so end users never download them.
       sourcemap: true,
       commonjsOptions: {
         include: [/@supabase\/supabase-js/, /node_modules/],
