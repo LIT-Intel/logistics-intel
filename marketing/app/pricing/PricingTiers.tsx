@@ -9,14 +9,20 @@ import { APP_SIGNUP_URL } from "@/lib/app-urls";
  * Plan-card grid with a monthly / annual billing toggle. Single toggle
  * controls all three cards.
  *
- * Pricing here is illustrative until the Stripe `plans` table is wired
- * through. Per CLAUDE.md, Stripe is the source of truth for billing —
- * these numbers exist only as a marketing anchor. See the TODO comments
- * tagged "confirm against Stripe plans table" for every number that
- * must be reconciled before this page can be considered production
- * billing surface (it is NOT a billing surface — checkout happens on
- * /signup).
+ * Pricing sourced from the Supabase `plans` table (rows where
+ * `is_active = true`). Annual values are stored as a yearly total
+ * (`price_yearly`) and rendered here as the equivalent per-seat per-month
+ * cost (yearly / 12, rounded). When plan rows change, re-sync by
+ * re-running the same SELECT against `plans` and updating
+ * PRICE_SOURCE_LAST_SYNC below. Stripe remains the source of truth at
+ * checkout — these numbers exist as the marketing anchor and must match
+ * the Stripe products linked by `stripe_price_id_monthly` /
+ * `stripe_price_id_yearly`.
  */
+
+// Pricing sourced from Supabase plans table on 2026-05-30. When plan rows
+// change, re-sync via the same SELECT and update PRICE_SOURCE_LAST_SYNC.
+const PRICE_SOURCE_LAST_SYNC = "2026-05-30";
 
 type Tier = {
   id: "starter" | "growth" | "scale";
@@ -37,9 +43,10 @@ const TIERS: Tier[] = [
     id: "starter",
     name: "Starter",
     tagline: "For solo freight prospectors getting their first 50 conversations on the books.",
-    /* TODO: confirm against Stripe plans table */
-    monthly: 199,
-    annual: 169,
+    // Supabase plans.code = "starter": price_monthly $125.00, price_yearly $1125.00
+    // Annual per-month equivalent: 1125 / 12 = $93.75 ≈ $94
+    monthly: 125,
+    annual: 94,
     rhythm: "/ seat / month",
     features: [
       "U.S. customs shipment search",
@@ -55,9 +62,10 @@ const TIERS: Tier[] = [
     id: "growth",
     name: "Growth",
     tagline: "For revenue teams running multi-channel outbound across a real book of accounts.",
-    /* TODO: confirm against Stripe plans table */
-    monthly: 399,
-    annual: 349,
+    // Supabase plans.code = "growth": price_monthly $499.00, price_yearly $4491.00
+    // Annual per-month equivalent: 4491 / 12 = $374.25 ≈ $374
+    monthly: 499,
+    annual: 374,
     rhythm: "/ seat / month",
     features: [
       "Everything in Starter",
@@ -76,9 +84,11 @@ const TIERS: Tier[] = [
     id: "scale",
     name: "Scale",
     tagline: "For multi-org programs and enterprise freight teams with custom data needs.",
-    monthly: null,
-    annual: null,
-    rhythm: "Custom pricing",
+    // Supabase plans.code = "scale": price_monthly $999.00, price_yearly $8991.00
+    // Annual per-month equivalent: 8991 / 12 = $749.25 ≈ $749
+    monthly: 999,
+    annual: 749,
+    rhythm: "/ seat / month",
     features: [
       "Everything in Growth",
       "Unlimited contact reveals",
@@ -90,7 +100,7 @@ const TIERS: Tier[] = [
       "SLA-backed support",
       "Custom seat pricing",
     ],
-    cta: { label: "Contact sales", href: "/demo" },
+    cta: { label: "Start free trial", href: APP_SIGNUP_URL },
   },
 ];
 
@@ -98,7 +108,7 @@ export function PricingTiers() {
   const [billing, setBilling] = useState<"monthly" | "annual">("annual");
 
   return (
-    <section className="px-5 sm:px-8 py-16">
+    <section className="px-5 sm:px-8 py-16" data-price-source-last-sync={PRICE_SOURCE_LAST_SYNC}>
       <div className="mx-auto max-w-container">
         <div className="mx-auto max-w-[680px] text-center">
           <div className="eyebrow">Plans</div>
@@ -150,7 +160,7 @@ export function PricingTiers() {
                     : "bg-brand-blue/10 text-brand-blue-700",
                 ].join(" ")}
               >
-                Save ~15%
+                Save ~25%
               </span>
             </button>
           </div>
@@ -209,12 +219,12 @@ export function PricingTiers() {
                   )}
                   {!isCustom && billing === "annual" && (
                     <div className="font-body mt-2 text-[12.5px] text-ink-500">
-                      Billed annually. {/* TODO: confirm against Stripe plans table */}
+                      Billed annually.
                     </div>
                   )}
                   {!isCustom && billing === "monthly" && (
                     <div className="font-body mt-2 text-[12.5px] text-ink-500">
-                      Billed monthly. {/* TODO: confirm against Stripe plans table */}
+                      Billed monthly.
                     </div>
                   )}
                   {isCustom && (

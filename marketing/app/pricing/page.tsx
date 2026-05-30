@@ -39,7 +39,7 @@ const PRICING_FAQS = [
   {
     question: "Do you offer annual discounts?",
     answer:
-      "Yes. Billing annually saves roughly 15% versus paying month to month on Starter and Growth. Scale agreements are negotiated annually by default.",
+      "Yes. Billing annually saves roughly 25% versus paying month to month across Starter, Growth, and Scale. Enterprise agreements are negotiated annually by default.",
   },
   {
     question: "What happens if I exceed my monthly contact reveals?",
@@ -66,10 +66,10 @@ const PRICING_FAQS = [
 export default function PricingPage() {
   const path = "/pricing";
 
-  /* Product + Offer structured data. Prices are illustrative — Stripe is
-   * the source of truth for real billing per CLAUDE.md. Annual prices
-   * here are encoded as monthly-equivalent unit pricing; we don't emit a
-   * Scale price (contact sales). */
+  /* Product + Offer structured data. Prices sourced from the Supabase
+   * `plans` table (price_monthly column) on 2026-05-30. Stripe remains the
+   * source of truth at checkout — these values must match the products
+   * linked by stripe_price_id_monthly. */
   const productJsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -84,7 +84,7 @@ export default function PricingPage() {
         name: "Starter",
         description:
           "For solo freight prospectors. U.S. customs shipment search, 1,000 verified contact reveals per month, and 50 Pulse AI briefs.",
-        price: "199",
+        price: "125",
         priceCurrency: "USD",
         availability: "https://schema.org/InStock",
         url: siteUrl(path),
@@ -94,7 +94,7 @@ export default function PricingPage() {
         name: "Growth",
         description:
           "For revenue teams. 5,000 contact reveals per month, multi-channel outbound, Command Center CRM, HubSpot and Salesforce sync.",
-        price: "399",
+        price: "499",
         priceCurrency: "USD",
         availability: "https://schema.org/InStock",
         url: siteUrl(path),
@@ -104,13 +104,10 @@ export default function PricingPage() {
         name: "Scale",
         description:
           "For multi-org programs. Unlimited contact reveals and Pulse briefs, SSO, SCIM, dedicated CSM, custom data feeds.",
-        priceSpecification: {
-          "@type": "PriceSpecification",
-          priceCurrency: "USD",
-          description: "Contact sales for custom pricing",
-        },
+        price: "999",
+        priceCurrency: "USD",
         availability: "https://schema.org/InStock",
-        url: siteUrl("/demo"),
+        url: siteUrl(path),
       },
     ],
   };
