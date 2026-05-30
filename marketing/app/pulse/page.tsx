@@ -175,10 +175,7 @@ export default function PulsePage() {
             />
             <div className="relative grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
               <div>
-                <div
-                  className="font-display text-[11px] font-bold uppercase tracking-[0.12em]"
-                  style={{ color: "#00F0FF" }}
-                >
+                <div className="lit-eyebrow-dark">
                   Trade lane intelligence
                 </div>
                 <h2 className="font-display mt-3 text-[28px] font-semibold leading-tight tracking-[-0.015em] text-white">

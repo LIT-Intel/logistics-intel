@@ -285,10 +285,7 @@ export default async function ComparisonPage({ params }: { params: { slug: strin
           />
           <div className="relative grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
             <div className="max-w-[680px]">
-              <div
-                className="font-display text-[11px] font-bold uppercase tracking-[0.12em]"
-                style={{ color: "#00F0FF" }}
-              >
+              <div className="lit-eyebrow-dark">
                 Switching from {c.competitorName}?
               </div>
               <div className="font-display mt-2 text-[26px] sm:text-[32px] font-semibold tracking-[-0.015em] text-white">

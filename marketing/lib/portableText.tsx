@@ -178,7 +178,7 @@ const components: PortableTextComponents = {
               className="pointer-events-none absolute -top-12 -right-10 h-40 w-40 rounded-full opacity-50"
               style={{ background: "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)" }}
             />
-            <div className="font-display relative text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: "#00F0FF" }}>
+            <div className="lit-eyebrow-dark relative">
               Pulse Coach
             </div>
             {value.title && <div className="font-display relative mt-1 text-[16px] font-semibold">{value.title}</div>}

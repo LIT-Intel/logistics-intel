@@ -75,10 +75,7 @@ export default function OutboundEnginePage() {
               style={{ background: "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)" }}
             />
             <div className="relative mx-auto max-w-[760px] text-center">
-              <div
-                className="font-display text-[11px] font-bold uppercase tracking-[0.12em]"
-                style={{ color: "#00F0FF" }}
-              >
+              <div className="lit-eyebrow-dark">
                 The reply-rate math
               </div>
               <h2 className="font-display mt-3 text-[28px] font-semibold leading-tight tracking-[-0.015em]">

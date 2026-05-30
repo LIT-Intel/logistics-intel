@@ -40,12 +40,7 @@ export function CtaBanner({
             style={{ background: "radial-gradient(circle, rgba(59,130,246,0.4), transparent 70%)" }}
           />
           <div className="relative max-w-[720px]">
-            <div
-              className="font-display text-[11px] font-bold uppercase tracking-[0.12em]"
-              style={{ color: "#00F0FF" }}
-            >
-              {eyebrow}
-            </div>
+            <div className="lit-eyebrow-dark">{eyebrow}</div>
             <h2 className="font-display mt-3 text-[40px] font-semibold leading-[1.05] tracking-[-0.02em]">
               {title}
             </h2>

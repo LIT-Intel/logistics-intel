@@ -56,9 +56,7 @@ export function BigNumberStrip({ stats, className }: BigNumberStripProps) {
                 i === 0 ? "" : "border-t border-white/10 pt-12 md:border-t-0 md:pt-0",
               ].join(" ")}
             >
-              <div className="text-[11px] uppercase tracking-[0.14em] text-brand-cyan font-medium">
-                {s.eyebrow}
-              </div>
+              <div className="lit-eyebrow-dark">{s.eyebrow}</div>
               <div
                 className="font-mono font-bold tracking-tight text-white mt-4 leading-none"
                 style={{ fontSize: "clamp(64px, 8vw, 96px)" }}

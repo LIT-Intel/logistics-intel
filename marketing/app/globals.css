@@ -221,6 +221,21 @@ body {
 }
 .lit-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: theme('colors.brand.blue'); box-shadow: 0 0 8px rgba(59,130,246,0.55); }
 
+/* Dark-surface eyebrow — paired with .lit-pill (light-surface). Cyan
+   small-caps with soft glow. Apply to top-of-section labels on
+   bg-dark-0/1/2/3 surfaces, the hero, BigNumberStrip, CtaBanner, and
+   any slate-gradient inset card. Never use on light surfaces. */
+.lit-eyebrow-dark {
+  display: inline-block;
+  color: #00F0FF;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.25);
+}
+
 /* ───────────────────────────────────────────────────────────────
    foundations.css — Phase 1+2+3 upgrade utilities ported from the
    design handoff. These are the shared recipes consumed by the new

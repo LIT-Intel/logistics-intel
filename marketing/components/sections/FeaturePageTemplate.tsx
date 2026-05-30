@@ -70,7 +70,7 @@ export function FeaturePageTemplate({
               boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
             }}
           >
-            <div className="font-display text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: "#00F0FF" }}>
+            <div className="lit-eyebrow-dark">
               How LIT solves it
             </div>
             <p className="font-body mt-3 text-[15.5px] leading-relaxed text-ink-150">

@@ -52,10 +52,7 @@ export function LeadMagnetHero({
       <div className="relative mx-auto grid max-w-container grid-cols-1 gap-12 px-4 pb-16 pt-10 sm:px-6 sm:pt-14 lg:grid-cols-[1.05fr_minmax(0,1fr)] lg:gap-16 lg:py-24">
         {/* Left: copy + form */}
         <div className="flex min-w-0 flex-col justify-center">
-          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-brand-cyan/40 bg-brand-cyan/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-cyan">
-            <span className="h-1.5 w-1.5 rounded-full bg-brand-cyan" aria-hidden />
-            {eyebrow}
-          </span>
+          <span className="lit-eyebrow-dark">{eyebrow}</span>
 
           {/* Any <em> OR <strong> inside the headline gets the cyan→blue
            *  gradient. Callers prefer <strong> on money pages (carries
