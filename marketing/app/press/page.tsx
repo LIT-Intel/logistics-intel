@@ -422,11 +422,20 @@ export default function PressPage() {
       <Section top="md" bottom="md" tone="soft-blue">
         <div className="mx-auto max-w-[820px]">
           <div className="eyebrow">Leadership</div>
-          <h2 className="display-md space-eyebrow-h1">Press contact.</h2>
+          <h2 className="display-md space-eyebrow-h1">Founders & press contact.</h2>
           <p className="font-body mt-4 text-[15px] leading-relaxed text-ink-500">
-            For interviews, quotes, demos, screenshots, or background — please reach
-            out to the press inbox. We&apos;ll route to the right person on the
-            leadership team.
+            The founding team brings 20+ years of combined logistics experience —
+            international and domestic freight forwarding, plus freight brokerage from
+            both the sales-side and the ownership seat. For background on the operating
+            profile behind the product, see the{" "}
+            <Link
+              href="/about/founders"
+              className="font-medium text-brand-blue underline"
+            >
+              founders page
+            </Link>
+            . For interviews, quotes, demos, screenshots, or other coverage, please
+            reach out to the press inbox below.
           </p>
 
           <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">

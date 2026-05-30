@@ -69,6 +69,15 @@ export default function AboutPage() {
               and lets you act — without leaving the page. We obsess over the moment a signal becomes pipeline, and
               everything we ship is in service of making that moment as short as possible.
             </p>
+            <p className="text-ink-500">
+              The founding team brings 20+ years of combined logistics experience —
+              international and domestic freight forwarding, plus freight brokerage from
+              both the sales-side and ownership.{" "}
+              <Link href="/about/founders" className="font-medium text-brand-blue underline">
+                Read about the founders
+              </Link>
+              .
+            </p>
           </div>
         </div>
       </section>
