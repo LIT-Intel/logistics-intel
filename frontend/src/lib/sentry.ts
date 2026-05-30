@@ -11,6 +11,10 @@ import * as Sentry from "@sentry/react";
 
 const DSN = import.meta.env.VITE_SENTRY_DSN || "";
 const ENV = import.meta.env.VITE_SENTRY_ENV || import.meta.env.MODE || "development";
+// Release tag — keep in sync with the value the Sentry Vite plugin uploaded
+// source maps under (sourced from VITE_SENTRY_RELEASE / VERCEL_GIT_COMMIT_SHA
+// in vite.config.ts), otherwise stack traces won't resolve to original files.
+const RELEASE = import.meta.env.VITE_SENTRY_RELEASE || "";
 
 let initialized = false;
 
@@ -25,6 +29,7 @@ export function initSentry(): boolean {
   Sentry.init({
     dsn: DSN,
     environment: ENV,
+    release: RELEASE || undefined,
     // Performance + replay sampling. Crank these up only after you've
     // monitored quota for a billing cycle.
     tracesSampleRate: 0.1,
