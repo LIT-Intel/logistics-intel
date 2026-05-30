@@ -9,6 +9,7 @@ import {
   supabase,
 } from './supabaseAuthClient';
 import { getStoredRef, clearStoredRef } from '@/lib/affiliateRef';
+import { identifySentryUser, clearSentryUser } from '@/lib/sentry';
 
 // Fire-and-forget claim of any pending affiliate referral once the user
 // authenticates. The edge function is idempotent (a row in
@@ -183,6 +184,15 @@ export function AuthProvider({ children }) {
           membership.plan || normalized?.user_metadata?.plan || 'free_trial'
         );
         setPlan(resolvedPlan);
+
+        // Tag Sentry scope with the verified user so every subsequent
+        // captureException event carries user_id + org + plan automatically.
+        identifySentryUser({
+          user_id: u.id,
+          email: u.email,
+          org_id: membership.orgId,
+          plan: resolvedPlan,
+        });
       } else {
         setRawUser(null);
         setAuthReady(false);
@@ -190,6 +200,7 @@ export function AuthProvider({ children }) {
         setOrgId(null);
         setOrgRole(null);
         setPlan(null);
+        clearSentryUser();
       }
 
       setLoading(false);

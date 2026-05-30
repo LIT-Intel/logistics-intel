@@ -1,19 +1,21 @@
 // Shared structured logger for Supabase edge functions.
 //
-// Why: every function currently uses ad-hoc `console.log("...")` with
-// prefix-bracket strings. That makes filtering, alerting, and Sentry routing
+// Why: every function previously used ad-hoc `console.log("...")` with
+// prefix-bracket strings. That made filtering, alerting, and Sentry routing
 // brittle. This helper emits one JSON line per event with stable keys so the
 // log pipeline (Logflare / Datadog / Sentry / etc) can index them.
+//
+// Sentry integration: `error` and `warn` emits are automatically captured by
+// Sentry when SENTRY_DSN is set (see _shared/sentry.ts). Fire-and-forget;
+// never blocks the calling path. No-op when DSN is unset.
 //
 // Usage:
 //   const log = createLogger("save-company");
 //   log.info("started", { request_id, user_id });
 //   log.warn("usage_limit_hit", { user_id, limit: 10 });
 //   log.error("stripe_call_failed", { err: String(err), stripe_request_id });
-//
-// Output (single line, parseable):
-//   {"ts":"2026-05-28T16:42:01.123Z","level":"info","fn":"save-company",
-//    "event":"started","request_id":"...","user_id":"..."}
+
+import { captureSentryEvent } from "./sentry.ts";
 
 type Level = "debug" | "info" | "warn" | "error";
 
@@ -27,18 +29,36 @@ export interface Logger {
 }
 
 function emit(level: Level, fn: string, base: Record<string, unknown>, event: string, extra?: Record<string, unknown>): void {
+  const merged = { ...base, ...(extra ?? {}) };
   const line = {
     ts: new Date().toISOString(),
     level,
     fn,
     event,
-    ...base,
-    ...(extra ?? {}),
+    ...merged,
   };
   const json = JSON.stringify(line);
   if (level === "error") console.error(json);
   else if (level === "warn") console.warn(json);
   else console.log(json);
+
+  // Sentry routing: error always; warn only when the fields include an `err`
+  // shape (string or Error) — pure-info warns like "near_limit" don't need to
+  // page anyone. Filtering policy lives here so it's the same for every fn.
+  if (level === "error" || (level === "warn" && merged.err)) {
+    captureSentryEvent({
+      fn,
+      event,
+      fields: merged as Record<string, unknown>,
+      error: merged.err,
+      tags: {
+        user_id: typeof merged.user_id === "string" ? merged.user_id : undefined,
+        org_id: typeof merged.org_id === "string" ? merged.org_id : undefined,
+        organization_id: typeof merged.organization_id === "string" ? merged.organization_id : undefined,
+        request_id: typeof merged.request_id === "string" ? merged.request_id : undefined,
+      },
+    });
+  }
 }
 
 export function createLogger(fn: string, base: Record<string, unknown> = {}): Logger {
