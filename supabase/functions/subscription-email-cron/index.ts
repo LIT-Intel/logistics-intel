@@ -18,6 +18,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { verifyCronAuth } from "../_shared/cron_auth.ts";
+import { createLogger, requestId } from "../_shared/logger.ts";
 
 const ALLOWED_EVENTS = new Set([
   "trial_welcome",
@@ -34,9 +35,13 @@ const ALLOWED_EVENTS = new Set([
 ]);
 
 serve(async (req: Request) => {
+  const log = createLogger("subscription-email-cron", { request_id: requestId() });
   if (req.method === "OPTIONS") return new Response(null, { headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Internal-Cron" } });
   const auth = verifyCronAuth(req);
-  if (!auth.ok) return auth.response;
+  if (!auth.ok) {
+    log.warn("cron_auth_failed", { err: "X-Internal-Cron mismatch or missing" });
+    return auth.response;
+  }
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const db = createClient(supabaseUrl, serviceRoleKey);
@@ -139,6 +144,11 @@ serve(async (req: Request) => {
     if (r.ok) stats.day_12++; else errors.push(`day12 ${email}: ${r.error}`);
   }
 
+  if (errors.length > 0) {
+    log.error("cron_dispatch_errors", { err: `${errors.length} dispatch failures`, errors: errors.slice(0, 5), stats });
+  } else {
+    log.info("cron_swept_clean", { stats });
+  }
   return new Response(JSON.stringify({ ok: true, processed: stats, errors: errors.length ? errors : undefined }), { headers: { "Content-Type": "application/json" } });
 });
 

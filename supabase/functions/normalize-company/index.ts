@@ -1,9 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { handlePreflight, json as jsonResp, requireUserOrService } from "../_shared/auth.ts";
+import { createLogger, requestId } from "../_shared/logger.ts";
 
 const ANTHROPIC_MODEL = "claude-sonnet-4-20250514";
 
 serve(async (req) => {
+  const log = createLogger("normalize-company", { request_id: requestId() });
   const preflight = handlePreflight(req);
   if (preflight) return preflight;
   if (req.method !== "POST") {
@@ -106,6 +108,7 @@ Return JSON only (no prose, no code fences):
 
     if (!aRes.ok) {
       const t = await aRes.text();
+      log.error("anthropic_api_failed", { err: `HTTP ${aRes.status}`, status: aRes.status, detail: t.slice(0, 500), company_id });
       return jsonResp({ error: "Anthropic API failed", status: aRes.status, detail: t }, 500);
     }
 
@@ -115,7 +118,8 @@ Return JSON only (no prose, no code fences):
     try {
       const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
       parsed = JSON.parse(cleaned);
-    } catch {
+    } catch (err) {
+      log.error("anthropic_returned_non_json", { err: String(err), text_preview: text.slice(0, 200), company_id });
       return jsonResp({ error: "Anthropic returned non-JSON", text }, 500);
     }
 
@@ -132,6 +136,7 @@ Return JSON only (no prose, no code fences):
 
     return jsonResp({ ok: true, cached: false, ...parsed });
   } catch (err) {
+    log.error("internal_error", { err: String(err) });
     return jsonResp({ error: "Internal error", detail: String(err) }, 500);
   }
 });

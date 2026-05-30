@@ -10,6 +10,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { requireUser } from "../_shared/auth.ts";
+import { createLogger, requestId } from "../_shared/logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -82,6 +83,7 @@ function freshnessFromDate(iso: string | null): SignalResponse["freshness"] {
 }
 
 Deno.serve(async (req) => {
+  const log = createLogger("apollo-job-postings", { request_id: requestId() });
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") {
     return jsonResponse(
@@ -128,6 +130,7 @@ Deno.serve(async (req) => {
     });
 
     if (upstream.status === 403) {
+      log.warn("provider_forbidden", { err: "PROVIDER_FORBIDDEN", org_id: orgId });
       return jsonResponse(
         {
           ok: false,
@@ -152,6 +155,7 @@ Deno.serve(async (req) => {
       return jsonResponse(empty);
     }
     if (!upstream.ok) {
+      log.error("provider_error", { err: `upstream ${upstream.status}`, status: upstream.status, org_id: orgId });
       return jsonResponse(
         {
           ok: false,
@@ -207,8 +211,8 @@ Deno.serve(async (req) => {
     };
     return jsonResponse(result);
   } catch (err) {
-    console.error("[apollo-job-postings] fatal", err);
     const error = err as Error;
+    log.error("fatal", { err: error?.message || String(err), stack: error?.stack, org_id: orgId });
     return jsonResponse(
       {
         ok: false,
