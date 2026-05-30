@@ -228,20 +228,22 @@ async function resolveUserId(sub: Stripe.Subscription): Promise<string | null> {
 }
 
 /**
- * Resolve the org_id for a user, preferring metadata then falling back to
- * the user's earliest org_members row. Returns null when the user has no
- * org membership yet (e.g. signup that hasn't run the org bootstrap trigger).
+ * Resolve the organization_id for a user, preferring Stripe metadata then
+ * falling back to the user's earliest org_members row. Returns null when the
+ * user has no org membership yet (e.g. signup that hasn't run the org
+ * bootstrap trigger). The column on `subscriptions` is `organization_id`
+ * (uuid, nullable, FK to organizations(id) ON DELETE CASCADE).
  *
  * Phase 4 of the subscriptions org-keyed migration: every webhook event
- * writes org_id alongside user_id so the pivot in Phase 5/6 has clean data.
- * Forward-compatible with Phase 1 — the column is nullable until the
- * constraint switch in Phase 6.
+ * writes organization_id alongside user_id so future reads can prefer the
+ * org-keyed lookup. Forward-compatible — the column is nullable.
  */
-async function resolveOrgId(
+async function resolveOrganizationId(
   sub: Stripe.Subscription,
   userId: string,
 ): Promise<string | null> {
-  const metaOrgId = (sub as any).metadata?.supabase_org_id;
+  const metaOrgId = (sub as any).metadata?.supabase_organization_id
+    ?? (sub as any).metadata?.supabase_org_id;
   if (metaOrgId) return String(metaOrgId);
   const res = await fetch(
     `${supabaseUrl}/rest/v1/org_members?user_id=eq.${userId}&select=org_id&order=joined_at.asc&limit=1`,
@@ -316,17 +318,14 @@ async function handleSubscriptionEvent(sub: Stripe.Subscription, eventLabel: str
     update.seat_quantity = seatQuantity;
   }
 
-  // Phase 4 of subscriptions org-keyed migration: also write org_id +
-  // created_by_user_id. Both columns are nullable additions from migration
-  // 20260528120000. Gated behind LIT_BILLING_WEBHOOK_WRITE_ORG_ID — flip to
-  // "true" ONLY after the migration ships. Writing to non-existent columns
-  // would make every webhook event 400, which would cascade into Stripe
-  // retries + drift between Stripe and our subscriptions table.
-  if (Deno.env.get("LIT_BILLING_WEBHOOK_WRITE_ORG_ID") === "true") {
-    const orgId = await resolveOrgId(sub, userId);
-    if (orgId) update.org_id = orgId;
-    update.created_by_user_id = userId;
-  }
+  // Phase 4 of subscriptions org-keyed migration: also write organization_id.
+  // The column already exists on the live table (nullable, FK to
+  // organizations(id) — populated for the first time by the 2026-05-30
+  // backfill migration). No env-gate needed: writing to an existing nullable
+  // column never 400s, and getting org-keyed data in here is the prerequisite
+  // for the eventual read-side pivot.
+  const organizationId = await resolveOrganizationId(sub, userId);
+  if (organizationId) update.organization_id = organizationId;
 
   await upsertSubscription(userId, update);
 

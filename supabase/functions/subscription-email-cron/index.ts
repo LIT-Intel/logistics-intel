@@ -58,26 +58,14 @@ serve(async (req: Request) => {
     };
   }
 
-  // org_id was added in 20260528120000_subscriptions_add_org_id.sql.
-  // The previous select listed `organization_id`, a column that never
-  // existed — PostgREST silently dropped it, leaving org_id null in the
-  // payload sent to send-subscription-email. Subscription lifecycle
-  // emails that rely on org_id (digest targeting, billing receipts)
-  // were therefore landing in the wrong workspace context.
-  //
-  // Gated by LIT_BILLING_WEBHOOK_WRITE_ORG_ID (re-used as the canonical
-  // "Phase 1 migration is live" sentinel) so this function stays safe to
-  // deploy before the migration ships. PostgREST returns 400 on selects
-  // of nonexistent columns; without the gate, every cron tick would fail
-  // on the staging-before-migration window.
-  const orgIdReady = Deno.env.get("LIT_BILLING_WEBHOOK_WRITE_ORG_ID") === "true";
-  const subColumns = orgIdReady
-    ? "id, user_id, org_id, plan_code, started_at, trial_ends_at"
-    : "id, user_id, plan_code, started_at, trial_ends_at";
-  const day12Columns = orgIdReady
-    ? "id, user_id, org_id, plan_code, trial_ends_at"
-    : "id, user_id, plan_code, trial_ends_at";
-  const select = subColumns;
+  // The canonical org column on `subscriptions` is `organization_id`. It is
+  // nullable + currently never populated for any of the 10 live rows; the
+  // backfill in 20260530120000_subscriptions_backfill_organization_id
+  // populates it for existing rows, and billing-webhook writes it on every
+  // future event. PostgREST returns the column value (null until backfilled,
+  // real value after) — no env gate needed for the read side.
+  const select = "id, user_id, organization_id, plan_code, started_at, trial_ends_at";
+  const day12Columns = "id, user_id, organization_id, plan_code, trial_ends_at";
   const day2 = dayWindow(3, 2);
   const day3 = dayWindow(4, 3);
   const day4 = dayWindow(5, 4);
@@ -119,7 +107,7 @@ serve(async (req: Request) => {
       const { count } = await db.from("lit_activity_events").select("id", { count: "exact", head: true }).eq("user_id", sub.user_id).gte("created_at", sub.started_at);
       if ((count ?? 0) > 0) { stats.skipped_day_2_active++; continue; }
     }
-    const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.org_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type: "trial_day_2_activation" });
+    const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.organization_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type: "trial_day_2_activation" });
     if (r.skipped) continue;
     if (r.ok) stats.day_2++; else errors.push(`day2 ${email}: ${r.error}`);
   }
@@ -129,7 +117,7 @@ serve(async (req: Request) => {
     for (const sub of candidates) {
       const { email, firstName } = await getRecipientInfo(sub.user_id);
       if (!email) continue;
-      const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.org_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type });
+      const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.organization_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type });
       if (r.skipped) continue;
       if (r.ok) stats[statKey]++; else errors.push(`${event_type} ${email}: ${r.error}`);
     }
@@ -146,7 +134,7 @@ serve(async (req: Request) => {
     if (!email) continue;
     let trialEndsDate: string | undefined;
     if (sub.trial_ends_at) { try { trialEndsDate = new Date(sub.trial_ends_at).toLocaleDateString("en-US", { month: "long", day: "numeric" }); } catch {} }
-    const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.org_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type: "trial_ending_soon", trial_ends_date: trialEndsDate });
+    const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.organization_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type: "trial_ending_soon", trial_ends_date: trialEndsDate });
     if (r.skipped) continue;
     if (r.ok) stats.day_12++; else errors.push(`day12 ${email}: ${r.error}`);
   }

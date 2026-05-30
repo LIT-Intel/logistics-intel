@@ -1,7 +1,8 @@
-# Subscriptions: pivot from user-keyed to org-keyed
+# Subscriptions: pivot from user-keyed to organization-keyed
 
-**Date:** 2026-05-28
-**Status:** PLAN — awaiting approval
+**Date originally drafted:** 2026-05-28
+**Corrected:** 2026-05-30 (column name was wrong, see below)
+**Status:** Phase 1 (backfill) READY TO APPLY
 **Branch lock:** `claude/review-dashboard-deploy-3AmMD`
 **Owner:** Auth / Access / Billing / Admin
 **Blocker resolved:** B-001 (Billing page does not match Stripe)
@@ -9,166 +10,77 @@
 
 ---
 
+## 2026-05-30 correction
+
+The original draft of this plan assumed `subscriptions` had a `user_id` UNIQUE NOT NULL column and no org column. Querying production showed both assumptions were wrong:
+
+- `subscriptions` already has an **`organization_id`** column (uuid, nullable, FK to `organizations(id) ON DELETE CASCADE`) — added by an earlier migration but **never populated** for any of the 10 live rows.
+- `user_id` is `UNIQUE` but **nullable**, not `NOT NULL`.
+- `organizations.owner_id` exists (not `owner_user_id` as the schema map claims).
+- The lifecycle-email trigger that references `NEW.organization_id` was **always correct** — it resolves to NULL today because the column is never populated, not because the column is missing. There is no trigger bug to fix.
+
+Four migration files written 2026-05-28 (add `org_id`, rewrite the trigger to use `org_id`, RLS over `org_id`, cutover to `UNIQUE(org_id)`) were **discarded**. They would have created a duplicate column and broken the trigger.
+
+This plan now uses `organization_id` end to end.
+
 ## Problem
 
-The `subscriptions` table is currently keyed `UNIQUE user_id` ([20260403_006_create_subscriptions_table.sql](../../../supabase/migrations/20260403_006_create_subscriptions_table.sql)):
-
-```sql
-user_id uuid NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE
-```
-
-RLS is scoped to `user_id = auth.uid()`. Every read in the codebase uses `.eq('user_id', ...)`:
-
-- `frontend/src/pages/BillingNew.tsx:212`
-- `frontend/src/pages/SettingsPage.tsx:247`
-- `frontend/src/pages/OnboardingFlow.tsx:215` (write)
-- `supabase/functions/get-billing-status/index.ts:133`
-- `supabase/functions/pulse-search/index.ts` (deployed copy)
-- `supabase/functions/subscription-email-cron/index.ts` (references `organization_id` field that doesn't exist — secondary bug)
+Today: every active subscription has `user_id` set and `organization_id` NULL. The `get-billing-status` edge function uses a tactical owner-fallback to resolve the org owner's subscription when an invited member calls it; that works but is fragile, and the underlying data model already has the right column — it's just never written.
 
 **Consequence for invited members of a paid org:**
-1. Org owner buys a plan → row written for `user_id = owner_id`
-2. Owner invites teammate → new `auth.users` row
-3. Teammate opens Billing → `subscriptions.user_id = teammate_id` returns nothing
-4. Teammate sees `free_trial` on the billing page despite being on a paid plan
-5. Teammate hits paid feature gates that succeed/fail inconsistently depending on whether the check goes through `get-entitlements` (which org-resolves) or a stale per-user query
+1. Owner buys a plan; subscription row has `user_id = owner_id`, `organization_id = NULL`.
+2. Owner invites teammate.
+3. Teammate's billing page queries via `get-billing-status`, which does owner-fallback to find the right subscription. Works.
+4. Any code path that bypasses `get-billing-status` and queries `subscriptions` directly returns nothing for the teammate → they see `free_trial`. B-001.
 
-**This is B-001 — "Billing page does not match Stripe."** The Stripe webhook is correct. The data model itself is broken for orgs.
+## Migration sequence
 
-**Schema map drift:** [LIT_SCHEMA_MAP.md](../../agents/LIT_SCHEMA_MAP.md) documents `subscriptions.org_id` as the canonical key. The doc is aspirational; the migration never landed.
+Three migration files, applied in order:
 
-## Migration files (all committed this session, awaiting apply)
+| Migration | Purpose | Status |
+|---|---|---|
+| `20260530120000_subscriptions_backfill_organization_id.sql` | Populate `organization_id` for all 10 existing rows from owner → org mapping. Fail-loud guard if any active row stays NULL. **APPLY NOW.** | Ready |
+| `20260530130000_subscriptions_organization_id_rls.sql` | Add an `org_members`-based RLS read policy alongside the existing `user_id` one. Dual-policy during transition. **APPLY ~1 week after Phase 1 + billing-webhook deploy.** | Ready |
+| `20260530140000_subscriptions_pivot_to_organization_unique.sql` | Drop the legacy `user_id` policy, make `organization_id NOT NULL`, swap the UNIQUE constraint from `user_id` to `organization_id`. **APPLY ONLY AFTER 7+ clean days post-Phase-3.** Irreversible. | Ready |
 
-In order:
+## Code changes already shipped (2026-05-30)
 
-1. `20260528120000_subscriptions_add_org_id.sql` — Phase 1: schema + backfill (additive, zero downtime).
-2. `20260528130000_subscriptions_lifecycle_trigger_use_org_id.sql` — Phase 2: fix the lifecycle-email trigger functions that referenced the nonexistent `NEW.organization_id`. Replaces with `NEW.org_id`.
-3. `20260528140000_subscriptions_org_id_rls.sql` — Phase 3: dual-policy RLS. Adds the org_members-based read policy alongside the legacy user_id one. Both active during transition.
-4. `20260528150000_subscriptions_pivot_to_org_unique.sql` — Phase 6 cutover: drops the legacy user_id policy, makes `org_id NOT NULL`, swaps the UNIQUE constraint from user_id to org_id. APPLY ONLY AFTER backfill is verified and Phases 4–5 have been live for 7+ days.
+- **billing-webhook**: `resolveOrganizationId(sub, userId)` resolves the org via Stripe metadata (`supabase_organization_id`, legacy `supabase_org_id` accepted as fallback) then DB lookup via `org_members`. Writes `organization_id` on every event. No env flag required.
+- **subscription-email-cron**: reads `organization_id` directly. No flag.
+- **`_shared/billing_webhook_helpers.ts`**: extracted `resolveOrganizationIdForUser` for unit testing. 6 Deno tests cover metadata precedence, legacy key fallback, DB fallback, null path, non-string metadata, etc.
 
-Phase 4 code (billing-webhook writes org_id) is committed, gated behind `LIT_BILLING_WEBHOOK_WRITE_ORG_ID=true`. Phase 5 code (read migration in subscription-email-cron) is also committed and gated by the same flag.
+## Frontend tactical fix shipped 2026-05-28 (still relevant)
 
-**Deployment order:**
+`get-billing-status` falls back to the org owner's subscription when no row exists for the current user. This works before AND after the backfill — it's a belt-and-braces fallback that handles edge cases where `organization_id` is not yet populated for a row.
 
-```
-Apply migration 20260528120000  (Phase 1)
-Apply migration 20260528130000  (Phase 2 trigger fix)
-Verify backfill: `select count(*) from subscriptions where org_id is null;` should be 0 for active subs
-Flip LIT_BILLING_WEBHOOK_WRITE_ORG_ID=true (Phase 4 + 5 reads activate)
-Apply migration 20260528140000  (Phase 3 dual-policy RLS)
-Wait 7 days, monitor billing-webhook + cron logs
-Apply migration 20260528150000  (Phase 6 cutover, IRREVERSIBLE)
-```
+`BillingNew.tsx` and `SettingsPage.tsx` no longer query `subscriptions` directly; they route through `get-billing-status`.
 
-## Tactical patch already shipped (2026-05-28)
+## Acceptance criteria
 
-`get-billing-status` now falls back to the org-owner subscription when no row exists for the current user. `BillingNew.tsx` and `SettingsPage.tsx` no longer query `subscriptions` directly — they go through `get-billing-status`. Frontend rule documented in [CLAUDE.md](../../../CLAUDE.md).
-
-This **unblocks invited-member billing today** without a migration. It does not fix:
-- Direct `subscriptions` queries in edge functions (cron, search, admin)
-- The structural assumption that one user = one subscription (blocks seat-based pricing, ownership transfer, future SCIM)
-
-## Durable structural fix (this plan)
-
-### Goal
-
-`subscriptions` becomes org-keyed: one row per active subscription per org. `user_id` is retained as `created_by_user_id` for audit but is no longer the lookup key or RLS subject.
-
-### Migration sequence
-
-**Phase 1 — schema (additive, zero downtime)**
-1. New migration: add `org_id uuid REFERENCES organizations(id) ON DELETE CASCADE` to `subscriptions`. Nullable for now.
-2. Add `idx_subscriptions_org_id` index.
-3. Add `created_by_user_id uuid REFERENCES auth.users(id)` (alias for the legacy `user_id`).
-
-**Phase 2 — backfill**
-```sql
-UPDATE subscriptions s
-SET org_id = o.id,
-    created_by_user_id = s.user_id
-FROM organizations o
-WHERE s.org_id IS NULL
-  AND o.owner_user_id = s.user_id;
-
--- For any sub whose user_id is not an org owner, attribute to their first org.
-UPDATE subscriptions s
-SET org_id = om.org_id,
-    created_by_user_id = s.user_id
-FROM org_members om
-WHERE s.org_id IS NULL
-  AND om.user_id = s.user_id
-  AND om.role IN ('owner','admin');
-```
-Manually triage remaining `org_id IS NULL` rows (test accounts, deleted orgs).
-
-**Phase 3 — RLS update**
-```sql
-DROP POLICY IF EXISTS "Users can read their own subscription" ON subscriptions;
-CREATE POLICY "Org members can read their org subscription"
-  ON subscriptions FOR SELECT TO authenticated
-  USING (
-    org_id IN (
-      SELECT org_id FROM org_members WHERE user_id = auth.uid()
-    )
-  );
-```
-Same pattern for INSERT/UPDATE (admin-only via `org_members.role IN ('owner','admin')`).
-
-**Phase 4 — billing-webhook writes**
-Update `supabase/functions/billing-webhook/index.ts` so every event resolves `stripe_customer_id → org_id` (via a `stripe_customer_id_to_org_id` lookup or by storing `org_id` in checkout session `metadata`) and writes that to the row. Continue writing `created_by_user_id` for audit.
-
-**Phase 5 — read migration (parallel, can ship per-call)**
-Replace `.eq('user_id', X)` with `.in('org_id', userOrgIds)` or `.eq('org_id', orgId)` in:
-- `supabase/functions/get-billing-status/index.ts` (already has tactical fallback — replace with primary org_id lookup)
-- `supabase/functions/pulse-search/index.ts`
-- `supabase/functions/subscription-email-cron/index.ts` (also fix the bogus `organization_id` reference)
-- `supabase/functions/admin-api/index.ts`
-- `frontend/src/pages/OnboardingFlow.tsx` (write path on signup — upsert by `org_id`)
-
-**Phase 6 — drop unique constraint on user_id**
-Once all reads/writes are org-keyed and all rows have `org_id`, drop the `UNIQUE user_id` constraint and add `UNIQUE org_id`. Keep `user_id` column as nullable audit field.
-
-### Rollback posture
-
-- Each phase is independently revertible.
-- RLS migration in phase 3 keeps the old policy until after the read migration in phase 5 — runs both policies during transition.
-- If Stripe webhook writes start failing, the tactical fallback in `get-billing-status` still resolves invited members → no user-visible regression.
-
-### Acceptance criteria
-
-- [ ] Owner and every invited member of a paid org see the same plan + status on `/billing`
-- [ ] Seat count derives from `org_members` count, capped at `plans.included_seats`
-- [ ] `billing-webhook` writes `org_id` on every event
-- [ ] All edge function reads of `subscriptions` use `org_id`
+- [ ] Backfill migration applied; `select count(*) from subscriptions where organization_id is null and status in ('active','trialing','past_due')` returns 0
+- [ ] Owner and every invited member of a paid org see the same plan on `/billing`
+- [ ] `billing-webhook` writes `organization_id` on every event (verify via DB log: `select count(*) from subscriptions where organization_id is not null` grows over time)
+- [ ] All edge function reads of `subscriptions` use `organization_id` where applicable
 - [ ] No frontend file directly queries the `subscriptions` table
-- [ ] RLS rejects cross-org reads
-- [ ] Backfill leaves no `org_id IS NULL` rows for active subscriptions
-- [ ] Old `UNIQUE user_id` constraint dropped after phase 5 ships clean for 7 days
+- [ ] RLS rejects cross-org reads (after Phase 3)
+- [ ] Old `UNIQUE user_id` constraint dropped after Phase 6 ships clean for 7 days
 
-### Effort estimate
+## Effort estimate
 
 | Phase | Work | Human | CC + gstack |
 |---|---|---|---|
-| 1 | Schema migration | 30 min | 5 min |
-| 2 | Backfill SQL + dry-run on staging | 2 h | 20 min |
-| 3 | RLS policy update | 1 h | 10 min |
-| 4 | billing-webhook rewrite | 4 h | 30 min |
-| 5 | Read migration across ~6 surfaces | 1 day | 1 h |
-| 6 | Constraint pivot | 30 min | 5 min |
-| | **Total** | **~2 days** | **~2 h** |
+| 1 | Backfill (3 lines of SQL after the corrected discovery) | 5 min | done |
+| 3 | Add RLS policy | 5 min | done |
+| 6 | Constraint pivot | 5 min | done |
+| | Code (webhook + cron + helper + tests) | 30 min | done |
+| | **Total deploy work** | **~30 min** | **already shipped in code** |
 
-### Risks
+## Risks
 
-- Stripe customer → org mapping must be unambiguous. Today every checkout creates a Stripe customer per user. To make `stripe_customer_id` org-unique we either (a) reuse the org owner's customer for the whole org or (b) accept multiple customers per org and treat the active subscription's customer as canonical. **Recommend (a)** — Stripe customer = org. Migrate existing data by merging customers via Stripe API where safe.
-- Onboarding currently upserts `subscriptions` on user signup with `plan_code: 'free_trial'`. Pivot this to upsert by org_id after the org bootstrap trigger runs (the trigger already creates an org per signup — confirmed in `20260410_003_auto_org_bootstrap.sql`).
-- `cancel-subscription` and `billing-portal` edge functions assume per-user subscription — re-audit during phase 5.
-
-### Decisions needed before phase 1
-
-1. **Stripe customer model:** one per org (recommended) vs one per user. Affects the data migration shape.
-2. **What to do with existing subscriptions where the org has been deleted but the user remains.** Default: archive the row, treat the user as `free_trial`.
-3. **Whether to ship phases 1–5 behind a feature flag.** Recommend: no flag, ship phase-by-phase with the dual-policy overlap providing the safety net.
+- **Stripe customer ↔ org mapping for future signups.** Today every checkout creates a Stripe customer per user. The webhook resolution preserves the current behavior (look up the user's org via `org_members`) so existing flows keep working without a Stripe data migration. If you later want one Stripe customer per org, that's a separate (one-way) migration. Recommend deferring.
+- **Onboarding upserts to `subscriptions`** at signup with `plan_code: 'free_trial'`. The org bootstrap trigger creates an org per signup, so by the time the next webhook event fires, `org_members` is populated and the resolver finds the org cleanly. Not a deploy blocker.
+- **Rows where the user has been removed from all their orgs** but the subscription still exists. After Phase 6, those rows fail the NOT NULL guard. Recommend a one-off `delete from subscriptions where ... status = 'expired'` cleanup before Phase 6 if any exist.
 
 ## How this gets reviewed
 
-Run `/plan-eng-review` against this file before touching production data. The migration is reversible but the Stripe customer merge is one-way. Treat as a one-way door.
+Run `/plan-eng-review` against this file before applying Phase 6 (the irreversible cutover). Phases 1 and 3 are additive + dual-policy and can be applied without ceremony.
