@@ -81,7 +81,7 @@ const LEGAL_LINKS: FooterLink[] = [
 const SOCIAL_LINKS: { label: string; href: string; Icon: typeof Linkedin }[] = [
   {
     label: "LinkedIn",
-    href: "https://www.linkedin.com/company/logisticintel",
+    href: "https://www.linkedin.com/company/logistic-intel",
     Icon: Linkedin,
   },
   {
@@ -91,7 +91,7 @@ const SOCIAL_LINKS: { label: string; href: string; Icon: typeof Linkedin }[] = [
   },
   {
     label: "YouTube",
-    href: "https://www.youtube.com/@logisticintel",
+    href: "https://www.youtube.com/@logisticsintel",
     Icon: Youtube,
   },
   { label: "RSS feed", href: "/blog/rss.xml", Icon: Rss },

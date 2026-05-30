@@ -140,7 +140,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               logo: `${SITE_URL}/lit-icon-master.svg`,
               sameAs: [
                 "https://twitter.com/logisticintel",
-                "https://www.linkedin.com/company/logisticintel",
+                "https://www.linkedin.com/company/logistic-intel",
                 "https://github.com/lit-intel",
               ],
               contactPoint: [

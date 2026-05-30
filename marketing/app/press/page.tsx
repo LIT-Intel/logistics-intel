@@ -50,7 +50,15 @@ type BrandAsset = {
   format: string;
   description: string;
   href?: string;
-  preview: "icon-glow" | "favicon" | "wordmark" | "lockup-dark" | "palette" | "typography";
+  preview:
+    | "icon-glow"
+    | "favicon"
+    | "wordmark-light"
+    | "wordmark-dark"
+    | "lockup-light"
+    | "lockup-dark"
+    | "palette"
+    | "typography";
   available: boolean;
 };
 
@@ -72,18 +80,36 @@ const BRAND_ASSETS: BrandAsset[] = [
     available: true,
   },
   {
-    name: "Wordmark",
+    name: "Wordmark — light",
     format: "SVG",
-    description: "Logistic Intel wordmark, horizontal lockup. Coming soon.",
-    preview: "wordmark",
-    available: false,
+    description: "Logistic Intel wordmark for use on light backgrounds.",
+    href: "/brand/wordmark-light.svg",
+    preview: "wordmark-light",
+    available: true,
   },
   {
-    name: "Logo + wordmark, on dark",
+    name: "Wordmark — dark",
     format: "SVG",
-    description: "Horizontal lockup designed for dark backgrounds. Coming soon.",
+    description: "Logistic Intel wordmark for use on dark backgrounds.",
+    href: "/brand/wordmark-dark.svg",
+    preview: "wordmark-dark",
+    available: true,
+  },
+  {
+    name: "Lockup — light",
+    format: "SVG",
+    description: "Horizontal lockup (mark + wordmark) for light backgrounds.",
+    href: "/brand/lockup-light.svg",
+    preview: "lockup-light",
+    available: true,
+  },
+  {
+    name: "Lockup — dark",
+    format: "SVG",
+    description: "Horizontal lockup (mark + wordmark) for dark backgrounds.",
+    href: "/brand/lockup-dark.svg",
     preview: "lockup-dark",
-    available: false,
+    available: true,
   },
   {
     name: "Brand colors",
@@ -118,21 +144,35 @@ function AssetPreview({ kind }: { kind: BrandAsset["preview"] }) {
       </div>
     );
   }
-  if (kind === "wordmark") {
+  if (kind === "wordmark-light") {
     return (
-      <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-ink-200 bg-ink-50">
-        <span className="font-display text-[18px] font-semibold tracking-[-0.02em] text-ink-400">
-          Logistic Intel
-        </span>
+      <div className="flex h-24 items-center justify-center rounded-xl border border-ink-100 bg-white px-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/wordmark-light.svg" alt="" className="h-8 w-auto" />
+      </div>
+    );
+  }
+  if (kind === "wordmark-dark") {
+    return (
+      <div className="flex h-24 items-center justify-center rounded-xl bg-dark-0 px-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/wordmark-dark.svg" alt="" className="h-8 w-auto" />
+      </div>
+    );
+  }
+  if (kind === "lockup-light") {
+    return (
+      <div className="flex h-24 items-center justify-center rounded-xl border border-ink-100 bg-white px-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/lockup-light.svg" alt="" className="h-10 w-auto" />
       </div>
     );
   }
   if (kind === "lockup-dark") {
     return (
-      <div className="flex h-24 items-center justify-center rounded-xl bg-dark-0">
-        <span className="font-display text-[18px] font-semibold tracking-[-0.02em] text-white/70">
-          Logistic Intel
-        </span>
+      <div className="flex h-24 items-center justify-center rounded-xl bg-dark-0 px-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/lockup-dark.svg" alt="" className="h-10 w-auto" />
       </div>
     );
   }
@@ -210,7 +250,7 @@ export default function PressPage() {
       "Logistic Intel is a freight revenue intelligence platform for brokers, forwarders, 3PLs, and NVOCCs — combining shipment data, company intelligence, and CRM workflows in one system.",
     sameAs: [
       "https://twitter.com/logisticintel",
-      "https://www.linkedin.com/company/logisticintel",
+      "https://www.linkedin.com/company/logistic-intel",
     ],
     contactPoint: [
       {
