@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LitLogoMark } from "../seo/LitLogoMark";
+import { Button } from "@/components/ui/Button";
 import { APP_LOGIN_URL } from "@/lib/app-urls";
 import { MobileMenu } from "./MobileMenu";
 import { ProductDropdown } from "./ProductDropdown.client";
@@ -39,38 +40,45 @@ export function Nav() {
         </div>
 
         <div className="ml-auto flex items-center gap-2 sm:gap-2.5">
-          <a
+          {/* Desktop: ghost Sign-in + primary Book-a-demo */}
+          <Button
+            variant="secondary"
+            size="sm"
             href={APP_LOGIN_URL}
-            className="font-display hidden h-9 items-center gap-1.5 rounded-md border border-ink-100 bg-white/70 px-3 text-[13px] font-semibold text-ink-700 backdrop-blur transition hover:bg-white md:inline-flex"
+            className="hidden md:inline-flex"
           >
             Sign in
-          </a>
-          <Link
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
             href="/demo"
-            className="font-display hidden h-9 items-center gap-1.5 rounded-md px-4 text-[13px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)] transition hover:shadow-[0_10px_24px_rgba(37,99,235,0.45)] md:inline-flex"
-            style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
+            className="hidden md:inline-flex"
           >
             Book a demo
-          </Link>
+          </Button>
 
-          {/* Mobile-only Sign in — compact ghost button, sits beside Demo */}
-          <a
+          {/* Mobile-only Sign in — compact, sits beside Demo */}
+          <Button
+            variant="secondary"
+            size="sm"
             href={APP_LOGIN_URL}
             aria-label="Sign in"
-            className="font-display inline-flex h-9 items-center whitespace-nowrap rounded-md border border-ink-100 bg-white/70 px-2.5 text-[12.5px] font-semibold text-ink-700 backdrop-blur transition hover:bg-white md:hidden"
+            className="whitespace-nowrap px-2.5 text-[12.5px] md:hidden"
           >
             Sign in
-          </a>
+          </Button>
           {/* Mobile-only primary CTA — one-tap /demo without opening the drawer */}
-          <Link
+          <Button
+            variant="primary"
+            size="sm"
             href="/demo"
             aria-label="Book a demo"
-            className="font-display inline-flex h-9 items-center gap-1 rounded-md px-2.5 text-[12.5px] font-semibold text-white shadow-[0_4px_14px_rgba(37,99,235,0.32)] md:hidden"
-            style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
+            className="px-2.5 text-[12.5px] md:hidden"
           >
             <Calendar className="h-3.5 w-3.5" aria-hidden />
             Demo
-          </Link>
+          </Button>
 
           <MobileMenu />
         </div>

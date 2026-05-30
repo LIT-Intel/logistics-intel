@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { ArrowRight, Calendar } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Bottom-of-page CTA — Pulse Coach surface (slate gradient + cyan glow).
@@ -55,22 +55,27 @@ export function CtaBanner({
               </p>
             )}
             <div className="mt-7 flex flex-wrap gap-3">
-              <Link
+              <Button
+                variant="primary"
+                size="lg"
                 href={primaryCta.href}
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.45)] transition hover:shadow-[0_10px_24px_rgba(37,99,235,0.55)]"
-                style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
+                className="shadow-[0_6px_18px_rgba(37,99,235,0.45)] hover:shadow-[0_10px_24px_rgba(37,99,235,0.55)]"
               >
                 <PrimaryIcon className="h-4 w-4" />
                 {primaryCta.label}
-              </Link>
+              </Button>
               {secondaryCta && (
-                <Link
+                /* Dark-surface secondary: white/15 border + white/5 fill,
+                   not the default light-surface secondary token. */
+                <Button
+                  variant="secondary"
+                  size="lg"
                   href={secondaryCta.href}
-                  className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-6 text-[15px] font-semibold text-white transition hover:bg-white/10"
+                  className="border-white/15 bg-white/5 text-white backdrop-blur-0 hover:border-white/15 hover:bg-white/10"
                 >
                   {secondaryCta.label}
                   <ArrowRight className="h-4 w-4" />
-                </Link>
+                </Button>
               )}
             </div>
           </div>
