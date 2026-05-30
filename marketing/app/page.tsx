@@ -17,6 +17,7 @@ import { SequenceBuilderMock } from "@/components/sections/SequenceBuilderMock";
 import { CustomerLogosRail } from "@/components/sections/CustomerLogosRail";
 import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
 import { BigNumberStrip, HOME_BIG_NUMBER_DEFAULTS } from "@/components/sections/BigNumberStrip";
+import { HomeShowcaseTabs, type ShowcaseTab } from "@/components/sections/HomeShowcaseTabs";
 
 export const revalidate = 600; // ISR — refresh every 10 min
 
@@ -117,10 +118,7 @@ export default async function HomePage() {
             { domain: "dbschenker.com", name: "DB Schenker" },
           ]}
         />
-        <CompanyIntelShowcase />
-        <PulseBriefShowcase />
-        <ContactDiscoveryShowcase />
-        <SequenceBuilderShowcase />
+        <HomeProductShowcaseTabs />
         <ProblemSection />
         {/* End-of-middle-band marker — when this scrolls into view the
             sticky CTA bar slides away (per home-page glide spec). */}
@@ -257,6 +255,102 @@ function TrustStrip() {
         </span>
       </div>
     </section>
+  );
+}
+
+/**
+ * Home-page product capability shell. Collapses the four prior alternating
+ * showcase rows (CompanyIntel / PulseBrief / ContactDiscovery / Sequence)
+ * into a single tabbed module to reclaim ~1,700px of phone scroll. Copy
+ * preserved verbatim from the original showcase functions defined below
+ * (now unused but retained as fallbacks). */
+function HomeProductShowcaseTabs() {
+  const tabs: [ShowcaseTab, ...ShowcaseTab[]] = [
+    {
+      id: "company-intel",
+      label: "Company Intel",
+      eyebrow: "Company Intelligence",
+      headline: (
+        <>
+          Every account, with the <span className="grad-text-cyan">trade picture</span> built in.
+        </>
+      ),
+      description:
+        "Live trailing-12m volume, top lane, carrier mix, container types — joined to the people you'd actually pitch.",
+      bullets: [
+        "Pulse Coach tells you what changed this week, in one sentence.",
+        "Live T-12m volume, top lane, carrier mix, container types.",
+        "One click to start outbound, save to a campaign, or push to your CRM.",
+      ],
+      mock: <CompanyIntelMock />,
+    },
+    {
+      id: "pulse-brief",
+      label: "Pulse AI Brief",
+      eyebrow: "Pulse AI Brief",
+      headline: (
+        <>
+          The first 30 seconds of <span className="grad-text-cyan">account research</span>, done.
+        </>
+      ),
+      description:
+        "One click on any account and Pulse generates a full intel brief — exec summary, opportunity signals, risk flags, ready-to-send hooks. Cited sources. 95% confidence. Refreshed weekly.",
+      bullets: [
+        "Buying / forwarder / carrier / supplier signal classification.",
+        "Email + LinkedIn opener variants you can copy and send today.",
+        "Every claim cited to a public source — no hallucinated facts.",
+      ],
+      mock: <PulseBriefMock />,
+    },
+    {
+      id: "contact-discovery",
+      label: "Contact Discovery",
+      eyebrow: "Contact Discovery",
+      headline: (
+        <>
+          The right buyers, <span className="grad-text-cyan">not just any buyers.</span>
+        </>
+      ),
+      description:
+        "Filtered by title, seniority, department, and location — then joined to who actually owns shipments at that company. Verified emails, LinkedIn URLs, and direct dials revealed on enrich.",
+      bullets: [
+        "Email-verified contacts — no spam-trap-rate roulette.",
+        "One-click bulk enrichment, plan-aware credit usage.",
+        "Native push to HubSpot, Salesforce, Outreach, Apollo.",
+      ],
+      mock: <ContactDiscoveryMock />,
+    },
+    {
+      id: "campaign-builder",
+      label: "Campaign Builder",
+      eyebrow: "Campaign Builder",
+      headline: (
+        <>
+          Sequences seeded by <span className="grad-text-cyan">the signal that started them.</span>
+        </>
+      ),
+      description:
+        "Lane-launch, carrier-pivot, RFP follow-up, win-back — six starter plays that bake the signal into the message. Multichannel by default. Send forecast before you launch.",
+      bullets: [
+        "Email + LinkedIn + call-task in one timeline.",
+        "Predicted opens / replies / meetings before launch.",
+        "Auto-personalization with the recipient's lane, top HS, top carrier.",
+      ],
+      mock: <SequenceBuilderMock />,
+    },
+  ];
+
+  return (
+    <HomeShowcaseTabs
+      eyebrow="Product capabilities"
+      headline={
+        <>
+          One workspace for <span className="grad-text-cyan">every step</span> of the freight sale.
+        </>
+      }
+      intro="Company intel, AI briefs, verified contacts, multichannel campaigns — all built on the same live shipment graph."
+      tabs={tabs}
+    />
   );
 }
 
@@ -501,43 +595,21 @@ function ProblemSection() {
 
 function SignalToPipelineSection() {
   return (
-    <section
-      className="relative overflow-hidden px-5 py-16 sm:px-8 sm:py-24"
-      style={{
-        background:
-          "linear-gradient(180deg, #020617 0%, #081225 100%)",
-      }}
-    >
-      <span
-        aria-hidden
-        className="pointer-events-none absolute -top-32 left-1/2 h-80 w-[800px] -translate-x-1/2 rounded-full opacity-50"
-        style={{
-          background:
-            "radial-gradient(ellipse, rgba(0,240,255,0.12), transparent 70%)",
-        }}
-      />
+    <section className="relative overflow-hidden bg-section-soft-blue px-5 py-16 sm:px-8 sm:py-24">
       <div className="relative mx-auto max-w-container">
         <div className="mx-auto max-w-[780px] text-center">
-          <div
-            className="font-display text-[12px] font-semibold uppercase tracking-[0.12em]"
-            style={{ color: "#00F0FF", textShadow: "0 0 12px rgba(0,240,255,0.3)" }}
-          >
-            Signal → Pipeline
-          </div>
-          {/* Inline color overrides — `.display-lg` and `.lead` in globals.css
-              ship a default ink-900/ink-500 color that ranks below Tailwind
-              utilities in the cascade. Inline style guarantees readability
-              on the dark surface. */}
-          <h2 className="display-lg mt-3" style={{ color: "#ffffff" }}>
-            Five steps from question to closed deal.
-          </h2>
-          <p className="lead mx-auto mt-3 max-w-[640px]" style={{ color: "#cfd7e6" }}>
+          <span className="lit-pill">
+            <span className="dot" aria-hidden />
+            Signal to Pipeline
+          </span>
+          <h2 className="display-lg mt-4">Five steps from question to closed deal.</h2>
+          <p className="lead mx-auto mt-3 max-w-[640px]">
             LIT collapses what was a five-tool, five-day workflow into a single board you finish in 20
             minutes.
           </p>
         </div>
         <div className="mt-14">
-          <WorkflowMotion dark />
+          <WorkflowMotion variant="light" />
         </div>
       </div>
     </section>
