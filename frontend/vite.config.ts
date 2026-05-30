@@ -13,12 +13,25 @@ export default defineConfig(({ mode }) => {
   // Sentry source-map upload: only runs when SENTRY_AUTH_TOKEN is present in
   // the build environment (set in Vercel for production / preview). The plugin
   // is a no-op without the token — local dev builds keep working without it.
-  // Release name preference: VITE_SENTRY_RELEASE > VERCEL_GIT_COMMIT_SHA > 'unknown'.
-  const sentryAuthToken = env.SENTRY_AUTH_TOKEN || ''
-  const sentryOrg = env.SENTRY_ORG || 'lit-g0'
-  const sentryProject = env.SENTRY_PROJECT || 'lit-frontend'
+  //
+  // IMPORTANT: read from process.env (NOT loadEnv). Vite's loadEnv reads from
+  // .env* files in envDir, not from the runtime process env. Vercel injects
+  // env vars into process.env at build time and does NOT write .env files —
+  // so loadEnv would return empty for SENTRY_AUTH_TOKEN even when set in
+  // Vercel. Same for VERCEL_GIT_COMMIT_SHA which Vercel auto-sets.
+  // Release name preference: VITE_SENTRY_RELEASE > VERCEL_GIT_COMMIT_SHA > SENTRY_RELEASE.
+  const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN || ''
+  const sentryOrg = process.env.SENTRY_ORG || 'lit-g0'
+  const sentryProject = process.env.SENTRY_PROJECT || 'lit-frontend'
   const sentryRelease =
-    env.VITE_SENTRY_RELEASE || env.VERCEL_GIT_COMMIT_SHA || env.SENTRY_RELEASE || ''
+    process.env.VITE_SENTRY_RELEASE ||
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.SENTRY_RELEASE ||
+    ''
+
+  // Debug line — visible in Vercel build logs so we can confirm the plugin is
+  // configured correctly without checking env-var UI. Just emits a boolean.
+  console.log(`[sentry-vite-plugin] auth_token=${Boolean(sentryAuthToken)} org=${sentryOrg} project=${sentryProject} release=${sentryRelease || '(none)'}`)
 
   return {
     plugins: [
