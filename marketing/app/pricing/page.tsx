@@ -34,7 +34,7 @@ const PRICING_FAQS = [
   {
     question: "What payment methods do you accept?",
     answer:
-      "We accept all major credit and debit cards through Stripe. Scale customers can also pay by ACH or invoice on annual terms.",
+      "We accept all major credit and debit cards through Stripe. Scale and Enterprise customers can also pay by ACH or invoice on annual terms.",
   },
   {
     question: "Do you offer annual discounts?",
@@ -54,7 +54,7 @@ const PRICING_FAQS = [
   {
     question: "How does billing work for additional seats?",
     answer:
-      "Growth includes 5 seats. Additional seats are billed at $99 per seat per month on the same cycle as your subscription. You can add or remove seats any time from your workspace settings — prorated automatically.",
+      "Starter includes 1 seat. Growth includes 3 seats. Scale includes 5 seats. Additional seats are billed at $99 per seat per month on the same cycle as your subscription. You can add or remove seats any time from your workspace settings — prorated automatically. Enterprise seat pricing is negotiated per contract.",
   },
   {
     question: "Can I upgrade or downgrade mid-cycle?",
@@ -66,10 +66,14 @@ const PRICING_FAQS = [
 export default function PricingPage() {
   const path = "/pricing";
 
-  /* Product + Offer structured data. Prices sourced from the Supabase
-   * `plans` table (price_monthly column) on 2026-05-30. Stripe remains the
-   * source of truth at checkout — these values must match the products
-   * linked by stripe_price_id_monthly. */
+  /* Product + Offer structured data. Prices and limits sourced from the
+   * Supabase `plans` table (price_monthly + per-tier integer limit
+   * columns) on 2026-05-31. Stripe remains the source of truth at
+   * checkout — priced offers must match the products linked by
+   * stripe_price_id_monthly. Enterprise has null pricing in the DB and
+   * surfaces as Custom / Contact sales. The Product carries an
+   * AggregateOffer so search engines can render a single
+   * "$125 – Custom" price range. */
   const productJsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -78,38 +82,57 @@ export default function PricingPage() {
       "Freight prospecting platform with live shipment data, verified contacts, and Pulse AI briefs for brokers, freight forwarders, and 3PLs.",
     brand: { "@type": "Brand", name: "Logistic Intel" },
     url: siteUrl(path),
-    offers: [
-      {
-        "@type": "Offer",
-        name: "Starter",
-        description:
-          "For solo freight prospectors. U.S. customs shipment search, 1,000 verified contact reveals per month, and 50 Pulse AI briefs.",
-        price: "125",
-        priceCurrency: "USD",
-        availability: "https://schema.org/InStock",
-        url: siteUrl(path),
-      },
-      {
-        "@type": "Offer",
-        name: "Growth",
-        description:
-          "For revenue teams. 5,000 contact reveals per month, multi-channel outbound, Command Center CRM, HubSpot and Salesforce sync.",
-        price: "499",
-        priceCurrency: "USD",
-        availability: "https://schema.org/InStock",
-        url: siteUrl(path),
-      },
-      {
-        "@type": "Offer",
-        name: "Scale",
-        description:
-          "For multi-org programs. Unlimited contact reveals and Pulse briefs, SSO, SCIM, dedicated CSM, custom data feeds.",
-        price: "999",
-        priceCurrency: "USD",
-        availability: "https://schema.org/InStock",
-        url: siteUrl(path),
-      },
-    ],
+    offers: {
+      "@type": "AggregateOffer",
+      priceCurrency: "USD",
+      lowPrice: "125",
+      highPrice: "999",
+      offerCount: 4,
+      availability: "https://schema.org/InStock",
+      url: siteUrl(path),
+      offers: [
+        {
+          "@type": "Offer",
+          name: "Starter",
+          description:
+            "For solo freight prospectors. 75 customs shipment searches, 50 saved companies, and 25 Pulse AI briefs per month.",
+          price: "125",
+          priceCurrency: "USD",
+          availability: "https://schema.org/InStock",
+          url: siteUrl(path),
+        },
+        {
+          "@type": "Offer",
+          name: "Growth",
+          description:
+            "For revenue teams. 350 shipment searches, 150 verified contact reveals, 100 Pulse AI briefs per month, multi-channel outbound, Command Center CRM, HubSpot and Salesforce sync.",
+          price: "499",
+          priceCurrency: "USD",
+          availability: "https://schema.org/InStock",
+          url: siteUrl(path),
+        },
+        {
+          "@type": "Offer",
+          name: "Scale",
+          description:
+            "For multi-seat ops teams. 1,000 shipment searches, 500 verified contact reveals, 500 Pulse AI briefs per month, SLA-backed support.",
+          price: "999",
+          priceCurrency: "USD",
+          availability: "https://schema.org/InStock",
+          url: siteUrl(path),
+        },
+        {
+          "@type": "Offer",
+          name: "Enterprise",
+          description:
+            "Custom pricing for multi-org programs. Unlimited usage, SSO + SCIM, Snowflake sync, custom data feeds, market benchmark analytics, named TAM, custom SLAs.",
+          price: "0",
+          priceCurrency: "USD",
+          availability: "https://schema.org/InStock",
+          url: siteUrl("/demo"),
+        },
+      ],
+    },
   };
 
   const faqJsonLd = {

@@ -7,9 +7,9 @@ import { APP_SIGNUP_URL } from "@/lib/app-urls";
 
 /**
  * Plan-card grid with a monthly / annual billing toggle. Single toggle
- * controls all three cards.
+ * controls all four cards.
  *
- * Pricing sourced from the Supabase `plans` table (rows where
+ * Pricing and limits sourced from the Supabase `plans` table (rows where
  * `is_active = true`). Annual values are stored as a yearly total
  * (`price_yearly`) and rendered here as the equivalent per-seat per-month
  * cost (yearly / 12, rounded). When plan rows change, re-sync by
@@ -18,21 +18,27 @@ import { APP_SIGNUP_URL } from "@/lib/app-urls";
  * checkout — these numbers exist as the marketing anchor and must match
  * the Stripe products linked by `stripe_price_id_monthly` /
  * `stripe_price_id_yearly`.
+ *
+ * Feature copy reflects the real per-tier integer limits from the
+ * `plans` table — never claim "unlimited" for a tier that has finite
+ * caps. Only the Enterprise row has all-null limits, so only Enterprise
+ * may surface unlimited usage.
  */
 
-// Pricing sourced from Supabase plans table on 2026-05-30. When plan rows
-// change, re-sync via the same SELECT and update PRICE_SOURCE_LAST_SYNC.
-const PRICE_SOURCE_LAST_SYNC = "2026-05-30";
+// Pricing + limits sourced from Supabase plans table on 2026-05-31.
+// When plan rows change, re-sync via the same SELECT and update
+// PRICE_SOURCE_LAST_SYNC.
+const PRICE_SOURCE_LAST_SYNC = "2026-05-31";
 
 type Tier = {
-  id: "starter" | "growth" | "scale";
+  id: "starter" | "growth" | "scale" | "enterprise";
   name: string;
   tagline: string;
-  /* Monthly price in USD per seat. `null` => contact-sales. */
+  /* Monthly price in USD per workspace. `null` => contact-sales. */
   monthly: number | null;
-  /* Annual price billed monthly (per seat). `null` => contact-sales. */
+  /* Annual price billed monthly equivalent (per workspace). `null` => contact-sales. */
   annual: number | null;
-  rhythm: string; // "/ seat / month" or "Contact sales"
+  rhythm: string; // "/ month" or empty
   features: string[];
   cta: { label: string; href: string };
   highlight?: boolean;
@@ -47,12 +53,14 @@ const TIERS: Tier[] = [
     // Annual per-month equivalent: 1125 / 12 = $93.75 ≈ $94
     monthly: 125,
     annual: 94,
-    rhythm: "/ seat / month",
+    rhythm: "/ month",
     features: [
-      "U.S. customs shipment search",
-      "1,000 verified contact reveals / mo",
-      "Pulse AI account briefs (50/mo)",
-      "Lane and shipper alerts",
+      "75 customs shipment searches / mo",
+      "50 saved companies",
+      "25 Pulse AI account briefs / mo",
+      "10 CSV exports / mo",
+      "250 campaign email sends / mo",
+      "75 LinkedIn touches / mo",
       "1 user seat",
       "Email support",
     ],
@@ -66,15 +74,17 @@ const TIERS: Tier[] = [
     // Annual per-month equivalent: 4491 / 12 = $374.25 ≈ $374
     monthly: 499,
     annual: 374,
-    rhythm: "/ seat / month",
+    rhythm: "/ month",
     features: [
       "Everything in Starter",
-      "5,000 verified contact reveals / mo",
-      "Pulse AI account briefs (500/mo)",
-      "Multi-channel outbound (email + LinkedIn)",
-      "Command Center CRM with shipment context",
+      "350 customs shipment searches / mo",
+      "150 verified contact reveals / mo",
+      "100 Pulse AI account briefs / mo",
+      "250 saved contacts",
+      "1,000 campaign email sends / mo",
+      "250 LinkedIn touches / mo",
       "HubSpot / Salesforce sync",
-      "5 user seats included (additional $99/seat/mo)",
+      "3 user seats included",
       "Priority support",
     ],
     cta: { label: "Start free trial", href: APP_SIGNUP_URL },
@@ -83,24 +93,49 @@ const TIERS: Tier[] = [
   {
     id: "scale",
     name: "Scale",
-    tagline: "For multi-org programs and enterprise freight teams with custom data needs.",
+    tagline: "For multi-seat ops teams running outbound at high volume across every lane.",
     // Supabase plans.code = "scale": price_monthly $999.00, price_yearly $8991.00
     // Annual per-month equivalent: 8991 / 12 = $749.25 ≈ $749
     monthly: 999,
     annual: 749,
-    rhythm: "/ seat / month",
+    rhythm: "/ month",
     features: [
       "Everything in Growth",
-      "Unlimited contact reveals",
-      "Unlimited Pulse AI briefs",
-      "SSO + SCIM",
-      "Custom data feeds",
-      "Dedicated CSM",
-      "Snowflake / data warehouse sync",
+      "1,000 customs shipment searches / mo",
+      "500 verified contact reveals / mo",
+      "500 Pulse AI account briefs / mo",
+      "1,000 saved contacts",
+      "2,500 campaign email sends / mo",
+      "750 LinkedIn touches / mo",
+      "100 CSV exports / mo",
+      "5 user seats included",
       "SLA-backed support",
-      "Custom seat pricing",
     ],
     cta: { label: "Start free trial", href: APP_SIGNUP_URL },
+  },
+  {
+    id: "enterprise",
+    name: "Enterprise",
+    tagline: "For multi-org programs and large freight networks with custom data and security needs.",
+    // Supabase plans.code = "enterprise": price_monthly null, price_yearly null
+    // All usage limits null = unlimited. seat_limit = 10 (custom beyond).
+    // market_benchmark_enabled = true (Enterprise-only).
+    monthly: null,
+    annual: null,
+    rhythm: "",
+    features: [
+      "Everything in Scale",
+      "Unlimited shipment searches",
+      "Unlimited contact reveals",
+      "Unlimited Pulse AI briefs",
+      "Market benchmark analytics",
+      "SSO + SCIM provisioning",
+      "Snowflake / data warehouse sync",
+      "Custom data feeds and integrations",
+      "Custom seat count (10+ included)",
+      "Named TAM and custom SLAs",
+    ],
+    cta: { label: "Contact sales", href: "/demo" },
   },
 ];
 
@@ -166,8 +201,9 @@ export function PricingTiers() {
           </div>
         </div>
 
-        {/* Cards */}
-        <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
+        {/* Cards: 2x2 grid on desktop so each of the 4 tiers has breathing
+            room. Growth keeps the "Most popular" badge as the focal card. */}
+        <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2">
           {TIERS.map((tier) => {
             const price = billing === "annual" ? tier.annual : tier.monthly;
             const isCustom = price === null;
@@ -204,7 +240,7 @@ export function PricingTiers() {
                   {isCustom ? (
                     <div className="flex items-baseline gap-2">
                       <span className="font-display text-[36px] font-semibold leading-none tracking-[-0.02em] text-ink-900">
-                        Contact sales
+                        Custom
                       </span>
                     </div>
                   ) : (
