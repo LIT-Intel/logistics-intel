@@ -27,6 +27,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { applyMergeVars, buildMergeContext } from "../_shared/merge-vars.ts";
 import { canSendNow, computeDailyCap } from "../_shared/outreach-throttle.ts";
 import { verifyCronAuth } from "../_shared/cron_auth.ts";
+import { createLogger, requestId } from "../_shared/logger.ts";
+
+// Module-level logger for helpers (getAccessToken / sendEmail). The serve()
+// handler creates a per-request child below so each tick gets its own
+// request_id propagated to Sentry tags.
+const moduleLog = createLogger("send-campaign-email");
 
 const BATCH_SIZE = 25;
 const DEFAULT_DAILY_CAP = 50;
@@ -190,15 +196,21 @@ serve(async (req) => {
     return json({ ok: false, error: "method_not_allowed" }, 405);
   }
 
+  const log = moduleLog.child({ request_id: requestId() });
+
   // Cron-only auth. Was previously open to anyone with the anon key, which
   // allowed Resend cost amplification + bypass of the 60s cron tick cadence.
   // See /cso audit 2026-05-28 finding F-A1.
   const cronAuth = verifyCronAuth(req);
-  if (!cronAuth.ok) return cronAuth.response;
+  if (!cronAuth.ok) {
+    log.warn("cron_auth_failed", { err: "X-Internal-Cron mismatch or missing" });
+    return cronAuth.response;
+  }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey) {
+    log.error("server_misconfigured", { err: "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set" });
     return json({ ok: false, error: "server_misconfigured" }, 500);
   }
 
@@ -227,7 +239,7 @@ serve(async (req) => {
     .limit(BATCH_SIZE);
 
   if (pickErr) {
-    console.error("[send-campaign-email] pick failed", pickErr);
+    log.error("pick_failed", { err: pickErr.message, code: pickErr.code });
     return json({ ok: false, error: pickErr.message }, 500);
   }
 
@@ -377,7 +389,9 @@ serve(async (req) => {
         else if (supp?.complained) suppressedReason = "complained";
         else if (supp?.converted) suppressedReason = "converted";
       } catch (e) {
-        console.warn("[send-campaign-email] suppression RPC failed (continuing with table fallback)", e);
+        // Falls back to legacy table check below — not an error worth paging on.
+        // log.warn without `err` field skips Sentry capture (info-level only).
+        log.warn("suppression_rpc_failed_using_fallback", { detail: String(e) });
       }
       if (!suppressedReason) {
         const { data: supRows } = await admin
@@ -503,11 +517,12 @@ serve(async (req) => {
                   if (!allowed && legacy.has(ownerEmail)) allowed = true;
                 }
               } catch (e) {
-                console.error("[send-campaign-email] resend gate lookup failed", e);
+                log.error("resend_gate_lookup_failed", { err: e instanceof Error ? e.message : String(e), user_id: camp.user_id });
               }
             }
             if (!allowed) {
-              console.warn("[send-campaign-email] resend send blocked for non-superadmin", camp.user_id);
+              // Info-level: not an error, just a policy enforcement. Skip Sentry capture.
+              log.warn("resend_send_blocked_non_superadmin", { user_id: camp.user_id });
               chosen = null;
             }
           }
@@ -636,7 +651,7 @@ serve(async (req) => {
       // block the send.
       if (linkRows.length > 0) {
         const { error: linkErr } = await admin.from("lit_outreach_links").insert(linkRows);
-        if (linkErr) console.warn("[send-campaign-email] link insert warned", linkErr.code, linkErr.message);
+        if (linkErr) log.warn("link_insert_failed", { err: linkErr.message, code: linkErr.code, recipient_id: r.id, campaign_id: r.campaign_id });
       }
 
       const ctx = buildMergeContext({
@@ -776,12 +791,20 @@ serve(async (req) => {
         summary.failed += 1;
       }
     } catch (e) {
-      console.error("[send-campaign-email] recipient threw", r.id, e);
+      log.error("recipient_exception", {
+        err: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined,
+        recipient_id: r.id,
+        user_id: r.user_id ?? undefined,
+        org_id: r.org_id ?? undefined,
+        campaign_id: r.campaign_id,
+      });
       await fail(admin, r, e instanceof Error ? e.message.slice(0, 200) : "exception");
       summary.failed += 1;
     }
   }
 
+  log.info("tick_completed", { summary, ms: Date.now() - startedAt });
   return json({ ok: true, summary, ms: Date.now() - startedAt });
 });
 
@@ -915,7 +938,7 @@ async function getAccessToken(
       });
       refreshJson = await resp.json();
     } catch (e) {
-      console.error("[send-campaign-email] gmail refresh threw", e);
+      moduleLog.error("gmail_refresh_threw", { err: e instanceof Error ? e.message : String(e), email_account_id: account.id });
     }
   } else {
     const id = Deno.env.get("OUTLOOK_CLIENT_ID");
@@ -939,7 +962,7 @@ async function getAccessToken(
       );
       refreshJson = await resp.json();
     } catch (e) {
-      console.error("[send-campaign-email] outlook refresh threw", e);
+      moduleLog.error("outlook_refresh_threw", { err: e instanceof Error ? e.message : String(e), email_account_id: account.id });
     }
   }
 
