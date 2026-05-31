@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Linkedin, Twitter, Youtube, Rss } from "lucide-react";
+import { Linkedin, Youtube, Rss } from "lucide-react";
 import { LitLogoMark } from "../seo/LitLogoMark";
 
 /**
@@ -83,11 +83,6 @@ const SOCIAL_LINKS: { label: string; href: string; Icon: typeof Linkedin }[] = [
     label: "LinkedIn",
     href: "https://www.linkedin.com/company/logistic-intel",
     Icon: Linkedin,
-  },
-  {
-    label: "X (Twitter)",
-    href: "https://twitter.com/logisticintel",
-    Icon: Twitter,
   },
   {
     label: "YouTube",

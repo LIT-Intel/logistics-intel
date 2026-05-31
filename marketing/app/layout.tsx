@@ -76,8 +76,6 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    site: "@logisticintel",
-    creator: "@logisticintel",
     title: "LIT — Market intelligence & revenue execution",
     description:
       "Find the companies, contacts, shipments, and market signals your competitors miss.",
@@ -139,8 +137,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               url: SITE_URL,
               logo: `${SITE_URL}/lit-icon-master.svg`,
               sameAs: [
-                "https://twitter.com/logisticintel",
                 "https://www.linkedin.com/company/logistic-intel",
+                "https://www.youtube.com/@logisticsintel",
                 "https://github.com/lit-intel",
               ],
               contactPoint: [

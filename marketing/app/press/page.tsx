@@ -249,8 +249,8 @@ export default function PressPage() {
     description:
       "Logistic Intel is a freight revenue intelligence platform for brokers, forwarders, 3PLs, and NVOCCs — combining shipment data, company intelligence, and CRM workflows in one system.",
     sameAs: [
-      "https://twitter.com/logisticintel",
       "https://www.linkedin.com/company/logistic-intel",
+      "https://www.youtube.com/@logisticsintel",
     ],
     contactPoint: [
       {
