@@ -46,6 +46,7 @@ const SearchPanel = lazy(() => import("@/pages/SearchPanel"));
 const Transactions = lazy(() => import("@/pages/Transactions"));
 const Widgets = lazy(() => import("@/pages/Widgets"));
 const CompanyProfileV2 = lazy(() => import("@/pages/CompanyProfileV2"));
+const SupplierProfile = lazy(() => import("@/pages/SupplierProfile"));
 const CommandCenterPage = lazy(() => import("@/components/command-center/CommandCenter"));
 const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany = lazy(() => import("@/pages/demo/company"));
@@ -318,6 +319,22 @@ export default function App() {
             <RequireAuth>
               <LITPage>
                 <CompanyProfileV2 />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+
+        {/* Supplier Profile (T1c) — `/app/suppliers/:slug` inverts the
+            CompanyProfileV2 lens. Reads location.state from the supplier
+            drawer for instant rendering; bookmark/refresh shows the
+            no-state empty state. Backend aggregator for cross-receiver
+            data is a planned follow-up. */}
+        <Route
+          path="/app/suppliers/:slug"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <SupplierProfile />
               </LITPage>
             </RequireAuth>
           }
