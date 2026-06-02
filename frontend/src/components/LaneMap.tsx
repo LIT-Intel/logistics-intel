@@ -468,7 +468,7 @@ export default function LaneMap({
           layers.casing = L.polyline(points, {
             color: casingColor,
             weight: casingWeight,
-            opacity: 0.5,
+            opacity: 1,
             lineCap: "round",
             lineJoin: "round",
             interactive: false,
@@ -477,7 +477,7 @@ export default function LaneMap({
           layers.casing.setStyle({
             color: casingColor,
             weight: casingWeight,
-            opacity: 0.5,
+            opacity: 1,
           });
         }
         // Ensure base line paints above casing.
