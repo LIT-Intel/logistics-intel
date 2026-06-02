@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Send,
 } from "lucide-react";
+import LitEmptyState from "@/components/ui/LitEmptyState";
 import { useCampaigns } from "@/features/outbound/hooks/useCampaigns";
 import { PulseBar } from "@/features/outbound/components/PulseBar";
 import { PlayCard } from "@/features/outbound/components/PlayCard";
@@ -203,32 +204,17 @@ function ErrorCard({ message, onRetry }) {
 
 function EmptyCampaigns({ onNewCampaign }) {
   return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-white px-5 py-8 text-center">
-      <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#3B82F6] ring-1 ring-[#BFDBFE]">
-        <Send className="h-5 w-5" />
-      </div>
-      <div
-        className="text-[14px] font-bold text-[#0F172A]"
-        style={{ fontFamily: fontDisplay }}
-      >
-        No campaigns yet
-      </div>
-      <p
-        className="mx-auto mt-1 max-w-md text-[12px] text-slate-500"
-        style={{ fontFamily: fontBody }}
-      >
-        Pick a starter play above or build a sequence from scratch.
-      </p>
-      <button
-        type="button"
-        onClick={onNewCampaign}
-        className="mt-3 inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(59,130,246,0.3)]"
-        style={{ fontFamily: fontDisplay }}
-      >
-        <Plus className="h-2.5 w-2.5" />
-        New campaign
-        <ArrowRight className="h-2.5 w-2.5" />
-      </button>
+    <div className="rounded-lg border border-dashed border-slate-300 bg-white">
+      <LitEmptyState
+        icon={<Send className="h-5 w-5" />}
+        title="No campaigns yet"
+        body="Pick a starter play from the templates above, or build a sequence from scratch. Every campaign can target a saved Pulse list as its audience."
+        primary={{
+          label: "New campaign",
+          onClick: onNewCampaign,
+          icon: <Plus className="h-3 w-3" />,
+        }}
+      />
     </div>
   );
 }
