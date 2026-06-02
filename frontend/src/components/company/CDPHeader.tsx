@@ -19,6 +19,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
+import LitCategoryChip from "@/components/ui/LitCategoryChip";
 import LitFlag from "@/components/ui/LitFlag";
 import LitHeaderIconBtn from "@/components/ui/LitHeaderIconBtn";
 import LitKpiStrip from "@/components/ui/LitKpiStrip";
@@ -257,15 +258,23 @@ export default function CDPHeader({
         </div>
       </div>
 
-      {/* Identity row */}
+      {/* Identity row — editorial framing (Phase C). Bracketed `[RECEIVER]`
+          chip above the H1 mirrors the marketing blog's category mark;
+          H1 bumped from 22px to clamp(26px, 2.4vw, 32px) so the company
+          name reads as the editorial subject of the page, not a small
+          breadcrumb label. */}
       <div className="flex flex-wrap items-start gap-3.5 px-6 pb-3 pt-3.5">
         <div className="shrink-0">
           <CompanyAvatar name={company.name} domain={domain} size="lg" />
         </div>
         <div className="min-w-0 flex-1">
+          <div className="mb-2">
+            <LitCategoryChip label="Receiver" />
+          </div>
           <div className="mb-1.5 flex flex-wrap items-center gap-2">
             <h1
-              className="font-display m-0 truncate text-[22px] font-bold leading-tight tracking-tight text-slate-900"
+              className="font-display m-0 truncate font-semibold leading-[1.05] tracking-[-0.015em] text-slate-900"
+              style={{ fontSize: "clamp(26px, 2.4vw, 32px)" }}
               title={company.name}
             >
               {company.name}
