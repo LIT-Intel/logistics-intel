@@ -16,7 +16,16 @@
 //   2 MB limit comfortably.
 
 const RAW_DSN = Deno.env.get("SENTRY_DSN") || "";
-const ENVIRONMENT = Deno.env.get("SENTRY_ENV") || Deno.env.get("DENO_DEPLOYMENT_ID") ? "production" : "development";
+// Precedence fix: || binds tighter than ?:, so the previous version
+// `Deno.env.get("SENTRY_ENV") || Deno.env.get("DENO_DEPLOYMENT_ID") ? "production" : "development"`
+// parsed as `(SENTRY_ENV || DENO_DEPLOYMENT_ID) ? "production" : "development"`
+// — any truthy SENTRY_ENV (e.g. literally "SENTRY_ENV", "staging", "test")
+// would silently get coerced to "production". The intended semantics per
+// CLAUDE.md: respect SENTRY_ENV when set; else default "production" when
+// running on Deno Deploy, else "development".
+const ENVIRONMENT =
+  Deno.env.get("SENTRY_ENV") ||
+  (Deno.env.get("DENO_DEPLOYMENT_ID") ? "production" : "development");
 const RELEASE = Deno.env.get("SENTRY_RELEASE") || Deno.env.get("DENO_DEPLOYMENT_ID") || undefined;
 
 interface ParsedDsn {
@@ -44,6 +53,36 @@ const PARSED = parseDsn(RAW_DSN);
 const SENTRY_AUTH_HEADER = PARSED
   ? `Sentry sentry_version=7, sentry_key=${PARSED.publicKey}, sentry_client=lit-edge/1.0`
   : "";
+
+// One-time startup log so operators (and `get_logs`) can verify the Sentry
+// wire-up without inspecting env vars. Emits the parsed host + project id
+// only — never the public key, never the full DSN.
+{
+  let status: string;
+  if (PARSED) {
+    try {
+      const u = new URL(RAW_DSN);
+      status = `enabled host=${u.host} project=${u.pathname.replace(/^\//, "")}`;
+    } catch {
+      status = "enabled";
+    }
+  } else if (RAW_DSN) {
+    status = "disabled reason=invalid_dsn";
+  } else {
+    status = "disabled reason=no_dsn";
+  }
+  console.log(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      level: "info",
+      fn: "_shared/sentry",
+      event: "init",
+      status,
+      environment: ENVIRONMENT,
+      release: RELEASE ?? null,
+    }),
+  );
+}
 
 export interface SentryEvent {
   /** Function name (createLogger fn). */
