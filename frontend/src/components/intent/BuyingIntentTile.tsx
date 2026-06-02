@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Sparkles, TrendingUp, Compass, Truck, Package } from "lucide-react";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import {
@@ -6,6 +6,8 @@ import {
   type BuyingIntentSignal,
   type SignalKey,
 } from "@/lib/buyingIntent/compute";
+
+const STORAGE_KEY = "lit:buyingIntentTile:open";
 
 /**
  * Buying Intent tile — surfaces the 4 signals derived from ImportYeti BOL
@@ -65,6 +67,28 @@ export default function BuyingIntentTile({
     [profile, recentBols, now],
   );
 
+  // localStorage-persisted open/closed state. Default: collapsed so the
+  // user gets the signal count in the header without losing real estate
+  // above the Top trade lanes card. Cross-tab sync via the storage event.
+  const [open, setOpen] = useState<boolean>(() => readPersisted());
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY || e.newValue === null) return;
+      setOpen(e.newValue === "1");
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
+    } catch {
+      // localStorage may be disabled (Safari private mode). Ignore.
+    }
+  };
+
   // Hide the tile entirely when nothing is interesting.
   if (!intent.hasAnySignal) return null;
 
@@ -81,6 +105,9 @@ export default function BuyingIntentTile({
       action={<Sparkles className="h-3.5 w-3.5 text-blue-500" />}
       className={className}
       padded={false}
+      collapsible
+      open={open}
+      onOpenChange={handleOpenChange}
     >
       <ul className="divide-y divide-slate-100">
         {activeSignals.map((signal) => (
@@ -89,6 +116,20 @@ export default function BuyingIntentTile({
       </ul>
     </LitSectionCard>
   );
+}
+
+function readPersisted(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const v = window.localStorage.getItem(STORAGE_KEY);
+    if (v === "1") return true;
+    if (v === "0") return false;
+  } catch {
+    // ignore
+  }
+  // No stored preference yet — default closed so the tile stays unobtrusive
+  // and the strong-signal count in the header invites the open click.
+  return false;
 }
 
 function SignalRow({ signal }: { signal: BuyingIntentSignal }) {

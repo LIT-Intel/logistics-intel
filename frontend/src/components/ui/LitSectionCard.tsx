@@ -15,8 +15,16 @@ type LitSectionCardProps = {
   /** Header becomes a chevron toggle that hides/shows the body. Mirrors the
    *  Profile-page right rail (CDPDetailsPanel) collapsible Section. */
   collapsible?: boolean;
-  /** Initial open state when collapsible. Defaults to true. */
+  /** Initial open state when collapsible. Defaults to true. Ignored when
+   *  `open` is provided (controlled mode). */
   defaultOpen?: boolean;
+  /** Controlled open state. When provided, the card is fully controlled and
+   *  internal state is ignored — pair with `onOpenChange` for localStorage
+   *  persistence or any other external state driver. */
+  open?: boolean;
+  /** Fires when the user toggles a collapsible header. Required when `open`
+   *  is provided (otherwise the toggle has no effect). */
+  onOpenChange?: (open: boolean) => void;
   className?: string;
   bodyClassName?: string;
   children: React.ReactNode;
@@ -32,11 +40,22 @@ export default function LitSectionCard({
   danger,
   collapsible,
   defaultOpen = true,
+  open: openProp,
+  onOpenChange,
   className,
   bodyClassName,
   children,
 }: LitSectionCardProps) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? !!openProp : uncontrolledOpen;
+  const toggleOpen = () => {
+    if (isControlled) {
+      onOpenChange?.(!open);
+    } else {
+      setUncontrolledOpen((v) => !v);
+    }
+  };
   const showHeader = title != null || action != null;
   const headerInteractive = collapsible && title != null;
 
@@ -50,7 +69,7 @@ export default function LitSectionCard({
     >
       {showHeader && (
         <div
-          onClick={headerInteractive ? () => setOpen((v) => !v) : undefined}
+          onClick={headerInteractive ? toggleOpen : undefined}
           role={headerInteractive ? "button" : undefined}
           tabIndex={headerInteractive ? 0 : undefined}
           aria-expanded={collapsible ? open : undefined}
@@ -59,7 +78,7 @@ export default function LitSectionCard({
               ? (e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    setOpen((v) => !v);
+                    toggleOpen();
                   }
                 }
               : undefined
