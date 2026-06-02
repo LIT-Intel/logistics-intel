@@ -50,12 +50,16 @@ const PULSE_STROKE = "rgba(34,211,238,0.6)";
 const DOT_FILL = "#22D3EE";
 const DOT_STROKE = "#FFFFFF";
 
+// Esri World Imagery — actual satellite photography. Free, no token. Picked
+// over CARTO Dark Matter after the latter shipped as a featureless dark void
+// (continents nearly invisible) AND its labels overlay leaked Arabic /
+// non-English place names. Satellite tiles are pure imagery — no labels at
+// all, no localization to worry about — and the deep ocean blue + visible
+// terrain reads as "real Earth" rather than a stylized map.
 const TILES_DARK =
-  "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png";
-const TILES_DARK_LABELS =
-  "https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png";
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 const TILES_ATTR =
-  "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> &copy; <a href=\"https://carto.com/attributions\">CARTO</a>";
+  "Tiles &copy; Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community";
 
 const MOBILE_QUERY = "(max-width: 639px)";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
@@ -217,17 +221,9 @@ export default function LaneMap({
 
     const baseTiles: LeafletTileLayer = L.tileLayer(TILES_DARK, {
       attribution: TILES_ATTR,
-      subdomains: "abcd",
       maxZoom: 8,
-    });
-    const labelTiles: LeafletTileLayer = L.tileLayer(TILES_DARK_LABELS, {
-      attribution: "",
-      subdomains: "abcd",
-      maxZoom: 8,
-      opacity: 0.55,
     });
     baseTiles.addTo(map);
-    labelTiles.addTo(map);
 
     // Slow-tile telemetry — flag the loader if no tile arrives in 800 ms.
     let firstTileLanded = false;
@@ -553,7 +549,19 @@ export default function LaneMap({
     const map = mapRef.current;
     if (!map || !selectedLane) return;
     const layers = laneLayersRef.current.get(selectedLane);
-    if (!layers) return;
+
+    // Diagnostic for the original bug we kept hitting — when parent and
+    // map disagree on the lane-id shape (canonical id vs displayLabel),
+    // this branch silently does nothing and the map stays at the world
+    // view. Surface it once per mismatch so the next regression is loud.
+    if (!layers) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[LaneMap] selectedLane has no matching lane in the rendered set",
+        { selectedLane, knownIds: Array.from(laneLayersRef.current.keys()) },
+      );
+      return;
+    }
 
     // Debounce 100 ms — avoids twitchy zooms when the user rapid-clicks rows.
     if (flyDebounceRef.current !== null) {
