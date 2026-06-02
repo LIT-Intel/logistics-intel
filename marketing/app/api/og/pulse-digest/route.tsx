@@ -137,7 +137,7 @@ function Hero({
       <div style={{ display: "flex", color: INK_300, fontSize: 16, gap: 10, alignItems: "center" }}>
         {parent ? <span>{parent}</span> : null}
         {parent && city ? (
-          <span style={{ width: 4, height: 4, borderRadius: 2, background: INK_400, display: "inline-block" }} />
+          <div style={{ width: 4, height: 4, borderRadius: 2, background: INK_400, display: "flex" }} />
         ) : null}
         {city ? <span>{city}</span> : null}
       </div>
