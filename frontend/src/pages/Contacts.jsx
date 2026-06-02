@@ -19,6 +19,7 @@ import { supabase } from "@/lib/supabase";
 import LitKpiStrip from "@/components/ui/LitKpiStrip";
 import LitPill from "@/components/ui/LitPill";
 import LitEmptyState from "@/components/ui/LitEmptyState";
+import { LitSkeletonRow } from "@/components/ui/LitSkeleton";
 
 /**
  * Workspace Contacts page — every saved-account contact in one clean
@@ -296,11 +297,8 @@ export default function ContactsPage() {
             </div>
 
             {loading ? (
-              <div className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
-                <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin text-blue-500" />
-                <p className="font-body text-[12px] text-slate-500">
-                  Loading contacts…
-                </p>
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <LitSkeletonRow count={6} />
               </div>
             ) : rows.length === 0 ? (
               <div className="rounded-xl border border-slate-200 bg-white">

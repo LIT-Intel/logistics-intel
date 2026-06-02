@@ -35,6 +35,7 @@ import {
   removeContactFromList,
 } from "@/features/pulse/pulseListsApi";
 import LitEmptyState from "@/components/ui/LitEmptyState";
+import { LitSkeletonCard } from "@/components/ui/LitSkeleton";
 
 const fontDisplay = "'Space Grotesk', system-ui, sans-serif";
 const fontBody = "'DM Sans', system-ui, sans-serif";
@@ -114,9 +115,8 @@ function ListsIndex() {
             body={`Apply migration 20260502120000_pulse_saved_lists.sql in Supabase to enable named lists.`}
           />
         ) : loading ? (
-          <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-[13px]" style={{ fontFamily: fontBody }}>Loading lists…</span>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <LitSkeletonCard count={6} />
           </div>
         ) : error ? (
           <EmptyCard title="Couldn't load your lists" body={error} />
