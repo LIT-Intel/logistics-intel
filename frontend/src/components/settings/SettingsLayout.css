@@ -1,0 +1,123 @@
+/*
+ * SettingsLayout mobile overrides (Wk3 T4 — F4 mobile sweep).
+ *
+ * The component uses inline `style={{ }}` props throughout, which always
+ * win over CSS by spec. To make the page responsive without rewriting
+ * every inline style into Tailwind/className, we apply !important CSS
+ * scoped to the existing className hooks:
+ *   .lit-settings-main   — outer flex shell on <main>
+ *   .lit-settings-header — top bar
+ *   .lit-settings-nav    — fixed-width 252px <aside> rail
+ *   .lit-settings-body   — content scroll area
+ *
+ * Mobile target: 393px viewport (iPhone 14 Pro). At ≤640px the layout
+ * collapses to vertical stack: nav becomes a single-row horizontal-
+ * scroll strip of icon pills at the top, body takes full width below.
+ *
+ * Long-term: refactor inline styles to Tailwind. That's a 4-hour pass
+ * separate from this one. The user converts trial-to-paid on mobile —
+ * the goal here is unblock that journey, not a full visual rewrite.
+ */
+
+/* ── Phone (≤640px) ────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+
+  /* The flex container holding nav + body is the SECOND direct child of
+     <main className="lit-settings-main"> (first is the header). Make
+     it stack column instead of row. */
+  .lit-settings-main > div:nth-of-type(1) {
+    flex-direction: column !important;
+    overflow: visible !important;
+  }
+
+  /* Header: shrink padding. */
+  .lit-settings-header {
+    padding: 14px 16px 12px !important;
+  }
+  /* Title size — first child div, then first inner div. */
+  .lit-settings-header > div:first-child > div:first-child {
+    font-size: 18px !important;
+  }
+  .lit-settings-header > div:first-child > div:nth-child(2) {
+    font-size: 11.5px !important;
+    margin-top: 2px !important;
+  }
+
+  /* Nav rail: change from 252px tall sidebar to a 1-row horizontal scroll
+     strip across the top of the body. */
+  .lit-settings-nav {
+    width: 100% !important;
+    min-width: 0 !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid #E5E7EB !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Inside the nav <aside>, the structure is:
+       1) <div> search box wrapper
+       2) <nav> with the group columns
+       3) <div> help footer
+     At mobile we hide #1 (search) and #3 (help) — they distract from
+     the primary nav action. Show only #2, and turn it into a horizontal
+     scroll strip. */
+  .lit-settings-nav > div:first-child {
+    display: none !important;  /* search box */
+  }
+  .lit-settings-nav > div:last-child {
+    display: none !important;  /* help footer */
+  }
+  .lit-settings-nav > nav {
+    display: flex !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding: 8px 12px !important;
+    gap: 6px !important;
+    flex: 0 0 auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Each "group" wrapper inside <nav> becomes inline. */
+  .lit-settings-nav > nav > div {
+    margin-bottom: 0 !important;
+    display: contents !important;  /* let the group's items flow as siblings */
+  }
+  /* Group label heading — hide at mobile. Too much vertical chrome. */
+  .lit-settings-nav > nav > div > div:first-child {
+    display: none !important;
+  }
+  /* Items column → row siblings. */
+  .lit-settings-nav > nav > div > div:last-child {
+    display: contents !important;
+  }
+  /* Buttons become inline pill chips with horizontal padding. */
+  .lit-settings-nav > nav button {
+    width: auto !important;
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+    padding: 7px 12px !important;
+    font-size: 12.5px !important;
+  }
+
+  /* Body: shrink horizontal padding. */
+  .lit-settings-body {
+    padding: 16px 14px 32px !important;
+  }
+  .lit-settings-body > div {
+    max-width: 100% !important;
+    gap: 16px !important;
+  }
+}
+
+/* ── Tablet (641-1023px) ───────────────────────────────────────────────── */
+@media (min-width: 641px) and (max-width: 1023px) {
+  .lit-settings-nav {
+    width: 200px !important;
+    min-width: 200px !important;
+  }
+  .lit-settings-header {
+    padding: 18px 22px 16px !important;
+  }
+  .lit-settings-body {
+    padding: 20px 22px 36px !important;
+  }
+}
