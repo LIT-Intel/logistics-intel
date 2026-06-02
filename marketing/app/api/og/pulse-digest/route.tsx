@@ -3,7 +3,11 @@ import type { NextRequest } from "next/server";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
-export const alt = "LIT Pulse Company Report — weekly supply-chain digest card";
+
+// Default alt text for the rendered card (used in ImageResponse + as a doc hint
+// for consumers; not exported because Next.js route handlers reject unknown
+// exports).
+const CARD_ALT = "LIT Pulse Company Report — weekly supply-chain digest card";
 
 /**
  * /api/og/pulse-digest
