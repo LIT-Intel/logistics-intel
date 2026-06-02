@@ -15,6 +15,7 @@ import {
 import { motion } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import LitSectionCard from "@/components/ui/LitSectionCard";
+import LitEmptyState from "@/components/ui/LitEmptyState";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
@@ -1734,17 +1735,20 @@ export default function SearchPage() {
             )}
 
             {!searching && filteredResults.length === 0 && (
-              <div className="px-6 py-12 text-center">
-                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
-                  <SearchIcon className="h-5 w-5 text-slate-400" />
-                </div>
-                <p className="font-display text-[13px] font-bold text-slate-700">
-                  No companies found
-                </p>
-                <p className="font-body mt-1 text-[11.5px] text-slate-500">
-                  Try a different query or clear the active filters.
-                </p>
-              </div>
+              <LitEmptyState
+                icon={<SearchIcon className="h-5 w-5" />}
+                title="No companies found"
+                body={
+                  hasActiveFilter
+                    ? "Your filter combination hid every result. Clear filters to see everything, or try a broader query."
+                    : "Try a different company name, route, or commodity. Adding a HS code or origin country often surfaces results that a name alone misses."
+                }
+                primary={
+                  hasActiveFilter
+                    ? { label: "Clear filters", onClick: clearFilters }
+                    : undefined
+                }
+              />
             )}
           </LitSectionCard>
         )}
