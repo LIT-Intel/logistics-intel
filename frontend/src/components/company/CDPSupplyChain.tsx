@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -1690,8 +1690,53 @@ function TopLanesCard({
     toMeta: l.toMeta,
     shipments: Number(l.shipments) || 0,
   }));
-  const initialSelected = globeLanes[0]?.id || canonicalLanes[0]?.displayLabel || null;
+
+  // Map from canonical country-pair key (`${fromKey}::${toKey}`) -> GlobeLane.id.
+  // Ranked rows (granular, per-route) are matched into globe arcs (collapsed by
+  // country pair) through this map so selection stays in sync between the row
+  // list, the 2-D <LaneMap>, and the 3-D <GlobeCanvas>. All three now compare
+  // against canonical GlobeLane.id (not the row's per-route displayLabel, which
+  // never matched anything on the globe).
+  const pairKeyToGlobeId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of globeLanes) {
+      const fromKey = g.fromMeta?.canonicalKey;
+      const toKey = g.toMeta?.canonicalKey;
+      if (fromKey && toKey) m.set(`${fromKey}::${toKey}`, g.id);
+    }
+    return m;
+  }, [globeLanes]);
+
+  // initialSelected: prefer the first globe lane's canonical id. The legacy
+  // fallback to canonicalLanes[0].displayLabel was always wrong for selection
+  // sync (row labels don't match globe ids) — translate it through the map if
+  // possible, otherwise fall back to null. New callers should pass canonical
+  // ids going forward.
+  const initialFallbackPairKey = (() => {
+    const first = canonicalLanes[0];
+    const fromKey = first?.fromMeta?.canonicalKey;
+    const toKey = first?.toMeta?.canonicalKey;
+    return fromKey && toKey ? `${fromKey}::${toKey}` : null;
+  })();
+  const initialSelected =
+    globeLanes[0]?.id ||
+    (initialFallbackPairKey ? pairKeyToGlobeId.get(initialFallbackPairKey) ?? null : null);
   const [selectedId, setSelectedId] = useState<string | null>(initialSelected);
+
+  // Track whether the latest selection came from the map (or globe in future)
+  // so we only auto-scroll the row list when selection originates externally.
+  // Row clicks set this to "row" and skip the scroll-into-view side effect.
+  const lastSelectionSourceRef = useRef<"row" | "map" | null>(null);
+  const rowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  useEffect(() => {
+    if (!selectedId) return;
+    if (lastSelectionSourceRef.current !== "map") return;
+    const el = rowRefs.current[selectedId];
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selectedId]);
 
   // Container-mix bar data (merged from former EquipmentAndLaneFootprint).
   const mix = useMemo(() => {
@@ -1783,7 +1828,10 @@ function TopLanesCard({
               <LaneMap
                 lanes={globeLanes}
                 selectedLane={selectedId}
-                onSelectLane={(id) => setSelectedId(id)}
+                onSelectLane={(id) => {
+                  lastSelectionSourceRef.current = "map";
+                  setSelectedId(id);
+                }}
                 height={300}
               />
             </div>
@@ -1794,16 +1842,32 @@ function TopLanesCard({
             own internal scroll so the card never overflows the viewport. */}
         <div className="max-h-[340px] overflow-y-auto border-t border-slate-100 lg:max-h-[420px] lg:border-l lg:border-t-0">
           {rankedLanes.map((lane: any, i: number) => {
-            const isSelected = selectedId === lane.displayLabel;
+            // Resolve this row's canonical globe-lane id (collapsed by country
+            // pair) so selection compares against the same key shape the globe
+            // and 2-D map use. Rows whose pair isn't on the globe (e.g. the
+            // endpoint didn't resolve to coords) get null and don't participate
+            // in selection — they degrade gracefully to a non-selectable row.
+            const fromKey = lane?.fromMeta?.canonicalKey;
+            const toKey = lane?.toMeta?.canonicalKey;
+            const globeLaneId =
+              fromKey && toKey
+                ? pairKeyToGlobeId.get(`${fromKey}::${toKey}`) ?? null
+                : null;
+            const isSelected =
+              globeLaneId !== null && globeLaneId === selectedId;
             const shipments = Number(lane?.shipments) || 0;
             const widthPct = (shipments / maxLaneShipments) * 100;
             return (
               <button
                 key={lane.displayLabel}
+                ref={(el) => {
+                  if (globeLaneId) rowRefs.current[globeLaneId] = el;
+                }}
                 type="button"
-                onClick={() =>
-                  setSelectedId(isSelected ? null : lane.displayLabel)
-                }
+                onClick={() => {
+                  lastSelectionSourceRef.current = "row";
+                  setSelectedId(isSelected ? null : globeLaneId ?? null);
+                }}
                 className={[
                   "flex w-full items-center gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left last:border-b-0 sm:px-4",
                   isSelected
