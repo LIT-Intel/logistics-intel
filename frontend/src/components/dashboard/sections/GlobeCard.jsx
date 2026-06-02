@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { ArrowRight } from "lucide-react";
 import GlobeCanvas from "@/components/GlobeCanvas";
 import LaneMap from "@/components/LaneMap";
@@ -27,11 +27,68 @@ export default function GlobeCard({
   const activeLane = hasLanes
     ? lanes.find((l) => l.displayLabel === selectedLaneId) || lanes[0]
     : null;
-  // Resolve the active lane's ID inside the GlobeLane[] payload so the
-  // map's `selectedLane` (keyed by GlobeLane.id) stays in sync with the
-  // dashboard's selectedLaneId (keyed by displayLabel).
-  const activeGlobeLaneId =
-    globeLanes && activeLane ? globeLanes.find((g) => g.id === activeLane.displayLabel)?.id || null : null;
+
+  // Bridge the row-keyed identity (`displayLabel`, used by the ranked list
+  // and by the parent's `selectedLaneId`) to the canonical `GlobeLane.id`
+  // consumed by <GlobeCanvas> and <LaneMap>. Without this bridge, rows can
+  // set a selection that the globe/map never recognise (selection-sync
+  // bug — same pattern as Company Profile's TopLanesCard).
+  //
+  // Strategy: match by from/to canonicalKey first (most robust), then fall
+  // back to displayLabel === id (works when the parent already builds
+  // globeLanes with `id: l.displayLabel`).
+  const resolveGlobeLaneId = (lane) => {
+    if (!lane || !globeLanes || globeLanes.length === 0) return null;
+    const fromKey = lane.fromMeta?.canonicalKey;
+    const toKey = lane.toMeta?.canonicalKey;
+    if (fromKey && toKey) {
+      const byMeta = globeLanes.find(
+        (g) => g.fromMeta?.canonicalKey === fromKey && g.toMeta?.canonicalKey === toKey,
+      );
+      if (byMeta) return byMeta.id;
+    }
+    const byLabel = globeLanes.find((g) => g.id === lane.displayLabel);
+    return byLabel?.id || null;
+  };
+
+  // Reverse: map a canonical GlobeLane.id back to the row's displayLabel
+  // so map clicks can update the parent's selectedLaneId without breaking
+  // the row→active-lane lookup at line `lanes.find(l => l.displayLabel === …)`.
+  const resolveDisplayLabelFromGlobeId = (globeId) => {
+    if (!globeId) return null;
+    const gl = (globeLanes || []).find((g) => g.id === globeId);
+    if (!gl) return globeId;
+    const fromKey = gl.fromMeta?.canonicalKey;
+    const toKey = gl.toMeta?.canonicalKey;
+    if (fromKey && toKey) {
+      const row = lanes.find(
+        (l) => l.fromMeta?.canonicalKey === fromKey && l.toMeta?.canonicalKey === toKey,
+      );
+      if (row) return row.displayLabel;
+    }
+    const row = lanes.find((l) => l.displayLabel === globeId);
+    return row ? row.displayLabel : globeId;
+  };
+
+  const activeGlobeLaneId = resolveGlobeLaneId(activeLane);
+  // The Globe canvas falls back to the first lane when nothing is selected,
+  // mirroring the ranked-list's "first row is implicitly active" affordance.
+  const globeSelectedId = activeGlobeLaneId || (globeLanes && globeLanes[0] ? globeLanes[0].id : null);
+
+  // Map -> row scroll sync. When the user clicks an endpoint on the map,
+  // the corresponding row in the right rail scrolls into view. Row clicks
+  // do NOT trigger a scroll (the row you clicked is already where you can
+  // see it). Same pattern as TopLanesCard's map->row scroll behavior.
+  const rowRefs = useRef({});
+  const lastSelectionSourceRef = useRef(null);
+  useEffect(() => {
+    if (lastSelectionSourceRef.current !== "map" || !selectedLaneId) return;
+    const el = rowRefs.current[selectedLaneId];
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+    lastSelectionSourceRef.current = null;
+  }, [selectedLaneId]);
 
   return (
     <LitSectionCard
@@ -67,7 +124,7 @@ export default function GlobeCard({
                 <GlobeCanvas
                   size={globeSize}
                   lanes={globeLanes}
-                  selectedLane={selectedLaneId || (lanes[0]?.displayLabel ?? null)}
+                  selectedLane={globeSelectedId}
                   theme="trade"
                   showFlagPins
                 />
@@ -76,8 +133,11 @@ export default function GlobeCard({
               <div className="w-full">
                 <LaneMap
                   lanes={globeLanes || []}
-                  selectedLane={activeGlobeLaneId}
-                  onSelectLane={(id) => onSelectLane(id)}
+                  selectedLane={globeSelectedId}
+                  onSelectLane={(id) => {
+                    lastSelectionSourceRef.current = "map";
+                    onSelectLane(resolveDisplayLabelFromGlobeId(id));
+                  }}
                   height={340}
                 />
               </div>
@@ -123,8 +183,14 @@ export default function GlobeCard({
               return (
                 <button
                   key={lane.displayLabel}
+                  ref={(el) => {
+                    rowRefs.current[lane.displayLabel] = el;
+                  }}
                   type="button"
-                  onClick={() => onSelectLane(lane.displayLabel)}
+                  onClick={() => {
+                    lastSelectionSourceRef.current = "row";
+                    onSelectLane(lane.displayLabel);
+                  }}
                   className={[
                     "flex w-full items-center gap-2.5 border-b border-slate-100 px-3.5 py-2.5 text-left transition-colors duration-150 last:border-b-0",
                     isSelected
