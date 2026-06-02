@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Search, Upload, FileText } from 'lucide-react';
+import { Search, Upload } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 
 const actions = [
@@ -19,13 +19,7 @@ const actions = [
     url: createPageUrl("ImportData"),
     color: "text-purple-600 bg-purple-50 hover:bg-purple-100"
   },
-  {
-    title: "Build a Quote",
-    description: "Create an RFP or quote",
-    icon: FileText,
-    url: createPageUrl("RFPStudio"),
-    color: "text-green-600 bg-green-50 hover:bg-green-100"
-  }
+  // "Build a Quote" RFP action removed 2026-06 — RFP Studio discontinued.
 ];
 
 export default function QuickActions({ onNavigate }) {

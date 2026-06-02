@@ -10,7 +10,7 @@ interface DashboardHeaderProps {
 const ACTIONS = [
   { icon: Building2, label: 'Add Company',     href: '/app/search'    },
   { icon: Send,      label: 'Start Campaign',   href: '/app/campaigns' },
-  { icon: FileText,  label: 'Generate Quote',   href: '/app/rfp-studio'},
+  // RFP Generate Quote removed 2026-06 — RFP Studio discontinued.
 ];
 
 export default function DashboardHeader({ userName }: DashboardHeaderProps) {

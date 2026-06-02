@@ -4,7 +4,7 @@ const tabs = [
   { key: 'search', label: 'Search Intelligence' },
   { key: 'cc', label: 'Command Center' },
   { key: 'campaigns', label: 'Campaigns' },
-  { key: 'rfp', label: 'RFP Studio' },
+  // RFP Studio entry removed 2026-06 — feature discontinued.
 ];
 
 function Panel({ title, subtitle, children }) {
@@ -89,17 +89,7 @@ export default function ModuleInteractiveBanner() {
               </div>
             </Panel>
           )}
-          {active === 'rfp' && (
-            <Panel title="RFP Studio" subtitle="Draft and compare carrier quotes with real shipment data.">
-              <div className="grid gap-2 text-sm">
-                <div className="grid grid-cols-2 gap-2">
-                  <input className="border rounded-lg px-2 py-1" placeholder="Origin (e.g., CN SHA)" />
-                  <input className="border rounded-lg px-2 py-1" placeholder="Destination (e.g., US LAX)" />
-                </div>
-                <button className="px-3 py-2 rounded-lg bg-slate-900 text-white w-max">Generate Quote</button>
-              </div>
-            </Panel>
-          )}
+          {/* RFP Panel removed 2026-06 — feature discontinued. */}
         </div>
       </div>
     </section>

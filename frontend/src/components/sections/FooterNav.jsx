@@ -8,7 +8,7 @@ export default function FooterNav({ data }) {
       links: [
         { text: "Search", url: createPageUrl("Search") },
         { text: "Company Profiles", url: "#" },
-        { text: "RFP Builder", url: createPageUrl("RFPStudio") },
+        // "RFP Builder" link removed 2026-06 — RFP Studio discontinued.
         { text: "Campaign Tools", url: createPageUrl("Campaigns") },
         { text: "Import Data", url: createPageUrl("ImportData") }
       ]

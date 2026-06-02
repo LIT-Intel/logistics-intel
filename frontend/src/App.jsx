@@ -25,7 +25,8 @@ const CampaignAnalyticsPage = lazy(() => import("@/pages/CampaignAnalyticsPage")
 const InboxPage = lazy(() => import("@/pages/InboxPage"));
 const NotificationsInbox = lazy(() => import("@/pages/NotificationsInbox"));
 const EmailCenter = lazy(() => import("@/pages/EmailCenter"));
-const RFPStudio = lazy(() => import("@/pages/RFPStudio"));
+// RFPStudio discontinued 2026-06 — see docs/agents/2026-06-02-app-review-roadmap.md.
+// Route below redirects /app/rfp → /app/dashboard so old bookmarks land softly.
 const Settings = lazy(() => import("@/pages/SettingsPage"));
 const Billing = lazy(() => import("@/pages/BillingNew"));
 const AffiliateDash = lazy(() => import("@/pages/AffiliateDashboard"));
@@ -442,21 +443,10 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/app/rfp"
-          element={
-            <RequirePlan
-              feature="rfp_studio"
-              featureName="RFP Studio"
-              description="Generate professional RFP responses and freight quotes with AI assistance. Available on Growth and above."
-              requiredPlan="growth"
-            >
-              <LITPage>
-                <RFPStudio />
-              </LITPage>
-            </RequirePlan>
-          }
-        />
+        {/* RFP Studio discontinued — soft redirect for stale bookmarks. */}
+        <Route path="/app/rfp" element={<Navigate to="/app/dashboard" replace />} />
+        <Route path="/app/rfp/*" element={<Navigate to="/app/dashboard" replace />} />
+        <Route path="/app/rfp-studio" element={<Navigate to="/app/dashboard" replace />} />
 
         <Route
           path="/app/settings"

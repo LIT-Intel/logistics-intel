@@ -1,11 +1,13 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Building2, Mail, FileText, ArrowUpRight } from 'lucide-react';
+import { Building2, Mail, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface InsightsPanelProps {
   totalCompanies?: number;
   emailsSent?: number;
+  // rfpsGenerated kept as optional for backwards compat with any caller still
+  // passing it; ignored. RFP Studio discontinued 2026-06.
   rfpsGenerated?: number;
 }
 
@@ -28,23 +30,14 @@ const STATS = [
     bg: 'bg-indigo-50',
     desc: 'across all campaigns',
   },
-  {
-    label: 'RFPs Generated',
-    key: 'rfpsGenerated' as const,
-    icon: FileText,
-    href: '/app/rfp-studio',
-    color: 'text-violet-600',
-    bg: 'bg-violet-50',
-    desc: 'ready to send',
-  },
+  // RFPs Generated stat removed 2026-06 — RFP Studio discontinued.
 ];
 
 export default function InsightsPanel({
   totalCompanies = 0,
   emailsSent = 0,
-  rfpsGenerated = 0,
 }: InsightsPanelProps) {
-  const values = { totalCompanies, emailsSent, rfpsGenerated };
+  const values = { totalCompanies, emailsSent };
 
   return (
     <motion.div
@@ -57,7 +50,7 @@ export default function InsightsPanel({
         <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Summary</p>
         <h2 className="mt-1 text-lg font-semibold text-slate-900">Activity Snapshot</h2>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+      <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
         {STATS.map((stat) => {
           const Icon = stat.icon;
           const value = values[stat.key];

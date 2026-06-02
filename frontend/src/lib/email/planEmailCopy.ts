@@ -18,7 +18,7 @@
 //   - Pulse AI for company briefings (5 AI runs/mo)
 //   - Revenue opportunity sizing per company
 //   - NO Pulse search (lookalike discovery), NO outreach campaigns,
-//     NO RFP studio, NO lead prospecting, NO team seats
+//     NO lead prospecting, NO team seats
 
 export type PlanSlug = "free_trial" | "starter" | "growth" | "scale" | "enterprise";
 
@@ -93,7 +93,7 @@ export const PLAN_EMAIL_COPY: Record<PlanSlug, PlanEmailCopy> = {
       "150 contact enrichments per month with verified emails",
       "1,000 active campaign recipients across your team",
       "3 team seats with 3 connected mailboxes",
-      "RFP Studio, lead prospecting, and team analytics",
+      "Lead prospecting and team analytics",
       "Saved Pulse lists for industry segmentation",
     ],
     primaryCta: "Invite your team",
@@ -108,7 +108,7 @@ export const PLAN_EMAIL_COPY: Record<PlanSlug, PlanEmailCopy> = {
       "500 Pulse AI briefs and 500 Pulse lookalike searches per month",
       "500 contact enrichments per month with verified emails",
       "5 team seats with 5 connected mailboxes",
-      "2,500 active campaign recipients and 100 RFP drafts",
+      "2,500 active campaign recipients across your team",
       "Credit-rating ready and contact intelligence ready datasets",
       "Saved Pulse lists, lead prospecting, and full team analytics",
     ],
