@@ -42,6 +42,8 @@ import {
   Anchor,
   TrendingUp,
   Radio,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import AddToListPicker from "@/features/pulse/AddToListPicker";
@@ -276,16 +278,24 @@ function buildShellCompany(companyId: string | null, stored: any): any {
   };
 }
 
-const TABS = [
+// F5 trim (Wk1): 5 visible + 3 in the "More" overflow dropdown.
+// Mobile-first reasoning from /plan-design-review: the tab row stayed
+// within mobile viewport without horizontal scroll only after the trim.
+// Pulse AI / Rate Benchmark / Revenue Opportunity live in More because
+// they're high-signal but low-frequency on a typical demo path.
+const VISIBLE_TABS = [
   { id: "supply", label: "Supply Chain", Icon: Workflow },
   { id: "live", label: "Pulse LIVE", Icon: Radio },
-  { id: "rates", label: "Rate Benchmark", Icon: Anchor },
   { id: "contacts", label: "Contacts", Icon: Users },
-  { id: "research", label: "Pulse AI", Icon: Sparkles },
-  { id: "revenue", label: "Revenue Opportunity", Icon: TrendingUp },
   { id: "activity", label: "Activity", Icon: Activity },
   { id: "inbox", label: "Inbox", Icon: Inbox },
 ] as const;
+const MORE_TABS = [
+  { id: "research", label: "Pulse AI", Icon: Sparkles },
+  { id: "rates", label: "Rate Benchmark", Icon: Anchor },
+  { id: "revenue", label: "Revenue Opportunity", Icon: TrendingUp },
+] as const;
+const TABS = [...VISIBLE_TABS, ...MORE_TABS] as const;
 type TabId = (typeof TABS)[number]["id"];
 
 // =============================================================================
@@ -338,6 +348,132 @@ class V2ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
     }
     return this.props.children;
   }
+}
+
+/**
+ * Tab bar with 5 visible + More dropdown (F5).
+ *
+ * Pulled out of the main render so the dropdown state (open/close, outside
+ * click, ESC) stays local. The active-in-overflow case highlights the More
+ * button itself so the user always knows where they are.
+ */
+function CompanyTabsRow({
+  tab,
+  onSelect,
+}: {
+  tab: TabId;
+  onSelect: (id: TabId) => void;
+}) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement | null>(null);
+  const activeInOverflow = MORE_TABS.some((t) => t.id === tab);
+
+  // Outside-click dismissal.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDocDown = (e: MouseEvent) => {
+      const el = moreRef.current;
+      if (el && !el.contains(e.target as Node)) setMoreOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onDocDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDocDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [moreOpen]);
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Company sections"
+      className="relative flex shrink-0 items-center gap-0 border-b border-slate-200 bg-white px-3 sm:px-6"
+    >
+      {VISIBLE_TABS.map((t) => {
+        const Icon = t.Icon;
+        const active = tab === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onSelect(t.id)}
+            className={[
+              "font-display -mb-px inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-[12.5px] font-semibold transition-colors sm:px-3.5",
+              active
+                ? "border-blue-500 text-blue-700"
+                : "border-transparent text-slate-500 hover:text-slate-700",
+            ].join(" ")}
+          >
+            <Icon className="h-3 w-3" />
+            {t.label}
+          </button>
+        );
+      })}
+      <div ref={moreRef} className="relative ml-auto sm:ml-1">
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((v) => !v)}
+          className={[
+            "font-display -mb-px inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-[12.5px] font-semibold transition-colors sm:px-3.5",
+            activeInOverflow
+              ? "border-blue-500 text-blue-700"
+              : "border-transparent text-slate-500 hover:text-slate-700",
+          ].join(" ")}
+        >
+          More
+          <ChevronDown
+            className={[
+              "h-3 w-3 transition-transform",
+              moreOpen ? "rotate-180" : "",
+            ].join(" ")}
+            aria-hidden
+          />
+        </button>
+        {moreOpen && (
+          <div
+            role="menu"
+            aria-label="More company sections"
+            className="absolute right-0 top-[calc(100%+4px)] z-[400] w-[240px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg"
+          >
+            {MORE_TABS.map((t) => {
+              const Icon = t.Icon;
+              const active = tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onSelect(t.id);
+                    setMoreOpen(false);
+                  }}
+                  className={[
+                    "font-display flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2.5 text-left text-[12.5px] font-semibold transition-colors last:border-b-0",
+                    active
+                      ? "bg-blue-50 text-blue-700"
+                      : "text-slate-700 hover:bg-slate-50",
+                  ].join(" ")}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Icon className="h-3 w-3" />
+                    {t.label}
+                  </span>
+                  <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function DirectoryOnlyEmptyState({
@@ -1864,35 +2000,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         }
       />
 
-      {/* Tab bar — verbatim density from legacy. */}
-      <div
-        role="tablist"
-        aria-label="Company sections"
-        className="flex shrink-0 items-center gap-0 border-b border-slate-200 bg-white px-6"
-      >
-        {TABS.map((t) => {
-          const Icon = t.Icon;
-          const active = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setTab(t.id)}
-              className={[
-                "font-display -mb-px inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-[12.5px] font-semibold transition-colors",
-                active
-                  ? "border-blue-500 text-blue-700"
-                  : "border-transparent text-slate-500 hover:text-slate-700",
-              ].join(" ")}
-            >
-              <Icon className="h-3 w-3" />
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Tab bar — F5 trim: 5 visible + More overflow. The More dropdown
+          surfaces Pulse AI / Rate Benchmark / Revenue Opportunity without
+          horizontal scroll on mobile. */}
+      <CompanyTabsRow tab={tab} onSelect={setTab} />
+
 
       {refreshLimitState && (
         <PulseCoachQuotaCard
