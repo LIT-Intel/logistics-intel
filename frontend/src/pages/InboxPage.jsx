@@ -27,6 +27,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/auth/AuthProvider";
 import LitEmptyState from "@/components/ui/LitEmptyState";
+import { LitSkeletonRow } from "@/components/ui/LitSkeleton";
 
 function formatRelative(ts) {
   if (!ts) return "—";
@@ -194,11 +195,7 @@ export default function InboxPage() {
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
               {loadingThreads ? (
-                <div className="space-y-1 p-2">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="h-14 animate-pulse rounded-md bg-slate-100" />
-                  ))}
-                </div>
+                <LitSkeletonRow count={6} noAvatar />
               ) : loadError ? (
                 <div className="px-4 py-6 text-[12px] text-rose-700">{loadError}</div>
               ) : filteredThreads.length === 0 ? (

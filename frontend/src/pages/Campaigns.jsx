@@ -11,6 +11,7 @@ import {
   Send,
 } from "lucide-react";
 import LitEmptyState from "@/components/ui/LitEmptyState";
+import { LitSkeletonBlock, LitSkeletonCard, LitSkeletonRow } from "@/components/ui/LitSkeleton";
 import { useCampaigns } from "@/features/outbound/hooks/useCampaigns";
 import { PulseBar } from "@/features/outbound/components/PulseBar";
 import { PlayCard } from "@/features/outbound/components/PlayCard";
@@ -152,16 +153,12 @@ function SectionHead({ title, subtitle, right }) {
 function LoadingSkeleton() {
   return (
     <div className="space-y-4">
-      <div className="h-16 animate-pulse rounded-lg bg-slate-100" />
+      <LitSkeletonBlock width="100%" height={64} rounded="lg" />
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="h-32 animate-pulse rounded-lg bg-slate-100" />
-        ))}
+        <LitSkeletonCard count={6} />
       </div>
-      <div className="space-y-2">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="h-16 animate-pulse rounded-lg bg-slate-100" />
-        ))}
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <LitSkeletonRow count={3} noAvatar />
       </div>
     </div>
   );
