@@ -182,6 +182,21 @@ Touches ~10 pages. Estimated: ~16h.
     - `tests/e2e/company-profile-suppliers.spec.ts` — open a fixture receiver → click Supply Chain → click Suppliers sub-tab → list renders + first row click opens drawer
   - Verify: production build green; demo path Dashboard → Search → Save → Company Profile → Supply Chain → Suppliers sub-tab → row click → drawer with shipment count to receiver; tab row shows 5 + More on mobile; `/app/rfp` → `/app/dashboard`; no `/app/rfp*` strings remain in `git grep -E "/app/rfp" -- frontend/src/`; no broken `/app/rfp-studio` links remain; upgrade-email copy doesn't say "RFP Studio"
 
+- [ ] **T1c (P1, human: ~1.5 days / CC: ~6h)** — Supplier Profile page (NEW from design review)
+  - Surfaced by: Design review Pass 3 — user push-back that BOL data already supports a real supplier profile, not just a drawer teaser
+  - **Route:** `/app/suppliers/:slug` — slug = supplier name slugified (URL-safe, dedup-stable)
+  - **Files:**
+    - `frontend/src/App.jsx` (add route, gated by RequireAuth)
+    - `frontend/src/pages/SupplierProfile.tsx` (new page, mirrors CompanyProfileV2 layout)
+    - `frontend/src/components/supplier/SupplierHeader.tsx` (new — flag + name + KPI strip)
+    - `frontend/src/components/supplier/SupplierReceiversTab.tsx` (new — all receivers this supplier ships to)
+    - `frontend/src/lib/suppliers/profile.ts` (new — cross-receiver aggregator: `aggregateSupplierProfile(supplierName, allBols)` returns `{ totalShipments, receivers: ReceiverRow[], topLanes, topHsCodes, monthlyCadence }`)
+    - `frontend/src/lib/suppliers/__tests__/profile.test.ts` (new — cover empty / single-receiver / 100+ receivers / sparse field cases)
+    - `frontend/src/components/company/CDPSupplyChain.tsx` (drawer "View full supplier profile" button now links to `/app/suppliers/${slug}`)
+  - **Tabs on Supplier Profile page:** Overview · Receivers (default) · Activity (matches CompanyProfileV2 structure, deliberately simpler)
+  - **Verify:** demo path Company Profile → Suppliers sub-tab → row click → drawer → "View full supplier profile" → SupplierProfile page renders aggregated cross-receiver intel; URL is bookmarkable; Receivers tab links each receiver back to `/app/companies/:id`
+  - **NOT in scope for v1:** Supplier-to-supplier comparison, supplier alerts, custom supplier tags. Deferred.
+
 - [ ] **T2 (P1 — REGRESSION rule, human: ~1 day / CC: ~1.5h)** — Suppliers aggregator — extract + unit tests + snapshot
   - Surfaced by: Finding 6.1 (CEO) — F1 needs unit tests for the aggregator
   - Surfaced by: Finding 3.1 (Eng) — REGRESSION RULE: `deriveSuppliers()` is 200+ LOC deployed in production with zero tests
@@ -217,6 +232,80 @@ Touches ~10 pages. Estimated: ~16h.
   - Files: ~10 pages with current "No data" placeholders; introduce shared `<EmptyState intent="..." />` + `<SkeletonRow />`
   - Verify: every empty state has a CTA pointing at next action
 
+## Wk1 design specs (locked by /plan-design-review)
+
+### F1 — Suppliers sub-tab + drawer + Supplier Profile page
+
+**Information architecture:**
+- Sub-tab order: Summary · Trade Lanes · **Suppliers (new)** · Products
+- Suppliers list header: "247 unique suppliers shipping to {receiver name} in last 12 months"
+- Row layout: `[flag 16px] [supplier name semibold 14px slate-900] [country muted 12px slate-500] → [count mono 14px right] [share bar 68px slate-100 → blue-500]`
+- Pagination: top 50 visible + "Show more (38 of 50 visible)" — no virtualization in v1
+- Drawer click anywhere on row → opens detail drawer
+- "View full supplier profile" button in drawer → navigates to `/app/suppliers/:slug` (T1c)
+
+**Interaction states (Suppliers sub-tab):**
+| State | Spec |
+|---|---|
+| Loading | 8 skeleton rows (same height as real row, slate-100 shimmer on name + count) |
+| Empty (0 suppliers) | Centered intent card + "No supplier shipments on file" + "Refresh Intel" CTA |
+| Error (aggregator threw) | Red-tinted notice "Couldn't load suppliers" + retry; Sentry captures `aggregator_failed` |
+| Success | List renders with count header at top |
+| Partial | Top 50 visible + Show more button |
+
+**Interaction states (supplier drawer):**
+| State | Spec |
+|---|---|
+| Loading | Drawer opens immediately with skeleton (name, location, big-number, sparkline) |
+| Sparse data | Missing fields render as "—", not "undefined" |
+| Error | Inline "Couldn't load supplier detail. [Try again]" |
+| Success | Flag + name (24px), country, total ships (mono 32px), date range, top 3 HS codes, monthly sparkline (recharts), "View full supplier profile" link |
+
+### F5 — Mobile tab overflow
+
+**Pattern:** Dropdown sheet anchored to "More" button
+- Visible tabs (5): Supply Chain · Pulse LIVE · Contacts · Activity · Inbox
+- Overflow (3 in More): Pulse AI · Rate Benchmark · Revenue Opportunity
+- "More" button styling: ghost outline + chevron-down (12px)
+- Dropdown: 240px wide, 3 list items with chevron-right, tap-outside or Esc closes
+- **Active-in-overflow:** if user is currently on Pulse AI (which lives in More), the More button gets active-tab styling
+
+### Responsive layout per viewport
+
+| Surface | Mobile ≤640px | Tablet 640-1024px | Desktop ≥1024px |
+|---|---|---|---|
+| Suppliers list | Single-col, share bar hidden (count only) | 2-row layout per supplier | Single-row dense layout |
+| Supplier drawer | Bottom-sheet, 70% height, swipe-down dismiss | Right-slide 380px | Right-slide 420px |
+| Supplier Profile page tabs | 5 + More overflow (same as Company Profile) | Inline | Inline |
+| More menu dropdown | Anchored, max-width 80vw | Anchored | Anchored |
+
+### Accessibility checklist
+
+- ✅ Tab row keyboard nav (←/→ cycles, Home/End jump, Tab focuses next group)
+- ✅ Drawer = `role="dialog"` + `aria-labelledby` + focus trap, Esc to close
+- ✅ Touch targets ≥44px (More button 44×44, supplier rows 56px mobile)
+- ✅ Contrast WCAG AA: supplier name 16.1:1, count 9.8:1, share bar 4.7:1
+- ✅ Empty-state illustration has `role="img"` + `aria-label`
+
+### Design system reuse (no new tokens introduced)
+
+| New surface | Reuses |
+|---|---|
+| Supplier Profile page | `CDPHeader` pattern, `LitSectionCard`, same TABS structure |
+| Suppliers list | `TopSuppliersCard` extended, `LitFlag`, `LitPill` |
+| Supplier drawer | `MobileCompaniesDrawer.tsx` pattern (right-slide desktop, bottom-sheet mobile) |
+| Mobile More menu | New micro-component `<TabsMore>` |
+
+### AI slop patterns explicitly avoided
+
+- ❌ No 3-column "Supplier metric cards" header — use editorial KPI strip
+- ❌ No card grid for supplier list — dense rows
+- ❌ No centered hero on Supplier Profile — left-aligned header
+- ❌ No purple gradient — solid white, navy text, blue-500 accent only
+- ❌ No icon-in-colored-circle anywhere — flags do the visual work
+- ❌ No bouncy animations — spring slide-in 220ms ease-out
+- ❌ No "Welcome to your supplier dashboard" copy — "247 suppliers shipping to {receiver}"
+
 ## NOT in scope (explicitly deferred)
 
 - F2 5th-signal external funding/hiring proxy — Q3 selected "ship 4 as-written"; revisit after metrics show whether the 4 are sufficient
@@ -234,17 +323,22 @@ None unresolved. All findings closed via decisions above.
 |--------|---------|-----|------|--------|----------|
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | CLEAN | 0 critical gaps, 8 decisions locked, 0 unresolved |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAN | 4 findings, 0 critical gaps, 4 decisions locked, 1 regression test enforced |
-| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | not yet run |
+| Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAN | score: 6/10 → 9/10, 4 decisions locked, 1 scope expansion (T1c Supplier Profile page) |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | not applicable to this plan |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | skipped (codex unavailable) |
 
-**Eng review summary (4 findings):**
-- 1.1 RFP cleanup blast radius — 11 surfaces, not 2. **Decision: expand T1 to full cleanup.**
-- 1.2 F1 Supplier infrastructure already exists — extension not new build. T1 scaffolding lighter than estimated. **Informational; plan T1 effort revised to ~3 days / CC ~5h.**
-- 3.1 `deriveSuppliers()` REGRESSION RULE — 200+ LOC in production with zero tests. **T2 enforced as P1 with extract-then-test pattern.**
-- 3.2 E2E coverage gaps. **3 Playwright tests added to T1 (RFP redirect, mobile 5+More, Suppliers sub-tab smoke).**
-- 4.1 Supplier list scaling for large receivers. **Decision: pagination — top 50 + Show more.**
+**Design review summary (Pass 1-7, scope = F1 + F5):**
+- Pass 1 IA: F1 4/10 → 10/10 (hierarchy locked: list row anatomy + drawer content order). F5 5/10 → 10/10 (dropdown sheet pattern).
+- Pass 2 States: Both surfaces 2/10 → 10/10 (loading skeletons, empty intent CTA, error with retry, partial pagination, sparse-data fallbacks all specified).
+- Pass 3 Journey: 6/10 → 9/10. **Scope expansion accepted: user push-back drove T1c — build real Supplier Profile page at `/app/suppliers/:slug` reusing CompanyProfileV2 structure.**
+- Pass 4 AI slop: 7 anti-patterns explicitly listed in plan.
+- Pass 5 Design system: All reuses mapped (`CDPHeader`, `LitSectionCard`, `MobileCompaniesDrawer` pattern). No new tokens.
+- Pass 6 Responsive + A11y: Per-viewport layouts + WCAG AA contrast + 44px touch targets specified.
+- Pass 7 Unresolved: Mobile drawer = bottom-sheet 70% height. All decisions locked.
+- Mockup generation: **SKIPPED** — designer binary unavailable (no OpenAI API key). Logged as TODO for next session.
+
+**Wk1 effort revised:** ~5.5 days human / ~12-15h CC (was ~3 days / ~5h before design review).
 
 **UNRESOLVED:** 0
 **CRITICAL GAPS:** 0
-**VERDICT:** CEO + ENG CLEARED — ready to implement. Design Review recommended before Phase C (Wk2). T1 + T2 ship Wk1 as one PR.
+**VERDICT:** CEO + ENG + DESIGN ALL CLEAR — Wk1 ready to implement. T1 + T1c + T2 ship together as one PR.
