@@ -19,6 +19,9 @@ import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitFlag from "@/components/ui/LitFlag";
 import LitPill from "@/components/ui/LitPill";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
+import LaneMap from "@/components/LaneMap";
+import LaneViewToggle from "@/components/LaneViewToggle";
+import { useLaneViewMode } from "@/hooks/useLaneViewMode";
 import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
 import {
   formatBolDate,
@@ -1277,6 +1280,11 @@ function TopLanesCard({
   containerProfile?: ContainerProfile;
   reducedMotion?: boolean;
 }) {
+  // Persisted globe / map preference — shared with the Dashboard's GlobeCard
+  // so a user who picks Map view on one surface sees Map on the other.
+  // Matches ZoomInfo's TerritoryView pattern: one preference, two consumers.
+  const { mode: viewMode, setMode: setViewMode } = useLaneViewMode();
+
   // Globe needs resolved coordinates; fall back to filtering canonicalLanes
   // for backwards compatibility when globeLanes prop isn't passed.
   const sourceForGlobe = (Array.isArray(globeOnlyLanes) && globeOnlyLanes.length > 0
@@ -1357,21 +1365,38 @@ function TopLanesCard({
   return (
     <LitSectionCard
       title="Top trade lanes"
-      sub="Globe · ranked share · container mix"
+      sub={viewMode === "globe" ? "Globe · ranked share · container mix" : "Map · ranked share · container mix"}
+      action={<LaneViewToggle mode={viewMode} onChange={setViewMode} />}
       padded={false}
     >
       <div className="flex flex-col lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        {/* Left ~40% — interactive globe. Full-width on mobile/tablet. */}
-        <div className="flex items-center justify-center bg-slate-50 p-3 sm:p-4 lg:p-4">
-          <div className="aspect-square w-full max-w-[320px]">
-            <GlobeCanvas
-              lanes={globeLanes}
-              selectedLane={selectedId}
-              size={260}
-              theme="trade"
-              showFlagPins
-            />
-          </div>
+        {/* Left ~40% — interactive globe OR 2D map. Full-width on mobile/tablet. */}
+        <div
+          className={[
+            "flex items-center justify-center p-3 sm:p-4 lg:p-4",
+            viewMode === "globe" ? "bg-slate-50" : "bg-white",
+          ].join(" ")}
+        >
+          {viewMode === "globe" ? (
+            <div className="aspect-square w-full max-w-[320px]">
+              <GlobeCanvas
+                lanes={globeLanes}
+                selectedLane={selectedId}
+                size={260}
+                theme="trade"
+                showFlagPins
+              />
+            </div>
+          ) : (
+            <div className="w-full">
+              <LaneMap
+                lanes={globeLanes}
+                selectedLane={selectedId}
+                onSelectLane={(id) => setSelectedId(id)}
+                height={300}
+              />
+            </div>
+          )}
         </div>
 
         {/* Right ~60% — lane list. On mobile stacks below globe with its

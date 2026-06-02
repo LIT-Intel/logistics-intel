@@ -1,17 +1,19 @@
 import React from "react";
 import { ArrowRight } from "lucide-react";
 import GlobeCanvas from "@/components/GlobeCanvas";
+import LaneMap from "@/components/LaneMap";
+import LaneViewToggle from "@/components/LaneViewToggle";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitFlag from "@/components/ui/LitFlag";
+import { useLaneViewMode } from "@/hooks/useLaneViewMode";
 
 /**
  * Phase 2 — Dashboard "Top Active Trade Lanes" card.
  *
- * Two-column layout: GlobeCanvas (trade theme + flag pins) on the left,
- * ranked-lane list on the right. Mirrors the design source structure
- * verbatim. Driven entirely by real data — `lanes` is the canonical lane
- * list aggregated from `lit_saved_companies.kpis.top_route_12m` upstream;
- * empty state renders when the user has no saved accounts to aggregate.
+ * Two-column layout: globe OR map on the left, ranked-lane list on the
+ * right. The viewMode toggle is persisted globally via useLaneViewMode so
+ * the Company Profile surface inherits the same preference (one user
+ * choice, two consumers — matches ZoomInfo's TerritoryView pattern).
  */
 export default function GlobeCard({
   lanes,
@@ -20,54 +22,79 @@ export default function GlobeCard({
   onSelectLane,
   globeSize,
 }) {
+  const { mode, setMode } = useLaneViewMode();
   const hasLanes = lanes && lanes.length > 0;
   const activeLane = hasLanes
     ? lanes.find((l) => l.displayLabel === selectedLaneId) || lanes[0]
     : null;
+  // Resolve the active lane's ID inside the GlobeLane[] payload so the
+  // map's `selectedLane` (keyed by GlobeLane.id) stays in sync with the
+  // dashboard's selectedLaneId (keyed by displayLabel).
+  const activeGlobeLaneId =
+    globeLanes && activeLane ? globeLanes.find((g) => g.id === activeLane.displayLabel)?.id || null : null;
 
   return (
     <LitSectionCard
       title="Top Active Trade Lanes"
-      sub="Click a lane to focus the globe · Trailing 12-month TEU"
+      sub="Click a lane to focus the view · Trailing 12-month TEU"
       action={
-        <span className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-green-200 bg-green-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-green-700">
-          <span className="h-1.5 w-1.5 rounded-full bg-green-500" aria-hidden />
-          Live
-        </span>
+        <div className="flex items-center gap-2">
+          <LaneViewToggle mode={mode} onChange={setMode} />
+          <span className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-green-200 bg-green-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-green-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500" aria-hidden />
+            Live
+          </span>
+        </div>
       }
       padded={false}
     >
       <div className="grid min-h-[340px] grid-cols-1 lg:grid-cols-[minmax(280px,1fr)_minmax(0,1.05fr)]">
-        {/* Globe pane */}
+        {/* Viz pane — globe OR map */}
         <div
           className="relative flex items-center justify-center border-b border-slate-100 lg:border-b-0 lg:border-r"
-          style={{ background: "radial-gradient(circle at 30% 30%, #F8FAFC 0%, #EEF2F7 100%)" }}
+          style={
+            mode === "globe"
+              ? { background: "radial-gradient(circle at 30% 30%, #F8FAFC 0%, #EEF2F7 100%)" }
+              : undefined
+          }
         >
-          <span className="font-display absolute left-3 top-3 text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
-            Trade Lane Map
+          <span className="font-display absolute left-3 top-3 z-[400] text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+            {mode === "globe" ? "Globe View" : "Map View"}
           </span>
           {hasLanes ? (
-            <div className="py-4">
-              <GlobeCanvas
-                size={globeSize}
-                lanes={globeLanes}
-                selectedLane={selectedLaneId || (lanes[0]?.displayLabel ?? null)}
-                theme="trade"
-                showFlagPins
-              />
-            </div>
+            mode === "globe" ? (
+              <div className="py-4">
+                <GlobeCanvas
+                  size={globeSize}
+                  lanes={globeLanes}
+                  selectedLane={selectedLaneId || (lanes[0]?.displayLabel ?? null)}
+                  theme="trade"
+                  showFlagPins
+                />
+              </div>
+            ) : (
+              <div className="w-full">
+                <LaneMap
+                  lanes={globeLanes || []}
+                  selectedLane={activeGlobeLaneId}
+                  onSelectLane={(id) => onSelectLane(id)}
+                  height={340}
+                />
+              </div>
+            )
           ) : (
             <div className="px-6 py-12 text-center">
               <p className="font-body text-[12px] text-slate-500">
-                No active lanes yet — save companies in the Command Center to populate the globe.
+                No active lanes yet — save companies in the Command Center to populate the view.
               </p>
             </div>
           )}
 
-          {/* Floating dark-glass overlay surfacing the active lane */}
+          {/* Floating dark-glass overlay surfacing the active lane.
+              z-index lifts it above Leaflet's tile/overlay panes in map mode. */}
           {hasLanes && activeLane && (
             <div
-              className="absolute bottom-3 left-3 right-3 flex items-center gap-2.5 rounded-[10px] px-3 py-2.5 text-white shadow-lg"
+              className="pointer-events-none absolute bottom-3 left-3 right-3 z-[500] flex items-center gap-2.5 rounded-[10px] px-3 py-2.5 text-white shadow-lg"
               style={{ background: "rgba(15,23,42,0.92)", backdropFilter: "blur(8px)" }}
             >
               <LitFlag code={activeLane.fromMeta?.countryCode} size={18} label={activeLane.fromMeta?.countryName || activeLane.fromMeta?.label} />
