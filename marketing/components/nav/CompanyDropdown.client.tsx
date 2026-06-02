@@ -120,10 +120,13 @@ export function CompanyDropdown() {
       {open && (
         <div
           role="menu"
-          // Anchored to the trigger's RIGHT edge so the wide panel extends
-          // leftward into the available viewport. Company sits near the
-          // right of the nav, so centering ran the panel off the right edge.
-          className="absolute right-0 top-full z-50 mt-2 w-[820px] overflow-hidden rounded-2xl border border-ink-100/80 bg-white/95 p-6 shadow-2xl backdrop-blur-md"
+          // Centered under the trigger. Company sits in the LEFT nav cluster
+          // (Product / Solutions / Customers / Blog / Company), not at the
+          // viewport right edge — Sign-in + Book-a-demo are the actual
+          // rightmost items. Centering keeps the panel symmetrical on
+          // standard desktop widths; max-w clamp prevents overflow on
+          // narrower viewports.
+          className="absolute left-1/2 top-full z-50 mt-2 w-[820px] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-2xl border border-ink-100/80 bg-white/95 p-6 shadow-2xl backdrop-blur-md"
         >
           <div className="grid grid-cols-[1.4fr_1fr] gap-8">
             {/* Left column: company links */}

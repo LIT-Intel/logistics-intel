@@ -152,8 +152,9 @@ export function ProductDropdown() {
           // Anchored to the trigger's LEFT edge so the wide panel extends
           // rightward into the available viewport. Centering via
           // -translate-x ran the left edge off-screen because the Product
-          // trigger sits near the left of the nav.
-          className="absolute left-0 top-full z-50 mt-2 w-[880px] overflow-hidden rounded-2xl border border-ink-100/80 bg-white/95 p-6 shadow-2xl backdrop-blur-md"
+          // trigger sits near the left of the nav. Max-w clamp protects
+          // narrow viewports.
+          className="absolute left-0 top-full z-50 mt-2 w-[880px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-ink-100/80 bg-white/95 p-6 shadow-2xl backdrop-blur-md"
         >
           <div className="grid grid-cols-[1.4fr_1fr] gap-8">
             {/* Left column: product links */}
