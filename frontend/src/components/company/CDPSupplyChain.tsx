@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   Sparkles,
@@ -41,11 +42,12 @@ import {
   readCarrier,
 } from "@/lib/bols/helpers";
 
-type SubTabId = "summary" | "lanes" | "products";
+type SubTabId = "summary" | "lanes" | "suppliers" | "products";
 
 const SUB_TABS: { id: SubTabId; label: string }[] = [
   { id: "summary", label: "Summary" },
   { id: "lanes", label: "Trade Lanes" },
+  { id: "suppliers", label: "Suppliers" },
   { id: "products", label: "Products" },
 ];
 
@@ -262,6 +264,12 @@ export default function CDPSupplyChain({
           carriers={carriers}
           forwarders={forwarders}
           containerProfile={containerProfile}
+          recentBols={recentBols}
+        />
+      )}
+      {sub === "suppliers" && (
+        <SuppliersView
+          profile={profile}
           recentBols={recentBols}
         />
       )}
@@ -869,6 +877,354 @@ function LanesView({
 }
 
 /* ── Products view ────────────────────────────────────────────────────── */
+
+/* ── Suppliers view (F1 — Wk1) ──────────────────────────────────────── */
+
+function SuppliersView({
+  profile,
+  recentBols,
+}: {
+  profile: any;
+  recentBols: any[];
+}) {
+  const navigate = useNavigate();
+  // F1: full supplier list (limit=Infinity), paginated client-side. Top 50
+  // visible; "Show more" reveals next 50. No virtualization in v1 — Finding
+  // 4.1 / Q1 from /plan-eng-review locked pagination over react-window
+  // because 99% of receivers have <50 suppliers.
+  const allSuppliers = useMemo(
+    () => aggregateSuppliers(profile, recentBols, { limit: Infinity }),
+    [profile, recentBols],
+  );
+  const [visibleCount, setVisibleCount] = useState(50);
+  const [openSupplier, setOpenSupplier] = useState<SupplierAggregateRow | null>(null);
+
+  const visible = allSuppliers.slice(0, visibleCount);
+  const hasMore = visibleCount < allSuppliers.length;
+
+  // BOLs filtered to the open supplier — passed to the drawer + the
+  // SupplierProfile page (via location.state) so the navigation has real
+  // data the moment the page mounts.
+  const supplierBols = useMemo(() => {
+    if (!openSupplier) return [];
+    const want = openSupplier.name.toLowerCase();
+    return recentBols.filter((b) => {
+      const s = getBolSupplier(b);
+      return s && s.toLowerCase() === want;
+    });
+  }, [openSupplier, recentBols]);
+
+  const companyName =
+    (profile?.companyName as string) ||
+    (profile?.name as string) ||
+    "this receiver";
+  const companyId =
+    (profile?.companyId as string) || (profile?.id as string) || null;
+
+  if (allSuppliers.length === 0) {
+    return (
+      <LitSectionCard title="Suppliers" sub="From shipment history">
+        <div className="px-6 py-10 text-center">
+          <p className="font-display text-[12px] font-semibold text-slate-700">
+            No supplier shipments on file for the last 12 months
+          </p>
+          <p className="font-body mt-1 text-[11px] text-slate-500">
+            Try <strong>Refresh Intel</strong> to pull the latest BOLs into
+            this account.
+          </p>
+        </div>
+      </LitSectionCard>
+    );
+  }
+
+  return (
+    <>
+      <LitSectionCard
+        title={`${allSuppliers.length.toLocaleString()} unique suppliers`}
+        sub={`Shipping to ${companyName} in the last 12 months · ranked by share`}
+        padded={false}
+      >
+        <div className="max-h-[680px] overflow-y-auto">
+          {visible.map((s, i) => (
+            <SupplierRowFull
+              key={`${s.name}-${i}`}
+              supplier={s}
+              index={i}
+              onOpen={() => setOpenSupplier(s)}
+            />
+          ))}
+        </div>
+        {hasMore && (
+          <div className="border-t border-slate-100 px-3 py-2.5 sm:px-4">
+            <button
+              type="button"
+              onClick={() => setVisibleCount((c) => c + 50)}
+              className="font-display w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-[11.5px] font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              Show more ({visibleCount} of {allSuppliers.length} visible)
+            </button>
+          </div>
+        )}
+      </LitSectionCard>
+      <SupplierDrawer
+        supplier={openSupplier}
+        supplierBols={supplierBols}
+        receiverName={companyName}
+        receiverId={companyId}
+        onClose={() => setOpenSupplier(null)}
+        onOpenFullProfile={() => {
+          if (!openSupplier) return;
+          const slug = supplierNameToSlug(openSupplier.name);
+          navigate(`/app/suppliers/${slug}`, {
+            state: {
+              supplier: openSupplier,
+              supplierBols,
+              originReceiver: {
+                id: companyId || undefined,
+                name: companyName,
+              },
+            },
+          });
+        }}
+      />
+    </>
+  );
+}
+
+function SupplierRowFull({
+  supplier,
+  index,
+  onOpen,
+}: {
+  supplier: SupplierAggregateRow;
+  index: number;
+  onOpen: () => void;
+}) {
+  const hasShare = supplier.share >= 0;
+  const hasShipments = supplier.shipments >= 0;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="grid w-full items-center gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-slate-50/60 sm:px-4"
+      style={{
+        gridTemplateColumns: "20px 18px minmax(0,1fr) 70px 80px",
+      }}
+    >
+      <span className="font-mono shrink-0 text-[10px] text-slate-400">
+        #{index + 1}
+      </span>
+      <LitFlag code={supplier.country} size={14} label={supplier.country} />
+      <div className="min-w-0">
+        <div className="font-display truncate text-[12px] font-semibold text-slate-900">
+          {supplier.name}
+        </div>
+        <div className="font-mono mt-0.5 text-[10px] text-slate-500">
+          {supplier.country || "Unknown country"}
+        </div>
+      </div>
+      <div className="text-right">
+        {hasShipments && (
+          <span className="font-mono text-[11px] font-bold text-slate-900">
+            {supplier.shipments.toLocaleString()}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-col items-end gap-1 sm:flex">
+        {hasShare && (
+          <>
+            <div className="hidden h-1 w-[68px] overflow-hidden rounded bg-slate-100 sm:block">
+              <div
+                className="h-full rounded bg-blue-500"
+                style={{ width: `${Math.max(1, supplier.share)}%` }}
+              />
+            </div>
+            <span className="font-mono text-[10px] text-slate-500">
+              {supplier.share}%
+            </span>
+          </>
+        )}
+      </div>
+    </button>
+  );
+}
+
+/* ── Supplier drawer (F1 — Wk1) ─────────────────────────────────────── */
+
+function SupplierDrawer({
+  supplier,
+  supplierBols,
+  receiverName,
+  receiverId,
+  onClose,
+  onOpenFullProfile,
+}: {
+  supplier: SupplierAggregateRow | null;
+  supplierBols: any[];
+  receiverName: string;
+  receiverId: string | null;
+  onClose: () => void;
+  onOpenFullProfile: () => void;
+}) {
+  // ESC closes — matches design review accessibility spec.
+  useEffect(() => {
+    if (!supplier) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [supplier, onClose]);
+
+  if (!supplier) return null;
+
+  const dateRange = (() => {
+    const ts = supplierBols
+      .map(getBolDate)
+      .filter(Boolean)
+      .map((d: any) => new Date(d).getTime())
+      .filter((t) => Number.isFinite(t)) as number[];
+    if (!ts.length) return null;
+    const fmt = (n: number) =>
+      new Date(n).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    return `${fmt(Math.min(...ts))} – ${fmt(Math.max(...ts))}`;
+  })();
+
+  const topHsChapters = (() => {
+    const map = new Map<string, number>();
+    for (const bol of supplierBols) {
+      const hs = getBolHs(bol);
+      if (!hs || hs === "—") continue;
+      const ch = String(hs).slice(0, 2);
+      if (ch) map.set(ch, (map.get(ch) || 0) + 1);
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([ch, count]) => ({ ch, count }));
+  })();
+
+  return (
+    <>
+      {/* Backdrop — tap to close on both viewports. */}
+      <div
+        className="fixed inset-0 z-[600] bg-slate-900/30 backdrop-blur-[2px]"
+        onClick={onClose}
+        aria-hidden
+      />
+      {/* Panel — right-slide on desktop, bottom-sheet on mobile. */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="supplier-drawer-title"
+        className={[
+          "fixed z-[610] flex flex-col bg-white shadow-2xl",
+          // Mobile bottom-sheet — 70% height, swipe-down dismiss handled by
+          // the backdrop tap + ESC since we don't ship a swipe lib in v1.
+          "inset-x-0 bottom-0 max-h-[70vh] rounded-t-2xl",
+          // Desktop right-slide — 420px panel from the right edge.
+          "sm:bottom-auto sm:left-auto sm:right-0 sm:top-0 sm:h-full sm:max-h-none sm:w-[420px] sm:max-w-[90vw] sm:rounded-none",
+        ].join(" ")}
+      >
+        {/* Drawer header */}
+        <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3.5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+            <LitFlag
+              code={supplier.country}
+              size={24}
+              label={supplier.country || "Supplier"}
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+              Supplier
+            </div>
+            <h2
+              id="supplier-drawer-title"
+              className="font-display mt-0.5 truncate text-[15px] font-bold leading-tight text-slate-900"
+            >
+              {supplier.name}
+            </h2>
+            <div className="font-mono mt-0.5 text-[10px] text-slate-500">
+              {supplier.country || "Unknown country"}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 transition-colors hover:bg-slate-50"
+            aria-label="Close supplier detail"
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Drawer body */}
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          <div className="space-y-3.5">
+            {/* Big metric */}
+            <div>
+              <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                Total shipments to {receiverName}
+              </div>
+              <div className="font-mono mt-1 text-[28px] font-bold leading-none text-slate-900">
+                {supplier.shipments >= 0
+                  ? supplier.shipments.toLocaleString()
+                  : "—"}
+              </div>
+              {supplier.share >= 0 && (
+                <div className="font-mono mt-1 text-[10.5px] text-slate-500">
+                  {supplier.share}% of this receiver's supplier volume
+                </div>
+              )}
+            </div>
+
+            {dateRange && (
+              <div>
+                <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                  Shipment date range
+                </div>
+                <div className="font-mono mt-1 text-[12px] text-slate-700">{dateRange}</div>
+              </div>
+            )}
+
+            {topHsChapters.length > 0 && (
+              <div>
+                <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                  Top commodity categories
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {topHsChapters.map(({ ch, count }) => (
+                    <LitPill key={ch} tone="blue">
+                      HS {ch} · {count}
+                    </LitPill>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {supplierBols.length === 0 && (
+              <p className="font-body text-[11px] text-slate-500">
+                No shipment records loaded for this supplier on the receiver.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Drawer footer */}
+        <div className="border-t border-slate-100 px-4 py-3">
+          <button
+            type="button"
+            onClick={onOpenFullProfile}
+            className="font-display w-full rounded-md bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+          >
+            View full supplier profile →
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
 
 function ProductsView({ products }: { products: ProductRow[] }) {
   if (products.length === 0) {
