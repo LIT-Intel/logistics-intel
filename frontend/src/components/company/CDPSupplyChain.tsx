@@ -19,6 +19,7 @@ import {
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitFlag from "@/components/ui/LitFlag";
 import LitPill from "@/components/ui/LitPill";
+import BuyingIntentTile from "@/components/intent/BuyingIntentTile";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import LaneMap from "@/components/LaneMap";
 import LaneViewToggle from "@/components/LaneViewToggle";
@@ -423,6 +424,7 @@ function SummaryView({
   // (dup of TopLanes), CarrierMixLive (lives in Pulse LIVE tab).
   return (
     <>
+      <BuyingIntentTile profile={_profile} recentBols={recentBols} />
       <TopLanesCard
         canonicalLanes={canonicalLanes}
         globeLanes={globeLanes}
