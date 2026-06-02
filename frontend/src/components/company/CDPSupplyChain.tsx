@@ -24,6 +24,11 @@ import LaneViewToggle from "@/components/LaneViewToggle";
 import { useLaneViewMode } from "@/hooks/useLaneViewMode";
 import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
 import {
+  aggregateSuppliers,
+  supplierNameToSlug,
+  type SupplierRow as SupplierAggregateRow,
+} from "@/lib/suppliers/aggregate";
+import {
   formatBolDate,
   getBolCarrierString,
   getBolDate,
@@ -2783,135 +2788,13 @@ function deriveForwarders(profile: any, recentBols: any[]): ForwarderRow[] {
     .slice(0, 6);
 }
 
+// deriveSuppliers used to live here as 130 LOC of inline logic. Extracted to
+// @/lib/suppliers/aggregate (with full Vitest coverage) per /plan-eng-review's
+// REGRESSION RULE. This local wrapper preserves the 6-row cap so the existing
+// TopSuppliersCard renders unchanged; the F1 Suppliers sub-tab and the
+// Supplier Profile page pass their own limit (Infinity / paginated).
 function deriveSuppliers(profile: any, recentBols: any[] = []): SupplierRow[] {
-  // Phase 5.1 — prefer service_provider_mix.suppliers (v200 parser, has counts)
-  // over the flat string-only top_suppliers list.
-  const structured =
-    profile?.serviceProviderMix?.suppliers ||
-    profile?.service_provider_mix?.suppliers ||
-    null;
-  const list =
-    (Array.isArray(structured) && structured.length > 0
-      ? structured.map((s: any) => ({
-          name: s?.providerName ?? s?.name ?? null,
-          shipments: Number(s?.shipments) || 0,
-          country: s?.countryCode ?? s?.country_code ?? s?.country ?? "",
-        }))
-      : null) ||
-    profile?.topSuppliers ||
-    profile?.suppliers ||
-    profile?.suppliers_sample ||
-    [];
-  // Phase 6 — when the explicit list has counts, use it; when it's a
-  // bare string array, aggregate counts from recentBols using
-  // getBolSupplier so the UI doesn't render "0% · 0 ship". Falls back to
-  // BOL-only aggregation when no explicit list is present at all.
-  if (Array.isArray(list) && list.length > 0) {
-    const hasCounts = list.some(
-      (e: any) =>
-        typeof e !== "string" &&
-        (Number(e?.shipments) > 0 || Number(e?.count) > 0),
-    );
-    if (hasCounts) {
-      const totalShip = list.reduce(
-        (s: number, e: any) =>
-          s + (typeof e === "string" ? 0 : Number(e?.shipments || e?.count) || 0),
-        0,
-      );
-      return list
-        .map((e: any) => {
-          const isString = typeof e === "string";
-          const name = isString ? e : String(e?.name || e?.label || "");
-          if (!name) return null;
-          const ship = isString ? 0 : Number(e?.shipments || e?.count) || 0;
-          const country = isString
-            ? ""
-            : String(e?.countryCode || e?.country_code || e?.country || "");
-          return {
-            name,
-            country,
-            shipments: ship,
-            share: totalShip > 0 ? Math.round((ship / totalShip) * 100) : 0,
-          };
-        })
-        .filter(Boolean) as SupplierRow[];
-    }
-    // String-only list: aggregate counts from recentBols where supplier
-    // matches one of these names; if no recentBols provided, return
-    // names with no count (caller renders without 0% · 0 ship).
-    const nameSet = new Set(
-      list
-        .map((e: any) => (typeof e === "string" ? e : String(e?.name || e?.label || "")))
-        .filter(Boolean)
-        .map((n: string) => n.toLowerCase()),
-    );
-    const counts = new Map<string, { ship: number; country: string }>();
-    for (const bol of recentBols) {
-      const supplier = getBolSupplier(bol);
-      if (!supplier || supplier === "—") continue;
-      if (!nameSet.has(supplier.toLowerCase())) continue;
-      const cur = counts.get(supplier) || {
-        ship: 0,
-        country: bol?.supplier_country || bol?.origin_country || "",
-      };
-      cur.ship += 1;
-      counts.set(supplier, cur);
-    }
-    const totalShip = Array.from(counts.values()).reduce(
-      (s, v) => s + v.ship,
-      0,
-    );
-    if (totalShip > 0) {
-      return Array.from(counts.entries())
-        .map(([name, v]) => ({
-          name,
-          country: v.country,
-          shipments: v.ship,
-          share: totalShip > 0 ? Math.round((v.ship / totalShip) * 100) : 0,
-        }))
-        .sort((a, b) => b.shipments - a.shipments);
-    }
-    // Truly no counts available — surface names with `shipments: -1`
-    // sentinel; the supplier card reads it as "no stat to show".
-    return list
-      .map((e: any) => {
-        const isString = typeof e === "string";
-        const name = isString ? e : String(e?.name || e?.label || "");
-        if (!name) return null;
-        return {
-          name,
-          country: isString
-            ? ""
-            : String(e?.countryCode || e?.country_code || e?.country || ""),
-          shipments: -1,
-          share: -1,
-        };
-      })
-      .filter(Boolean) as SupplierRow[];
-  }
-  // No explicit list — aggregate purely from recentBols.
-  if (!Array.isArray(recentBols) || recentBols.length === 0) return [];
-  const counts = new Map<string, { ship: number; country: string }>();
-  for (const bol of recentBols) {
-    const supplier = getBolSupplier(bol);
-    if (!supplier || supplier === "—") continue;
-    const cur = counts.get(supplier) || {
-      ship: 0,
-      country: bol?.supplier_country || bol?.origin_country || "",
-    };
-    cur.ship += 1;
-    counts.set(supplier, cur);
-  }
-  const total = Array.from(counts.values()).reduce((s, v) => s + v.ship, 0);
-  return Array.from(counts.entries())
-    .map(([name, v]) => ({
-      name,
-      country: v.country,
-      shipments: v.ship,
-      share: total > 0 ? Math.round((v.ship / total) * 100) : 0,
-    }))
-    .sort((a, b) => b.shipments - a.shipments)
-    .slice(0, 6);
+  return aggregateSuppliers(profile, recentBols, { limit: 6 }) as SupplierRow[];
 }
 
 function deriveProducts(profile: any, recentBols: any[] = []): ProductRow[] {
