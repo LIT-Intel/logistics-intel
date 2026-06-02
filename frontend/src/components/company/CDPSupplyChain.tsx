@@ -203,35 +203,65 @@ export default function CDPSupplyChain({
 
   return (
     <div className="flex flex-col gap-3.5">
-      {/* Sub-tabs + year selector */}
-      <div className="flex items-center gap-1.5 self-start rounded-lg bg-slate-100 p-1">
-        {SUB_TABS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => setSub(s.id)}
-            className={[
-              "font-display whitespace-nowrap rounded-md px-3 py-1 text-[12px] font-semibold",
-              sub === s.id
-                ? "border border-slate-200 bg-white text-slate-900 shadow-sm"
-                : "border border-transparent text-slate-500 hover:text-slate-700",
-            ].join(" ")}
-          >
-            {s.label}
-          </button>
-        ))}
+      {/* Sub-tabs (left) + year selector (right). Sub-tab styling uses the
+          same blue language as the main tab row above so the visual
+          hierarchy reads as "tab → sub-tab" instead of two competing pill
+          groups. Year selector is pulled out as its own chip on the right
+          with a calendar icon affordance. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
+          {SUB_TABS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => setSub(s.id)}
+              className={[
+                "font-display whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                sub === s.id
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+              ].join(" ")}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
         {Array.isArray(years) && years.length > 1 && onSelectYear && (
-          <select
-            value={selectedYear ?? years[0]}
-            onChange={(e) => onSelectYear(Number(e.target.value))}
-            className="font-mono ml-auto rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
-          >
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
+          <label className="font-display inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm">
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden
+              className="text-slate-400"
+            >
+              <rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
+              <path d="M2 6h12M5.5 2v2M10.5 2v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+            </svg>
+            <span className="text-slate-500">Year</span>
+            <select
+              value={selectedYear ?? years[0]}
+              onChange={(e) => onSelectYear(Number(e.target.value))}
+              className="font-mono cursor-pointer appearance-none bg-transparent text-[11.5px] font-bold text-slate-900 focus:outline-none"
+            >
+              {years.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+            <svg
+              width="9"
+              height="9"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden
+              className="text-slate-400"
+            >
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </label>
         )}
       </div>
 

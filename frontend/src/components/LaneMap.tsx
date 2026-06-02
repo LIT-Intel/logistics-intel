@@ -43,15 +43,22 @@ export type LaneMapProps = {
   className?: string;
 };
 
-const LANE_ACTIVE = "#3B82F6";   // blue-500 — matches GlobeCard active treatment
-const LANE_IDLE = "#94A3B8";     // slate-400 — same idle tone as globe arcs
-const ENDPOINT_FILL = "#0F172A"; // slate-900
-const ENDPOINT_RING = "#FFFFFF";
+// Brand-aligned lane palette. Idle lanes are bold-enough to read on a
+// light basemap (the old slate-400 dashed line at weight 1.5 disappeared
+// against CARTO Positron). Active lane gets the canonical LIT blue.
+const LANE_ACTIVE = "#2563EB";   // blue-600
+const LANE_IDLE = "#60A5FA";     // blue-400
+const ENDPOINT_ACTIVE_FILL = "#2563EB";
+const ENDPOINT_IDLE_FILL = "#FFFFFF";
+const ENDPOINT_RING_ACTIVE = "#FFFFFF";
+const ENDPOINT_RING_IDLE = "#3B82F6";  // blue-500
+// CARTO `light_nolabels` instead of `light_all` — kills the Arabic /
+// localized place-name layer that was making the dashboard map look
+// like a stock screenshot.
 const TILES_LIGHT =
-  // CartoDB Positron — neutral grey/white basemap. Attribution required.
-  "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+  "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png";
 const TILES_ATTR =
-  "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors &copy; <a href=\"https://carto.com/attributions\">CARTO</a>";
+  "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> &copy; <a href=\"https://carto.com/attributions\">CARTO</a>";
 
 /**
  * Great-circle interpolation. Treats inputs as [lon, lat] (matching the
@@ -171,11 +178,8 @@ export default function LaneMap({
       const isActive = selectedLane === lane.id;
       const polyline = L.polyline(points, {
         color: isActive ? LANE_ACTIVE : LANE_IDLE,
-        weight: isActive ? 2.5 : 1.5,
-        opacity: isActive ? 0.95 : 0.55,
-        // Dashed for idle lanes, solid for the selection — same convention
-        // as the active-lane glow in GlobeCanvas.
-        dashArray: isActive ? undefined : "3 4",
+        weight: isActive ? 3.5 : 2,
+        opacity: isActive ? 1 : 0.7,
         lineCap: "round",
         lineJoin: "round",
         interactive: !!onSelectLane,
@@ -188,18 +192,18 @@ export default function LaneMap({
       const [fromLat, fromLon] = [lane.coords[0][1], lane.coords[0][0]];
       const [toLat, toLon] = [lane.coords[1][1], lane.coords[1][0]];
       const fromDot = L.circleMarker([fromLat, fromLon], {
-        radius: isActive ? 5 : 3.5,
-        color: ENDPOINT_RING,
-        weight: 1.5,
-        fillColor: isActive ? LANE_ACTIVE : ENDPOINT_FILL,
+        radius: isActive ? 7 : 5,
+        color: isActive ? ENDPOINT_RING_ACTIVE : ENDPOINT_RING_IDLE,
+        weight: isActive ? 2.5 : 2,
+        fillColor: isActive ? ENDPOINT_ACTIVE_FILL : ENDPOINT_IDLE_FILL,
         fillOpacity: 1,
         interactive: !!onSelectLane,
       }).addTo(map);
       const toDot = L.circleMarker([toLat, toLon], {
-        radius: isActive ? 5 : 3.5,
-        color: ENDPOINT_RING,
-        weight: 1.5,
-        fillColor: isActive ? LANE_ACTIVE : ENDPOINT_FILL,
+        radius: isActive ? 7 : 5,
+        color: isActive ? ENDPOINT_RING_ACTIVE : ENDPOINT_RING_IDLE,
+        weight: isActive ? 2.5 : 2,
+        fillColor: isActive ? ENDPOINT_ACTIVE_FILL : ENDPOINT_IDLE_FILL,
         fillOpacity: 1,
         interactive: !!onSelectLane,
       }).addTo(map);
@@ -246,16 +250,17 @@ export default function LaneMap({
       if (polyline) {
         polyline.setStyle({
           color: isActive ? LANE_ACTIVE : LANE_IDLE,
-          weight: isActive ? 2.5 : 1.5,
-          opacity: isActive ? 0.95 : 0.55,
-          dashArray: isActive ? undefined : "3 4",
+          weight: isActive ? 3.5 : 2,
+          opacity: isActive ? 1 : 0.7,
         });
       }
       for (const dot of [fromDot, toDot]) {
         if (dot) {
           dot.setStyle({
-            fillColor: isActive ? LANE_ACTIVE : ENDPOINT_FILL,
-            radius: isActive ? 5 : 3.5,
+            fillColor: isActive ? ENDPOINT_ACTIVE_FILL : ENDPOINT_IDLE_FILL,
+            color: isActive ? ENDPOINT_RING_ACTIVE : ENDPOINT_RING_IDLE,
+            weight: isActive ? 2.5 : 2,
+            radius: isActive ? 7 : 5,
           });
         }
       }
@@ -266,7 +271,10 @@ export default function LaneMap({
   return (
     <div
       ref={containerRef}
-      className={["w-full overflow-hidden rounded-lg", className].join(" ")}
+      className={[
+        "lit-lane-map w-full overflow-hidden rounded-lg border border-slate-200/70 bg-slate-50/40",
+        className,
+      ].join(" ")}
       style={{ height }}
       // Keep Leaflet's default cursor instead of inheriting the parent's
       // pointer cursor — the basemap is draggable, the lanes are clickable.
