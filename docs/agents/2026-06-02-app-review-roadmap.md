@@ -153,15 +153,43 @@ Touches ~10 pages. Estimated: ~16h.
 
 ## Implementation tasks (from review)
 
-- [ ] **T1 (P1, human: ~2 days / CC: ~3h)** — Company Profile — Wk1 structure pass PR
-  - Surfaced by: Finding 9.1 — coupling of F1 + F5 + RFP cleanup on CompanyProfileV2.tsx
-  - Files: `frontend/src/pages/CompanyProfileV2.tsx` (TABS const + supplier sub-tab routing), `frontend/src/components/company/CDPSupplyChain.tsx` (extend `deriveSuppliers`, add hover/drawer card), `frontend/src/App.jsx` + sidebar nav (RFP route removal), `frontend/src/layout/lit/AppSidebar.jsx` + `frontend/src/components/layout/AppShell.jsx` (RFP nav item removal)
-  - Verify: production build green; demo path Dashboard → Search → Save → Company Profile → Suppliers sub-tab → hover row → drawer; tab row shows 5 + More on mobile; /app/rfp redirects to /app/dashboard
+- [ ] **T1 (P1, human: ~3 days / CC: ~5h)** — Company Profile — Wk1 structure pass PR (eng-review expanded)
+  - Surfaced by: Finding 9.1 (CEO) — coupling of F1 + F5 + RFP cleanup on CompanyProfileV2.tsx
+  - Surfaced by: Finding 1.1 (Eng) — RFP cleanup blast radius is 11 surfaces, not 2
+  - Surfaced by: Finding 3.2 (Eng) — 3 E2E tests added to lock structural changes
+  - Surfaced by: Finding 4.1 (Eng) — supplier list pagination (top 50 + Show more) for large receivers
+  - **F1 Supplier sub-tab:**
+    - `frontend/src/pages/CompanyProfileV2.tsx` (TABS const + supplier sub-tab routing)
+    - `frontend/src/components/company/CDPSupplyChain.tsx` (extend existing `deriveSuppliers`/`SupplierRowInteractive`/`TopSuppliersCard` from "top N" to "top 50 + Show more"; add new `<SupplierDrawerCard>` for row click)
+    - **NOTE — much lighter than plan implied:** `getBolSupplier()`, `deriveSuppliers()`, `SupplierRow` type, `SupplierRowInteractive` and `TopSuppliersCard` ALL ALREADY EXIST. F1 is extension, not new build.
+  - **F5 tab trim (8 → 5 + More):**
+    - `frontend/src/pages/CompanyProfileV2.tsx` (TABS const → visible 5; new `<TabsMore>` dropdown for Pulse AI + Rate Benchmark + Revenue Opportunity)
+  - **RFP cleanup (all 11 surfaces):**
+    - `frontend/src/App.jsx` (remove route, add `/app/rfp → /app/dashboard` redirect)
+    - `frontend/src/pages/RFPStudio.jsx` (delete file)
+    - `frontend/src/components/layout/AppShell.jsx` (remove 2 SideLink entries)
+    - `frontend/src/layout/lit/AppSidebar.jsx` (remove RFP entry)
+    - `frontend/src/components/dashboard/DashboardHeader.tsx` (remove "Generate Quote" — also fixes broken `/app/rfp-studio` link)
+    - `frontend/src/components/dashboard/QuickActionsButton.tsx` (remove RFP link — broken)
+    - `frontend/src/components/dashboard/InsightsPanel.tsx` (remove RFP link — broken)
+    - `frontend/src/components/dashboard/GettingStartedChecklist.tsx` (remove RFP onboarding step — broken)
+    - `frontend/src/components/landing/ModuleInteractiveBanner.jsx` (remove rfp panel from marketing landing)
+    - `frontend/src/lib/email/planEmailCopy.ts` (remove "RFP Studio" from upgrade-email feature list)
+    - `frontend/src/pages/companies/index.tsx` (remove "Migrate RFP Studio payloads into Command Center" helper — obsolete)
+  - **E2E (new — Finding 3.2):**
+    - `tests/e2e/rfp-redirect.spec.ts` — visit `/app/rfp` → assert redirect to `/app/dashboard`
+    - `tests/e2e/company-profile-tabs.spec.ts` — mobile viewport (393×852) → assert 5 tabs visible + "More" button; click More → Pulse AI link present
+    - `tests/e2e/company-profile-suppliers.spec.ts` — open a fixture receiver → click Supply Chain → click Suppliers sub-tab → list renders + first row click opens drawer
+  - Verify: production build green; demo path Dashboard → Search → Save → Company Profile → Supply Chain → Suppliers sub-tab → row click → drawer with shipment count to receiver; tab row shows 5 + More on mobile; `/app/rfp` → `/app/dashboard`; no `/app/rfp*` strings remain in `git grep -E "/app/rfp" -- frontend/src/`; no broken `/app/rfp-studio` links remain; upgrade-email copy doesn't say "RFP Studio"
 
-- [ ] **T2 (P2, human: ~1 day / CC: ~1h)** — Suppliers aggregator — pure-function module + Vitest
-  - Surfaced by: Finding 6.1 — F1 needs unit tests for the aggregator
-  - Files: `frontend/src/lib/suppliers/aggregate.ts` (new), `frontend/src/lib/suppliers/__tests__/aggregate.test.ts` (new)
-  - Verify: 4+ Vitest cases (zero suppliers, single supplier, 200+ suppliers w/ pagination, sparse `getBolSupplier` field)
+- [ ] **T2 (P1 — REGRESSION rule, human: ~1 day / CC: ~1.5h)** — Suppliers aggregator — extract + unit tests + snapshot
+  - Surfaced by: Finding 6.1 (CEO) — F1 needs unit tests for the aggregator
+  - Surfaced by: Finding 3.1 (Eng) — REGRESSION RULE: `deriveSuppliers()` is 200+ LOC deployed in production with zero tests
+  - **Step 1** — extract pure aggregator out of `CDPSupplyChain.tsx` (line 2786) into `frontend/src/lib/suppliers/aggregate.ts` so it's testable in isolation
+  - **Step 2** — snapshot test against current production behavior: feed real BOL fixture, snapshot the SupplierRow[] output (locks current behavior before any refactor)
+  - **Step 3** — 5+ behavior tests: zero suppliers; single supplier; 200+ suppliers (pagination boundary); sparse `getBolSupplier` field (null/undefined/empty); mixed-case supplier names should dedupe; shipment count + share math correctness
+  - Files: `frontend/src/lib/suppliers/aggregate.ts` (new), `frontend/src/lib/suppliers/__tests__/aggregate.test.ts` (new), `frontend/src/lib/suppliers/__tests__/fixtures/bols.json` (new), `frontend/src/components/company/CDPSupplyChain.tsx` (import from new module instead of inline)
+  - Verify: `npm test --workspace frontend src/lib/suppliers` green; snapshot matches Walmart-fixture output
 
 - [ ] **T3 (P1, human: ~3 days / CC: ~4h)** — Phase C visual port
   - Surfaced by: Plan Wk2 + Finding 11.2
@@ -205,10 +233,18 @@ None unresolved. All findings closed via decisions above.
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | CLEAN | 0 critical gaps, 8 decisions locked, 0 unresolved |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | — | not yet run |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAN | 4 findings, 0 critical gaps, 4 decisions locked, 1 regression test enforced |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | not yet run |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | not applicable to this plan |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | skipped (codex unavailable) |
 
+**Eng review summary (4 findings):**
+- 1.1 RFP cleanup blast radius — 11 surfaces, not 2. **Decision: expand T1 to full cleanup.**
+- 1.2 F1 Supplier infrastructure already exists — extension not new build. T1 scaffolding lighter than estimated. **Informational; plan T1 effort revised to ~3 days / CC ~5h.**
+- 3.1 `deriveSuppliers()` REGRESSION RULE — 200+ LOC in production with zero tests. **T2 enforced as P1 with extract-then-test pattern.**
+- 3.2 E2E coverage gaps. **3 Playwright tests added to T1 (RFP redirect, mobile 5+More, Suppliers sub-tab smoke).**
+- 4.1 Supplier list scaling for large receivers. **Decision: pagination — top 50 + Show more.**
+
 **UNRESOLVED:** 0
-**VERDICT:** CEO CLEARED — Approach B + HOLD SCOPE locked. Eng Review required before Wk1 PR lands. Design Review recommended before Phase C (Wk2) lands.
+**CRITICAL GAPS:** 0
+**VERDICT:** CEO + ENG CLEARED — ready to implement. Design Review recommended before Phase C (Wk2). T1 + T2 ship Wk1 as one PR.
