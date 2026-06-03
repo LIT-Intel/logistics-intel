@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { getSupabase } from "@/lib/supabase";
+import { pushInboundLeadToAttio } from "@/lib/attio";
 import { sendEmail } from "@/lib/email";
 import { resolveAudience } from "@/lib/resend-audiences";
 import { SEQUENCES } from "@/lib/lead-sequences";
@@ -221,6 +222,40 @@ export async function POST(req: NextRequest) {
     await enrollLead(lead, leadRow!.id, supa);
   } catch (e: any) {
     console.error("[leads/resend] enrollment threw", e?.message || e);
+  }
+
+  // Attio fan-out — fire-and-forget so a slow Attio API never delays the
+  // form response. waitUntil keeps the function alive on Vercel until the
+  // Attio promise settles (no-op on local dev where it's not available).
+  try {
+    const attioPromise = pushInboundLeadToAttio({
+      email: lead.email,
+      source: lead.source,
+      attribution: {
+        offer: lead.offer,
+        utmSource: lead.utmSource,
+        utmMedium: lead.utmMedium,
+        utmCampaign: lead.utmCampaign,
+        referrer: lead.referrer,
+        firstTouchUtmSource: lead.firstTouch?.utmSource,
+        firstTouchUtmCampaign: lead.firstTouch?.utmCampaign,
+        firstTouchReferrer: lead.firstTouch?.referrer,
+        lastTouchUtmSource: lead.lastTouch?.utmSource,
+        lastTouchUtmCampaign: lead.lastTouch?.utmCampaign,
+        leadId: leadRow!.id,
+      },
+      jobTitle: lead.role,
+      dealName: `${lead.email} — ${lead.source}`,
+    }).catch((e) => {
+      console.error("[leads/resend] attio push threw", e?.message || e);
+    });
+    // @ts-expect-error — waitUntil is only available on Edge / Vercel runtime
+    if (typeof globalThis.waitUntil === "function") {
+      // @ts-expect-error — see above
+      globalThis.waitUntil(attioPromise);
+    }
+  } catch (e: any) {
+    console.error("[leads/resend] attio scheduling threw", e?.message || e);
   }
 
   return json({ ok: true });

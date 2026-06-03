@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { sanityWriteClient } from "@/sanity/lib/client";
 import { sendEmail, escapeHtml } from "@/lib/email";
+import { pushInboundLeadToAttio } from "@/lib/attio";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +108,7 @@ export async function POST(req: NextRequest) {
     sendWebhook(doc, sanityId),
     writeSupabaseRow(doc, sanityId),
     pingAdminNotify(doc, sanityId),
+    pushToAttio(doc, sanityId),
   ];
   Promise.allSettled(fanOut);
 
@@ -173,6 +175,41 @@ async function pingAdminNotify(d: Doc, sanityId: string): Promise<void> {
     }
   } catch (e: any) {
     console.error("[demo-request] admin-notify threw", e?.message || e);
+  }
+}
+
+/**
+ * Attio fan-out — every demo request becomes a Lead-stage Deal in Attio
+ * with the contact attached to the right Company. Best-effort: a failure
+ * here logs but doesn't roll back the Sanity write.
+ *
+ * Source label encodes which page the form came from so the auto-note
+ * on the deal preserves attribution even though we don't have a Source
+ * dropdown attribute (deferred to v2).
+ */
+async function pushToAttio(d: Doc, sanityId: string): Promise<void> {
+  try {
+    const result = await pushInboundLeadToAttio({
+      email: d.email,
+      name: d.name,
+      companyName: d.company || undefined,
+      companyDomain: d.domain || undefined,
+      phone: d.phone || undefined,
+      message: d.primaryGoal || undefined,
+      source: `Demo Request${d.source ? ` (${d.source})` : ""}`,
+      attribution: {
+        useCase: d.useCase,
+        teamSize: d.teamSize,
+        sanityId,
+        submittedAt: d.submittedAt,
+      },
+      dealName: `${d.company || d.email} — Demo Request`,
+    });
+    if (!result.ok) {
+      console.warn("[demo-request] attio push partial", JSON.stringify(result));
+    }
+  } catch (e: any) {
+    console.error("[demo-request] attio push threw", e?.message || e);
   }
 }
 
