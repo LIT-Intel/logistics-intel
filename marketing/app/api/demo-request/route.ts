@@ -102,15 +102,22 @@ export async function POST(req: NextRequest) {
   // admin-notify function fires from the app side using its own credential
   // and writes the attempt into lit_outreach_history. That row is what
   // the admin dashboard reads, so missed notifications surface there.
+  // Notify emails / webhook / Supabase row / admin-notify are fire-and-
+  // forget — those run within Resend / Slack / Supabase's own infra after
+  // we return.
   const fanOut: Promise<unknown>[] = [
     sendProspectConfirmation(doc),
     sendSalesAlert(doc, sanityId),
     sendWebhook(doc, sanityId),
     writeSupabaseRow(doc, sanityId),
     pingAdminNotify(doc, sanityId),
-    pushToAttio(doc, sanityId),
   ];
   Promise.allSettled(fanOut);
+
+  // Attio is awaited inline because the Vercel Node runtime kills the
+  // lambda the moment we return, abandoning any in-flight promises.
+  // Adds ~2-3s to response time; better than silently dropping deals.
+  await pushToAttio(doc, sanityId);
 
   return json({ ok: true, id: sanityId });
 }

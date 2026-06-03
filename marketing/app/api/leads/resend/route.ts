@@ -224,11 +224,16 @@ export async function POST(req: NextRequest) {
     console.error("[leads/resend] enrollment threw", e?.message || e);
   }
 
-  // Attio fan-out — fire-and-forget so a slow Attio API never delays the
-  // form response. waitUntil keeps the function alive on Vercel until the
-  // Attio promise settles (no-op on local dev where it's not available).
+  // Attio fan-out — awaited inline so the lambda doesn't terminate
+  // before the Person → Company → Deal → Note chain completes. Adds
+  // ~2-3s to the response time but guarantees nothing falls through
+  // the cracks. The earlier fire-and-forget (waitUntil) was wrong:
+  // globalThis.waitUntil isn't a real Node-runtime API on Vercel, so
+  // the promise was abandoned the moment we returned 200 (verified via
+  // runtime logs — only the Company upsert succeeded before the
+  // lambda was killed mid-chain).
   try {
-    const attioPromise = pushInboundLeadToAttio({
+    const attioResult = await pushInboundLeadToAttio({
       email: lead.email,
       source: lead.source,
       attribution: {
@@ -246,16 +251,15 @@ export async function POST(req: NextRequest) {
       },
       jobTitle: lead.role,
       dealName: `${lead.email} — ${lead.source}`,
-    }).catch((e) => {
-      console.error("[leads/resend] attio push threw", e?.message || e);
     });
-    // @ts-expect-error — waitUntil is only available on Edge / Vercel runtime
-    if (typeof globalThis.waitUntil === "function") {
-      // @ts-expect-error — see above
-      globalThis.waitUntil(attioPromise);
+    if (!attioResult.ok) {
+      console.warn(
+        "[leads/resend] attio push partial",
+        JSON.stringify(attioResult),
+      );
     }
   } catch (e: any) {
-    console.error("[leads/resend] attio scheduling threw", e?.message || e);
+    console.error("[leads/resend] attio push threw", e?.message || e);
   }
 
   return json({ ok: true });
