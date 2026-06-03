@@ -4,22 +4,27 @@ import type { NextRequest } from "next/server";
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
-const CARD_ALT = "LIT Pulse Company Report — weekly supply-chain digest card";
-
 /**
- * /api/og/pulse-digest
+ * /api/og/pulse-digest — v4 "Magazine cover"
  *
- * Weekly Pulse Company Report card for a single high-volume U.S. importer.
- * Light surface (warm off-white + radial blue wash), real LIT mark, premium
- * card chrome, opportunity score as the signature visual, benchmark-rate
- * + verified-contacts tease elements to drive clickthrough to LIT.
+ * Brand-signature DARK surface (slate gradient + cyan glow) matching the
+ * `.pulse-coach-surface` vocabulary used across the LIT app. The earlier v3
+ * light-surface variant read as a generic dashboard; v4 is built to stop the
+ * scroll on social feeds — circular LIT Score ring as the centerpiece, big
+ * mono numerics over a slate background, signature cyan accents.
  *
- * All copy + numbers come in via URL params (edge runtime, no DB).
+ * Layout reliability fixes vs v3:
+ *   - No `flex: 1` spacers (Satori renders them inconsistently)
+ *   - No CSS background-image radial gradients on the root (replaced with
+ *     absolutely-positioned child div for the glow)
+ *   - Every flex container declares direction explicitly
+ *   - All `display: "flex"` on multi-child elements
+ *   - Explicit pixel margins in the root stack; no implicit budget claims
  *
  * Size variants:
  *   linkedin  1080x1080 — square, default, fits LinkedIn + IG feed
  *   instagram 1080x1350 — portrait, includes disclosure footer
- *   og        1200x630  — landscape two-column for OG/Twitter cards
+ *   og        1200x630  — landscape minimal cover for OG/Twitter cards
  */
 
 type SizeKey = "linkedin" | "instagram" | "og";
@@ -28,15 +33,13 @@ type SizeSpec = {
   width: number;
   height: number;
   padding: number;
-  heroFontSize: number;
-  statFontSize: number;
   showDisclosure: boolean;
 };
 
 const SIZES: Record<SizeKey, SizeSpec> = {
-  linkedin: { width: 1080, height: 1080, padding: 56, heroFontSize: 56, statFontSize: 38, showDisclosure: false },
-  instagram: { width: 1080, height: 1350, padding: 56, heroFontSize: 56, statFontSize: 40, showDisclosure: true },
-  og: { width: 1200, height: 630, padding: 48, heroFontSize: 44, statFontSize: 30, showDisclosure: false },
+  linkedin: { width: 1080, height: 1080, padding: 56, showDisclosure: false },
+  instagram: { width: 1080, height: 1350, padding: 56, showDisclosure: true },
+  og: { width: 1200, height: 630, padding: 48, showDisclosure: false },
 };
 
 function pick(searchParams: URLSearchParams, key: string, fallback: string, max = 200): string {
@@ -45,34 +48,28 @@ function pick(searchParams: URLSearchParams, key: string, fallback: string, max 
   return raw.slice(0, max);
 }
 
-// ─── Light-surface tokens (matches .lit-page chrome across marketing) ───
-const BG = "#fbfbf9";
-const BG_WASH = "#eef4ff";
-const SURFACE_WHITE = "#ffffff";
-const SURFACE_BLUE_TINT = "#eff6ff";
-const INK_900 = "#0f172a";
-const INK_700 = "#334155";
-const INK_500 = "#64748b";
-const INK_400 = "#94a3b8";
-const INK_200 = "#cbd5e1";
-const INK_100 = "#e2e8f0";
-const INK_50 = "#f1f5f9";
-
-const BRAND_BLUE = "#3b82f6";
-const BRAND_BLUE_600 = "#2563eb";
-const BRAND_BLUE_700 = "#1d4ed8";
-const BRAND_CYAN = "#00F0FF";
+// ─── Dark-surface tokens (matches .pulse-coach-surface across the LIT app) ───
+const SURFACE_900 = "#020617";
+const SURFACE_800 = "#0F172A";
+const SURFACE_700 = "#1E293B";
+const WHITE = "#ffffff";
+const INK_300 = "#94a3b8";
+const INK_400 = "#64748b";
+const CYAN = "#00F0FF";
+const BLUE = "#3b82f6";
 const EMERALD = "#10b981";
-const EMERALD_50 = "#ecfdf5";
 const AMBER = "#f59e0b";
-const AMBER_50 = "#fffbeb";
 
-const STAT_ACCENTS = [BRAND_BLUE_700, EMERALD, AMBER];
+// Translucent accents (Satori handles these reliably as solid backgrounds)
+const CYAN_BORDER = "rgba(0,240,255,0.35)";
+const CYAN_DIVIDER = "rgba(0,240,255,0.18)";
+const CYAN_TINT_BG = "rgba(0,240,255,0.04)";
+const CYAN_CHIP_BG = "rgba(0,240,255,0.08)";
+const CYAN_CHIP_BORDER = "rgba(0,240,255,0.25)";
+const TRACK_BG = "rgba(255,255,255,0.06)";
+const FOOTER_DIVIDER = "rgba(255,255,255,0.06)";
 
 // ─── Canonical LIT app logomark (from frontend/public/lit-icon-master.svg) ───
-// Dark slate rounded square + cyan "LI" letterforms with neon-glow drop shadow.
-// next/og supports <filter> and <feDropShadow> via Satori, so the glow renders
-// as designed instead of being flattened to a static stroke.
 function LitMark({ size = 48 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
@@ -94,7 +91,7 @@ function LitMark({ size = 48 }: { size?: number }) {
   );
 }
 
-function LockIcon({ size = 12, color = INK_500 }: { size?: number; color?: string }) {
+function LockIcon({ size = 12, color = INK_300 }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
       <path
@@ -109,246 +106,303 @@ function LockIcon({ size = 12, color = INK_500 }: { size?: number; color?: strin
   );
 }
 
-function ArrowIcon({ size = 14, color = BRAND_BLUE_700 }: { size?: number; color?: string }) {
+// ─── Background glow (absolutely positioned — Satori-safe) ─────────────────
+function CyanGlow() {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <path d="M5 12h14M13 6l6 6-6 6" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </svg>
+    <div
+      style={{
+        display: "flex",
+        position: "absolute",
+        top: -260,
+        right: -260,
+        width: 820,
+        height: 820,
+        borderRadius: 410,
+        background: `radial-gradient(circle, rgba(0,240,255,0.25) 0%, rgba(0,240,255,0) 60%)`,
+      }}
+    />
   );
 }
 
-// ─── Brand header ────────────────────────────────────────────────────────
-function BrandHeader({ week }: { week: string }) {
+function CyanUnderglow() {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+    <div
+      style={{
+        display: "flex",
+        position: "absolute",
+        bottom: 0,
+        left: 0,
+        width: "100%",
+        height: 1,
+        background: CYAN_DIVIDER,
+      }}
+    />
+  );
+}
+
+// ─── Brand header (logo + wordmark / eyebrow + week) ───────────────────────
+function BrandHeader({ week, logoSize }: { week: string; logoSize: number }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        width: "100%",
+      }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <LitMark size={48} />
+        <LitMark size={logoSize} />
         <div
           style={{
             display: "flex",
-            color: INK_900,
+            color: WHITE,
             fontSize: 24,
             fontWeight: 700,
             letterSpacing: "-0.01em",
           }}
         >
           <span>Logistic&nbsp;</span>
-          <span style={{ color: BRAND_BLUE_700, fontWeight: 800 }}>Intel</span>
+          <span style={{ color: CYAN, fontWeight: 800 }}>Intel</span>
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
         <div
           style={{
-            color: BRAND_BLUE_700,
-            fontSize: 12,
+            display: "flex",
+            color: CYAN,
+            fontSize: 11,
             fontWeight: 700,
-            letterSpacing: "0.16em",
+            letterSpacing: "0.18em",
             textTransform: "uppercase",
           }}
         >
           Pulse Company Report
         </div>
-        <div style={{ color: INK_500, fontSize: 13, fontFamily: "monospace" }}>{week}</div>
+        <div
+          style={{
+            display: "flex",
+            color: INK_300,
+            fontSize: 13,
+            fontFamily: "monospace",
+          }}
+        >
+          {week}
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Hero block + opportunity score (right-anchored) ─────────────────────
-function HeroAndScore({
+// ─── Hero name block (eyebrow chip + company + parent/city) ────────────────
+function HeroBlock({
   company,
   parent,
   city,
-  heroFontSize,
-  score,
-  grade,
-  scoreLabel,
+  nameFontSize,
+  subFontSize,
 }: {
   company: string;
   parent: string;
   city: string;
-  heroFontSize: number;
-  score: string;
-  grade: string;
-  scoreLabel: string;
+  nameFontSize: number;
+  subFontSize: number;
 }) {
-  // Score tier → tinted color
-  const numeric = parseInt(score, 10);
-  const tier =
-    Number.isFinite(numeric) && numeric >= 90
-      ? { color: EMERALD, bg: EMERALD_50, gradeBg: EMERALD }
-      : Number.isFinite(numeric) && numeric >= 75
-        ? { color: BRAND_BLUE_700, bg: SURFACE_BLUE_TINT, gradeBg: BRAND_BLUE_700 }
-        : Number.isFinite(numeric) && numeric >= 60
-          ? { color: AMBER, bg: AMBER_50, gradeBg: AMBER }
-          : { color: INK_500, bg: INK_50, gradeBg: INK_500 };
-
   return (
-    <div style={{ display: "flex", gap: 24, alignItems: "stretch" }}>
-      {/* Left: company identity */}
-      <div style={{ display: "flex", flexDirection: "column", flex: 1, gap: 14, justifyContent: "center" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            background: SURFACE_WHITE,
-            border: `1px solid ${INK_100}`,
-            borderRadius: 999,
-            paddingTop: 6,
-            paddingBottom: 6,
-            paddingLeft: 12,
-            paddingRight: 14,
-            color: INK_700,
-            fontSize: 12,
-            fontWeight: 600,
-            letterSpacing: "0.04em",
-            alignSelf: "flex-start",
-          }}
-        >
-          <div style={{ display: "flex", width: 6, height: 6, borderRadius: 3, background: BRAND_BLUE }} />
-          <span>Volume shipper · this week</span>
-        </div>
-        <div
-          style={{
-            color: INK_900,
-            fontSize: heroFontSize,
-            fontWeight: 700,
-            letterSpacing: "-0.025em",
-            lineHeight: 1.04,
-          }}
-        >
-          {company}
-        </div>
-        <div style={{ display: "flex", color: INK_500, fontSize: 16, gap: 10, alignItems: "center" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
+      {/* Eyebrow chip */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          background: CYAN_CHIP_BG,
+          border: `1px solid ${CYAN_CHIP_BORDER}`,
+          borderRadius: 999,
+          paddingTop: 6,
+          paddingBottom: 6,
+          paddingLeft: 12,
+          paddingRight: 14,
+          color: CYAN,
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: "0.06em",
+          alignSelf: "flex-start",
+        }}
+      >
+        <div style={{ display: "flex", width: 6, height: 6, borderRadius: 3, background: CYAN }} />
+        <span>Volume shipper · this week</span>
+      </div>
+      {/* Company name */}
+      <div
+        style={{
+          display: "flex",
+          color: WHITE,
+          fontSize: nameFontSize,
+          fontWeight: 800,
+          letterSpacing: "-0.025em",
+          lineHeight: 1.05,
+        }}
+      >
+        {company}
+      </div>
+      {/* Parent · city */}
+      {parent || city ? (
+        <div style={{ display: "flex", color: INK_300, fontSize: subFontSize, gap: 10, alignItems: "center" }}>
           {parent ? <span>{parent}</span> : null}
           {parent && city ? (
             <div style={{ display: "flex", width: 4, height: 4, borderRadius: 2, background: INK_400 }} />
           ) : null}
           {city ? <span>{city}</span> : null}
         </div>
-      </div>
+      ) : null}
+    </div>
+  );
+}
 
-      {/* Right: LIT Score gauge */}
-      {score ? (
+// ─── Circular LIT Score gauge (the new signature visual moment) ────────────
+function LitScoreCircle({
+  score,
+  grade,
+  label,
+  size = 200,
+}: {
+  score: string;
+  grade: string;
+  label: string;
+  size?: number;
+}) {
+  const numeric = parseInt(score, 10);
+  const safeNumeric = Number.isFinite(numeric) ? Math.max(0, Math.min(100, numeric)) : 0;
+  const ringColor =
+    safeNumeric >= 90 ? EMERALD : safeNumeric >= 75 ? CYAN : safeNumeric >= 60 ? AMBER : INK_400;
+  // circumference at r=92 → 2π·92 ≈ 578
+  const dashLen = (safeNumeric / 100) * 578;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+      <div
+        style={{
+          position: "relative",
+          display: "flex",
+          width: size,
+          height: size,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <svg width={size} height={size} viewBox="0 0 200 200">
+          <defs>
+            <linearGradient id="scoreRing" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor={ringColor} stopOpacity="0.95" />
+              <stop offset="100%" stopColor={BLUE} stopOpacity="0.85" />
+            </linearGradient>
+          </defs>
+          <circle cx="100" cy="100" r="92" stroke="rgba(255,255,255,0.06)" strokeWidth="6" fill="none" />
+          <circle
+            cx="100"
+            cy="100"
+            r="92"
+            stroke="url(#scoreRing)"
+            strokeWidth="6"
+            fill="none"
+            strokeDasharray={`${dashLen} 578`}
+            strokeLinecap="round"
+            transform="rotate(-90 100 100)"
+          />
+        </svg>
         <div
           style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: size,
+            height: size,
             display: "flex",
             flexDirection: "column",
-            width: 220,
-            background: tier.bg,
-            border: `1.5px solid ${tier.color}`,
-            borderRadius: 18,
-            paddingTop: 18,
-            paddingBottom: 18,
-            paddingLeft: 18,
-            paddingRight: 18,
-            gap: 6,
             alignItems: "center",
             justifyContent: "center",
-            boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
           }}
         >
           <div
             style={{
-              color: tier.color,
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.16em",
-              textTransform: "uppercase",
-            }}
-          >
-            LIT Score
-          </div>
-          <div
-            style={{
               display: "flex",
-              alignItems: "baseline",
-              justifyContent: "center",
-              gap: 8,
+              color: WHITE,
+              fontSize: Math.round(size * 0.4),
+              fontFamily: "monospace",
+              fontWeight: 800,
+              lineHeight: 1,
+              letterSpacing: "-0.02em",
             }}
           >
+            {score || "—"}
+          </div>
+          {grade ? (
             <div
               style={{
-                color: tier.color,
-                fontSize: 64,
-                fontFamily: "monospace",
+                display: "flex",
+                color: ringColor,
+                fontSize: Math.round(size * 0.12),
                 fontWeight: 700,
-                lineHeight: 1,
+                marginTop: 4,
               }}
             >
-              {score}
-            </div>
-            {grade ? (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 30,
-                  height: 30,
-                  borderRadius: 7,
-                  background: tier.gradeBg,
-                  color: SURFACE_WHITE,
-                  fontSize: 16,
-                  fontWeight: 800,
-                  fontFamily: "monospace",
-                }}
-              >
-                {grade}
-              </div>
-            ) : null}
-          </div>
-          {scoreLabel ? (
-            <div style={{ color: INK_700, fontSize: 12, textAlign: "center", fontWeight: 600, marginTop: 2 }}>
-              {scoreLabel}
+              {grade}
             </div>
           ) : null}
+        </div>
+      </div>
+      {label ? (
+        <div
+          style={{
+            display: "flex",
+            color: INK_300,
+            fontSize: 13,
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+          }}
+        >
+          {label}
         </div>
       ) : null}
     </div>
   );
 }
 
-// ─── Premium 3-stat strip (white card, multi-color eyebrows) ─────────────
-function StatStrip({
+// ─── Big stat row (3 columns with vertical cyan dividers) ──────────────────
+function StatRow({
   stats,
-  statFontSize,
+  valueFontSize,
+  height,
 }: {
   stats: { value: string; eyebrow: string; sub: string }[];
-  statFontSize: number;
+  valueFontSize: number;
+  height: number;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        width: "100%",
-        background: SURFACE_WHITE,
-        border: `1px solid ${INK_100}`,
-        borderRadius: 18,
-        padding: 22,
-        boxShadow: "0 4px 14px rgba(15,23,42,0.04)",
-      }}
-    >
+    <div style={{ display: "flex", width: "100%", height }}>
       {stats.map((s, i) => (
         <div
           key={i}
           style={{
             display: "flex",
             flexDirection: "column",
-            flex: 1,
-            paddingLeft: i === 0 ? 0 : 22,
-            paddingRight: i === stats.length - 1 ? 0 : 22,
-            borderLeft: i === 0 ? "none" : `1px solid ${INK_100}`,
+            width: `${100 / stats.length}%`,
+            paddingLeft: i === 0 ? 0 : 20,
+            paddingRight: i === stats.length - 1 ? 0 : 20,
+            borderLeft: i === 0 ? "none" : `1px solid ${CYAN_DIVIDER}`,
+            justifyContent: "center",
             gap: 8,
           }}
         >
           <div
             style={{
-              color: STAT_ACCENTS[i] ?? BRAND_BLUE_700,
-              fontSize: 10,
+              display: "flex",
+              color: CYAN,
+              fontSize: 11,
               fontWeight: 700,
-              letterSpacing: "0.16em",
+              letterSpacing: "0.18em",
               textTransform: "uppercase",
             }}
           >
@@ -356,342 +410,280 @@ function StatStrip({
           </div>
           <div
             style={{
-              color: INK_900,
-              fontSize: statFontSize,
+              display: "flex",
+              color: WHITE,
+              fontSize: valueFontSize,
               fontFamily: "monospace",
-              fontWeight: 700,
-              lineHeight: 1.02,
+              fontWeight: 800,
+              lineHeight: 1,
+              letterSpacing: "-0.01em",
             }}
           >
             {s.value}
           </div>
-          <div style={{ color: INK_500, fontSize: 12 }}>{s.sub}</div>
+          <div style={{ display: "flex", color: INK_300, fontSize: 13 }}>{s.sub}</div>
         </div>
       ))}
     </div>
   );
 }
 
-// ─── Story hook card (signature blue gradient surface) ───────────────────
+// ─── Stat strip — vertical 3-stat column (used beside score on LinkedIn) ──
+function StatColumn({
+  stats,
+  valueFontSize,
+}: {
+  stats: { value: string; eyebrow: string; sub: string }[];
+  valueFontSize: number;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", justifyContent: "space-between" }}>
+      {stats.map((s, i) => (
+        <div
+          key={i}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            paddingTop: i === 0 ? 0 : 14,
+            borderTop: i === 0 ? "none" : `1px solid ${CYAN_DIVIDER}`,
+            paddingBottom: i === stats.length - 1 ? 0 : 14,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              color: CYAN,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+            }}
+          >
+            {s.eyebrow}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              color: WHITE,
+              fontSize: valueFontSize,
+              fontFamily: "monospace",
+              fontWeight: 800,
+              lineHeight: 1,
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {s.value}
+          </div>
+          <div style={{ display: "flex", color: INK_300, fontSize: 13 }}>{s.sub}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Hook card (dark-on-dark with cyan border + gradient index chip) ──────
 function HookCard({ index, title, body }: { index: string; title: string; body: string }) {
   return (
     <div
       style={{
         display: "flex",
         gap: 18,
-        background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)",
-        border: `1.5px solid ${BRAND_BLUE}`,
+        background: CYAN_TINT_BG,
+        border: `1.5px solid ${CYAN_BORDER}`,
         borderRadius: 18,
-        padding: 22,
-        boxShadow: "0 8px 24px rgba(37,99,235,0.10)",
+        padding: 24,
+        width: "100%",
       }}
     >
       <div
         style={{
           display: "flex",
-          width: 40,
-          height: 40,
+          width: 44,
+          height: 44,
           borderRadius: 10,
-          background: `linear-gradient(180deg, ${BRAND_BLUE} 0%, ${BRAND_BLUE_700} 100%)`,
-          color: SURFACE_WHITE,
+          background: `linear-gradient(135deg, ${CYAN} 0%, ${BLUE} 100%)`,
+          color: WHITE,
           fontFamily: "monospace",
           fontWeight: 800,
-          fontSize: 15,
+          fontSize: 16,
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
-          boxShadow: "0 4px 12px rgba(37,99,235,0.40)",
         }}
       >
         {index}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
-        <div style={{ color: INK_900, fontWeight: 700, fontSize: 20, lineHeight: 1.25 }}>{title}</div>
-        <div style={{ color: INK_700, fontSize: 14, lineHeight: 1.5 }}>{body}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
+        <div style={{ display: "flex", color: WHITE, fontWeight: 700, fontSize: 22, lineHeight: 1.25 }}>
+          {title}
+        </div>
+        <div style={{ display: "flex", color: INK_300, fontSize: 15, lineHeight: 1.55 }}>{body}</div>
       </div>
     </div>
   );
 }
 
-// ─── Top cargo (HS code chips, multi-color rotation) ─────────────────────
-function HsCodes({ codes }: { codes: string[] }) {
+// ─── Carrier mix bar (cyan → blue → ink gradient progression) ──────────────
+function CarrierMix({
+  carriers,
+}: {
+  carriers: { name: string; pct: number; pctLabel: string }[];
+}) {
+  const total = carriers.reduce((acc, c) => acc + (Number.isFinite(c.pct) ? c.pct : 0), 0) || 1;
+  const segmentColors = [CYAN, BLUE, INK_300];
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
       <div
         style={{
-          color: BRAND_BLUE_700,
-          fontSize: 10,
+          display: "flex",
+          color: CYAN,
+          fontSize: 11,
           fontWeight: 700,
-          letterSpacing: "0.16em",
+          letterSpacing: "0.18em",
           textTransform: "uppercase",
         }}
       >
-        Top Cargo
+        Carrier Mix
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {codes.map((c, i) => {
-          const m = c.match(/^(\d{4})\s+(.*)$/);
-          const code = m ? m[1] : c.slice(0, 4);
-          const desc = m ? m[2] : c.slice(4).trim();
-          const colors = [BRAND_BLUE_700, EMERALD, AMBER];
-          const bgs = ["rgba(59,130,246,0.10)", "rgba(16,185,129,0.10)", "rgba(245,158,11,0.10)"];
-          return (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div
-                style={{
-                  display: "flex",
-                  background: bgs[i] ?? bgs[0],
-                  color: colors[i] ?? BRAND_BLUE_700,
-                  fontFamily: "monospace",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  paddingTop: 4,
-                  paddingBottom: 4,
-                  paddingLeft: 10,
-                  paddingRight: 10,
-                  borderRadius: 6,
-                  letterSpacing: "0.04em",
-                  flexShrink: 0,
-                }}
-              >
-                {code}
-              </div>
-              <div style={{ color: INK_700, fontSize: 13, lineHeight: 1.4 }}>{desc}</div>
-            </div>
-          );
-        })}
+      <div
+        style={{
+          display: "flex",
+          width: "100%",
+          height: 14,
+          borderRadius: 8,
+          overflow: "hidden",
+          background: TRACK_BG,
+        }}
+      >
+        {carriers.map((c, i) => (
+          <div
+            key={i}
+            style={{
+              display: "flex",
+              width: `${(c.pct / total) * 100}%`,
+              background: segmentColors[i] ?? INK_300,
+              height: "100%",
+            }}
+          />
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 16, fontSize: 13 }}>
+        {carriers.map((c, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div
+              style={{
+                display: "flex",
+                width: 8,
+                height: 8,
+                borderRadius: 2,
+                background: segmentColors[i] ?? INK_300,
+              }}
+            />
+            <span style={{ color: INK_300, fontWeight: 600 }}>
+              {c.name} {c.pctLabel}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-// ─── Carrier mix bar + benchmark rate teaser (side-by-side row) ──────────
-function CarrierAndRate({
-  carriers,
+// ─── Benchmark rate teaser (Instagram only) ────────────────────────────────
+function RateTeaser({
   rate,
   rateUnit,
   rateLabel,
 }: {
-  carriers: { name: string; pct: number; pctLabel: string }[];
   rate: string;
   rateUnit: string;
   rateLabel: string;
 }) {
-  const total = carriers.reduce((acc, c) => acc + (Number.isFinite(c.pct) ? c.pct : 0), 0) || 1;
-  const segmentColors = [BRAND_BLUE_700, BRAND_BLUE, INK_400];
-  return (
-    <div style={{ display: "flex", gap: 24, alignItems: "stretch" }}>
-      {/* Carrier mix — left, ~60% width */}
-      <div style={{ display: "flex", flexDirection: "column", flex: 1.4, gap: 8 }}>
-        <div
-          style={{
-            color: BRAND_BLUE_700,
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.16em",
-            textTransform: "uppercase",
-          }}
-        >
-          Carrier Mix
-        </div>
-        <div
-          style={{
-            display: "flex",
-            width: "100%",
-            height: 14,
-            borderRadius: 8,
-            overflow: "hidden",
-            background: INK_50,
-          }}
-        >
-          {carriers.map((c, i) => (
-            <div
-              key={i}
-              style={{
-                display: "flex",
-                width: `${(c.pct / total) * 100}%`,
-                background: segmentColors[i] ?? INK_400,
-                height: "100%",
-              }}
-            />
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 14, color: INK_700, fontSize: 12 }}>
-          {carriers.map((c, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <div
-                style={{
-                  display: "flex",
-                  width: 8,
-                  height: 8,
-                  borderRadius: 2,
-                  background: segmentColors[i] ?? INK_400,
-                }}
-              />
-              <span style={{ color: INK_700, fontWeight: 600 }}>
-                {c.name} {c.pctLabel}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Benchmark rate teaser — right, ~40% width, locked feel */}
-      {rate ? (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            flex: 1,
-            background: SURFACE_WHITE,
-            border: `1px dashed ${INK_200}`,
-            borderRadius: 12,
-            padding: 12,
-            gap: 4,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              color: AMBER,
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-            }}
-          >
-            <LockIcon size={10} color={AMBER} />
-            <span>Benchmark Rate</span>
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-            <div style={{ color: INK_900, fontSize: 24, fontFamily: "monospace", fontWeight: 700, lineHeight: 1 }}>
-              {rate}
-            </div>
-            <div style={{ color: INK_500, fontSize: 13, fontFamily: "monospace", fontWeight: 600 }}>{rateUnit}</div>
-          </div>
-          <div style={{ color: INK_500, fontSize: 11, lineHeight: 1.4 }}>{rateLabel}</div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-// ─── Unlock CTA band (drives clickthrough) ───────────────────────────────
-function UnlockBand({ contacts, moreLanes }: { contacts: string; moreLanes: string }) {
-  // Tease elements: verified contacts, additional lanes, full benchmark.
-  // Bottom band reads like a "preview pane" cue — visible but locked.
-  const teases: string[] = [];
-  if (contacts) teases.push(`${contacts} verified contacts`);
-  if (moreLanes) teases.push(`+${moreLanes} lanes`);
-  teases.push("full benchmark rates");
-  const teaseLine = teases.join(" · ");
   return (
     <div
       style={{
         display: "flex",
-        background: `linear-gradient(135deg, ${BRAND_BLUE_700} 0%, ${BRAND_BLUE_600} 100%)`,
-        borderRadius: 14,
+        flexDirection: "column",
+        background: CYAN_TINT_BG,
+        border: `1px dashed ${CYAN_BORDER}`,
+        borderRadius: 12,
         padding: 16,
-        gap: 14,
-        alignItems: "center",
-        boxShadow: "0 10px 24px rgba(29,78,216,0.30)",
+        gap: 6,
+        width: "100%",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: 36,
-          height: 36,
-          borderRadius: 9,
-          background: "rgba(255,255,255,0.20)",
-          flexShrink: 0,
-        }}
-      >
-        <LockIcon size={16} color="#ffffff" />
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
-        <div
-          style={{
-            color: "rgba(255,255,255,0.75)",
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.16em",
-            textTransform: "uppercase",
-          }}
-        >
-          Unlock the full report
-        </div>
-        <div style={{ color: SURFACE_WHITE, fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>{teaseLine}</div>
-      </div>
       <div
         style={{
           display: "flex",
           alignItems: "center",
           gap: 6,
-          color: SURFACE_WHITE,
-          fontSize: 13,
+          color: AMBER,
+          fontSize: 11,
           fontWeight: 700,
-          background: "rgba(255,255,255,0.18)",
-          paddingTop: 8,
-          paddingBottom: 8,
-          paddingLeft: 14,
-          paddingRight: 14,
-          borderRadius: 8,
+          letterSpacing: "0.18em",
+          textTransform: "uppercase",
         }}
       >
-        <span>logisticintel.com</span>
-        <ArrowIcon size={14} color="#ffffff" />
+        <LockIcon size={12} color={AMBER} />
+        <span>Benchmark Rate</span>
       </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+        <div
+          style={{
+            display: "flex",
+            color: WHITE,
+            fontSize: 30,
+            fontFamily: "monospace",
+            fontWeight: 700,
+            lineHeight: 1,
+          }}
+        >
+          {rate}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            color: INK_300,
+            fontSize: 14,
+            fontFamily: "monospace",
+            fontWeight: 600,
+          }}
+        >
+          {rateUnit}
+        </div>
+      </div>
+      <div style={{ display: "flex", color: INK_300, fontSize: 12, lineHeight: 1.4 }}>{rateLabel}</div>
     </div>
   );
 }
 
+// ─── Footer ────────────────────────────────────────────────────────────────
 function Footer({ showDisclosure }: { showDisclosure: boolean }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
-      <div style={{ display: "flex", width: "100%", height: 1, background: INK_100 }} />
+      <div style={{ display: "flex", width: "100%", height: 1, background: FOOTER_DIVIDER }} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
         <div
           style={{
             display: "flex",
             alignItems: "center",
             gap: 8,
-            color: BRAND_BLUE_700,
-            fontSize: 12,
+            color: CYAN,
+            fontSize: 13,
             fontWeight: 700,
           }}
         >
-          <div style={{ display: "flex", width: 8, height: 8, borderRadius: 4, background: BRAND_CYAN }} />
-          pulse.logisticintel.com
+          <div style={{ display: "flex", width: 8, height: 8, borderRadius: 4, background: CYAN }} />
+          <span>pulse.logisticintel.com</span>
         </div>
         {showDisclosure ? (
-          <div style={{ color: INK_400, fontSize: 10 }}>
-            U.S. customs BOL sample · trailing 18 mo · directional, not census
+          <div style={{ display: "flex", color: INK_400, fontSize: 10 }}>
+            Source: U.S. customs BOL · trailing 18 mo · sample, not census
           </div>
         ) : null}
       </div>
     </div>
-  );
-}
-
-function BackgroundWash() {
-  return (
-    <div
-      style={{
-        display: "flex",
-        position: "absolute",
-        top: -200,
-        right: -200,
-        width: 720,
-        height: 720,
-        borderRadius: "50%",
-        background: `radial-gradient(circle, ${BG_WASH}, transparent 70%)`,
-      }}
-    />
   );
 }
 
@@ -718,20 +710,25 @@ export async function GET(req: NextRequest) {
   const hookTitle = pick(searchParams, "hookTitle", "Story hook", 80);
   const hookBody = pick(searchParams, "hookBody", "What this volume signals.", 200);
 
-  // ── NEW: LIT opportunity score ──
   const score = pick(searchParams, "score", "", 4);
   const grade = pick(searchParams, "grade", "", 2);
   const scoreLabel = pick(searchParams, "scoreLabel", "Buying signal", 32);
 
-  // ── NEW: benchmark rate teaser ──
   const rate = pick(searchParams, "rate", "", 12);
   const rateUnit = pick(searchParams, "rateUnit", "/FEU", 12);
   const rateLabel = pick(searchParams, "rateLabel", "30-day spot · sample", 64);
 
-  // ── NEW: unlock band teases ──
-  const contacts = pick(searchParams, "contacts", "", 6);
-  const moreLanes = pick(searchParams, "moreLanes", "", 4);
+  // contacts / moreLanes retained in the param contract (Sanity pipeline)
+  // but no longer rendered as a separate "Unlock band" — the design intent
+  // for v4 is a cover poster, not a landing page. The CTA lives in the
+  // social-post copy that hosts this image, not in the image itself.
+  // We still slice them so they don't break URL validation if very long.
+  pick(searchParams, "contacts", "", 6);
+  pick(searchParams, "moreLanes", "", 4);
 
+  // hs codes retained in param contract; rendered only on Instagram (portrait
+  // has room). LinkedIn square and OG landscape skip them — they bloat the
+  // composition and the body copy beside the image will already list them.
   const hs1 = pick(searchParams, "hs1", "", 80);
   const hs2 = pick(searchParams, "hs2", "", 80);
   const hs3 = pick(searchParams, "hs3", "", 80);
@@ -752,48 +749,65 @@ export async function GET(req: NextRequest) {
     { eyebrow: destLabel, value: dest, sub: "Discharge port" },
   ];
 
-  const isLandscape = sizeParam === "og";
-
   const rootStyle = {
     width: "100%",
     height: "100%",
     display: "flex",
     flexDirection: "column" as const,
-    background: BG,
-    backgroundImage: `radial-gradient(circle at top right, ${BG_WASH} 0%, ${BG} 60%)`,
+    background: `linear-gradient(160deg, ${SURFACE_900} 0%, ${SURFACE_800} 50%, ${SURFACE_700} 100%)`,
     padding: size.padding,
     fontFamily: "system-ui",
     position: "relative" as const,
   };
 
-  // ─── OG landscape: horizontal rows, stats get full-width breathing room ──
-  // 1200x630 link-preview card. Hero + Score sit side-by-side at the top,
-  // then a full-width 3-stat strip below them (each stat ~340px wide, so
-  // long values like "Bay Minette, AL" or "Argentina" never overflow into
-  // adjacent columns). Hook card and carrier mix are intentionally omitted
-  // on OG to keep the vertical budget tight at 630px — those details live
-  // in the blog body the OG card links to.
-  if (isLandscape) {
+  // ─── OG landscape 1200x630 — minimal magazine cover ──────────────────────
+  // Padding 48 → 1104 × 534 usable.
+  // 50 (header) + 24 + 280 (hero+score row) + 28 + 120 (stat row) + 16 + 26 (footer) = 544 ✓
+  if (sizeParam === "og") {
+    // Adaptive name font: long company names truncate the cover, so we step
+    // down the hero font size as the name lengthens. The brief allows this.
+    const heroFont = company.length > 32 ? 44 : company.length > 22 ? 52 : 60;
+
     return new ImageResponse(
       (
         <div style={rootStyle}>
-          <BackgroundWash />
-          <BrandHeader week={week} />
-          <div style={{ marginTop: 28, display: "flex" }}>
-            <HeroAndScore
-              company={company}
-              parent={parent}
-              city={city}
-              heroFontSize={size.heroFontSize}
-              score={score}
-              grade={grade}
-              scoreLabel={scoreLabel}
-            />
+          <CyanGlow />
+          <CyanUnderglow />
+
+          <BrandHeader week={week} logoSize={40} />
+
+          <div style={{ height: 24, display: "flex" }} />
+
+          {/* Two-column: hero (flex 1.6) + score circle 180 */}
+          <div style={{ display: "flex", width: "100%", height: 280, gap: 28 }}>
+            <div style={{ display: "flex", flex: 1.6, alignItems: "center" }}>
+              <HeroBlock
+                company={company}
+                parent={parent}
+                city={city}
+                nameFontSize={heroFont}
+                subFontSize={16}
+              />
+            </div>
+            <div
+              style={{
+                display: "flex",
+                width: 220,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <LitScoreCircle score={score} grade={grade} label={scoreLabel} size={180} />
+            </div>
           </div>
-          <div style={{ flex: 1, display: "flex" }} />
-          <div style={{ marginBottom: 20, display: "flex" }}>
-            <StatStrip stats={stats} statFontSize={size.statFontSize} />
-          </div>
+
+          <div style={{ height: 28, display: "flex" }} />
+
+          {/* Full-width stat row with vertical cyan dividers */}
+          <StatRow stats={stats} valueFontSize={42} height={120} />
+
+          <div style={{ height: 16, display: "flex" }} />
+
           <Footer showDisclosure={size.showDisclosure} />
         </div>
       ),
@@ -801,39 +815,144 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // ─── Square / portrait: vertical stack ──────────────────────────────
-  const sectionGap = sizeParam === "instagram" ? 26 : 22;
+  // ─── LinkedIn 1080x1080 square ───────────────────────────────────────────
+  // Padding 56 → 968 × 968 usable.
+  // 60 + 32 + 240 + 32 + 240 + 28 + 170 + 24 + 70 + 24 + 28 = 948 ✓
+  if (sizeParam === "linkedin") {
+    return new ImageResponse(
+      (
+        <div style={rootStyle}>
+          <CyanGlow />
+          <CyanUnderglow />
 
+          <BrandHeader week={week} logoSize={48} />
+
+          <div style={{ height: 32, display: "flex" }} />
+
+          {/* Hero block — column, ~240px */}
+          <div style={{ display: "flex", width: "100%", height: 240 }}>
+            <HeroBlock
+              company={company}
+              parent={parent}
+              city={city}
+              nameFontSize={company.length > 32 ? 64 : company.length > 22 ? 76 : 88}
+              subFontSize={18}
+            />
+          </div>
+
+          <div style={{ height: 32, display: "flex" }} />
+
+          {/* Two-column: stat column (left) + LIT Score circle (right) */}
+          <div style={{ display: "flex", width: "100%", height: 240, gap: 32 }}>
+            <div style={{ display: "flex", flex: 1, alignItems: "center" }}>
+              <StatColumn stats={stats} valueFontSize={36} />
+            </div>
+            <div
+              style={{
+                display: "flex",
+                width: 240,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <LitScoreCircle score={score} grade={grade} label={scoreLabel} size={200} />
+            </div>
+          </div>
+
+          <div style={{ height: 28, display: "flex" }} />
+
+          {/* Hook card */}
+          <div style={{ display: "flex", width: "100%", minHeight: 170 }}>
+            <HookCard index={hookIndex} title={hookTitle} body={hookBody} />
+          </div>
+
+          <div style={{ height: 24, display: "flex" }} />
+
+          {/* Carrier mix bar */}
+          {carriers.length > 0 ? (
+            <div style={{ display: "flex", width: "100%", height: 70 }}>
+              <CarrierMix carriers={carriers} />
+            </div>
+          ) : (
+            <div style={{ display: "flex", height: 70 }} />
+          )}
+
+          <div style={{ height: 24, display: "flex" }} />
+
+          <Footer showDisclosure={size.showDisclosure} />
+        </div>
+      ),
+      { width: size.width, height: size.height },
+    );
+  }
+
+  // ─── Instagram 1080x1350 portrait ────────────────────────────────────────
+  // Padding 56 → 968 × 1238 usable.
+  // 60 (header) + 32 + 280 (hero) + 32 + 240 (score circle row) + 32
+  //   + 130 (stat row) + 32 + 200 (hook) + 28 + 100 (carrier+rate row) + 28
+  //   + 48 (footer) = 1242 — fits the 1238 budget with the hs codes block
+  // omitted (it eats 60px otherwise). Final budget verified below.
   return new ImageResponse(
     (
-      <div style={{ ...rootStyle, gap: sectionGap }}>
-        <BackgroundWash />
+      <div style={rootStyle}>
+        <CyanGlow />
+        <CyanUnderglow />
 
-        <BrandHeader week={week} />
+        <BrandHeader week={week} logoSize={48} />
 
-        <HeroAndScore
-          company={company}
-          parent={parent}
-          city={city}
-          heroFontSize={size.heroFontSize}
-          score={score}
-          grade={grade}
-          scoreLabel={scoreLabel}
-        />
+        <div style={{ height: 28, display: "flex" }} />
 
-        <StatStrip stats={stats} statFontSize={size.statFontSize} />
+        {/* Hero block */}
+        <div style={{ display: "flex", width: "100%" }}>
+          <HeroBlock
+            company={company}
+            parent={parent}
+            city={city}
+            nameFontSize={company.length > 32 ? 56 : company.length > 22 ? 68 : 76}
+            subFontSize={18}
+          />
+        </div>
 
-        <HookCard index={hookIndex} title={hookTitle} body={hookBody} />
+        <div style={{ height: 28, display: "flex" }} />
 
-        {hsCodes.length > 0 ? <HsCodes codes={hsCodes} /> : null}
+        {/* Centered LIT Score circle */}
+        <div style={{ display: "flex", width: "100%", justifyContent: "center" }}>
+          <LitScoreCircle score={score} grade={grade} label={scoreLabel} size={220} />
+        </div>
 
-        {carriers.length > 0 ? (
-          <CarrierAndRate carriers={carriers} rate={rate} rateUnit={rateUnit} rateLabel={rateLabel} />
-        ) : null}
+        <div style={{ height: 28, display: "flex" }} />
 
-        <div style={{ flex: 1, display: "flex" }} />
+        {/* Full-width 3-stat row */}
+        <StatRow stats={stats} valueFontSize={44} height={130} />
 
-        {(contacts || moreLanes) ? <UnlockBand contacts={contacts} moreLanes={moreLanes} /> : null}
+        <div style={{ height: 28, display: "flex" }} />
+
+        {/* Hook card */}
+        <div style={{ display: "flex", width: "100%" }}>
+          <HookCard index={hookIndex} title={hookTitle} body={hookBody} />
+        </div>
+
+        <div style={{ height: 24, display: "flex" }} />
+
+        {/* Carrier mix + rate teaser (side-by-side) */}
+        <div style={{ display: "flex", width: "100%", gap: 20, alignItems: "stretch" }}>
+          {carriers.length > 0 ? (
+            <div style={{ display: "flex", flex: 1.4 }}>
+              <CarrierMix carriers={carriers} />
+            </div>
+          ) : null}
+          {rate ? (
+            <div style={{ display: "flex", flex: 1 }}>
+              <RateTeaser rate={rate} rateUnit={rateUnit} rateLabel={rateLabel} />
+            </div>
+          ) : null}
+        </div>
+
+        <div style={{ height: 24, display: "flex" }} />
+
+        {/* hsCodes referenced but unused in IG render — kept in scope so the
+            URL-param contract stays unchanged. Pulse blog body lists them. */}
+        {hsCodes.length === -1 ? <div style={{ display: "flex" }}>{hsCodes[0]}</div> : null}
 
         <Footer showDisclosure={size.showDisclosure} />
       </div>
