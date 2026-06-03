@@ -69,25 +69,27 @@ const AMBER_50 = "#fffbeb";
 
 const STAT_ACCENTS = [BRAND_BLUE_700, EMERALD, AMBER];
 
-// ─── Real LIT logomark (inlined from public/lit-icon-glow.svg) ────────────
+// ─── Canonical LIT app logomark (from frontend/public/lit-icon-master.svg) ───
+// Dark slate rounded square + cyan "LI" letterforms with neon-glow drop shadow.
+// next/og supports <filter> and <feDropShadow> via Satori, so the glow renders
+// as designed instead of being flattened to a static stroke.
 function LitMark({ size = 48 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <svg width={size} height={size} viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <radialGradient id="litGlow" cx="50%" cy="55%" r="55%">
-          <stop offset="0%" stopColor="#00F0FF" stopOpacity="0.55" />
-          <stop offset="55%" stopColor="#00F0FF" stopOpacity="0.12" />
-          <stop offset="100%" stopColor="#00F0FF" stopOpacity="0" />
-        </radialGradient>
-        <linearGradient id="litSurface" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#162033" />
-          <stop offset="100%" stopColor="#0F172A" />
-        </linearGradient>
+        <filter id="litNeonGlow" x="-60%" y="-60%" width="220%" height="220%" colorInterpolationFilters="sRGB">
+          <feDropShadow dx="0" dy="0" stdDeviation="1.2" floodColor="#00F0FF" floodOpacity="0.55" />
+          <feDropShadow dx="0" dy="0" stdDeviation="2.4" floodColor="#00F0FF" floodOpacity="0.28" />
+        </filter>
       </defs>
-      <rect x="0" y="0" width="32" height="32" rx="7" ry="7" fill="url(#litSurface)" />
-      <rect x="0" y="0" width="32" height="32" rx="7" ry="7" fill="url(#litGlow)" />
-      <path d="M10.5 8 V21 H22 V18.2 H13.6 V8 Z" fill="#FFFFFF" />
-      <rect x="0.5" y="0.5" width="31" height="31" rx="6.5" ry="6.5" fill="none" stroke="#00F0FF" strokeOpacity="0.18" />
+      <rect width="64" height="64" rx="16" fill="#020617" />
+      <g filter="url(#litNeonGlow)">
+        <path d="M14 14v36h20" stroke="#00F0FF" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        <path d="M30 14h22" stroke="#00F0FF" strokeWidth="6" strokeLinecap="round" fill="none" />
+        <path d="M30 28h9" stroke="#00F0FF" strokeWidth="6" strokeLinecap="round" fill="none" />
+        <path d="M44 28v22" stroke="#00F0FF" strokeWidth="6" strokeLinecap="round" fill="none" />
+        <path d="M30 50h14" stroke="#00F0FF" strokeWidth="6" strokeLinecap="round" fill="none" />
+      </g>
     </svg>
   );
 }
