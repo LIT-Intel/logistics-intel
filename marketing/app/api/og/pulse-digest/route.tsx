@@ -766,32 +766,33 @@ export async function GET(req: NextRequest) {
     position: "relative" as const,
   };
 
-  // ─── OG landscape: tight two-column ──────────────────────────────────
+  // ─── OG landscape: horizontal rows, stats get full-width breathing room ──
+  // 1200x630 link-preview card. Hero + Score sit side-by-side at the top,
+  // then a full-width 3-stat strip below them (each stat ~340px wide, so
+  // long values like "Bay Minette, AL" or "Argentina" never overflow into
+  // adjacent columns). Hook card and carrier mix are intentionally omitted
+  // on OG to keep the vertical budget tight at 630px — those details live
+  // in the blog body the OG card links to.
   if (isLandscape) {
     return new ImageResponse(
       (
         <div style={rootStyle}>
           <BackgroundWash />
           <BrandHeader week={week} />
-          <div style={{ display: "flex", flex: 1, gap: 32, marginTop: 20 }}>
-            <div style={{ display: "flex", flexDirection: "column", flex: 1, gap: 16, justifyContent: "center" }}>
-              <HeroAndScore
-                company={company}
-                parent={parent}
-                city={city}
-                heroFontSize={size.heroFontSize}
-                score={score}
-                grade={grade}
-                scoreLabel={scoreLabel}
-              />
-              <HookCard index={hookIndex} title={hookTitle} body={hookBody} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", width: 360, gap: 16, justifyContent: "center" }}>
-              <StatStrip stats={stats} statFontSize={size.statFontSize} />
-              {carriers.length > 0 ? (
-                <CarrierAndRate carriers={carriers} rate={rate} rateUnit={rateUnit} rateLabel={rateLabel} />
-              ) : null}
-            </div>
+          <div style={{ marginTop: 28, display: "flex" }}>
+            <HeroAndScore
+              company={company}
+              parent={parent}
+              city={city}
+              heroFontSize={size.heroFontSize}
+              score={score}
+              grade={grade}
+              scoreLabel={scoreLabel}
+            />
+          </div>
+          <div style={{ flex: 1, display: "flex" }} />
+          <div style={{ marginBottom: 20, display: "flex" }}>
+            <StatStrip stats={stats} statFontSize={size.statFontSize} />
           </div>
           <Footer showDisclosure={size.showDisclosure} />
         </div>
