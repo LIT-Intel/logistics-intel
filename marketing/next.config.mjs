@@ -90,6 +90,11 @@ const nextConfig = {
   images: {
     formats: ["image/avif", "image/webp"],
     remotePatterns: [
+      // Self-hosted: required for next/image to fetch our own /api/og/*
+      // routes (Pulse Company Report cards, blog OG images, etc.) when
+      // blog posts reference them via absolute heroImageUrl.
+      { protocol: "https", hostname: "logisticintel.com" },
+      { protocol: "https", hostname: "www.logisticintel.com" },
       // Sanity-hosted assets
       { protocol: "https", hostname: "cdn.sanity.io" },
       // logo.dev for company logos (mentioned in the strategic plan)
