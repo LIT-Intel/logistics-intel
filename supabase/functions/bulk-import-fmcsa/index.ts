@@ -183,129 +183,135 @@ serve(async (req) => {
   };
   const processedCap = Math.min(limit, ageFiltered.length);
 
-  for (let i = 0; i < processedCap; i++) {
-    const auth = ageFiltered[i];
-    const domain = guessDomainFromName(auth.legalName, auth.dbaName);
-    if (!domain) { skipped.no_apollo_org++; continue; }
+  try {
+    for (let i = 0; i < processedCap; i++) {
+      const auth = ageFiltered[i];
+      const domain = guessDomainFromName(auth.legalName, auth.dbaName);
+      if (!domain) { skipped.no_apollo_org++; continue; }
 
-    let org;
-    try {
-      org = await apollo.findCompanyByDomain(domain);
-    } catch (e: any) {
-      log.warn("apollo_company_lookup_failed", { err: e?.message, domain });
-      skipped.apollo_error++;
-      continue;
-    }
-    if (!org || !org.employeeCount) { skipped.no_apollo_org++; continue; }
-
-    let contacts;
-    try {
-      contacts = await apollo.findContactsAtCompany(org.id);
-    } catch (e: any) {
-      log.warn("apollo_contact_lookup_failed", { err: e?.message, org_id: org.id });
-      skipped.apollo_error++;
-      continue;
-    }
-    if (contacts.length === 0) { skipped.no_apollo_contact++; continue; }
-
-    // Score the first decision-maker (best-effort: take #1 from Apollo's
-    // ranked list — Apollo orders by seniority by default)
-    const top = contacts[0];
-    let unlocked;
-    try {
-      unlocked = await apollo.unlockContactEmail(top.id);
-    } catch (e: any) {
-      log.warn("apollo_unlock_failed", { err: e?.message, contact_id: top.id });
-      skipped.apollo_error++;
-      continue;
-    }
-    if (!unlocked.email || !unlocked.deliverable) {
-      skipped.no_deliverable_email++;
-      continue;
-    }
-
-    const titleTier = classifyTitleTier(top.title);
-    const scoreInput: ScoreInput = {
-      authorityType: auth.authorityType === "carrier" || auth.authorityType === "other" ? "carrier" : auth.authorityType,
-      authorityYears: auth.authorityYears,
-      employeeCount: org.employeeCount,
-      titleTier,
-      emailDeliverable: true,
-    };
-    const score = scoreContact(scoreInput);
-    if (score.tier === "exclude") { skipped.icp_excluded++; continue; }
-
-    // Push to Attio + queue if Hot
-    try {
-      const pushed = await pushToAttioBulk({
-        attioKey,
-        listId: score.tier === "hot" ? hotListId : coldListId,
-        membership: score.tier === "hot" ? "outbound_hot" : "newsletter_cold",
-        email: unlocked.email,
-        firstName: top.firstName,
-        lastName: top.lastName,
-        jobTitle: top.title,
-        companyName: auth.legalName,
-        companyDomain: domain,
-        attribution: {
-          authority_type: auth.authorityType,
-          authority_years: auth.authorityYears,
-          employee_count: org.employeeCount,
-          apollo_org_id: org.id,
-          apollo_person_id: top.id,
-          fmcsa_dot: auth.dotNumber,
-          fmcsa_mc: auth.mcNumber,
-          source_run_id: runId,
-        },
-      });
-      if (!pushed.personRecordId) { skipped.attio_error++; continue; }
-
-      if (score.tier === "hot") {
-        // Queue 4 sequence steps for this person
-        const steps = [
-          { step: 1, delayHours: 0,   envVar: "RESEND_TPL_COLD_FMCSA_T1", subject: `quick question — ${auth.legalName} prospecting` },
-          { step: 2, delayHours: 72,  envVar: "RESEND_TPL_COLD_FMCSA_T2", subject: `re: quick question — ${auth.legalName} prospecting` },
-          { step: 3, delayHours: 168, envVar: "RESEND_TPL_COLD_FMCSA_T3", subject: "something you might find useful" },
-          { step: 4, delayHours: 336, envVar: "RESEND_TPL_COLD_FMCSA_T4", subject: `closing the loop on ${auth.legalName}?` },
-        ];
-        const nowMs = Date.now();
-        const queueRows = steps.map((s) => ({
-          email: unlocked.email!,
-          sequence_key: "cold-fmcsa-outbound",
-          step: s.step,
-          send_at: new Date(nowMs + s.delayHours * 3600 * 1000).toISOString(),
-          subject: s.subject,
-          source: "bulk_apollo_fmcsa",
-        }));
-        const { error: queueErr } = await admin
-          .from("lit_lead_sequence_queue")
-          .insert(queueRows);
-        if (queueErr) { skipped.attio_error++; log.warn("queue_insert_failed", { err: queueErr.message, email: unlocked.email }); continue; }
-        hotCount++;
-      } else {
-        coldCount++;
+      let org;
+      try {
+        org = await apollo.findCompanyByDomain(domain);
+      } catch (e: any) {
+        log.warn("apollo_company_lookup_failed", { err: e?.message, domain });
+        skipped.apollo_error++;
+        continue;
       }
-    } catch (e: any) {
-      log.warn("attio_push_failed", { err: e?.message });
-      skipped.attio_error++;
+      if (!org || !org.employeeCount) { skipped.no_apollo_org++; continue; }
+
+      let contacts;
+      try {
+        contacts = await apollo.findContactsAtCompany(org.id);
+      } catch (e: any) {
+        log.warn("apollo_contact_lookup_failed", { err: e?.message, org_id: org.id });
+        skipped.apollo_error++;
+        continue;
+      }
+      if (contacts.length === 0) { skipped.no_apollo_contact++; continue; }
+
+      // Score the first decision-maker (best-effort: take #1 from Apollo's
+      // ranked list — Apollo orders by seniority by default)
+      const top = contacts[0];
+      let unlocked;
+      try {
+        unlocked = await apollo.unlockContactEmail(top.id);
+      } catch (e: any) {
+        log.warn("apollo_unlock_failed", { err: e?.message, contact_id: top.id });
+        skipped.apollo_error++;
+        continue;
+      }
+      if (!unlocked.email || !unlocked.deliverable) {
+        skipped.no_deliverable_email++;
+        continue;
+      }
+
+      const titleTier = classifyTitleTier(top.title);
+      const scoreInput: ScoreInput = {
+        authorityType: auth.authorityType === "carrier" || auth.authorityType === "other" ? "carrier" : auth.authorityType,
+        authorityYears: auth.authorityYears,
+        employeeCount: org.employeeCount,
+        titleTier,
+        emailDeliverable: true,
+      };
+      const score = scoreContact(scoreInput);
+      if (score.tier === "exclude") { skipped.icp_excluded++; continue; }
+
+      // Push to Attio + queue if Hot
+      try {
+        const pushed = await pushToAttioBulk({
+          attioKey,
+          listId: score.tier === "hot" ? hotListId : coldListId,
+          membership: score.tier === "hot" ? "outbound_hot" : "newsletter_cold",
+          email: unlocked.email,
+          firstName: top.firstName,
+          lastName: top.lastName,
+          jobTitle: top.title,
+          companyName: auth.legalName,
+          companyDomain: domain,
+          attribution: {
+            authority_type: auth.authorityType,
+            authority_years: auth.authorityYears,
+            employee_count: org.employeeCount,
+            apollo_org_id: org.id,
+            apollo_person_id: top.id,
+            fmcsa_dot: auth.dotNumber,
+            fmcsa_mc: auth.mcNumber,
+            source_run_id: runId,
+          },
+        });
+        if (!pushed.personRecordId) { skipped.attio_error++; continue; }
+
+        if (score.tier === "hot") {
+          // Queue 4 sequence steps for this person
+          const steps = [
+            { step: 1, delayHours: 0,   envVar: "RESEND_TPL_COLD_FMCSA_T1", subject: `quick question — ${auth.legalName} prospecting` },
+            { step: 2, delayHours: 72,  envVar: "RESEND_TPL_COLD_FMCSA_T2", subject: `re: quick question — ${auth.legalName} prospecting` },
+            { step: 3, delayHours: 168, envVar: "RESEND_TPL_COLD_FMCSA_T3", subject: "something you might find useful" },
+            { step: 4, delayHours: 336, envVar: "RESEND_TPL_COLD_FMCSA_T4", subject: `closing the loop on ${auth.legalName}?` },
+          ];
+          const nowMs = Date.now();
+          const queueRows = steps.map((s) => ({
+            email: unlocked.email!,
+            sequence_key: "cold-fmcsa-outbound",
+            step: s.step,
+            send_at: new Date(nowMs + s.delayHours * 3600 * 1000).toISOString(),
+            subject: s.subject,
+            source: "bulk_apollo_fmcsa",
+          }));
+          const { error: queueErr } = await admin
+            .from("lit_lead_sequence_queue")
+            .insert(queueRows);
+          if (queueErr) { skipped.attio_error++; log.warn("queue_insert_failed", { err: queueErr.message, email_domain: unlocked.email.split("@")[1] ?? null }); continue; }
+          hotCount++;
+        } else {
+          coldCount++;
+        }
+      } catch (e: any) {
+        log.warn("attio_push_failed", { err: e?.message });
+        skipped.attio_error++;
+      }
     }
+
+    await admin
+      .from("lit_fmcsa_import_runs")
+      .update({
+        finished_at: new Date().toISOString(),
+        status: "succeeded",
+        hot_count: hotCount,
+        cold_count: coldCount,
+        funnel,
+        skipped,
+      })
+      .eq("id", runId);
+
+    log.info("real_run_complete", { run_id: runId, hot_count: hotCount, cold_count: coldCount, skipped });
+
+    return json({ ok: true, runId, dryRun: false, hotCount, coldCount, skipped, funnel });
+  } catch (e: any) {
+    log.error("real_run_uncaught", { err: e?.message, run_id: runId });
+    await failRun(admin, runId, `Uncaught: ${e?.message ?? String(e)}`);
+    return json({ error: "Internal error", runId }, 500);
   }
-
-  await admin
-    .from("lit_fmcsa_import_runs")
-    .update({
-      finished_at: new Date().toISOString(),
-      status: "succeeded",
-      hot_count: hotCount,
-      cold_count: coldCount,
-      funnel,
-      skipped,
-    })
-    .eq("id", runId);
-
-  log.info("real_run_complete", { run_id: runId, hot_count: hotCount, cold_count: coldCount, skipped });
-
-  return json({ ok: true, runId, dryRun: false, hotCount, coldCount, skipped, funnel });
 });
 
 // Helper at module scope (outside serve handler)
@@ -417,18 +423,23 @@ async function pushToAttioBulk(args: PushArgs): Promise<{ personRecordId: string
   if (!personId) return { personRecordId: null };
 
   // Add to list
-  await fetch(`${BASE}/lists/${args.listId}/entries`, {
+  const listRes = await fetch(`${BASE}/lists/${args.listId}/entries`, {
     method: "POST",
     headers,
     body: JSON.stringify({
       data: { parent_record_id: personId, parent_object: "people", entry_values: {} },
     }),
   });
+  if (!listRes.ok) {
+    const t = await listRes.text().catch(() => "");
+    throw new Error(`Attio list add ${listRes.status}: ${t.slice(0, 200)}`);
+  }
+  await listRes.text().catch(() => ""); // consume body to prevent connection leak
 
   // Attribution note
   const noteLines = [`Source: bulk_apollo_fmcsa`, `Membership: ${args.membership}`];
   for (const [k, v] of Object.entries(args.attribution)) noteLines.push(`${k}: ${v}`);
-  await fetch(`${BASE}/notes`, {
+  const noteRes = await fetch(`${BASE}/notes`, {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -441,6 +452,11 @@ async function pushToAttioBulk(args: PushArgs): Promise<{ personRecordId: string
       },
     }),
   });
+  if (!noteRes.ok) {
+    const t = await noteRes.text().catch(() => "");
+    throw new Error(`Attio note create ${noteRes.status}: ${t.slice(0, 200)}`);
+  }
+  await noteRes.text().catch(() => ""); // consume body to prevent connection leak
 
   return { personRecordId: personId };
 }
