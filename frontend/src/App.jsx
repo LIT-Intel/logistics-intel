@@ -37,6 +37,7 @@ const AdminDashboard = lazy(() => import("@/pages/AdminDashboardV2"));
 const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
 const AdminDemoRequests = lazy(() => import("@/pages/AdminDemoRequests"));
 const AdminSubscribers = lazy(() => import("@/pages/AdminSubscribers"));
+const AdminFmcsaImport = lazy(() => import("@/pages/AdminFmcsaImport"));
 const AdminMarketingAnalytics = lazy(() => import("@/pages/AdminMarketingAnalytics"));
 const AdminMarketingBroadcasts = lazy(() => import("@/pages/AdminMarketingBroadcasts"));
 const Pulse = lazy(() => import("@/pages/Pulse"));
@@ -567,6 +568,17 @@ export default function App() {
             <RequireAdmin>
               <LITPage>
                 <AdminSubscribers />
+              </LITPage>
+            </RequireAdmin>
+          }
+        />
+
+        <Route
+          path="/app/admin/fmcsa-import"
+          element={
+            <RequireAdmin>
+              <LITPage>
+                <AdminFmcsaImport />
               </LITPage>
             </RequireAdmin>
           }
