@@ -46,6 +46,7 @@ export async function listPulseLists() {
         org_id,
         is_shared,
         shared_at,
+        syncs_to_attio,
         created_at,
         updated_at
       `)
