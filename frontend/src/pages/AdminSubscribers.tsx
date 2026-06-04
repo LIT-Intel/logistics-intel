@@ -27,6 +27,10 @@ import {
   Bookmark,
   Clock,
   CircleDot,
+  Activity,
+  CheckCircle2,
+  XCircle,
+  SkipForward,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -58,6 +62,19 @@ type Meta = {
   attioDealMatches: number;
   attioError: string | null;
   generatedAt: string;
+};
+
+type SyncLogRow = {
+  id: string;
+  created_at: string;
+  list_id: string;
+  membership_type: string;
+  membership_id: string;
+  attio_record_id: string | null;
+  attio_object_type: string | null;
+  status: "succeeded" | "failed" | "skipped";
+  error: string | null;
+  retry_count: number | null;
 };
 
 const STAGE_TONE: Record<string, { bg: string; text: string; ring: string; dot: string }> = {
@@ -126,6 +143,12 @@ function fmtAbsolute(iso: string | null): string {
 type StageFilter = "all" | "no_deal" | string;
 type ActivityFilter = "all" | "active_7d" | "active_30d" | "dormant" | "never";
 
+// Human-readable names for the two system Pulse lists that sync to Attio.
+const PULSE_LIST_NAMES: Record<string, string> = {
+  "71df54d9-56d3-4ba3-823d-d367f7e9affd": "Forwarders",
+  "99b046f1-1885-449f-9441-2128be55895f": "Brokers",
+};
+
 export default function AdminSubscribers() {
   const [rows, setRows] = useState<SubscriberRow[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -135,6 +158,11 @@ export default function AdminSubscribers() {
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
   const [search, setSearch] = useState("");
+
+  // Pulse → Attio sync log
+  const [syncLogs, setSyncLogs] = useState<SyncLogRow[]>([]);
+  const [syncLogsLoading, setSyncLogsLoading] = useState(true);
+  const [syncLogsErr, setSyncLogsErr] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,6 +188,33 @@ export default function AdminSubscribers() {
         if (!cancelled) setLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  // Fetch the last 20 Pulse → Attio sync log entries (most recent first).
+  // This is a direct Supabase query — admins only (RLS enforces platform_admins).
+  useEffect(() => {
+    let cancelled = false;
+    setSyncLogsLoading(true);
+    setSyncLogsErr(null);
+    supabase
+      .from("pulse_attio_sync_log")
+      .select(
+        "id,created_at,list_id,membership_type,membership_id,attio_record_id,attio_object_type,status,error,retry_count",
+      )
+      .order("created_at", { ascending: false })
+      .limit(20)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setSyncLogsErr(error.message);
+        } else {
+          setSyncLogs((data ?? []) as SyncLogRow[]);
+        }
+        setSyncLogsLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -447,7 +502,129 @@ export default function AdminSubscribers() {
           Generated {fmtAbsolute(meta.generatedAt)} · {meta.attioPersonMatches} Attio people · {meta.attioDealMatches} deals matched
         </p>
       )}
+
+      {/* ── Pulse → Attio Sync Log ─────────────────────────────────────── */}
+      <div className="mt-10">
+        <div className="flex items-center gap-2 text-blue-600">
+          <Activity className="h-4 w-4" aria-hidden />
+          <span className="text-[11px] font-bold uppercase tracking-[0.14em]">
+            Pulse → Attio sync
+          </span>
+        </div>
+        <h2 className="mt-1 text-[18px] font-semibold tracking-[-0.01em] text-slate-900">
+          Sync log
+        </h2>
+        <p className="mt-1 text-[13px] text-slate-500">
+          Last 20 sync attempts for the Forwarders and Brokers Pulse lists.
+          Each new member triggers one entry via{" "}
+          <span className="font-mono text-[11.5px] text-slate-700">pulse-attio-sync</span>.
+        </p>
+
+        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          {syncLogsLoading ? (
+            <div className="px-6 py-10 text-center">
+              <div className="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+              <div className="mt-2 text-[12px] text-slate-500">Loading sync log…</div>
+            </div>
+          ) : syncLogsErr ? (
+            <div className="flex items-start gap-2 px-4 py-4 text-[12.5px] text-rose-700">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span>{syncLogsErr}</span>
+            </div>
+          ) : syncLogs.length === 0 ? (
+            <div className="px-6 py-10 text-center">
+              <div className="text-[14px] font-semibold text-slate-700">No sync attempts yet</div>
+              <p className="mt-1 text-[12px] text-slate-500">
+                Entries appear here as soon as a contact or company is added to
+                a Pulse list with <span className="font-mono">syncs_to_attio = true</span>.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[12px]">
+                <thead className="bg-slate-50/70 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
+                  <tr>
+                    <th className="px-4 py-2.5 text-left">Status</th>
+                    <th className="px-4 py-2.5 text-left">List</th>
+                    <th className="px-4 py-2.5 text-left">Type</th>
+                    <th className="px-4 py-2.5 text-left">Attio record</th>
+                    <th className="px-4 py-2.5 text-left">Error</th>
+                    <th className="px-4 py-2.5 text-right">When</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {syncLogs.map((row) => (
+                    <SyncLogTableRow key={row.id} row={row} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
+  );
+}
+
+function SyncLogTableRow({ row }: { row: SyncLogRow }) {
+  const statusIcon =
+    row.status === "succeeded" ? (
+      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+    ) : row.status === "skipped" ? (
+      <SkipForward className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+    ) : (
+      <XCircle className="h-3.5 w-3.5 text-rose-600" aria-hidden />
+    );
+  const statusText =
+    row.status === "succeeded"
+      ? "text-emerald-700"
+      : row.status === "skipped"
+        ? "text-slate-500"
+        : "text-rose-700";
+
+  const listName = PULSE_LIST_NAMES[row.list_id] ?? row.list_id.slice(0, 8) + "…";
+  const attioLink =
+    row.attio_record_id && row.attio_object_type
+      ? `https://app.attio.com/lit/${row.attio_object_type}/record/${row.attio_record_id}`
+      : null;
+
+  return (
+    <tr className="hover:bg-slate-50/60">
+      <td className="px-4 py-2.5 align-middle">
+        <span className={`inline-flex items-center gap-1.5 font-semibold ${statusText}`}>
+          {statusIcon}
+          {row.status}
+        </span>
+      </td>
+      <td className="px-4 py-2.5 align-middle text-slate-700">{listName}</td>
+      <td className="px-4 py-2.5 align-middle">
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[10.5px] text-slate-600">
+          {row.membership_type}
+        </span>
+      </td>
+      <td className="px-4 py-2.5 align-middle">
+        {attioLink ? (
+          <a
+            href={attioLink}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 font-mono text-[11px] text-blue-600 hover:underline"
+            title={row.attio_record_id ?? undefined}
+          >
+            {row.attio_record_id!.slice(0, 8)}…
+            <ExternalLink className="h-2.5 w-2.5" aria-hidden />
+          </a>
+        ) : (
+          <span className="text-slate-300">—</span>
+        )}
+      </td>
+      <td className="max-w-[260px] truncate px-4 py-2.5 align-middle font-mono text-[10.5px] text-rose-600">
+        {row.error ?? <span className="text-slate-300">—</span>}
+      </td>
+      <td className="px-4 py-2.5 text-right align-middle font-mono text-[11px] text-slate-500">
+        <span title={fmtAbsolute(row.created_at)}>{fmtRelative(row.created_at)}</span>
+      </td>
+    </tr>
   );
 }
 

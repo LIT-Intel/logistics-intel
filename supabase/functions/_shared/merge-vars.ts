@@ -20,6 +20,23 @@ export type ApplyOptions = {
 
 const TOKEN_RE = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
 
+/**
+ * Convert a camelCase or PascalCase key to snake_case so that template tokens
+ * like {{firstName}} and {{companyName}} resolve the context keys
+ * `first_name` and `company_name` produced by buildMergeContext.
+ *
+ * Examples:
+ *   firstName  → first_name
+ *   companyName → company_name
+ *   FirstName  → first_name
+ */
+function camelToSnake(s: string): string {
+  return s
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .replace(/([a-z\d])([A-Z])/g, "$1_$2")
+    .toLowerCase();
+}
+
 function readVar(ctx: MergeContext, key: string): unknown {
   if (!key) return undefined;
   // Direct hit (case-sensitive) wins.
@@ -29,6 +46,15 @@ function readVar(ctx: MergeContext, key: string): unknown {
   const lower = key.toLowerCase();
   for (const k of Object.keys(ctx)) {
     if (k.toLowerCase() === lower) return (ctx as any)[k];
+  }
+  // camelCase / PascalCase → snake_case conversion so {{firstName}} resolves
+  // `first_name` and {{companyName}} resolves `company_name`.
+  const snake = camelToSnake(key);
+  if (snake !== lower) {
+    if (Object.prototype.hasOwnProperty.call(ctx, snake)) return (ctx as any)[snake];
+    for (const k of Object.keys(ctx)) {
+      if (k.toLowerCase() === snake) return (ctx as any)[k];
+    }
   }
   // Dot path support: {{company.name}} -> ctx.company?.name
   if (key.includes(".")) {
