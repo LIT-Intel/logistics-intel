@@ -96,24 +96,82 @@ serve(async (req) => {
   const runId = runRow.id as string;
   log.info("run_started", { run_id: runId, dry_run: dryRun, mode, limit });
 
-  // TODO D2/D3: full pipeline here.
-  // For D1 we just close the run as succeeded with empty funnel so
-  // we can deploy and verify auth + run-row plumbing.
+  // ── 1. Download FMCSA CSV ──────────────────────────────────────────────
+  const fmcsaUrl = Deno.env.get("FMCSA_CSV_URL");
+  if (!fmcsaUrl) {
+    await failRun(admin, runId, "FMCSA_CSV_URL env not configured");
+    return json({ error: "FMCSA_CSV_URL not configured" }, 500);
+  }
+
+  let csv: string;
+  try {
+    const res = await fetch(fmcsaUrl);
+    if (!res.ok) throw new Error(`fetch ${res.status}`);
+    csv = await res.text();
+  } catch (e: any) {
+    await failRun(admin, runId, `FMCSA download failed: ${e?.message ?? e}`);
+    return json({ error: "FMCSA download failed" }, 502);
+  }
+
+  const rows = parseFmcsaCsv(csv);
+  const now = new Date(Deno.env.get("FMCSA_NOW_OVERRIDE") || new Date().toISOString());
+  const normalized: NormalizedAuthority[] = rows.map((r) => normalizeAuthority(r, now));
+
+  // ── 2. Filter 1: active + age + authority type ─────────────────────────
+  const ageFiltered = normalized.filter(
+    (a) =>
+      a.status === "active" &&
+      a.authorityType !== "carrier" &&
+      a.authorityType !== "other" &&
+      a.authorityYears >= 2 &&
+      a.authorityYears <= 15,
+  );
+
+  // ── 3. Filter 2: dedup against existing Attio Companies ────────────────
+  // For dry-run skeleton, dedup uses lit_fmcsa_import_runs.funnel history.
+  // Real Attio dedup happens at upsert time (PUT with matching_attribute
+  // is idempotent — re-importing won't create duplicates).
+
+  // ── 4. Take a representative sample for dry-run preview (no Apollo) ────
+  const sampleSize = Math.min(20, ageFiltered.length);
+  const sample = ageFiltered.slice(0, sampleSize);
+
+  const funnel = {
+    fmcsa_raw: normalized.length,
+    after_status_filter: normalized.filter((a) => a.status === "active").length,
+    after_authority_type_filter: normalized.filter(
+      (a) => a.status === "active" && (a.authorityType === "broker" || a.authorityType === "forwarder" || a.authorityType === "both"),
+    ).length,
+    after_age_filter: ageFiltered.length,
+    sample,
+  };
+
+  if (dryRun) {
+    await admin
+      .from("lit_fmcsa_import_runs")
+      .update({
+        finished_at: new Date().toISOString(),
+        status: "dry_run_complete",
+        funnel,
+      })
+      .eq("id", runId);
+    log.info("dry_run_complete", { run_id: runId, fmcsa_raw: normalized.length, after_age_filter: ageFiltered.length });
+    return json({ ok: true, runId, dryRun: true, funnel });
+  }
+
+  // TODO D3: real-run path with Apollo enrich + Attio upsert + queue
+  await failRun(admin, runId, "Real-run path not yet implemented (D3)");
+  return json({ error: "Real-run not implemented yet" }, 501);
+});
+
+// Helper at module scope (outside serve handler)
+async function failRun(admin: any, runId: string, reason: string) {
   await admin
     .from("lit_fmcsa_import_runs")
     .update({
       finished_at: new Date().toISOString(),
-      status: dryRun ? "dry_run_complete" : "succeeded",
-      funnel: { skeleton_only: true },
+      status: "failed",
+      errors: { reason },
     })
     .eq("id", runId);
-
-  return json({
-    ok: true,
-    runId,
-    dryRun,
-    mode,
-    limit,
-    funnel: { skeleton_only: true },
-  });
-});
+}
