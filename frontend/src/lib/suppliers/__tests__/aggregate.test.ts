@@ -22,9 +22,9 @@ describe("aggregateSuppliers", () => {
       };
       const out = aggregateSuppliers(profile, []);
       expect(out).toEqual<SupplierRow[]>([
-        { name: "ABC MFG", country: "CN", shipments: 50, share: 50 },
-        { name: "XYZ Industrial", country: "VN", shipments: 30, share: 30 },
-        { name: "MNO Trading", country: "CN", shipments: 20, share: 20 },
+        { name: "ABC MFG", country: "CN", country_code: "CN", shipments: 50, share: 50 },
+        { name: "XYZ Industrial", country: "VN", country_code: "VN", shipments: 30, share: 30 },
+        { name: "MNO Trading", country: "CN", country_code: "CN", shipments: 20, share: 20 },
       ]);
     });
 
@@ -55,8 +55,8 @@ describe("aggregateSuppliers", () => {
       ];
       const out = aggregateSuppliers(profile, recentBols);
       expect(out).toEqual<SupplierRow[]>([
-        { name: "Alpha Mfg", country: "CN", shipments: 3, share: 75 },
-        { name: "Beta Industrial", country: "VN", shipments: 1, share: 25 },
+        { name: "Alpha Mfg", country: "CN", country_code: "CN", shipments: 3, share: 75 },
+        { name: "Beta Industrial", country: "VN", country_code: "VN", shipments: 1, share: 25 },
       ]);
     });
 
@@ -96,7 +96,7 @@ describe("aggregateSuppliers", () => {
       ];
       const out = aggregateSuppliers({}, recentBols);
       expect(out).toEqual<SupplierRow[]>([
-        { name: "Real Co", country: "CN", shipments: 1, share: 100 },
+        { name: "Real Co", country: "CN", country_code: "CN", shipments: 1, share: 100 },
       ]);
     });
   });
@@ -164,30 +164,35 @@ describe("aggregateSuppliers", () => {
         [
           {
             "country": "CN",
+            "country_code": "CN",
             "name": "Supplier-000",
             "share": 1,
             "shipments": 200,
           },
           {
             "country": "VN",
+            "country_code": "VN",
             "name": "Supplier-001",
             "share": 1,
             "shipments": 199,
           },
           {
             "country": "TH",
+            "country_code": "TH",
             "name": "Supplier-002",
             "share": 1,
             "shipments": 198,
           },
           {
             "country": "CN",
+            "country_code": "CN",
             "name": "Supplier-003",
             "share": 1,
             "shipments": 197,
           },
           {
             "country": "VN",
+            "country_code": "VN",
             "name": "Supplier-004",
             "share": 1,
             "shipments": 196,

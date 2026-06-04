@@ -2567,34 +2567,56 @@ function ShipmentRow({ bol, isLast }: { bol: any; isLast: boolean }) {
 function SupplierRowInteractive({
   supplier: s,
   hasStats,
+  onClick,
 }: {
   supplier: SupplierRow;
   hasStats: boolean;
+  onClick?: () => void;
 }) {
   const [hover, setHover] = useState(false);
+  // Prefer the parser-emitted `country_code` (ISO-2). Fall back to the
+  // legacy `country` field when it happens to look like a 2-letter code
+  // — covers the BOL-aggregated rows where country is sourced from
+  // bol.supplier_country / origin_country which is already ISO-2.
+  const iso =
+    (s.country_code && /^[A-Za-z]{2}$/.test(s.country_code) ? s.country_code : null) ||
+    (typeof s.country === "string" && /^[A-Za-z]{2}$/.test(s.country) ? s.country : null);
+  const countryLabel = s.country || "Country pending";
+  const lastShipped = s.last_shipment_date ? formatRelativeShort(s.last_shipment_date) : null;
+
+  const RowTag = onClick ? "button" : "div";
+  const interactiveProps = onClick
+    ? ({ type: "button" as const, onClick })
+    : ({} as const);
+
   return (
-    <div
-      className="relative flex items-center gap-2.5 rounded transition-colors hover:bg-emerald-50/50"
+    <RowTag
+      {...interactiveProps}
+      className={[
+        "relative flex w-full items-center gap-2.5 rounded text-left transition-colors hover:bg-emerald-50/50",
+        onClick ? "cursor-pointer" : "",
+      ].join(" ")}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
       {hover && hasStats && (
         <div
-          className="font-display pointer-events-none absolute left-8 z-20 min-w-[180px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] leading-tight text-white shadow-lg"
+          className="font-display pointer-events-none absolute left-8 z-20 min-w-[200px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] leading-tight text-white shadow-lg"
           style={{ bottom: "100%", marginBottom: 6 }}
         >
           <div className="font-semibold">{s.name}</div>
-          {s.country && <div className="text-[10px] opacity-75">{s.country}</div>}
+          {countryLabel && <div className="text-[10px] opacity-75">{countryLabel}</div>}
           <div className="opacity-90">Shipments: {s.shipments.toLocaleString()}</div>
           {s.share > 0 && <div className="opacity-90">Share: {s.share}%</div>}
+          {lastShipped && lastShipped !== "—" && (
+            <div className="opacity-90">Last shipped: {lastShipped}</div>
+          )}
         </div>
       )}
-      <div className="font-mono flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[9px] font-bold text-slate-500">
-        {(s.country || "").slice(0, 2).toUpperCase() || "—"}
-      </div>
+      <LitFlag code={iso} size={14} label={countryLabel} />
       <div className="min-w-0 flex-1">
         <div className="font-display truncate text-[12px] font-semibold text-slate-900">
-          {s.name}
+          {s.name || "—"}
         </div>
         {hasStats ? (
           <div className="mt-1 flex items-center gap-1.5">
@@ -2607,15 +2629,18 @@ function SupplierRowInteractive({
             <span className="font-mono whitespace-nowrap text-[10px] text-slate-500">
               {s.share > 0 ? `${s.share}% · ` : ""}
               {s.shipments.toLocaleString()} ship
+              {lastShipped && lastShipped !== "—" ? ` · ${lastShipped}` : ""}
             </span>
           </div>
         ) : (
           <div className="font-body mt-0.5 text-[10px] text-slate-400">
-            Counterparty on file · count pending
+            {countryLabel === "Country pending"
+              ? "Counterparty on file · count pending"
+              : `${countryLabel}${lastShipped && lastShipped !== "—" ? ` · last shipped ${lastShipped}` : " · count pending"}`}
           </div>
         )}
       </div>
-    </div>
+    </RowTag>
   );
 }
 
