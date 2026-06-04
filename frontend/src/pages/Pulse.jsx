@@ -169,6 +169,9 @@ export default function Pulse() {
   const [results, setResults] = useState([]);
   // Pagination state — `Load more` button appends additional pages to results.
   const [loadingMore, setLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const PAGE_SIZE = 50;
   const [resultMode, setResultMode] = useState(null);
   const [meta, setMeta] = useState(null);
   const [apiStatus, setApiStatus] = useState('unknown');
@@ -266,24 +269,32 @@ export default function Pulse() {
   const isSetupError = errorClass === 'setup';
   const isPermissionError = errorClass === 'permission';
 
-  async function runSearch(rawQuery) {
+  async function runSearch(rawQuery, opts = {}) {
+    const { append = false, page = 1 } = opts;
     const trimmed = (rawQuery ?? query).trim();
     if (!trimmed) return;
-    setQuery(trimmed);
-    setIsSearching(true);
-    setErrorMessage('');
-    setSearchPerformed(false);
-    setActiveCompany(null);
 
-    setSearchLimit(null);
-    setSelectedIds(new Set());
+    if (!append) {
+      // New search — reset all state
+      setQuery(trimmed);
+      setIsSearching(true);
+      setErrorMessage('');
+      setSearchPerformed(false);
+      setActiveCompany(null);
+      setSearchLimit(null);
+      setSelectedIds(new Set());
+      setCurrentPage(1);
+      setHasMore(false);
+    } else {
+      setLoadingMore(true);
+    }
 
     try {
       // v2 owns search end-to-end: parses, hits saved → directory → Apollo,
       // merges + ranks server-side. Single round trip. No legacy fallback —
       // we surface whatever v2 returns, including empty result sets with
       // the coach_summary explaining what was tried.
-      const v2 = await searchPulseV2({ query: trimmed, limit: 50 }).catch(
+      const v2 = await searchPulseV2({ query: trimmed, limit: PAGE_SIZE, per_page: PAGE_SIZE, page }).catch(
         (err) => ({ ok: false, error: err?.message || 'pulse_search_failed' }),
       );
 
@@ -292,18 +303,31 @@ export default function Pulse() {
       // banner rather than a fake error.
       if (v2 && v2.code === 'LIMIT_EXCEEDED' && v2.limit) {
         setSearchLimit(v2.limit);
-        setResults([]);
-        setResultMode(null);
-        setMeta(null);
-        setApiStatus('connected');
-        setSubmittedQuery(trimmed);
-        setSearchPerformed(true);
+        if (!append) {
+          setResults([]);
+          setResultMode(null);
+          setMeta(null);
+          setApiStatus('connected');
+          setSubmittedQuery(trimmed);
+          setSearchPerformed(true);
+        }
         return;
       }
 
       if (v2 && v2.ok && Array.isArray(v2.rows)) {
         setLocalCount(v2.sources?.saved + v2.sources?.directory || 0);
-        setResults(v2.rows);
+        if (append) {
+          // Preserve selection — only append new rows; dedupe by id
+          setResults((prev) => {
+            const existingIds = new Set(prev.map((r) => r.id));
+            const newRows = v2.rows.filter((r) => !existingIds.has(r.id));
+            return [...prev, ...newRows];
+          });
+        } else {
+          setResults(v2.rows);
+        }
+        setHasMore(v2.has_more ?? false);
+        setCurrentPage(page);
         setResultMode('companies');
         setMeta({
           total: v2.rows.length,
@@ -316,7 +340,7 @@ export default function Pulse() {
         setApiStatus('connected');
         setSubmittedQuery(trimmed);
         setSearchPerformed(true);
-        if (!v2.rows.length) {
+        if (!v2.rows.length && !append) {
           setErrorMessage(v2.coach_summary || 'No matches. Try broadening the geography or rephrasing.');
         }
         return;
@@ -325,27 +349,35 @@ export default function Pulse() {
       // v2 failed at the function call level (network / CORS / 500 / 401).
       // Surface the actual error to the user so we can diagnose; do NOT
       // silently fall back to legacy results that pretend the query worked.
-      setResults([]);
-      setResultMode(null);
-      setMeta(null);
-      setApiStatus('error');
-      setSubmittedQuery(trimmed);
-      setSearchPerformed(true);
-      setErrorMessage(
-        (v2 && (v2.error || v2.coach_summary)) ||
-          'Pulse search is unreachable right now. Try again in a moment, or contact support if this persists.',
-      );
+      if (!append) {
+        setResults([]);
+        setResultMode(null);
+        setMeta(null);
+        setApiStatus('error');
+        setSubmittedQuery(trimmed);
+        setSearchPerformed(true);
+        setErrorMessage(
+          (v2 && (v2.error || v2.coach_summary)) ||
+            'Pulse search is unreachable right now. Try again in a moment, or contact support if this persists.',
+        );
+      }
     } catch (error) {
       console.error('[Pulse] search failed:', error);
-      setApiStatus('error');
-      setResults([]);
-      setResultMode(null);
-      setMeta(null);
-      setSubmittedQuery(trimmed);
-      setSearchPerformed(true);
-      setErrorMessage(error?.message || 'Pulse search failed.');
+      if (!append) {
+        setApiStatus('error');
+        setResults([]);
+        setResultMode(null);
+        setMeta(null);
+        setSubmittedQuery(trimmed);
+        setSearchPerformed(true);
+        setErrorMessage(error?.message || 'Pulse search failed.');
+      }
     } finally {
-      setIsSearching(false);
+      if (append) {
+        setLoadingMore(false);
+      } else {
+        setIsSearching(false);
+      }
     }
   }
 
@@ -1039,55 +1071,33 @@ export default function Pulse() {
                 />
               ))}
             </div>
-            {/* Pagination — page size is 50; show "Load more" when the
-                upstream meta reports a higher total than what's
-                rendered. Each click fires page+1 via searchPulse and
-                appends the new rows to results. Local-only result sets
-                cap at 50 (the lit_company_directory cascade already
-                returns its full match window in one query) so the
-                button hides when remoteRows didn't contribute. */}
-            {(() => {
-              const total = Number(meta?.total) || 0;
-              const pageSize = Number(meta?.pageSize) || 50;
-              const currentPage = Number(meta?.page) || 1;
-              const hasMore = total > resultCount && total > currentPage * pageSize;
-              if (!hasMore) return null;
-              return (
-                <div className="mt-4 flex items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (loadingMore) return;
-                      setLoadingMore(true);
-                      try {
-                        const nextPage = currentPage + 1;
-                        const nextResp = await searchPulse({
-                          query: submittedQuery,
-                          ui_mode: 'auto',
-                          entities: parsedQuery?.hasAny ? parsedQuery : undefined,
-                          page: nextPage,
-                        }).catch(() => null);
-                        const moreRows = Array.isArray(nextResp?.data?.results)
-                          ? nextResp.data.results
-                          : [];
-                        if (moreRows.length > 0) {
-                          setResults((prev) => [...prev, ...moreRows]);
-                          if (nextResp?.meta) setMeta(nextResp.meta);
-                        }
-                      } finally {
-                        setLoadingMore(false);
-                      }
-                    }}
-                    disabled={loadingMore}
-                    className="font-display rounded-lg border border-slate-200 bg-white px-4 py-2 text-[12.5px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
-                  >
-                    {loadingMore
-                      ? 'Loading…'
-                      : `Load more · showing ${resultCount} of ${total}`}
-                  </button>
-                </div>
-              );
-            })()}
+            {/* Pagination — Load More button: visible when backend returned
+                has_more=true (i.e. the last page was full at PAGE_SIZE rows). */}
+            {hasMore ? (
+              <div className="mt-6 flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (loadingMore) return;
+                    runSearch(submittedQuery, { append: true, page: currentPage + 1 });
+                  }}
+                  disabled={loadingMore}
+                  className="font-display inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-[13px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50"
+                >
+                  {loadingMore ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                      Loading more…
+                    </>
+                  ) : (
+                    <>
+                      Load more results
+                      <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                    </>
+                  )}
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -1594,21 +1604,44 @@ function BulkSaveBar({ selectedIds, results, onClear, onSaved, upsertCompany }) 
       return;
     }
 
-    const result = await bulkAddCompaniesToList(list.id, resolvedIds);
-    setSaving(false);
-    setSavingTo(null);
+    if (list.syncs_to_attio) {
+      // Syncable system list — enrich decision-maker contacts at these companies
+      // then insert into pulse_list_contacts (fires the Attio sync trigger).
+      try {
+        const { data, error } = await supabase.functions.invoke('pulse-bulk-enrich-by-company', {
+          body: { company_ids: resolvedIds, list_id: list.id },
+        });
+        setSaving(false);
+        setSavingTo(null);
+        if (error) throw new Error(error.message || 'Enrich failed');
+        toast.success(
+          `Found ${data?.added_contacts ?? 0} decision-maker contacts at ${resolvedIds.length} compan${resolvedIds.length === 1 ? 'y' : 'ies'} — syncing to Attio`,
+        );
+      } catch (err) {
+        setSaving(false);
+        setSavingTo(null);
+        toast.error(err?.message || 'Contact enrichment failed');
+        return;
+      }
+    } else {
+      // Standard path — save companies to the list
+      const result = await bulkAddCompaniesToList(list.id, resolvedIds);
+      setSaving(false);
+      setSavingTo(null);
 
-    if (!result.ok) {
-      toast.error(`Failed to save to "${list.name}": ${result.message}`);
-      // Don't clear selection so user can retry
-      return;
+      if (!result.ok) {
+        toast.error(`Failed to save to "${list.name}": ${result.message}`);
+        // Don't clear selection so user can retry
+        return;
+      }
+
+      const savedCount = resolvedIds.length;
+      const msg = failCount > 0
+        ? `${savedCount} saved to "${list.name}" · ${failCount} skipped (resolve error)`
+        : `${savedCount} compan${savedCount === 1 ? 'y' : 'ies'} added to "${list.name}"`;
+      toast.success(msg);
     }
 
-    const savedCount = resolvedIds.length;
-    const msg = failCount > 0
-      ? `${savedCount} saved to "${list.name}" · ${failCount} skipped (resolve error)`
-      : `${savedCount} compan${savedCount === 1 ? 'y' : 'ies'} added to "${list.name}"`;
-    toast.success(msg);
     onSaved?.();
   }
 
@@ -1696,8 +1729,16 @@ function BulkSaveBar({ selectedIds, results, onClear, onSaved, upsertCompany }) 
                       >
                         <Database className="h-3 w-3 shrink-0 text-slate-400" />
                         <div className="min-w-0 flex-1">
-                          <div className="font-display truncate text-[12.5px] font-semibold text-slate-100">
+                          <div className="font-display flex items-center gap-1.5 truncate text-[12.5px] font-semibold text-slate-100">
                             {list.name}
+                            {list.syncs_to_attio ? (
+                              <span
+                                className="inline-flex shrink-0 items-center rounded-sm px-1 py-px text-[9px] font-bold uppercase tracking-wide"
+                                style={{ background: 'rgba(0,240,255,0.15)', color: '#00F0FF', border: '1px solid rgba(0,240,255,0.25)' }}
+                              >
+                                enriches contacts
+                              </span>
+                            ) : null}
                           </div>
                           <div className="font-body text-[10.5px] text-slate-500">
                             {list.company_count ?? 0} compan{(list.company_count ?? 0) === 1 ? 'y' : 'ies'}

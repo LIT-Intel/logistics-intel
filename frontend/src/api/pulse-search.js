@@ -154,14 +154,24 @@ function normalizeResults(mode, rawResults) {
  * `matched_reasons` / `source_badge` field for the new badge UI.
  */
 export async function searchPulseV2(payload = {}) {
-  const { query, limit = 50, includeApollo = true, includeSaved = true, includeDirectory = true } = payload || {};
+  const {
+    query,
+    limit = 50,
+    page = 1,
+    per_page,
+    includeApollo = true,
+    includeSaved = true,
+    includeDirectory = true,
+  } = payload || {};
   const trimmed = String(query || '').trim();
   if (!trimmed) {
     return { ok: false, error: 'query_required', results: [], meta: null };
   }
 
+  const perPage = per_page || limit;
+
   const { data, error } = await supabase.functions.invoke('pulse-search', {
-    body: { query: trimmed, limit, includeApollo, includeSaved, includeDirectory },
+    body: { query: trimmed, limit: perPage, per_page: perPage, page, includeApollo, includeSaved, includeDirectory },
   });
 
   // supabase-js wraps non-2xx responses in FunctionsHttpError; the actual
@@ -205,6 +215,9 @@ export async function searchPulseV2(payload = {}) {
     timing_ms: raw.timing_ms || null,
     rows: mappedRows,
     raw_results: results,
+    has_more: raw.has_more ?? false,
+    page: raw.page ?? 1,
+    per_page: raw.per_page ?? perPage,
   };
 }
 

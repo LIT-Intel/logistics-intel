@@ -734,15 +734,16 @@ function escapeIlikeFragment(s: string): string {
   return String(s).replace(/[,()\\]/g, " ").trim();
 }
 
-async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, topicTerms: string[]): Promise<PulseCompanyResult[]> {
+async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, topicTerms: string[], page = 1): Promise<PulseCompanyResult[]> {
   try {
+    const offset = (page - 1) * limit;
     let q = supa
       .from("lit_company_directory")
       .select(
         "company_key, company_name, domain, website, phone, address_line1, address_line2, city, state, postal_code, country, industry, trade_roles, shipments, teu, lcl, value_usd, description",
       )
       .eq("is_active", true)
-      .limit(limit * 3);
+      .range(offset * 3, offset * 3 + limit * 3 - 1);
 
     // Geography filters — state.ilike matches the directory's full-name
     // storage; state.eq.{abbr} is kept as a safety net for any abbr rows.
@@ -1205,7 +1206,7 @@ ${blanks.map((r, i) => `${i + 1}. ${r.company_name}${r.domain ? ` (${r.domain})`
   }
 }
 
-async function searchApollo(intent: ParsedIntent, limit: number): Promise<PulseCompanyResult[]> {
+async function searchApollo(intent: ParsedIntent, limit: number, page = 1): Promise<PulseCompanyResult[]> {
   if (!APOLLO_API_KEY) return [];
   try {
     // Keyword tags: TOPIC ONLY (industry + service). Sending audience tokens
@@ -1249,7 +1250,7 @@ async function searchApollo(intent: ParsedIntent, limit: number): Promise<PulseC
     }
 
     const body: Record<string, any> = {
-      page: 1,
+      page,
       per_page: Math.min(limit, 50),
     };
     if (keywords.length > 0) body.q_organization_keyword_tags = keywords.slice(0, 6);
@@ -1554,7 +1555,9 @@ serve(async (req) => {
       status: 400, headers: { ...corsHeaders(), "Content-Type": "application/json" },
     });
   }
-  const limit = Math.max(5, Math.min(Number(body?.limit) || 50, 100));
+  const perPage = Math.max(5, Math.min(Number(body?.per_page) || Number(body?.limit) || 50, 100));
+  const page = Math.max(1, Number(body?.page) || 1);
+  const limit = perPage; // alias kept for downstream calls
   const includeApollo = body?.includeApollo !== false;
   const includeSaved = body?.includeSaved !== false;
   const includeDirectory = body?.includeDirectory !== false;
@@ -1665,7 +1668,7 @@ serve(async (req) => {
     : Promise.resolve([]);
 
   const directoryPromise: Promise<PulseCompanyResult[]> = includeDirectory
-    ? searchDirectory(supa, intent, Math.min(50, limit), topicTerms)
+    ? searchDirectory(supa, intent, Math.min(50, limit), topicTerms, page)
     : Promise.resolve([]);
 
   let apolloCalled = false;
@@ -1674,7 +1677,7 @@ serve(async (req) => {
     const { plan, usedToday, cap } = await getUserPlanAndApolloUsage(supa, userId);
     if (cap > 0 && usedToday < cap) {
       apolloCalled = true;
-      apolloPromise = searchApollo(intent, Math.min(50, limit)).then(async (rows) => {
+      apolloPromise = searchApollo(intent, Math.min(50, limit), page).then(async (rows) => {
         await incrementApollo(supa, userId);
         return rows;
       });
@@ -1749,6 +1752,11 @@ serve(async (req) => {
 
   const coachSummary = buildCoachSummary(intent, sourceCounts, ranked, textTerms);
 
+  // has_more: true when the last page returned exactly perPage results,
+  // implying there may be more. Apollo doesn't give us a total count
+  // without an extra call, so we use this heuristic.
+  const has_more = ranked.length >= perPage;
+
   return new Response(JSON.stringify({
     ok: true,
     query: rawQuery,
@@ -1762,6 +1770,9 @@ serve(async (req) => {
     results: ranked,
     coach_summary: coachSummary,
     timing_ms: { parser: parserMs, total: totalMs },
+    page,
+    per_page: perPage,
+    has_more,
   }), {
     headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
