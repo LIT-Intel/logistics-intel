@@ -2275,6 +2275,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             snapshotUpdatedAt={snapshotUpdatedAt}
             contacts={savedContacts}
             onOpenContactsTab={() => setTab("contacts")}
+            onOpenSuppliersTab={() => setTab("supply")}
             crmStage={
               bundle?.identity?.sources?.saved?.present === true
                 ? (bundle?.identity?.sources?.saved?.stage ?? null)

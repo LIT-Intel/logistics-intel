@@ -21,12 +21,12 @@ import {
   Ship,
   Target,
   TrendingUp,
-  Truck,
   User,
   Users,
 } from "lucide-react";
 import LitPill from "@/components/ui/LitPill";
 import { resolveEndpoint } from "@/lib/laneGlobe";
+import { normalizeSupplier } from "@/lib/supplierNormalize";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -157,6 +157,10 @@ type CDPDetailsPanelProps = {
   /** Switches the parent's active tab to Contacts when the user clicks
    *  the "View contacts" button in the Verified Contacts block. */
   onOpenContactsTab?: () => void;
+  /** Switches the parent's active tab to the Supply Chain tab (which
+   *  hosts the Suppliers view) when the user clicks the Top Supplier
+   *  tile in the Trade Intelligence section. */
+  onOpenSuppliersTab?: () => void;
 };
 
 export default function CDPDetailsPanel({
@@ -172,6 +176,7 @@ export default function CDPDetailsPanel({
   snapshotUpdatedAt,
   contacts,
   onOpenContactsTab,
+  onOpenSuppliersTab,
   crmStage,
   companyId,
   savedPresent,
@@ -220,43 +225,19 @@ export default function CDPDetailsPanel({
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
   }, [profile?.topCarriers, profile?.carrier_mix, profile?.carriers, recentBols]);
 
-  const topForwarder = useMemo(() => {
-    const list =
-      profile?.topForwarders ||
-      profile?.forwarder_mix ||
-      profile?.forwarders ||
-      profile?.serviceProviders;
-    if (Array.isArray(list) && list.length > 0) {
-      const head = list[0] as any;
-      const name = head?.providerName || head?.name || head?.forwarder;
-      if (name) return name;
-    }
-    // Fall back to most-frequent supplier/shipper/notify-party across
-    // recentBols.
-    const counts = new Map<string, number>();
-    for (const bol of recentBols) {
-      const name =
-        bol?.shipper_name ||
-        bol?.supplier ||
-        bol?.supplier_name ||
-        bol?.notify_party ||
-        bol?.raw?.shipper_name ||
-        bol?.raw?.supplier_name ||
-        null;
-      if (!name) continue;
-      const s = String(name).trim();
-      if (!s) continue;
-      counts.set(s, (counts.get(s) || 0) + 1);
-    }
-    if (counts.size === 0) return null;
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
-  }, [
-    profile?.topForwarders,
-    profile?.forwarder_mix,
-    profile?.forwarders,
-    profile?.serviceProviders,
-    recentBols,
-  ]);
+  // Top Supplier — sourced from parsed_summary.top_suppliers (the
+  // structured shape introduced in importyeti_fetch v2). Renamed from
+  // "Top Forwarder" because (a) parsed_summary.top_forwarders was
+  // never populated, and (b) the BOL fallback that previously filled
+  // the gap actually returned the supplier/shipper name. Labeling it
+  // "Top Forwarder" was misleading. The widget now correctly shows
+  // the highest-shipment supplier and links to the Suppliers tab.
+  const topSupplier = useMemo(() => {
+    const list = profile?.topSuppliers ?? (profile as any)?.top_suppliers;
+    if (!Array.isArray(list) || list.length === 0) return null;
+    const head = normalizeSupplier(list[0]);
+    return head.name ? head : null;
+  }, [profile?.topSuppliers, (profile as any)?.top_suppliers]);
 
   const topMode = useMemo(() => {
     const list = profile?.topModes;
@@ -352,32 +333,6 @@ export default function CDPDetailsPanel({
     profile?.hsProfile,
     recentBols,
   ]);
-
-  const topSupplierCountry = useMemo(() => {
-    const list = profile?.topSuppliers;
-    if (Array.isArray(list) && list.length > 0) {
-      const head = list[0];
-      if (head && typeof head !== "string") {
-        const c = head.country || head.countryCode || head.country_code;
-        if (c) return c;
-      }
-    }
-    // Fall back to most-frequent supplier_country across recent BOLs.
-    const counts = new Map<string, number>();
-    for (const bol of recentBols) {
-      const c =
-        bol?.supplier_country ||
-        bol?.origin_country ||
-        bol?.shipper_country ||
-        null;
-      if (!c) continue;
-      const s = String(c).trim();
-      if (!s) continue;
-      counts.set(s, (counts.get(s) || 0) + 1);
-    }
-    if (counts.size === 0) return null;
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
-  }, [profile?.topSuppliers, recentBols]);
 
   const primaryLane = useMemo(
     () => derivePrimaryLane(kpis.topRoute || kpis.recentRoute),
@@ -544,9 +499,30 @@ export default function CDPDetailsPanel({
           <Row icon={<Ship />} label="Top carrier">
             {topCarrier || "—"}
           </Row>
-          <Row icon={<Truck />} label="Top forwarder">
-            {topForwarder || "—"}
-          </Row>
+          {topSupplier ? (
+            <div className="px-4 py-2">
+              <button
+                type="button"
+                onClick={() => onOpenSuppliersTab?.()}
+                className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-blue-300 hover:bg-slate-50"
+              >
+                <div className="min-w-0">
+                  <div className="font-display text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Top supplier
+                  </div>
+                  <div className="font-display mt-0.5 truncate text-sm font-semibold text-slate-900">
+                    {topSupplier.name}
+                  </div>
+                  {topSupplier.country ? (
+                    <div className="font-body truncate text-[11px] text-slate-500">
+                      {topSupplier.country}
+                    </div>
+                  ) : null}
+                </div>
+                <span aria-hidden className="text-slate-400">→</span>
+              </button>
+            </div>
+          ) : null}
           <Row icon={<Package />} label="Top mode">
             {topMode || "—"}
           </Row>
@@ -573,13 +549,6 @@ export default function CDPDetailsPanel({
                 )}
                 <span className="truncate">{topHs.label}</span>
               </span>
-            ) : (
-              "—"
-            )}
-          </Row>
-          <Row icon={<MapPin />} label="Top supplier">
-            {topSupplierCountry ? (
-              <LitPill tone="slate">{topSupplierCountry}</LitPill>
             ) : (
               "—"
             )}
