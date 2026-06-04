@@ -2243,6 +2243,14 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                     null,
                 ) || null
               }
+              sourceCompanyKey={
+                (bundle?.identity as any)?.source_company_key ??
+                (bundle?.identity as any)?.sourceCompanyKey ??
+                (bundle?.identity as any)?.key ??
+                (activeProfile as any)?.identity?.key ??
+                (activeProfile as any)?.source_company_key ??
+                null
+              }
             />
           )}
           {tab === "activity" && (

@@ -53,6 +53,31 @@ export interface DrayageRollup {
   bol_count: number;
 }
 
+/**
+ * Per-route row from `lit_drayage_estimates`, grouped by
+ * (pod_unloc, destination_city, destination_state). Matches the shape
+ * returned by `useDrayageRollup` in `@/lib/api/drayageRollup`.
+ */
+export interface DrayageRollupRouteRow {
+  pod_unloc: string | null;
+  destination_city: string | null;
+  destination_state: string | null;
+  miles: number | null;
+  containers_eq: number;
+  est_cost_usd: number;
+  est_cost_low_usd: number;
+  est_cost_high_usd: number;
+  bol_count: number;
+}
+
+/**
+ * Discriminated status carried by `ServiceLineEstimate.status`. When the
+ * drayage rollup is empty, callers should render a "not yet calculated"
+ * empty state with a "Compute now" affordance instead of fabricating a
+ * default cost.
+ */
+export type ServiceLineStatus = "ok" | "not_calculated";
+
 export type ServiceLineEstimate = {
   serviceLine: string;
   /** Annualized revenue opportunity in USD. null when inputs are missing. */
@@ -62,6 +87,18 @@ export type ServiceLineEstimate = {
   reason: string;
   /** Detail rows for the UI methodology popover. */
   inputs: Array<{ label: string; value: string }>;
+  /**
+   * Optional status discriminator. Currently used by the drayage line so
+   * the UI can distinguish "we have a real rollup" from "no rollup has
+   * been computed yet — show a Compute now affordance".
+   */
+  status?: ServiceLineStatus;
+  /** Optional per-route breakdown (drayage line, when status is 'ok'). */
+  breakdown?: Array<{
+    route: string;
+    cost: number;
+    containers: number;
+  }>;
 };
 
 export type CrossSellSignal = {
@@ -120,6 +157,14 @@ export type RevenueOpportunityInputs = {
   importerSelfReportedSpend12m?: number | null;
   /** Drayage rollup from `lit_drayage_estimates` (Pulse LIVE). */
   drayageRollup?: DrayageRollup | null;
+  /**
+   * Per-route drayage rollup from `lit_drayage_estimates`, grouped by
+   * (pod_unloc, destination_city, destination_state). When provided and
+   * non-empty, takes precedence over `drayageRollup` and supplies a
+   * per-route breakdown for the UI. When empty/null, drayage will return
+   * `{ status: 'not_calculated' }` instead of fabricating a fallback.
+   */
+  drayageRollupRoutes?: DrayageRollupRouteRow[] | null;
 };
 
 // ---------- Helpers ------------------------------------------------------
@@ -166,7 +211,12 @@ function airLikelyShareFromHs(hsProfile: any[] | null | undefined): number {
 export function computeDrayageRevenue(args: {
   rollup?: DrayageRollup | null;
   fclShipments12m: number;
-}): { value: number; low: number; high: number; confidence: 'High' | 'Medium' | 'Low' } {
+}): {
+  value: number | null;
+  low: number | null;
+  high: number | null;
+  confidence: 'High' | 'Medium' | 'Low' | 'NotCalculated';
+} {
   if (args.rollup && args.rollup.bol_count > 0) {
     return {
       value: args.rollup.total_est_usd,
@@ -175,13 +225,15 @@ export function computeDrayageRevenue(args: {
       confidence: 'Medium',
     };
   }
-  const perShipment = 1200;
-  const value = args.fclShipments12m * perShipment;
+  // No rollup available — return a NotCalculated sentinel instead of the
+  // misleading $1,200 × FCL count fallback that previously displayed for
+  // every company without real drayage data. UI should render a
+  // "Compute now" affordance.
   return {
-    value,
-    low: Math.round(value * 0.75),
-    high: Math.round(value * 1.25),
-    confidence: 'Low',
+    value: null,
+    low: null,
+    high: null,
+    confidence: 'NotCalculated',
   };
 }
 
@@ -261,11 +313,61 @@ function sizeCustoms(inputs: RevenueOpportunityInputs): ServiceLineEstimate {
 }
 
 function sizeDrayage(inputs: RevenueOpportunityInputs): ServiceLineEstimate {
+  // Preferred path — per-route rollup from `lit_drayage_estimates`.
+  // Gives both an aggregate total and a route-level breakdown the UI
+  // can render (e.g. "USLAX → Chicago, IL — $42,300 / 38 containers").
+  const routes = Array.isArray(inputs.drayageRollupRoutes)
+    ? inputs.drayageRollupRoutes
+    : null;
+  if (routes && routes.length > 0) {
+    const breakdown = routes.map((r) => {
+      const dest =
+        r.destination_city ?? r.destination_state ?? "—";
+      return {
+        route: `${r.pod_unloc ?? "—"} → ${dest}`,
+        cost: Number(r.est_cost_usd) || 0,
+        containers: Number(r.containers_eq) || 0,
+      };
+    });
+    const total = breakdown.reduce((s, row) => s + row.cost, 0);
+    const totalLow = routes.reduce(
+      (s, r) => s + (Number(r.est_cost_low_usd) || 0),
+      0,
+    );
+    const totalHigh = routes.reduce(
+      (s, r) => s + (Number(r.est_cost_high_usd) || 0),
+      0,
+    );
+    const bols = routes.reduce(
+      (s, r) => s + (Number(r.bol_count) || 0),
+      0,
+    );
+    return {
+      serviceLine: "Drayage",
+      value: Math.round(total),
+      confidence: "medium",
+      status: "ok",
+      reason: `Per-route drayage rollup across ${routes.length} ${routes.length === 1 ? "lane" : "lanes"} (PierPASS + chassis + fuel + linehaul).`,
+      inputs: [
+        { label: "Routes", value: String(routes.length) },
+        { label: "BOLs estimated", value: String(bols) },
+        {
+          label: "Range",
+          value: `$${Math.round(totalLow).toLocaleString()}–$${Math.round(totalHigh).toLocaleString()}`,
+        },
+      ],
+      breakdown,
+    };
+  }
+
+  // Backwards compat — aggregate-only rollup (used by callers that
+  // haven't switched to per-route yet).
   if (inputs.drayageRollup && inputs.drayageRollup.bol_count > 0) {
     return {
       serviceLine: "Drayage",
       value: inputs.drayageRollup.total_est_usd,
       confidence: "medium",
+      status: "ok",
       reason: `Drayage rollup from ${inputs.drayageRollup.bol_count} BOL estimates (PierPASS + chassis + fuel + linehaul).`,
       inputs: [
         { label: "BOLs estimated", value: String(inputs.drayageRollup.bol_count) },
@@ -273,23 +375,18 @@ function sizeDrayage(inputs: RevenueOpportunityInputs): ServiceLineEstimate {
       ],
     };
   }
-  const fcl = safeNum(inputs.fclShipments12m);
-  if (!fcl) {
-    return { serviceLine: "Drayage", value: null, confidence: "insufficient_data", reason: "Need FCL count or drayage rollup.", inputs: [] };
-  }
-  // Fallback per-FCL drayage with accessorials baked in (~$1,200 avg coast-to-DC pulls).
-  // Includes: linehaul, chassis, fuel surcharge (22%), PierPASS (LA/LB), per-container fee.
-  const DRAYAGE_PER_FCL_USD = 1200;
-  const value = fcl * DRAYAGE_PER_FCL_USD;
+
+  // No rollup at all — return a `not_calculated` status instead of the
+  // misleading $1,200 × FCL count fallback. UI should render a
+  // "Compute now" affordance that invokes pulse-drayage-recompute.
   return {
     serviceLine: "Drayage",
-    value,
-    confidence: "low",
-    reason: "Per-FCL flat drayage (linehaul + chassis + fuel + PierPASS averaged).",
-    inputs: [
-      { label: "FCL pulls", value: fcl.toLocaleString() },
-      { label: "Avg per pull", value: `$${DRAYAGE_PER_FCL_USD.toLocaleString()}` },
-    ],
+    value: null,
+    confidence: "insufficient_data",
+    status: "not_calculated",
+    reason:
+      "No drayage estimates computed yet for this company. Click 'Compute now' to build the rollup from BOL data.",
+    inputs: [],
   };
 }
 
