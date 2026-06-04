@@ -286,6 +286,7 @@ export default function CDPSupplyChain({
           canonicalLanes={allLanes}
           globeLanes={globeLanes}
           onOpenPulseLive={onOpenPulseLive}
+          onOpenLanesTab={() => setSub("lanes")}
         />
       )}
       {sub === "lanes" && (
@@ -400,6 +401,7 @@ function SummaryView({
   canonicalLanes,
   globeLanes,
   onOpenPulseLive,
+  onOpenLanesTab,
 }: {
   profile: any;
   cadence: CadencePoint[];
@@ -411,6 +413,7 @@ function SummaryView({
   canonicalLanes: any[];
   globeLanes: any[];
   onOpenPulseLive?: () => void;
+  onOpenLanesTab?: () => void;
 }) {
   const reducedMotion = usePrefersReducedMotion();
 
@@ -431,6 +434,7 @@ function SummaryView({
         recentBols={recentBols}
         containerProfile={containerProfile}
         reducedMotion={reducedMotion}
+        onOpenLanesTab={onOpenLanesTab}
       />
       <CadenceAndModalMix
         cadence={cadence}
@@ -1666,12 +1670,14 @@ function TopLanesCard({
   recentBols = [],
   containerProfile,
   reducedMotion = false,
+  onOpenLanesTab,
 }: {
   canonicalLanes: any[];
   globeLanes?: any[];
   recentBols?: any[];
   containerProfile?: ContainerProfile;
   reducedMotion?: boolean;
+  onOpenLanesTab?: () => void;
 }) {
   // Persisted globe / map preference — shared with the Dashboard's GlobeCard
   // so a user who picks Map view on one surface sees Map on the other.
@@ -1789,12 +1795,12 @@ function TopLanesCard({
     );
   }
 
-  // Top lanes for the ranked list — sorted by shipments. Keep up to 8 so
+  // Top lanes for the ranked list — sorted by shipments. Keep up to 12 so
   // the right-rail fills the card height on lg+ viewports.
   const rankedLanes = canonicalLanes
     .slice()
     .sort((a: any, b: any) => (Number(b?.shipments) || 0) - (Number(a?.shipments) || 0))
-    .slice(0, 8);
+    .slice(0, 12);
   const maxLaneShipments = Math.max(
     1,
     ...rankedLanes.map((l: any) => Number(l?.shipments) || 0),
@@ -1902,6 +1908,21 @@ function TopLanesCard({
               </button>
             );
           })}
+          {canonicalLanes.length > 12 ? (
+            <div className="px-3 py-2 sm:px-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenLanesTab) {
+                    onOpenLanesTab();
+                  }
+                }}
+                className="font-body inline-flex items-center gap-1 text-[12px] font-medium text-blue-600 hover:text-blue-700"
+              >
+                View all {canonicalLanes.length.toLocaleString()} lanes →
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
