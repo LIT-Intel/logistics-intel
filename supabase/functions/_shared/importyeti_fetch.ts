@@ -756,16 +756,26 @@ function pickTopSuppliers(raw: any): StructuredSupplier[] {
       normalizeString(row?.iso2) ??
       normalizeString(row?.country_iso) ??
       null;
+    // ImportYeti's actual key names (verified against EAE raw payload):
+    //   shipments_12m, total_shipments_supplier, most_recent_shipment
+    // Keep older aliases as fallbacks for any other upstream variants.
     const shipment_count =
+      normalizeNumber(row?.shipments_12m) ??
       normalizeNumber(row?.shipments) ??
       normalizeNumber(row?.shipment_count) ??
       normalizeNumber(row?.count) ??
+      normalizeNumber(row?.total_shipments_supplier) ??
       null;
-    const last_shipment_date =
+    // most_recent_shipment is in DD/MM/YYYY format per ImportYeti.
+    // Normalize to ISO YYYY-MM-DD so the UI can humanize uniformly.
+    const lastRaw =
+      normalizeString(row?.most_recent_shipment) ??
       normalizeString(row?.last_shipment_date) ??
       normalizeString(row?.last_date) ??
       normalizeString(row?.last_bol_date) ??
       null;
+    const lastDate = lastRaw ? parseImportYetiDateNoFuture(lastRaw) : null;
+    const last_shipment_date = lastDate ? lastDate.toISOString().slice(0, 10) : null;
 
     out.push({ name, country, country_code, shipment_count, last_shipment_date });
     if (out.length >= 30) break;
