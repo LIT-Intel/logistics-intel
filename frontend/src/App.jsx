@@ -36,6 +36,7 @@ const AdminPartnerProgram = lazy(() => import("@/pages/AdminPartnerProgram"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboardV2"));
 const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
 const AdminDemoRequests = lazy(() => import("@/pages/AdminDemoRequests"));
+const AdminSubscribers = lazy(() => import("@/pages/AdminSubscribers"));
 const AdminMarketingAnalytics = lazy(() => import("@/pages/AdminMarketingAnalytics"));
 const AdminMarketingBroadcasts = lazy(() => import("@/pages/AdminMarketingBroadcasts"));
 const Pulse = lazy(() => import("@/pages/Pulse"));
@@ -555,6 +556,17 @@ export default function App() {
             <RequireAdmin>
               <LITPage>
                 <AdminDemoRequests />
+              </LITPage>
+            </RequireAdmin>
+          }
+        />
+
+        <Route
+          path="/app/admin/subscribers"
+          element={
+            <RequireAdmin>
+              <LITPage>
+                <AdminSubscribers />
               </LITPage>
             </RequireAdmin>
           }

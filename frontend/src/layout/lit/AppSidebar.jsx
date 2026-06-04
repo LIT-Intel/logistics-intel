@@ -100,6 +100,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
             title: "Admin",
             items: [
               { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
+              { label: "Subscribers", href: "/app/admin/subscribers", icon: Users },
               { label: "Demo requests", href: "/app/admin/demo-requests", icon: Inbox },
               { label: "Partner program", href: "/app/admin/partner-program", icon: Users },
               { label: "Marketing analytics", href: "/app/admin/marketing-analytics", icon: BarChart3 },
