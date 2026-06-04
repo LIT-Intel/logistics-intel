@@ -15,15 +15,17 @@
 // not surfaced anywhere in the UI per product direction. Existing
 // ImportYeti tables and APIs are NEVER written to from this page.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
   Building2,
   CheckCircle2,
+  ChevronDown,
   Compass,
   Database,
   GitBranch,
   Layers,
+  Loader2,
   MapPin,
   Search,
   Ship,
@@ -34,6 +36,7 @@ import {
   Wand2,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { searchPulse, searchPulseV2 } from '@/api/pulse-search';
 import { supabase } from '@/lib/supabase';
@@ -49,6 +52,10 @@ import {
   ErrorBanner,
   PermissionIssueState,
 } from '@/features/pulse/PulseResults';
+import {
+  bulkAddCompaniesToList,
+  listPulseLists,
+} from '@/features/pulse/pulseListsApi';
 import { searchLocalCompanies, mergeResults, LOCAL_RICH_THRESHOLD } from '@/features/pulse/pulseLocalSearch';
 import PulseQuickCard from '@/features/pulse/PulseQuickCard';
 import PulseLibrary from '@/features/pulse/PulseLibrary';
@@ -195,6 +202,19 @@ export default function Pulse() {
   // write a membership row directly via pulse_list_companies.
   const [listPicker, setListPicker] = useState(null); // { companyId, companyName }
 
+  // — bulk-select state —
+  // selectedIds holds the result IDs (company.id values) for the current page.
+  // Cleared after every new search and after a successful bulk-save.
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  // Stable toggle handler — doesn't recreate on every render
+  const toggleSelect = useCallback((id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
+  }, []);
+
   // — UI flourishes —
   const [phIdx, setPhIdx] = useState(0);
   const inputRef = useRef(null);
@@ -256,6 +276,7 @@ export default function Pulse() {
     setActiveCompany(null);
 
     setSearchLimit(null);
+    setSelectedIds(new Set());
 
     try {
       // v2 owns search end-to-end: parses, hits saved → directory → Apollo,
@@ -999,12 +1020,21 @@ export default function Pulse() {
               local={localCount}
               mode={resultMode}
             />
+            {/* Select-all header */}
+            <SelectAllHeader
+              results={results}
+              selectedIds={selectedIds}
+              onSelectAll={() => setSelectedIds(new Set(results.map((r) => r.id)))}
+              onClearAll={() => setSelectedIds(new Set())}
+            />
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {results.map((c) => (
                 <ResultCard
                   key={c.id}
                   company={c}
                   active={activeCompany?.id === c.id}
+                  selected={selectedIds.has(c.id)}
+                  onToggleSelect={toggleSelect}
                   onClick={() => setActiveCompany(c)}
                 />
               ))}
@@ -1064,6 +1094,18 @@ export default function Pulse() {
         {/* Pulse Library — collapsible, scoped to source='pulse' */}
         <PulseLibrary onSelect={setActiveCompany} refreshKey={libraryRefreshKey} />
       </div>
+
+      {/* Floating bulk-save action bar — appears when ≥1 result is selected */}
+      <BulkSaveBar
+        selectedIds={selectedIds}
+        results={results}
+        onClear={() => setSelectedIds(new Set())}
+        onSaved={() => {
+          setSelectedIds(new Set());
+          setLibraryRefreshKey((k) => k + 1);
+        }}
+        upsertCompany={upsertCompanyFromResult}
+      />
 
       {/* Quick Card right rail */}
       <PulseQuickCard
@@ -1331,76 +1373,359 @@ function ResultsHeader({ query, total, local, mode }) {
   );
 }
 
-function ResultCard({ company, active, onClick }) {
+function ResultCard({ company, active, selected, onToggleSelect, onClick }) {
   const domain = extractDomain(company.domain || company.website) || company.domain || stripUrl(company.website);
   const location = [company.city, company.state, company.country].filter(Boolean).join(', ');
   const inDb = company.provenance === 'database' || company.alsoLive;
   const shipments = company.kpis?.shipments_12m;
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div
       className={[
-        'group flex flex-col gap-2 rounded-[14px] border bg-white p-3.5 text-left transition',
-        active
-          ? 'border-blue-400 shadow-[0_8px_24px_rgba(59,130,246,0.18)]'
-          : 'border-slate-200 shadow-[0_2px_8px_rgba(15,23,42,0.04)] hover:border-slate-300 hover:shadow-[0_6px_18px_rgba(15,23,42,0.07)]',
+        'group relative flex flex-col gap-2 rounded-[14px] border bg-white p-3.5 transition',
+        selected
+          ? 'border-[#00F0FF]/60 shadow-[0_0_0_2px_rgba(0,240,255,0.25),0_4px_14px_rgba(0,240,255,0.12)]'
+          : active
+            ? 'border-blue-400 shadow-[0_8px_24px_rgba(59,130,246,0.18)]'
+            : 'border-slate-200 shadow-[0_2px_8px_rgba(15,23,42,0.04)] hover:border-slate-300 hover:shadow-[0_6px_18px_rgba(15,23,42,0.07)]',
       ].join(' ')}
     >
-      {/* identity */}
-      <div className="flex items-start gap-2.5">
-        <CompanyAvatar
-          name={company.name || 'Unknown'}
-          domain={domain || null}
-          size="sm"
-          className="!h-9 !w-9 !rounded-md"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="font-display truncate text-[13.5px] font-bold leading-tight text-slate-900">
-            {company.name}
-          </div>
-          <div className="font-body mt-0.5 truncate text-[11px] text-slate-500">
-            {domain || 'No domain'}
-            {location ? ` · ${location}` : ''}
+      {/* Checkbox — top-left corner, stop propagation so it doesn't open the Quick Card */}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onToggleSelect(company.id); }}
+        aria-label={selected ? 'Deselect company' : 'Select company'}
+        className={[
+          'absolute left-2.5 top-2.5 flex h-5 w-5 items-center justify-center rounded border transition',
+          selected
+            ? 'border-[#00F0FF] bg-[#0F172A]'
+            : 'border-slate-300 bg-white opacity-0 group-hover:opacity-100',
+        ].join(' ')}
+      >
+        {selected ? (
+          <svg width="10" height="8" viewBox="0 0 10 8" fill="none" aria-hidden>
+            <path d="M1 4L3.5 6.5L9 1" stroke="#00F0FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        ) : null}
+      </button>
+
+      {/* Clickable card body */}
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex flex-col gap-2 text-left"
+      >
+        {/* identity */}
+        <div className="flex items-start gap-2.5 pl-6">
+          <CompanyAvatar
+            name={company.name || 'Unknown'}
+            domain={domain || null}
+            size="sm"
+            className="!h-9 !w-9 !rounded-md"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="font-display truncate text-[13.5px] font-bold leading-tight text-slate-900">
+              {company.name}
+            </div>
+            <div className="font-body mt-0.5 truncate text-[11px] text-slate-500">
+              {domain || 'No domain'}
+              {location ? ` · ${location}` : ''}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* signal pills */}
-      <div className="flex flex-wrap items-center gap-1">
-        {inDb ? (
-          <ProvenancePill tone="blue" icon={Database}>
-            In database
-          </ProvenancePill>
-        ) : (
-          <ProvenancePill tone="amber" icon={Sparkles}>
-            Discovered
-          </ProvenancePill>
-        )}
-        {shipments != null && shipments > 0 ? (
-          <ProvenancePill tone="slate" icon={Ship}>
-            {Number(shipments).toLocaleString()} shipments
-          </ProvenancePill>
-        ) : null}
-        {company.industry ? (
-          <ProvenancePill tone="slate" icon={Layers}>
-            {company.industry}
-          </ProvenancePill>
-        ) : null}
-      </div>
+        {/* signal pills */}
+        <div className="flex flex-wrap items-center gap-1">
+          {inDb ? (
+            <ProvenancePill tone="blue" icon={Database}>
+              In database
+            </ProvenancePill>
+          ) : (
+            <ProvenancePill tone="amber" icon={Sparkles}>
+              Discovered
+            </ProvenancePill>
+          )}
+          {shipments != null && shipments > 0 ? (
+            <ProvenancePill tone="slate" icon={Ship}>
+              {Number(shipments).toLocaleString()} shipments
+            </ProvenancePill>
+          ) : null}
+          {company.industry ? (
+            <ProvenancePill tone="slate" icon={Layers}>
+              {company.industry}
+            </ProvenancePill>
+          ) : null}
+        </div>
 
-      {/* footer cta */}
-      <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-2">
-        <span className="font-display text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-          Click to analyze
+        {/* footer cta */}
+        <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-2">
+          <span className="font-display text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+            Click to analyze
+          </span>
+          <span className="font-display inline-flex items-center gap-0.5 text-[11px] font-semibold text-blue-600 group-hover:text-blue-700">
+            Open card
+            <ArrowRight className="h-3 w-3" />
+          </span>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+/* ── SelectAllHeader ── */
+function SelectAllHeader({ results, selectedIds, onSelectAll, onClearAll }) {
+  if (!results.length) return null;
+  const allSelected = results.every((r) => selectedIds.has(r.id));
+  const someSelected = !allSelected && results.some((r) => selectedIds.has(r.id));
+  const handleToggle = () => {
+    if (allSelected) { onClearAll(); } else { onSelectAll(); }
+  };
+  return (
+    <div className="mt-2 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+      <button
+        type="button"
+        onClick={handleToggle}
+        aria-label={allSelected ? 'Deselect all' : 'Select all visible'}
+        className={[
+          'flex h-4.5 w-4.5 items-center justify-center rounded border transition',
+          allSelected
+            ? 'border-[#00F0FF] bg-[#0F172A]'
+            : someSelected
+              ? 'border-slate-400 bg-white'
+              : 'border-slate-300 bg-white hover:border-slate-400',
+        ].join(' ')}
+        style={{ minWidth: '18px', minHeight: '18px', width: 18, height: 18 }}
+      >
+        {allSelected ? (
+          <svg width="10" height="8" viewBox="0 0 10 8" fill="none" aria-hidden>
+            <path d="M1 4L3.5 6.5L9 1" stroke="#00F0FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        ) : someSelected ? (
+          <svg width="8" height="2" viewBox="0 0 8 2" fill="none" aria-hidden>
+            <rect x="0" y="0.5" width="8" height="1" rx="0.5" fill="#64748b"/>
+          </svg>
+        ) : null}
+      </button>
+      <span className="font-body text-[12px] text-slate-600">
+        {selectedIds.size > 0
+          ? `${selectedIds.size} of ${results.length} selected`
+          : `Select all ${results.length} results on this page`}
+      </span>
+      {selectedIds.size > 0 ? (
+        <button
+          type="button"
+          onClick={onClearAll}
+          className="font-body ml-2 text-[11.5px] text-slate-400 hover:text-slate-700"
+        >
+          Clear
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/* ── BulkSaveBar ── */
+function BulkSaveBar({ selectedIds, results, onClear, onSaved, upsertCompany }) {
+  const [listsOpen, setListsOpen] = useState(false);
+  const [lists, setLists] = useState([]);
+  const [listsLoading, setListsLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savingTo, setSavingTo] = useState(null);
+  const dropdownRef = useRef(null);
+
+  // Load lists when dropdown opens
+  useEffect(() => {
+    if (!listsOpen) return;
+    let cancelled = false;
+    setListsLoading(true);
+    listPulseLists().then((res) => {
+      if (cancelled) return;
+      setLists(res.ok ? res.rows : []);
+      setListsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [listsOpen]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!listsOpen) return;
+    function handler(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setListsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [listsOpen]);
+
+  const count = selectedIds.size;
+  if (count === 0) return null;
+
+  async function handleSaveToList(list) {
+    setListsOpen(false);
+    setSaving(true);
+    setSavingTo(list.name);
+
+    // Resolve: we need lit_companies IDs. Results already in db have .provenance==='database'
+    // with a UUID id. "Discovered" results need to be saved first via upsertCompanyFromResult.
+    const selectedResults = results.filter((r) => selectedIds.has(r.id));
+
+    let resolvedIds = [];
+    let failCount = 0;
+    for (const company of selectedResults) {
+      try {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(company.id || ''));
+        let dbId = isUuid ? company.id : null;
+        if (!dbId || company.provenance !== 'database') {
+          // Save to lit_companies so we have a real UUID
+          const saved = await upsertCompany(company);
+          dbId = saved?.id || null;
+        }
+        if (dbId) resolvedIds.push(dbId);
+      } catch {
+        failCount++;
+      }
+    }
+
+    if (!resolvedIds.length) {
+      setSaving(false);
+      setSavingTo(null);
+      toast.error('Could not resolve any company IDs. No rows saved.');
+      return;
+    }
+
+    const result = await bulkAddCompaniesToList(list.id, resolvedIds);
+    setSaving(false);
+    setSavingTo(null);
+
+    if (!result.ok) {
+      toast.error(`Failed to save to "${list.name}": ${result.message}`);
+      // Don't clear selection so user can retry
+      return;
+    }
+
+    const savedCount = resolvedIds.length;
+    const msg = failCount > 0
+      ? `${savedCount} saved to "${list.name}" · ${failCount} skipped (resolve error)`
+      : `${savedCount} compan${savedCount === 1 ? 'y' : 'ies'} added to "${list.name}"`;
+    toast.success(msg);
+    onSaved?.();
+  }
+
+  return (
+    <div
+      className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2"
+      style={{ pointerEvents: saving ? 'none' : 'auto' }}
+    >
+      <div
+        className="flex items-center gap-3 rounded-[14px] px-4 py-3 shadow-[0_8px_32px_rgba(15,23,42,0.45),0_2px_8px_rgba(0,240,255,0.12)]"
+        style={{
+          background: 'linear-gradient(135deg, #0F172A 0%, #1B2A44 100%)',
+          border: '1px solid rgba(0,240,255,0.25)',
+        }}
+      >
+        {/* Count badge */}
+        <span
+          className="font-display inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-[12px] font-bold"
+          style={{ background: 'rgba(0,240,255,0.15)', color: '#00F0FF', border: '1px solid rgba(0,240,255,0.3)' }}
+        >
+          {count}
         </span>
-        <span className="font-display inline-flex items-center gap-0.5 text-[11px] font-semibold text-blue-600 group-hover:text-blue-700">
-          Open card
-          <ArrowRight className="h-3 w-3" />
+        <span className="font-body text-[12.5px] font-medium text-slate-200">
+          {count === 1 ? 'company' : 'companies'} selected
         </span>
+
+        <span className="text-slate-600">·</span>
+
+        {/* Save to list dropdown */}
+        <div className="relative" ref={dropdownRef}>
+          <button
+            type="button"
+            onClick={() => setListsOpen((o) => !o)}
+            disabled={saving}
+            className="font-display inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold text-[#0F172A] transition hover:brightness-105 disabled:opacity-50"
+            style={{
+              background: 'linear-gradient(180deg, #00F0FF 0%, #00C4D4 100%)',
+              boxShadow: '0 1px 3px rgba(0,240,255,0.35), inset 0 1px 0 rgba(255,255,255,0.3)',
+            }}
+          >
+            {saving ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Saving to {savingTo}…
+              </>
+            ) : (
+              <>
+                Save to list
+                <ChevronDown className="h-3 w-3" />
+              </>
+            )}
+          </button>
+
+          {listsOpen ? (
+            <div
+              className="absolute bottom-full mb-2 left-0 w-[260px] overflow-hidden rounded-[12px] border shadow-[0_16px_40px_rgba(15,23,42,0.4)]"
+              style={{
+                background: 'linear-gradient(160deg, #0F172A 0%, #1E293B 100%)',
+                borderColor: 'rgba(255,255,255,0.1)',
+              }}
+            >
+              <div
+                className="font-display px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em]"
+                style={{ color: 'rgba(0,240,255,0.7)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}
+              >
+                Choose a list
+              </div>
+              {listsLoading ? (
+                <div className="flex items-center justify-center gap-2 p-4">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+                  <span className="font-body text-[11.5px] text-slate-400">Loading…</span>
+                </div>
+              ) : lists.length === 0 ? (
+                <div className="p-4 text-center">
+                  <span className="font-body text-[11.5px] text-slate-400">No lists yet — create one first.</span>
+                </div>
+              ) : (
+                <ul className="max-h-[240px] overflow-y-auto py-1">
+                  {lists.map((list) => (
+                    <li key={list.id}>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveToList(list)}
+                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-white/5"
+                      >
+                        <Database className="h-3 w-3 shrink-0 text-slate-400" />
+                        <div className="min-w-0 flex-1">
+                          <div className="font-display truncate text-[12.5px] font-semibold text-slate-100">
+                            {list.name}
+                          </div>
+                          <div className="font-body text-[10.5px] text-slate-500">
+                            {list.company_count ?? 0} compan{(list.company_count ?? 0) === 1 ? 'y' : 'ies'}
+                          </div>
+                        </div>
+                        <ArrowRight className="h-3 w-3 shrink-0 text-slate-500" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : null}
+        </div>
+
+        <span className="text-slate-600">·</span>
+
+        {/* Clear */}
+        <button
+          type="button"
+          onClick={onClear}
+          disabled={saving}
+          className="font-body text-[12px] text-slate-400 transition hover:text-slate-200 disabled:opacity-50"
+        >
+          Clear
+        </button>
       </div>
-    </button>
+    </div>
   );
 }
 

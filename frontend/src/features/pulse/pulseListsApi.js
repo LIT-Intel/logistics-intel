@@ -176,6 +176,66 @@ export async function createPulseList({ name, description, queryText, filterReci
   }
 }
 
+/** Bulk-add multiple companies (array of lit_companies.id) to a list.
+ *  Uses a single upsert call for atomicity. Returns { ok, added } where
+ *  added is the count of rows that were inserted or already existed.
+ *  Duplicates are silently ignored (onConflict = do nothing). */
+export async function bulkAddCompaniesToList(listId, companyIds) {
+  if (!listId || !companyIds?.length) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'List + companies are required.' };
+  }
+  try {
+    const { data: userResp } = await supabase.auth.getUser();
+    const addedBy = userResp?.user?.id || null;
+
+    const rows = companyIds.map((cid) => ({
+      list_id: listId,
+      company_id: cid,
+      added_by: addedBy,
+    }));
+
+    const { error } = await supabase
+      .from('pulse_list_companies')
+      .upsert(rows, { onConflict: 'list_id,company_id' });
+
+    if (error) {
+      return { ok: false, code: classifyError(error), message: error.message };
+    }
+    return { ok: true, added: companyIds.length };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
+  }
+}
+
+/** Bulk-add multiple contacts (array of lit_contacts.id) to a list.
+ *  Uses a single upsert call for atomicity. */
+export async function bulkAddContactsToList(listId, contactIds) {
+  if (!listId || !contactIds?.length) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'List + contacts are required.' };
+  }
+  try {
+    const { data: userResp } = await supabase.auth.getUser();
+    const addedBy = userResp?.user?.id || null;
+
+    const rows = contactIds.map((cid) => ({
+      list_id: listId,
+      contact_id: cid,
+      added_by: addedBy,
+    }));
+
+    const { error } = await supabase
+      .from('pulse_list_contacts')
+      .upsert(rows, { onConflict: 'list_id,contact_id' });
+
+    if (error) {
+      return { ok: false, code: classifyError(error), message: error.message };
+    }
+    return { ok: true, added: contactIds.length };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
+  }
+}
+
 /** Add a single company (by lit_companies.id) to a list. */
 export async function addCompanyToList(listId, companyId, note) {
   if (!listId || !companyId) {
