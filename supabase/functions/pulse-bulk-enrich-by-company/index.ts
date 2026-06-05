@@ -85,10 +85,17 @@ async function apolloPeopleSearchByDomains(domains: string[]): Promise<ApolloCon
     q_organization_domains_list: domains,
     person_titles: HOT_TITLES_FOR_APOLLO,
     include_similar_titles: true,
-    contact_email_status: ["verified", "likely_to_engage"],
+    // contact_email_status filter removed 2026-06-05: API-level filter is
+    // unreliable across domain batches (returns 0 even when matches exist).
+    // isDeliverable() at the per-contact level handles deliverability filtering
+    // client-side after we get the results.
     page: 1,
     per_page: Math.min(domains.length * 5, 100),
   };
+
+  console.log(
+    `[pulse-bulk-enrich] Apollo POST — domains in batch: ${domains.length}, title filter count: ${HOT_TITLES_FOR_APOLLO.length}, per_page: ${body.per_page}`,
+  );
 
   const resp = await fetch(`${APOLLO_API_BASE}/api/v1/mixed_people/search`, {
     method: "POST",
@@ -99,6 +106,8 @@ async function apolloPeopleSearchByDomains(domains: string[]): Promise<ApolloCon
     },
     body: JSON.stringify(body),
   });
+
+  console.log(`[pulse-bulk-enrich] Apollo response status: ${resp.status}`);
 
   if (!resp.ok) {
     const txt = await resp.text().catch(() => "");
@@ -202,6 +211,10 @@ serve(async (req: Request) => {
     no_deliverable_email: 0,
   };
 
+  // Company IDs that had no domain on file — surfaced in the response so the
+  // frontend toast can tell the user exactly which companies couldn't be enriched.
+  const skippedNoDomainCompanyIds: string[] = [];
+
   const failedCompanies: { company_id: string; reason: string }[] = [];
 
   // Build domain → company_id map; skip companies without a domain.
@@ -215,6 +228,7 @@ serve(async (req: Request) => {
         : null);
     if (!domain) {
       skipped.no_domain++;
+      skippedNoDomainCompanyIds.push(co.id);
       continue;
     }
     domain = domain.toLowerCase().trim();
@@ -227,6 +241,7 @@ serve(async (req: Request) => {
       ok: true,
       added_contacts: 0,
       skipped,
+      skipped_company_ids: skippedNoDomainCompanyIds,
       failed_companies: failedCompanies,
       contact_ids: [],
     });
@@ -257,6 +272,7 @@ serve(async (req: Request) => {
       ok: true,
       added_contacts: 0,
       skipped,
+      skipped_company_ids: skippedNoDomainCompanyIds,
       failed_companies: failedCompanies,
       contact_ids: [],
     });
@@ -279,6 +295,7 @@ serve(async (req: Request) => {
       ok: true,
       added_contacts: 0,
       skipped,
+      skipped_company_ids: skippedNoDomainCompanyIds,
       failed_companies: failedCompanies,
       contact_ids: [],
     });
@@ -360,6 +377,7 @@ serve(async (req: Request) => {
     ok: true,
     added_contacts: contactIds.length,
     skipped,
+    skipped_company_ids: skippedNoDomainCompanyIds,
     failed_companies: failedCompanies,
     contact_ids: contactIds,
   });
