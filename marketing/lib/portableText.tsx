@@ -73,8 +73,31 @@ const components: PortableTextComponents = {
     ),
   },
   list: {
-    bullet: ({ children }) => <ul className="my-5 space-y-2 pl-5 text-[17px] text-ink-700 [&>li]:list-disc">{children}</ul>,
-    number: ({ children }) => <ol className="my-5 space-y-2 pl-5 text-[17px] text-ink-700 [&>li]:list-decimal">{children}</ol>,
+    bullet: ({ children }) => (
+      <ul className="font-body my-5 list-disc space-y-2 pl-6 text-[17px] leading-[1.7] text-ink-700 marker:text-ink-500">
+        {children}
+      </ul>
+    ),
+    number: ({ children }) => (
+      <ol className="font-body my-5 list-decimal space-y-2 pl-6 text-[17px] leading-[1.7] text-ink-700 marker:text-ink-500">
+        {children}
+      </ol>
+    ),
+  },
+  listItem: {
+    // Explicit listItem serializers — required because the default
+    // <li> wrapper carries no classes, and Tailwind's Preflight reset
+    // strips `list-style` from <ul>/<ol>. Setting `list-disc`/`list-decimal`
+    // on the parent then `display: list-item` on the <li> guarantees
+    // markers render even when an arbitrary `[&>li]` variant fails to
+    // tokenize during the JIT pass (which is what was happening for
+    // posts that landed bullets in production with no visible markers).
+    bullet: ({ children }) => (
+      <li className="pl-1 [&>p]:my-0 [&>p]:inline">{children}</li>
+    ),
+    number: ({ children }) => (
+      <li className="pl-1 [&>p]:my-0 [&>p]:inline">{children}</li>
+    ),
   },
   marks: {
     strong: ({ children }) => <strong className="font-semibold text-ink-900">{children}</strong>,
