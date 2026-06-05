@@ -3012,16 +3012,17 @@ function readTopRoutes(profile: any, routeKpis: any) {
       profile?.top_route_12m ||
       routeKpis?.topRouteLast12m;
     if (lane && typeof lane === "string") {
+      // Synthesized single-lane row. Use the 12-month rolling shipment
+      // count (Task 14) — profile.totalShipments can resolve to the
+      // lifetime BOL count in api.ts, which would silently inflate the
+      // lane row for snapshots that lack an explicit 12m number.
       return [
         {
           lane,
-          shipments:
-            Number(profile?.totalShipments) ||
-            Number(routeKpis?.shipmentsLast12m) ||
-            0,
+          shipments: Number(routeKpis?.shipmentsLast12m) || 0,
           teu:
-            Number(profile?.teuLast12m) ||
             Number(routeKpis?.teuLast12m) ||
+            Number(profile?.teuLast12m) ||
             0,
           spend: null,
         },

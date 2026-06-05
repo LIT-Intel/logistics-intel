@@ -61,6 +61,15 @@ type DetailsCompany = {
 };
 
 type DetailsKpis = {
+  /**
+   * Rolling 12-month BOL count. MUST be sourced from the 12-month
+   * window (e.g. `profile.routeKpis.shipmentsLast12m` or
+   * `lit_company_index.total_shipments`, which itself is 12mo).
+   * Do NOT pass `parsed_summary.total_shipments` or any lifetime
+   * total here — the right-rail "Volume" row labels this value as
+   * "Shipments — last 12 months", so a lifetime number would be
+   * actively misleading.
+   */
   shipments?: number | null;
   teu?: number | null;
   topRoute?: string | null;
@@ -598,7 +607,11 @@ export default function CDPDetailsPanel({
           <Row icon={<Clock />} label="Data freshness">
             {snapshotUpdatedAt ? formatRelative(snapshotUpdatedAt) : "—"}
           </Row>
-          <Row icon={<BarChart2 />} label="Volume">
+          <Row
+            icon={<BarChart2 />}
+            label="Shipments (12mo)"
+            title="Rolling 12-month BOL count from our shipment intelligence database."
+          >
             {kpis.shipments != null && kpis.shipments > 0 ? (
               <LitPill tone="green">
                 {Number(kpis.shipments).toLocaleString()} ship
@@ -676,17 +689,20 @@ function Row({
   children,
   mono,
   accent,
+  title,
 }: {
   icon?: React.ReactNode;
   label: string;
   children: React.ReactNode;
   mono?: boolean;
   accent?: boolean;
+  title?: string;
 }) {
   return (
     <div
       className="grid items-center gap-2 px-3.5 py-1.5"
       style={{ gridTemplateColumns: "92px 1fr", minHeight: 30 }}
+      title={title}
     >
       <div className="font-body flex items-center gap-1.5 text-[11px] text-slate-500">
         {icon && (

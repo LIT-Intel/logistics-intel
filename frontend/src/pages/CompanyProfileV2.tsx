@@ -862,8 +862,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     // here would have Command Center / Dashboard list cards showing the
     // structurally-low importer figure for any company viewed in V2.
     const update: Record<string, any> = {
-      shipments_12m:
-        profile.routeKpis?.shipmentsLast12m ?? profile.totalShipments ?? null,
+      // 12-month rolling only — `lit_company_index.shipments_12m` is a
+      // 12mo column, so we must not pollute it with `profile.totalShipments`
+      // (which can resolve to the lifetime BOL count when no 12m field is
+      // present on the snapshot — see Task 14 root cause).
+      shipments_12m: profile.routeKpis?.shipmentsLast12m ?? null,
       teu_12m: profile.routeKpis?.teuLast12m ?? null,
       fcl_shipments_12m: profile.containers?.fclShipments12m ?? null,
       lcl_shipments_12m: profile.containers?.lclShipments12m ?? null,
@@ -1301,9 +1304,20 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     );
 
     return {
+      // 12-month rolling BOL count. Sources, in priority order:
+      //   1. activeRouteKpis.shipmentsLast12m — explicit 12mo from
+      //      _shared/importyeti_fetch.ts route_kpis
+      //   2. shellCompany.kpis.shipments — lit_company_index.total_shipments
+      //      which is itself the 12-month rolling number (the search-result
+      //      cards already use this and label it "(12m)")
+      // We deliberately do NOT fall back to activeProfile.totalShipments —
+      // that field is derived from `shipments_last_12m ?? total_shipments`
+      // in api.ts, so it silently leaks the *lifetime* value when the
+      // snapshot doesn't carry a 12m number (Task 14 root cause: EAE
+      // showing 506 lifetime on the profile page while the search-card
+      // showed 243 12mo for the same company).
       shipments:
         activeRouteKpis?.shipmentsLast12m ??
-        activeProfile?.totalShipments ??
         shellCompany?.kpis?.shipments ??
         null,
       shipmentsAllTime: activeProfile?.totalShipmentsAllTime ?? null,
@@ -1358,9 +1372,10 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       // 0 when no service line could be sized (insufficient inputs); the
       // header renders "—" in that case rather than a fabricated zero.
       estRevOpp: (() => {
+        // 12-month rolling only — see headerKpis.shipments comment above
+        // for why activeProfile.totalShipments is excluded as a fallback.
         const shipments12m =
           activeRouteKpis?.shipmentsLast12m ??
-          activeProfile?.totalShipments ??
           shellCompany?.kpis?.shipments ??
           null;
         const t =
@@ -2088,8 +2103,10 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 null
               }
               ships12m={
+                // 12-month rolling only — never fall back to
+                // activeProfile.totalShipments (can be lifetime). See
+                // headerKpis.shipments comment for full rationale.
                 activeRouteKpis?.shipmentsLast12m ??
-                activeProfile?.totalShipments ??
                 shellCompany?.kpis?.shipments ??
                 null
               }
@@ -2128,9 +2145,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                   null,
               }}
               tradeKpis={{
+                // 12-month rolling only (Task 14). activeProfile.totalShipments
+                // excluded — see headerKpis.shipments rationale above.
                 shipments12m:
                   activeRouteKpis?.shipmentsLast12m ??
-                  activeProfile?.totalShipments ??
+                  shellCompany?.kpis?.shipments ??
                   null,
                 teu12m:
                   activeRouteKpis?.teuLast12m ??
@@ -2152,8 +2171,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                     activeProfile?.top_routes?.[0] ||
                     null;
                   const total = Number(
+                    // 12-month rolling only — never lifetime (Task 14)
                     activeRouteKpis?.shipmentsLast12m ??
-                      activeProfile?.totalShipments,
+                      shellCompany?.kpis?.shipments,
                   );
                   const topShip = Number(top?.shipments);
                   if (!total || !topShip || total <= 0) return null;
@@ -2190,8 +2210,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             <CDPRevenueOpportunity
               companyName={companyName}
               shipments12m={
+                // 12-month rolling only (Task 14). See headerKpis.shipments
+                // for why activeProfile.totalShipments is excluded.
                 activeRouteKpis?.shipmentsLast12m ??
-                activeProfile?.totalShipments ??
                 shellCompany?.kpis?.shipments ??
                 null
               }
