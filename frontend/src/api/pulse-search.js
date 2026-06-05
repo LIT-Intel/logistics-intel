@@ -215,7 +215,12 @@ export async function searchPulseV2(payload = {}) {
     timing_ms: raw.timing_ms || null,
     rows: mappedRows,
     raw_results: results,
-    has_more: raw.has_more ?? false,
+    // Do NOT coerce undefined → false here. The consumer in Pulse.jsx checks
+    // `typeof has_more === 'boolean'` to decide whether to trust the edge fn
+    // vs. fall back to the `rows.length >= PAGE_SIZE` heuristic. Coercing to
+    // false would make every legacy pulse-search response look like "no more
+    // results" and the Load More button would never appear.
+    has_more: typeof raw.has_more === 'boolean' ? raw.has_more : undefined,
     page: raw.page ?? 1,
     per_page: raw.per_page ?? perPage,
   };
