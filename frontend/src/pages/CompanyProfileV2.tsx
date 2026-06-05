@@ -1316,8 +1316,17 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       // snapshot doesn't carry a 12m number (Task 14 root cause: EAE
       // showing 506 lifetime on the profile page while the search-card
       // showed 243 12mo for the same company).
+      //
+      // FOLLOW-UP FIX: read from UNSCOPED `routeKpis` (not
+      // `activeRouteKpis`). `buildYearScopedProfile` overwrites
+      // `shipmentsLast12m` with a year-scoped sum — for 2026 that's
+      // just Jan-May = ~126, displayed under a "(12M)" label that
+      // should mean trailing 12 months (true value ~259 for EAE).
+      // The trailing-12M tile should be independent of the year
+      // selector; year-specific values render in their own tiles.
       shipments:
-        activeRouteKpis?.shipmentsLast12m ??
+        routeKpis?.shipmentsLast12m ??
+        (profile as any)?.routeKpis?.shipmentsLast12m ??
         shellCompany?.kpis?.shipments ??
         null,
       shipmentsAllTime: activeProfile?.totalShipmentsAllTime ?? null,
@@ -1372,10 +1381,12 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       // 0 when no service line could be sized (insufficient inputs); the
       // header renders "—" in that case rather than a fabricated zero.
       estRevOpp: (() => {
-        // 12-month rolling only — see headerKpis.shipments comment above
-        // for why activeProfile.totalShipments is excluded as a fallback.
+        // 12-month rolling only — read UNSCOPED routeKpis (same reason
+        // as headerKpis.shipments above: year selector shouldn't clobber
+        // the trailing-12M denominator of the revenue-opportunity calc).
         const shipments12m =
-          activeRouteKpis?.shipmentsLast12m ??
+          routeKpis?.shipmentsLast12m ??
+          (profile as any)?.routeKpis?.shipmentsLast12m ??
           shellCompany?.kpis?.shipments ??
           null;
         const t =

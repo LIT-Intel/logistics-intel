@@ -670,6 +670,32 @@ function buildCompanyProfileFromSnapshot(
   };
 }
 
+// Resolve UUID → ImportYeti slug. Callers (e.g. the profile-page
+// refresh button) pass `lit_companies.id` (a UUID), but ImportYeti's
+// upstream API expects the slug like "eae-usa". Without this lookup
+// the URL becomes `/v1.0/company/<uuid>` → 404 "Company not found
+// upstream". The cron path is unaffected because the picker hands
+// out source_company_key directly.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+async function resolveCompanyKeyToSlug(supabase: any, companyId: string): Promise<string> {
+  if (!UUID_RE.test(companyId)) return companyId;
+  try {
+    const { data: row } = await supabase
+      .from("lit_companies")
+      .select("source_company_key")
+      .eq("id", companyId)
+      .maybeSingle();
+    if (row?.source_company_key) {
+      console.log("  Resolved UUID → slug:", companyId, "→", row.source_company_key);
+      return row.source_company_key;
+    }
+    console.warn("  UUID lookup returned no source_company_key for", companyId);
+  } catch (e) {
+    console.warn("  UUID→slug lookup threw:", e instanceof Error ? e.message : String(e));
+  }
+  return companyId;
+}
+
 async function handleCompanyBolsAction(supabase: any, companyId: string, requestId: string) {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("📋 COMPANY BOLS REQUEST:", { requestId, companyId });
@@ -679,7 +705,8 @@ async function handleCompanyBolsAction(supabase: any, companyId: string, request
     return jsonResponse({ ok: false, error: "ImportYeti API key not configured", code: "IY_API_KEY_MISSING" }, 500);
   }
 
-  const normalizedCompanyKey = normalizeCompanyKey(companyId);
+  const slugInput = await resolveCompanyKeyToSlug(supabase, companyId);
+  const normalizedCompanyKey = normalizeCompanyKey(slugInput);
   console.log("  Normalized slug:", normalizedCompanyKey);
 
   try {
@@ -927,7 +954,8 @@ async function handleCompanyProfileAction(
     );
   }
 
-  const normalizedCompanyKey = normalizeCompanyKey(companyId);
+  const slugInput = await resolveCompanyKeyToSlug(supabase, companyId);
+  const normalizedCompanyKey = normalizeCompanyKey(slugInput);
   console.log("  Normalized slug:", normalizedCompanyKey);
 
   // Cached views are free for everyone (no quota burn). Only an explicit
@@ -1192,6 +1220,24 @@ async function handleReparseAll(
       const reparsed = buildParsedSummary(row.company_id, rawData) as any;
       const now = new Date().toISOString();
 
+      // Read the previous snapshot's last_shipment_date so we can later
+      // skip patching lit_companies.most_recent_shipment_date when the
+      // underlying date didn't actually move. Touching it every tick
+      // made the profile UI display 'Updated today' next to month-old
+      // shipment data — the writer's updated_at moved while the data
+      // didn't. We read the OLD parsed_summary BEFORE the snapshot
+      // update below overwrites it.
+      const { data: prevSnap } = await supabase
+        .from("lit_importyeti_company_snapshot")
+        .select("parsed_summary")
+        .eq("company_id", row.company_id)
+        .maybeSingle();
+      const previousParsedSummary =
+        (prevSnap as { parsed_summary?: Record<string, unknown> } | null)
+          ?.parsed_summary ?? null;
+      const previousLastShipmentDate =
+        (previousParsedSummary as any)?.last_shipment_date ?? null;
+
       const { error: snapErr } = await supabase
         .from("lit_importyeti_company_snapshot")
         .update({ parsed_summary: reparsed, updated_at: now })
@@ -1236,12 +1282,22 @@ async function handleReparseAll(
         lcl_shipments_12m: reparsed?.lcl_count ?? null,
         est_spend_12m:
           reparsed?.route_kpis?.estSpendUsd12m ?? reparsed?.est_spend ?? null,
-        most_recent_shipment_date: normalizeDateForPg(
-          reparsed?.last_shipment_date,
-        ),
         top_route_12m: reparsed?.route_kpis?.topRouteLast12m ?? null,
         recent_route: reparsed?.route_kpis?.mostRecentRoute ?? null,
       };
+      // Only patch most_recent_shipment_date when the snapshot's actual
+      // last shipment date moved. Touching it every tick made the profile
+      // UI display 'Updated today' next to month-old shipment data (the
+      // writer's updated_at moved; the data didn't).
+      const newLastShipmentDate = reparsed?.last_shipment_date ?? null;
+      if (
+        newLastShipmentDate &&
+        newLastShipmentDate !== previousLastShipmentDate
+      ) {
+        companyUpdate.most_recent_shipment_date = normalizeDateForPg(
+          newLastShipmentDate,
+        );
+      }
       const cleaned = Object.fromEntries(
         Object.entries(companyUpdate).filter(
           ([, v]) => v !== null && v !== undefined,
