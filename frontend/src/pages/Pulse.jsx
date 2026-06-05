@@ -1676,38 +1676,68 @@ function BulkSaveBar({ selectedIds, results, savedMemberships, onClear, onSaved,
     console.log('[BulkSave] resolved', resolvedIds.length, 'IDs; list.syncs_to_attio =', list.syncs_to_attio, 'list.id =', list.id);
 
     if (list.syncs_to_attio) {
-      // Syncable system list — enrich decision-maker contacts at these companies
-      // then insert into pulse_list_contacts (fires the Attio sync trigger).
-      console.log('[BulkSave] calling pulse-bulk-enrich-by-company with', resolvedIds.length, 'company IDs');
+      // Syncable system list — TWO-PHASE save:
+      //   Phase 1 (required): insert companies into pulse_list_companies. This
+      //     guarantees something lands in the list + fires the Attio company
+      //     sync trigger for each. User sees companies show up immediately.
+      //   Phase 2 (best-effort): call pulse-bulk-enrich-by-company to find
+      //     decision-maker contacts at those companies via Apollo. When Apollo
+      //     finds 0 (no domain on the Pulse "Discovered" row, or no senior
+      //     titles found), contacts stay at 0 but Phase 1 already covered us.
+      console.log('[BulkSave] syncable list — phase 1: bulk add companies', resolvedIds.length);
+      let companiesAdded = 0;
+      try {
+        const result = await bulkAddCompaniesToList(list.id, resolvedIds);
+        companiesAdded = result?.added ?? resolvedIds.length;
+        console.log('[BulkSave] phase 1 ok — companies added:', companiesAdded);
+      } catch (err) {
+        setSaving(false);
+        setSavingTo(null);
+        console.error('[BulkSave] phase 1 bulkAddCompaniesToList threw:', err);
+        toast.error(`Save failed: ${err?.message || 'Could not add companies to list'}`);
+        return;
+      }
+
+      console.log('[BulkSave] phase 2: calling pulse-bulk-enrich-by-company');
+      let contactsEnriched = 0;
+      let enrichError = null;
       try {
         const { data, error } = await supabase.functions.invoke('pulse-bulk-enrich-by-company', {
           body: { company_ids: resolvedIds, list_id: list.id },
         });
-        setSaving(false);
-        setSavingTo(null);
         if (error) {
-          // Parse structured error body from FunctionsHttpError
           let parsedErr = null;
           try {
             const cloned = error?.context?.clone?.();
             parsedErr = await cloned?.json?.();
           } catch { /* non-JSON */ }
-          const msg = parsedErr?.message || parsedErr?.error || error.message || 'Enrich failed';
-          console.error('[BulkSave] pulse-bulk-enrich-by-company error:', msg, parsedErr);
-          toast.error(`Contact enrichment failed: ${msg}`);
-          return;
+          enrichError = parsedErr?.message || parsedErr?.error || error.message || 'Enrich failed';
+          console.warn('[BulkSave] phase 2 enrich error (non-blocking):', enrichError, parsedErr);
+        } else {
+          contactsEnriched = data?.added_contacts ?? 0;
+          console.log('[BulkSave] phase 2 ok — contacts enriched:', contactsEnriched, data);
         }
-        console.log('[BulkSave] enrich response:', data);
-        toast.success(
-          `Found ${data?.added_contacts ?? 0} decision-maker contacts at ${resolvedIds.length} compan${resolvedIds.length === 1 ? 'y' : 'ies'} — syncing to Attio`,
-        );
       } catch (err) {
-        setSaving(false);
-        setSavingTo(null);
-        console.error('[BulkSave] pulse-bulk-enrich-by-company threw:', err);
-        toast.error(err?.message || 'Contact enrichment failed');
-        return;
+        enrichError = err?.message || 'Enrichment threw';
+        console.warn('[BulkSave] phase 2 enrich threw (non-blocking):', err);
       }
+
+      setSaving(false);
+      setSavingTo(null);
+
+      // Compose toast that reflects reality
+      const parts = [];
+      parts.push(`${companiesAdded} compan${companiesAdded === 1 ? 'y' : 'ies'} added to ${list.name}`);
+      if (contactsEnriched > 0) {
+        parts.push(`${contactsEnriched} decision-maker contact${contactsEnriched === 1 ? '' : 's'} enriched`);
+      } else if (enrichError) {
+        parts.push(`(contact enrichment hit an error — companies still synced to Attio)`);
+      } else {
+        parts.push(`(Apollo found no decision-maker contacts to enrich — companies still synced to Attio)`);
+      }
+      toast.success(parts.join(' · '));
+      onSaved?.();
+      return;
     } else {
       // Standard path — save companies to the list.
       // Filter out IDs already known to be in this list (avoids unnecessary
