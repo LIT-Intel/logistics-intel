@@ -28,6 +28,7 @@ import LitPill from "@/components/ui/LitPill";
 import { resolveEndpoint } from "@/lib/laneGlobe";
 import { normalizeSupplier } from "@/lib/supplierNormalize";
 import { supabase } from "@/lib/supabase";
+import { UpgradeRequiredInline } from "@/components/common/UpgradeRequired";
 
 /**
  * Phase 3 — Right-rail "Account Details" panel for the Company Profile.
@@ -191,6 +192,44 @@ export default function CDPDetailsPanel({
   });
   const toggle = (k: keyof typeof open) =>
     setOpen((s) => ({ ...s, [k]: !s[k] }));
+
+  // Refresh-button error surface. Most error routing happens upstream
+  // in CompanyProfileV2.handleManualRefreshClick (which swallows the
+  // thrown error). This local catch is the defensive layer: if the
+  // parent ever stops handling the throw, we still render the right
+  // banner / toast here instead of a silent failure.
+  const [limitError, setLimitError] = useState<any>(null);
+
+  async function handleRefreshClick() {
+    try {
+      setLimitError(null);
+      await onRefresh();
+    } catch (e: any) {
+      if (e?.code === "LIMIT_EXCEEDED") {
+        setLimitError(e.limit || e.gate || null);
+      } else if (e?.code === "TEMPORARY") {
+        window.dispatchEvent(
+          new CustomEvent("lit:toast", {
+            detail: {
+              tone: "warning",
+              title: "Refresh unavailable",
+              body: e.message,
+            },
+          }),
+        );
+      } else {
+        window.dispatchEvent(
+          new CustomEvent("lit:toast", {
+            detail: {
+              tone: "error",
+              title: "Refresh failed",
+              body: e?.message ?? "Unknown error",
+            },
+          }),
+        );
+      }
+    }
+  }
 
   // Phase 6 — right-rail trade-intel rows now fall back through profile
   // shapes AND recentBols when the explicit list isn't surfaced. Order
@@ -574,7 +613,7 @@ export default function CDPDetailsPanel({
         <div className="px-3.5 py-3">
           <button
             type="button"
-            onClick={onRefresh}
+            onClick={handleRefreshClick}
             disabled={refreshing}
             className="font-display inline-flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -585,6 +624,11 @@ export default function CDPDetailsPanel({
             )}
             {refreshing ? "Refreshing…" : "Refresh enrichment"}
           </button>
+          {limitError ? (
+            <div className="mt-2">
+              <UpgradeRequiredInline limit={limitError} />
+            </div>
+          ) : null}
         </div>
       </div>
     </aside>

@@ -2904,13 +2904,11 @@ export async function getIyCompanyProfile({
 
   if (error) {
     console.error("ImportYeti companyProfile error:", error);
-    // Try to parse the structured error body the edge function returns
-    // for both 403 LIMIT_EXCEEDED and 500 COMPANY_PROFILE_FAILED. The
-    // generic supabase-js error message ("Edge Function returned a
-    // non-2xx status code") doesn't carry our `code` so we either pull
-    // it from `data` (when supabase-js puts the body there) or from
-    // `error.context.response`. Attaching `code` to the thrown error
-    // lets the UI route to the right toast (limit vs upstream issue).
+    // supabase-js wraps non-2xx in FunctionsHttpError whose `.context`
+    // is the underlying Response. Pull the structured body so callers
+    // can route LIMIT_EXCEEDED to the upgrade modal and 5xx to a retry
+    // toast — not the generic "Edge Function returned a non-2xx status
+    // code" message that supabase-js attaches to `error.message`.
     let code: string | null = null;
     let bodyMsg: string | null = null;
     let gateBody: any = null;
@@ -2920,8 +2918,13 @@ export async function getIyCompanyProfile({
         bodyMsg = (data as any)?.message || (data as any)?.error || null;
         gateBody = data;
       }
-      if (!code && (error as any)?.context?.response) {
-        const cloned = (error as any).context.response.clone?.();
+      if (!code) {
+        const ctx: any = (error as any)?.context;
+        // `.context` is sometimes the Response itself, sometimes
+        // `{ response: Response }`. Support both.
+        const responseCandidate =
+          typeof ctx?.clone === "function" ? ctx : ctx?.response;
+        const cloned = responseCandidate?.clone?.();
         if (cloned) {
           const body = await cloned.json().catch(() => null);
           if (body && typeof body === "object") {
@@ -2932,15 +2935,41 @@ export async function getIyCompanyProfile({
         }
       }
     } catch {
-      /* swallow — fall back to error.message */
+      /* non-JSON body — fall through */
     }
+
+    if (code === "LIMIT_EXCEEDED") {
+      const thrown: any = new Error(
+        bodyMsg ||
+          "Monthly profile refresh limit reached. Upgrade to refresh more frequently.",
+      );
+      thrown.code = "LIMIT_EXCEEDED";
+      // Attach the structured gate payload under both `gate` (existing
+      // callers like CompanyProfileV2.handleManualRefreshClick) and
+      // `limit` (the canonical UpgradeRequiredInline shape).
+      thrown.gate = gateBody;
+      thrown.limit = gateBody;
+      throw thrown;
+    }
+
+    const status = Number(
+      (error as any)?.context?.status ??
+        (error as any)?.context?.response?.status ??
+        0,
+    );
+    if (status >= 500) {
+      const thrown: any = new Error(
+        "Refresh temporarily unavailable. Try again in a few minutes.",
+      );
+      thrown.code = "TEMPORARY";
+      thrown.gate = gateBody;
+      throw thrown;
+    }
+
     const thrown: any = new Error(
       `getIyCompanyProfile failed: ${bodyMsg || error.message || "Unknown error"}`,
     );
     thrown.code = code;
-    // Attach the full structured gate response (plan / used / limit /
-    // reset_at / upgrade_url for LIMIT_EXCEEDED) so the UI can render
-    // a premium quota-warning card without re-fetching.
     thrown.gate = gateBody;
     throw thrown;
   }
