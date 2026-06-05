@@ -120,6 +120,38 @@ async function fetchOwnerDisplay(userIds) {
   }
 }
 
+/**
+ * Batch-fetch list memberships for a set of company IDs.
+ *
+ * Returns a Map<companyId, string[]> where the value is the list of list
+ * names the company belongs to (RLS-filtered to lists the user can see).
+ * Used by the Pulse search page to show "Saved" badges on result cards.
+ *
+ * @param {string[]} companyIds  - lit_companies.id values
+ * @returns {Promise<Map<string, string[]>>}
+ */
+export async function fetchListMembershipsForCompanies(companyIds) {
+  if (!companyIds || companyIds.length === 0) return new Map();
+  try {
+    const { data, error } = await supabase
+      .from('pulse_list_companies')
+      .select('company_id, pulse_lists(name)')
+      .in('company_id', companyIds);
+    if (error || !Array.isArray(data)) return new Map();
+    const map = new Map();
+    for (const row of data) {
+      const cid = row.company_id;
+      const listName = row.pulse_lists?.name;
+      if (!cid || !listName) continue;
+      if (!map.has(cid)) map.set(cid, []);
+      map.get(cid).push(listName);
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
 /** Toggle a list's org-share state. The list owner's org_id is
  *  required when sharing; we accept it as an arg so the caller (with
  *  AuthProvider context) can pass it cleanly. Unshare clears

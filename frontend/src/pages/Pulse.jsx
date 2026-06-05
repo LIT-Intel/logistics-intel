@@ -54,6 +54,7 @@ import {
 } from '@/features/pulse/PulseResults';
 import {
   bulkAddCompaniesToList,
+  fetchListMembershipsForCompanies,
   listPulseLists,
 } from '@/features/pulse/pulseListsApi';
 import { searchLocalCompanies, mergeResults, LOCAL_RICH_THRESHOLD } from '@/features/pulse/pulseLocalSearch';
@@ -205,6 +206,13 @@ export default function Pulse() {
   // write a membership row directly via pulse_list_companies.
   const [listPicker, setListPicker] = useState(null); // { companyId, companyName }
 
+  // — "Saved" badge state —
+  // Map<company.id, string[]> listing which list names a company is already in.
+  // Populated after each search by batch-fetching pulse_list_companies.
+  // Only populated for companies that have a UUID id (provenance === 'database'
+  // or any previously-saved row with a real UUID).
+  const [savedMemberships, setSavedMemberships] = useState(new Map());
+
   // — bulk-select state —
   // selectedIds holds the result IDs (company.id values) for the current page.
   // Cleared after every new search and after a successful bulk-save.
@@ -283,6 +291,7 @@ export default function Pulse() {
       setActiveCompany(null);
       setSearchLimit(null);
       setSelectedIds(new Set());
+      setSavedMemberships(new Map());
       setCurrentPage(1);
       setHasMore(false);
     } else {
@@ -326,7 +335,13 @@ export default function Pulse() {
         } else {
           setResults(v2.rows);
         }
-        setHasMore(v2.has_more ?? false);
+        // has_more: trust the edge fn when it returns the field explicitly.
+        // Fallback heuristic: if the deployed fn pre-dates the pagination
+        // commit it won't return has_more at all (undefined). In that case,
+        // if we got a full page worth of results, assume there are more.
+        const explicitHasMore = typeof v2.has_more === 'boolean' ? v2.has_more : null;
+        const inferredHasMore = explicitHasMore !== null ? explicitHasMore : (v2.rows.length >= PAGE_SIZE);
+        setHasMore(inferredHasMore);
         setCurrentPage(page);
         setResultMode('companies');
         setMeta({
@@ -343,6 +358,25 @@ export default function Pulse() {
         if (!v2.rows.length && !append) {
           setErrorMessage(v2.coach_summary || 'No matches. Try broadening the geography or rephrasing.');
         }
+
+        // Batch-fetch saved-list memberships for the newly visible result IDs.
+        // Only query UUIDs — non-UUID ids (Apollo/discovered rows not yet in DB)
+        // can't be in pulse_list_companies. Fire-and-forget; badge is cosmetic.
+        const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const uuidIds = v2.rows.map((r) => r.id).filter((id) => uuidRx.test(String(id || '')));
+        if (uuidIds.length) {
+          fetchListMembershipsForCompanies(uuidIds).then((memberMap) => {
+            setSavedMemberships((prev) => {
+              if (!append) return memberMap;
+              const merged = new Map(prev);
+              memberMap.forEach((names, id) => merged.set(id, names));
+              return merged;
+            });
+          }).catch(() => {/* non-fatal */});
+        } else if (!append) {
+          setSavedMemberships(new Map());
+        }
+
         return;
       }
 
@@ -1068,6 +1102,7 @@ export default function Pulse() {
                   selected={selectedIds.has(c.id)}
                   onToggleSelect={toggleSelect}
                   onClick={() => setActiveCompany(c)}
+                  savedInLists={savedMemberships.get(c.id) || null}
                 />
               ))}
             </div>
@@ -1109,10 +1144,17 @@ export default function Pulse() {
       <BulkSaveBar
         selectedIds={selectedIds}
         results={results}
+        savedMemberships={savedMemberships}
         onClear={() => setSelectedIds(new Set())}
         onSaved={() => {
           setSelectedIds(new Set());
           setLibraryRefreshKey((k) => k + 1);
+          // Re-fetch saved badges so newly-added companies show "Saved"
+          const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          const uuidIds = results.map((r) => r.id).filter((id) => uuidRx.test(String(id || '')));
+          if (uuidIds.length) {
+            fetchListMembershipsForCompanies(uuidIds).then((m) => setSavedMemberships(m)).catch(() => {});
+          }
         }}
         upsertCompany={upsertCompanyFromResult}
       />
@@ -1383,11 +1425,15 @@ function ResultsHeader({ query, total, local, mode }) {
   );
 }
 
-function ResultCard({ company, active, selected, onToggleSelect, onClick }) {
+function ResultCard({ company, active, selected, onToggleSelect, onClick, savedInLists }) {
   const domain = extractDomain(company.domain || company.website) || company.domain || stripUrl(company.website);
   const location = [company.city, company.state, company.country].filter(Boolean).join(', ');
   const inDb = company.provenance === 'database' || company.alsoLive;
   const shipments = company.kpis?.shipments_12m;
+  const isSaved = Array.isArray(savedInLists) && savedInLists.length > 0;
+  const savedTooltip = isSaved
+    ? `In: ${savedInLists.join(', ')}`
+    : null;
 
   return (
     <div
@@ -1418,6 +1464,16 @@ function ResultCard({ company, active, selected, onToggleSelect, onClick }) {
           </svg>
         ) : null}
       </button>
+
+      {/* "Saved" badge — top-right, always visible (not just on hover) */}
+      {isSaved ? (
+        <span
+          title={savedTooltip || undefined}
+          className="absolute right-2.5 top-2.5 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-200"
+        >
+          Saved
+        </span>
+      ) : null}
 
       {/* Clickable card body */}
       <button
@@ -1535,7 +1591,7 @@ function SelectAllHeader({ results, selectedIds, onSelectAll, onClearAll }) {
 }
 
 /* ── BulkSaveBar ── */
-function BulkSaveBar({ selectedIds, results, onClear, onSaved, upsertCompany }) {
+function BulkSaveBar({ selectedIds, results, savedMemberships, onClear, onSaved, upsertCompany }) {
   const [listsOpen, setListsOpen] = useState(false);
   const [lists, setLists] = useState([]);
   const [listsLoading, setListsLoading] = useState(false);
@@ -1582,6 +1638,7 @@ function BulkSaveBar({ selectedIds, results, onClear, onSaved, upsertCompany }) 
 
     let resolvedIds = [];
     let failCount = 0;
+    let limitHit = false;
     for (const company of selectedResults) {
       try {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(company.id || ''));
@@ -1592,7 +1649,11 @@ function BulkSaveBar({ selectedIds, results, onClear, onSaved, upsertCompany }) 
           dbId = saved?.id || null;
         }
         if (dbId) resolvedIds.push(dbId);
-      } catch {
+      } catch (err) {
+        console.warn('[BulkSave] upsertCompany failed for', company.name, err?.message);
+        if (err?.name === 'LimitExceededError' || err?.code === 'LIMIT_EXCEEDED') {
+          limitHit = true;
+        }
         failCount++;
       }
     }
@@ -1600,32 +1661,78 @@ function BulkSaveBar({ selectedIds, results, onClear, onSaved, upsertCompany }) 
     if (!resolvedIds.length) {
       setSaving(false);
       setSavingTo(null);
-      toast.error('Could not resolve any company IDs. No rows saved.');
+      if (limitHit) {
+        toast.error('Save limit reached — upgrade your plan to save more companies.');
+      } else {
+        toast.error(
+          failCount > 0
+            ? `Could not resolve company IDs (${failCount} failed). Check console for details.`
+            : 'Could not resolve any company IDs. No rows saved.',
+        );
+      }
       return;
     }
+
+    console.log('[BulkSave] resolved', resolvedIds.length, 'IDs; list.syncs_to_attio =', list.syncs_to_attio, 'list.id =', list.id);
 
     if (list.syncs_to_attio) {
       // Syncable system list — enrich decision-maker contacts at these companies
       // then insert into pulse_list_contacts (fires the Attio sync trigger).
+      console.log('[BulkSave] calling pulse-bulk-enrich-by-company with', resolvedIds.length, 'company IDs');
       try {
         const { data, error } = await supabase.functions.invoke('pulse-bulk-enrich-by-company', {
           body: { company_ids: resolvedIds, list_id: list.id },
         });
         setSaving(false);
         setSavingTo(null);
-        if (error) throw new Error(error.message || 'Enrich failed');
+        if (error) {
+          // Parse structured error body from FunctionsHttpError
+          let parsedErr = null;
+          try {
+            const cloned = error?.context?.clone?.();
+            parsedErr = await cloned?.json?.();
+          } catch { /* non-JSON */ }
+          const msg = parsedErr?.message || parsedErr?.error || error.message || 'Enrich failed';
+          console.error('[BulkSave] pulse-bulk-enrich-by-company error:', msg, parsedErr);
+          toast.error(`Contact enrichment failed: ${msg}`);
+          return;
+        }
+        console.log('[BulkSave] enrich response:', data);
         toast.success(
           `Found ${data?.added_contacts ?? 0} decision-maker contacts at ${resolvedIds.length} compan${resolvedIds.length === 1 ? 'y' : 'ies'} — syncing to Attio`,
         );
       } catch (err) {
         setSaving(false);
         setSavingTo(null);
+        console.error('[BulkSave] pulse-bulk-enrich-by-company threw:', err);
         toast.error(err?.message || 'Contact enrichment failed');
         return;
       }
     } else {
-      // Standard path — save companies to the list
-      const result = await bulkAddCompaniesToList(list.id, resolvedIds);
+      // Standard path — save companies to the list.
+      // Filter out IDs already known to be in this list (avoids unnecessary
+      // upserts and gives a more accurate "N new" toast message).
+      const alreadyInListIds = new Set(
+        results
+          .filter((r) => selectedIds.has(r.id))
+          .filter((r) => {
+            const names = savedMemberships?.get(r.id);
+            return Array.isArray(names) && names.includes(list.name);
+          })
+          .map((r) => r.id),
+      );
+      const newIds = resolvedIds.filter((id) => !alreadyInListIds.has(id));
+      const skippedDupes = resolvedIds.length - newIds.length;
+
+      if (newIds.length === 0) {
+        setSaving(false);
+        setSavingTo(null);
+        toast.success(`All ${skippedDupes} selected compan${skippedDupes === 1 ? 'y is' : 'ies are'} already in "${list.name}".`);
+        onSaved?.();
+        return;
+      }
+
+      const result = await bulkAddCompaniesToList(list.id, newIds);
       setSaving(false);
       setSavingTo(null);
 
@@ -1635,10 +1742,10 @@ function BulkSaveBar({ selectedIds, results, onClear, onSaved, upsertCompany }) 
         return;
       }
 
-      const savedCount = resolvedIds.length;
-      const msg = failCount > 0
-        ? `${savedCount} saved to "${list.name}" · ${failCount} skipped (resolve error)`
-        : `${savedCount} compan${savedCount === 1 ? 'y' : 'ies'} added to "${list.name}"`;
+      const savedCount = newIds.length;
+      const dupePart = skippedDupes > 0 ? ` · ${skippedDupes} already in list` : '';
+      const failPart = failCount > 0 ? ` · ${failCount} skipped (save error)` : '';
+      const msg = `${savedCount} compan${savedCount === 1 ? 'y' : 'ies'} added to "${list.name}"${dupePart}${failPart}`;
       toast.success(msg);
     }
 
@@ -1720,34 +1827,47 @@ function BulkSaveBar({ selectedIds, results, onClear, onSaved, upsertCompany }) 
                 </div>
               ) : (
                 <ul className="max-h-[240px] overflow-y-auto py-1">
-                  {lists.map((list) => (
-                    <li key={list.id}>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveToList(list)}
-                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-white/5"
-                      >
-                        <Database className="h-3 w-3 shrink-0 text-slate-400" />
-                        <div className="min-w-0 flex-1">
-                          <div className="font-display flex items-center gap-1.5 truncate text-[12.5px] font-semibold text-slate-100">
-                            {list.name}
-                            {list.syncs_to_attio ? (
-                              <span
-                                className="inline-flex shrink-0 items-center rounded-sm px-1 py-px text-[9px] font-bold uppercase tracking-wide"
-                                style={{ background: 'rgba(0,240,255,0.15)', color: '#00F0FF', border: '1px solid rgba(0,240,255,0.25)' }}
-                              >
-                                enriches contacts
-                              </span>
-                            ) : null}
+                  {lists.map((list) => {
+                    // Count how many of the currently-selected companies are
+                    // already in this list (so we can show a preview).
+                    const alreadyInList = results
+                      .filter((r) => selectedIds.has(r.id))
+                      .filter((r) => {
+                        const names = savedMemberships?.get(r.id);
+                        return Array.isArray(names) && names.includes(list.name);
+                      }).length;
+                    const newCount = selectedIds.size - alreadyInList;
+                    return (
+                      <li key={list.id}>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveToList(list)}
+                          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-white/5"
+                        >
+                          <Database className="h-3 w-3 shrink-0 text-slate-400" />
+                          <div className="min-w-0 flex-1">
+                            <div className="font-display flex items-center gap-1.5 truncate text-[12.5px] font-semibold text-slate-100">
+                              {list.name}
+                              {list.syncs_to_attio ? (
+                                <span
+                                  className="inline-flex shrink-0 items-center rounded-sm px-1 py-px text-[9px] font-bold uppercase tracking-wide"
+                                  style={{ background: 'rgba(0,240,255,0.15)', color: '#00F0FF', border: '1px solid rgba(0,240,255,0.25)' }}
+                                >
+                                  enriches contacts
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="font-body text-[10.5px] text-slate-500">
+                              {alreadyInList > 0
+                                ? `${newCount} new · ${alreadyInList} already in list`
+                                : `${list.company_count ?? 0} compan${(list.company_count ?? 0) === 1 ? 'y' : 'ies'}`}
+                            </div>
                           </div>
-                          <div className="font-body text-[10.5px] text-slate-500">
-                            {list.company_count ?? 0} compan{(list.company_count ?? 0) === 1 ? 'y' : 'ies'}
-                          </div>
-                        </div>
-                        <ArrowRight className="h-3 w-3 shrink-0 text-slate-500" />
-                      </button>
-                    </li>
-                  ))}
+                          <ArrowRight className="h-3 w-3 shrink-0 text-slate-500" />
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
