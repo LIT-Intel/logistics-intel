@@ -144,10 +144,7 @@ export default function CareersPage() {
           />
           <div className="relative grid grid-cols-1 gap-8 lg:grid-cols-[2fr,1fr] lg:items-center">
             <div className="max-w-[680px]">
-              <div
-                className="font-display text-[11px] font-bold uppercase tracking-[0.12em]"
-                style={{ color: "#00F0FF" }}
-              >
+              <div className="lit-eyebrow-dark">
                 Apply
               </div>
               <h2 className="font-display mt-3 text-[28px] sm:text-[36px] font-semibold leading-[1.05] tracking-[-0.02em] text-white">

@@ -44,9 +44,7 @@ export function NewsletterStrip({
   return (
     <section className="newsletter-strip">
       <div className="relative z-10 mx-auto max-w-container px-5 sm:px-8">
-        <div className="font-display text-[11px] font-bold uppercase tracking-[0.16em] text-brand-cyan">
-          {eyebrow}
-        </div>
+        <div className="lit-eyebrow-dark">{eyebrow}</div>
         <h2 className="mt-3">{heading}</h2>
         <p className="ns-lede mx-auto max-w-[520px]">{lede}</p>
         <form onSubmit={onSubmit} noValidate>

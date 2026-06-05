@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Menu, X, ArrowRight, Calendar } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 import { APP_LOGIN_URL } from "@/lib/app-urls";
 
 /** Grouped to mirror the desktop "Product" dropdown so the mobile drawer
@@ -160,16 +161,17 @@ export function MobileMenu() {
               >
                 Sign in
               </a>
-              <Link
+              <Button
+                variant="primary"
+                size="md"
                 href="/demo"
                 onClick={() => setOpen(false)}
-                className="font-display flex h-11 items-center justify-center gap-2 rounded-md text-[14px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
-                style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
+                className="w-full"
               >
                 <Calendar className="h-4 w-4" />
                 Book a demo
                 <ArrowRight className="h-4 w-4" />
-              </Link>
+              </Button>
             </div>
           </div>
         </div>

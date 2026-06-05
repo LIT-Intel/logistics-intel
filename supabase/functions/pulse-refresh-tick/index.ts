@@ -13,8 +13,11 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const IMPORTYETI_API_KEY = Deno.env.get("IMPORTYETI_API_KEY") || "";
 
-const BATCH_SIZE = 20;
-const TTL_DAYS = 14;
+// Weekly refresh cadence: cron runs once daily, processes up to 40
+// stalest saves per tick. 279 saved companies / 40 per day ≈ full
+// sweep every 7 days. TTL aligned with that cadence.
+const BATCH_SIZE = 40;
+const TTL_HOURS = 24 * 7; // 7 days
 const LOCK_KEY = 7281990; // arbitrary 32-bit signed int identifying this cron lock
 
 serve(async (req) => {
@@ -95,23 +98,20 @@ serve(async (req) => {
 });
 
 async function pickStaleSnapshots(supabase: any, limit: number): Promise<string[]> {
-  const ttl = new Date(Date.now() - TTL_DAYS * 86400 * 1000).toISOString();
-  const { data } = await supabase
-    .from("lit_importyeti_company_snapshot")
-    .select("company_id")
-    .lt("updated_at", ttl)
-    .order("updated_at", { ascending: true, nullsFirst: true })
-    .limit(limit);
-  if (!data || data.length === 0) return [];
-  // Filter to only company_ids that are CURRENTLY saved AND not untrackable.
-  const slugs = data.map((r: any) => r.company_id);
-  const { data: active } = await supabase
-    .from("lit_saved_companies")
-    .select("source_company_key")
-    .in("source_company_key", slugs)
-    .eq("refresh_status", "active");
-  const activeSet = new Set((active || []).map((r: any) => r.source_company_key));
-  return slugs.filter((s: string) => activeSet.has(s));
+  // Delegate to pick_stale_saved_snapshots RPC. The RPC does the
+  // INNER JOIN between lit_saved_companies and lit_importyeti_company_snapshot
+  // so the LIMIT applies AFTER the active-save filter. Previous in-app
+  // two-step query (select 20 oldest snapshots, then filter to saved)
+  // shipped 0 candidates because orphan snapshots filled all 20 slots.
+  const { data, error } = await supabase.rpc("pick_stale_saved_snapshots", {
+    p_limit: limit,
+    p_ttl_hours: TTL_HOURS,
+  });
+  if (error) {
+    console.error("[pulse-refresh-tick] pick_stale_saved_snapshots RPC failed:", error);
+    return [];
+  }
+  return (data ?? []).map((row: { source_company_key: string }) => row.source_company_key);
 }
 
 async function pickNeverFetched(supabase: any, limit: number): Promise<string[]> {

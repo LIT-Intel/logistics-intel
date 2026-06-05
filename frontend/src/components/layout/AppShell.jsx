@@ -136,7 +136,8 @@ export default function AppShell({ currentPageName, children }) {
   const isAdmin = Boolean(canAccessAdmin || isOrgAdmin || isSuperAdmin);
   const showCampaigns = isAdmin || canAccessFeature(plan, "campaign_builder");
   const showPulse = isAdmin || canAccessFeature(plan, "pulse");
-  const showRfp = true;
+  // RFP Studio discontinued 2026-06 — see roadmap doc.
+  const showRfp = false;
   const showAdminSection = isAdmin;
 
   const breadcrumbs = useMemo(() => {
@@ -236,19 +237,6 @@ export default function AppShell({ currentPageName, children }) {
 
           <SectionLabel collapsed={collapsed}>Tools</SectionLabel>
           <nav className="mb-4">
-            {showRfp ? (
-              <SideLink to="/app/rfp" icon={FileText} label={collapsed ? "" : "RFP Studio"} />
-            ) : (
-              !collapsed && (
-                <SideLink
-                  to="#"
-                  icon={FileText}
-                  label="RFP Studio"
-                  locked
-                  onClick={lockedClick}
-                />
-              )
-            )}
             <SideLink to="/app/widgets" icon={Box} label={collapsed ? "" : "Widgets"} />
           </nav>
 
@@ -408,7 +396,6 @@ export default function AppShell({ currentPageName, children }) {
               {showPulse && (
                 <SideLink to="/app/prospecting" icon={TrendingUp} label="Pulse" />
               )}
-              <SideLink to="/app/rfp" icon={FileText} label="RFP Studio" />
               <SideLink to="/app/widgets" icon={Box} label="Widgets" />
               <SideLink to="/app/settings" icon={Settings} label="Settings" />
               <SideLink to="/app/billing" icon={CreditCard} label="Billing" />

@@ -9,7 +9,7 @@
  * Math lives in `frontend/src/lib/revenueOpportunity.ts`. This file is just
  * the rendering layer + an empty state for companies without enough data.
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Anchor,
   CheckCircle2,
@@ -30,6 +30,8 @@ import {
   type RevenueOpportunityReport,
   type ServiceLineEstimate,
 } from "@/lib/revenueOpportunity";
+import { useDrayageRollup } from "@/lib/api/drayageRollup";
+import { supabase } from "@/lib/supabase";
 import type { FreightLane } from "@/lib/freightRateBenchmark";
 
 type Props = {
@@ -43,6 +45,13 @@ type Props = {
   hsProfile?: any[] | null;
   carrierMix?: any[] | null;
   importerSelfReportedSpend12m?: number | null;
+  /**
+   * ImportYeti slug used to key into `lit_drayage_estimates`
+   * (`source_company_key`). NOT the lit_companies UUID.
+   * When missing, the drayage line falls back to a "not calculated"
+   * empty state with no Compute now affordance.
+   */
+  sourceCompanyKey?: string | null;
 };
 
 const SERVICE_LINE_ICONS: Record<string, any> = {
@@ -86,13 +95,60 @@ const CONFIDENCE_TONE: Record<
 function ServiceLineCard({
   line,
   shortKey,
+  onComputeNow,
+  computing,
 }: {
   line: ServiceLineEstimate;
   shortKey: keyof typeof SERVICE_LINE_ICONS;
+  onComputeNow?: () => void;
+  computing?: boolean;
 }) {
   const Icon = SERVICE_LINE_ICONS[shortKey] ?? Building2;
   const tone = CONFIDENCE_TONE[line.confidence];
   const isUsable = line.value != null && line.value > 0;
+  const isNotCalculated = line.status === "not_calculated";
+
+  // Special render path for "drayage — not calculated yet". Shows an
+  // amber banner with a Compute now button instead of the misleading
+  // greyed-out "Not enough data" tile.
+  if (isNotCalculated) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+              <Icon className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="text-[12.5px] font-bold text-amber-900">
+                {line.serviceLine}
+              </div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                Not yet calculated
+              </div>
+            </div>
+          </div>
+        </div>
+        <p className="text-[11.5px] leading-snug text-amber-800 mb-3">
+          {line.reason}
+        </p>
+        {onComputeNow ? (
+          <button
+            type="button"
+            onClick={onComputeNow}
+            disabled={computing}
+            className="inline-flex h-8 items-center rounded-lg bg-blue-600 px-3 text-[12px] font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {computing ? "Computing…" : "Compute now"}
+          </button>
+        ) : (
+          <div className="text-[10.5px] text-amber-700 italic">
+            Save this company to enable drayage rollup compute.
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -157,6 +213,37 @@ function ServiceLineCard({
           ))}
         </div>
       ) : null}
+      {line.breakdown && line.breakdown.length > 0 ? (
+        <div className="mt-3 pt-2.5 border-t border-slate-100">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+            Per-route breakdown
+          </div>
+          <div className="space-y-1">
+            {line.breakdown.slice(0, 6).map((row) => (
+              <div
+                key={row.route}
+                className="flex items-center justify-between gap-2 text-[10.5px]"
+              >
+                <div className="truncate text-slate-700">{row.route}</div>
+                <div className="flex items-center gap-2 whitespace-nowrap">
+                  <span className="text-slate-500 tabular-nums">
+                    {row.containers} cnt
+                  </span>
+                  <span className="font-semibold text-slate-900 tabular-nums">
+                    {formatUsdShort(row.cost)}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {line.breakdown.length > 6 ? (
+              <div className="text-[10px] text-slate-500 italic">
+                +{line.breakdown.length - 6} more route
+                {line.breakdown.length - 6 === 1 ? "" : "s"}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -190,6 +277,15 @@ function CrossSellCard({
 }
 
 export default function CDPRevenueOpportunity(props: Props) {
+  // Fetch per-route drayage rollup from `lit_drayage_estimates` keyed
+  // on source_company_key (the ImportYeti slug). 271 of 279 saved
+  // companies already have rollup data; the other 8 get the "Compute
+  // now" empty state below.
+  const { rollup: drayageRollupRoutes } = useDrayageRollup(
+    props.sourceCompanyKey ?? null,
+  );
+  const [computingDrayage, setComputingDrayage] = useState(false);
+
   const inputs: RevenueOpportunityInputs = useMemo(
     () => ({
       companyName: props.companyName,
@@ -202,13 +298,44 @@ export default function CDPRevenueOpportunity(props: Props) {
       hsProfile: props.hsProfile,
       carrierMix: props.carrierMix,
       importerSelfReportedSpend12m: props.importerSelfReportedSpend12m,
+      drayageRollupRoutes,
     }),
-    [props],
+    [props, drayageRollupRoutes],
   );
 
   const report = useMemo(() => buildRevenueOpportunity(inputs), [inputs]);
 
-  if (!report.hasUsableData) {
+  async function handleComputeDrayageNow() {
+    if (!props.sourceCompanyKey) return;
+    setComputingDrayage(true);
+    try {
+      const { error } = await supabase.functions.invoke(
+        "pulse-drayage-recompute",
+        { body: { source_company_key: props.sourceCompanyKey } },
+      );
+      if (error) throw error;
+      // Reload to refetch the rollup. Cheap + reliable; the alternative
+      // (re-fire the hook by bumping a dep) would need more plumbing.
+      window.location.reload();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("[drayage] compute failed:", e);
+      // eslint-disable-next-line no-alert
+      alert("Drayage compute failed. Try again or contact support.");
+    } finally {
+      setComputingDrayage(false);
+    }
+  }
+
+  // Even when no service line has dollar value (e.g. drayage is the
+  // only line and it's not_calculated), we still want to render the
+  // tab so the user sees the Compute now affordance. Only fall back to
+  // the empty state when every line is truly insufficient_data AND the
+  // drayage line isn't sitting in the not_calculated state.
+  const drayageIsNotCalculated =
+    report.serviceLines.drayage.status === "not_calculated";
+
+  if (!report.hasUsableData && !drayageIsNotCalculated) {
     return (
       <div className="px-6 py-8">
         <div className="mx-auto max-w-2xl rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
@@ -284,7 +411,14 @@ export default function CDPRevenueOpportunity(props: Props) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           <ServiceLineCard line={serviceLines.ocean} shortKey="Ocean" />
           <ServiceLineCard line={serviceLines.customs} shortKey="Customs" />
-          <ServiceLineCard line={serviceLines.drayage} shortKey="Drayage" />
+          <ServiceLineCard
+            line={serviceLines.drayage}
+            shortKey="Drayage"
+            onComputeNow={
+              props.sourceCompanyKey ? handleComputeDrayageNow : undefined
+            }
+            computing={computingDrayage}
+          />
           <ServiceLineCard line={serviceLines.air} shortKey="Air" />
           <ServiceLineCard line={serviceLines.trucking} shortKey="Trucking" />
         </div>
@@ -320,9 +454,11 @@ export default function CDPRevenueOpportunity(props: Props) {
             <span className="font-semibold text-slate-700">Methodology:</span>{" "}
             Ocean uses lane-matched FBX rates (LCL-bounded TEU split). Customs
             uses per-entry brokerage fees ($150 FCL / $200 LCL). Drayage uses
-            blended US East/West coast pulls (~$450). Air uses HS-derived
-            air-likely share with a 5% conversion factor + $2.80/kg general
-            cargo rate. Trucking uses 60% of FCL × $1,200 post-port FTL.
+            per-route rollup from <code className="text-slate-700">lit_drayage_estimates</code>
+            {" "}(PierPASS + chassis + fuel + linehaul per BOL). Air uses
+            HS-derived air-likely share with a 5% conversion factor + $2.80/kg
+            general cargo rate. Trucking uses 60% of FCL × $1,200 post-port
+            FTL.
             {benchmarkAsOf
               ? ` Benchmark snapshot as of ${benchmarkAsOf}.`
               : ""}

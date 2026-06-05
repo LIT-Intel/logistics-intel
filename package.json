@@ -1,7 +1,16 @@
 {
   "name": "logistics-intel-monorepo",
   "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:frontend": "vitest run --root frontend",
+    "test:edge": "deno test --allow-env --allow-net=esm.sh,deno.land --allow-read supabase/functions/_shared/",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium"
+  },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "vitest": "^4.0.12"
   }
 }

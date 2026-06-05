@@ -2,12 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
+/* Fonts are loaded via next/font/google in app/layout.tsx — the
+   self-hosted @font-face declarations are injected by Next and exposed
+   as the --font-space-grotesk / --font-dm-sans / --font-jetbrains-mono
+   CSS variables on <html>. These aliases keep the existing
+   --font-display / --font-body / --font-mono naming used throughout
+   this file and the design system. */
 :root {
-  --font-display: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-display: var(--font-space-grotesk), system-ui, -apple-system, sans-serif;
+  --font-body: var(--font-dm-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), 'Fira Code', monospace;
 
   /* Brand color tokens (extend Tailwind brand.*). Cyan-dim is the
      "cyan-flavored" dark-surface accent; never use raw #00F0FF for text
@@ -130,9 +134,12 @@ body {
   box-shadow: inset 0 -1px 0 rgba(0, 240, 255, 0.18);
 }
 
-/* Premium gradient text used for hero highlights. */
+/* Premium gradient text used for hero highlights. Blue → cyan only
+   (no violet stop) per the home-palette restraint pass. The full
+   blue→violet→cyan rainbow was retired to keep the brand voice on
+   two anchor hues. */
 .grad-text {
-  background: linear-gradient(95deg, #3b82f6 0%, #8b5cf6 55%, #06b6d4 100%);
+  background: linear-gradient(95deg, #3b82f6 0%, #06b6d4 60%, #00F0FF 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -213,6 +220,21 @@ body {
   box-shadow: 0 1px 2px rgba(15,23,42,0.04);
 }
 .lit-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: theme('colors.brand.blue'); box-shadow: 0 0 8px rgba(59,130,246,0.55); }
+
+/* Dark-surface eyebrow — paired with .lit-pill (light-surface). Cyan
+   small-caps with soft glow. Apply to top-of-section labels on
+   bg-dark-0/1/2/3 surfaces, the hero, BigNumberStrip, CtaBanner, and
+   any slate-gradient inset card. Never use on light surfaces. */
+.lit-eyebrow-dark {
+  display: inline-block;
+  color: #00F0FF;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.25);
+}
 
 /* ───────────────────────────────────────────────────────────────
    foundations.css — Phase 1+2+3 upgrade utilities ported from the

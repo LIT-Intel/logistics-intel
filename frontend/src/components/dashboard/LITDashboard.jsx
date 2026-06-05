@@ -29,6 +29,7 @@ import TimelineCard from "@/components/dashboard/sections/TimelineCard";
 
 import { PulseCoachInline } from "@/features/coach/PulseCoachWidget";
 import WorkspaceLanesGlobe from "@/features/coach/WorkspaceLanesGlobe";
+import ArrivingThisWeekTile from "@/components/dashboard/ArrivingThisWeekTile";
 import RecentEnrichmentsCard from "@/components/dashboard/sections/RecentEnrichmentsCard";
 
 // Provider + floating pill are mounted by AppLayout so Pulse Coach
@@ -339,6 +340,12 @@ export default function LITDashboard() {
               <WorkspaceLanesGlobe />
               <PulseCoachInline />
             </div>
+
+            {/* Arriving this week — F3 closure for pulse-arrival-alerts.
+                Auto-hides nothing; the tile owns its own empty + loading
+                states. Single-column at every breakpoint to keep
+                ETA-by-day legible. */}
+            <ArrivingThisWeekTile />
 
             {/* Hot Accounts + Activity rail */}
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">

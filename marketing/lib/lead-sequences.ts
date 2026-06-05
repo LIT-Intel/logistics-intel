@@ -28,7 +28,8 @@ export type SequenceKey =
   | "partner-onboarding"
   | "comparison-nurture"
   | "re-engagement"
-  | "post-signup-demo";
+  | "post-signup-demo"
+  | "cold-fmcsa-outbound";
 
 export type SequenceStep = {
   /** 1-indexed step number, unique within a sequence. */
@@ -191,6 +192,40 @@ export const SEQUENCES: Record<SequenceKey, SequenceStep[]> = {
       templateId: null,
       subject: "Want to see LIT in action? Book a 15-min walkthrough",
       purpose: "Post-confirmation demo invite — single Cal.com CTA",
+    },
+  ],
+  "cold-fmcsa-outbound": [
+    {
+      step: 1,
+      delayHours: 0,
+      envTemplateVar: "RESEND_TPL_COLD_FMCSA_T1",
+      templateId: null,
+      subject: "quick question — {{companyName}} prospecting",
+      purpose: "Curiosity opener — no ask, no link, threading anchor",
+    },
+    {
+      step: 2,
+      delayHours: 72,
+      envTemplateVar: "RESEND_TPL_COLD_FMCSA_T2",
+      templateId: null,
+      subject: "re: quick question — {{companyName}} prospecting",
+      purpose: "Concrete proof point + soft video offer",
+    },
+    {
+      step: 3,
+      delayHours: 168,
+      envTemplateVar: "RESEND_TPL_COLD_FMCSA_T3",
+      templateId: null,
+      subject: "something you might find useful",
+      purpose: "Pulse Digest share — converts non-responders to newsletter",
+    },
+    {
+      step: 4,
+      delayHours: 336,
+      envTemplateVar: "RESEND_TPL_COLD_FMCSA_T4",
+      templateId: null,
+      subject: "closing the loop on {{companyName}}?",
+      purpose: "Polite breakup — highest reply-rate touch",
     },
   ],
 };

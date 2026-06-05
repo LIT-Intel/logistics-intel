@@ -14,6 +14,8 @@ import { TestimonialTrio } from "@/components/lead-magnet/TestimonialTrio";
 import { MoneyPageFAQ } from "@/components/lead-magnet/MoneyPageFAQ";
 import { PulseDigestEmailMockup } from "@/components/lead-magnet/PulseDigestEmailMockup";
 import { FinalCtaBand } from "@/components/lead-magnet/FinalCtaBand";
+import Link from "next/link";
+import { INDUSTRIES } from "./_industries";
 
 export const revalidate = 600;
 
@@ -250,6 +252,44 @@ export default function FreightLeadsPage() {
             { question: "Will LIT integrate with our CRM?", answer: "Native push to HubSpot, Salesforce, Outreach, Apollo, Salesloft, and SmartLead. Two-way sync on the paid plans. Or use LIT's built-in Command Center CRM (included with the free trial) and skip the integration entirely." },
           ]}
         />
+
+        <section className="bg-white px-5 py-16 sm:px-8 sm:py-20">
+          <div className="mx-auto max-w-content">
+            <div className="mx-auto max-w-[680px] text-center">
+              <div className="eyebrow">Industries we serve</div>
+              <h2 className="display-lg mt-3">
+                Freight leads, by industry.
+              </h2>
+              <p className="font-body mt-4 text-[15px] leading-relaxed text-ink-500">
+                Each industry page maps the live importer base, the HS-code priors, the
+                lanes with the most activity, and the Pulse AI signals that drive
+                opportunity in that vertical.
+              </p>
+            </div>
+            <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {INDUSTRIES.map((ind) => (
+                <Link
+                  key={ind.slug}
+                  href={`/freight-leads/${ind.slug}`}
+                  className="group rounded-2xl border border-ink-100 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg"
+                >
+                  <div className="font-mono mb-2 text-[10.5px] font-bold uppercase tracking-[0.12em] text-brand-blue-700">
+                    Freight leads
+                  </div>
+                  <div className="font-display text-[17px] font-semibold leading-snug text-ink-900 group-hover:text-brand-blue-700">
+                    {ind.industry}
+                  </div>
+                  <div className="font-body mt-2 text-[13.5px] leading-relaxed text-ink-500">
+                    {ind.audienceLine}
+                  </div>
+                  <div className="font-display mt-4 inline-flex items-center gap-1 text-[13px] font-semibold text-brand-blue-700">
+                    See freight leads →
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
 
         <FinalCtaBand
           heading="Start free. See your first 10 active shippers in 30 seconds."

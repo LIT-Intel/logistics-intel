@@ -11,36 +11,53 @@ const STEPS = [
   { icon: CheckCircle2, label: "Replies land", body: "3 meetings booked, pipeline built" },
 ];
 
+export type WorkflowMotionVariant = "light" | "dark";
+
 /**
  * Animated workflow strip used on the homepage and /pulse. Each step
  * pulses in sequence — communicates "signal becomes pipeline" without
- * needing a video. Pass `dark` to render on a Pulse-Coach surface
- * (the home page's Signal → Pipeline section is dark-bg).
+ * needing a video.
+ *
+ * `variant` controls surface treatment:
+ *  - `"dark"`  — slate cards, cyan-glow racing runner. Use on
+ *    `.bg-section-dark` or other dark surfaces (e.g. /pulse hero).
+ *  - `"light"` — white cards, brand-blue accents, blue pulse dot.
+ *    No cyan; suitable for light section surfaces such as
+ *    `bg-section-soft-blue` on the home page.
+ *
+ * Legacy `dark` boolean prop is still honoured for back-compat with the
+ * /pulse page; if both `dark` and `variant` are provided, `variant` wins.
  */
 export function WorkflowMotion({
   className = "",
   dark = false,
+  variant,
 }: {
   className?: string;
   dark?: boolean;
+  variant?: WorkflowMotionVariant;
 }) {
   const prefersReducedMotion = useReducedMotion();
+  const resolvedVariant: WorkflowMotionVariant =
+    variant ?? (dark ? "dark" : "light");
+  const isDark = resolvedVariant === "dark";
 
-  // Dark variant — cards on a slate surface, cyan-glow numbers, white text.
-  // Light variant — original blue-tinted icon, ink-900 labels, white card.
-  const cardCls = dark
+  // Card chrome.
+  const cardCls = isDark
     ? "relative flex flex-col gap-3 rounded-2xl border border-white/10 p-5 shadow-[0_30px_80px_-20px_rgba(15,23,42,0.5)]"
-    : "relative flex flex-col gap-3 rounded-2xl border border-ink-100 bg-white p-5 shadow-sm";
-  const cardStyle = dark
+    : "relative flex flex-col gap-3 rounded-2xl border border-ink-100 bg-white p-5 shadow-sm transition-colors";
+  const cardStyle = isDark
     ? {
         background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
         boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.15)",
       }
     : undefined;
-  const numCls = dark
+
+  // Number / icon badge.
+  const numCls = isDark
     ? "font-mono inline-flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-bold"
     : "flex h-8 w-8 items-center justify-center rounded-lg";
-  const numStyle = dark
+  const numStyle = isDark
     ? {
         background: "linear-gradient(180deg,#0b1220,#020617)",
         color: "#00F0FF",
@@ -48,16 +65,18 @@ export function WorkflowMotion({
           "0 0 0 1px rgba(0,240,255,0.4), 0 0 12px rgba(0,240,255,0.2)",
       }
     : { background: "rgba(37,99,235,0.08)", boxShadow: "inset 0 0 0 1px rgba(37,99,235,0.15)" };
-  const stepLblCls = dark
+
+  // Step label row.
+  const stepLblCls = isDark
     ? "font-display text-[10.5px] font-bold uppercase tracking-[0.08em]"
     : "font-display text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink-200";
-  const stepLblStyle = dark ? { color: "rgba(0,240,255,0.7)" } : undefined;
-  const titleCls = dark
+  const stepLblStyle = isDark ? { color: "rgba(0,240,255,0.7)" } : undefined;
+  const titleCls = isDark
     ? "font-display text-[14px] font-semibold leading-tight text-white"
     : "font-display text-[14px] font-semibold leading-tight text-ink-900";
-  const bodyCls = dark
+  const bodyCls = isDark
     ? "font-body text-[12.5px] leading-snug text-ink-150"
-    : "font-body text-[12.5px] leading-snug text-ink-500";
+    : "font-body text-[12.5px] leading-snug text-ink-700";
 
   // Race-effect timing (dark variant only).
   // Runner travels 5% → 95% over RACE_S; brief PAUSE_S at each end keeps
@@ -70,7 +89,7 @@ export function WorkflowMotion({
 
   return (
     <div className={`relative grid grid-cols-1 gap-3 md:grid-cols-5 ${className}`}>
-      {dark && (
+      {isDark && (
         <>
           {/* Dim base track */}
           <span
@@ -135,6 +154,16 @@ export function WorkflowMotion({
           />
         </>
       )}
+      {!isDark && (
+        // Light-variant connector line behind the cards — soft ink-200
+        // rule that ties the steps together without competing with the
+        // section's blue radial. Hidden on mobile (cards stack vertically).
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-[6%] right-[6%] top-9 hidden h-px md:block"
+          style={{ background: "rgba(15,23,42,0.10)" }}
+        />
+      )}
       {STEPS.map((s, i) => {
         const Icon = s.icon;
         const isLast = i === STEPS.length - 1;
@@ -153,7 +182,7 @@ export function WorkflowMotion({
             style={cardStyle}
           >
             <div className="flex items-center gap-2.5">
-              {dark ? (
+              {isDark ? (
                 <motion.div
                   className={numCls}
                   style={numStyle}
@@ -189,31 +218,32 @@ export function WorkflowMotion({
                 </div>
               )}
               <div className={stepLblCls} style={stepLblStyle}>
-                {dark ? (
+                {isDark ? (
                   <Icon className="h-3.5 w-3.5 inline-block align-[-2px]" />
                 ) : (
                   <>Step {i + 1}</>
                 )}
-                {dark && <span className="ml-1.5">{s.label.split(" ")[0]}</span>}
+                {isDark && <span className="ml-1.5">{s.label.split(" ")[0]}</span>}
               </div>
             </div>
             <div className={titleCls}>{s.label}</div>
             <div className={bodyCls}>{s.body}</div>
-            {/* Connector dot — pulses in sequence (light variant only —
-                dark variant uses the gradient line behind the cards). */}
-            {!dark && (
+            {/* Light-variant connector dot — small blue dot pulses in
+                sequence between cards. No cyan on the light surface
+                (per design review). */}
+            {!isDark && (
               <motion.span
                 aria-hidden
-                className="absolute -right-1.5 top-1/2 hidden h-3 w-3 -translate-y-1/2 rounded-full md:block"
+                className="absolute -right-1.5 top-1/2 hidden h-2 w-2 -translate-y-1/2 rounded-full md:block"
                 style={{
-                  background: "#00F0FF",
-                  boxShadow: "0 0 12px rgba(0,240,255,0.6)",
+                  background: "#2563EB",
+                  boxShadow: "0 0 8px rgba(37,99,235,0.45)",
                   opacity: isLast ? 0 : 1,
                 }}
                 animate={
                   prefersReducedMotion
                     ? undefined
-                    : { scale: [1, 1.4, 1], opacity: [0.6, 1, 0.6] }
+                    : { scale: [1, 1.35, 1], opacity: [0.55, 1, 0.55] }
                 }
                 transition={
                   prefersReducedMotion

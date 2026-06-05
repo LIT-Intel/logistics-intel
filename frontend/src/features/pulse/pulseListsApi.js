@@ -46,6 +46,7 @@ export async function listPulseLists() {
         org_id,
         is_shared,
         shared_at,
+        syncs_to_attio,
         created_at,
         updated_at
       `)
@@ -119,6 +120,38 @@ async function fetchOwnerDisplay(userIds) {
   }
 }
 
+/**
+ * Batch-fetch list memberships for a set of company IDs.
+ *
+ * Returns a Map<companyId, string[]> where the value is the list of list
+ * names the company belongs to (RLS-filtered to lists the user can see).
+ * Used by the Pulse search page to show "Saved" badges on result cards.
+ *
+ * @param {string[]} companyIds  - lit_companies.id values
+ * @returns {Promise<Map<string, string[]>>}
+ */
+export async function fetchListMembershipsForCompanies(companyIds) {
+  if (!companyIds || companyIds.length === 0) return new Map();
+  try {
+    const { data, error } = await supabase
+      .from('pulse_list_companies')
+      .select('company_id, pulse_lists(name)')
+      .in('company_id', companyIds);
+    if (error || !Array.isArray(data)) return new Map();
+    const map = new Map();
+    for (const row of data) {
+      const cid = row.company_id;
+      const listName = row.pulse_lists?.name;
+      if (!cid || !listName) continue;
+      if (!map.has(cid)) map.set(cid, []);
+      map.get(cid).push(listName);
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
 /** Toggle a list's org-share state. The list owner's org_id is
  *  required when sharing; we accept it as an arg so the caller (with
  *  AuthProvider context) can pass it cleanly. Unshare clears
@@ -171,6 +204,66 @@ export async function createPulseList({ name, description, queryText, filterReci
       return { ok: false, code: classifyError(error), message: error.message };
     }
     return { ok: true, list: data };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
+  }
+}
+
+/** Bulk-add multiple companies (array of lit_companies.id) to a list.
+ *  Uses a single upsert call for atomicity. Returns { ok, added } where
+ *  added is the count of rows that were inserted or already existed.
+ *  Duplicates are silently ignored (onConflict = do nothing). */
+export async function bulkAddCompaniesToList(listId, companyIds) {
+  if (!listId || !companyIds?.length) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'List + companies are required.' };
+  }
+  try {
+    const { data: userResp } = await supabase.auth.getUser();
+    const addedBy = userResp?.user?.id || null;
+
+    const rows = companyIds.map((cid) => ({
+      list_id: listId,
+      company_id: cid,
+      added_by: addedBy,
+    }));
+
+    const { error } = await supabase
+      .from('pulse_list_companies')
+      .upsert(rows, { onConflict: 'list_id,company_id' });
+
+    if (error) {
+      return { ok: false, code: classifyError(error), message: error.message };
+    }
+    return { ok: true, added: companyIds.length };
+  } catch (err) {
+    return { ok: false, code: classifyError(err), message: err?.message };
+  }
+}
+
+/** Bulk-add multiple contacts (array of lit_contacts.id) to a list.
+ *  Uses a single upsert call for atomicity. */
+export async function bulkAddContactsToList(listId, contactIds) {
+  if (!listId || !contactIds?.length) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'List + contacts are required.' };
+  }
+  try {
+    const { data: userResp } = await supabase.auth.getUser();
+    const addedBy = userResp?.user?.id || null;
+
+    const rows = contactIds.map((cid) => ({
+      list_id: listId,
+      contact_id: cid,
+      added_by: addedBy,
+    }));
+
+    const { error } = await supabase
+      .from('pulse_list_contacts')
+      .upsert(rows, { onConflict: 'list_id,contact_id' });
+
+    if (error) {
+      return { ok: false, code: classifyError(error), message: error.message };
+    }
+    return { ok: true, added: contactIds.length };
   } catch (err) {
     return { ok: false, code: classifyError(err), message: err?.message };
   }

@@ -3,6 +3,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { updateProfile } from "@/auth/supabaseAuthClient";
 import { UploadFile } from "@/api/integrations";
+import { getBillingStatus } from "@/api/billing";
 import SettingsLayout from "@/components/settings/SettingsLayout";
 import type { PlanCode } from "@/lib/planLimits";
 
@@ -240,14 +241,33 @@ export default function SettingsPage() {
       });
     }
 
+    // Subscription must come from get-billing-status (canonical, includes
+    // org-owner fallback for invited members). Direct queries to the
+    // `subscriptions` table are forbidden — see CLAUDE.md.
     const [subResult, plansResult] = await Promise.allSettled([
-      supabase
-        .from("subscriptions")
-        .select("*")
-        .eq("user_id", uid)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
+      (async () => {
+        try {
+          const status = await getBillingStatus({});
+          const subSnap = (status as any)?.subscription;
+          const planSnap = (status as any)?.plan;
+          const data = subSnap || planSnap
+            ? {
+                plan_code: planSnap?.code ?? null,
+                status: subSnap?.status ?? null,
+                stripe_customer_id: subSnap?.stripe_customer_id ?? null,
+                stripe_subscription_id: subSnap?.stripe_subscription_id ?? null,
+                current_period_start: subSnap?.current_period_start ?? null,
+                current_period_end: subSnap?.current_period_end ?? null,
+                cancel_at_period_end: Boolean(subSnap?.cancel_at_period_end),
+                trial_ends_at: subSnap?.trial_ends_at ?? null,
+                seat_quantity: subSnap?.seat_quantity ?? null,
+              }
+            : null;
+          return { data, error: null as any };
+        } catch (e: any) {
+          return { data: null, error: e };
+        }
+      })(),
       supabase
         .from("plans")
         .select("*")

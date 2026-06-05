@@ -42,6 +42,8 @@ import {
   Anchor,
   TrendingUp,
   Radio,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import AddToListPicker from "@/features/pulse/AddToListPicker";
@@ -276,16 +278,24 @@ function buildShellCompany(companyId: string | null, stored: any): any {
   };
 }
 
-const TABS = [
+// F5 trim (Wk1): 5 visible + 3 in the "More" overflow dropdown.
+// Mobile-first reasoning from /plan-design-review: the tab row stayed
+// within mobile viewport without horizontal scroll only after the trim.
+// Pulse AI / Rate Benchmark / Revenue Opportunity live in More because
+// they're high-signal but low-frequency on a typical demo path.
+const VISIBLE_TABS = [
   { id: "supply", label: "Supply Chain", Icon: Workflow },
   { id: "live", label: "Pulse LIVE", Icon: Radio },
-  { id: "rates", label: "Rate Benchmark", Icon: Anchor },
   { id: "contacts", label: "Contacts", Icon: Users },
-  { id: "research", label: "Pulse AI", Icon: Sparkles },
-  { id: "revenue", label: "Revenue Opportunity", Icon: TrendingUp },
   { id: "activity", label: "Activity", Icon: Activity },
   { id: "inbox", label: "Inbox", Icon: Inbox },
 ] as const;
+const MORE_TABS = [
+  { id: "research", label: "Pulse AI", Icon: Sparkles },
+  { id: "rates", label: "Rate Benchmark", Icon: Anchor },
+  { id: "revenue", label: "Revenue Opportunity", Icon: TrendingUp },
+] as const;
+const TABS = [...VISIBLE_TABS, ...MORE_TABS] as const;
 type TabId = (typeof TABS)[number]["id"];
 
 // =============================================================================
@@ -338,6 +348,132 @@ class V2ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
     }
     return this.props.children;
   }
+}
+
+/**
+ * Tab bar with 5 visible + More dropdown (F5).
+ *
+ * Pulled out of the main render so the dropdown state (open/close, outside
+ * click, ESC) stays local. The active-in-overflow case highlights the More
+ * button itself so the user always knows where they are.
+ */
+function CompanyTabsRow({
+  tab,
+  onSelect,
+}: {
+  tab: TabId;
+  onSelect: (id: TabId) => void;
+}) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement | null>(null);
+  const activeInOverflow = MORE_TABS.some((t) => t.id === tab);
+
+  // Outside-click dismissal.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDocDown = (e: MouseEvent) => {
+      const el = moreRef.current;
+      if (el && !el.contains(e.target as Node)) setMoreOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onDocDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDocDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [moreOpen]);
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Company sections"
+      className="relative flex shrink-0 items-center gap-0 border-b border-slate-200 bg-white px-3 sm:px-6"
+    >
+      {VISIBLE_TABS.map((t) => {
+        const Icon = t.Icon;
+        const active = tab === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onSelect(t.id)}
+            className={[
+              "font-display -mb-px inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-[12.5px] font-semibold transition-colors sm:px-3.5",
+              active
+                ? "border-blue-500 text-blue-700"
+                : "border-transparent text-slate-500 hover:text-slate-700",
+            ].join(" ")}
+          >
+            <Icon className="h-3 w-3" />
+            {t.label}
+          </button>
+        );
+      })}
+      <div ref={moreRef} className="relative ml-auto sm:ml-1">
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((v) => !v)}
+          className={[
+            "font-display -mb-px inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-[12.5px] font-semibold transition-colors sm:px-3.5",
+            activeInOverflow
+              ? "border-blue-500 text-blue-700"
+              : "border-transparent text-slate-500 hover:text-slate-700",
+          ].join(" ")}
+        >
+          More
+          <ChevronDown
+            className={[
+              "h-3 w-3 transition-transform",
+              moreOpen ? "rotate-180" : "",
+            ].join(" ")}
+            aria-hidden
+          />
+        </button>
+        {moreOpen && (
+          <div
+            role="menu"
+            aria-label="More company sections"
+            className="absolute right-0 top-[calc(100%+4px)] z-[400] w-[240px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg"
+          >
+            {MORE_TABS.map((t) => {
+              const Icon = t.Icon;
+              const active = tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onSelect(t.id);
+                    setMoreOpen(false);
+                  }}
+                  className={[
+                    "font-display flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2.5 text-left text-[12.5px] font-semibold transition-colors last:border-b-0",
+                    active
+                      ? "bg-blue-50 text-blue-700"
+                      : "text-slate-700 hover:bg-slate-50",
+                  ].join(" ")}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Icon className="h-3 w-3" />
+                    {t.label}
+                  </span>
+                  <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function DirectoryOnlyEmptyState({
@@ -726,8 +862,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     // here would have Command Center / Dashboard list cards showing the
     // structurally-low importer figure for any company viewed in V2.
     const update: Record<string, any> = {
-      shipments_12m:
-        profile.routeKpis?.shipmentsLast12m ?? profile.totalShipments ?? null,
+      // 12-month rolling only — `lit_company_index.shipments_12m` is a
+      // 12mo column, so we must not pollute it with `profile.totalShipments`
+      // (which can resolve to the lifetime BOL count when no 12m field is
+      // present on the snapshot — see Task 14 root cause).
+      shipments_12m: profile.routeKpis?.shipmentsLast12m ?? null,
       teu_12m: profile.routeKpis?.teuLast12m ?? null,
       fcl_shipments_12m: profile.containers?.fclShipments12m ?? null,
       lcl_shipments_12m: profile.containers?.lclShipments12m ?? null,
@@ -1165,9 +1304,29 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     );
 
     return {
+      // 12-month rolling BOL count. Sources, in priority order:
+      //   1. activeRouteKpis.shipmentsLast12m — explicit 12mo from
+      //      _shared/importyeti_fetch.ts route_kpis
+      //   2. shellCompany.kpis.shipments — lit_company_index.total_shipments
+      //      which is itself the 12-month rolling number (the search-result
+      //      cards already use this and label it "(12m)")
+      // We deliberately do NOT fall back to activeProfile.totalShipments —
+      // that field is derived from `shipments_last_12m ?? total_shipments`
+      // in api.ts, so it silently leaks the *lifetime* value when the
+      // snapshot doesn't carry a 12m number (Task 14 root cause: EAE
+      // showing 506 lifetime on the profile page while the search-card
+      // showed 243 12mo for the same company).
+      //
+      // FOLLOW-UP FIX: read from UNSCOPED `routeKpis` (not
+      // `activeRouteKpis`). `buildYearScopedProfile` overwrites
+      // `shipmentsLast12m` with a year-scoped sum — for 2026 that's
+      // just Jan-May = ~126, displayed under a "(12M)" label that
+      // should mean trailing 12 months (true value ~259 for EAE).
+      // The trailing-12M tile should be independent of the year
+      // selector; year-specific values render in their own tiles.
       shipments:
-        activeRouteKpis?.shipmentsLast12m ??
-        activeProfile?.totalShipments ??
+        routeKpis?.shipmentsLast12m ??
+        (profile as any)?.routeKpis?.shipmentsLast12m ??
         shellCompany?.kpis?.shipments ??
         null,
       shipmentsAllTime: activeProfile?.totalShipmentsAllTime ?? null,
@@ -1222,9 +1381,12 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       // 0 when no service line could be sized (insufficient inputs); the
       // header renders "—" in that case rather than a fabricated zero.
       estRevOpp: (() => {
+        // 12-month rolling only — read UNSCOPED routeKpis (same reason
+        // as headerKpis.shipments above: year selector shouldn't clobber
+        // the trailing-12M denominator of the revenue-opportunity calc).
         const shipments12m =
-          activeRouteKpis?.shipmentsLast12m ??
-          activeProfile?.totalShipments ??
+          routeKpis?.shipmentsLast12m ??
+          (profile as any)?.routeKpis?.shipmentsLast12m ??
           shellCompany?.kpis?.shipments ??
           null;
         const t =
@@ -1864,35 +2026,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         }
       />
 
-      {/* Tab bar — verbatim density from legacy. */}
-      <div
-        role="tablist"
-        aria-label="Company sections"
-        className="flex shrink-0 items-center gap-0 border-b border-slate-200 bg-white px-6"
-      >
-        {TABS.map((t) => {
-          const Icon = t.Icon;
-          const active = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setTab(t.id)}
-              className={[
-                "font-display -mb-px inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-[12.5px] font-semibold transition-colors",
-                active
-                  ? "border-blue-500 text-blue-700"
-                  : "border-transparent text-slate-500 hover:text-slate-700",
-              ].join(" ")}
-            >
-              <Icon className="h-3 w-3" />
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Tab bar — F5 trim: 5 visible + More overflow. The More dropdown
+          surfaces Pulse AI / Rate Benchmark / Revenue Opportunity without
+          horizontal scroll on mobile. */}
+      <CompanyTabsRow tab={tab} onSelect={setTab} />
+
 
       {refreshLimitState && (
         <PulseCoachQuotaCard
@@ -1976,8 +2114,10 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 null
               }
               ships12m={
+                // 12-month rolling only — never fall back to
+                // activeProfile.totalShipments (can be lifetime). See
+                // headerKpis.shipments comment for full rationale.
                 activeRouteKpis?.shipmentsLast12m ??
-                activeProfile?.totalShipments ??
                 shellCompany?.kpis?.shipments ??
                 null
               }
@@ -2016,9 +2156,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                   null,
               }}
               tradeKpis={{
+                // 12-month rolling only (Task 14). activeProfile.totalShipments
+                // excluded — see headerKpis.shipments rationale above.
                 shipments12m:
                   activeRouteKpis?.shipmentsLast12m ??
-                  activeProfile?.totalShipments ??
+                  shellCompany?.kpis?.shipments ??
                   null,
                 teu12m:
                   activeRouteKpis?.teuLast12m ??
@@ -2040,8 +2182,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                     activeProfile?.top_routes?.[0] ||
                     null;
                   const total = Number(
+                    // 12-month rolling only — never lifetime (Task 14)
                     activeRouteKpis?.shipmentsLast12m ??
-                      activeProfile?.totalShipments,
+                      shellCompany?.kpis?.shipments,
                   );
                   const topShip = Number(top?.shipments);
                   if (!total || !topShip || total <= 0) return null;
@@ -2078,8 +2221,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             <CDPRevenueOpportunity
               companyName={companyName}
               shipments12m={
+                // 12-month rolling only (Task 14). See headerKpis.shipments
+                // for why activeProfile.totalShipments is excluded.
                 activeRouteKpis?.shipmentsLast12m ??
-                activeProfile?.totalShipments ??
                 shellCompany?.kpis?.shipments ??
                 null
               }
@@ -2131,6 +2275,14 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                     null,
                 ) || null
               }
+              sourceCompanyKey={
+                (bundle?.identity as any)?.source_company_key ??
+                (bundle?.identity as any)?.sourceCompanyKey ??
+                (bundle?.identity as any)?.key ??
+                (activeProfile as any)?.identity?.key ??
+                (activeProfile as any)?.source_company_key ??
+                null
+              }
             />
           )}
           {tab === "activity" && (
@@ -2163,6 +2315,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             snapshotUpdatedAt={snapshotUpdatedAt}
             contacts={savedContacts}
             onOpenContactsTab={() => setTab("contacts")}
+            onOpenSuppliersTab={() => setTab("supply")}
             crmStage={
               bundle?.identity?.sources?.saved?.present === true
                 ? (bundle?.identity?.sources?.saved?.stage ?? null)

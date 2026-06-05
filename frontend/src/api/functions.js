@@ -72,53 +72,35 @@ function normalizeLeadResults(raw) {
 }
 
 // ============================================================
-// STRIPE / BILLING (FIXED)
+// STRIPE / BILLING
+//
+// Canonical typed module: ./billing.ts. The exports below re-export those
+// implementations so legacy callers (e.g. BillingNew.tsx, SettingsPage.tsx,
+// OnboardingFlow.tsx) keep working during the api.ts domain split.
+//
+// New code should import from "@/api/billing" directly.
 // ============================================================
 
 export const generateRfpPdf = httpCall('/functions/generateRfpPdf', { ok: false });
 
-// ✅ FIXED: direct Supabase call
-export const createStripeCheckout = async (payload = {}) =>
-  invokeSupabaseFunction('billing-checkout', payload);
+export {
+  getBillingStatus,
+  createStripeCheckout,
+  createStripePortalSession,
+  listStripeInvoices,
+  previewUpcomingInvoice,
+  cancelStripeSubscription,
+} from './billing';
 
-// ✅ FIXED: direct Supabase call
-export const createStripePortalSession = async (payload = {}) =>
-  invokeSupabaseFunction('billing-portal', payload);
-
-// Lists the user's Stripe invoices + computes MTD/YTD spend totals.
-// Powers the inline invoice table on /app/billing so users don't have
-// to bounce out to the Stripe portal just to see past charges.
-export const listStripeInvoices = async (payload = {}) =>
-  invokeSupabaseFunction('list-invoices', payload);
-
-// Authoritative billing snapshot. Returns plan, subscription state,
-// REAL Stripe default payment method (not inferred from customer id),
-// trial_ends_at, and seat snapshot. Use this — not subscriptions row
-// alone — for the Billing page payment-method state.
-export const getBillingStatus = async (payload = {}) =>
-  invokeSupabaseFunction('get-billing-status', payload);
-
-// Previews the next invoice + today's prorated charge if the user
-// upgrades / switches plans now. Powers the pre-checkout confirmation
-// modal so users see "today: $X / then $Y/mo from [date]" before
-// hitting Stripe-hosted checkout. Reduces sticker-shock abandonment.
-export const previewUpcomingInvoice = async (payload = {}) =>
-  invokeSupabaseFunction('upcoming-invoice', payload);
-
-// Server-side cancellation flow. Sets cancel_at_period_end = true on
-// the active subscription so the user keeps access until period end;
-// no refund. Persists reason + feedback to subscription metadata.
-// Use action: 'reactivate' to flip cancel_at_period_end back to false.
-export const cancelStripeSubscription = async (payload = {}) =>
-  invokeSupabaseFunction('cancel-subscription', payload);
-
-// Optional webhook (usually server-side only)
+// Optional webhook (usually server-side only — kept here for completeness)
 export const stripeWebhookHandler = async (payload = {}) =>
   invokeSupabaseFunction('billing-webhook', payload);
 
-// ✅ NEW: Server-side entitlement checking
-export const checkEntitlements = async (payload = {}) =>
-  invokeSupabaseFunction('check-entitlements', payload);
+// Server-authoritative entitlements snapshot (JWT-verified, single fetch).
+// Replaces the deprecated `check-entitlements` per-check function which was
+// unauthenticated and spoofable.
+export const getEntitlements = async (payload = {}) =>
+  invokeSupabaseFunction('get-entitlements', payload);
 
 export const sendEmail = httpCall('/functions/sendEmail', {
   ok: false,
@@ -139,37 +121,38 @@ export const findCompanyContacts = httpCall('/functions/findCompanyContacts', {
   contacts: [],
 });
 
-export const phantombusterLinkedIn = async (payload = {}) =>
-  invokeSupabaseFunction('phantombuster-linkedin', payload);
+// Outreach domain entry point (typed module: ./outreach.ts).
+export { phantombusterLinkedIn } from './outreach';
 
-const rawSearchLeads = async (payload = {}) =>
-  invokeSupabaseFunction('searchLeads', payload);
+// Search domain entry point (typed module: ./search.ts).
+export { searchLeads } from './search';
 
-export const searchLeads = async (payload = {}) => {
-  const response = await rawSearchLeads(payload);
-  const data = response?.data ?? response ?? {};
+// AI domain entry point (typed module: ./ai.ts). normalizeCompany requires JWT
+// since 2026-05-28 (was unauthenticated and amplified Anthropic spend).
+export { normalizeCompany, geminiBrief, geminiEnrichment, pulseAiEnrich } from './ai';
 
-  const rawResults =
-    data?.results ??
-    data?.data?.results ??
-    data?.items ??
-    response?.results ??
-    [];
+// Admin domain entry point (typed module: ./admin.ts).
+export { adminApi, adminAuditExport, adminNotify } from './admin';
 
-  const normalizedResults = normalizeLeadResults(rawResults);
+// Affiliate / partner program entry point (typed module: ./affiliate.ts).
+export {
+  affiliateApply,
+  affiliateInviteLookup,
+  acceptAffiliateInvite,
+  affiliateReview,
+  sendAffiliateInvite,
+  claimAffiliateReferral,
+  affiliateAdmin,
+} from './affiliate';
 
-  return {
-    ...response,
-    ok: response?.ok ?? data?.ok ?? true,
-    status: response?.status ?? 200,
-    error: response?.error ?? data?.error ?? null,
-    data: {
-      ...data,
-      results: normalizedResults,
-      total: data?.total ?? normalizedResults.length,
-    },
-  };
-};
+// Campaign-side edge fns (typed module: ./campaigns.ts). The cron-only
+// send-campaign-email is NOT exported here — invoke from pg_cron only.
+export {
+  pulseRefreshLists,
+  pulseListDigestEmail,
+  sendPulseBriefEmail,
+  pulseBrief,
+} from './campaigns';
 
 export const toggleCompanySave = httpCall('/functions/toggleCompanySave', {
   ok: true,

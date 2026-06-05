@@ -25,7 +25,8 @@ const CampaignAnalyticsPage = lazy(() => import("@/pages/CampaignAnalyticsPage")
 const InboxPage = lazy(() => import("@/pages/InboxPage"));
 const NotificationsInbox = lazy(() => import("@/pages/NotificationsInbox"));
 const EmailCenter = lazy(() => import("@/pages/EmailCenter"));
-const RFPStudio = lazy(() => import("@/pages/RFPStudio"));
+// RFPStudio discontinued 2026-06 — see docs/agents/2026-06-02-app-review-roadmap.md.
+// Route below redirects /app/rfp → /app/dashboard so old bookmarks land softly.
 const Settings = lazy(() => import("@/pages/SettingsPage"));
 const Billing = lazy(() => import("@/pages/BillingNew"));
 const AffiliateDash = lazy(() => import("@/pages/AffiliateDashboard"));
@@ -35,6 +36,8 @@ const AdminPartnerProgram = lazy(() => import("@/pages/AdminPartnerProgram"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboardV2"));
 const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
 const AdminDemoRequests = lazy(() => import("@/pages/AdminDemoRequests"));
+const AdminSubscribers = lazy(() => import("@/pages/AdminSubscribers"));
+const AdminFmcsaImport = lazy(() => import("@/pages/AdminFmcsaImport"));
 const AdminMarketingAnalytics = lazy(() => import("@/pages/AdminMarketingAnalytics"));
 const AdminMarketingBroadcasts = lazy(() => import("@/pages/AdminMarketingBroadcasts"));
 const Pulse = lazy(() => import("@/pages/Pulse"));
@@ -46,6 +49,7 @@ const SearchPanel = lazy(() => import("@/pages/SearchPanel"));
 const Transactions = lazy(() => import("@/pages/Transactions"));
 const Widgets = lazy(() => import("@/pages/Widgets"));
 const CompanyProfileV2 = lazy(() => import("@/pages/CompanyProfileV2"));
+const SupplierProfile = lazy(() => import("@/pages/SupplierProfile"));
 const CommandCenterPage = lazy(() => import("@/components/command-center/CommandCenter"));
 const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany = lazy(() => import("@/pages/demo/company"));
@@ -323,6 +327,22 @@ export default function App() {
           }
         />
 
+        {/* Supplier Profile (T1c) — `/app/suppliers/:slug` inverts the
+            CompanyProfileV2 lens. Reads location.state from the supplier
+            drawer for instant rendering; bookmark/refresh shows the
+            no-state empty state. Backend aggregator for cross-receiver
+            data is a planned follow-up. */}
+        <Route
+          path="/app/suppliers/:slug"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <SupplierProfile />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+
         <Route
           path="/app/campaigns"
           element={
@@ -425,21 +445,10 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/app/rfp"
-          element={
-            <RequirePlan
-              feature="rfp_studio"
-              featureName="RFP Studio"
-              description="Generate professional RFP responses and freight quotes with AI assistance. Available on Growth and above."
-              requiredPlan="growth"
-            >
-              <LITPage>
-                <RFPStudio />
-              </LITPage>
-            </RequirePlan>
-          }
-        />
+        {/* RFP Studio discontinued — soft redirect for stale bookmarks. */}
+        <Route path="/app/rfp" element={<Navigate to="/app/dashboard" replace />} />
+        <Route path="/app/rfp/*" element={<Navigate to="/app/dashboard" replace />} />
+        <Route path="/app/rfp-studio" element={<Navigate to="/app/dashboard" replace />} />
 
         <Route
           path="/app/settings"
@@ -548,6 +557,28 @@ export default function App() {
             <RequireAdmin>
               <LITPage>
                 <AdminDemoRequests />
+              </LITPage>
+            </RequireAdmin>
+          }
+        />
+
+        <Route
+          path="/app/admin/subscribers"
+          element={
+            <RequireAdmin>
+              <LITPage>
+                <AdminSubscribers />
+              </LITPage>
+            </RequireAdmin>
+          }
+        />
+
+        <Route
+          path="/app/admin/fmcsa-import"
+          element={
+            <RequireAdmin>
+              <LITPage>
+                <AdminFmcsaImport />
               </LITPage>
             </RequireAdmin>
           }

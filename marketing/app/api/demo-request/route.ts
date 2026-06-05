@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { sanityWriteClient } from "@/sanity/lib/client";
 import { sendEmail, escapeHtml } from "@/lib/email";
+import { pushInboundLeadToAttio } from "@/lib/attio";
 
 export const dynamic = "force-dynamic";
 
@@ -101,6 +102,9 @@ export async function POST(req: NextRequest) {
   // admin-notify function fires from the app side using its own credential
   // and writes the attempt into lit_outreach_history. That row is what
   // the admin dashboard reads, so missed notifications surface there.
+  // Notify emails / webhook / Supabase row / admin-notify are fire-and-
+  // forget — those run within Resend / Slack / Supabase's own infra after
+  // we return.
   const fanOut: Promise<unknown>[] = [
     sendProspectConfirmation(doc),
     sendSalesAlert(doc, sanityId),
@@ -109,6 +113,11 @@ export async function POST(req: NextRequest) {
     pingAdminNotify(doc, sanityId),
   ];
   Promise.allSettled(fanOut);
+
+  // Attio is awaited inline because the Vercel Node runtime kills the
+  // lambda the moment we return, abandoning any in-flight promises.
+  // Adds ~2-3s to response time; better than silently dropping deals.
+  await pushToAttio(doc, sanityId);
 
   return json({ ok: true, id: sanityId });
 }
@@ -173,6 +182,41 @@ async function pingAdminNotify(d: Doc, sanityId: string): Promise<void> {
     }
   } catch (e: any) {
     console.error("[demo-request] admin-notify threw", e?.message || e);
+  }
+}
+
+/**
+ * Attio fan-out — every demo request becomes a Lead-stage Deal in Attio
+ * with the contact attached to the right Company. Best-effort: a failure
+ * here logs but doesn't roll back the Sanity write.
+ *
+ * Source label encodes which page the form came from so the auto-note
+ * on the deal preserves attribution even though we don't have a Source
+ * dropdown attribute (deferred to v2).
+ */
+async function pushToAttio(d: Doc, sanityId: string): Promise<void> {
+  try {
+    const result = await pushInboundLeadToAttio({
+      email: d.email,
+      name: d.name,
+      companyName: d.company || undefined,
+      companyDomain: d.domain || undefined,
+      phone: d.phone || undefined,
+      message: d.primaryGoal || undefined,
+      source: `Demo Request${d.source ? ` (${d.source})` : ""}`,
+      attribution: {
+        useCase: d.useCase,
+        teamSize: d.teamSize,
+        sanityId,
+        submittedAt: d.submittedAt,
+      },
+      dealName: `${d.company || d.email} — Demo Request`,
+    });
+    if (!result.ok) {
+      console.warn("[demo-request] attio push partial", JSON.stringify(result));
+    }
+  } catch (e: any) {
+    console.error("[demo-request] attio push threw", e?.message || e);
   }
 }
 

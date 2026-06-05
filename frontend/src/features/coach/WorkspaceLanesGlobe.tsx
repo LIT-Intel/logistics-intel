@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Globe2, Layers } from "lucide-react";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
+import LaneMap from "@/components/LaneMap";
+import LaneViewToggle from "@/components/LaneViewToggle";
+import { useLaneViewMode } from "@/hooks/useLaneViewMode";
 import { formatLaneShort, resolveEndpoint } from "@/lib/laneGlobe";
 import LitFlag from "@/components/ui/LitFlag";
 import { usePulseCoach, useWorkspaceLanes } from "./PulseCoachWidget";
@@ -37,6 +40,7 @@ export default function WorkspaceLanesGlobe() {
   const { lanes, loading } = useWorkspaceLanes();
   const { highlightedLane, highlightLane } = usePulseCoach();
   const [mode, setMode] = useState<Mode>("volume");
+  const { mode: viewMode, setMode: setViewMode } = useLaneViewMode();
   const globeWrapRef = useRef<HTMLDivElement | null>(null);
   const [globeSize, setGlobeSize] = useState<number>(300);
 
@@ -142,7 +146,7 @@ export default function WorkspaceLanesGlobe() {
             </div>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-1">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
           <Layers className="h-2.5 w-2.5 text-slate-400" />
           {MODE_OPTIONS.map((o) => (
             <button
@@ -159,6 +163,8 @@ export default function WorkspaceLanesGlobe() {
               {o.label}
             </button>
           ))}
+          <div className="ml-1 hidden h-3 w-px bg-slate-200 sm:block" aria-hidden />
+          <LaneViewToggle mode={viewMode} onChange={setViewMode} />
         </div>
       </div>
 
@@ -176,15 +182,31 @@ export default function WorkspaceLanesGlobe() {
         <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,1fr)_minmax(260px,1.2fr)] xl:grid-cols-[minmax(320px,1.1fr)_minmax(280px,1fr)] 2xl:grid-cols-[minmax(420px,1.4fr)_minmax(280px,1fr)]">
           <div
             ref={globeWrapRef}
-            className="flex items-center justify-center bg-slate-50 p-3"
+            className={[
+              "flex items-center justify-center p-3",
+              viewMode === "globe" ? "bg-slate-50" : "bg-white",
+            ].join(" ")}
           >
-            <GlobeCanvas
-              lanes={globeLanes}
-              selectedLane={highlightId}
-              size={globeSize}
-              theme="trade"
-              showFlagPins
-            />
+            {viewMode === "globe" ? (
+              <GlobeCanvas
+                lanes={globeLanes}
+                selectedLane={highlightId}
+                size={globeSize}
+                theme="trade"
+                showFlagPins
+              />
+            ) : (
+              <LaneMap
+                lanes={globeLanes}
+                selectedLane={highlightId}
+                onSelectLane={(laneId) => {
+                  const lane = sorted.find((l) => l.key === laneId);
+                  if (lane) highlightLane({ from: lane.from_label, to: lane.to_label });
+                }}
+                height={Math.min(globeSize, 380)}
+                className="w-full"
+              />
+            )}
           </div>
           <div className="max-h-[360px] overflow-y-auto md:max-h-[460px] 2xl:max-h-[520px]">
             {sorted.map((l, i) => {

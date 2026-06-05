@@ -54,7 +54,7 @@
 
 The "premium CDP" architecture is **already drafted in code but not wired up.** Six fully-built tab components (`CDPHeader`, `CDPSupplyChain`, `CDPContacts`, `CDPResearch`, `CDPActivity`, `CDPDetailsPanel`) exist under [frontend/src/components/company/](../../frontend/src/components/company/) — none of them are imported by any page. The live profile experience runs on a legacy `/company/[id]` page plus the `CompanyDrawer` modal launched from search/command-center. Phase 1 is therefore not a refactor of UI; it's a **container page + resolver + aggregated endpoint** that mounts the orphaned CDP components.
 
-Entitlements infrastructure is **mature and centrally managed** — `useEntitlements()` + `check-entitlements` edge fn + 23 `FeatureKey`s. We use it; we do not reinvent it.
+Entitlements infrastructure is **mature and centrally managed** — `useEntitlements()` + `get-entitlements` edge fn + 23 `FeatureKey`s. We use it; we do not reinvent it. (Note: 2026-05-28 — deprecated `check-entitlements` removed; was unauthenticated/spoofable. All checks now derive from a single JWT-verified `get-entitlements` snapshot.)
 
 Three spec tables (`lit_company_directory`, `lit_company_source_metrics`, `lit_company_contact_previews`) **do not exist.** Their semantics live elsewhere (see §6). No generic telemetry helper exists — that's a real gap to surface to you.
 
@@ -257,7 +257,7 @@ Most types come straight from `lit_activity_events.event_type`. Email events (`e
 | Usage tracking | [frontend/src/lib/usage.ts](../../frontend/src/lib/usage.ts), [useUsageSummary.ts](../../frontend/src/hooks/useUsageSummary.ts) |
 | Access lib | [frontend/src/lib/access.ts](../../frontend/src/lib/access.ts) |
 | UI gate | [frontend/src/components/common/UpgradeGate.tsx](../../frontend/src/components/common/UpgradeGate.tsx) |
-| Edge fn | [supabase/functions/check-entitlements/index.ts](../../supabase/functions/check-entitlements/index.ts) + [get-entitlements](../../supabase/functions/get-entitlements/index.ts) |
+| Edge fn | [get-entitlements](../../supabase/functions/get-entitlements/index.ts) |
 | Migration | [supabase/migrations/20260427100000_usage_enforcement.sql](../../supabase/migrations/20260427100000_usage_enforcement.sql) |
 
 Existing `FeatureKey`s relevant to Company Profile: `profile_access`, `contact_enrichment_access`, `ai_brief_access`, `export_pdf_access`, `similar_companies_access`, `credit_rating_access`, `command_center_access`. **All needed gates already exist.**

@@ -38,12 +38,7 @@ export default function GettingStartedChecklist({
       completed: campaignsCount > 0,
       href: '/app/campaigns',
     },
-    {
-      id: '4',
-      label: 'Generate an RFP',
-      completed: false,
-      href: '/app/rfp-studio',
-    },
+    // RFP step ('Generate an RFP') removed 2026-06 — RFP Studio discontinued.
     {
       id: '5',
       label: 'Connect your email account',
@@ -54,13 +49,11 @@ export default function GettingStartedChecklist({
 
   useEffect(() => {
     const hasSearched = localStorage.getItem('lit_has_searched') === 'true';
-    const hasGeneratedRfp = localStorage.getItem('lit_rfps') && JSON.parse(localStorage.getItem('lit_rfps') || '[]').length > 0;
 
     setItems(prev => prev.map(item => {
       if (item.id === '1') return { ...item, completed: hasSearched };
       if (item.id === '2') return { ...item, completed: savedCompaniesCount >= 5 };
       if (item.id === '3') return { ...item, completed: campaignsCount > 0 };
-      if (item.id === '4') return { ...item, completed: hasGeneratedRfp };
       return item;
     }));
   }, [savedCompaniesCount, campaignsCount]);

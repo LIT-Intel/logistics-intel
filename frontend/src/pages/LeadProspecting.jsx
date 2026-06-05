@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
-import { searchPulse } from '@/api/pulse';
+import { searchPulse } from '@/api/pulse-search';
 import { supabase } from '@/lib/supabase';
 import AddToCampaignModal from '@/components/command-center/AddToCampaignModal';
 import { saveCompany, isLimitExceeded, LimitExceededError } from '@/lib/saveCompany';

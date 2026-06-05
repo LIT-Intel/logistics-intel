@@ -5,74 +5,65 @@ import Link from "next/link";
 import {
   ChevronDown,
   Sparkles,
-  Building2,
-  Users,
-  Globe2,
-  Send,
   Search,
-  BarChart3,
-  TrendingUp,
+  LayoutGrid,
+  Send,
+  Users,
+  Plug,
+  ArrowRight,
 } from "lucide-react";
 
 /**
- * Desktop-only "Product" dropdown that consolidates the seven product
- * routes under one nav item. Mobile users see the same items grouped in
- * the drawer (see MobileMenu.tsx). Click-toggle + hover-open + outside-
- * click-close + Esc-close so it works for keyboard, touch, and pointer.
+ * Desktop "Product" mega-menu. Two-column layout: six product-category
+ * links on the left, a featured preview card on the right (current
+ * spotlight = the /freight-leads industry hub). Hover-open + click-open
+ * + outside-pointerdown-close + Esc-close, same a11y semantics as the
+ * sibling CompanyDropdown so keyboard, touch, and pointer users all get
+ * a working menu.
  */
-const PRODUCT_LINKS: {
+type ProductLink = {
   label: string;
   description: string;
   href: string;
   icon: typeof Sparkles;
-}[] = [
+};
+
+const PRODUCT_LINKS: ProductLink[] = [
+  {
+    label: "Search & Discovery",
+    description: "Find shipper accounts by lane, HS code, or origin",
+    href: "/company-intelligence",
+    icon: Search,
+  },
   {
     label: "Pulse AI",
-    description: "Natural-language intelligence + briefs",
+    description: "Account briefs and signals, generated in seconds",
     href: "/pulse",
     icon: Sparkles,
   },
   {
-    label: "Company Intelligence",
-    description: "Live trade picture on every account",
-    href: "/company-intelligence",
-    icon: Building2,
+    label: "Command Center CRM",
+    description: "Freight-aware pipeline, stages, tasks, notes",
+    href: "/command-center",
+    icon: LayoutGrid,
   },
   {
-    label: "Contact Intelligence",
-    description: "The right buyers — title-, dept-, lane-filtered",
+    label: "Outbound Sequences",
+    description: "Email + LinkedIn + call cadences, multi-channel",
+    href: "/outbound-engine",
+    icon: Send,
+  },
+  {
+    label: "Verified Contacts",
+    description: "Buyer-side decision makers attached to every importer",
     href: "/contact-intelligence",
     icon: Users,
   },
   {
-    label: "Trade Intelligence",
-    description: "Live origin × destination signals",
-    href: "/trade-intelligence",
-    icon: Globe2,
-  },
-  {
-    label: "Rate Benchmark",
-    description: "Live FBX12 rates inside every account",
-    href: "/rate-benchmark",
-    icon: BarChart3,
-  },
-  {
-    label: "Revenue Opportunity",
-    description: "Sized freight wallet across six service lines",
-    href: "/revenue-opportunity",
-    icon: TrendingUp,
-  },
-  {
-    label: "Command Center (CRM)",
-    description: "CRM with shipment context built in",
-    href: "/command-center",
-    icon: Search,
-  },
-  {
-    label: "Outbound Engine",
-    description: "Multichannel sequences seeded by signal",
-    href: "/outbound-engine",
-    icon: Send,
+    label: "Integrations",
+    description: "HubSpot, Salesforce, Slack, Snowflake, and more",
+    href: "/integrations",
+    icon: Plug,
   },
 ];
 
@@ -158,38 +149,105 @@ export function ProductDropdown() {
       {open && (
         <div
           role="menu"
-          className="absolute left-0 top-full z-50 mt-1.5 w-[440px] overflow-hidden rounded-xl border border-ink-100 bg-white p-2 shadow-[0_30px_80px_-20px_rgba(15,23,42,0.22)]"
+          // Anchored to the trigger's LEFT edge so the wide panel extends
+          // rightward into the available viewport. Centering via
+          // -translate-x ran the left edge off-screen because the Product
+          // trigger sits near the left of the nav. Max-w clamp protects
+          // narrow viewports.
+          className="absolute left-0 top-full z-50 mt-2 w-[880px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-ink-100/80 bg-white/95 p-6 shadow-2xl backdrop-blur-md"
         >
-          {PRODUCT_LINKS.map((link) => {
-            const Icon = link.icon;
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setOpen(false)}
-                role="menuitem"
-                className="group flex items-start gap-3 rounded-lg px-3 py-2.5 transition hover:bg-ink-25"
+          <div className="grid grid-cols-[1.4fr_1fr] gap-8">
+            {/* Left column: product links */}
+            <div>
+              <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-500">
+                Product
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                {PRODUCT_LINKS.map((link) => {
+                  const Icon = link.icon;
+                  return (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={() => setOpen(false)}
+                      role="menuitem"
+                      className="group flex items-start gap-2.5 rounded-md px-2.5 py-2 transition hover:bg-ink-25"
+                    >
+                      <Icon
+                        className="mt-0.5 h-4 w-4 shrink-0 text-brand-blue transition group-hover:text-brand-blue-700"
+                        aria-hidden
+                      />
+                      <span className="min-w-0">
+                        <span className="font-display block text-[14px] font-semibold leading-tight text-ink-900">
+                          {link.label}
+                        </span>
+                        <span className="font-body mt-1 line-clamp-2 block text-[12.5px] leading-relaxed text-ink-500">
+                          {link.description}
+                        </span>
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Right column: featured preview card */}
+            <Link
+              href="/freight-leads"
+              onClick={() => setOpen(false)}
+              role="menuitem"
+              className="group block rounded-xl border border-brand-blue/15 bg-section-soft-blue p-5 transition hover:border-brand-blue/30"
+            >
+              <span className="mb-3 inline-flex items-center rounded-full bg-brand-blue/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-brand-blue">
+                Featured
+              </span>
+
+              {/* Mini-visual: 2 connected lane nodes (origin → destination) */}
+              <svg
+                viewBox="0 0 200 40"
+                className="h-10 w-full"
+                aria-hidden
               >
-                <span
-                  className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-brand-blue-700 transition group-hover:scale-105"
-                  style={{
-                    background: "linear-gradient(180deg, #eff6ff, #dbeafe)",
-                    boxShadow: "inset 0 0 0 1px rgba(59,130,246,0.15)",
-                  }}
-                >
-                  <Icon className="h-4 w-4" />
-                </span>
-                <span className="min-w-0">
-                  <span className="font-display block text-[13.5px] font-semibold text-ink-900">
-                    {link.label}
-                  </span>
-                  <span className="font-body mt-0.5 block text-[12px] leading-snug text-ink-500">
-                    {link.description}
-                  </span>
-                </span>
-              </Link>
-            );
-          })}
+                <defs>
+                  <linearGradient id="lanePath" x1="0" x2="1" y1="0" y2="0">
+                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
+                    <stop offset="50%" stopColor="#3b82f6" stopOpacity="0.9" />
+                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.25" />
+                  </linearGradient>
+                </defs>
+                {/* dashed lane line */}
+                <line
+                  x1="20"
+                  y1="20"
+                  x2="180"
+                  y2="20"
+                  stroke="url(#lanePath)"
+                  strokeWidth="2"
+                  strokeDasharray="3 5"
+                />
+                {/* mid waypoint */}
+                <circle cx="100" cy="20" r="2.5" fill="#3b82f6" opacity="0.5" />
+                {/* origin node */}
+                <circle cx="20" cy="20" r="6" fill="#fff" stroke="#3b82f6" strokeWidth="2" />
+                <circle cx="20" cy="20" r="2.5" fill="#3b82f6" />
+                {/* destination node */}
+                <circle cx="180" cy="20" r="6" fill="#fff" stroke="#1d4ed8" strokeWidth="2" />
+                <circle cx="180" cy="20" r="2.5" fill="#1d4ed8" />
+              </svg>
+
+              <div className="font-display mt-3 text-[16px] font-semibold leading-tight text-ink-900">
+                Freight leads by industry
+              </div>
+              <p className="font-body mt-1 text-[13px] leading-relaxed text-ink-700">
+                Six verticals with HS-code priors, key lanes, and outreach plays. Start with
+                automotive, apparel, or electronics.
+              </p>
+              <span className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-brand-blue transition group-hover:text-brand-blue-700">
+                Browse industries
+                <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" aria-hidden />
+              </span>
+            </Link>
+          </div>
         </div>
       )}
     </div>

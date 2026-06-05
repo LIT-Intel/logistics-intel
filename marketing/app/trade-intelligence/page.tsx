@@ -51,10 +51,7 @@ export default function TradeIntelligencePage() {
             />
             <div className="relative grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
               <div>
-                <div
-                  className="font-display text-[11px] font-bold uppercase tracking-[0.12em]"
-                  style={{ color: "#00F0FF" }}
-                >
+                <div className="lit-eyebrow-dark">
                   Live trade graph
                 </div>
                 <h2 className="font-display mt-3 text-[28px] font-semibold leading-tight tracking-[-0.015em] text-white">

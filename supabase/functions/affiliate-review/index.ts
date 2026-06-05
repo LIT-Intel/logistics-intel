@@ -12,6 +12,9 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("affiliate-review");
 import {
   authenticate,
   corsHeaders,
@@ -86,7 +89,7 @@ serve(async (req) => {
     .eq("id", applicationId)
     .maybeSingle();
   if (appErr) {
-    console.error("[affiliate-review] load failed", appErr);
+    log.error("load_failed", { err: String(appErr?.message ?? appErr) });
     return json({ ok: false, error: "Failed to load application" }, 500);
   }
   if (!app) return json({ ok: false, error: "Application not found" }, 404);
@@ -115,7 +118,7 @@ serve(async (req) => {
       )
       .maybeSingle();
     if (error) {
-      console.error("[affiliate-review] reject failed", error);
+      log.error("reject_failed", { err: String(error?.message ?? error) });
       return json({ ok: false, error: "Failed to reject application" }, 500);
     }
     return json({ ok: true, application: data });
@@ -155,7 +158,7 @@ serve(async (req) => {
   try {
     refCode = await generateUniqueRefCode(adminClient);
   } catch (err) {
-    console.error("[affiliate-review] ref_code allocation failed", err);
+    log.error("ref_code_allocation_failed", { err: String((err as Error)?.message ?? err) });
     return json({ ok: false, error: "Failed to allocate ref_code" }, 500);
   }
 
@@ -177,7 +180,7 @@ serve(async (req) => {
     .maybeSingle();
 
   if (partnerErr) {
-    console.error("[affiliate-review] partner insert failed", partnerErr);
+    log.error("partner_insert_failed", { err: String(partnerErr?.message ?? partnerErr) });
     return json(
       { ok: false, error: "Failed to create partner record", details: partnerErr.message },
       500,
@@ -196,7 +199,7 @@ serve(async (req) => {
     .eq("id", app.id);
 
   if (appUpdateErr) {
-    console.error("[affiliate-review] application status update failed", appUpdateErr);
+    log.error("application_status_update_failed", { err: String(appUpdateErr?.message ?? appUpdateErr) });
     // Partner is created; surface a warning rather than fail the request.
     return json(
       {

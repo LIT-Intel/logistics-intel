@@ -42,9 +42,7 @@ export function ReportCta({
             </div>
           </div>
           <div className="relative">
-            <div className="font-display text-[11px] font-bold uppercase tracking-[0.16em] text-brand-cyan">
-              {eyebrow}
-            </div>
+            <div className="lit-eyebrow-dark">{eyebrow}</div>
             <h2 className="font-display mt-3 text-[clamp(26px,2.6vw,36px)] font-bold leading-[1.12] tracking-[-0.02em] text-white">
               {heading}
             </h2>

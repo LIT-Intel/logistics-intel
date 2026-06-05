@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   Sparkles,
@@ -18,8 +19,17 @@ import {
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitFlag from "@/components/ui/LitFlag";
 import LitPill from "@/components/ui/LitPill";
+import BuyingIntentTile from "@/components/intent/BuyingIntentTile";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
+import LaneMap from "@/components/LaneMap";
+import LaneViewToggle from "@/components/LaneViewToggle";
+import { useLaneViewMode } from "@/hooks/useLaneViewMode";
 import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
+import {
+  aggregateSuppliers,
+  supplierNameToSlug,
+  type SupplierRow as SupplierAggregateRow,
+} from "@/lib/suppliers/aggregate";
 import {
   formatBolDate,
   getBolCarrierString,
@@ -33,11 +43,12 @@ import {
   readCarrier,
 } from "@/lib/bols/helpers";
 
-type SubTabId = "summary" | "lanes" | "products";
+type SubTabId = "summary" | "lanes" | "suppliers" | "products";
 
 const SUB_TABS: { id: SubTabId; label: string }[] = [
   { id: "summary", label: "Summary" },
   { id: "lanes", label: "Trade Lanes" },
+  { id: "suppliers", label: "Suppliers" },
   { id: "products", label: "Products" },
 ];
 
@@ -193,35 +204,65 @@ export default function CDPSupplyChain({
 
   return (
     <div className="flex flex-col gap-3.5">
-      {/* Sub-tabs + year selector */}
-      <div className="flex items-center gap-1.5 self-start rounded-lg bg-slate-100 p-1">
-        {SUB_TABS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => setSub(s.id)}
-            className={[
-              "font-display whitespace-nowrap rounded-md px-3 py-1 text-[12px] font-semibold",
-              sub === s.id
-                ? "border border-slate-200 bg-white text-slate-900 shadow-sm"
-                : "border border-transparent text-slate-500 hover:text-slate-700",
-            ].join(" ")}
-          >
-            {s.label}
-          </button>
-        ))}
+      {/* Sub-tabs (left) + year selector (right). Sub-tab styling uses the
+          same blue language as the main tab row above so the visual
+          hierarchy reads as "tab → sub-tab" instead of two competing pill
+          groups. Year selector is pulled out as its own chip on the right
+          with a calendar icon affordance. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
+          {SUB_TABS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => setSub(s.id)}
+              className={[
+                "font-display whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                sub === s.id
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+              ].join(" ")}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
         {Array.isArray(years) && years.length > 1 && onSelectYear && (
-          <select
-            value={selectedYear ?? years[0]}
-            onChange={(e) => onSelectYear(Number(e.target.value))}
-            className="font-mono ml-auto rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
-          >
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
+          <label className="font-display inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm">
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden
+              className="text-slate-400"
+            >
+              <rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
+              <path d="M2 6h12M5.5 2v2M10.5 2v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+            </svg>
+            <span className="text-slate-500">Year</span>
+            <select
+              value={selectedYear ?? years[0]}
+              onChange={(e) => onSelectYear(Number(e.target.value))}
+              className="font-mono cursor-pointer appearance-none bg-transparent text-[11.5px] font-bold text-slate-900 focus:outline-none"
+            >
+              {years.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+            <svg
+              width="9"
+              height="9"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden
+              className="text-slate-400"
+            >
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </label>
         )}
       </div>
 
@@ -245,6 +286,7 @@ export default function CDPSupplyChain({
           canonicalLanes={allLanes}
           globeLanes={globeLanes}
           onOpenPulseLive={onOpenPulseLive}
+          onOpenLanesTab={() => setSub("lanes")}
         />
       )}
       {sub === "lanes" && (
@@ -254,6 +296,12 @@ export default function CDPSupplyChain({
           carriers={carriers}
           forwarders={forwarders}
           containerProfile={containerProfile}
+          recentBols={recentBols}
+        />
+      )}
+      {sub === "suppliers" && (
+        <SuppliersView
+          profile={profile}
           recentBols={recentBols}
         />
       )}
@@ -353,6 +401,7 @@ function SummaryView({
   canonicalLanes,
   globeLanes,
   onOpenPulseLive,
+  onOpenLanesTab,
 }: {
   profile: any;
   cadence: CadencePoint[];
@@ -364,6 +413,7 @@ function SummaryView({
   canonicalLanes: any[];
   globeLanes: any[];
   onOpenPulseLive?: () => void;
+  onOpenLanesTab?: () => void;
 }) {
   const reducedMotion = usePrefersReducedMotion();
 
@@ -377,12 +427,14 @@ function SummaryView({
   // (dup of TopLanes), CarrierMixLive (lives in Pulse LIVE tab).
   return (
     <>
+      <BuyingIntentTile profile={_profile} recentBols={recentBols} />
       <TopLanesCard
         canonicalLanes={canonicalLanes}
         globeLanes={globeLanes}
         recentBols={recentBols}
         containerProfile={containerProfile}
         reducedMotion={reducedMotion}
+        onOpenLanesTab={onOpenLanesTab}
       />
       <CadenceAndModalMix
         cadence={cadence}
@@ -862,6 +914,354 @@ function LanesView({
 
 /* ── Products view ────────────────────────────────────────────────────── */
 
+/* ── Suppliers view (F1 — Wk1) ──────────────────────────────────────── */
+
+function SuppliersView({
+  profile,
+  recentBols,
+}: {
+  profile: any;
+  recentBols: any[];
+}) {
+  const navigate = useNavigate();
+  // F1: full supplier list (limit=Infinity), paginated client-side. Top 50
+  // visible; "Show more" reveals next 50. No virtualization in v1 — Finding
+  // 4.1 / Q1 from /plan-eng-review locked pagination over react-window
+  // because 99% of receivers have <50 suppliers.
+  const allSuppliers = useMemo(
+    () => aggregateSuppliers(profile, recentBols, { limit: Infinity }),
+    [profile, recentBols],
+  );
+  const [visibleCount, setVisibleCount] = useState(50);
+  const [openSupplier, setOpenSupplier] = useState<SupplierAggregateRow | null>(null);
+
+  const visible = allSuppliers.slice(0, visibleCount);
+  const hasMore = visibleCount < allSuppliers.length;
+
+  // BOLs filtered to the open supplier — passed to the drawer + the
+  // SupplierProfile page (via location.state) so the navigation has real
+  // data the moment the page mounts.
+  const supplierBols = useMemo(() => {
+    if (!openSupplier) return [];
+    const want = openSupplier.name.toLowerCase();
+    return recentBols.filter((b) => {
+      const s = getBolSupplier(b);
+      return s && s.toLowerCase() === want;
+    });
+  }, [openSupplier, recentBols]);
+
+  const companyName =
+    (profile?.companyName as string) ||
+    (profile?.name as string) ||
+    "this receiver";
+  const companyId =
+    (profile?.companyId as string) || (profile?.id as string) || null;
+
+  if (allSuppliers.length === 0) {
+    return (
+      <LitSectionCard title="Suppliers" sub="From shipment history">
+        <div className="px-6 py-10 text-center">
+          <p className="font-display text-[12px] font-semibold text-slate-700">
+            No supplier shipments on file for the last 12 months
+          </p>
+          <p className="font-body mt-1 text-[11px] text-slate-500">
+            Try <strong>Refresh Intel</strong> to pull the latest BOLs into
+            this account.
+          </p>
+        </div>
+      </LitSectionCard>
+    );
+  }
+
+  return (
+    <>
+      <LitSectionCard
+        title={`${allSuppliers.length.toLocaleString()} unique suppliers`}
+        sub={`Shipping to ${companyName} in the last 12 months · ranked by share`}
+        padded={false}
+      >
+        <div className="max-h-[680px] overflow-y-auto">
+          {visible.map((s, i) => (
+            <SupplierRowFull
+              key={`${s.name}-${i}`}
+              supplier={s}
+              index={i}
+              onOpen={() => setOpenSupplier(s)}
+            />
+          ))}
+        </div>
+        {hasMore && (
+          <div className="border-t border-slate-100 px-3 py-2.5 sm:px-4">
+            <button
+              type="button"
+              onClick={() => setVisibleCount((c) => c + 50)}
+              className="font-display w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-[11.5px] font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              Show more ({visibleCount} of {allSuppliers.length} visible)
+            </button>
+          </div>
+        )}
+      </LitSectionCard>
+      <SupplierDrawer
+        supplier={openSupplier}
+        supplierBols={supplierBols}
+        receiverName={companyName}
+        receiverId={companyId}
+        onClose={() => setOpenSupplier(null)}
+        onOpenFullProfile={() => {
+          if (!openSupplier) return;
+          const slug = supplierNameToSlug(openSupplier.name);
+          navigate(`/app/suppliers/${slug}`, {
+            state: {
+              supplier: openSupplier,
+              supplierBols,
+              originReceiver: {
+                id: companyId || undefined,
+                name: companyName,
+              },
+            },
+          });
+        }}
+      />
+    </>
+  );
+}
+
+function SupplierRowFull({
+  supplier,
+  index,
+  onOpen,
+}: {
+  supplier: SupplierAggregateRow;
+  index: number;
+  onOpen: () => void;
+}) {
+  const hasShare = supplier.share >= 0;
+  const hasShipments = supplier.shipments >= 0;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="grid w-full items-center gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-slate-50/60 sm:px-4"
+      style={{
+        gridTemplateColumns: "20px 18px minmax(0,1fr) 70px 80px",
+      }}
+    >
+      <span className="font-mono shrink-0 text-[10px] text-slate-400">
+        #{index + 1}
+      </span>
+      <LitFlag code={supplier.country} size={14} label={supplier.country} />
+      <div className="min-w-0">
+        <div className="font-display truncate text-[12px] font-semibold text-slate-900">
+          {supplier.name}
+        </div>
+        <div className="font-mono mt-0.5 text-[10px] text-slate-500">
+          {supplier.country || "Unknown country"}
+        </div>
+      </div>
+      <div className="text-right">
+        {hasShipments && (
+          <span className="font-mono text-[11px] font-bold text-slate-900">
+            {supplier.shipments.toLocaleString()}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-col items-end gap-1 sm:flex">
+        {hasShare && (
+          <>
+            <div className="hidden h-1 w-[68px] overflow-hidden rounded bg-slate-100 sm:block">
+              <div
+                className="h-full rounded bg-blue-500"
+                style={{ width: `${Math.max(1, supplier.share)}%` }}
+              />
+            </div>
+            <span className="font-mono text-[10px] text-slate-500">
+              {supplier.share}%
+            </span>
+          </>
+        )}
+      </div>
+    </button>
+  );
+}
+
+/* ── Supplier drawer (F1 — Wk1) ─────────────────────────────────────── */
+
+function SupplierDrawer({
+  supplier,
+  supplierBols,
+  receiverName,
+  receiverId,
+  onClose,
+  onOpenFullProfile,
+}: {
+  supplier: SupplierAggregateRow | null;
+  supplierBols: any[];
+  receiverName: string;
+  receiverId: string | null;
+  onClose: () => void;
+  onOpenFullProfile: () => void;
+}) {
+  // ESC closes — matches design review accessibility spec.
+  useEffect(() => {
+    if (!supplier) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [supplier, onClose]);
+
+  if (!supplier) return null;
+
+  const dateRange = (() => {
+    const ts = supplierBols
+      .map(getBolDate)
+      .filter(Boolean)
+      .map((d: any) => new Date(d).getTime())
+      .filter((t) => Number.isFinite(t)) as number[];
+    if (!ts.length) return null;
+    const fmt = (n: number) =>
+      new Date(n).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    return `${fmt(Math.min(...ts))} – ${fmt(Math.max(...ts))}`;
+  })();
+
+  const topHsChapters = (() => {
+    const map = new Map<string, number>();
+    for (const bol of supplierBols) {
+      const hs = getBolHs(bol);
+      if (!hs || hs === "—") continue;
+      const ch = String(hs).slice(0, 2);
+      if (ch) map.set(ch, (map.get(ch) || 0) + 1);
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([ch, count]) => ({ ch, count }));
+  })();
+
+  return (
+    <>
+      {/* Backdrop — tap to close on both viewports. */}
+      <div
+        className="fixed inset-0 z-[600] bg-slate-900/30 backdrop-blur-[2px]"
+        onClick={onClose}
+        aria-hidden
+      />
+      {/* Panel — right-slide on desktop, bottom-sheet on mobile. */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="supplier-drawer-title"
+        className={[
+          "fixed z-[610] flex flex-col bg-white shadow-2xl",
+          // Mobile bottom-sheet — 70% height, swipe-down dismiss handled by
+          // the backdrop tap + ESC since we don't ship a swipe lib in v1.
+          "inset-x-0 bottom-0 max-h-[70vh] rounded-t-2xl",
+          // Desktop right-slide — 420px panel from the right edge.
+          "sm:bottom-auto sm:left-auto sm:right-0 sm:top-0 sm:h-full sm:max-h-none sm:w-[420px] sm:max-w-[90vw] sm:rounded-none",
+        ].join(" ")}
+      >
+        {/* Drawer header */}
+        <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3.5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+            <LitFlag
+              code={supplier.country}
+              size={24}
+              label={supplier.country || "Supplier"}
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+              Supplier
+            </div>
+            <h2
+              id="supplier-drawer-title"
+              className="font-display mt-0.5 truncate text-[15px] font-bold leading-tight text-slate-900"
+            >
+              {supplier.name}
+            </h2>
+            <div className="font-mono mt-0.5 text-[10px] text-slate-500">
+              {supplier.country || "Unknown country"}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 transition-colors hover:bg-slate-50"
+            aria-label="Close supplier detail"
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Drawer body */}
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          <div className="space-y-3.5">
+            {/* Big metric */}
+            <div>
+              <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                Total shipments to {receiverName}
+              </div>
+              <div className="font-mono mt-1 text-[28px] font-bold leading-none text-slate-900">
+                {supplier.shipments >= 0
+                  ? supplier.shipments.toLocaleString()
+                  : "—"}
+              </div>
+              {supplier.share >= 0 && (
+                <div className="font-mono mt-1 text-[10.5px] text-slate-500">
+                  {supplier.share}% of this receiver's supplier volume
+                </div>
+              )}
+            </div>
+
+            {dateRange && (
+              <div>
+                <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                  Shipment date range
+                </div>
+                <div className="font-mono mt-1 text-[12px] text-slate-700">{dateRange}</div>
+              </div>
+            )}
+
+            {topHsChapters.length > 0 && (
+              <div>
+                <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                  Top commodity categories
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {topHsChapters.map(({ ch, count }) => (
+                    <LitPill key={ch} tone="blue">
+                      HS {ch} · {count}
+                    </LitPill>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {supplierBols.length === 0 && (
+              <p className="font-body text-[11px] text-slate-500">
+                No shipment records loaded for this supplier on the receiver.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Drawer footer */}
+        <div className="border-t border-slate-100 px-4 py-3">
+          <button
+            type="button"
+            onClick={onOpenFullProfile}
+            className="font-display w-full rounded-md bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+          >
+            View full supplier profile →
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function ProductsView({ products }: { products: ProductRow[] }) {
   if (products.length === 0) {
     return (
@@ -1270,13 +1670,20 @@ function TopLanesCard({
   recentBols = [],
   containerProfile,
   reducedMotion = false,
+  onOpenLanesTab,
 }: {
   canonicalLanes: any[];
   globeLanes?: any[];
   recentBols?: any[];
   containerProfile?: ContainerProfile;
   reducedMotion?: boolean;
+  onOpenLanesTab?: () => void;
 }) {
+  // Persisted globe / map preference — shared with the Dashboard's GlobeCard
+  // so a user who picks Map view on one surface sees Map on the other.
+  // Matches ZoomInfo's TerritoryView pattern: one preference, two consumers.
+  const { mode: viewMode, setMode: setViewMode } = useLaneViewMode();
+
   // Globe needs resolved coordinates; fall back to filtering canonicalLanes
   // for backwards compatibility when globeLanes prop isn't passed.
   const sourceForGlobe = (Array.isArray(globeOnlyLanes) && globeOnlyLanes.length > 0
@@ -1291,8 +1698,53 @@ function TopLanesCard({
     toMeta: l.toMeta,
     shipments: Number(l.shipments) || 0,
   }));
-  const initialSelected = globeLanes[0]?.id || canonicalLanes[0]?.displayLabel || null;
+
+  // Map from canonical country-pair key (`${fromKey}::${toKey}`) -> GlobeLane.id.
+  // Ranked rows (granular, per-route) are matched into globe arcs (collapsed by
+  // country pair) through this map so selection stays in sync between the row
+  // list, the 2-D <LaneMap>, and the 3-D <GlobeCanvas>. All three now compare
+  // against canonical GlobeLane.id (not the row's per-route displayLabel, which
+  // never matched anything on the globe).
+  const pairKeyToGlobeId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of globeLanes) {
+      const fromKey = g.fromMeta?.canonicalKey;
+      const toKey = g.toMeta?.canonicalKey;
+      if (fromKey && toKey) m.set(`${fromKey}::${toKey}`, g.id);
+    }
+    return m;
+  }, [globeLanes]);
+
+  // initialSelected: prefer the first globe lane's canonical id. The legacy
+  // fallback to canonicalLanes[0].displayLabel was always wrong for selection
+  // sync (row labels don't match globe ids) — translate it through the map if
+  // possible, otherwise fall back to null. New callers should pass canonical
+  // ids going forward.
+  const initialFallbackPairKey = (() => {
+    const first = canonicalLanes[0];
+    const fromKey = first?.fromMeta?.canonicalKey;
+    const toKey = first?.toMeta?.canonicalKey;
+    return fromKey && toKey ? `${fromKey}::${toKey}` : null;
+  })();
+  const initialSelected =
+    globeLanes[0]?.id ||
+    (initialFallbackPairKey ? pairKeyToGlobeId.get(initialFallbackPairKey) ?? null : null);
   const [selectedId, setSelectedId] = useState<string | null>(initialSelected);
+
+  // Track whether the latest selection came from the map (or globe in future)
+  // so we only auto-scroll the row list when selection originates externally.
+  // Row clicks set this to "row" and skip the scroll-into-view side effect.
+  const lastSelectionSourceRef = useRef<"row" | "map" | null>(null);
+  const rowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  useEffect(() => {
+    if (!selectedId) return;
+    if (lastSelectionSourceRef.current !== "map") return;
+    const el = rowRefs.current[selectedId];
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selectedId]);
 
   // Container-mix bar data (merged from former EquipmentAndLaneFootprint).
   const mix = useMemo(() => {
@@ -1343,12 +1795,12 @@ function TopLanesCard({
     );
   }
 
-  // Top lanes for the ranked list — sorted by shipments. Keep up to 8 so
+  // Top lanes for the ranked list — sorted by shipments. Keep up to 12 so
   // the right-rail fills the card height on lg+ viewports.
   const rankedLanes = canonicalLanes
     .slice()
     .sort((a: any, b: any) => (Number(b?.shipments) || 0) - (Number(a?.shipments) || 0))
-    .slice(0, 8);
+    .slice(0, 12);
   const maxLaneShipments = Math.max(
     1,
     ...rankedLanes.map((l: any) => Number(l?.shipments) || 0),
@@ -1357,37 +1809,73 @@ function TopLanesCard({
   return (
     <LitSectionCard
       title="Top trade lanes"
-      sub="Globe · ranked share · container mix"
+      sub={viewMode === "globe" ? "Globe · ranked share · container mix" : "Map · ranked share · container mix"}
+      action={<LaneViewToggle mode={viewMode} onChange={setViewMode} />}
       padded={false}
     >
       <div className="flex flex-col lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        {/* Left ~40% — interactive globe. Full-width on mobile/tablet. */}
-        <div className="flex items-center justify-center bg-slate-50 p-3 sm:p-4 lg:p-4">
-          <div className="aspect-square w-full max-w-[320px]">
-            <GlobeCanvas
-              lanes={globeLanes}
-              selectedLane={selectedId}
-              size={260}
-              theme="trade"
-              showFlagPins
-            />
-          </div>
+        {/* Left ~40% — interactive globe OR 2D map. Full-width on mobile/tablet. */}
+        <div
+          className={[
+            "flex items-center justify-center p-3 sm:p-4 lg:p-4",
+            viewMode === "globe" ? "bg-slate-50" : "bg-white",
+          ].join(" ")}
+        >
+          {viewMode === "globe" ? (
+            <div className="aspect-square w-full max-w-[320px]">
+              <GlobeCanvas
+                lanes={globeLanes}
+                selectedLane={selectedId}
+                size={260}
+                theme="trade"
+                showFlagPins
+              />
+            </div>
+          ) : (
+            <div className="w-full">
+              <LaneMap
+                lanes={globeLanes}
+                selectedLane={selectedId}
+                onSelectLane={(id) => {
+                  lastSelectionSourceRef.current = "map";
+                  setSelectedId(id);
+                }}
+                height={300}
+              />
+            </div>
+          )}
         </div>
 
         {/* Right ~60% — lane list. On mobile stacks below globe with its
             own internal scroll so the card never overflows the viewport. */}
         <div className="max-h-[340px] overflow-y-auto border-t border-slate-100 lg:max-h-[420px] lg:border-l lg:border-t-0">
           {rankedLanes.map((lane: any, i: number) => {
-            const isSelected = selectedId === lane.displayLabel;
+            // Resolve this row's canonical globe-lane id (collapsed by country
+            // pair) so selection compares against the same key shape the globe
+            // and 2-D map use. Rows whose pair isn't on the globe (e.g. the
+            // endpoint didn't resolve to coords) get null and don't participate
+            // in selection — they degrade gracefully to a non-selectable row.
+            const fromKey = lane?.fromMeta?.canonicalKey;
+            const toKey = lane?.toMeta?.canonicalKey;
+            const globeLaneId =
+              fromKey && toKey
+                ? pairKeyToGlobeId.get(`${fromKey}::${toKey}`) ?? null
+                : null;
+            const isSelected =
+              globeLaneId !== null && globeLaneId === selectedId;
             const shipments = Number(lane?.shipments) || 0;
             const widthPct = (shipments / maxLaneShipments) * 100;
             return (
               <button
                 key={lane.displayLabel}
+                ref={(el) => {
+                  if (globeLaneId) rowRefs.current[globeLaneId] = el;
+                }}
                 type="button"
-                onClick={() =>
-                  setSelectedId(isSelected ? null : lane.displayLabel)
-                }
+                onClick={() => {
+                  lastSelectionSourceRef.current = "row";
+                  setSelectedId(isSelected ? null : globeLaneId ?? null);
+                }}
                 className={[
                   "flex w-full items-center gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left last:border-b-0 sm:px-4",
                   isSelected
@@ -1420,6 +1908,21 @@ function TopLanesCard({
               </button>
             );
           })}
+          {canonicalLanes.length > 12 ? (
+            <div className="px-3 py-2 sm:px-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenLanesTab) {
+                    onOpenLanesTab();
+                  }
+                }}
+                className="font-body inline-flex items-center gap-1 text-[12px] font-medium text-blue-600 hover:text-blue-700"
+              >
+                View all {canonicalLanes.length.toLocaleString()} lanes →
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -2085,34 +2588,56 @@ function ShipmentRow({ bol, isLast }: { bol: any; isLast: boolean }) {
 function SupplierRowInteractive({
   supplier: s,
   hasStats,
+  onClick,
 }: {
   supplier: SupplierRow;
   hasStats: boolean;
+  onClick?: () => void;
 }) {
   const [hover, setHover] = useState(false);
+  // Prefer the parser-emitted `country_code` (ISO-2). Fall back to the
+  // legacy `country` field when it happens to look like a 2-letter code
+  // — covers the BOL-aggregated rows where country is sourced from
+  // bol.supplier_country / origin_country which is already ISO-2.
+  const iso =
+    (s.country_code && /^[A-Za-z]{2}$/.test(s.country_code) ? s.country_code : null) ||
+    (typeof s.country === "string" && /^[A-Za-z]{2}$/.test(s.country) ? s.country : null);
+  const countryLabel = s.country || "Country pending";
+  const lastShipped = s.last_shipment_date ? formatRelativeShort(s.last_shipment_date) : null;
+
+  const RowTag = onClick ? "button" : "div";
+  const interactiveProps = onClick
+    ? ({ type: "button" as const, onClick })
+    : ({} as const);
+
   return (
-    <div
-      className="relative flex items-center gap-2.5 rounded transition-colors hover:bg-emerald-50/50"
+    <RowTag
+      {...interactiveProps}
+      className={[
+        "relative flex w-full items-center gap-2.5 rounded text-left transition-colors hover:bg-emerald-50/50",
+        onClick ? "cursor-pointer" : "",
+      ].join(" ")}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
       {hover && hasStats && (
         <div
-          className="font-display pointer-events-none absolute left-8 z-20 min-w-[180px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] leading-tight text-white shadow-lg"
+          className="font-display pointer-events-none absolute left-8 z-20 min-w-[200px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] leading-tight text-white shadow-lg"
           style={{ bottom: "100%", marginBottom: 6 }}
         >
           <div className="font-semibold">{s.name}</div>
-          {s.country && <div className="text-[10px] opacity-75">{s.country}</div>}
+          {countryLabel && <div className="text-[10px] opacity-75">{countryLabel}</div>}
           <div className="opacity-90">Shipments: {s.shipments.toLocaleString()}</div>
           {s.share > 0 && <div className="opacity-90">Share: {s.share}%</div>}
+          {lastShipped && lastShipped !== "—" && (
+            <div className="opacity-90">Last shipped: {lastShipped}</div>
+          )}
         </div>
       )}
-      <div className="font-mono flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[9px] font-bold text-slate-500">
-        {(s.country || "").slice(0, 2).toUpperCase() || "—"}
-      </div>
+      <LitFlag code={iso} size={14} label={countryLabel} />
       <div className="min-w-0 flex-1">
         <div className="font-display truncate text-[12px] font-semibold text-slate-900">
-          {s.name}
+          {s.name || "—"}
         </div>
         {hasStats ? (
           <div className="mt-1 flex items-center gap-1.5">
@@ -2125,15 +2650,18 @@ function SupplierRowInteractive({
             <span className="font-mono whitespace-nowrap text-[10px] text-slate-500">
               {s.share > 0 ? `${s.share}% · ` : ""}
               {s.shipments.toLocaleString()} ship
+              {lastShipped && lastShipped !== "—" ? ` · ${lastShipped}` : ""}
             </span>
           </div>
         ) : (
           <div className="font-body mt-0.5 text-[10px] text-slate-400">
-            Counterparty on file · count pending
+            {countryLabel === "Country pending"
+              ? "Counterparty on file · count pending"
+              : `${countryLabel}${lastShipped && lastShipped !== "—" ? ` · last shipped ${lastShipped}` : " · count pending"}`}
           </div>
         )}
       </div>
-    </div>
+    </RowTag>
   );
 }
 
@@ -2484,16 +3012,17 @@ function readTopRoutes(profile: any, routeKpis: any) {
       profile?.top_route_12m ||
       routeKpis?.topRouteLast12m;
     if (lane && typeof lane === "string") {
+      // Synthesized single-lane row. Use the 12-month rolling shipment
+      // count (Task 14) — profile.totalShipments can resolve to the
+      // lifetime BOL count in api.ts, which would silently inflate the
+      // lane row for snapshots that lack an explicit 12m number.
       return [
         {
           lane,
-          shipments:
-            Number(profile?.totalShipments) ||
-            Number(routeKpis?.shipmentsLast12m) ||
-            0,
+          shipments: Number(routeKpis?.shipmentsLast12m) || 0,
           teu:
-            Number(profile?.teuLast12m) ||
             Number(routeKpis?.teuLast12m) ||
+            Number(profile?.teuLast12m) ||
             0,
           spend: null,
         },
@@ -2758,135 +3287,13 @@ function deriveForwarders(profile: any, recentBols: any[]): ForwarderRow[] {
     .slice(0, 6);
 }
 
+// deriveSuppliers used to live here as 130 LOC of inline logic. Extracted to
+// @/lib/suppliers/aggregate (with full Vitest coverage) per /plan-eng-review's
+// REGRESSION RULE. This local wrapper preserves the 6-row cap so the existing
+// TopSuppliersCard renders unchanged; the F1 Suppliers sub-tab and the
+// Supplier Profile page pass their own limit (Infinity / paginated).
 function deriveSuppliers(profile: any, recentBols: any[] = []): SupplierRow[] {
-  // Phase 5.1 — prefer service_provider_mix.suppliers (v200 parser, has counts)
-  // over the flat string-only top_suppliers list.
-  const structured =
-    profile?.serviceProviderMix?.suppliers ||
-    profile?.service_provider_mix?.suppliers ||
-    null;
-  const list =
-    (Array.isArray(structured) && structured.length > 0
-      ? structured.map((s: any) => ({
-          name: s?.providerName ?? s?.name ?? null,
-          shipments: Number(s?.shipments) || 0,
-          country: s?.countryCode ?? s?.country_code ?? s?.country ?? "",
-        }))
-      : null) ||
-    profile?.topSuppliers ||
-    profile?.suppliers ||
-    profile?.suppliers_sample ||
-    [];
-  // Phase 6 — when the explicit list has counts, use it; when it's a
-  // bare string array, aggregate counts from recentBols using
-  // getBolSupplier so the UI doesn't render "0% · 0 ship". Falls back to
-  // BOL-only aggregation when no explicit list is present at all.
-  if (Array.isArray(list) && list.length > 0) {
-    const hasCounts = list.some(
-      (e: any) =>
-        typeof e !== "string" &&
-        (Number(e?.shipments) > 0 || Number(e?.count) > 0),
-    );
-    if (hasCounts) {
-      const totalShip = list.reduce(
-        (s: number, e: any) =>
-          s + (typeof e === "string" ? 0 : Number(e?.shipments || e?.count) || 0),
-        0,
-      );
-      return list
-        .map((e: any) => {
-          const isString = typeof e === "string";
-          const name = isString ? e : String(e?.name || e?.label || "");
-          if (!name) return null;
-          const ship = isString ? 0 : Number(e?.shipments || e?.count) || 0;
-          const country = isString
-            ? ""
-            : String(e?.countryCode || e?.country_code || e?.country || "");
-          return {
-            name,
-            country,
-            shipments: ship,
-            share: totalShip > 0 ? Math.round((ship / totalShip) * 100) : 0,
-          };
-        })
-        .filter(Boolean) as SupplierRow[];
-    }
-    // String-only list: aggregate counts from recentBols where supplier
-    // matches one of these names; if no recentBols provided, return
-    // names with no count (caller renders without 0% · 0 ship).
-    const nameSet = new Set(
-      list
-        .map((e: any) => (typeof e === "string" ? e : String(e?.name || e?.label || "")))
-        .filter(Boolean)
-        .map((n: string) => n.toLowerCase()),
-    );
-    const counts = new Map<string, { ship: number; country: string }>();
-    for (const bol of recentBols) {
-      const supplier = getBolSupplier(bol);
-      if (!supplier || supplier === "—") continue;
-      if (!nameSet.has(supplier.toLowerCase())) continue;
-      const cur = counts.get(supplier) || {
-        ship: 0,
-        country: bol?.supplier_country || bol?.origin_country || "",
-      };
-      cur.ship += 1;
-      counts.set(supplier, cur);
-    }
-    const totalShip = Array.from(counts.values()).reduce(
-      (s, v) => s + v.ship,
-      0,
-    );
-    if (totalShip > 0) {
-      return Array.from(counts.entries())
-        .map(([name, v]) => ({
-          name,
-          country: v.country,
-          shipments: v.ship,
-          share: totalShip > 0 ? Math.round((v.ship / totalShip) * 100) : 0,
-        }))
-        .sort((a, b) => b.shipments - a.shipments);
-    }
-    // Truly no counts available — surface names with `shipments: -1`
-    // sentinel; the supplier card reads it as "no stat to show".
-    return list
-      .map((e: any) => {
-        const isString = typeof e === "string";
-        const name = isString ? e : String(e?.name || e?.label || "");
-        if (!name) return null;
-        return {
-          name,
-          country: isString
-            ? ""
-            : String(e?.countryCode || e?.country_code || e?.country || ""),
-          shipments: -1,
-          share: -1,
-        };
-      })
-      .filter(Boolean) as SupplierRow[];
-  }
-  // No explicit list — aggregate purely from recentBols.
-  if (!Array.isArray(recentBols) || recentBols.length === 0) return [];
-  const counts = new Map<string, { ship: number; country: string }>();
-  for (const bol of recentBols) {
-    const supplier = getBolSupplier(bol);
-    if (!supplier || supplier === "—") continue;
-    const cur = counts.get(supplier) || {
-      ship: 0,
-      country: bol?.supplier_country || bol?.origin_country || "",
-    };
-    cur.ship += 1;
-    counts.set(supplier, cur);
-  }
-  const total = Array.from(counts.values()).reduce((s, v) => s + v.ship, 0);
-  return Array.from(counts.entries())
-    .map(([name, v]) => ({
-      name,
-      country: v.country,
-      shipments: v.ship,
-      share: total > 0 ? Math.round((v.ship / total) * 100) : 0,
-    }))
-    .sort((a, b) => b.shipments - a.shipments)
-    .slice(0, 6);
+  return aggregateSuppliers(profile, recentBols, { limit: 6 }) as SupplierRow[];
 }
 
 function deriveProducts(profile: any, recentBols: any[] = []): ProductRow[] {

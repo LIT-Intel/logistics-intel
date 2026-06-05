@@ -34,6 +34,8 @@ import {
   deletePulseList,
   removeContactFromList,
 } from "@/features/pulse/pulseListsApi";
+import LitEmptyState from "@/components/ui/LitEmptyState";
+import { LitSkeletonCard } from "@/components/ui/LitSkeleton";
 
 const fontDisplay = "'Space Grotesk', system-ui, sans-serif";
 const fontBody = "'DM Sans', system-ui, sans-serif";
@@ -113,33 +115,43 @@ function ListsIndex() {
             body={`Apply migration 20260502120000_pulse_saved_lists.sql in Supabase to enable named lists.`}
           />
         ) : loading ? (
-          <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-[13px]" style={{ fontFamily: fontBody }}>Loading lists…</span>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <LitSkeletonCard count={6} />
           </div>
         ) : error ? (
           <EmptyCard title="Couldn't load your lists" body={error} />
         ) : filtered.length === 0 ? (
-          <EmptyCard
-            title={rows.length === 0 ? "No lists yet" : "No matches"}
-            body={
-              rows.length === 0
-                ? "Save companies from Pulse, or open a Company Profile and add a contact, to start a list."
-                : "Try a different search."
-            }
-            cta={
-              rows.length === 0 ? (
-                <Link
-                  to="/app/prospecting"
-                  className="inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:from-blue-600 hover:to-blue-700"
-                  style={{ fontFamily: fontDisplay }}
-                >
-                  <Plus className="h-3 w-3" />
-                  Open Pulse
-                </Link>
-              ) : null
-            }
-          />
+          <div className="rounded-xl border border-slate-200 bg-white">
+            <LitEmptyState
+              icon={<Database className="h-5 w-5" />}
+              title={rows.length === 0 ? "No lists yet" : "No matches"}
+              body={
+                rows.length === 0
+                  ? "Save companies from Pulse, or open a Company Profile and add a contact, to start your first targeted list — then plug it into a campaign as the audience."
+                  : "Try a different search term, or clear the filter to see every list."
+              }
+              primary={
+                rows.length === 0
+                  ? {
+                      label: "Open Pulse",
+                      to: "/app/prospecting",
+                      icon: <Plus className="h-3 w-3" />,
+                    }
+                  : {
+                      label: "Clear search",
+                      onClick: () => setFilter(""),
+                    }
+              }
+              secondary={
+                rows.length === 0
+                  ? {
+                      label: "Browse Command Center",
+                      to: "/app/command-center",
+                    }
+                  : undefined
+              }
+            />
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((list) => (

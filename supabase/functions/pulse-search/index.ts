@@ -13,6 +13,10 @@
 // Auth: requires Authorization: Bearer <user_jwt>. Server-side service
 // role is used for elevated reads (entitlements, daily Apollo cap).
 
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("pulse-search");
+
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 
@@ -342,7 +346,7 @@ async function parseWithGemini(rawQuery: string): Promise<{ intent: ParsedIntent
     intent.raw_query = rawQuery;
     return { intent, model: "gemini-2.0-flash-exp" };
   } catch (err) {
-    console.warn("[pulse-search] Gemini parse failed:", err);
+    log.warn("gemini_parse_failed", { err: String(err) });
     return null;
   }
 }
@@ -374,7 +378,7 @@ async function parseWithOpenAI(rawQuery: string): Promise<{ intent: ParsedIntent
     intent.raw_query = rawQuery;
     return { intent, model: "gpt-4o-mini" };
   } catch (err) {
-    console.warn("[pulse-search] OpenAI parse failed:", err);
+    log.warn("openai_parse_failed", { err: String(err) });
     return null;
   }
 }
@@ -714,7 +718,7 @@ async function searchSaved(supa: any, userId: string, intent: ParsedIntent, limi
     }
     return out;
   } catch (err) {
-    console.warn("[pulse-search] saved search failed:", err);
+    log.warn("saved_search_failed", { err: String(err) });
     return [];
   }
 }
@@ -730,15 +734,16 @@ function escapeIlikeFragment(s: string): string {
   return String(s).replace(/[,()\\]/g, " ").trim();
 }
 
-async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, topicTerms: string[]): Promise<PulseCompanyResult[]> {
+async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, topicTerms: string[], page = 1): Promise<PulseCompanyResult[]> {
   try {
+    const offset = (page - 1) * limit;
     let q = supa
       .from("lit_company_directory")
       .select(
         "company_key, company_name, domain, website, phone, address_line1, address_line2, city, state, postal_code, country, industry, trade_roles, shipments, teu, lcl, value_usd, description",
       )
       .eq("is_active", true)
-      .limit(limit * 3);
+      .range(offset * 3, offset * 3 + limit * 3 - 1);
 
     // Geography filters — state.ilike matches the directory's full-name
     // storage; state.eq.{abbr} is kept as a safety net for any abbr rows.
@@ -799,7 +804,7 @@ async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, t
 
     const { data, error } = await q;
     if (error || !Array.isArray(data)) {
-      console.warn("[pulse-search] directory error:", error);
+      log.warn("directory_error", { err: String(error?.message ?? error) });
       return [];
     }
 
@@ -824,7 +829,7 @@ async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, t
           for (const s of (snaps || [])) snapshotByKey.set(s.company_id, s.parsed_summary || {});
         }
       } catch (err) {
-        console.warn("[pulse-search] importyeti snapshot fetch failed:", err);
+        log.warn("importyeti_snapshot_fetch_failed", { err: String(err) });
       }
     }
 
@@ -881,7 +886,7 @@ async function searchDirectory(supa: any, intent: ParsedIntent, limit: number, t
 
     return scored;
   } catch (err) {
-    console.warn("[pulse-search] directory search failed:", err);
+    log.warn("directory_search_failed", { err: String(err) });
     return [];
   }
 }
@@ -1110,7 +1115,7 @@ async function enrichWithDecisionMakers(rows: PulseCompanyResult[], intent: Pars
     });
     if (!resp.ok) {
       const txt = await resp.text().catch(() => "");
-      console.warn("[pulse-search] mixed_people/search non-ok:", resp.status, txt.slice(0, 200));
+      log.warn("apollo_mixed_people_non_ok", { status: resp.status, body: txt.slice(0, 200) });
       return;
     }
     const data = await resp.json();
@@ -1152,7 +1157,7 @@ async function enrichWithDecisionMakers(rows: PulseCompanyResult[], intent: Pars
       row.matched_reasons = [...row.matched_reasons, `${matches.length} decision-maker${matches.length === 1 ? "" : "s"} identified`];
     }
   } catch (err) {
-    console.warn("[pulse-search] enrichWithDecisionMakers failed:", err);
+    log.warn("enrich_decision_makers_failed", { err: String(err) });
   }
 }
 
@@ -1197,11 +1202,11 @@ ${blanks.map((r, i) => `${i + 1}. ${r.company_name}${r.domain ? ` (${r.domain})`
       }
     }
   } catch (err) {
-    console.warn("[pulse-search] batchClassifyIndustries failed:", err);
+    log.warn("batch_classify_industries_failed", { err: String(err) });
   }
 }
 
-async function searchApollo(intent: ParsedIntent, limit: number): Promise<PulseCompanyResult[]> {
+async function searchApollo(intent: ParsedIntent, limit: number, page = 1): Promise<PulseCompanyResult[]> {
   if (!APOLLO_API_KEY) return [];
   try {
     // Keyword tags: TOPIC ONLY (industry + service). Sending audience tokens
@@ -1245,7 +1250,7 @@ async function searchApollo(intent: ParsedIntent, limit: number): Promise<PulseC
     }
 
     const body: Record<string, any> = {
-      page: 1,
+      page,
       per_page: Math.min(limit, 50),
     };
     if (keywords.length > 0) body.q_organization_keyword_tags = keywords.slice(0, 6);
@@ -1279,7 +1284,7 @@ async function searchApollo(intent: ParsedIntent, limit: number): Promise<PulseC
     });
     if (!resp.ok) {
       const txt = await resp.text().catch(() => "");
-      console.warn("[pulse-search] Apollo non-ok:", resp.status, txt.slice(0, 200));
+      log.warn("apollo_non_ok", { status: resp.status, body: txt.slice(0, 200) });
       return [];
     }
     const data = await resp.json();
@@ -1310,7 +1315,7 @@ async function searchApollo(intent: ParsedIntent, limit: number): Promise<PulseC
     for (const r of filtered as any[]) { delete r.__keywordHit; delete r.__naicsHit; }
     return filtered;
   } catch (err) {
-    console.warn("[pulse-search] Apollo failed:", err);
+    log.warn("apollo_failed", { err: String(err) });
     return [];
   }
 }
@@ -1510,7 +1515,7 @@ async function incrementApollo(supa: any, userId: string) {
   try {
     await supa.rpc("increment_apollo_usage", { p_user_id: userId, p_kind: "company", p_delta: 1 });
   } catch (err) {
-    console.warn("[pulse-search] increment_apollo_usage failed:", err);
+    log.warn("increment_apollo_usage_failed", { err: String(err) });
   }
 }
 
@@ -1550,7 +1555,9 @@ serve(async (req) => {
       status: 400, headers: { ...corsHeaders(), "Content-Type": "application/json" },
     });
   }
-  const limit = Math.max(5, Math.min(Number(body?.limit) || 50, 100));
+  const perPage = Math.max(5, Math.min(Number(body?.per_page) || Number(body?.limit) || 50, 100));
+  const page = Math.max(1, Number(body?.page) || 1);
+  const limit = perPage; // alias kept for downstream calls
   const includeApollo = body?.includeApollo !== false;
   const includeSaved = body?.includeSaved !== false;
   const includeDirectory = body?.includeDirectory !== false;
@@ -1617,7 +1624,7 @@ serve(async (req) => {
       );
     }
   } catch (e) {
-    console.error("[pulse-search] trial-expiry check failed (non-fatal):", e);
+    log.error("trial_expiry_check_failed", { err: String(e), nonfatal: true });
   }
 
   // Usage gate — maps to `pulse_search` feature_key.
@@ -1637,7 +1644,7 @@ serve(async (req) => {
     p_quantity: 1,
   });
   if (gateErr) {
-    console.error("[pulse-search] gate rpc failed", gateErr);
+    log.error("gate_rpc_failed", { err: String(gateErr?.message ?? gateErr) });
   } else if (gateData && gateData.ok === false) {
     return new Response(JSON.stringify(gateData), {
       status: 403,
@@ -1661,7 +1668,7 @@ serve(async (req) => {
     : Promise.resolve([]);
 
   const directoryPromise: Promise<PulseCompanyResult[]> = includeDirectory
-    ? searchDirectory(supa, intent, Math.min(50, limit), topicTerms)
+    ? searchDirectory(supa, intent, Math.min(50, limit), topicTerms, page)
     : Promise.resolve([]);
 
   let apolloCalled = false;
@@ -1670,12 +1677,12 @@ serve(async (req) => {
     const { plan, usedToday, cap } = await getUserPlanAndApolloUsage(supa, userId);
     if (cap > 0 && usedToday < cap) {
       apolloCalled = true;
-      apolloPromise = searchApollo(intent, Math.min(50, limit)).then(async (rows) => {
+      apolloPromise = searchApollo(intent, Math.min(50, limit), page).then(async (rows) => {
         await incrementApollo(supa, userId);
         return rows;
       });
     } else {
-      console.log(`[pulse-search] Apollo skipped — plan=${plan} usedToday=${usedToday} cap=${cap}`);
+      log.info("apollo_skipped_quota", { plan, used_today: usedToday, cap });
     }
   }
 
@@ -1725,7 +1732,7 @@ serve(async (req) => {
       total_ms: totalMs,
     });
   } catch (err) {
-    console.warn("[pulse-search] telemetry insert failed:", err);
+    log.warn("telemetry_insert_failed", { err: String(err) });
   }
 
   // Consume usage AFTER successful search so failed/empty parses don't
@@ -1740,10 +1747,15 @@ serve(async (req) => {
       p_metadata: { query: rawQuery.slice(0, 200), result_count: ranked.length },
     });
   } catch (consumeErr) {
-    console.error("[pulse-search] consume_usage failed (non-fatal):", consumeErr);
+    log.error("consume_usage_failed", { err: String(consumeErr?.message ?? consumeErr), nonfatal: true });
   }
 
   const coachSummary = buildCoachSummary(intent, sourceCounts, ranked, textTerms);
+
+  // has_more: true when the last page returned exactly perPage results,
+  // implying there may be more. Apollo doesn't give us a total count
+  // without an extra call, so we use this heuristic.
+  const has_more = ranked.length >= perPage;
 
   return new Response(JSON.stringify({
     ok: true,
@@ -1758,6 +1770,9 @@ serve(async (req) => {
     results: ranked,
     coach_summary: coachSummary,
     timing_ms: { parser: parserMs, total: totalMs },
+    page,
+    per_page: perPage,
+    has_more,
   }), {
     headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
@@ -1767,7 +1782,7 @@ serve(async (req) => {
     // The frontend shows "Failed to send a request to the Edge Function" on any
     // non-2xx, which is unhelpful. Returning 200 with ok:false lets the UI
     // surface the actual error message.
-    console.error("[pulse-search] unhandled error:", err?.stack || err?.message || String(err));
+    log.error("unhandled_error", { err: err?.stack || err?.message || String(err) });
     return new Response(JSON.stringify({
       ok: false,
       error: "pulse_search_internal_error",

@@ -33,6 +33,9 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@16.5.0?target=deno";
+import { createLogger, requestId } from "../_shared/logger.ts";
+
+const moduleLog = createLogger("billing-webhook");
 
 const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
 const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
@@ -92,7 +95,7 @@ async function claimEvent(event: Stripe.Event): Promise<boolean> {
   // accidentally reprocess one.
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    console.warn("[billing-webhook] claimEvent unexpected status", res.status, txt);
+    moduleLog.warn("claim_event_unexpected_status", { err: `HTTP ${res.status}`, status: res.status, body: txt.slice(0, 200) });
   }
   return true;
 }
@@ -114,7 +117,7 @@ async function markEventProcessed(eventId: string, error?: string) {
       }),
     },
   ).catch((err) => {
-    console.warn("[billing-webhook] markEventProcessed failed", err);
+    moduleLog.warn("mark_event_processed_failed", { err: String(err), event_id: eventId });
   });
 }
 
@@ -227,6 +230,37 @@ async function resolveUserId(sub: Stripe.Subscription): Promise<string | null> {
   return rows[0]?.user_id ?? null;
 }
 
+/**
+ * Resolve the organization_id for a user, preferring Stripe metadata then
+ * falling back to the user's earliest org_members row. Returns null when the
+ * user has no org membership yet (e.g. signup that hasn't run the org
+ * bootstrap trigger). The column on `subscriptions` is `organization_id`
+ * (uuid, nullable, FK to organizations(id) ON DELETE CASCADE).
+ *
+ * Phase 4 of the subscriptions org-keyed migration: every webhook event
+ * writes organization_id alongside user_id so future reads can prefer the
+ * org-keyed lookup. Forward-compatible — the column is nullable.
+ */
+async function resolveOrganizationId(
+  sub: Stripe.Subscription,
+  userId: string,
+): Promise<string | null> {
+  const metaOrgId = (sub as any).metadata?.supabase_organization_id
+    ?? (sub as any).metadata?.supabase_org_id;
+  if (metaOrgId) return String(metaOrgId);
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/org_members?user_id=eq.${userId}&select=org_id&order=joined_at.asc&limit=1`,
+    {
+      headers: {
+        apikey: supabaseServiceRoleKey!,
+        Authorization: `Bearer ${supabaseServiceRoleKey}`,
+      },
+    },
+  );
+  const rows: Array<{ org_id: string }> = await res.json().catch(() => []);
+  return rows[0]?.org_id ?? null;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Per-event handlers. Each one writes plan_code ONLY when
 // getPlanCodeForPrice returns a non-null code. That guarantees the only
@@ -250,14 +284,14 @@ function getSubscriptionSeatQuantity(sub: Stripe.Subscription): number | null {
 async function handleSubscriptionEvent(sub: Stripe.Subscription, eventLabel: string) {
   const userId = await resolveUserId(sub);
   if (!userId) {
-    console.warn(`[billing-webhook] ${eventLabel}: could not resolve user_id (sub=${sub.id})`);
+    moduleLog.warn("user_id_unresolved", { err: "no user_id", event_label: eventLabel, stripe_sub_id: sub.id });
     return;
   }
 
   const priceId = getSubscriptionPriceId(sub);
   const planCode = await getPlanCodeForPrice(priceId);
   if (!planCode) {
-    console.warn(`[billing-webhook] ${eventLabel}: priceId=${priceId} did not map to a known plan_code; leaving plan_code unchanged for user ${userId}`);
+    moduleLog.warn("price_id_unmapped", { err: `unknown price_id ${priceId}`, event_label: eventLabel, user_id: userId, stripe_price_id: priceId });
   }
 
   const update: Record<string, unknown> = {
@@ -287,6 +321,15 @@ async function handleSubscriptionEvent(sub: Stripe.Subscription, eventLabel: str
     update.seat_quantity = seatQuantity;
   }
 
+  // Phase 4 of subscriptions org-keyed migration: also write organization_id.
+  // The column already exists on the live table (nullable, FK to
+  // organizations(id) — populated for the first time by the 2026-05-30
+  // backfill migration). No env-gate needed: writing to an existing nullable
+  // column never 400s, and getting org-keyed data in here is the prerequisite
+  // for the eventual read-side pivot.
+  const organizationId = await resolveOrganizationId(sub, userId);
+  if (organizationId) update.organization_id = organizationId;
+
   await upsertSubscription(userId, update);
 
   if (planCode) {
@@ -301,7 +344,7 @@ async function handleSubscriptionEvent(sub: Stripe.Subscription, eventLabel: str
     });
   }
 
-  console.log(`[billing-webhook] ${eventLabel}: user=${userId} plan_code=${planCode ?? "(unchanged)"} status=${sub.status}`);
+  moduleLog.info("subscription_event_handled", { event_label: eventLabel, user_id: userId, plan_code: planCode ?? "(unchanged)", status: sub.status });
 }
 
 serve(async (req) => {
@@ -322,19 +365,21 @@ serve(async (req) => {
   try {
     event = await stripe.webhooks.constructEventAsync(body, sig, webhookSecret!);
   } catch (err: any) {
-    console.error("[billing-webhook] Signature verification failed:", err.message);
+    moduleLog.error("signature_verification_failed", { err: err?.message || String(err) });
     return json({ error: "Invalid signature" }, 400);
   }
+
+  const log = moduleLog.child({ request_id: requestId(), event_id: event.id, event_type: event.type });
 
   // Idempotency check: if we've already claimed this event.id, treat
   // this delivery as a no-op replay.
   const isFirstDelivery = await claimEvent(event);
   if (!isFirstDelivery) {
-    console.log(`[billing-webhook] Replay ignored: ${event.type} ${event.id}`);
+    log.info("replay_ignored");
     return json({ received: true, replay: true });
   }
 
-  console.log(`[billing-webhook] Processing event: ${event.type} ${event.id}`);
+  log.info("processing_event");
 
   let handlerError: string | undefined;
   try {
@@ -346,7 +391,7 @@ serve(async (req) => {
           session.metadata?.supabase_user_id ||
           session.client_reference_id;
         if (!userId) {
-          console.warn("[billing-webhook] checkout.session.completed: no user_id in metadata or client_reference_id");
+          log.warn("checkout_no_user_id", { err: "no user_id in metadata or client_reference_id" });
           break;
         }
 
@@ -379,7 +424,7 @@ serve(async (req) => {
           // Without a verified price -> plan_code mapping we still
           // record the customer/subscription IDs so the next webhook
           // event can reconcile, but we DO NOT write a paid plan_code.
-          console.warn(`[billing-webhook] checkout.session.completed: priceId=${stripePriceId} did not map to a known plan_code (sub=${stripeSubscriptionId}); not writing plan_code`);
+          log.warn("checkout_price_unmapped", { err: `unknown price_id ${stripePriceId}`, user_id: userId, stripe_price_id: stripePriceId, stripe_sub_id: stripeSubscriptionId });
           await upsertSubscription(userId, {
             stripe_customer_id: stripeCustomerId,
             stripe_subscription_id: stripeSubscriptionId,
@@ -417,7 +462,7 @@ serve(async (req) => {
           subscription_status: "active",
         });
 
-        console.log(`[billing-webhook] checkout.session.completed: user=${userId} -> plan_code=${planCode} (price=${stripePriceId})`);
+        log.info("checkout_session_completed", { user_id: userId, plan_code: planCode, stripe_price_id: stripePriceId });
         break;
       }
 
@@ -434,7 +479,7 @@ serve(async (req) => {
         const sub = event.data.object as Stripe.Subscription;
         const userId = await resolveUserId(sub);
         if (!userId) {
-          console.warn(`[billing-webhook] subscription.deleted: could not resolve user_id (sub=${sub.id})`);
+          log.warn("subscription_deleted_no_user_id", { err: "no user_id", stripe_sub_id: sub.id });
           break;
         }
         await upsertSubscription(userId, {
@@ -446,7 +491,7 @@ serve(async (req) => {
           plan: "free_trial",
           subscription_status: "cancelled",
         });
-        console.log(`[billing-webhook] subscription.deleted: user=${userId} -> plan_code=free_trial`);
+        log.info("subscription_deleted", { user_id: userId, plan_code: "free_trial" });
         break;
       }
 
@@ -459,7 +504,7 @@ serve(async (req) => {
         if (!userId) break;
         await upsertSubscription(userId, { status: "past_due" });
         await updateUserMetadata(userId, { subscription_status: "past_due" });
-        console.log(`[billing-webhook] invoice.payment_failed: user=${userId} -> status=past_due`);
+        log.warn("invoice_payment_failed", { err: "payment_failed", user_id: userId, status: "past_due" });
         break;
       }
 
@@ -492,16 +537,16 @@ serve(async (req) => {
           subscription_status: "active",
           ...(planCode ? { plan: planCode } : {}),
         });
-        console.log(`[billing-webhook] invoice.payment_succeeded: user=${userId} plan_code=${planCode ?? "(unchanged)"}`);
+        log.info("invoice_payment_succeeded", { user_id: userId, plan_code: planCode ?? "(unchanged)" });
         break;
       }
 
       default:
-        console.log(`[billing-webhook] Unhandled event type: ${event.type}`);
+        log.info("unhandled_event_type");
     }
   } catch (err: any) {
     handlerError = err?.message || String(err);
-    console.error("[billing-webhook] Handler error:", handlerError, err?.stack);
+    log.error("handler_error", { err: handlerError, stack: err?.stack });
     // Always 200 to Stripe (no retries); we already claimed the event,
     // so the error is recorded in stripe_webhook_events.processing_error
     // for an operator to investigate.

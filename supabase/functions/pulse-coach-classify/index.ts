@@ -14,6 +14,9 @@
 // be added later if usage spikes.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("pulse-coach-classify");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -176,7 +179,7 @@ serve(async (req) => {
 
     const data = await resp.json();
     if (!resp.ok) {
-      console.error("[pulse-coach-classify] OpenAI error", data);
+      log.error("openai_error", { detail: data });
       return jsonResponse(
         {
           ok: false,
@@ -214,7 +217,7 @@ serve(async (req) => {
       token_usage: data.usage || null,
     });
   } catch (err) {
-    console.error("[pulse-coach-classify] fatal", err);
+    log.error("fatal", { err: String((err as Error)?.message ?? err) });
     return jsonResponse(
       {
         ok: false,

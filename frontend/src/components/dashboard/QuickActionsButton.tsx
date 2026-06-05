@@ -23,12 +23,7 @@ const QUICK_ACTIONS: QuickAction[] = [
     href: '/app/campaigns',
     color: 'from-green-500 to-green-600',
   },
-  {
-    label: 'Generate RFP',
-    icon: FileText,
-    href: '/app/rfp-studio',
-    color: 'from-purple-500 to-purple-600',
-  },
+  // Generate RFP entry removed 2026-06 — RFP Studio discontinued.
 ];
 
 export default function QuickActionsButton() {

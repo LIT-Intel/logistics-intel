@@ -238,8 +238,11 @@ export function buildParsedSummary(
 
   topRoutes = topRoutes
     .filter((entry) => isUsableRouteLabel(entry?.route))
-    .sort((a, b) => b.shipments - a.shipments)
-    .slice(0, 10);
+    .sort((a, b) => b.shipments - a.shipments);
+  // No truncation — Trade Lanes tab renders the full list; Summary
+  // widget shows top 12 and links to the full tab. Capping here
+  // permanently destroys routes 11+ from the snapshot, breaking the
+  // full-list view downstream.
 
   // Pick the largest credible TEU value so we never persist the single-digit
   // monthly-sum number when ImportYeti drops container detail.
@@ -704,7 +707,6 @@ function buildTopRoutesFromRecentBols(recentBols: any[]): TopRoute[] {
 
   return Array.from(routeStats.entries())
     .sort((a, b) => b[1].shipments - a[1].shipments)
-    .slice(0, 10)
     .map(([route, stats]) => ({
       route,
       shipments: stats.shipments,
@@ -714,19 +716,73 @@ function buildTopRoutesFromRecentBols(recentBols: any[]): TopRoute[] {
     }));
 }
 
-function pickTopSuppliers(raw: any): string[] {
-  const rows = Array.isArray(raw?.suppliers_table) ? raw.suppliers_table : [];
-  const values = rows
-    .map(
-      (row: any) =>
-        normalizeString(row?.supplier) ??
-        normalizeString(row?.supplier_name) ??
-        normalizeString(row?.shipper) ??
-        normalizeString(row?.name),
-    )
-    .filter((value: string | null): value is string => Boolean(value));
+type StructuredSupplier = {
+  name: string;
+  country: string | null;
+  country_code: string | null;
+  shipment_count: number | null;
+  last_shipment_date: string | null;
+};
 
-  return Array.from(new Set(values)).slice(0, 10);
+/**
+ * Returns structured supplier rows preserving country, shipment count,
+ * last shipment date. Previous shape was `string[]` capped at 10 which
+ * dropped every field the Suppliers tab needs (flag, count, date).
+ *
+ * Kept at top 30 (was 10) because the Suppliers tab now renders the
+ * full list; "Show more" is the UI's job, not the parser's.
+ */
+function pickTopSuppliers(raw: any): StructuredSupplier[] {
+  const rows = Array.isArray(raw?.suppliers_table) ? raw.suppliers_table : [];
+  const seen = new Set<string>();
+  const out: StructuredSupplier[] = [];
+  for (const row of rows) {
+    const name =
+      normalizeString(row?.supplier) ??
+      normalizeString(row?.supplier_name) ??
+      normalizeString(row?.shipper) ??
+      normalizeString(row?.name);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const country =
+      normalizeString(row?.country) ??
+      normalizeString(row?.supplier_country) ??
+      null;
+    const country_code =
+      normalizeString(row?.country_code) ??
+      normalizeString(row?.iso2) ??
+      normalizeString(row?.country_iso) ??
+      null;
+    // ImportYeti's actual key names (verified against EAE raw payload):
+    //   shipments_12m, total_shipments_supplier, most_recent_shipment
+    // Keep older aliases as fallbacks for any other upstream variants.
+    const shipment_count =
+      normalizeNumber(row?.shipments_12m) ??
+      normalizeNumber(row?.shipments) ??
+      normalizeNumber(row?.shipment_count) ??
+      normalizeNumber(row?.count) ??
+      normalizeNumber(row?.total_shipments_supplier) ??
+      null;
+    // most_recent_shipment is in DD/MM/YYYY format per ImportYeti.
+    // Normalize to ISO YYYY-MM-DD so the UI can humanize uniformly.
+    const lastRaw =
+      normalizeString(row?.most_recent_shipment) ??
+      normalizeString(row?.last_shipment_date) ??
+      normalizeString(row?.last_date) ??
+      normalizeString(row?.last_bol_date) ??
+      null;
+    const lastDate = lastRaw ? parseImportYetiDateNoFuture(lastRaw) : null;
+    const last_shipment_date = lastDate ? lastDate.toISOString().slice(0, 10) : null;
+
+    out.push({ name, country, country_code, shipment_count, last_shipment_date });
+    if (out.length >= 30) break;
+  }
+  // Sort by shipment_count desc, nulls last.
+  out.sort((a, b) => (b.shipment_count ?? -1) - (a.shipment_count ?? -1));
+  return out;
 }
 
 function pickPhone(raw: any): string | null {

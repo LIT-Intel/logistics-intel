@@ -123,18 +123,37 @@ const components: PortableTextComponents = {
   },
   types: {
     image: ({ value }) => {
-      if (!value?.asset) return null;
-      const url = urlFor(value).width(1280).fit("max").auto("format").url();
+      // External-URL fallback (e.g. SVGs served from marketing/public/) —
+      // lets editors embed assets that aren't uploaded to Sanity. Falls
+      // through to the Sanity asset pipeline when an asset ref exists.
+      const externalUrl: string | undefined = value?.externalUrl;
+      if (!value?.asset && !externalUrl) return null;
+      const url = value?.asset
+        ? urlFor(value).width(1280).fit("max").auto("format").url()
+        : externalUrl!;
       return (
-        <figure className="my-9 overflow-hidden rounded-2xl border border-ink-100">
-          <Image
-            src={url}
-            alt={value.alt || ""}
-            width={1280}
-            height={720}
-            sizes="(min-width: 768px) 720px, 100vw"
-            className="h-auto w-full"
-          />
+        <figure className="my-9 overflow-hidden rounded-2xl border border-ink-100 bg-white">
+          {externalUrl && !value?.asset ? (
+            // External SVG / image — bypass next/image since the file lives
+            // on our own public/ and may not be a fixed-size raster.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={url}
+              alt={value.alt || ""}
+              loading="lazy"
+              decoding="async"
+              className="block h-auto w-full"
+            />
+          ) : (
+            <Image
+              src={url}
+              alt={value.alt || ""}
+              width={1280}
+              height={720}
+              sizes="(min-width: 768px) 720px, 100vw"
+              className="h-auto w-full"
+            />
+          )}
           {value.caption && (
             <figcaption className="font-body bg-ink-25 px-4 py-3 text-center text-[12.5px] text-ink-500">
               {value.caption}
@@ -159,7 +178,7 @@ const components: PortableTextComponents = {
               className="pointer-events-none absolute -top-12 -right-10 h-40 w-40 rounded-full opacity-50"
               style={{ background: "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)" }}
             />
-            <div className="font-display relative text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: "#00F0FF" }}>
+            <div className="lit-eyebrow-dark relative">
               Pulse Coach
             </div>
             {value.title && <div className="font-display relative mt-1 text-[16px] font-semibold">{value.title}</div>}

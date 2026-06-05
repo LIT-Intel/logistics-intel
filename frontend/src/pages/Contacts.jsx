@@ -18,6 +18,8 @@ import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import LitKpiStrip from "@/components/ui/LitKpiStrip";
 import LitPill from "@/components/ui/LitPill";
+import LitEmptyState from "@/components/ui/LitEmptyState";
+import { LitSkeletonRow } from "@/components/ui/LitSkeleton";
 
 /**
  * Workspace Contacts page — every saved-account contact in one clean
@@ -295,28 +297,43 @@ export default function ContactsPage() {
             </div>
 
             {loading ? (
-              <div className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
-                <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin text-blue-500" />
-                <p className="font-body text-[12px] text-slate-500">
-                  Loading contacts…
-                </p>
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <LitSkeletonRow count={6} />
               </div>
             ) : rows.length === 0 ? (
-              <div className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
-                <p className="font-display mb-1 text-[13px] font-semibold text-slate-700">
-                  No saved contacts yet
-                </p>
-                <p className="font-body mx-auto max-w-md text-[12px] text-slate-400">
-                  Save a company, open the Contacts tab, and run{" "}
-                  <strong className="text-slate-700">Find contacts with LIT</strong>{" "}
-                  to populate this list.
-                </p>
+              <div className="rounded-xl border border-slate-200 bg-white">
+                <LitEmptyState
+                  icon={<UserPlus className="h-5 w-5" />}
+                  title="No saved contacts yet"
+                  body={
+                    <>
+                      Save a company, open its Contacts tab, and run{" "}
+                      <strong className="text-slate-700">Find contacts with LIT</strong>{" "}
+                      to populate this list with verified buying-committee names.
+                    </>
+                  }
+                  primary={{
+                    label: "Search companies",
+                    to: "/app/search",
+                    icon: <Search className="h-3 w-3" />,
+                  }}
+                />
               </div>
             ) : filtered.length === 0 ? (
-              <div className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
-                <p className="font-display text-[12.5px] font-semibold text-slate-700">
-                  No contacts match this filter set.
-                </p>
+              <div className="rounded-xl border border-slate-200 bg-white">
+                <LitEmptyState
+                  size="sm"
+                  title="No contacts match this filter"
+                  body="Try a broader title, role, or seniority filter — or clear filters to see everything."
+                  primary={{
+                    label: "Clear filters",
+                    onClick: () => {
+                      setQuery("");
+                      setCompanyFilter("all");
+                      setStatusFilter("all");
+                    },
+                  }}
+                />
               </div>
             ) : (
               <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">

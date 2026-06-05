@@ -2,6 +2,11 @@
 // Inline style={{ }} approach. SettingsHeader + SettingsNav (left rail) with
 // lucide-react icons. No second sidebar — LITPage already provides the app sidebar.
 import React from "react";
+// Mobile overrides applied as `!important` CSS scoped to the className hooks
+// (.lit-settings-main / .lit-settings-header / .lit-settings-nav /
+// .lit-settings-body) because inline styles win over CSS by spec. See the
+// file's own comment block for the rationale + tablet/phone breakpoints.
+import "./SettingsLayout.css";
 import {
   User,
   Building2,

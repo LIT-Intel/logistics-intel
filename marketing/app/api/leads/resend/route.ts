@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { getSupabase } from "@/lib/supabase";
+import { pushInboundLeadToAttio } from "@/lib/attio";
 import { sendEmail } from "@/lib/email";
 import { resolveAudience } from "@/lib/resend-audiences";
 import { SEQUENCES } from "@/lib/lead-sequences";
@@ -221,6 +222,44 @@ export async function POST(req: NextRequest) {
     await enrollLead(lead, leadRow!.id, supa);
   } catch (e: any) {
     console.error("[leads/resend] enrollment threw", e?.message || e);
+  }
+
+  // Attio fan-out — awaited inline so the lambda doesn't terminate
+  // before the Person → Company → Deal → Note chain completes. Adds
+  // ~2-3s to the response time but guarantees nothing falls through
+  // the cracks. The earlier fire-and-forget (waitUntil) was wrong:
+  // globalThis.waitUntil isn't a real Node-runtime API on Vercel, so
+  // the promise was abandoned the moment we returned 200 (verified via
+  // runtime logs — only the Company upsert succeeded before the
+  // lambda was killed mid-chain).
+  try {
+    const attioResult = await pushInboundLeadToAttio({
+      email: lead.email,
+      source: lead.source,
+      attribution: {
+        offer: lead.offer,
+        utmSource: lead.utmSource,
+        utmMedium: lead.utmMedium,
+        utmCampaign: lead.utmCampaign,
+        referrer: lead.referrer,
+        firstTouchUtmSource: lead.firstTouch?.utmSource,
+        firstTouchUtmCampaign: lead.firstTouch?.utmCampaign,
+        firstTouchReferrer: lead.firstTouch?.referrer,
+        lastTouchUtmSource: lead.lastTouch?.utmSource,
+        lastTouchUtmCampaign: lead.lastTouch?.utmCampaign,
+        leadId: leadRow!.id,
+      },
+      jobTitle: lead.role,
+      dealName: `${lead.email} — ${lead.source}`,
+    });
+    if (!attioResult.ok) {
+      console.warn(
+        "[leads/resend] attio push partial",
+        JSON.stringify(attioResult),
+      );
+    }
+  } catch (e: any) {
+    console.error("[leads/resend] attio push threw", e?.message || e);
   }
 
   return json({ ok: true });

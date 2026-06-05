@@ -21,13 +21,14 @@ import {
   Ship,
   Target,
   TrendingUp,
-  Truck,
   User,
   Users,
 } from "lucide-react";
 import LitPill from "@/components/ui/LitPill";
 import { resolveEndpoint } from "@/lib/laneGlobe";
+import { normalizeSupplier } from "@/lib/supplierNormalize";
 import { supabase } from "@/lib/supabase";
+import { UpgradeRequiredInline } from "@/components/common/UpgradeRequired";
 
 /**
  * Phase 3 — Right-rail "Account Details" panel for the Company Profile.
@@ -60,6 +61,15 @@ type DetailsCompany = {
 };
 
 type DetailsKpis = {
+  /**
+   * Rolling 12-month BOL count. MUST be sourced from the 12-month
+   * window (e.g. `profile.routeKpis.shipmentsLast12m` or
+   * `lit_company_index.total_shipments`, which itself is 12mo).
+   * Do NOT pass `parsed_summary.total_shipments` or any lifetime
+   * total here — the right-rail "Volume" row labels this value as
+   * "Shipments — last 12 months", so a lifetime number would be
+   * actively misleading.
+   */
   shipments?: number | null;
   teu?: number | null;
   topRoute?: string | null;
@@ -157,6 +167,10 @@ type CDPDetailsPanelProps = {
   /** Switches the parent's active tab to Contacts when the user clicks
    *  the "View contacts" button in the Verified Contacts block. */
   onOpenContactsTab?: () => void;
+  /** Switches the parent's active tab to the Supply Chain tab (which
+   *  hosts the Suppliers view) when the user clicks the Top Supplier
+   *  tile in the Trade Intelligence section. */
+  onOpenSuppliersTab?: () => void;
 };
 
 export default function CDPDetailsPanel({
@@ -172,6 +186,7 @@ export default function CDPDetailsPanel({
   snapshotUpdatedAt,
   contacts,
   onOpenContactsTab,
+  onOpenSuppliersTab,
   crmStage,
   companyId,
   savedPresent,
@@ -186,6 +201,44 @@ export default function CDPDetailsPanel({
   });
   const toggle = (k: keyof typeof open) =>
     setOpen((s) => ({ ...s, [k]: !s[k] }));
+
+  // Refresh-button error surface. Most error routing happens upstream
+  // in CompanyProfileV2.handleManualRefreshClick (which swallows the
+  // thrown error). This local catch is the defensive layer: if the
+  // parent ever stops handling the throw, we still render the right
+  // banner / toast here instead of a silent failure.
+  const [limitError, setLimitError] = useState<any>(null);
+
+  async function handleRefreshClick() {
+    try {
+      setLimitError(null);
+      await onRefresh();
+    } catch (e: any) {
+      if (e?.code === "LIMIT_EXCEEDED") {
+        setLimitError(e.limit || e.gate || null);
+      } else if (e?.code === "TEMPORARY") {
+        window.dispatchEvent(
+          new CustomEvent("lit:toast", {
+            detail: {
+              tone: "warning",
+              title: "Refresh unavailable",
+              body: e.message,
+            },
+          }),
+        );
+      } else {
+        window.dispatchEvent(
+          new CustomEvent("lit:toast", {
+            detail: {
+              tone: "error",
+              title: "Refresh failed",
+              body: e?.message ?? "Unknown error",
+            },
+          }),
+        );
+      }
+    }
+  }
 
   // Phase 6 — right-rail trade-intel rows now fall back through profile
   // shapes AND recentBols when the explicit list isn't surfaced. Order
@@ -220,43 +273,19 @@ export default function CDPDetailsPanel({
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
   }, [profile?.topCarriers, profile?.carrier_mix, profile?.carriers, recentBols]);
 
-  const topForwarder = useMemo(() => {
-    const list =
-      profile?.topForwarders ||
-      profile?.forwarder_mix ||
-      profile?.forwarders ||
-      profile?.serviceProviders;
-    if (Array.isArray(list) && list.length > 0) {
-      const head = list[0] as any;
-      const name = head?.providerName || head?.name || head?.forwarder;
-      if (name) return name;
-    }
-    // Fall back to most-frequent supplier/shipper/notify-party across
-    // recentBols.
-    const counts = new Map<string, number>();
-    for (const bol of recentBols) {
-      const name =
-        bol?.shipper_name ||
-        bol?.supplier ||
-        bol?.supplier_name ||
-        bol?.notify_party ||
-        bol?.raw?.shipper_name ||
-        bol?.raw?.supplier_name ||
-        null;
-      if (!name) continue;
-      const s = String(name).trim();
-      if (!s) continue;
-      counts.set(s, (counts.get(s) || 0) + 1);
-    }
-    if (counts.size === 0) return null;
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
-  }, [
-    profile?.topForwarders,
-    profile?.forwarder_mix,
-    profile?.forwarders,
-    profile?.serviceProviders,
-    recentBols,
-  ]);
+  // Top Supplier — sourced from parsed_summary.top_suppliers (the
+  // structured shape introduced in importyeti_fetch v2). Renamed from
+  // "Top Forwarder" because (a) parsed_summary.top_forwarders was
+  // never populated, and (b) the BOL fallback that previously filled
+  // the gap actually returned the supplier/shipper name. Labeling it
+  // "Top Forwarder" was misleading. The widget now correctly shows
+  // the highest-shipment supplier and links to the Suppliers tab.
+  const topSupplier = useMemo(() => {
+    const list = profile?.topSuppliers ?? (profile as any)?.top_suppliers;
+    if (!Array.isArray(list) || list.length === 0) return null;
+    const head = normalizeSupplier(list[0]);
+    return head.name ? head : null;
+  }, [profile?.topSuppliers, (profile as any)?.top_suppliers]);
 
   const topMode = useMemo(() => {
     const list = profile?.topModes;
@@ -352,32 +381,6 @@ export default function CDPDetailsPanel({
     profile?.hsProfile,
     recentBols,
   ]);
-
-  const topSupplierCountry = useMemo(() => {
-    const list = profile?.topSuppliers;
-    if (Array.isArray(list) && list.length > 0) {
-      const head = list[0];
-      if (head && typeof head !== "string") {
-        const c = head.country || head.countryCode || head.country_code;
-        if (c) return c;
-      }
-    }
-    // Fall back to most-frequent supplier_country across recent BOLs.
-    const counts = new Map<string, number>();
-    for (const bol of recentBols) {
-      const c =
-        bol?.supplier_country ||
-        bol?.origin_country ||
-        bol?.shipper_country ||
-        null;
-      if (!c) continue;
-      const s = String(c).trim();
-      if (!s) continue;
-      counts.set(s, (counts.get(s) || 0) + 1);
-    }
-    if (counts.size === 0) return null;
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
-  }, [profile?.topSuppliers, recentBols]);
 
   const primaryLane = useMemo(
     () => derivePrimaryLane(kpis.topRoute || kpis.recentRoute),
@@ -544,9 +547,30 @@ export default function CDPDetailsPanel({
           <Row icon={<Ship />} label="Top carrier">
             {topCarrier || "—"}
           </Row>
-          <Row icon={<Truck />} label="Top forwarder">
-            {topForwarder || "—"}
-          </Row>
+          {topSupplier ? (
+            <div className="px-4 py-2">
+              <button
+                type="button"
+                onClick={() => onOpenSuppliersTab?.()}
+                className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-blue-300 hover:bg-slate-50"
+              >
+                <div className="min-w-0">
+                  <div className="font-display text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Top supplier
+                  </div>
+                  <div className="font-display mt-0.5 truncate text-sm font-semibold text-slate-900">
+                    {topSupplier.name}
+                  </div>
+                  {topSupplier.country ? (
+                    <div className="font-body truncate text-[11px] text-slate-500">
+                      {topSupplier.country}
+                    </div>
+                  ) : null}
+                </div>
+                <span aria-hidden className="text-slate-400">→</span>
+              </button>
+            </div>
+          ) : null}
           <Row icon={<Package />} label="Top mode">
             {topMode || "—"}
           </Row>
@@ -577,20 +601,17 @@ export default function CDPDetailsPanel({
               "—"
             )}
           </Row>
-          <Row icon={<MapPin />} label="Top supplier">
-            {topSupplierCountry ? (
-              <LitPill tone="slate">{topSupplierCountry}</LitPill>
-            ) : (
-              "—"
-            )}
-          </Row>
           <Row icon={<Clock />} label="Last shipment" mono>
             {formatRelative(kpis.lastShipment) || "—"}
           </Row>
           <Row icon={<Clock />} label="Data freshness">
             {snapshotUpdatedAt ? formatRelative(snapshotUpdatedAt) : "—"}
           </Row>
-          <Row icon={<BarChart2 />} label="Volume">
+          <Row
+            icon={<BarChart2 />}
+            label="Shipments (12mo)"
+            title="Rolling 12-month BOL count from our shipment intelligence database."
+          >
             {kpis.shipments != null && kpis.shipments > 0 ? (
               <LitPill tone="green">
                 {Number(kpis.shipments).toLocaleString()} ship
@@ -605,7 +626,7 @@ export default function CDPDetailsPanel({
         <div className="px-3.5 py-3">
           <button
             type="button"
-            onClick={onRefresh}
+            onClick={handleRefreshClick}
             disabled={refreshing}
             className="font-display inline-flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -616,6 +637,11 @@ export default function CDPDetailsPanel({
             )}
             {refreshing ? "Refreshing…" : "Refresh enrichment"}
           </button>
+          {limitError ? (
+            <div className="mt-2">
+              <UpgradeRequiredInline limit={limitError} />
+            </div>
+          ) : null}
         </div>
       </div>
     </aside>
@@ -663,17 +689,20 @@ function Row({
   children,
   mono,
   accent,
+  title,
 }: {
   icon?: React.ReactNode;
   label: string;
   children: React.ReactNode;
   mono?: boolean;
   accent?: boolean;
+  title?: string;
 }) {
   return (
     <div
       className="grid items-center gap-2 px-3.5 py-1.5"
       style={{ gridTemplateColumns: "92px 1fr", minHeight: 30 }}
+      title={title}
     >
       <div className="font-body flex items-center gap-1.5 text-[11px] text-slate-500">
         {icon && (

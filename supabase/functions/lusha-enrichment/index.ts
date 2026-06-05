@@ -1,5 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("lusha-enrichment");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -129,7 +132,7 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (error: any) {
-    console.error("Lusha enrichment error:", error);
+    log.error("enrichment_error", { err: String((error as Error)?.message ?? error) });
     return new Response(
       JSON.stringify({ error: error.message || "Internal server error" }),
       {
@@ -145,7 +148,7 @@ async function enrichSpecificContact(
   domain: string
 ): Promise<any | null> {
   if (!LUSHA_API_KEY) {
-    console.warn("LUSHA_API_KEY not configured, using mock data");
+    log.warn("api_key_missing_using_mock");
     return generateMockContact(requestData.first_name, requestData.last_name, requestData.title, domain);
   }
 
@@ -186,14 +189,14 @@ async function enrichSpecificContact(
       raw_data: data,
     };
   } catch (error) {
-    console.error("Lusha enrichment failed, using mock data:", error);
+    log.error("enrichment_failed_using_mock", { err: String((error as Error)?.message ?? error) });
     return generateMockContact(requestData.first_name, requestData.last_name, requestData.title, domain);
   }
 }
 
 async function enrichCompanyContacts(domain: string): Promise<any[]> {
   if (!LUSHA_API_KEY) {
-    console.warn("LUSHA_API_KEY not configured, using mock data");
+    log.warn("api_key_missing_using_mock");
     return generateMockCompanyContacts(domain);
   }
 
@@ -224,7 +227,7 @@ async function enrichCompanyContacts(domain: string): Promise<any[]> {
       raw_data: contact,
     }));
   } catch (error) {
-    console.error("Lusha company enrichment failed, using mock data:", error);
+    log.error("company_enrichment_failed_using_mock", { err: String((error as Error)?.message ?? error) });
     return generateMockCompanyContacts(domain);
   }
 }

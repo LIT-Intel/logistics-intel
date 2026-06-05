@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/auth/AuthProvider";
+import LitEmptyState from "@/components/ui/LitEmptyState";
+import { LitSkeletonRow } from "@/components/ui/LitSkeleton";
 
 function formatRelative(ts) {
   if (!ts) return "—";
@@ -193,11 +195,7 @@ export default function InboxPage() {
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
               {loadingThreads ? (
-                <div className="space-y-1 p-2">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="h-14 animate-pulse rounded-md bg-slate-100" />
-                  ))}
-                </div>
+                <LitSkeletonRow count={6} noAvatar />
               ) : loadError ? (
                 <div className="px-4 py-6 text-[12px] text-rose-700">{loadError}</div>
               ) : filteredThreads.length === 0 ? (
@@ -522,37 +520,35 @@ function MessageBubble({ message }) {
 
 function EmptyThreads({ onSync, syncing }) {
   return (
-    <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
-      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50">
-        <Mail className="h-4 w-4 text-blue-600" />
-      </div>
-      <div className="mt-2 text-[13px] font-bold text-[#0F172A]">No conversations yet</div>
-      <p className="mt-1 max-w-[260px] text-[11.5px] text-slate-500">
-        Click "Sync mailbox" to pull recent threads from your connected Gmail or Microsoft 365 account.
-      </p>
-      <button
-        type="button"
-        onClick={onSync}
-        disabled={syncing}
-        className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-3 py-1.5 text-[11.5px] font-semibold text-white shadow-sm disabled:opacity-50"
-      >
-        {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-        {syncing ? "Syncing…" : "Sync now"}
-      </button>
-    </div>
+    <LitEmptyState
+      icon={<Mail className="h-5 w-5" />}
+      title="No conversations yet"
+      body="Pull recent threads from your connected Gmail or Microsoft 365 account to start tracking reply rates and warm responses against your campaigns."
+      primary={{
+        label: syncing ? "Syncing…" : "Sync mailbox now",
+        onClick: syncing ? undefined : onSync,
+        icon: syncing ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <RefreshCw className="h-3 w-3" />
+        ),
+      }}
+      secondary={{
+        label: "Connect mailbox in Settings",
+        to: "/app/settings?tab=integrations",
+      }}
+    />
   );
 }
 
 function EmptyDetail() {
   return (
-    <div className="flex h-[60vh] flex-col items-center justify-center px-6 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
-        <Mail className="h-5 w-5 text-slate-400" />
-      </div>
-      <div className="mt-2 text-[13px] font-bold text-[#0F172A]">Pick a thread</div>
-      <p className="mt-1 max-w-[320px] text-[12px] text-slate-500">
-        Select a conversation on the left to read it and reply. The reply lands in the same email thread the recipient sees.
-      </p>
+    <div className="flex h-[60vh] items-center justify-center">
+      <LitEmptyState
+        icon={<Mail className="h-5 w-5" />}
+        title="Pick a thread"
+        body="Select a conversation on the left to read it and reply. The reply lands in the same email thread the recipient sees."
+      />
     </div>
   );
 }

@@ -12,7 +12,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
-import { createStripeCheckout, createStripePortalSession, listStripeInvoices, getBillingStatus } from '@/api/functions';
+import {
+  createStripeCheckout,
+  createStripePortalSession,
+  listStripeInvoices,
+  getBillingStatus,
+} from '@/api/billing';
 import type { InvoiceRow } from '@/components/billing/sections/BillingInvoices';
 import { supabase } from '@/lib/supabase';
 import {
@@ -204,14 +209,28 @@ export default function Billing() {
 
   // PRESERVED VERBATIM. Reads from `subscriptions` table.
   async function loadSubscription() {
+    // Subscription state is part of the canonical get-billing-status snapshot
+    // (loaded by loadBillingStatus). Direct frontend queries to the
+    // `subscriptions` table are forbidden — they miss org-owner fallback for
+    // invited members and bypass the future org_id pivot. See CLAUDE.md.
     if (!user) return;
     try {
-      const { data } = await supabase
-        .from('subscriptions')
-        .select('*')
-        .eq('user_id', (user as any).id)
-        .maybeSingle();
-      if (data) setSubscription(data);
+      const status = await getBillingStatus({});
+      const subSnap = (status as any)?.subscription;
+      const planSnap = (status as any)?.plan;
+      if (subSnap || planSnap) {
+        setSubscription({
+          plan_code: planSnap?.code ?? null,
+          status: subSnap?.status ?? null,
+          stripe_customer_id: subSnap?.stripe_customer_id ?? null,
+          stripe_subscription_id: subSnap?.stripe_subscription_id ?? null,
+          current_period_start: subSnap?.current_period_start ?? null,
+          current_period_end: subSnap?.current_period_end ?? null,
+          cancel_at_period_end: Boolean(subSnap?.cancel_at_period_end),
+          trial_ends_at: subSnap?.trial_ends_at ?? null,
+          seat_quantity: subSnap?.seat_quantity ?? null,
+        });
+      }
     } catch {
       /* fallback to auth metadata */
     }

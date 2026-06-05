@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { ArrowRight, Calendar } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Standard inner-page hero — used on every public template (feature,
@@ -78,23 +78,16 @@ export function PageHero({
         {(primaryCta || secondaryCta) && (
           <div className={`space-intro-cta flex flex-wrap gap-3 ${isCenter ? "justify-center" : ""}`}>
             {primaryCta && (
-              <Link
-                href={primaryCta.href}
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl px-6 text-[15px] font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)] transition hover:shadow-[0_10px_24px_rgba(37,99,235,0.45)]"
-                style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
-              >
+              <Button variant="primary" size="lg" href={primaryCta.href}>
                 <PrimaryIcon className="h-4 w-4" />
                 {primaryCta.label}
-              </Link>
+              </Button>
             )}
             {secondaryCta && (
-              <Link
-                href={secondaryCta.href}
-                className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white/80 px-6 text-[15px] font-semibold text-ink-900 backdrop-blur transition hover:bg-white"
-              >
+              <Button variant="secondary" size="lg" href={secondaryCta.href}>
                 {secondaryCta.label}
                 <ArrowRight className="h-4 w-4" />
-              </Link>
+              </Button>
             )}
           </div>
         )}

@@ -13,12 +13,32 @@ export type ApplyOptions = {
 
 const TOKEN_RE = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
 
+/**
+ * Convert camelCase / PascalCase token keys to snake_case so that
+ * {{firstName}} resolves `first_name` and {{companyName}} resolves
+ * `company_name`. Mirrors the same helper in _shared/merge-vars.ts.
+ */
+function camelToSnake(s: string): string {
+  return s
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .replace(/([a-z\d])([A-Z])/g, "$1_$2")
+    .toLowerCase();
+}
+
 function readVar(ctx: MergeContext, key: string): unknown {
   if (!key) return undefined;
   if (Object.prototype.hasOwnProperty.call(ctx, key)) return (ctx as any)[key];
   const lower = key.toLowerCase();
   for (const k of Object.keys(ctx)) {
     if (k.toLowerCase() === lower) return (ctx as any)[k];
+  }
+  // camelCase / PascalCase → snake_case: {{companyName}} → company_name
+  const snake = camelToSnake(key);
+  if (snake !== lower) {
+    if (Object.prototype.hasOwnProperty.call(ctx, snake)) return (ctx as any)[snake];
+    for (const k of Object.keys(ctx)) {
+      if (k.toLowerCase() === snake) return (ctx as any)[k];
+    }
   }
   if (key.includes(".")) {
     let cursor: any = ctx;

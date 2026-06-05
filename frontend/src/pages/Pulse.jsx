@@ -15,15 +15,17 @@
 // not surfaced anywhere in the UI per product direction. Existing
 // ImportYeti tables and APIs are NEVER written to from this page.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
   Building2,
   CheckCircle2,
+  ChevronDown,
   Compass,
   Database,
   GitBranch,
   Layers,
+  Loader2,
   MapPin,
   Search,
   Ship,
@@ -34,8 +36,9 @@ import {
   Wand2,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
-import { searchPulse, searchPulseV2 } from '@/api/pulse';
+import { searchPulse, searchPulseV2 } from '@/api/pulse-search';
 import { supabase } from '@/lib/supabase';
 import AddToCampaignModal from '@/components/command-center/AddToCampaignModal';
 import { saveCompany, isLimitExceeded, LimitExceededError } from '@/lib/saveCompany';
@@ -49,6 +52,11 @@ import {
   ErrorBanner,
   PermissionIssueState,
 } from '@/features/pulse/PulseResults';
+import {
+  bulkAddCompaniesToList,
+  fetchListMembershipsForCompanies,
+  listPulseLists,
+} from '@/features/pulse/pulseListsApi';
 import { searchLocalCompanies, mergeResults, LOCAL_RICH_THRESHOLD } from '@/features/pulse/pulseLocalSearch';
 import PulseQuickCard from '@/features/pulse/PulseQuickCard';
 import PulseLibrary from '@/features/pulse/PulseLibrary';
@@ -162,6 +170,9 @@ export default function Pulse() {
   const [results, setResults] = useState([]);
   // Pagination state — `Load more` button appends additional pages to results.
   const [loadingMore, setLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const PAGE_SIZE = 50;
   const [resultMode, setResultMode] = useState(null);
   const [meta, setMeta] = useState(null);
   const [apiStatus, setApiStatus] = useState('unknown');
@@ -194,6 +205,26 @@ export default function Pulse() {
   // action. Carries the resolved lit_companies.id so the picker can
   // write a membership row directly via pulse_list_companies.
   const [listPicker, setListPicker] = useState(null); // { companyId, companyName }
+
+  // — "Saved" badge state —
+  // Map<company.id, string[]> listing which list names a company is already in.
+  // Populated after each search by batch-fetching pulse_list_companies.
+  // Only populated for companies that have a UUID id (provenance === 'database'
+  // or any previously-saved row with a real UUID).
+  const [savedMemberships, setSavedMemberships] = useState(new Map());
+
+  // — bulk-select state —
+  // selectedIds holds the result IDs (company.id values) for the current page.
+  // Cleared after every new search and after a successful bulk-save.
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  // Stable toggle handler — doesn't recreate on every render
+  const toggleSelect = useCallback((id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
+  }, []);
 
   // — UI flourishes —
   const [phIdx, setPhIdx] = useState(0);
@@ -246,23 +277,33 @@ export default function Pulse() {
   const isSetupError = errorClass === 'setup';
   const isPermissionError = errorClass === 'permission';
 
-  async function runSearch(rawQuery) {
+  async function runSearch(rawQuery, opts = {}) {
+    const { append = false, page = 1 } = opts;
     const trimmed = (rawQuery ?? query).trim();
     if (!trimmed) return;
-    setQuery(trimmed);
-    setIsSearching(true);
-    setErrorMessage('');
-    setSearchPerformed(false);
-    setActiveCompany(null);
 
-    setSearchLimit(null);
+    if (!append) {
+      // New search — reset all state
+      setQuery(trimmed);
+      setIsSearching(true);
+      setErrorMessage('');
+      setSearchPerformed(false);
+      setActiveCompany(null);
+      setSearchLimit(null);
+      setSelectedIds(new Set());
+      setSavedMemberships(new Map());
+      setCurrentPage(1);
+      setHasMore(false);
+    } else {
+      setLoadingMore(true);
+    }
 
     try {
       // v2 owns search end-to-end: parses, hits saved → directory → Apollo,
       // merges + ranks server-side. Single round trip. No legacy fallback —
       // we surface whatever v2 returns, including empty result sets with
       // the coach_summary explaining what was tried.
-      const v2 = await searchPulseV2({ query: trimmed, limit: 50 }).catch(
+      const v2 = await searchPulseV2({ query: trimmed, limit: PAGE_SIZE, per_page: PAGE_SIZE, page }).catch(
         (err) => ({ ok: false, error: err?.message || 'pulse_search_failed' }),
       );
 
@@ -271,18 +312,37 @@ export default function Pulse() {
       // banner rather than a fake error.
       if (v2 && v2.code === 'LIMIT_EXCEEDED' && v2.limit) {
         setSearchLimit(v2.limit);
-        setResults([]);
-        setResultMode(null);
-        setMeta(null);
-        setApiStatus('connected');
-        setSubmittedQuery(trimmed);
-        setSearchPerformed(true);
+        if (!append) {
+          setResults([]);
+          setResultMode(null);
+          setMeta(null);
+          setApiStatus('connected');
+          setSubmittedQuery(trimmed);
+          setSearchPerformed(true);
+        }
         return;
       }
 
       if (v2 && v2.ok && Array.isArray(v2.rows)) {
         setLocalCount(v2.sources?.saved + v2.sources?.directory || 0);
-        setResults(v2.rows);
+        if (append) {
+          // Preserve selection — only append new rows; dedupe by id
+          setResults((prev) => {
+            const existingIds = new Set(prev.map((r) => r.id));
+            const newRows = v2.rows.filter((r) => !existingIds.has(r.id));
+            return [...prev, ...newRows];
+          });
+        } else {
+          setResults(v2.rows);
+        }
+        // has_more: trust the edge fn when it returns the field explicitly.
+        // Fallback heuristic: if the deployed fn pre-dates the pagination
+        // commit it won't return has_more at all (undefined). In that case,
+        // if we got a full page worth of results, assume there are more.
+        const explicitHasMore = typeof v2.has_more === 'boolean' ? v2.has_more : null;
+        const inferredHasMore = explicitHasMore !== null ? explicitHasMore : (v2.rows.length >= PAGE_SIZE);
+        setHasMore(inferredHasMore);
+        setCurrentPage(page);
         setResultMode('companies');
         setMeta({
           total: v2.rows.length,
@@ -295,36 +355,63 @@ export default function Pulse() {
         setApiStatus('connected');
         setSubmittedQuery(trimmed);
         setSearchPerformed(true);
-        if (!v2.rows.length) {
+        if (!v2.rows.length && !append) {
           setErrorMessage(v2.coach_summary || 'No matches. Try broadening the geography or rephrasing.');
         }
+
+        // Batch-fetch saved-list memberships for the newly visible result IDs.
+        // Only query UUIDs — non-UUID ids (Apollo/discovered rows not yet in DB)
+        // can't be in pulse_list_companies. Fire-and-forget; badge is cosmetic.
+        const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const uuidIds = v2.rows.map((r) => r.id).filter((id) => uuidRx.test(String(id || '')));
+        if (uuidIds.length) {
+          fetchListMembershipsForCompanies(uuidIds).then((memberMap) => {
+            setSavedMemberships((prev) => {
+              if (!append) return memberMap;
+              const merged = new Map(prev);
+              memberMap.forEach((names, id) => merged.set(id, names));
+              return merged;
+            });
+          }).catch(() => {/* non-fatal */});
+        } else if (!append) {
+          setSavedMemberships(new Map());
+        }
+
         return;
       }
 
       // v2 failed at the function call level (network / CORS / 500 / 401).
       // Surface the actual error to the user so we can diagnose; do NOT
       // silently fall back to legacy results that pretend the query worked.
-      setResults([]);
-      setResultMode(null);
-      setMeta(null);
-      setApiStatus('error');
-      setSubmittedQuery(trimmed);
-      setSearchPerformed(true);
-      setErrorMessage(
-        (v2 && (v2.error || v2.coach_summary)) ||
-          'Pulse search is unreachable right now. Try again in a moment, or contact support if this persists.',
-      );
+      if (!append) {
+        setResults([]);
+        setResultMode(null);
+        setMeta(null);
+        setApiStatus('error');
+        setSubmittedQuery(trimmed);
+        setSearchPerformed(true);
+        setErrorMessage(
+          (v2 && (v2.error || v2.coach_summary)) ||
+            'Pulse search is unreachable right now. Try again in a moment, or contact support if this persists.',
+        );
+      }
     } catch (error) {
       console.error('[Pulse] search failed:', error);
-      setApiStatus('error');
-      setResults([]);
-      setResultMode(null);
-      setMeta(null);
-      setSubmittedQuery(trimmed);
-      setSearchPerformed(true);
-      setErrorMessage(error?.message || 'Pulse search failed.');
+      if (!append) {
+        setApiStatus('error');
+        setResults([]);
+        setResultMode(null);
+        setMeta(null);
+        setSubmittedQuery(trimmed);
+        setSearchPerformed(true);
+        setErrorMessage(error?.message || 'Pulse search failed.');
+      }
     } finally {
-      setIsSearching(false);
+      if (append) {
+        setLoadingMore(false);
+      } else {
+        setIsSearching(false);
+      }
     }
   }
 
@@ -999,71 +1086,78 @@ export default function Pulse() {
               local={localCount}
               mode={resultMode}
             />
+            {/* Select-all header */}
+            <SelectAllHeader
+              results={results}
+              selectedIds={selectedIds}
+              onSelectAll={() => setSelectedIds(new Set(results.map((r) => r.id)))}
+              onClearAll={() => setSelectedIds(new Set())}
+            />
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {results.map((c) => (
                 <ResultCard
                   key={c.id}
                   company={c}
                   active={activeCompany?.id === c.id}
+                  selected={selectedIds.has(c.id)}
+                  onToggleSelect={toggleSelect}
                   onClick={() => setActiveCompany(c)}
+                  savedInLists={savedMemberships.get(c.id) || null}
                 />
               ))}
             </div>
-            {/* Pagination — page size is 50; show "Load more" when the
-                upstream meta reports a higher total than what's
-                rendered. Each click fires page+1 via searchPulse and
-                appends the new rows to results. Local-only result sets
-                cap at 50 (the lit_company_directory cascade already
-                returns its full match window in one query) so the
-                button hides when remoteRows didn't contribute. */}
-            {(() => {
-              const total = Number(meta?.total) || 0;
-              const pageSize = Number(meta?.pageSize) || 50;
-              const currentPage = Number(meta?.page) || 1;
-              const hasMore = total > resultCount && total > currentPage * pageSize;
-              if (!hasMore) return null;
-              return (
-                <div className="mt-4 flex items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (loadingMore) return;
-                      setLoadingMore(true);
-                      try {
-                        const nextPage = currentPage + 1;
-                        const nextResp = await searchPulse({
-                          query: submittedQuery,
-                          ui_mode: 'auto',
-                          entities: parsedQuery?.hasAny ? parsedQuery : undefined,
-                          page: nextPage,
-                        }).catch(() => null);
-                        const moreRows = Array.isArray(nextResp?.data?.results)
-                          ? nextResp.data.results
-                          : [];
-                        if (moreRows.length > 0) {
-                          setResults((prev) => [...prev, ...moreRows]);
-                          if (nextResp?.meta) setMeta(nextResp.meta);
-                        }
-                      } finally {
-                        setLoadingMore(false);
-                      }
-                    }}
-                    disabled={loadingMore}
-                    className="font-display rounded-lg border border-slate-200 bg-white px-4 py-2 text-[12.5px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
-                  >
-                    {loadingMore
-                      ? 'Loading…'
-                      : `Load more · showing ${resultCount} of ${total}`}
-                  </button>
-                </div>
-              );
-            })()}
+            {/* Pagination — Load More button: visible when backend returned
+                has_more=true (i.e. the last page was full at PAGE_SIZE rows). */}
+            {hasMore ? (
+              <div className="mt-6 flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (loadingMore) return;
+                    runSearch(submittedQuery, { append: true, page: currentPage + 1 });
+                  }}
+                  disabled={loadingMore}
+                  className="font-display inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-[13px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50"
+                >
+                  {loadingMore ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                      Loading more…
+                    </>
+                  ) : (
+                    <>
+                      Load more results
+                      <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                    </>
+                  )}
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
         {/* Pulse Library — collapsible, scoped to source='pulse' */}
         <PulseLibrary onSelect={setActiveCompany} refreshKey={libraryRefreshKey} />
       </div>
+
+      {/* Floating bulk-save action bar — appears when ≥1 result is selected */}
+      <BulkSaveBar
+        selectedIds={selectedIds}
+        results={results}
+        savedMemberships={savedMemberships}
+        onClear={() => setSelectedIds(new Set())}
+        onSaved={() => {
+          setSelectedIds(new Set());
+          setLibraryRefreshKey((k) => k + 1);
+          // Re-fetch saved badges so newly-added companies show "Saved"
+          const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          const uuidIds = results.map((r) => r.id).filter((id) => uuidRx.test(String(id || '')));
+          if (uuidIds.length) {
+            fetchListMembershipsForCompanies(uuidIds).then((m) => setSavedMemberships(m)).catch(() => {});
+          }
+        }}
+        upsertCompany={upsertCompanyFromResult}
+      />
 
       {/* Quick Card right rail */}
       <PulseQuickCard
@@ -1331,76 +1425,498 @@ function ResultsHeader({ query, total, local, mode }) {
   );
 }
 
-function ResultCard({ company, active, onClick }) {
+function ResultCard({ company, active, selected, onToggleSelect, onClick, savedInLists }) {
   const domain = extractDomain(company.domain || company.website) || company.domain || stripUrl(company.website);
   const location = [company.city, company.state, company.country].filter(Boolean).join(', ');
   const inDb = company.provenance === 'database' || company.alsoLive;
   const shipments = company.kpis?.shipments_12m;
+  const isSaved = Array.isArray(savedInLists) && savedInLists.length > 0;
+  const savedTooltip = isSaved
+    ? `In: ${savedInLists.join(', ')}`
+    : null;
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div
       className={[
-        'group flex flex-col gap-2 rounded-[14px] border bg-white p-3.5 text-left transition',
-        active
-          ? 'border-blue-400 shadow-[0_8px_24px_rgba(59,130,246,0.18)]'
-          : 'border-slate-200 shadow-[0_2px_8px_rgba(15,23,42,0.04)] hover:border-slate-300 hover:shadow-[0_6px_18px_rgba(15,23,42,0.07)]',
+        'group relative flex flex-col gap-2 rounded-[14px] border bg-white p-3.5 transition',
+        selected
+          ? 'border-[#00F0FF]/60 shadow-[0_0_0_2px_rgba(0,240,255,0.25),0_4px_14px_rgba(0,240,255,0.12)]'
+          : active
+            ? 'border-blue-400 shadow-[0_8px_24px_rgba(59,130,246,0.18)]'
+            : 'border-slate-200 shadow-[0_2px_8px_rgba(15,23,42,0.04)] hover:border-slate-300 hover:shadow-[0_6px_18px_rgba(15,23,42,0.07)]',
       ].join(' ')}
     >
-      {/* identity */}
-      <div className="flex items-start gap-2.5">
-        <CompanyAvatar
-          name={company.name || 'Unknown'}
-          domain={domain || null}
-          size="sm"
-          className="!h-9 !w-9 !rounded-md"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="font-display truncate text-[13.5px] font-bold leading-tight text-slate-900">
-            {company.name}
-          </div>
-          <div className="font-body mt-0.5 truncate text-[11px] text-slate-500">
-            {domain || 'No domain'}
-            {location ? ` · ${location}` : ''}
+      {/* Checkbox — top-left corner, stop propagation so it doesn't open the Quick Card */}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onToggleSelect(company.id); }}
+        aria-label={selected ? 'Deselect company' : 'Select company'}
+        className={[
+          'absolute left-2.5 top-2.5 flex h-5 w-5 items-center justify-center rounded border transition',
+          selected
+            ? 'border-[#00F0FF] bg-[#0F172A]'
+            : 'border-slate-300 bg-white opacity-0 group-hover:opacity-100',
+        ].join(' ')}
+      >
+        {selected ? (
+          <svg width="10" height="8" viewBox="0 0 10 8" fill="none" aria-hidden>
+            <path d="M1 4L3.5 6.5L9 1" stroke="#00F0FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        ) : null}
+      </button>
+
+      {/* "Saved" badge — top-right, always visible (not just on hover) */}
+      {isSaved ? (
+        <span
+          title={savedTooltip || undefined}
+          className="absolute right-2.5 top-2.5 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-200"
+        >
+          Saved
+        </span>
+      ) : null}
+
+      {/* Clickable card body */}
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex flex-col gap-2 text-left"
+      >
+        {/* identity */}
+        <div className="flex items-start gap-2.5 pl-6">
+          <CompanyAvatar
+            name={company.name || 'Unknown'}
+            domain={domain || null}
+            size="sm"
+            className="!h-9 !w-9 !rounded-md"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="font-display truncate text-[13.5px] font-bold leading-tight text-slate-900">
+              {company.name}
+            </div>
+            <div className="font-body mt-0.5 truncate text-[11px] text-slate-500">
+              {domain || 'No domain'}
+              {location ? ` · ${location}` : ''}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* signal pills */}
-      <div className="flex flex-wrap items-center gap-1">
-        {inDb ? (
-          <ProvenancePill tone="blue" icon={Database}>
-            In database
-          </ProvenancePill>
-        ) : (
-          <ProvenancePill tone="amber" icon={Sparkles}>
-            Discovered
-          </ProvenancePill>
-        )}
-        {shipments != null && shipments > 0 ? (
-          <ProvenancePill tone="slate" icon={Ship}>
-            {Number(shipments).toLocaleString()} shipments
-          </ProvenancePill>
-        ) : null}
-        {company.industry ? (
-          <ProvenancePill tone="slate" icon={Layers}>
-            {company.industry}
-          </ProvenancePill>
-        ) : null}
-      </div>
+        {/* signal pills */}
+        <div className="flex flex-wrap items-center gap-1">
+          {inDb ? (
+            <ProvenancePill tone="blue" icon={Database}>
+              In database
+            </ProvenancePill>
+          ) : (
+            <ProvenancePill tone="amber" icon={Sparkles}>
+              Discovered
+            </ProvenancePill>
+          )}
+          {shipments != null && shipments > 0 ? (
+            <ProvenancePill tone="slate" icon={Ship}>
+              {Number(shipments).toLocaleString()} shipments
+            </ProvenancePill>
+          ) : null}
+          {company.industry ? (
+            <ProvenancePill tone="slate" icon={Layers}>
+              {company.industry}
+            </ProvenancePill>
+          ) : null}
+        </div>
 
-      {/* footer cta */}
-      <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-2">
-        <span className="font-display text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-          Click to analyze
+        {/* footer cta */}
+        <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-2">
+          <span className="font-display text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+            Click to analyze
+          </span>
+          <span className="font-display inline-flex items-center gap-0.5 text-[11px] font-semibold text-blue-600 group-hover:text-blue-700">
+            Open card
+            <ArrowRight className="h-3 w-3" />
+          </span>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+/* ── SelectAllHeader ── */
+function SelectAllHeader({ results, selectedIds, onSelectAll, onClearAll }) {
+  if (!results.length) return null;
+  const allSelected = results.every((r) => selectedIds.has(r.id));
+  const someSelected = !allSelected && results.some((r) => selectedIds.has(r.id));
+  const handleToggle = () => {
+    if (allSelected) { onClearAll(); } else { onSelectAll(); }
+  };
+  return (
+    <div className="mt-2 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+      <button
+        type="button"
+        onClick={handleToggle}
+        aria-label={allSelected ? 'Deselect all' : 'Select all visible'}
+        className={[
+          'flex h-4.5 w-4.5 items-center justify-center rounded border transition',
+          allSelected
+            ? 'border-[#00F0FF] bg-[#0F172A]'
+            : someSelected
+              ? 'border-slate-400 bg-white'
+              : 'border-slate-300 bg-white hover:border-slate-400',
+        ].join(' ')}
+        style={{ minWidth: '18px', minHeight: '18px', width: 18, height: 18 }}
+      >
+        {allSelected ? (
+          <svg width="10" height="8" viewBox="0 0 10 8" fill="none" aria-hidden>
+            <path d="M1 4L3.5 6.5L9 1" stroke="#00F0FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        ) : someSelected ? (
+          <svg width="8" height="2" viewBox="0 0 8 2" fill="none" aria-hidden>
+            <rect x="0" y="0.5" width="8" height="1" rx="0.5" fill="#64748b"/>
+          </svg>
+        ) : null}
+      </button>
+      <span className="font-body text-[12px] text-slate-600">
+        {selectedIds.size > 0
+          ? `${selectedIds.size} of ${results.length} selected`
+          : `Select all ${results.length} results on this page`}
+      </span>
+      {selectedIds.size > 0 ? (
+        <button
+          type="button"
+          onClick={onClearAll}
+          className="font-body ml-2 text-[11.5px] text-slate-400 hover:text-slate-700"
+        >
+          Clear
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/* ── BulkSaveBar ── */
+function BulkSaveBar({ selectedIds, results, savedMemberships, onClear, onSaved, upsertCompany }) {
+  const [listsOpen, setListsOpen] = useState(false);
+  const [lists, setLists] = useState([]);
+  const [listsLoading, setListsLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savingTo, setSavingTo] = useState(null);
+  const dropdownRef = useRef(null);
+
+  // Load lists when dropdown opens
+  useEffect(() => {
+    if (!listsOpen) return;
+    let cancelled = false;
+    setListsLoading(true);
+    listPulseLists().then((res) => {
+      if (cancelled) return;
+      setLists(res.ok ? res.rows : []);
+      setListsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [listsOpen]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!listsOpen) return;
+    function handler(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setListsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [listsOpen]);
+
+  const count = selectedIds.size;
+  if (count === 0) return null;
+
+  async function handleSaveToList(list) {
+    setListsOpen(false);
+    setSaving(true);
+    setSavingTo(list.name);
+
+    // Resolve: we need lit_companies IDs. Results already in db have .provenance==='database'
+    // with a UUID id. "Discovered" results need to be saved first via upsertCompanyFromResult.
+    const selectedResults = results.filter((r) => selectedIds.has(r.id));
+
+    let resolvedIds = [];
+    let failCount = 0;
+    let limitHit = false;
+    for (const company of selectedResults) {
+      try {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(company.id || ''));
+        let dbId = isUuid ? company.id : null;
+        if (!dbId || company.provenance !== 'database') {
+          // Save to lit_companies so we have a real UUID
+          const saved = await upsertCompany(company);
+          dbId = saved?.id || null;
+        }
+        if (dbId) resolvedIds.push(dbId);
+      } catch (err) {
+        console.warn('[BulkSave] upsertCompany failed for', company.name, err?.message);
+        if (err?.name === 'LimitExceededError' || err?.code === 'LIMIT_EXCEEDED') {
+          limitHit = true;
+        }
+        failCount++;
+      }
+    }
+
+    if (!resolvedIds.length) {
+      setSaving(false);
+      setSavingTo(null);
+      if (limitHit) {
+        toast.error('Save limit reached — upgrade your plan to save more companies.');
+      } else {
+        toast.error(
+          failCount > 0
+            ? `Could not resolve company IDs (${failCount} failed). Check console for details.`
+            : 'Could not resolve any company IDs. No rows saved.',
+        );
+      }
+      return;
+    }
+
+    console.log('[BulkSave] resolved', resolvedIds.length, 'IDs; list.syncs_to_attio =', list.syncs_to_attio, 'list.id =', list.id);
+
+    if (list.syncs_to_attio) {
+      // Syncable system list — TWO-PHASE save:
+      //   Phase 1 (required): insert companies into pulse_list_companies. This
+      //     guarantees something lands in the list + fires the Attio company
+      //     sync trigger for each. User sees companies show up immediately.
+      //   Phase 2 (best-effort): call pulse-bulk-enrich-by-company to find
+      //     decision-maker contacts at those companies via Apollo. When Apollo
+      //     finds 0 (no domain on the Pulse "Discovered" row, or no senior
+      //     titles found), contacts stay at 0 but Phase 1 already covered us.
+      console.log('[BulkSave] syncable list — phase 1: bulk add companies', resolvedIds.length);
+      let companiesAdded = 0;
+      try {
+        const result = await bulkAddCompaniesToList(list.id, resolvedIds);
+        companiesAdded = result?.added ?? resolvedIds.length;
+        console.log('[BulkSave] phase 1 ok — companies added:', companiesAdded);
+      } catch (err) {
+        setSaving(false);
+        setSavingTo(null);
+        console.error('[BulkSave] phase 1 bulkAddCompaniesToList threw:', err);
+        toast.error(`Save failed: ${err?.message || 'Could not add companies to list'}`);
+        return;
+      }
+
+      console.log('[BulkSave] phase 2: calling pulse-bulk-enrich-by-company');
+      let contactsEnriched = 0;
+      let enrichError = null;
+      try {
+        const { data, error } = await supabase.functions.invoke('pulse-bulk-enrich-by-company', {
+          body: { company_ids: resolvedIds, list_id: list.id },
+        });
+        if (error) {
+          let parsedErr = null;
+          try {
+            const cloned = error?.context?.clone?.();
+            parsedErr = await cloned?.json?.();
+          } catch { /* non-JSON */ }
+          enrichError = parsedErr?.message || parsedErr?.error || error.message || 'Enrich failed';
+          console.warn('[BulkSave] phase 2 enrich error (non-blocking):', enrichError, parsedErr);
+        } else {
+          contactsEnriched = data?.added_contacts ?? 0;
+          console.log('[BulkSave] phase 2 ok — contacts enriched:', contactsEnriched, data);
+        }
+      } catch (err) {
+        enrichError = err?.message || 'Enrichment threw';
+        console.warn('[BulkSave] phase 2 enrich threw (non-blocking):', err);
+      }
+
+      setSaving(false);
+      setSavingTo(null);
+
+      // Compose toast that reflects reality
+      const parts = [];
+      parts.push(`${companiesAdded} compan${companiesAdded === 1 ? 'y' : 'ies'} added to ${list.name}`);
+      if (contactsEnriched > 0) {
+        parts.push(`${contactsEnriched} decision-maker contact${contactsEnriched === 1 ? '' : 's'} enriched`);
+      } else if (enrichError) {
+        parts.push(`(contact enrichment hit an error — companies still synced to Attio)`);
+      } else {
+        parts.push(`(Apollo found no decision-maker contacts to enrich — companies still synced to Attio)`);
+      }
+      toast.success(parts.join(' · '));
+      onSaved?.();
+      return;
+    } else {
+      // Standard path — save companies to the list.
+      // Filter out IDs already known to be in this list (avoids unnecessary
+      // upserts and gives a more accurate "N new" toast message).
+      const alreadyInListIds = new Set(
+        results
+          .filter((r) => selectedIds.has(r.id))
+          .filter((r) => {
+            const names = savedMemberships?.get(r.id);
+            return Array.isArray(names) && names.includes(list.name);
+          })
+          .map((r) => r.id),
+      );
+      const newIds = resolvedIds.filter((id) => !alreadyInListIds.has(id));
+      const skippedDupes = resolvedIds.length - newIds.length;
+
+      if (newIds.length === 0) {
+        setSaving(false);
+        setSavingTo(null);
+        toast.success(`All ${skippedDupes} selected compan${skippedDupes === 1 ? 'y is' : 'ies are'} already in "${list.name}".`);
+        onSaved?.();
+        return;
+      }
+
+      const result = await bulkAddCompaniesToList(list.id, newIds);
+      setSaving(false);
+      setSavingTo(null);
+
+      if (!result.ok) {
+        toast.error(`Failed to save to "${list.name}": ${result.message}`);
+        // Don't clear selection so user can retry
+        return;
+      }
+
+      const savedCount = newIds.length;
+      const dupePart = skippedDupes > 0 ? ` · ${skippedDupes} already in list` : '';
+      const failPart = failCount > 0 ? ` · ${failCount} skipped (save error)` : '';
+      const msg = `${savedCount} compan${savedCount === 1 ? 'y' : 'ies'} added to "${list.name}"${dupePart}${failPart}`;
+      toast.success(msg);
+    }
+
+    onSaved?.();
+  }
+
+  return (
+    <div
+      className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2"
+      style={{ pointerEvents: saving ? 'none' : 'auto' }}
+    >
+      <div
+        className="flex items-center gap-3 rounded-[14px] px-4 py-3 shadow-[0_8px_32px_rgba(15,23,42,0.45),0_2px_8px_rgba(0,240,255,0.12)]"
+        style={{
+          background: 'linear-gradient(135deg, #0F172A 0%, #1B2A44 100%)',
+          border: '1px solid rgba(0,240,255,0.25)',
+        }}
+      >
+        {/* Count badge */}
+        <span
+          className="font-display inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-[12px] font-bold"
+          style={{ background: 'rgba(0,240,255,0.15)', color: '#00F0FF', border: '1px solid rgba(0,240,255,0.3)' }}
+        >
+          {count}
         </span>
-        <span className="font-display inline-flex items-center gap-0.5 text-[11px] font-semibold text-blue-600 group-hover:text-blue-700">
-          Open card
-          <ArrowRight className="h-3 w-3" />
+        <span className="font-body text-[12.5px] font-medium text-slate-200">
+          {count === 1 ? 'company' : 'companies'} selected
         </span>
+
+        <span className="text-slate-600">·</span>
+
+        {/* Save to list dropdown */}
+        <div className="relative" ref={dropdownRef}>
+          <button
+            type="button"
+            onClick={() => setListsOpen((o) => !o)}
+            disabled={saving}
+            className="font-display inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold text-[#0F172A] transition hover:brightness-105 disabled:opacity-50"
+            style={{
+              background: 'linear-gradient(180deg, #00F0FF 0%, #00C4D4 100%)',
+              boxShadow: '0 1px 3px rgba(0,240,255,0.35), inset 0 1px 0 rgba(255,255,255,0.3)',
+            }}
+          >
+            {saving ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Saving to {savingTo}…
+              </>
+            ) : (
+              <>
+                Save to list
+                <ChevronDown className="h-3 w-3" />
+              </>
+            )}
+          </button>
+
+          {listsOpen ? (
+            <div
+              className="absolute bottom-full mb-2 left-0 w-[260px] overflow-hidden rounded-[12px] border shadow-[0_16px_40px_rgba(15,23,42,0.4)]"
+              style={{
+                background: 'linear-gradient(160deg, #0F172A 0%, #1E293B 100%)',
+                borderColor: 'rgba(255,255,255,0.1)',
+              }}
+            >
+              <div
+                className="font-display px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em]"
+                style={{ color: 'rgba(0,240,255,0.7)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}
+              >
+                Choose a list
+              </div>
+              {listsLoading ? (
+                <div className="flex items-center justify-center gap-2 p-4">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+                  <span className="font-body text-[11.5px] text-slate-400">Loading…</span>
+                </div>
+              ) : lists.length === 0 ? (
+                <div className="p-4 text-center">
+                  <span className="font-body text-[11.5px] text-slate-400">No lists yet — create one first.</span>
+                </div>
+              ) : (
+                <ul className="max-h-[240px] overflow-y-auto py-1">
+                  {lists.map((list) => {
+                    // Count how many of the currently-selected companies are
+                    // already in this list (so we can show a preview).
+                    const alreadyInList = results
+                      .filter((r) => selectedIds.has(r.id))
+                      .filter((r) => {
+                        const names = savedMemberships?.get(r.id);
+                        return Array.isArray(names) && names.includes(list.name);
+                      }).length;
+                    const newCount = selectedIds.size - alreadyInList;
+                    return (
+                      <li key={list.id}>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveToList(list)}
+                          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-white/5"
+                        >
+                          <Database className="h-3 w-3 shrink-0 text-slate-400" />
+                          <div className="min-w-0 flex-1">
+                            <div className="font-display flex items-center gap-1.5 truncate text-[12.5px] font-semibold text-slate-100">
+                              {list.name}
+                              {list.syncs_to_attio ? (
+                                <span
+                                  className="inline-flex shrink-0 items-center rounded-sm px-1 py-px text-[9px] font-bold uppercase tracking-wide"
+                                  style={{ background: 'rgba(0,240,255,0.15)', color: '#00F0FF', border: '1px solid rgba(0,240,255,0.25)' }}
+                                >
+                                  enriches contacts
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="font-body text-[10.5px] text-slate-500">
+                              {alreadyInList > 0
+                                ? `${newCount} new · ${alreadyInList} already in list`
+                                : `${list.company_count ?? 0} compan${(list.company_count ?? 0) === 1 ? 'y' : 'ies'}`}
+                            </div>
+                          </div>
+                          <ArrowRight className="h-3 w-3 shrink-0 text-slate-500" />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          ) : null}
+        </div>
+
+        <span className="text-slate-600">·</span>
+
+        {/* Clear */}
+        <button
+          type="button"
+          onClick={onClear}
+          disabled={saving}
+          className="font-body text-[12px] text-slate-400 transition hover:text-slate-200 disabled:opacity-50"
+        >
+          Clear
+        </button>
       </div>
-    </button>
+    </div>
   );
 }
 

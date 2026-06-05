@@ -124,7 +124,6 @@
       "usage_hook": "frontend/src/hooks/useUsageSummary.ts",
       "access_lib": "frontend/src/lib/access.ts",
       "ui_gate": "frontend/src/components/common/UpgradeGate.tsx",
-      "edge_fn_check": "supabase/functions/check-entitlements/index.ts",
       "edge_fn_get": "supabase/functions/get-entitlements/index.ts",
       "migration": "supabase/migrations/20260427100000_usage_enforcement.sql"
     },

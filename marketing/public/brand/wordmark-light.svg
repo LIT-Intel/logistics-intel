@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 56" width="280" height="56" role="img" aria-labelledby="title desc">
+  <title id="title">Logistic Intel</title>
+  <desc id="desc">Logistic Intel wordmark for use on light backgrounds.</desc>
+  <!-- Font: Space Grotesk. Falls back to system sans-serif. -->
+  <defs>
+    <linearGradient id="intel-light" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <style>
+      .lit-wm { font-family: "Space Grotesk", "SpaceGrotesk", system-ui, -apple-system, "Segoe UI", sans-serif; font-weight: 700; letter-spacing: -0.02em; font-size: 32px; }
+      .lit-wm-bold { font-weight: 800; }
+    </style>
+  </defs>
+  <text x="0" y="38" class="lit-wm" fill="#0F172A">Logistic <tspan class="lit-wm-bold" fill="url(#intel-light)">Intel</tspan></text>
+</svg>

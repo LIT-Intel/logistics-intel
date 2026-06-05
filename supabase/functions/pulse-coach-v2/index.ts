@@ -14,6 +14,9 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("pulse-coach-v2");
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -145,7 +148,7 @@ async function loadContext(supa: any, userId: string): Promise<ContextBlock> {
       pulse_briefs_this_month: briefRes.count ?? 0,
       enrichments_this_month: enrichRes.count ?? 0,
     };
-  } catch (err) { console.warn("[coach-v2] usage load failed:", err); }
+  } catch (err) { log.warn("usage_load_failed", { err: String(err) }); }
 
   try {
     const { data: camps } = await supa
@@ -600,7 +603,7 @@ async function answerQuestion(ctx: ContextBlock, question: string): Promise<{
       matched_articles: matched.map((a) => ({ slug: a.slug, title: a.title })),
     };
   } catch (err) {
-    console.warn("[coach-v2] answer LLM failed:", err);
+    log.warn("answer_llm_failed", { err: String(err) });
     if (matched.length) {
       const top = matched[0];
       return {

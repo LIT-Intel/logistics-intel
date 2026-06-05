@@ -6,8 +6,13 @@ import { AuthProvider } from "./auth/AuthProvider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import App from "./App";
+import { initSentry } from "./lib/sentry";
 import "./index.css";
 import "./styles/tokens.css";
+
+// Init Sentry before anything else renders so the first uncaught error gets
+// captured. No-op when VITE_SENTRY_DSN is unset (dev / preview / local).
+initSentry();
 
 if (typeof window !== "undefined") {
   const { pathname, hash, search } = window.location;

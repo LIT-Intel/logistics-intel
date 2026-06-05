@@ -1,113 +1,122 @@
 /**
- * React hook for server-side entitlement checks
- * Provides a way to check feature access and usage limits
+ * Server-authoritative entitlement checks.
+ *
+ * Single source of truth: `get-entitlements` edge fn (JWT-verified, reads
+ * auth.uid() from the session). Fetched once per session and cached via
+ * TanStack Query. Feature and usage checks derive locally from the cached
+ * snapshot — no spoofable per-check round-trips.
+ *
+ * Security boundary stays server-side: every mutating edge function must
+ * re-check entitlements before writing. This hook gates UI affordances only.
  */
-
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/auth/AuthProvider';
-import { supabase } from '@/lib/supabase';
+import { fetchEntitlementsSnapshot } from '@/api/entitlements';
 import type { FeatureKey, UsageLimitKey } from '@/lib/planLimits';
 
 export interface EntitlementCheckResult {
   allowed: boolean;
   reason?: string;
   feature_available?: boolean;
-  usage_remaining?: number;
+  usage_remaining?: number | null;
   usage_limit?: number | null;
   is_admin?: boolean;
 }
 
-export function useEntitlements() {
-  const { user, plan, orgRole, orgId } = useAuth();
-  const [isChecking, setIsChecking] = useState(false);
-  const [cache, setCache] = useState<Map<string, EntitlementCheckResult>>(new Map());
+const ENTITLEMENTS_QUERY_KEY = ['entitlements'] as const;
 
-  /**
-   * Check if feature is available for current user
-   */
+export function useEntitlements() {
+  const { user, plan, orgRole } = useAuth();
+  const queryClient = useQueryClient();
+
+  const isAdmin = ['owner', 'admin'].includes(orgRole || '');
+
+  const {
+    data: entitlements,
+    isLoading: isChecking,
+  } = useQuery({
+    queryKey: ENTITLEMENTS_QUERY_KEY,
+    queryFn: fetchEntitlementsSnapshot,
+    enabled: Boolean(user),
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+  });
+
   const canAccessFeature = useCallback(
     async (feature: FeatureKey): Promise<EntitlementCheckResult> => {
-      if (!user) {
-        return { allowed: false, reason: 'Not authenticated' };
+      if (!user) return { allowed: false, reason: 'Not authenticated' };
+      if (!entitlements) return { allowed: false, reason: 'Entitlements loading' };
+
+      const hasFeature = Boolean(entitlements.features?.[feature]);
+      if (hasFeature) {
+        return { allowed: true, feature_available: true, is_admin: isAdmin };
       }
-
-      const cacheKey = `feature:${feature}`;
-      if (cache.has(cacheKey)) {
-        return cache.get(cacheKey)!;
+      if (isAdmin) {
+        return {
+          allowed: true,
+          feature_available: false,
+          is_admin: true,
+          reason: `Feature "${feature}" not in plan, allowed via admin override`,
+        };
       }
-
-      setIsChecking(true);
-      try {
-        const { data, error } = await supabase.functions.invoke('check-entitlements', {
-          body: {
-            user_id: user.id,
-            org_id: orgId,
-            feature,
-          },
-        });
-
-        if (error) throw error;
-
-        setCache((prev) => new Map(prev).set(cacheKey, data));
-        return data;
-      } catch (err) {
-        console.error('[useEntitlements] Feature check failed:', err);
-        return { allowed: false, reason: 'Failed to check entitlements' };
-      } finally {
-        setIsChecking(false);
-      }
+      return {
+        allowed: false,
+        feature_available: false,
+        is_admin: false,
+        reason: `Feature "${feature}" is not available on this plan`,
+      };
     },
-    [user, orgId, cache]
+    [user, entitlements, isAdmin]
   );
 
-  /**
-   * Check if usage is within limit
-   */
   const checkUsageLimit = useCallback(
     async (
       limitKey: UsageLimitKey,
       currentUsage: number
     ): Promise<EntitlementCheckResult> => {
-      if (!user) {
-        return { allowed: false, reason: 'Not authenticated' };
+      if (!user) return { allowed: false, reason: 'Not authenticated' };
+      if (!entitlements) return { allowed: false, reason: 'Entitlements loading' };
+
+      const limit = entitlements.limits?.[limitKey] ?? null;
+      // null limit means unlimited.
+      if (limit === null) {
+        return { allowed: true, usage_limit: null, usage_remaining: null, is_admin: isAdmin };
       }
 
-      const cacheKey = `usage:${limitKey}:${currentUsage}`;
-      if (cache.has(cacheKey)) {
-        return cache.get(cacheKey)!;
+      const remaining = Math.max(0, limit - currentUsage);
+      const overLimit = currentUsage >= limit;
+
+      if (overLimit && !isAdmin) {
+        return {
+          allowed: false,
+          usage_limit: limit,
+          usage_remaining: 0,
+          reason: `${limitKey} limit reached (${currentUsage}/${limit})`,
+        };
       }
-
-      setIsChecking(true);
-      try {
-        const { data, error } = await supabase.functions.invoke('check-entitlements', {
-          body: {
-            user_id: user.id,
-            org_id: orgId,
-            limit_key: limitKey,
-            current_usage: currentUsage,
-          },
-        });
-
-        if (error) throw error;
-
-        setCache((prev) => new Map(prev).set(cacheKey, data));
-        return data;
-      } catch (err) {
-        console.error('[useEntitlements] Usage check failed:', err);
-        return { allowed: false, reason: 'Failed to check usage limits' };
-      } finally {
-        setIsChecking(false);
+      if (overLimit && isAdmin) {
+        return {
+          allowed: true,
+          usage_limit: limit,
+          usage_remaining: 0,
+          is_admin: true,
+          reason: 'Usage limit exceeded, allowed via admin override',
+        };
       }
+      return {
+        allowed: true,
+        usage_limit: limit,
+        usage_remaining: remaining,
+        is_admin: isAdmin,
+      };
     },
-    [user, orgId, cache]
+    [user, entitlements, isAdmin]
   );
 
-  /**
-   * Invalidate cache (call after user action that affects limits)
-   */
   const invalidateCache = useCallback(() => {
-    setCache(new Map());
-  }, []);
+    queryClient.invalidateQueries({ queryKey: ENTITLEMENTS_QUERY_KEY });
+  }, [queryClient]);
 
   return {
     canAccessFeature,
@@ -115,6 +124,7 @@ export function useEntitlements() {
     invalidateCache,
     isChecking,
     plan,
-    isAdmin: ['owner', 'admin'].includes(orgRole || ''),
+    isAdmin,
+    entitlements,
   };
 }

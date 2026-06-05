@@ -29,6 +29,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
   BarChart3,
   ExternalLink,
   Linkedin,
@@ -38,6 +39,7 @@ import {
   MailWarning,
   MousePointerClick,
   RefreshCw,
+  Send,
   Sparkles,
   Target,
   TrendingUp,
@@ -264,6 +266,45 @@ export default function AdminMarketingAnalytics() {
         </header>
 
         {err && <ErrorBanner message={err} />}
+
+        {/* Cold-outbound campaigns callout — these write to lit_outreach_history,
+            NOT lit_resend_events, so they never appear in the KPIs below. */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white text-blue-700 ring-1 ring-blue-200">
+              <Send className="h-3.5 w-3.5" />
+            </div>
+            <div className="min-w-0">
+              <div
+                className="text-[12.5px] font-bold text-slate-900"
+                style={{ fontFamily: fontDisplay }}
+              >
+                Cold-outbound metrics live in a separate dashboard
+              </div>
+              <div className="mt-0.5 text-[12px] text-slate-600">
+                The Forwarders and Brokers cold-outbound campaigns (Resend via Gmail/Outlook) write
+                to <span className="font-mono text-[11px]">lit_outreach_history</span>, not{" "}
+                <span className="font-mono text-[11px]">lit_resend_events</span>. Their open/click/reply
+                rates appear in{" "}
+                <a
+                  href="/app/campaigns/analytics"
+                  className="font-semibold text-blue-700 hover:underline"
+                >
+                  Campaign Analytics
+                </a>
+                .
+              </div>
+            </div>
+          </div>
+          <a
+            href="/app/campaigns/analytics"
+            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition hover:bg-blue-700"
+            style={{ fontFamily: fontDisplay }}
+          >
+            Campaign Analytics
+            <ArrowRight className="h-3 w-3" />
+          </a>
+        </div>
 
         {/* KPI strip */}
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">

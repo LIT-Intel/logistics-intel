@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { createLogger, requestId } from "../_shared/logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,6 +16,7 @@ function json(body: Record<string, unknown>, status = 200) {
 }
 
 serve(async (req) => {
+  const log = createLogger("admin-api", { request_id: requestId() });
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
@@ -36,7 +38,10 @@ serve(async (req) => {
   const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey);
 
   const { data: { user }, error: authError } = await userClient.auth.getUser();
-  if (authError || !user) return json({ error: "Unauthorized" }, 401);
+  if (authError || !user) {
+    log.warn("unauthorized", { detail: authError?.message });
+    return json({ error: "Unauthorized" }, 401);
+  }
 
   // Verify caller is a platform_admin
   const { data: adminRow } = await adminClient
@@ -45,10 +50,14 @@ serve(async (req) => {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!adminRow) return json({ error: "Forbidden: superadmin access required" }, 403);
+  if (!adminRow) {
+    log.warn("forbidden_non_admin", { user_id: user.id });
+    return json({ error: "Forbidden: superadmin access required" }, 403);
+  }
 
   const body = await req.json().catch(() => ({}));
   const { action, params = {} } = body as { action: string; params: Record<string, unknown> };
+  log.info("admin_action", { user_id: user.id, action });
 
   try {
     // ── GET KPIs ─────────────────────────────────────────────────────────────
