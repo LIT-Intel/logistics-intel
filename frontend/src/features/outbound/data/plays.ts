@@ -59,10 +59,13 @@ export const LIT_MARKETING_FORWARDER_PLAY: Play = {
 // LIT_MARKETING_BROKER_PLAY or LIT_MARKETING_FORWARDER_PLAY explicitly.
 export const LIT_MARKETING_PLAY: Play = LIT_MARKETING_BROKER_PLAY;
 
+// LIT_MARKETING_BROKER_PLAY + LIT_MARKETING_FORWARDER_PLAY removed from
+// STARTER_PLAYS on 2026-06-04 — replaced by the 4-touch cold-outbound
+// campaigns seeded directly into lit_campaigns (Forwarders/Brokers Cold
+// Outbound) which are bound to the new Pulse → Attio system lists. The
+// constants are still exported above so legacy import-paths don't break,
+// but they no longer appear in the play picker.
 export const STARTER_PLAYS: Play[] = [
-  // LIT Marketing first — primary GTM offering, biggest-touch sequences
-  LIT_MARKETING_BROKER_PLAY,
-  LIT_MARKETING_FORWARDER_PLAY,
   {
     id: "lane-launch",
     icon: "ship",

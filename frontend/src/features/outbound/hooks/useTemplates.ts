@@ -8,10 +8,12 @@ import type {
   PersonasResult,
 } from "../types";
 import { STARTER_TEMPLATES, type StarterTemplate } from "../data/templates";
-import {
-  LIT_MARKETING_TEMPLATES,
-  asOutreachTemplate as asOutreachFromLitMarketing,
-} from "@/lib/campaignEmailTemplates";
+// LIT_MARKETING_TEMPLATES import removed 2026-06-04. The hardcoded "LIT
+// Marketing · Broker/Forwarder (14 days)" templates were superseded by
+// the 4 reusable email templates seeded into lit_outreach_templates
+// (Cold T1-T4 — Curiosity opener / Proof point / Pulse digest drop /
+// Breakup) plus the two pre-populated campaigns bound to the system
+// Pulse lists for Forwarders + Brokers.
 
 // lit_outreach_templates schema (verified via Supabase introspection):
 //   id uuid · org_id uuid · persona_id uuid · mode text · channel text
@@ -78,17 +80,15 @@ export function useTemplates(): {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    // LIT Marketing campaigns (4-touch broker + 4-touch forwarder
-    // sequences) pitch LIT itself — they are reserved for the founder
-    // org's own outbound and must never be exposed to subscribers.
-    // Surface them only when the viewer is a super-admin.
-    const litMarketingRows: OutreachTemplate[] = isSuperAdmin
-      ? LIT_MARKETING_TEMPLATES.map((t) => asOutreachFromLitMarketing(t))
-      : [];
-    const starterRows = [
-      ...litMarketingRows,
-      ...(STARTER_TEMPLATES as OutreachTemplate[]),
-    ];
+    // The "LIT Marketing · Broker/Forwarder (14 days)" hardcoded
+    // templates were retired on 2026-06-04 in favor of the 4-touch
+    // Cold Outbound templates seeded in lit_outreach_templates (queried
+    // below) and the pre-populated Forwarders + Brokers Cold Outbound
+    // campaigns bound to the system Pulse lists. isSuperAdmin is no
+    // longer used for template visibility — RLS on lit_outreach_templates
+    // handles admin gating server-side.
+    void isSuperAdmin; // retained for hook deps; intentionally unused
+    const starterRows = [...(STARTER_TEMPLATES as OutreachTemplate[])];
     try {
       const { data, error } = await supabase
         .from("lit_outreach_templates")
