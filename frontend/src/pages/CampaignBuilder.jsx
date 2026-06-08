@@ -1034,7 +1034,7 @@ export default function CampaignBuilder() {
                 ? "Connect a Gmail or Outlook mailbox in Settings first."
                 : "Send the currently-selected email step to your inbox with sample variables."
             }
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+            className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-white disabled:text-slate-400"
             style={{ fontFamily: fontDisplay }}
           >
             <FlaskConical className="h-2.5 w-2.5" />
