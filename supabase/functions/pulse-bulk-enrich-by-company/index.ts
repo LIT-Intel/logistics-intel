@@ -32,6 +32,11 @@ const APOLLO_API_BASE = Deno.env.get("APOLLO_API_BASE") || "https://api.apollo.i
 // API keys require the api_search path. Request/response shape is unchanged.
 const APOLLO_PEOPLE_URL = `${APOLLO_API_BASE}/api/v1/mixed_people/api_search`;
 const APOLLO_ORG_URL = `${APOLLO_API_BASE}/api/v1/mixed_companies/search`;
+const APOLLO_BULK_MATCH_URL = `${APOLLO_API_BASE}/api/v1/people/bulk_match`;
+const APOLLO_MATCH_URL = `${APOLLO_API_BASE}/api/v1/people/match`;
+// Cap unlocks per company to control Apollo credit spend.
+const MAX_UNLOCKS_PER_COMPANY = 5;
+const BULK_MATCH_MAX = 10;
 
 // ─────────────────────────────────────────────────────────────────────
 // Title matching — HOT decision-maker titles, JUNIOR exclusions
@@ -132,6 +137,7 @@ function mapPerson(p: any): ApolloContact {
 }
 
 async function apolloPost(url: string, body: Record<string, unknown>): Promise<{ ok: boolean; status: number; people: ApolloContact[]; raw: string }> {
+  console.log(`[pulse-bulk-enrich] apolloPost → ${url} body=${JSON.stringify(body)}`);
   const resp = await fetch(url, {
     method: "POST",
     headers: {
@@ -143,12 +149,16 @@ async function apolloPost(url: string, body: Record<string, unknown>): Promise<{
   });
   const raw = await resp.text().catch(() => "");
   if (!resp.ok) {
+    console.log(`[pulse-bulk-enrich] apolloPost ← status=${resp.status} error body=${raw.slice(0, 300)}`);
     return { ok: false, status: resp.status, people: [], raw };
   }
   let data: any = null;
   try { data = JSON.parse(raw); } catch (_) {}
   const people: any[] = Array.isArray(data?.people) ? data.people : (Array.isArray(data?.contacts) ? data.contacts : []);
-  return { ok: true, status: resp.status, people: people.filter((p) => p?.id).map(mapPerson), raw };
+  const mapped = people.filter((p) => p?.id).map(mapPerson);
+  const locked = mapped.filter((c) => c.emailStatus === "locked" || (c.email === null && isLockedEmail(people.find((p) => p.id === c.apolloId)?.email))).length;
+  console.log(`[pulse-bulk-enrich] apolloPost ← status=${resp.status} total=${mapped.length} locked_placeholder=${locked} has_email=${mapped.filter((c) => c.email).length}`);
+  return { ok: true, status: resp.status, people: mapped, raw };
 }
 
 async function rawApolloPost(url: string, body: Record<string, unknown>): Promise<any> {
@@ -164,6 +174,79 @@ async function rawApolloPost(url: string, body: Record<string, unknown>): Promis
   if (!resp.ok) return null;
   const raw = await resp.text().catch(() => "");
   try { return JSON.parse(raw); } catch (_) { return null; }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Email unlock via /people/bulk_match (mirrors apollo-contact-enrich)
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Unlock real emails for up to BULK_MATCH_MAX contacts per call.
+ * Mirrors the bulkMatch() pattern in apollo-contact-enrich exactly:
+ *   POST /people/bulk_match  { details: [{ id: "..." }, ...] }
+ * Response shape: { matches: [...] } or { people: [...] }
+ * Each entry may be { person: {...} } or the person object directly.
+ * Returns a Map<apolloId, unlockedEmail> for hits that resolve to a
+ * non-locked email.
+ */
+async function unlockEmails(
+  contacts: ApolloContact[],
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (contacts.length === 0) return result;
+
+  // Build identifier blocks keyed by index so we can pair back to apolloId.
+  const identifiers: Array<{ id: string }> = contacts.map((c) => ({ id: c.apolloId }));
+
+  // Chunk into batches of BULK_MATCH_MAX
+  for (let i = 0; i < identifiers.length; i += BULK_MATCH_MAX) {
+    const chunk = identifiers.slice(i, i + BULK_MATCH_MAX);
+    const chunkContacts = contacts.slice(i, i + BULK_MATCH_MAX);
+    const body: Record<string, unknown> = {
+      details: chunk,
+      reveal_personal_emails: true,
+    };
+    console.log(`[pulse-bulk-enrich] unlock bulk_match batch size=${chunk.length} ids=${chunk.map((c) => c.id).join(",")}`);
+    const resp = await fetch(APOLLO_BULK_MATCH_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": APOLLO_API_KEY,
+        "Cache-Control": "no-cache",
+      },
+      body: JSON.stringify(body),
+    });
+    const raw = await resp.text().catch(() => "");
+    if (!resp.ok) {
+      console.log(`[pulse-bulk-enrich] bulk_match failed status=${resp.status} body=${raw.slice(0, 200)}`);
+      continue;
+    }
+    let data: any = null;
+    try { data = JSON.parse(raw); } catch (_) {}
+    // Apollo bulk_match shape: { matches: [...] } or { people: [...] }
+    const arr: any[] = Array.isArray(data?.matches)
+      ? data.matches
+      : Array.isArray(data?.people)
+        ? data.people
+        : [];
+    // Each entry may itself be { person: {...} } or the person directly
+    const people = arr.map((m) => (m && m.person ? m.person : m)).filter(Boolean);
+    let unlocked = 0;
+    let stillLocked = 0;
+    people.forEach((p: any, j: number) => {
+      const apolloId = chunkContacts[j]?.apolloId;
+      if (!apolloId) return;
+      const email = p?.email;
+      if (email && !isLockedEmail(email)) {
+        result.set(apolloId, email);
+        unlocked++;
+      } else {
+        stillLocked++;
+      }
+    });
+    console.log(`[pulse-bulk-enrich] bulk_match batch result: unlocked=${unlocked} still_locked=${stillLocked}`);
+  }
+  return result;
 }
 
 function buildPeopleBody(scopeFields: Record<string, unknown>, perPage: number): Record<string, unknown> {
@@ -282,6 +365,7 @@ serve(async (req: Request) => {
     no_apollo_match: 0,
     no_decision_maker: 0,
     no_deliverable_email: 0,
+    email_unreachable: 0,
   };
 
   // Company IDs that had no domain on file — surfaced in the response so the
@@ -348,23 +432,82 @@ serve(async (req: Request) => {
   }
 
   // Filter: decision-maker by seniority (primary) OR hot-title regex (fallback).
-  // Accept any non-null, non-locked email — same policy as apollo-contact-search.
-  // Deliverability is left to downstream consumers; we don't gate here.
+  // Include decision-makers even with locked emails — we'll attempt to unlock below.
   function isDecisionMaker(c: ApolloContact): boolean {
     if (isHotSeniority(c.seniority)) return true;
     return isHotTitle(c.title);
   }
 
-  const hotContacts = allContacts.filter(
-    (c) => isDecisionMaker(c) && c.email && !isLockedEmail(c.email),
-  );
-
   const coldWithNoTitle = allContacts.filter((c) => !isDecisionMaker(c)).length;
-  const coldWithNoEmail = allContacts.filter(
-    (c) => isDecisionMaker(c) && (!c.email || isLockedEmail(c.email)),
-  ).length;
   skipped.no_decision_maker += coldWithNoTitle;
-  skipped.no_deliverable_email += coldWithNoEmail;
+
+  // Decision-makers with a real email already — no unlock needed.
+  const decisionMakers = allContacts.filter((c) => isDecisionMaker(c));
+  const alreadyHaveEmail = decisionMakers.filter((c) => c.email && !isLockedEmail(c.email));
+  // Decision-makers with a locked email placeholder — need unlock.
+  const needUnlock = decisionMakers.filter((c) => !c.email || isLockedEmail(c.email));
+
+  skipped.no_deliverable_email += needUnlock.length; // will be adjusted down after unlock
+
+  // ── Unlock step: attempt /people/bulk_match per domain, capped at
+  // MAX_UNLOCKS_PER_COMPANY per company to control credit spend.
+  // Mirrors apollo-contact-enrich's bulkMatch() pattern exactly.
+  const unlockedEmailMap = new Map<string, string>(); // apolloId → real email
+  if (needUnlock.length > 0 && APOLLO_API_KEY) {
+    // Group by company domain so we can enforce per-company cap
+    const byDomain = new Map<string, ApolloContact[]>();
+    for (const c of needUnlock) {
+      const dom = (c.organizationDomain || "").toLowerCase().trim() || "_unknown";
+      if (!byDomain.has(dom)) byDomain.set(dom, []);
+      byDomain.get(dom)!.push(c);
+    }
+    const debugPerCompany: Array<{ domain: string; people_returned: number; locked: number; unlocked: number; kept: number }> = [];
+    for (const [dom, contacts] of byDomain.entries()) {
+      const toUnlock = contacts.slice(0, MAX_UNLOCKS_PER_COMPANY);
+      console.log(`[pulse-bulk-enrich] unlock domain=${dom} candidates=${contacts.length} capped_to=${toUnlock.length}`);
+      const unlockResult = await unlockEmails(toUnlock);
+      let unlockCount = 0;
+      for (const [id, email] of unlockResult.entries()) {
+        unlockedEmailMap.set(id, email);
+        unlockCount++;
+      }
+      debugPerCompany.push({
+        domain: dom,
+        people_returned: contacts.length,
+        locked: toUnlock.length,
+        unlocked: unlockCount,
+        kept: unlockCount,
+      });
+    }
+    // Adjust skipped.email_unreachable: contacts that we attempted unlock but still got nothing
+    const attempted = needUnlock.length;
+    const successfulUnlocks = unlockedEmailMap.size;
+    skipped.email_unreachable += attempted - successfulUnlocks;
+    // Remove the ones we successfully unlocked from no_deliverable_email counter
+    skipped.no_deliverable_email -= attempted;
+    skipped.no_deliverable_email += (attempted - successfulUnlocks);
+  } else if (needUnlock.length > 0) {
+    // No API key — all locked contacts are unreachable
+    skipped.email_unreachable += needUnlock.length;
+    skipped.no_deliverable_email = 0;
+  }
+
+  // Apply unlocked emails back onto the contact objects
+  for (const c of needUnlock) {
+    const unlocked = unlockedEmailMap.get(c.apolloId);
+    if (unlocked) {
+      c.email = unlocked;
+      c.emailStatus = null; // was "locked", now real
+    }
+  }
+
+  // Final set: decision-makers with a real email (either already had one, or just unlocked)
+  const hotContacts = [
+    ...alreadyHaveEmail,
+    ...needUnlock.filter((c) => c.email && !isLockedEmail(c.email)),
+  ];
+
+  console.log(`[pulse-bulk-enrich] filter summary: total=${allContacts.length} decision_makers=${decisionMakers.length} already_had_email=${alreadyHaveEmail.length} needed_unlock=${needUnlock.length} unlocked=${unlockedEmailMap.size} hot_final=${hotContacts.length}`);
 
   if (hotContacts.length === 0) {
     return json({
@@ -446,6 +589,7 @@ serve(async (req: Request) => {
     domain_count: domainsToSearch.length,
     apollo_contacts: allContacts.length,
     hot_contacts: hotContacts.length,
+    unlocked_emails: unlockedEmailMap.size,
     inserted: contactIds.length,
   });
 
