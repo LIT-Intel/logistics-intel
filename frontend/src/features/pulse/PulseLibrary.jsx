@@ -48,6 +48,7 @@ import {
 } from '@/features/pulse/pulseListsApi';
 import { refreshList } from '@/features/pulse/refreshList';
 import DigestSettings from '@/features/pulse/DigestSettings';
+import BulkEnrichButton from '@/components/lists/BulkEnrichButton';
 
 export default function PulseLibrary({ onSelect, refreshKey = 0 }) {
   const [expanded, setExpanded] = useState(false);
@@ -944,6 +945,14 @@ function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelect
         >
           {refreshStatus.tone === 'success' ? <Sparkles className="h-3 w-3" /> : null}
           <span className="font-body">{refreshStatus.message}</span>
+        </div>
+      ) : null}
+
+      {/* Bulk decision-maker enrichment — only renders for syncable lists
+          (syncs_to_attio === true). Component self-hides for plain lists. */}
+      {list?.syncs_to_attio ? (
+        <div className="px-4 pt-3">
+          <BulkEnrichButton list={{ ...list, company_count: listRows.length }} />
         </div>
       ) : null}
 
