@@ -43,6 +43,8 @@ export function useEntitlements() {
     gcTime: 5 * 60_000,
   });
 
+  const isPlatformAdmin = Boolean(entitlements?.is_platform_admin);
+
   const canAccessFeature = useCallback(
     async (feature: FeatureKey): Promise<EntitlementCheckResult> => {
       if (!user) return { allowed: false, reason: 'Not authenticated' };
@@ -125,6 +127,7 @@ export function useEntitlements() {
     isChecking,
     plan,
     isAdmin,
+    isPlatformAdmin,
     entitlements,
   };
 }
