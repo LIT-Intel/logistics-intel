@@ -84,6 +84,15 @@ function normalize(row: any): OutboundCampaign {
       row?.metrics && typeof row.metrics === "object" ? row.metrics : {},
     createdAt: row?.created_at ?? null,
     updatedAt: row?.updated_at ?? null,
+    creator:
+      row?.creator && typeof row.creator === "object"
+        ? {
+            full_name:
+              typeof row.creator.full_name === "string" ? row.creator.full_name : null,
+            email:
+              typeof row.creator.email === "string" ? row.creator.email : null,
+          }
+        : null,
     // Funnel / spark / health remain null until there is a backed
     // aggregation endpoint over lit_outreach_history. The UI renders an
     // honest "no outreach data yet" state for these.

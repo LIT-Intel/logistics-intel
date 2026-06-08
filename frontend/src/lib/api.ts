@@ -5007,7 +5007,38 @@ export async function getCrmCampaigns(_signal?: AbortSignal) {
     const code = error.code ? ` ${error.code}` : "";
     throw new Error(`getCrmCampaigns${code}: ${error.message}`);
   }
-  return { rows: data ?? [] };
+  const campaigns = data ?? [];
+
+  // Batched creator lookup. There is no FK from public.lit_campaigns.user_id
+  // to public.profiles.id, so PostgREST embed is not viable; we fetch the
+  // distinct creator profiles in a single follow-up SELECT. This is needed
+  // now that campaigns are org-scoped — every member of the org sees every
+  // campaign and needs to know who created it.
+  const userIds = Array.from(
+    new Set(
+      campaigns
+        .map((c: any) => c?.user_id)
+        .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+    ),
+  );
+  const creatorMap = new Map<string, { full_name: string | null; email: string | null }>();
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .in("id", userIds);
+    for (const p of profiles ?? []) {
+      creatorMap.set((p as any).id, {
+        full_name: (p as any).full_name ?? null,
+        email: (p as any).email ?? null,
+      });
+    }
+  }
+  const enriched = campaigns.map((c: any) => ({
+    ...c,
+    creator: c?.user_id ? creatorMap.get(c.user_id) ?? null : null,
+  }));
+  return { rows: enriched };
 }
 
 export async function createCrmCampaign(body: {

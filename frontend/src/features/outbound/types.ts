@@ -11,6 +11,11 @@ export interface CampaignFunnel {
   booked: number;
 }
 
+export interface CampaignCreator {
+  full_name: string | null;
+  email: string | null;
+}
+
 export interface OutboundCampaign {
   id: string;
   name: string;
@@ -22,6 +27,7 @@ export interface OutboundCampaign {
   metrics: Record<string, unknown>;
   createdAt: string | null;
   updatedAt: string | null;
+  creator: CampaignCreator | null;
   // derived for UI
   funnel: CampaignFunnel | null;
   health: CampaignHealth;
