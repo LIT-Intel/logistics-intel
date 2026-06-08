@@ -1191,9 +1191,10 @@ export default function CampaignBuilder() {
       <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[1fr_340px] lg:grid-cols-[260px_1fr_340px]">
         <div className="hidden lg:block">
           <PersonaPanel
-            audienceCount={selectedIds.size}
+            audienceCount={selectedIds.size + manualEmails.length}
             totalSavedCompanies={companies.length}
             selectedCompanies={selectedCompanies}
+            manualEmails={manualEmails}
             personasResult={personasResult}
             selectedPersonaId={selectedPersonaId}
             onSelectPersona={setSelectedPersonaId}
