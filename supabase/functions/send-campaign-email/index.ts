@@ -216,6 +216,26 @@ serve(async (req) => {
 
   const admin = createClient(supabaseUrl, serviceRoleKey);
 
+  // Safety hold kill switch — any uncleared row in lit_outreach_safety_holds
+  // halts all outbound sends until the row is cleared. Operator-controlled
+  // pause for incidents, audits, or before-launch testing windows.
+  // (Phase 4 spec — migration 20260603_phase4_outbound_schema.sql)
+  const { data: holds } = await admin
+    .from("lit_outreach_safety_holds")
+    .select("id, reason")
+    .is("cleared_at", null)
+    .limit(1);
+  if (holds && holds.length > 0) {
+    log.warn("safety_hold_active", { hold_id: holds[0].id, reason: holds[0].reason });
+    return json({
+      ok: false,
+      paused: true,
+      reason: "safety_hold_active",
+      hold_id: holds[0].id,
+      hold_reason: holds[0].reason,
+    }, 503);
+  }
+
   const startedAt = Date.now();
   const summary = {
     picked: 0,
