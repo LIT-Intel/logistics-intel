@@ -257,6 +257,45 @@ const components: PortableTextComponents = {
         </figure>
       );
     },
+    dataTable: ({ value }) => {
+      const headers: string[] = value?.headers || [];
+      const rows: Array<{ cells: string[] }> = value?.rows || [];
+      if (!headers.length || !rows.length) return null;
+      return (
+        <figure className="my-9 overflow-x-auto rounded-2xl border border-ink-100 bg-white shadow-sm">
+          <table className="font-body w-full border-collapse text-left text-[14px] leading-[1.55] text-ink-700">
+            <thead className="bg-ink-25">
+              <tr>
+                {headers.map((h, i) => (
+                  <th
+                    key={i}
+                    className="font-display border-b border-ink-100 px-4 py-3 text-[12.5px] font-semibold uppercase tracking-[0.04em] text-ink-900"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} className="border-b border-ink-50 last:border-b-0 hover:bg-ink-25/40">
+                  {(row?.cells || []).map((c, ci) => (
+                    <td key={ci} className="align-top px-4 py-3">
+                      {c}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {value?.caption && (
+            <figcaption className="font-body bg-ink-25 px-4 py-3 text-center text-[12.5px] text-ink-500">
+              {value.caption}
+            </figcaption>
+          )}
+        </figure>
+      );
+    },
   },
 };
 
