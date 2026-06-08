@@ -28,11 +28,18 @@ const ALLOWED_EVENTS = new Set([
   "trial_tip_contact_enrichment",
   "trial_tip_revenue_opportunity",
   "trial_ending_soon",
+  "trial_book_demo",
+  "trial_check_in_inactive",
   "paid_plan_welcome",
   "upgrade_confirmation",
   "payment_failed",
   "cancellation_confirmation",
 ]);
+
+// Inactivity threshold (days) for the trial_check_in_inactive event.
+// If a trialing user has zero rows in lit_activity_events within
+// this window, we send the warm "stuck somewhere?" Cal.com nudge.
+const INACTIVE_DAYS_THRESHOLD = 3;
 
 serve(async (req: Request) => {
   const log = createLogger("subscription-email-cron", { request_id: requestId() });
@@ -74,15 +81,22 @@ serve(async (req: Request) => {
   const day2 = dayWindow(3, 2);
   const day3 = dayWindow(4, 3);
   const day4 = dayWindow(5, 4);
+  const day5 = dayWindow(6, 5);  // trial_book_demo trigger window
   const day6 = dayWindow(7, 6);
   const day8 = dayWindow(9, 8);
 
   const { data: day2c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day2.gte).lte("started_at", day2.lte);
   const { data: day3c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day3.gte).lte("started_at", day3.lte);
   const { data: day4c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day4.gte).lte("started_at", day4.lte);
+  const { data: day5c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day5.gte).lte("started_at", day5.lte);
   const { data: day6c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day6.gte).lte("started_at", day6.lte);
   const { data: day8c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day8.gte).lte("started_at", day8.lte);
   const { data: day12c } = await db.from("subscriptions").select(day12Columns).eq("status", "trialing").gte("trial_ends_at", new Date().toISOString()).lte("trial_ends_at", new Date(Date.now() + 2 * 86400 * 1000).toISOString());
+
+  // Inactivity sweep — all live trials regardless of signup age. We
+  // narrow by inactivity check below (per-user). The idempotency guard
+  // in send-subscription-email keeps us from sending twice.
+  const { data: inactiveCandidates } = await db.from("subscriptions").select(select).eq("status", "trialing");
 
   async function getRecipientInfo(userId: string | null): Promise<{ email: string | null; firstName: string | null }> {
     if (!userId) return { email: null, firstName: null };
@@ -101,7 +115,7 @@ serve(async (req: Request) => {
     } catch (err) { return { ok: false, error: err instanceof Error ? err.message : String(err) }; }
   }
 
-  const stats: Record<string, number> = { day_2: 0, day_3: 0, day_4: 0, day_6: 0, day_8: 0, day_12: 0, skipped_day_2_active: 0 };
+  const stats: Record<string, number> = { day_2: 0, day_3: 0, day_4: 0, day_5_book_demo: 0, day_6: 0, day_8: 0, day_12: 0, check_in_inactive: 0, skipped_day_2_active: 0, skipped_check_in_active: 0 };
   const errors: string[] = [];
 
   // Day 2 — behavior-gated
@@ -130,8 +144,30 @@ serve(async (req: Request) => {
 
   await fireSweep(day3c ?? [], "trial_day_3_founder_note", "day_3");
   await fireSweep(day4c ?? [], "trial_tip_pulse_ai", "day_4");
+  // Day 5 — book demo from sales@. Warm Cal.com invite; routes replies
+  // to the sales inbox. Idempotent — guarded by lit_email_automation_events.
+  await fireSweep(day5c ?? [], "trial_book_demo", "day_5_book_demo");
   await fireSweep(day6c ?? [], "trial_tip_contact_enrichment", "day_6");
   await fireSweep(day8c ?? [], "trial_tip_revenue_opportunity", "day_8");
+
+  // Inactivity check-in — fires when a trialing user has zero
+  // lit_activity_events rows in the last INACTIVE_DAYS_THRESHOLD days
+  // AND has not already received this email (idempotency on the receive
+  // side). Skip users we already sent on subsequent runs.
+  const inactiveCutoff = new Date(Date.now() - INACTIVE_DAYS_THRESHOLD * 86400 * 1000).toISOString();
+  for (const sub of (inactiveCandidates ?? [])) {
+    const { email, firstName } = await getRecipientInfo(sub.user_id);
+    if (!email) continue;
+    // Require trial age >= INACTIVE_DAYS_THRESHOLD to avoid pinging
+    // users on day 0/1 who just signed up and haven't had a chance.
+    if (sub.started_at && new Date(sub.started_at).getTime() > Date.now() - INACTIVE_DAYS_THRESHOLD * 86400 * 1000) continue;
+    if (!sub.user_id) continue;
+    const { count } = await db.from("lit_activity_events").select("id", { count: "exact", head: true }).eq("user_id", sub.user_id).gte("created_at", inactiveCutoff);
+    if ((count ?? 0) > 0) { stats.skipped_check_in_active++; continue; }
+    const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.organization_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type: "trial_check_in_inactive" });
+    if (r.skipped) continue;
+    if (r.ok) stats.check_in_inactive++; else errors.push(`check_in ${email}: ${r.error}`);
+  }
 
   // Day 12 — trial ending
   for (const sub of (day12c ?? [])) {
