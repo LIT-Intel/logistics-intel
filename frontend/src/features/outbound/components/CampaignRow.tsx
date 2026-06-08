@@ -167,7 +167,7 @@ export function CampaignRow({
         <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
           <FunnelStrip funnel={c.funnel} />
           {c.spark ? (
-            <Sparkline values={c.spark} color={healthColor} width={72} height={22} />
+            <Sparkline data={c.spark} color={healthColor} width={72} height={22} />
           ) : null}
         </div>
       ) : c.status === "archived" ? (
