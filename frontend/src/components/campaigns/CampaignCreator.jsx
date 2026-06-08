@@ -97,9 +97,37 @@ async function getCurrentUserIdentity() {
   };
 }
 
+async function resolveActiveOrgId(userId) {
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from('org_members')
+    .select('org_id')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .order('joined_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn('[CampaignCreator] resolveActiveOrgId failed:', error);
+    return null;
+  }
+  return data?.org_id ?? null;
+}
+
 async function saveCampaignRecord(campaignId, draftPayload) {
   const identity = await getCurrentUserIdentity();
   const timestamp = new Date().toISOString();
+
+  // Sub-project A: lit_campaigns.org_id is NOT NULL on INSERT. Resolve
+  // the caller's active org_members row and stamp it on every insert
+  // payload variant. Existing campaigns (campaignId set) keep their
+  // org_id — we don't re-stamp on update.
+  const orgIdForInsert = campaignId ? null : await resolveActiveOrgId(identity.id);
+  if (!campaignId && !orgIdForInsert) {
+    throw new Error(
+      'No active org membership found for current user; cannot create campaign',
+    );
+  }
 
   const metricsPayload = {
     draft: draftPayload,
@@ -158,6 +186,7 @@ async function saveCampaignRecord(campaignId, draftPayload) {
       ? { ...row }
       : {
           ...row,
+          org_id: orgIdForInsert,
           created_at: timestamp,
         };
 

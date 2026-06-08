@@ -5774,6 +5774,38 @@ async function getCurrentUserIdOrThrow(): Promise<string> {
   return userId;
 }
 
+/**
+ * Resolve the caller's active org_id from `org_members`. Used by mutating
+ * code paths that must stamp `org_id` on the inserted row (Sub-project A
+ * campaign org-scoping — `lit_campaigns.org_id` is NOT NULL and the RLS
+ * INSERT policy requires the value to match an active org_members row).
+ *
+ * Picks the earliest-joined active membership when the user has multiple.
+ * Throws (rather than returning null) so callers fail loud at the call site
+ * instead of writing a null that the NOT NULL constraint would reject with
+ * a less helpful Postgres error.
+ */
+async function resolveActiveOrgIdOrThrow(userId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from("org_members")
+    .select("org_id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("joined_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`resolveActiveOrgId: ${error.message}`);
+  }
+  const orgId = (data as any)?.org_id ?? null;
+  if (!orgId) {
+    throw new Error(
+      "No active org membership found for current user; cannot create org-scoped record",
+    );
+  }
+  return orgId as string;
+}
+
 // ---------------- Sequences ----------------
 
 export async function listSequences(
@@ -6120,6 +6152,7 @@ export async function createCampaignDraft(input: {
   updated_at: string;
 }> {
   const userId = await getCurrentUserIdOrThrow();
+  const orgId = await resolveActiveOrgIdOrThrow(userId);
   const metrics: Record<string, unknown> = { ...(input.metrics ?? {}) };
   if (input.description && input.description.trim()) {
     metrics.description = input.description.trim();
@@ -6128,6 +6161,7 @@ export async function createCampaignDraft(input: {
     .from("lit_campaigns")
     .insert({
       user_id: userId,
+      org_id: orgId,
       name: input.name,
       channel: input.channel ?? "email",
       status: "draft",
