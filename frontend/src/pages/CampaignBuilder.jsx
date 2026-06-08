@@ -25,7 +25,8 @@ import { useUserSignature } from "@/features/outbound/hooks/useUserSignature";
 import { useTemplates, usePersonas } from "@/features/outbound/hooks/useTemplates";
 import { useCampaign } from "@/features/outbound/hooks/useCampaign";
 
-import { ForecastStrip } from "@/features/outbound/components/ForecastStrip";
+import { CampaignKpiHero } from "@/features/outbound/components/CampaignKpiHero";
+import { fetchCampaignMetricsBatch } from "@/features/outbound/api/campaignMetrics";
 import { ScheduleStrip } from "@/features/outbound/components/ScheduleStrip";
 import { PersonaPanel } from "@/features/outbound/components/PersonaPanel";
 import { TimelineCanvas } from "@/features/outbound/components/TimelineCanvas";
@@ -349,6 +350,53 @@ export default function CampaignBuilder() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [toast, setToast] = useState(null);
+
+  const [campaignFunnel, setCampaignFunnel] = useState(null);
+  const [campaignSparkData, setCampaignSparkData] = useState([]);
+
+  // Fetch funnel metrics for the current campaign. Re-runs when editId
+  // changes (e.g. after first save). For unsaved drafts (editId === null),
+  // effect early-returns; KpiHero renders the draft state with estimates.
+  useEffect(() => {
+    if (!editId) {
+      setCampaignFunnel(null);
+      return;
+    }
+    fetchCampaignMetricsBatch([editId])
+      .then((m) => setCampaignFunnel(m.get(editId) ?? null))
+      .catch(() => setCampaignFunnel(null));
+  }, [editId]);
+
+  // Sparkline data: daily sent counts over last 14 days. Inline query
+  // because it's small and used only here. Empty array for drafts.
+  useEffect(() => {
+    if (!editId) {
+      setCampaignSparkData([]);
+      return;
+    }
+    (async () => {
+      try {
+        const { supabase } = await import("@/lib/supabase");
+        const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+        const { data } = await supabase
+          .from("lit_outreach_history")
+          .select("created_at")
+          .eq("campaign_id", editId)
+          .eq("event_type", "sent")
+          .gte("created_at", since)
+          .order("created_at", { ascending: true });
+        if (!data) { setCampaignSparkData([]); return; }
+        const byDay = new Map();
+        for (const row of data) {
+          const day = row.created_at.slice(0, 10);
+          byDay.set(day, (byDay.get(day) ?? 0) + 1);
+        }
+        setCampaignSparkData(Array.from(byDay.values()));
+      } catch {
+        setCampaignSparkData([]);
+      }
+    })();
+  }, [editId]);
 
   // When edit-mode details land, hydrate state.
   useEffect(() => {
@@ -1028,7 +1076,12 @@ export default function CampaignBuilder() {
         </div>
       </div>
 
-      <ForecastStrip audienceCount={selectedIds.size} />
+      <CampaignKpiHero
+        status={details?.status ?? (editId ? "active" : "draft")}
+        audienceCount={selectedIds.size + manualEmails.length}
+        funnel={campaignFunnel}
+        sparkData={campaignSparkData}
+      />
       {senderLoadError ? (
         <div
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800"
