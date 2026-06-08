@@ -359,13 +359,18 @@ export default function Pulse() {
           setErrorMessage(v2.coach_summary || 'No matches. Try broadening the geography or rephrasing.');
         }
 
-        // Batch-fetch saved-list memberships for the newly visible result IDs.
-        // Only query UUIDs — non-UUID ids (Apollo/discovered rows not yet in DB)
-        // can't be in pulse_list_companies. Fire-and-forget; badge is cosmetic.
-        const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const uuidIds = v2.rows.map((r) => r.id).filter((id) => uuidRx.test(String(id || '')));
-        if (uuidIds.length) {
-          fetchListMembershipsForCompanies(uuidIds).then((memberMap) => {
+        // Batch-fetch saved-list memberships for the newly visible result rows.
+        // We look up by domain (not ID) because Apollo discovery rows have
+        // synthetic IDs that don't exist in pulse_list_companies until saved.
+        // Domain-based lookup matches already-saved companies regardless of
+        // whether the search-result ID is synthetic or a real UUID.
+        // Fire-and-forget; badge is cosmetic.
+        const membershipItems = v2.rows.map((r) => ({
+          id: r.id,
+          domain: extractDomain(r.domain || r.website) || r.domain || null,
+        })).filter((x) => x.domain);
+        if (membershipItems.length) {
+          fetchListMembershipsForCompanies(membershipItems).then((memberMap) => {
             setSavedMemberships((prev) => {
               if (!append) return memberMap;
               const merged = new Map(prev);
@@ -1150,10 +1155,12 @@ export default function Pulse() {
           setSelectedIds(new Set());
           setLibraryRefreshKey((k) => k + 1);
           // Re-fetch saved badges so newly-added companies show "Saved"
-          const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          const uuidIds = results.map((r) => r.id).filter((id) => uuidRx.test(String(id || '')));
-          if (uuidIds.length) {
-            fetchListMembershipsForCompanies(uuidIds).then((m) => setSavedMemberships(m)).catch(() => {});
+          const membershipItems = results.map((r) => ({
+            id: r.id,
+            domain: extractDomain(r.domain || r.website) || r.domain || null,
+          })).filter((x) => x.domain);
+          if (membershipItems.length) {
+            fetchListMembershipsForCompanies(membershipItems).then((m) => setSavedMemberships(m)).catch(() => {});
           }
         }}
         upsertCompany={upsertCompanyFromResult}
