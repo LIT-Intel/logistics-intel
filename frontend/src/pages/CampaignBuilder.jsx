@@ -35,6 +35,7 @@ import { AudiencePickerDrawer } from "@/features/outbound/components/AudiencePic
 import { PreviewModal } from "@/features/outbound/components/PreviewModal";
 import { CreateTemplateModal } from "@/features/outbound/components/CreateTemplateModal";
 import { CreatePersonaModal } from "@/features/outbound/components/CreatePersonaModal";
+import { SenderGuidelinesNote } from "@/features/outbound/components/SenderGuidelinesNote";
 import { findPlay } from "@/features/outbound/data/plays";
 import {
   applyLitMarketingSequenceToBuilder,
@@ -1023,6 +1024,7 @@ export default function CampaignBuilder() {
             <Rocket className="h-2.5 w-2.5" />
             {launching ? "Launching…" : "Launch"}
           </button>
+          <SenderGuidelinesNote />
         </div>
       </div>
 
