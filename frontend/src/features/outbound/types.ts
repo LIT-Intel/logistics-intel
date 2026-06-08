@@ -7,8 +7,17 @@ export interface CampaignFunnel {
   enrolled: number;
   sent: number;
   opened: number;
+  clicked: number;
   replied: number;
-  booked: number;
+  bounced: number;
+  suppressed: number;
+  // Computed rates (0-100), null when sent === 0
+  openRate: number | null;
+  clickRate: number | null;
+  replyRate: number | null;
+  bounceRate: number | null;
+  // ISO timestamp of the most recent event for this campaign
+  lastEventAt: string | null;
 }
 
 export interface CampaignCreator {
