@@ -18,6 +18,8 @@ import { Bell, Download, Filter, Search, Send } from "lucide-react";
 
 import AppLayout from "@/layout/lit/AppLayout.jsx";
 import { useAuth } from "@/auth/AuthProvider";
+import { useEntitlements } from "@/hooks/useEntitlements";
+import { useAdminScope } from "@/hooks/useAdminScope";
 import { getSavedCompanies } from "@/lib/api";
 import { getCampaignsFromSupabase, supabase } from "@/lib/supabase";
 
@@ -38,6 +40,9 @@ import RecentEnrichmentsCard from "@/components/dashboard/sections/RecentEnrichm
 // to the same provider state.
 export default function LITDashboard() {
   const { user, fullName } = useAuth();
+  const { entitlements } = useEntitlements();
+  const { scope: adminScope } = useAdminScope();
+  const orgId = entitlements?.org_id || null;
 
   const [savedCompaniesLive, setSavedCompaniesLive] = useState([]);
   const [campaignsLive, setCampaignsLive] = useState([]);
@@ -64,7 +69,7 @@ export default function LITDashboard() {
             console.error("getSavedCompanies failed:", err);
             return null;
           }),
-          getCampaignsFromSupabase().catch((err) => {
+          getCampaignsFromSupabase({ orgId, adminScope }).catch((err) => {
             console.error("getCampaignsFromSupabase failed:", err);
             return [];
           }),
@@ -149,7 +154,7 @@ export default function LITDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [user?.id, orgId, adminScope]);
 
   const realSavedCompanies = useMemo(
     () => savedCompaniesLive.filter((r) => r?.company_id || r?.company?.id),
