@@ -26,6 +26,7 @@ import { useTemplates, usePersonas } from "@/features/outbound/hooks/useTemplate
 import { useCampaign } from "@/features/outbound/hooks/useCampaign";
 
 import { CampaignKpiHero } from "@/features/outbound/components/CampaignKpiHero";
+import { LaunchButton } from "@/features/outbound/components/LaunchButton";
 import { fetchCampaignMetricsBatch } from "@/features/outbound/api/campaignMetrics";
 import { ScheduleStrip } from "@/features/outbound/components/ScheduleStrip";
 import { PersonaPanel } from "@/features/outbound/components/PersonaPanel";
@@ -347,6 +348,7 @@ export default function CampaignBuilder() {
   const [saving, setSaving] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [testSending, setTestSending] = useState(false);
+  const [hasTestSendOccurred, setHasTestSendOccurred] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [toast, setToast] = useState(null);
@@ -796,6 +798,7 @@ export default function CampaignBuilder() {
       const includeSig = (selectedStep && selectedStep.kind === "email" ? selectedStep : emailStep)?.includeSignature !== false;
       const res = await sendTestEmail(toEmail, subject, body, includeSig);
       if ("ok" in res && res.ok) {
+        setHasTestSendOccurred(true);
         setToast({ message: `Test sent to ${toEmail}`, tone: "success" });
         window.setTimeout(() => setToast(null), 2500);
       } else if ("setupRequired" in res) {
@@ -1051,27 +1054,21 @@ export default function CampaignBuilder() {
             <Save className="h-2.5 w-2.5" />
             {saving ? "Saving…" : isEditMode ? "Save changes" : "Save draft"}
           </button>
-          <button
-            type="button"
-            onClick={handleLaunch}
-            disabled={!canLaunch || launching}
-            title={
-              canLaunch
-                ? "Queue recipients and start sending."
-                : !editId
-                  ? "Save the campaign first."
-                  : !primaryEmail
-                    ? "Connect a Gmail or Outlook mailbox in Settings first."
-                    : !hasRecipients
-                      ? "Add at least one recipient — pick a company with enriched contacts, or type emails into the Manual tab."
-                      : "Add at least one filled step first."
+          <LaunchButton
+            onLaunch={handleLaunch}
+            canLaunch={canLaunch}
+            launching={launching}
+            disabledReason={
+              !editId
+                ? "Save the campaign first."
+                : !primaryEmail
+                  ? "Connect a Gmail or Outlook mailbox in Settings first."
+                  : !hasRecipients
+                    ? "Add at least one recipient — pick a company with enriched contacts, or type emails into the Manual tab."
+                    : "Add at least one filled step first."
             }
-            className="inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-[#10B981] to-[#059669] px-3 py-1 text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(16,185,129,0.3)] disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ fontFamily: fontDisplay }}
-          >
-            <Rocket className="h-2.5 w-2.5" />
-            {launching ? "Launching…" : "Launch"}
-          </button>
+            hasTestSendOccurred={hasTestSendOccurred}
+          />
           <SenderGuidelinesNote />
         </div>
       </div>
