@@ -344,17 +344,25 @@ Deno.serve(async (req: Request) => {
     // ── Fetch context (scoped to this user's saved companies) ─────────
     // KPI fields live on lit_companies (shipments_12m, teu_12m,
     // top_route_12m, most_recent_shipment_date) — lit_saved_companies
-    // is just the membership table. The previous version read
-    // sc.kpis which doesn't exist, so workspace_lanes was empty and
-    // the globe rendered blank.
+    // is just the membership table.
+    //
+    // 2026-06-09: widened LIMIT 50 → 200 and added a `top_route_12m is
+    // not null` filter via lit_companies!inner join. Without these the
+    // newest 50 saves often dominate the result set; if those saves are
+    // freight forwarders / 3PLs (which legitimately have NULL
+    // top_route_12m because they are the carriers, not shippers), the
+    // workspace_lanes aggregation returns empty and the globe goes
+    // blank even when the workspace has hundreds of shipment-bearing
+    // accounts.
     const { data: savedRows } = await supabase
       .from("lit_saved_companies")
       .select(
-        "id, company_id, created_at, last_viewed_at, lit_companies (id, source_company_key, name, domain, website, shipments_12m, teu_12m, top_route_12m, most_recent_shipment_date)",
+        "id, company_id, created_at, last_viewed_at, lit_companies!inner (id, source_company_key, name, domain, website, shipments_12m, teu_12m, top_route_12m, most_recent_shipment_date)",
       )
       .eq("user_id", user.id)
+      .not("lit_companies.top_route_12m", "is", null)
       .order("last_viewed_at", { ascending: false, nullsFirst: false })
-      .limit(50);
+      .limit(200);
 
     const saved: SavedCompanyLite[] = (savedRows || [])
       .map((r: any) => {
