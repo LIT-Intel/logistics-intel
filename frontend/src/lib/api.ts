@@ -6519,6 +6519,7 @@ export async function sendTestEmail(
   subject?: string,
   body?: string,
   includeSignature?: boolean,
+  campaignId?: string | null,
 ): Promise<
   | { ok: true; messageId: string | null; provider: string; from: string; to: string }
   | { setupRequired: true }
@@ -6536,7 +6537,7 @@ export async function sendTestEmail(
 
   try {
     const { data, error } = await supabase.functions.invoke("send-test-email", {
-      body: { toEmail, subject, body, includeSignature },
+      body: { toEmail, subject, body, includeSignature, campaign_id: campaignId ?? null },
     });
 
     if (error) {

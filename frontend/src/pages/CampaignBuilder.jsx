@@ -796,7 +796,7 @@ export default function CampaignBuilder() {
     setError(null);
     try {
       const includeSig = (selectedStep && selectedStep.kind === "email" ? selectedStep : emailStep)?.includeSignature !== false;
-      const res = await sendTestEmail(toEmail, subject, body, includeSig);
+      const res = await sendTestEmail(toEmail, subject, body, includeSig, editId);
       if ("ok" in res && res.ok) {
         setHasTestSendOccurred(true);
         setToast({ message: `Test sent to ${toEmail}`, tone: "success" });
