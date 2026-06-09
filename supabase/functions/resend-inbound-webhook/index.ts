@@ -114,8 +114,11 @@ async function getReceivedEmailContent(emailId: string, resendApiKey: string) {
 async function matchInboundReply(params: {
   supabase: SupabaseClient;
   fromEmail: string | null;
+  /** Inbound text body (or stripped html) so the timeline UI can show
+   *  the reply inline without a second query to lit_inbound_emails. */
+  replyBody?: string | null;
 }) {
-  const { supabase, fromEmail } = params;
+  const { supabase, fromEmail, replyBody } = params;
 
   if (!fromEmail) {
     return {
@@ -252,6 +255,13 @@ async function matchInboundReply(params: {
           inbound_reply_matched_at: new Date().toISOString(),
           inbound_reply_from: normalizedFrom,
           match_method: matchMethod,
+          // 500-char snippet for inline display in the campaign timeline /
+          // drill-in. Full body still lives in lit_inbound_emails.text_body
+          // for cases where the operator needs the complete reply.
+          reply_snippet:
+            replyBody && typeof replyBody === "string"
+              ? replyBody.replace(/\s+/g, " ").trim().slice(0, 500)
+              : null,
         },
       })
       .eq("id", outreachHistory.id);
@@ -468,6 +478,7 @@ serve(async (req) => {
   const match = await matchInboundReply({
     supabase,
     fromEmail: fromParsed.email,
+    replyBody: textBody,
   });
 
   const insertPayload = {
