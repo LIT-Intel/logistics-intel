@@ -330,7 +330,11 @@ export default function CampaignAnalyticsPage() {
                     recentEvents.map((e) => {
                       const meta = EVENT_LABEL[e.event_type] || EVENT_LABEL.sent;
                       const Icon = meta.Icon;
-                      const recipient = e.metadata?.recipient_email || e.metadata?.recipient_id?.slice(0, 8) || "—";
+                      const recipient =
+                        e.metadata?.recipient_email
+                        || recipients.find((r) => r.id === e.metadata?.recipient_id)?.email
+                        || e.metadata?.recipient_id?.slice(0, 8)
+                        || "—";
                       return (
                         <li key={e.id} className="flex items-start gap-2 px-3 py-2">
                           <span
@@ -499,7 +503,10 @@ function CampaignDetail({ campaign, events, navigate }) {
                       <span className="text-[9.5px] text-slate-400">{fmtAbsolute(e.occurred_at)}</span>
                     </div>
                     <div className="truncate text-[10.5px] text-slate-500">
-                      {e.metadata?.recipient_email || e.metadata?.recipient_id?.slice(0, 8) || "—"}
+                      {e.metadata?.recipient_email
+                        || recipients.find((r) => r.id === e.metadata?.recipient_id)?.email
+                        || e.metadata?.recipient_id?.slice(0, 8)
+                        || "—"}
                     </div>
                   </div>
                 </li>

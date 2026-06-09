@@ -6,9 +6,12 @@
 //   1. Look up lit_outreach_links by slug. If missing → 404 plain text.
 //   2. Increment click_count, set first_clicked_at if null,
 //      set last_clicked_at = now().
-//   3. If link.recipient_id is set, advance the recipient's status to
-//      'clicked' and write a lit_outreach_history row (event_type='clicked').
+//   3. Insert a lit_outreach_history row event_type='clicked' (deduped
+//      per recipient+step+slug so refreshes don't inflate the count).
 //   4. 302 redirect to original_url.
+//
+// Recipient.status is intentionally NOT mutated — that field is the
+// dispatcher's state machine. Engagement signals live in history.
 //
 // Public — no JWT required. The slug is the auth token (12-char random).
 
@@ -45,8 +48,6 @@ serve(async (req) => {
     return plain("not_found", 404);
   }
 
-  // Best-effort updates. If any of these fail we still redirect — never
-  // block the user's click on a tracking write.
   try {
     const now = new Date().toISOString();
     await admin
@@ -59,32 +60,61 @@ serve(async (req) => {
       .eq("id", link.id);
 
     if (link.recipient_id) {
-      // Mark recipient as clicked. Don't wipe next_send_at — the campaign
-      // continues per the sequence regardless of click; analytics treats
-      // clicked as a "richer than opened" engagement signal.
-      await admin
-        .from("lit_campaign_contacts")
-        .update({ status: "clicked", updated_at: now })
-        .eq("id", link.recipient_id);
+      // Dedupe history rows on (recipient + step + link slug) so the
+      // analytics count doesn't double-count refreshes / link previews.
+      const { data: existing } = await admin
+        .from("lit_outreach_history")
+        .select("id")
+        .eq("campaign_id", link.campaign_id)
+        .eq("event_type", "clicked")
+        .filter("metadata->>link_id", "eq", link.id)
+        .limit(1)
+        .maybeSingle();
+      if (!existing) {
+        // Look up the recipient row so the click history carries readable
+        // attribution (contact_id + recipient_email + company_id) instead
+        // of NULL + a UUID-fragment fallback in the analytics activity feed.
+        // Best-effort — falls through to NULL on lookup failure rather than
+        // blocking the click.
+        let contactId: string | null = null;
+        let recipientEmail: string | null = null;
+        let companyId: string | null = null;
+        try {
+          const { data: contact } = await admin
+            .from("lit_campaign_contacts")
+            .select("id, email, company_id")
+            .eq("id", link.recipient_id)
+            .maybeSingle();
+          if (contact) {
+            contactId = (contact.id as string | null) ?? null;
+            recipientEmail = (contact.email as string | null) ?? null;
+            companyId = (contact.company_id as string | null) ?? null;
+          }
+        } catch (lookupErr) {
+          console.error("[redirect-click] contact lookup failed", lookupErr);
+        }
 
-      await admin.from("lit_outreach_history").insert({
-        user_id: link.user_id,
-        campaign_id: link.campaign_id,
-        campaign_step_id: link.campaign_step_id,
-        company_id: null,
-        contact_id: null,
-        channel: "email",
-        event_type: "clicked",
-        status: "clicked",
-        provider: null,
-        clicked_at: now,
-        occurred_at: now,
-        metadata: {
-          link_id: link.id,
-          original_url: link.original_url,
-          ua: req.headers.get("user-agent") ?? null,
-        },
-      });
+        await admin.from("lit_outreach_history").insert({
+          user_id: link.user_id,
+          campaign_id: link.campaign_id,
+          campaign_step_id: link.campaign_step_id,
+          company_id: companyId,
+          contact_id: contactId,
+          channel: "email",
+          event_type: "clicked",
+          status: "clicked",
+          provider: null,
+          clicked_at: now,
+          occurred_at: now,
+          metadata: {
+            link_id: link.id,
+            recipient_id: link.recipient_id,
+            recipient_email: recipientEmail,
+            original_url: link.original_url,
+            ua: req.headers.get("user-agent") ?? null,
+          },
+        });
+      }
     }
   } catch (e) {
     console.error("[redirect-click] write failure", e);

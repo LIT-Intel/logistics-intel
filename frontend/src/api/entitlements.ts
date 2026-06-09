@@ -18,6 +18,13 @@ export interface EntitlementsSnapshot {
   limits: Partial<Record<UsageLimitKey, number | null>>;
   used: Partial<Record<UsageLimitKey, number>>;
   market_benchmark_enabled?: boolean;
+  is_platform_admin?: boolean;
+  /**
+   * Folded from the top-level `org_id` on the get-entitlements response so
+   * consumers (e.g. campaign query, save-company gating) have a single
+   * place to read the user's primary org.
+   */
+  org_id?: string | null;
 }
 
 interface GetEntitlementsResponse {
@@ -25,13 +32,26 @@ interface GetEntitlementsResponse {
   entitlements: EntitlementsSnapshot;
   org_id: string | null;
   user_id: string;
+  is_platform_admin?: boolean;
 }
 
 /**
  * Fetch the canonical entitlements snapshot for the current user. JWT-verified
  * server-side. Single call returns plan + features + limits + used.
+ *
+ * The edge fn returns `is_platform_admin` as a top-level field; fold it into
+ * the snapshot if the snapshot itself didn't already carry it, so consumers
+ * have one place to read it.
  */
 export async function fetchEntitlementsSnapshot(): Promise<EntitlementsSnapshot | null> {
   const res = await invokeEdge<GetEntitlementsResponse>("get-entitlements", {});
-  return res?.entitlements ?? null;
+  if (!res) return null;
+  const snap = res.entitlements ?? null;
+  if (snap && typeof res.is_platform_admin === "boolean" && snap.is_platform_admin === undefined) {
+    snap.is_platform_admin = res.is_platform_admin;
+  }
+  if (snap && snap.org_id === undefined) {
+    snap.org_id = res.org_id ?? null;
+  }
+  return snap;
 }

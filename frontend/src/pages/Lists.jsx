@@ -36,6 +36,7 @@ import {
 } from "@/features/pulse/pulseListsApi";
 import LitEmptyState from "@/components/ui/LitEmptyState";
 import { LitSkeletonCard } from "@/components/ui/LitSkeleton";
+import BulkEnrichButton from "@/components/lists/BulkEnrichButton";
 
 const fontDisplay = "'Space Grotesk', system-ui, sans-serif";
 const fontBody = "'DM Sans', system-ui, sans-serif";
@@ -318,6 +319,8 @@ function ListDetail({ listId }) {
               <KpiTile label="Contacts" value={contacts.length} icon={Users} />
               <KpiTile label="Email-ready" value={emailReady} icon={Mail} accent />
             </div>
+
+            <BulkEnrichButton list={{ ...list, company_count: companies.length }} />
 
             <nav className="mb-3 inline-flex rounded-md border border-slate-200 bg-white p-0.5 text-[11px]">
               {[

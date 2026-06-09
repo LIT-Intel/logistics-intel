@@ -48,6 +48,8 @@ import {
 } from '@/features/pulse/pulseListsApi';
 import { refreshList } from '@/features/pulse/refreshList';
 import DigestSettings from '@/features/pulse/DigestSettings';
+import BulkEnrichButton from '@/components/lists/BulkEnrichButton';
+import { supabase } from '@/lib/supabase';
 
 export default function PulseLibrary({ onSelect, refreshKey = 0 }) {
   const [expanded, setExpanded] = useState(false);
@@ -524,6 +526,35 @@ function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelect
   const [inboxBusy, setInboxBusy] = useState(false);
   const [autoTriggering, setAutoTriggering] = useState(false);
 
+  // Map<companyId, contactCount> for this list — drives the "Enriched"
+  // pill on each card so the user can see at a glance which companies
+  // already have decision-makers and won't waste Apollo credits.
+  const [enrichedCounts, setEnrichedCounts] = useState(new Map());
+
+  async function loadEnrichedCounts() {
+    if (!list?.id) return;
+    const { data, error } = await supabase
+      .from('pulse_list_contacts')
+      .select('lit_contacts!inner(company_id)')
+      .eq('list_id', list.id);
+    if (error || !Array.isArray(data)) {
+      setEnrichedCounts(new Map());
+      return;
+    }
+    const m = new Map();
+    for (const row of data) {
+      const cid = row.lit_contacts?.company_id;
+      if (!cid) continue;
+      m.set(cid, (m.get(cid) || 0) + 1);
+    }
+    setEnrichedCounts(m);
+  }
+
+  useEffect(() => {
+    if (list?.id) loadEnrichedCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list?.id, listRows.length]);
+
   const isOwner = list?.is_owner ?? true;
   const isShared = Boolean(list?.is_shared);
 
@@ -947,6 +978,14 @@ function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelect
         </div>
       ) : null}
 
+      {/* Bulk decision-maker enrichment — only renders for syncable lists
+          (syncs_to_attio === true). Component self-hides for plain lists. */}
+      {list?.syncs_to_attio ? (
+        <div className="px-4 pt-3">
+          <BulkEnrichButton list={{ ...list, company_count: listRows.length }} />
+        </div>
+      ) : null}
+
       <div className="px-4 py-4">
         {listRowsLoading ? (
           <div className="flex items-center justify-center gap-2 py-4 text-slate-500">
@@ -964,6 +1003,7 @@ function ListDetailView({ list, listRows, listRowsLoading, onCloseList, onSelect
                 key={c.id}
                 company={c}
                 isNew={newIds.has(c.id)}
+                enrichedCount={enrichedCounts.get(c.id) || 0}
                 onClick={() => onSelectCompany?.(c)}
               />
             ))}
@@ -985,9 +1025,10 @@ function formatRelativeAgo(ts) {
 
 /* ─── Sub-components ─── */
 
-function LibraryCard({ company, onClick, isNew }) {
+function LibraryCard({ company, onClick, isNew, enrichedCount = 0 }) {
   const domain = extractDomain(company.domain || company.website);
   const location = [company.city, company.state, company.country].filter(Boolean).join(', ');
+  const hasContacts = enrichedCount > 0;
   return (
     <button
       type="button"
@@ -1033,9 +1074,26 @@ function LibraryCard({ company, onClick, isNew }) {
         <span className="font-display text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
           {company.stage || 'prospect'}
         </span>
-        <span className="font-display text-[10px] font-semibold text-blue-600 group-hover:text-blue-700">
-          Open →
-        </span>
+        <div className="flex items-center gap-1.5">
+          {hasContacts ? (
+            <span
+              title={`${enrichedCount} decision-maker contact${enrichedCount === 1 ? '' : 's'} already enriched — bulk enrich will skip this company`}
+              className="font-display inline-flex items-center gap-0.5 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.05em] text-emerald-700"
+            >
+              ✓ {enrichedCount}
+            </span>
+          ) : (
+            <span
+              title="No contacts enriched yet — will be processed on bulk enrich"
+              className="font-display inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.05em] text-slate-500"
+            >
+              ○ 0
+            </span>
+          )}
+          <span className="font-display text-[10px] font-semibold text-blue-600 group-hover:text-blue-700">
+            Open →
+          </span>
+        </div>
       </div>
     </button>
   );

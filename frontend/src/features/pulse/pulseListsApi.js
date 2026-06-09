@@ -121,32 +121,70 @@ async function fetchOwnerDisplay(userIds) {
 }
 
 /**
- * Batch-fetch list memberships for a set of company IDs.
+ * Batch-fetch list memberships for a set of search-result items.
  *
- * Returns a Map<companyId, string[]> where the value is the list of list
- * names the company belongs to (RLS-filtered to lists the user can see).
- * Used by the Pulse search page to show "Saved" badges on result cards.
+ * Pulse search returns Apollo discoveries with synthetic IDs (e.g.
+ * "apollo:abc123") that never exist in pulse_list_companies until the
+ * company is explicitly saved. Querying by ID alone always returns
+ * empty results for unsaved Apollo rows, so the Saved badge never shows.
  *
- * @param {string[]} companyIds  - lit_companies.id values
- * @returns {Promise<Map<string, string[]>>}
+ * Fix: look up by domain instead. Joins pulse_list_companies →
+ * lit_companies and filters by lit_companies.domain IN (unique domains).
+ * This correctly matches already-saved companies regardless of whether
+ * the search-result ID is synthetic or a real UUID.
+ *
+ * The return Map is still keyed by the original search-result item.id
+ * so ResultCard rendering (savedMemberships.get(c.id)) is unchanged.
+ *
+ * @param {Array<{ id: string, domain: string | null }>} items
+ * @returns {Promise<Map<string, string[]>>}  Map<item.id, listName[]>
  */
-export async function fetchListMembershipsForCompanies(companyIds) {
-  if (!companyIds || companyIds.length === 0) return new Map();
+export async function fetchListMembershipsForCompanies(items) {
+  if (!items || items.length === 0) return new Map();
+
+  // Normalise: accept legacy string[] callers (UUID-only path) for safety,
+  // converting them to the new { id, domain: null } shape.
+  const normalised = items.map((x) =>
+    typeof x === 'string' ? { id: x, domain: null } : x,
+  );
+
+  // Collect unique non-empty domains
+  const domains = Array.from(
+    new Set(normalised.map((x) => x.domain).filter(Boolean)),
+  );
+
+  if (domains.length === 0) return new Map();
+
   try {
+    // Single query: join pulse_list_companies → lit_companies, filter by domain.
+    // The join key is pulse_list_companies.company_id = lit_companies.id.
     const { data, error } = await supabase
       .from('pulse_list_companies')
-      .select('company_id, pulse_lists(name)')
-      .in('company_id', companyIds);
+      .select('company_id, pulse_lists(name), lit_companies!inner(domain)')
+      .in('lit_companies.domain', domains);
+
     if (error || !Array.isArray(data)) return new Map();
-    const map = new Map();
+
+    // Build domain → list names map
+    const domainToListNames = new Map();
     for (const row of data) {
-      const cid = row.company_id;
+      const domain = row.lit_companies?.domain;
       const listName = row.pulse_lists?.name;
-      if (!cid || !listName) continue;
-      if (!map.has(cid)) map.set(cid, []);
-      map.get(cid).push(listName);
+      if (!domain || !listName) continue;
+      if (!domainToListNames.has(domain)) domainToListNames.set(domain, []);
+      domainToListNames.get(domain).push(listName);
     }
-    return map;
+
+    // Map each original item.id → list names via its domain
+    const result = new Map();
+    for (const item of normalised) {
+      if (!item.domain) continue;
+      const listNames = domainToListNames.get(item.domain);
+      if (listNames && listNames.length > 0) {
+        result.set(item.id, listNames);
+      }
+    }
+    return result;
   } catch {
     return new Map();
   }

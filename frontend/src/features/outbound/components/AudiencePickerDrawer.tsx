@@ -20,6 +20,10 @@ import {
   getListCompanies,
   getListContacts,
 } from "@/features/pulse/pulseListsApi";
+import { ConsentAttestationCheckbox } from "./ConsentAttestationCheckbox";
+import { upsertConsents } from "../api/recipientConsent";
+import { useAuth } from "@/auth/AuthProvider";
+import { useEntitlements } from "@/hooks/useEntitlements";
 
 export type ManualRecipient = {
   email: string;
@@ -121,6 +125,12 @@ export function AudiencePickerDrawer({
   const [manualBlob, setManualBlob] = useState<string>("");
   const [manualError, setManualError] = useState<string | null>(null);
   const [enrichedCounts, setEnrichedCounts] = useState<Record<string, number>>({});
+  // Consent attestation gate — user must affirm recipients opted in
+  // before we close the picker and propagate the audience to the
+  // campaign builder. See Sub-project D / Gmail compliance MVP.
+  const [consentAttested, setConsentAttested] = useState(false);
+  const { user } = useAuth();
+  const { entitlements } = useEntitlements();
 
   // Lists tab state — fetched once when the drawer opens. Per-list
   // "applying" flag drives the spinner on the row that's mid-bulk-add.
@@ -142,6 +152,9 @@ export function AudiencePickerDrawer({
     if (!open) return;
     setManualBlob("");
     setManualError(null);
+    // Re-require attestation each time the drawer reopens — the
+    // recipient set may have changed since the last confirmation.
+    setConsentAttested(false);
   }, [open]);
 
   // Pull enriched contact counts for the visible companies in one query
@@ -319,6 +332,37 @@ export function AudiencePickerDrawer({
 
   function handleRemoveManual(email: string) {
     onChangeManualEmails(manualEmails.filter((m) => m.email !== email));
+  }
+
+  // Confirm = close drawer + upsert consent rows for the recipients
+  // the user just attested to. Company-derived contacts aren't walked
+  // at confirm time in this picker (the dispatcher pulls them at send
+  // time from lit_contacts), so this only attests the manual list
+  // here. The dispatcher's server-side consent gate is the actual
+  // security boundary for company-derived emails in this MVP.
+  async function handleConfirm() {
+    if (!consentAttested) return;
+    const orgId =
+      (entitlements as any)?.org_id ?? (entitlements as any)?.orgId;
+    if (orgId && user?.id) {
+      try {
+        const manualEmailStrings: string[] = (manualEmails ?? [])
+          .map((m) => String(m?.email ?? "").trim())
+          .filter(Boolean);
+        if (manualEmailStrings.length > 0) {
+          await upsertConsents({
+            emails: manualEmailStrings,
+            orgId,
+            attestedByUserId: user.id,
+            source: "manual_email_tab",
+          });
+        }
+      } catch (e) {
+        // Non-fatal — dispatcher's server-side gate is the boundary.
+        console.warn("[picker] consent upsert failed:", e);
+      }
+    }
+    onClose();
   }
 
   return (
@@ -637,29 +681,45 @@ export function AudiencePickerDrawer({
           </div>
         )}
 
-        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-100 px-5 py-3">
-          <div className="flex flex-col">
-            <span
-              className="text-[11px] font-semibold text-[#0F172A]"
+        <div className="shrink-0 border-t border-slate-100 px-5 py-3">
+          <div className="mb-2">
+            <ConsentAttestationCheckbox
+              checked={consentAttested}
+              onChange={setConsentAttested}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col">
+              <span
+                className="text-[11px] font-semibold text-[#0F172A]"
+                style={{ fontFamily: fontDisplay }}
+              >
+                {totalEmailable} email{totalEmailable === 1 ? "" : "s"} will be queued
+              </span>
+              <span
+                className="text-[10px] text-slate-500"
+                style={{ fontFamily: fontBody }}
+              >
+                {enrichedSelectedCount} from {selectedCount} companies · {totalManual} manual
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={!consentAttested || totalEmailable === 0}
+              title={
+                !consentAttested
+                  ? "Check the consent box to confirm these recipients opted in."
+                  : totalEmailable === 0
+                    ? "Select at least one recipient."
+                    : "Add selected recipients to the campaign."
+              }
+              className="rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-4 py-1.5 text-xs font-semibold text-white shadow-[0_1px_4px_rgba(59,130,246,0.3)] disabled:cursor-not-allowed disabled:opacity-50"
               style={{ fontFamily: fontDisplay }}
             >
-              {totalEmailable} email{totalEmailable === 1 ? "" : "s"} will be queued
-            </span>
-            <span
-              className="text-[10px] text-slate-500"
-              style={{ fontFamily: fontBody }}
-            >
-              {enrichedSelectedCount} from {selectedCount} companies · {totalManual} manual
-            </span>
+              Confirm
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-4 py-1.5 text-xs font-semibold text-white shadow-[0_1px_4px_rgba(59,130,246,0.3)]"
-            style={{ fontFamily: fontDisplay }}
-          >
-            Done
-          </button>
         </div>
       </div>
     </>

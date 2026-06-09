@@ -311,16 +311,43 @@ export async function saveContactToSupabase(payload: {
   }
 }
 
-export async function getCampaignsFromSupabase() {
+export interface GetCampaignsOptions {
+  /** Caller's primary org_id (from entitlements snapshot). */
+  orgId?: string | null;
+  /** 'org' = scope to caller's org (default). 'all' = no filter (platform admin opt-in). */
+  adminScope?: 'org' | 'all';
+}
+
+/**
+ * Fetch campaigns from `lit_campaigns` with org scoping.
+ *
+ * Sub-project A campaign org-scoping: the new RLS requires `org_id` to match
+ * the caller's `org_members` row. To avoid a confusing empty grid for users
+ * with an org, the client also passes `.eq('org_id', orgId)` so PostgREST
+ * doesn't even fetch other-org rows.
+ *
+ * Safety: scope='org' with no orgId returns [] rather than fire an unscoped
+ * query that the new RLS would block anyway — fails loud (empty) instead of
+ * leaking a 200 with zero rows after a slow RLS evaluation.
+ */
+export async function getCampaignsFromSupabase(opts: GetCampaignsOptions = {}) {
   try {
     if (supabaseError) {
       return [];
     }
+    const { orgId = null, adminScope = 'org' } = opts;
 
-    const { data, error } = await supabase
-      .from('lit_campaigns')
-      .select('*')
-      .order('created_at', { ascending: false });
+    // Safety: scope='org' without orgId is not a valid query — return
+    // empty instead of leaking via an unscoped fetch.
+    if (adminScope === 'org' && !orgId) {
+      return [];
+    }
+
+    let q = supabase.from('lit_campaigns').select('*');
+    if (adminScope === 'org' && orgId) {
+      q = q.eq('org_id', orgId);
+    }
+    const { data, error } = await q.order('created_at', { ascending: false });
 
     if (error) {
       console.warn('[Supabase] Error fetching campaigns:', error);

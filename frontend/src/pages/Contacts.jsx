@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -8,10 +8,12 @@ import {
   Mail,
   MapPin,
   Phone,
+  Plus,
   Search,
   Send,
   Sparkles,
   UserPlus,
+  X,
 } from "lucide-react";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
 import { useAuth } from "@/auth/AuthProvider";
@@ -20,6 +22,8 @@ import LitKpiStrip from "@/components/ui/LitKpiStrip";
 import LitPill from "@/components/ui/LitPill";
 import LitEmptyState from "@/components/ui/LitEmptyState";
 import { LitSkeletonRow } from "@/components/ui/LitSkeleton";
+import { removeContactFromList } from "@/features/pulse/pulseListsApi";
+import AddToListPicker from "@/features/pulse/AddToListPicker";
 
 /**
  * Workspace Contacts page — every saved-account contact in one clean
@@ -40,6 +44,16 @@ export default function ContactsPage() {
   const [query, setQuery] = useState("");
   const [companyFilter, setCompanyFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  // Geo + industry + list filters — populated from data, not preset.
+  const [industryFilter, setIndustryFilter] = useState("all");
+  const [cityFilter, setCityFilter] = useState("all");
+  const [stateFilter_, setStateFilter_] = useState("all");
+  const [listFilter, setListFilter] = useState("all");
+  // List membership map<contactId, [{id, name, syncs_to_attio}]>.
+  // Populated alongside contact fetch; mutated on add/remove.
+  const [memberships, setMemberships] = useState(new Map());
+  // Per-row "Add to list" picker target { contactId, companyId, contactName }.
+  const [pickerTarget, setPickerTarget] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,12 +94,12 @@ export default function ContactsPage() {
         const [companyRes, contactRes] = await Promise.all([
           supabase
             .from("lit_companies")
-            .select("id, name, source_company_key, domain")
+            .select("id, name, source_company_key, domain, industry, city, state, country_code")
             .in("id", companyIds),
           supabase
             .from("lit_contacts")
             .select(
-              "id, company_id, full_name, first_name, last_name, title, department, seniority, email, phone, linkedin_url, source, verified_by_provider, email_verified, email_verification_status, updated_at, created_at",
+              "id, company_id, full_name, first_name, last_name, title, department, seniority, email, phone, linkedin_url, source, verified_by_provider, email_verified, email_verification_status, city, state, country_code, updated_at, created_at",
             )
             .in("company_id", companyIds)
             .order("updated_at", { ascending: false })
@@ -116,6 +130,32 @@ export default function ContactsPage() {
         }));
         setRows(enriched);
         setCompanies(Array.from(companyMap.values()));
+
+        // Fetch pulse_list memberships for these contacts. RLS-scoped to
+        // the caller, so other workspaces' lists never leak in. We use
+        // the relationship-embed syntax — if the FK isn't named, PostgREST
+        // still resolves via list_id → pulse_lists.id.
+        const contactIds = enriched.map((c) => c.id).filter(Boolean);
+        if (contactIds.length > 0) {
+          const { data: memRows, error: memErr } = await supabase
+            .from("pulse_list_contacts")
+            .select("contact_id, list_id, pulse_lists(id, name, syncs_to_attio)")
+            .in("contact_id", contactIds);
+          if (memErr) {
+            console.error("[contacts page] memberships query failed:", memErr);
+          }
+          if (!cancelled) {
+            const m = new Map();
+            for (const row of memRows || []) {
+              const list = row.pulse_lists;
+              if (!list?.id) continue;
+              const arr = m.get(row.contact_id) || [];
+              arr.push({ id: list.id, name: list.name, syncs_to_attio: !!list.syncs_to_attio });
+              m.set(row.contact_id, arr);
+            }
+            setMemberships(m);
+          }
+        }
       } catch (err) {
         console.error("contacts page load error:", err);
         if (!cancelled) setRows([]);
@@ -128,6 +168,35 @@ export default function ContactsPage() {
     };
   }, [user?.id]);
 
+  // Distinct facet values used to populate the new filter dropdowns.
+  // Industry comes off the contact's parent company. City/State come off
+  // the contact row first (Apollo enrichment populates them), falling back
+  // to the company row if the contact is missing geo.
+  const facets = useMemo(() => {
+    const industries = new Set();
+    const cities = new Set();
+    const states = new Set();
+    const lists = new Map();
+    for (const c of rows) {
+      const ind = c.company?.industry;
+      if (ind) industries.add(String(ind).trim());
+      const city = c.city || c.company?.city;
+      if (city) cities.add(String(city).trim());
+      const st = c.state || c.company?.state;
+      if (st) states.add(String(st).trim());
+      const ms = memberships.get(c.id) || [];
+      for (const m of ms) lists.set(m.id, m.name);
+    }
+    return {
+      industries: Array.from(industries).sort((a, b) => a.localeCompare(b)),
+      cities: Array.from(cities).sort((a, b) => a.localeCompare(b)),
+      states: Array.from(states).sort((a, b) => a.localeCompare(b)),
+      lists: Array.from(lists.entries())
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  }, [rows, memberships]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((c) => {
@@ -137,12 +206,17 @@ export default function ContactsPage() {
         ["verified", "valid", "deliverable"].includes(
           String(c.email_verification_status || "").toLowerCase(),
         );
-      if (companyFilter !== "all" && c.company_id !== companyFilter) {
-        return false;
-      }
+      if (companyFilter !== "all" && c.company_id !== companyFilter) return false;
       if (statusFilter === "verified" && !verified) return false;
       if (statusFilter === "with_email" && !c.email) return false;
       if (statusFilter === "with_phone" && !c.phone) return false;
+      if (industryFilter !== "all" && c.company?.industry !== industryFilter) return false;
+      if (cityFilter !== "all" && (c.city || c.company?.city) !== cityFilter) return false;
+      if (stateFilter_ !== "all" && (c.state || c.company?.state) !== stateFilter_) return false;
+      if (listFilter !== "all") {
+        const ms = memberships.get(c.id) || [];
+        if (!ms.some((m) => m.id === listFilter)) return false;
+      }
       if (!q) return true;
       const name = String(c.full_name || c.name || "").toLowerCase();
       const title = String(c.title || "").toLowerCase();
@@ -155,7 +229,58 @@ export default function ContactsPage() {
         company.includes(q)
       );
     });
-  }, [rows, query, companyFilter, statusFilter]);
+  }, [rows, query, companyFilter, statusFilter, industryFilter, cityFilter, stateFilter_, listFilter, memberships]);
+
+  // Mutation handlers — keep local memberships state in sync so the UI
+  // updates without a refetch. The DB writes happen optimistically; on
+  // failure we revert and surface a console error (toast layer is per-page).
+  const handleRemoveFromList = useCallback(async (contactId, listId) => {
+    setMemberships((prev) => {
+      const next = new Map(prev);
+      const arr = (next.get(contactId) || []).filter((m) => m.id !== listId);
+      if (arr.length) next.set(contactId, arr);
+      else next.delete(contactId);
+      return next;
+    });
+    const res = await removeContactFromList(listId, contactId);
+    if (!res.ok) {
+      console.error("[contacts page] removeContactFromList failed:", res);
+      // Refetch memberships from DB to recover from drift.
+      const { data: memRows } = await supabase
+        .from("pulse_list_contacts")
+        .select("contact_id, list_id, pulse_lists(id, name, syncs_to_attio)")
+        .eq("contact_id", contactId);
+      const arr = (memRows || [])
+        .map((row) => row.pulse_lists)
+        .filter(Boolean)
+        .map((l) => ({ id: l.id, name: l.name, syncs_to_attio: !!l.syncs_to_attio }));
+      setMemberships((prev) => {
+        const next = new Map(prev);
+        if (arr.length) next.set(contactId, arr);
+        else next.delete(contactId);
+        return next;
+      });
+    }
+  }, []);
+
+  // Called by AddToListPicker after a successful add — pull the membership
+  // for this contact again and merge it in.
+  const handleListAdded = useCallback(async (contactId) => {
+    const { data: memRows } = await supabase
+      .from("pulse_list_contacts")
+      .select("contact_id, list_id, pulse_lists(id, name, syncs_to_attio)")
+      .eq("contact_id", contactId);
+    const arr = (memRows || [])
+      .map((row) => row.pulse_lists)
+      .filter(Boolean)
+      .map((l) => ({ id: l.id, name: l.name, syncs_to_attio: !!l.syncs_to_attio }));
+    setMemberships((prev) => {
+      const next = new Map(prev);
+      if (arr.length) next.set(contactId, arr);
+      else next.delete(contactId);
+      return next;
+    });
+  }, []);
 
   const verifiedCount = useMemo(
     () =>
@@ -272,6 +397,58 @@ export default function ContactsPage() {
                     </option>
                   ))}
               </select>
+              <select
+                value={industryFilter}
+                onChange={(e) => setIndustryFilter(e.target.value)}
+                disabled={facets.industries.length === 0}
+                className="font-body rounded-md border-[1.5px] border-slate-200 bg-white px-2.5 py-1.5 text-[11.5px] text-slate-900 disabled:opacity-40"
+              >
+                <option value="all">All industries</option>
+                {facets.industries.map((ind) => (
+                  <option key={ind} value={ind}>
+                    {ind}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={listFilter}
+                onChange={(e) => setListFilter(e.target.value)}
+                disabled={facets.lists.length === 0}
+                className="font-body rounded-md border-[1.5px] border-slate-200 bg-white px-2.5 py-1.5 text-[11.5px] text-slate-900 disabled:opacity-40"
+              >
+                <option value="all">All lists</option>
+                {facets.lists.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={stateFilter_}
+                onChange={(e) => setStateFilter_(e.target.value)}
+                disabled={facets.states.length === 0}
+                className="font-body rounded-md border-[1.5px] border-slate-200 bg-white px-2.5 py-1.5 text-[11.5px] text-slate-900 disabled:opacity-40"
+              >
+                <option value="all">All states</option>
+                {facets.states.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={cityFilter}
+                onChange={(e) => setCityFilter(e.target.value)}
+                disabled={facets.cities.length === 0}
+                className="font-body rounded-md border-[1.5px] border-slate-200 bg-white px-2.5 py-1.5 text-[11.5px] text-slate-900 disabled:opacity-40"
+              >
+                <option value="all">All cities</option>
+                {facets.cities.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
               <div className="flex flex-wrap gap-1">
                 {[
                   { id: "all", label: "All" },
@@ -331,6 +508,10 @@ export default function ContactsPage() {
                       setQuery("");
                       setCompanyFilter("all");
                       setStatusFilter("all");
+                      setIndustryFilter("all");
+                      setCityFilter("all");
+                      setStateFilter_("all");
+                      setListFilter("all");
                     },
                   }}
                 />
@@ -344,6 +525,8 @@ export default function ContactsPage() {
                         "Contact",
                         "Title",
                         "Company",
+                        "Industry",
+                        "Lists",
                         "Email",
                         "Phone",
                         "Source",
@@ -363,6 +546,15 @@ export default function ContactsPage() {
                       <ContactRow
                         key={c.id}
                         contact={c}
+                        memberships={memberships.get(c.id) || []}
+                        onRemoveFromList={(listId) => handleRemoveFromList(c.id, listId)}
+                        onAddToList={() =>
+                          setPickerTarget({
+                            contactId: c.id,
+                            companyId: c.company_id || null,
+                            contactName: c.full_name || c.first_name || "Contact",
+                          })
+                        }
                         onOpenCompany={() => {
                           const slug =
                             c.company?.source_company_key || c.company?.id;
@@ -381,6 +573,21 @@ export default function ContactsPage() {
           </div>
         </div>
       </div>
+
+      {/* Per-row Add-to-list picker. Mounted once at page level so
+          the modal can render on top of the table. Closing it clears
+          the target. Successful add triggers a membership refetch for
+          the affected contact via handleListAdded. */}
+      <AddToListPicker
+        open={Boolean(pickerTarget)}
+        onClose={() => setPickerTarget(null)}
+        contactId={pickerTarget?.contactId || null}
+        contactName={pickerTarget?.contactName || ""}
+        companyId={pickerTarget?.companyId || null}
+        onSaved={() => {
+          if (pickerTarget?.contactId) handleListAdded(pickerTarget.contactId);
+        }}
+      />
     </AppLayout>
   );
 }
@@ -395,7 +602,7 @@ const PALETTE = [
   "#14B8A6",
 ];
 
-function ContactRow({ contact, onOpenCompany }) {
+function ContactRow({ contact, memberships = [], onOpenCompany, onRemoveFromList, onAddToList }) {
   const name =
     contact.full_name ||
     [contact.first_name, contact.last_name].filter(Boolean).join(" ").trim() ||
@@ -453,6 +660,57 @@ function ContactRow({ contact, onOpenCompany }) {
         >
           {contact.company?.name || "—"}
         </button>
+      </td>
+      <td className="font-body px-3.5 py-2.5 text-[11px] text-slate-600">
+        {contact.company?.industry ? (
+          <span className="inline-block max-w-[160px] truncate" title={contact.company.industry}>
+            {contact.company.industry}
+          </span>
+        ) : (
+          <span className="text-slate-300">—</span>
+        )}
+      </td>
+      <td className="px-3.5 py-2.5">
+        <div className="flex flex-wrap items-center gap-1 max-w-[260px]">
+          {memberships.length === 0 ? (
+            <span className="font-body text-[10.5px] text-slate-400">No lists</span>
+          ) : (
+            memberships.map((m) => (
+              <span
+                key={m.id}
+                className={[
+                  "font-display group inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                  m.syncs_to_attio
+                    ? "border-cyan-200 bg-cyan-50 text-cyan-800"
+                    : "border-blue-200 bg-blue-50 text-blue-700",
+                ].join(" ")}
+                title={m.syncs_to_attio ? `${m.name} — syncs to Attio` : m.name}
+              >
+                <span className="max-w-[120px] truncate">{m.name}</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemoveFromList?.(m.id);
+                  }}
+                  title={`Remove from ${m.name}`}
+                  className="ml-0.5 flex h-3 w-3 shrink-0 items-center justify-center rounded-full opacity-60 transition hover:bg-slate-900/10 hover:opacity-100"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </span>
+            ))
+          )}
+          <button
+            type="button"
+            onClick={onAddToList}
+            title="Add to list"
+            className="font-display inline-flex h-5 items-center gap-0.5 rounded-full border border-dashed border-slate-300 px-1.5 text-[10px] font-semibold text-slate-500 hover:border-blue-300 hover:text-blue-700"
+          >
+            <Plus className="h-2.5 w-2.5" />
+            Add
+          </button>
+        </div>
       </td>
       <td className="font-mono px-3.5 py-2.5 text-[10px] text-slate-600">
         {contact.email || <span className="text-slate-300">—</span>}

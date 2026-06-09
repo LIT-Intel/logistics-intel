@@ -10,6 +10,7 @@ const config: Config = {
   content: [
     "./app/**/*.{ts,tsx,mdx}",
     "./components/**/*.{ts,tsx,mdx}",
+    "./lib/**/*.{ts,tsx}",
     "./sanity/**/*.{ts,tsx}",
   ],
   theme: {

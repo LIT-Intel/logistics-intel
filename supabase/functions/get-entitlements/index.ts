@@ -89,5 +89,18 @@ serve(async (req) => {
     return json({ ok: false, error: error.message }, 500);
   }
 
-  return json({ ok: true, entitlements: data, org_id: orgId, user_id: user.id });
+  const { data: paRow } = await adminClient
+    .from("platform_admins")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const isPlatformAdmin = paRow !== null;
+
+  return json({
+    ok: true,
+    entitlements: data,
+    org_id: orgId,
+    user_id: user.id,
+    is_platform_admin: isPlatformAdmin,
+  });
 });

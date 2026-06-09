@@ -30,6 +30,8 @@ type EventType =
   | "trial_tip_contact_enrichment"
   | "trial_tip_revenue_opportunity"
   | "trial_ending_soon"
+  | "trial_book_demo"
+  | "trial_check_in_inactive"
   | "paid_plan_welcome"
   | "upgrade_confirmation"
   | "payment_failed"
@@ -38,9 +40,21 @@ type EventType =
 const VALID_EVENT_TYPES: EventType[] = [
   "trial_welcome", "trial_day_2_activation", "trial_day_3_founder_note",
   "trial_tip_pulse_ai", "trial_tip_contact_enrichment", "trial_tip_revenue_opportunity",
-  "trial_ending_soon", "paid_plan_welcome", "upgrade_confirmation",
+  "trial_ending_soon", "trial_book_demo", "trial_check_in_inactive",
+  "paid_plan_welcome", "upgrade_confirmation",
   "payment_failed", "cancellation_confirmation",
 ];
+
+// Sales sender for human-touch events (book demo, inactivity check-in).
+// Reply-to → sales@ so replies route to the actual sales inbox not hello@.
+// The from/replyTo defaults are also overrideable via env if you want to
+// route through Valesco's personal inbox instead.
+const SALES_FROM = Deno.env.get("LIT_SALES_FROM") ?? "Valesco at Logistic Intel <sales@logisticintel.com>";
+const SALES_REPLY_TO = Deno.env.get("LIT_SALES_REPLY_TO") ?? "sales@logisticintel.com";
+
+// Cal.com booking links provided by user (verified in Cal.com 2026-06-08)
+const CAL_15MIN = "https://cal.com/logisticintel/15min";
+const CAL_30MIN = "https://cal.com/logisticintel/30min";
 
 interface SendPayload {
   user_id?: string; org_id?: string; subscription_id?: string;
@@ -202,7 +216,7 @@ function buildLayout(opts: LayoutContext): { html: string; text: string } {
   return { html, text };
 }
 
-function buildEmail(eventType: EventType, payload: SendPayload, appUrl: string, unsubscribeUrl: string): { subject: string; html: string; text: string } {
+function buildEmail(eventType: EventType, payload: SendPayload, appUrl: string, unsubscribeUrl: string): { subject: string; html: string; text: string; fromOverride?: string; replyToOverride?: string } {
   const planSlug = normalizePlanSlug(payload.plan_slug);
   const plan = PLAN_EMAIL_COPY[planSlug];
   const name = payload.first_name?.trim() || "there";
@@ -301,6 +315,25 @@ function buildEmail(eventType: EventType, payload: SendPayload, appUrl: string, 
       const { html, text } = buildLayout({ previewText: "Action needed to keep your LIT workspace active.", headline: "Your payment didn't go through.", subtitle: "Update your card to keep your workspace active.", bodyHtml, bodyText, ctaText: "Update payment method", ctaUrl: `${appUrl}/settings/billing`, unsubscribeUrl });
       return { subject: "Heads up — your LIT payment didn't go through", html, text };
     }
+    case "trial_book_demo": {
+      // Day-5 demo invite. Sent from sales@ (warmer, personal sender,
+      // higher reply rate than the global "Gabriel from LIT" sender).
+      // Two CTAs: 15-min walkthrough (primary), 30-min deep dive (secondary).
+      const bodyHtml = `<p style="margin:0 0 18px 0;text-align:left;">Hi ${esc(name)},</p><p style="margin:0 0 18px 0;text-align:left;">You've been exploring LIT for a few days. The fastest way to see what it can do for <strong>your</strong> specific accounts is a 15-minute walkthrough — I'll pull up the shippers you've already searched and show you the patterns most people miss on their own.</p><p style="margin:0 0 18px 0;text-align:left;">No slides, no pitch. Just your accounts and the parts of LIT that actually move the needle for them.</p>${proTipHtml(`Bring 2-3 target shipper names. We'll walk through their full freight footprint, revenue opportunity, and decision-maker map together — and you'll leave with a ready-to-call list.`)}<p style="margin:24px 0 18px 0;text-align:left;">Pick a time that works:</p><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:0 0 8px 0;width:auto;"><tr><td style="padding:6px 0;font-family:${FONT_BODY};font-size:15px;line-height:1.55;color:${COLOR.text};">→ <a href="${CAL_15MIN}" style="color:${COLOR.brandBlue};font-weight:600;text-decoration:none;">15-minute walkthrough</a> &nbsp;(recommended)</td></tr><tr><td style="padding:6px 0;font-family:${FONT_BODY};font-size:15px;line-height:1.55;color:${COLOR.text};">→ <a href="${CAL_30MIN}" style="color:${COLOR.brandBlue};font-weight:600;text-decoration:none;">30-minute deep dive</a> &nbsp;(if you want to whiteboard a campaign)</td></tr></table><p style="margin:18px 0 0 0;font-style:italic;color:${COLOR.textSubtle};font-size:14px;text-align:left;">— Valesco<br/>Logistic Intel</p>`;
+      const bodyText = `Hi ${name},\n\nYou've been exploring LIT for a few days. The fastest way to see what it can do for YOUR specific accounts is a 15-minute walkthrough — I'll pull up the shippers you've already searched and show you the patterns most people miss on their own.\n\nNo slides, no pitch. Just your accounts and the parts of LIT that actually move the needle for them.\n\nPRO TIP: Bring 2-3 target shipper names. We'll walk through their full freight footprint, revenue opportunity, and decision-maker map together — and you'll leave with a ready-to-call list.\n\nPick a time that works:\n→ 15-minute walkthrough (recommended): ${CAL_15MIN}\n→ 30-minute deep dive (whiteboard a campaign): ${CAL_30MIN}\n\n— Valesco\nLogistic Intel`;
+      const { html, text } = buildLayout({ previewText: "15-minute walkthrough of YOUR accounts.", headline: "Want me to walk you through it?", subtitle: "15 minutes, your accounts, no slides.", bodyHtml, bodyText, ctaText: "Book 15 minutes", ctaUrl: CAL_15MIN, unsubscribeUrl, showHeroBanner: false });
+      return { subject: "Quick 15-min walkthrough of LIT?", html, text, fromOverride: SALES_FROM, replyToOverride: SALES_REPLY_TO };
+    }
+    case "trial_check_in_inactive": {
+      // Inactivity check-in. Fires after 3 days of zero activity on a
+      // live trial. Same warm sales@ sender — replies route to sales inbox.
+      // The CTA is the 15-min Cal.com link plus an explicit "or just reply"
+      // affordance, because some people prefer async over a meeting.
+      const bodyHtml = `<p style="margin:0 0 18px 0;text-align:left;">Hi ${esc(name)},</p><p style="margin:0 0 18px 0;text-align:left;">Noticed you haven't been back to LIT in a couple of days. Want to make sure you didn't run into something blocking you — most people get stuck on one of three things:</p><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:0 0 24px 0;width:auto;"><tr><td valign="top" style="padding:6px 14px 6px 0;font-family:${FONT_BODY};font-size:15px;font-weight:700;color:${COLOR.brandBlue};width:24px;">1.</td><td valign="top" style="padding:6px 0;font-family:${FONT_BODY};font-size:15px;line-height:1.55;color:${COLOR.text};">Not sure which company to search first.</td></tr><tr><td valign="top" style="padding:6px 14px 6px 0;font-family:${FONT_BODY};font-size:15px;font-weight:700;color:${COLOR.brandBlue};width:24px;">2.</td><td valign="top" style="padding:6px 0;font-family:${FONT_BODY};font-size:15px;line-height:1.55;color:${COLOR.text};">The interface isn't clicking yet.</td></tr><tr><td valign="top" style="padding:6px 14px 6px 0;font-family:${FONT_BODY};font-size:15px;font-weight:700;color:${COLOR.brandBlue};width:24px;">3.</td><td valign="top" style="padding:6px 0;font-family:${FONT_BODY};font-size:15px;line-height:1.55;color:${COLOR.text};">Wondering whether LIT actually fits your specific lanes / mode / customer mix.</td></tr></table><p style="margin:0 0 18px 0;text-align:left;">Whatever it is, 15 minutes with me would unblock it. I'll screen-share, you bring your real target accounts, and we'll see if LIT is the right fit together.</p><p style="margin:0 0 18px 0;text-align:left;"><a href="${CAL_15MIN}" style="color:${COLOR.brandBlue};font-weight:600;text-decoration:none;">→ Grab 15 minutes on my calendar</a></p><p style="margin:0 0 0 0;text-align:left;">Or just reply to this email with what's blocking you — I read every reply personally.</p><p style="margin:18px 0 0 0;font-style:italic;color:${COLOR.textSubtle};font-size:14px;text-align:left;">— Valesco<br/>Logistic Intel</p>`;
+      const bodyText = `Hi ${name},\n\nNoticed you haven't been back to LIT in a couple of days. Want to make sure you didn't run into something blocking you — most people get stuck on one of three things:\n\n1. Not sure which company to search first.\n2. The interface isn't clicking yet.\n3. Wondering whether LIT actually fits your specific lanes / mode / customer mix.\n\nWhatever it is, 15 minutes with me would unblock it. I'll screen-share, you bring your real target accounts, and we'll see if LIT is the right fit together.\n\n→ Grab 15 minutes on my calendar: ${CAL_15MIN}\n\nOr just reply to this email with what's blocking you — I read every reply personally.\n\n— Valesco\nLogistic Intel`;
+      const { html, text } = buildLayout({ previewText: "What's blocking you in LIT?", headline: "Stuck somewhere?", subtitle: "Let's unblock it in 15 minutes.", bodyHtml, bodyText, ctaText: "Book 15 minutes", ctaUrl: CAL_15MIN, unsubscribeUrl, showHeroBanner: false });
+      return { subject: "Stuck somewhere in LIT?", html, text, fromOverride: SALES_FROM, replyToOverride: SALES_REPLY_TO };
+    }
     case "cancellation_confirmation": {
       const planDisplay = payload.plan_name || plan.name;
       const periodEnd = payload.period_end || "the end of your billing period";
@@ -351,17 +384,22 @@ serve(async (req: Request) => {
   }
   const emailToken = btoa(recipient_email.toLowerCase()).replace(/=/g, "");
   const unsubscribeUrl = `${siteUrl}/unsubscribe?email=${encodeURIComponent(recipient_email.toLowerCase())}&token=${emailToken}`;
-  let emailResult: { subject: string; html: string; text: string };
+  let emailResult: { subject: string; html: string; text: string; fromOverride?: string; replyToOverride?: string };
   try { emailResult = buildEmail(event_type, { ...body, plan_slug: planSlug }, appUrl, unsubscribeUrl); } catch (err) { return new Response(JSON.stringify({ ok: false, error: `Template build failed: ${err instanceof Error ? err.message : String(err)}` }), { status: 500, headers: { "Content-Type": "application/json" } }); }
   const { subject, html, text } = emailResult;
-  const listUnsubscribeHeader = `<${unsubscribeUrl}>, <mailto:${replyTo}?subject=Unsubscribe>`;
+  // Per-event sender override: trial_book_demo + trial_check_in_inactive
+  // come from sales@ (warmer, personal, higher reply rate). All other
+  // events fall through to the global LIT_EMAIL_FROM.
+  const effectiveFrom = emailResult.fromOverride ?? fromEmail;
+  const effectiveReplyTo = emailResult.replyToOverride ?? replyTo;
+  const listUnsubscribeHeader = `<${unsubscribeUrl}>, <mailto:${effectiveReplyTo}?subject=Unsubscribe>`;
   let resendEmailId: string | null = null;
   let sendStatus: "sent" | "failed" = "failed";
   let errorMessage: string | null = null;
   if (!resendKey) { errorMessage = "LIT_RESEND_API_KEY not configured"; }
   else {
     try {
-      const resp = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: fromEmail, to: [recipient_email], reply_to: replyTo, subject, html, text, headers: { "List-Unsubscribe": listUnsubscribeHeader, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" }, tags: [{ name: "event_type", value: event_type }, { name: "plan_slug", value: planSlug }] }) });
+      const resp = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: effectiveFrom, to: [recipient_email], reply_to: effectiveReplyTo, subject, html, text, headers: { "List-Unsubscribe": listUnsubscribeHeader, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" }, tags: [{ name: "event_type", value: event_type }, { name: "plan_slug", value: planSlug }] }) });
       const respJson: any = await resp.json().catch(() => ({}));
       if (resp.ok) { resendEmailId = (respJson?.id as string | null) ?? null; sendStatus = "sent"; }
       else { errorMessage = String(respJson?.message || respJson?.name || respJson?.error || resp.status).slice(0, 500); }

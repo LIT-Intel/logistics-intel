@@ -25,7 +25,9 @@ import { useUserSignature } from "@/features/outbound/hooks/useUserSignature";
 import { useTemplates, usePersonas } from "@/features/outbound/hooks/useTemplates";
 import { useCampaign } from "@/features/outbound/hooks/useCampaign";
 
-import { ForecastStrip } from "@/features/outbound/components/ForecastStrip";
+import { CampaignKpiHero } from "@/features/outbound/components/CampaignKpiHero";
+import { LaunchButton } from "@/features/outbound/components/LaunchButton";
+import { fetchCampaignMetricsBatch } from "@/features/outbound/api/campaignMetrics";
 import { ScheduleStrip } from "@/features/outbound/components/ScheduleStrip";
 import { PersonaPanel } from "@/features/outbound/components/PersonaPanel";
 import { TimelineCanvas } from "@/features/outbound/components/TimelineCanvas";
@@ -35,6 +37,7 @@ import { AudiencePickerDrawer } from "@/features/outbound/components/AudiencePic
 import { PreviewModal } from "@/features/outbound/components/PreviewModal";
 import { CreateTemplateModal } from "@/features/outbound/components/CreateTemplateModal";
 import { CreatePersonaModal } from "@/features/outbound/components/CreatePersonaModal";
+import { SenderGuidelinesNote } from "@/features/outbound/components/SenderGuidelinesNote";
 import { findPlay } from "@/features/outbound/data/plays";
 import {
   applyLitMarketingSequenceToBuilder,
@@ -345,9 +348,81 @@ export default function CampaignBuilder() {
   const [saving, setSaving] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [testSending, setTestSending] = useState(false);
+  const [hasTestSendOccurred, setHasTestSendOccurred] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [toast, setToast] = useState(null);
+
+  const [campaignFunnel, setCampaignFunnel] = useState(null);
+  const [campaignSparkData, setCampaignSparkData] = useState([]);
+
+  // Fetch funnel metrics for the current campaign. Re-runs when editId
+  // changes (e.g. after first save). For unsaved drafts (editId === null),
+  // effect early-returns; KpiHero renders the draft state with estimates.
+  useEffect(() => {
+    if (!editId) {
+      setCampaignFunnel(null);
+      return;
+    }
+    fetchCampaignMetricsBatch([editId])
+      .then((m) => setCampaignFunnel(m.get(editId) ?? null))
+      .catch(() => setCampaignFunnel(null));
+  }, [editId]);
+
+  // Rehydrate hasTestSendOccurred from DB on mount. Without this the
+  // per-session local state resets on every page reload and the
+  // pre-launch "you haven't tested yet" nudge re-appears even when the
+  // user already test-sent this campaign earlier. Pairs with Task 3
+  // (send-test-email now writes campaign_id on test_sent rows).
+  useEffect(() => {
+    if (!editId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { supabase } = await import("@/lib/supabase");
+        const { count } = await supabase
+          .from("lit_outreach_history")
+          .select("id", { count: "exact", head: true })
+          .eq("campaign_id", editId)
+          .eq("event_type", "test_sent");
+        if (!cancelled && (count ?? 0) > 0) setHasTestSendOccurred(true);
+      } catch {
+        // Non-fatal — nudge defaults to visible (safer UX).
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editId]);
+
+  // Sparkline data: daily sent counts over last 14 days. Inline query
+  // because it's small and used only here. Empty array for drafts.
+  useEffect(() => {
+    if (!editId) {
+      setCampaignSparkData([]);
+      return;
+    }
+    (async () => {
+      try {
+        const { supabase } = await import("@/lib/supabase");
+        const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+        const { data } = await supabase
+          .from("lit_outreach_history")
+          .select("created_at")
+          .eq("campaign_id", editId)
+          .eq("event_type", "sent")
+          .gte("created_at", since)
+          .order("created_at", { ascending: true });
+        if (!data) { setCampaignSparkData([]); return; }
+        const byDay = new Map();
+        for (const row of data) {
+          const day = row.created_at.slice(0, 10);
+          byDay.set(day, (byDay.get(day) ?? 0) + 1);
+        }
+        setCampaignSparkData(Array.from(byDay.values()));
+      } catch {
+        setCampaignSparkData([]);
+      }
+    })();
+  }, [editId]);
 
   // When edit-mode details land, hydrate state.
   useEffect(() => {
@@ -745,8 +820,9 @@ export default function CampaignBuilder() {
     setError(null);
     try {
       const includeSig = (selectedStep && selectedStep.kind === "email" ? selectedStep : emailStep)?.includeSignature !== false;
-      const res = await sendTestEmail(toEmail, subject, body, includeSig);
+      const res = await sendTestEmail(toEmail, subject, body, includeSig, editId);
       if ("ok" in res && res.ok) {
+        setHasTestSendOccurred(true);
         setToast({ message: `Test sent to ${toEmail}`, tone: "success" });
         window.setTimeout(() => setToast(null), 2500);
       } else if ("setupRequired" in res) {
@@ -865,7 +941,7 @@ export default function CampaignBuilder() {
   }, [selectedStep]);
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-72px)] min-h-[640px] w-full max-w-[1500px] flex-col overflow-hidden bg-[#F8FAFC]">
+    <div className="mx-auto flex h-[calc(100vh-112px)] min-h-[640px] min-h-0 w-full max-w-[1500px] flex-col overflow-hidden bg-[#F8FAFC]">
       {/* Top bar */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 lg:flex-nowrap">
         <button
@@ -985,7 +1061,7 @@ export default function CampaignBuilder() {
                 ? "Connect a Gmail or Outlook mailbox in Settings first."
                 : "Send the currently-selected email step to your inbox with sample variables."
             }
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+            className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-white disabled:text-slate-400"
             style={{ fontFamily: fontDisplay }}
           >
             <FlaskConical className="h-2.5 w-2.5" />
@@ -1002,31 +1078,32 @@ export default function CampaignBuilder() {
             <Save className="h-2.5 w-2.5" />
             {saving ? "Saving…" : isEditMode ? "Save changes" : "Save draft"}
           </button>
-          <button
-            type="button"
-            onClick={handleLaunch}
-            disabled={!canLaunch || launching}
-            title={
-              canLaunch
-                ? "Queue recipients and start sending."
-                : !editId
-                  ? "Save the campaign first."
-                  : !primaryEmail
-                    ? "Connect a Gmail or Outlook mailbox in Settings first."
-                    : !hasRecipients
-                      ? "Add at least one recipient — pick a company with enriched contacts, or type emails into the Manual tab."
-                      : "Add at least one filled step first."
+          <LaunchButton
+            onLaunch={handleLaunch}
+            canLaunch={canLaunch}
+            launching={launching}
+            disabledReason={
+              !editId
+                ? "Save the campaign first."
+                : !primaryEmail
+                  ? "Connect a Gmail or Outlook mailbox in Settings first."
+                  : !hasRecipients
+                    ? "Add at least one recipient — pick a company with enriched contacts, or type emails into the Manual tab."
+                    : "Add at least one filled step first."
             }
-            className="inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-[#10B981] to-[#059669] px-3 py-1 text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(16,185,129,0.3)] disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ fontFamily: fontDisplay }}
-          >
-            <Rocket className="h-2.5 w-2.5" />
-            {launching ? "Launching…" : "Launch"}
-          </button>
+            hasTestSendOccurred={hasTestSendOccurred}
+          />
+          <SenderGuidelinesNote />
         </div>
       </div>
 
-      <ForecastStrip audienceCount={selectedIds.size} />
+      <CampaignKpiHero
+        status={details?.status ?? (editId ? "active" : "draft")}
+        audienceCount={selectedIds.size + manualEmails.length}
+        funnel={campaignFunnel}
+        sparkData={campaignSparkData}
+        campaignId={editId}
+      />
       {senderLoadError ? (
         <div
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800"
@@ -1136,9 +1213,10 @@ export default function CampaignBuilder() {
       <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[1fr_340px] lg:grid-cols-[260px_1fr_340px]">
         <div className="hidden lg:block">
           <PersonaPanel
-            audienceCount={selectedIds.size}
+            audienceCount={selectedIds.size + manualEmails.length}
             totalSavedCompanies={companies.length}
             selectedCompanies={selectedCompanies}
+            manualEmails={manualEmails}
             personasResult={personasResult}
             selectedPersonaId={selectedPersonaId}
             onSelectPersona={setSelectedPersonaId}

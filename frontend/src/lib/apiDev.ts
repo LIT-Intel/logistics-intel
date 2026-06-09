@@ -194,9 +194,13 @@ export async function devGetContacts(company_id: string) {
   return contacts.map(c => c.contact_data);
 }
 
-export async function devGetCampaigns() {
-  console.log('[DEV API] Getting campaigns from Supabase');
-  return getCampaignsFromSupabase();
+export async function devGetCampaigns(opts: { orgId?: string | null; adminScope?: 'org' | 'all' } = {}) {
+  console.log('[DEV API] Getting campaigns from Supabase', opts);
+  // No hook context here — caller (api.ts getCampaigns) must thread orgId/adminScope
+  // through if they want a non-empty result. With no args, getCampaignsFromSupabase
+  // now returns [] rather than leak cross-org rows; this is the intended dev-mode
+  // fallback after Sub-project A campaign org-scoping.
+  return getCampaignsFromSupabase(opts);
 }
 
 export async function devCreateCampaign(payload: any) {

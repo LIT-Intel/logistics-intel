@@ -147,17 +147,29 @@ function verifySignature(
   return false;
 }
 
+// Mapped to the actual public.lit_email_events schema:
+// (id, conversation_id, message_id, campaign_id, contact_id, event_type,
+//  event_timestamp, user_agent, ip_hash, url_clicked, metadata_json, created_at)
 type EmailEventRow = {
-  resend_email_id: string;
+  message_id: string | null;
   event_type: string;
-  email_to: string | null;
-  template_id: string | null;
-  subject: string | null;
-  click_url: string | null;
+  event_timestamp: string;
   user_agent: string | null;
-  ip: string | null;
-  raw: ResendWebhookPayload;
+  ip_hash: string | null;
+  url_clicked: string | null;
+  metadata_json: {
+    email_to: string | null;
+    subject: string | null;
+    template_id: string | null;
+    tags: Array<{ name: string; value: string }> | null;
+    raw: ResendWebhookPayload;
+  };
 };
+
+function mapEventType(type: string): string {
+  // Strip the "email." prefix if present, otherwise return the raw type.
+  return type.startsWith("email.") ? type.slice("email.".length) : type;
+}
 
 function mapPayloadToRow(p: ResendWebhookPayload): EmailEventRow | null {
   if (!p?.type || typeof p.type !== "string") return null;
@@ -166,37 +178,39 @@ function mapPayloadToRow(p: ResendWebhookPayload): EmailEventRow | null {
   // different pipeline (Resend Audiences) and are tracked elsewhere.
   if (!p.type.startsWith("email.")) return null;
 
-  const event_type = p.type.slice("email.".length);
   const data = p.data ?? {};
-  const emailId = typeof data.email_id === "string" ? data.email_id : "";
-  if (!emailId) return null;
-
-  const to = Array.isArray(data.to) ? data.to[0] : data.to;
   const click = data.click ?? {};
   const open = data.open ?? {};
+
+  const to = Array.isArray(data.to) ? data.to[0] : data.to;
 
   // Resolve template_id from Resend tags. The marketing-site sender attaches
   // a tag `template` whenever it dispatches via a template id.
   const tags = Array.isArray(data.tags) ? data.tags : [];
-  const templateTag = tags.find((t) => t?.name === "template");
+  const templateTag = tags.find((t: { name: string; value: string }) => t?.name === "template");
   const template_id = templateTag?.value ?? null;
 
   return {
-    resend_email_id: emailId,
-    event_type,
-    email_to: typeof to === "string" ? to.toLowerCase().slice(0, 254) : null,
-    template_id,
-    subject: typeof data.subject === "string" ? data.subject.slice(0, 998) : null,
-    click_url: typeof click.link === "string" ? click.link.slice(0, 2048) : null,
+    message_id: typeof data.email_id === "string" ? data.email_id : null, // Resend's email_id → message_id
+    event_type: mapEventType(p.type),
+    event_timestamp: typeof p.created_at === "string" ? p.created_at : new Date().toISOString(),
     user_agent:
       (typeof click.userAgent === "string" && click.userAgent.slice(0, 500)) ||
       (typeof open.userAgent === "string" && open.userAgent.slice(0, 500)) ||
       null,
-    ip:
+    ip_hash:
       (typeof click.ipAddress === "string" && click.ipAddress) ||
       (typeof open.ipAddress === "string" && open.ipAddress) ||
       null,
-    raw: p,
+    url_clicked: typeof click.link === "string" ? click.link.slice(0, 2048) : null,
+    metadata_json: {
+      // Everything Resend gave us that doesn't fit a dedicated column.
+      email_to: typeof to === "string" ? to.toLowerCase().slice(0, 254) : null,
+      subject: typeof data.subject === "string" ? data.subject.slice(0, 998) : null,
+      template_id,
+      tags: tags.length > 0 ? tags : null,
+      raw: p,
+    },
   };
 }
 

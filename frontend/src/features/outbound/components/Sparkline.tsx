@@ -1,53 +1,46 @@
-import React from "react";
-
-export function Sparkline({
-  values,
-  color = "#3B82F6",
-  width = 80,
-  height = 24,
-}: {
-  values: number[];
-  color?: string;
+/**
+ * Tiny SVG sparkline. Renders a smooth polyline from a numeric series.
+ * Pure presentation — no axis, no labels, no tooltips. Use inside
+ * KPI tiles where the trend matters more than exact values.
+ */
+interface Props {
+  data: number[];
   width?: number;
   height?: number;
-}) {
-  if (!values || values.length < 2) {
-    return (
-      <div
-        className="rounded"
-        style={{
-          width,
-          height,
-          background: "#F1F5F9",
-        }}
-      />
-    );
-  }
-  const max = Math.max(...values);
-  const min = Math.min(...values);
+  color?: string;
+  className?: string;
+}
+
+export function Sparkline({
+  data,
+  width = 80,
+  height = 24,
+  color = "#3B82F6",
+  className,
+}: Props) {
+  if (!data || data.length < 2) return null;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
   const range = max - min || 1;
-  const pts = values
-    .map(
-      (v, i) =>
-        `${(i / (values.length - 1)) * width},${
-          height - ((v - min) / range) * height
-        }`,
-    )
+  const stepX = width / (data.length - 1);
+  const points = data
+    .map((v, i) => `${i * stepX},${height - ((v - min) / range) * height}`)
     .join(" ");
   return (
-    <svg width={width} height={height} style={{ overflow: "visible" }}>
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      className={className}
+      aria-hidden
+    >
       <polyline
-        points={pts}
         fill="none"
         stroke={color}
         strokeWidth={1.5}
-        strokeLinecap="round"
         strokeLinejoin="round"
-      />
-      <polyline
-        points={`0,${height} ${pts} ${width},${height}`}
-        fill={color}
-        opacity={0.08}
+        strokeLinecap="round"
+        points={points}
       />
     </svg>
   );

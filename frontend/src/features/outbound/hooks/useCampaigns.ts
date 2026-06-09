@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { getCrmCampaigns } from "@/lib/api";
+import { fetchCampaignMetricsBatch } from "@/features/outbound/api/campaignMetrics";
+import { deriveHealth } from "@/features/outbound/lib/metrics";
 import type {
+  CampaignFunnel,
+  CampaignHealth,
   CampaignStatus,
   OutboundCampaign,
 } from "../types";
@@ -70,10 +74,16 @@ function deriveStepCount(c: any): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-function normalize(row: any): OutboundCampaign {
+function normalize(
+  row: any,
+  metrics: Map<string, CampaignFunnel>,
+): OutboundCampaign {
   const status = normalizeStatus(row?.status);
+  const id = String(row?.id ?? "");
+  const funnel = metrics.get(id) ?? null;
+  const health: CampaignHealth = deriveHealth(funnel);
   return {
-    id: String(row?.id ?? ""),
+    id,
     name: String(row?.name ?? "Untitled campaign"),
     status,
     channel: row?.channel ?? null,
@@ -84,12 +94,19 @@ function normalize(row: any): OutboundCampaign {
       row?.metrics && typeof row.metrics === "object" ? row.metrics : {},
     createdAt: row?.created_at ?? null,
     updatedAt: row?.updated_at ?? null,
-    // Funnel / spark / health remain null until there is a backed
-    // aggregation endpoint over lit_outreach_history. The UI renders an
-    // honest "no outreach data yet" state for these.
-    funnel: null,
-    health: null,
+    creator:
+      row?.creator && typeof row.creator === "object"
+        ? {
+            full_name:
+              typeof row.creator.full_name === "string" ? row.creator.full_name : null,
+            email:
+              typeof row.creator.email === "string" ? row.creator.email : null,
+          }
+        : null,
+    funnel,
+    health,
     alert: null,
+    // sparkline data lands in Task 7+8 via a separate time-series query
     spark: null,
     nextSendLabel: status === "draft" ? "—" : status === "paused" ? "paused" : "—",
   };
@@ -113,7 +130,18 @@ export function useCampaigns(): UseCampaignsResult {
     try {
       const resp = await getCrmCampaigns();
       const rows = asArray(resp);
-      setCampaigns(rows.map(normalize));
+      const ids = rows
+        .map((r: any) => String(r?.id ?? ""))
+        .filter(Boolean);
+      // Fetch funnel metrics in batch. Failure degrades to an empty map
+      // so campaigns still render with funnel:null.
+      let metrics: Map<string, CampaignFunnel> = new Map();
+      try {
+        metrics = await fetchCampaignMetricsBatch(ids);
+      } catch {
+        metrics = new Map();
+      }
+      setCampaigns(rows.map((r: any) => normalize(r, metrics)));
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to load campaigns.";
       setError(msg);

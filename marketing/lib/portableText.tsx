@@ -73,8 +73,31 @@ const components: PortableTextComponents = {
     ),
   },
   list: {
-    bullet: ({ children }) => <ul className="my-5 space-y-2 pl-5 text-[17px] text-ink-700 [&>li]:list-disc">{children}</ul>,
-    number: ({ children }) => <ol className="my-5 space-y-2 pl-5 text-[17px] text-ink-700 [&>li]:list-decimal">{children}</ol>,
+    bullet: ({ children }) => (
+      <ul className="font-body my-5 list-disc space-y-2 pl-6 text-[17px] leading-[1.7] text-ink-700 marker:text-ink-500">
+        {children}
+      </ul>
+    ),
+    number: ({ children }) => (
+      <ol className="font-body my-5 list-decimal space-y-2 pl-6 text-[17px] leading-[1.7] text-ink-700 marker:text-ink-500">
+        {children}
+      </ol>
+    ),
+  },
+  listItem: {
+    // Explicit listItem serializers — required because the default
+    // <li> wrapper carries no classes, and Tailwind's Preflight reset
+    // strips `list-style` from <ul>/<ol>. Setting `list-disc`/`list-decimal`
+    // on the parent then `display: list-item` on the <li> guarantees
+    // markers render even when an arbitrary `[&>li]` variant fails to
+    // tokenize during the JIT pass (which is what was happening for
+    // posts that landed bullets in production with no visible markers).
+    bullet: ({ children }) => (
+      <li className="pl-1 [&>p]:my-0 [&>p]:inline">{children}</li>
+    ),
+    number: ({ children }) => (
+      <li className="pl-1 [&>p]:my-0 [&>p]:inline">{children}</li>
+    ),
   },
   marks: {
     strong: ({ children }) => <strong className="font-semibold text-ink-900">{children}</strong>,
@@ -230,6 +253,45 @@ const components: PortableTextComponents = {
           </div>
           {value.caption && (
             <figcaption className="font-body bg-ink-25 px-4 py-3 text-center text-[12.5px] text-ink-500">{value.caption}</figcaption>
+          )}
+        </figure>
+      );
+    },
+    dataTable: ({ value }) => {
+      const headers: string[] = value?.headers || [];
+      const rows: Array<{ cells: string[] }> = value?.rows || [];
+      if (!headers.length || !rows.length) return null;
+      return (
+        <figure className="my-9 overflow-x-auto rounded-2xl border border-ink-100 bg-white shadow-sm">
+          <table className="font-body w-full border-collapse text-left text-[14px] leading-[1.55] text-ink-700">
+            <thead className="bg-ink-25">
+              <tr>
+                {headers.map((h, i) => (
+                  <th
+                    key={i}
+                    className="font-display border-b border-ink-100 px-4 py-3 text-[12.5px] font-semibold uppercase tracking-[0.04em] text-ink-900"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} className="border-b border-ink-50 last:border-b-0 hover:bg-ink-25/40">
+                  {(row?.cells || []).map((c, ci) => (
+                    <td key={ci} className="align-top px-4 py-3">
+                      {c}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {value?.caption && (
+            <figcaption className="font-body bg-ink-25 px-4 py-3 text-center text-[12.5px] text-ink-500">
+              {value.caption}
+            </figcaption>
           )}
         </figure>
       );

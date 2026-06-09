@@ -16,6 +16,7 @@ interface PersonaPanelProps {
   audienceCount: number;
   totalSavedCompanies: number;
   selectedCompanies: SavedCompanyLite[];
+  manualEmails?: Array<{ email: string }>;
   personasResult: PersonasResult | null;
   selectedPersonaId: string | null;
   onSelectPersona: (id: string | null) => void;
@@ -28,6 +29,7 @@ export function PersonaPanel({
   audienceCount,
   totalSavedCompanies,
   selectedCompanies,
+  manualEmails = [],
   personasResult,
   selectedPersonaId,
   onSelectPersona,
@@ -36,6 +38,18 @@ export function PersonaPanel({
   onCreatePersona,
 }: PersonaPanelProps) {
   const sample = selectedCompanies.slice(0, 6);
+  const manualSample = manualEmails.slice(0, 6);
+
+  const denominatorLabel = (() => {
+    const hasCompanies = selectedCompanies.length > 0;
+    const hasManual = manualEmails.length > 0;
+    if (!hasCompanies && !hasManual) return "Pick recipients";
+    if (hasCompanies && !hasManual)
+      return `${selectedCompanies.length} of ${totalSavedCompanies} saved companies`;
+    if (!hasCompanies && hasManual)
+      return `${manualEmails.length} manual recipients`;
+    return `${selectedCompanies.length} saved + ${manualEmails.length} manual`;
+  })();
 
   return (
     <div className="flex h-full flex-col overflow-hidden border-r border-slate-200 bg-white">
@@ -92,14 +106,11 @@ export function PersonaPanel({
           className="mt-3 flex items-baseline gap-1.5 border-t border-white/10 pt-2.5"
           style={{ fontFamily: fontDisplay }}
         >
-          <span className="text-2xl font-bold text-white">
-            {audienceCount}
-          </span>
           <span
             className="text-[11px] text-slate-400"
             style={{ fontFamily: fontBody }}
           >
-            of {totalSavedCompanies} saved
+            {denominatorLabel}
           </span>
         </div>
         <button
@@ -164,7 +175,7 @@ export function PersonaPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-3">
-        {sample.length === 0 ? (
+        {sample.length === 0 && manualSample.length === 0 ? (
           <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-4 py-6 text-center">
             <Users className="mx-auto mb-2 h-4 w-4 text-slate-400" />
             <div
@@ -188,6 +199,26 @@ export function PersonaPanel({
               Pick recipients
               <ArrowRight className="h-2.5 w-2.5" />
             </button>
+          </div>
+        ) : sample.length === 0 ? (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {manualSample.map((m) => (
+              <span
+                key={m.email}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700"
+                style={{ fontFamily: fontBody }}
+              >
+                <span className="text-[10px]" aria-hidden>
+                  📧
+                </span>
+                <span className="truncate max-w-[180px]">{m.email}</span>
+              </span>
+            ))}
+            {manualEmails.length > manualSample.length && (
+              <span className="text-[11px] text-slate-400">
+                +{manualEmails.length - manualSample.length} more
+              </span>
+            )}
           </div>
         ) : (
           <div>

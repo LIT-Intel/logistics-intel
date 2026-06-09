@@ -216,6 +216,31 @@ serve(async (req) => {
 
   const admin = createClient(supabaseUrl, serviceRoleKey);
 
+  // Safety hold kill switch — any uncleared row in lit_outreach_safety_holds
+  // halts all outbound sends until the row is cleared. Operator-controlled
+  // pause for incidents, audits, or before-launch testing windows.
+  // (Phase 4 spec — migration 20260603_phase4_outbound_schema.sql)
+  // Safety-hold check now respects expires_at — a hold with expires_at in
+  // the past is treated as effectively cleared, so an operator-set TTL or
+  // the migration-applied 24h default keeps a forgotten hold from silently
+  // 503-ing production indefinitely (BulkEnrich incident class).
+  const { data: holds } = await admin
+    .from("lit_outreach_safety_holds")
+    .select("id, reason, expires_at")
+    .is("cleared_at", null)
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .limit(1);
+  if (holds && holds.length > 0) {
+    log.warn("safety_hold_active", { hold_id: holds[0].id, reason: holds[0].reason });
+    return json({
+      ok: false,
+      paused: true,
+      reason: "safety_hold_active",
+      hold_id: holds[0].id,
+      hold_reason: holds[0].reason,
+    }, 503);
+  }
+
   const startedAt = Date.now();
   const summary = {
     picked: 0,
@@ -281,6 +306,112 @@ serve(async (req) => {
   // lit_user_preferences. Loaded lazily the first time we encounter a
   // step with include_signature !== false.
   const signatureCache = new Map<string, { html: string | null; text: string | null }>();
+
+  // ─── 1.5 Pre-fetch consent attestations (Sub-project D / Gmail policy) ──
+  //
+  // Gmail API policy + Google Sender Guidelines require us to only send to
+  // recipients who have an attested consent record. The frontend
+  // AudiencePickerDrawer captures attestation on confirm for manual emails;
+  // company-derived contacts are checked here at dispatcher time. Without
+  // a row in lit_recipient_consent for (recipient_email, org_id), the
+  // recipient is SKIPPED below — the frontend checkbox is UX hint, this
+  // is the security boundary.
+  //
+  // Pre-fetched as a Set per org so the per-recipient check is O(1).
+  // Fail-CLOSED on lookup error: an empty consent set means every recipient
+  // is skipped. Better to skip sends than violate Gmail API policy.
+  const consentByOrg = new Map<string, Set<string>>();
+  const recipientsByOrg = new Map<string, string[]>();
+  for (const r of recipients) {
+    if (!r.org_id || !r.email) continue;
+    const list = recipientsByOrg.get(r.org_id) ?? [];
+    list.push(r.email);
+    recipientsByOrg.set(r.org_id, list);
+  }
+  for (const [orgId, emails] of recipientsByOrg.entries()) {
+    const uniqueEmails = Array.from(new Set(emails));
+    const { data: consented, error: consErr } = await admin.rpc(
+      "lit_recipients_with_consent",
+      { p_org_id: orgId, p_emails: uniqueEmails },
+    );
+    if (consErr) {
+      log.warn("consent_lookup_failed", {
+        err: consErr.message,
+        org_id: orgId,
+        sample_count: uniqueEmails.length,
+      });
+      // Fail-CLOSED: leave the org's set empty so every recipient is
+      // skipped below. Safer than letting an RPC outage flood inboxes.
+      consentByOrg.set(orgId, new Set<string>());
+      continue;
+    }
+    const set = new Set<string>(
+      (consented ?? []).map((row: any) =>
+        String(row.recipient_email ?? "").toLowerCase()
+      ),
+    );
+    consentByOrg.set(orgId, set);
+  }
+
+  // ─── 1.6 Auto-backfill consent for legacy / pre-wire recipients ─────────
+  //
+  // Recipients added before the AudiencePickerDrawer consent capture wire
+  // shipped (or where the picker's upsert silently failed) have no row in
+  // lit_recipient_consent and would be silently SKIPPED below. Operators
+  // launching legacy campaigns would see "0 sent / all skipped" with no
+  // obvious cause.
+  //
+  // Policy: launching a campaign IS itself the attestation that the
+  // operator believes consent exists (the picker's checkbox is UX hint;
+  // launching is the security commit). We write an audit row tagged
+  // source='legacy_pre_consent_wire' citing the user_id that launched the
+  // campaign + the campaign_id so the trail is preserved.
+  //
+  // Per-org because lit_recipient_consent is keyed (recipient_email, org_id).
+  // user_id is taken from any recipient in the batch for that org (they all
+  // belong to the same org's campaigns; user_id identifies the launcher).
+  for (const [orgId, emails] of recipientsByOrg.entries()) {
+    const consentedSet = consentByOrg.get(orgId) ?? new Set<string>();
+    const uniqueLower = Array.from(new Set(emails.map((e) => String(e).toLowerCase())));
+    const missing = uniqueLower.filter((e) => !consentedSet.has(e));
+    if (missing.length === 0) continue;
+
+    // Pick a representative recipient from this org to identify the launcher
+    // + campaign for the audit trail. Per missing email we look up the first
+    // recipient row matching it so the campaign_id is accurate.
+    const recipientsForOrg = recipients.filter((r) => r.org_id === orgId);
+    const fallbackUserId = recipientsForOrg.find((r) => r.user_id)?.user_id ?? null;
+
+    const rows = missing.map((email) => {
+      const owner = recipientsForOrg.find(
+        (r) => String(r.email ?? "").toLowerCase() === email,
+      );
+      return {
+        recipient_email: email,
+        org_id: orgId,
+        attested_by_user_id: owner?.user_id ?? fallbackUserId,
+        source: "legacy_pre_consent_wire",
+        campaign_id: owner?.campaign_id ?? null,
+      };
+    }).filter((r) => r.attested_by_user_id); // schema requires non-null
+
+    if (rows.length === 0) continue;
+
+    const { error: backfillErr } = await admin
+      .from("lit_recipient_consent")
+      .upsert(rows, { onConflict: "recipient_email,org_id", ignoreDuplicates: true });
+    if (backfillErr) {
+      log.warn("consent_backfill_failed", {
+        err: backfillErr.message,
+        count: rows.length,
+        org_id: orgId,
+      });
+    } else {
+      log.info("consent_backfill_ok", { count: rows.length, org_id: orgId });
+      for (const r of rows) consentedSet.add(r.recipient_email);
+      consentByOrg.set(orgId, consentedSet);
+    }
+  }
 
   // ─── 2. Process each recipient ───────────────────────────────────────────
   for (const r of recipients) {
@@ -361,6 +492,51 @@ serve(async (req) => {
         });
         await advance(admin, r, step, steps[stepIndex + 1] ?? null);
         summary.advanced += 1;
+        continue;
+      }
+
+      // 2e-pre. Consent gate (Sub-project D / Gmail API policy).
+      //         Skip + log 'consent_missing' if the recipient has no
+      //         attested consent record for this org. Pre-fetched as a
+      //         Set above (step 1.5) — O(1) lookup here.
+      //
+      //         This runs BEFORE suppression because consent is a
+      //         hard-policy gate; suppression is operational hygiene.
+      //         A non-consented recipient must never be sent to even
+      //         if they're not suppressed.
+      const orgConsentSet = r.org_id ? consentByOrg.get(r.org_id) : undefined;
+      const hasConsent = !!orgConsentSet && orgConsentSet.has(String(r.email ?? "").toLowerCase());
+      if (!hasConsent) {
+        await admin.from("lit_outreach_history").insert({
+          user_id: r.user_id,
+          campaign_id: r.campaign_id,
+          campaign_step_id: step.id,
+          company_id: r.company_id,
+          contact_id: r.contact_id,
+          channel: "email",
+          event_type: "consent_missing",
+          status: "skipped",
+          subject: step.subject,
+          provider: "policy",
+          occurred_at: new Date().toISOString(),
+          metadata: {
+            recipient_email: r.email,
+            reason: r.org_id ? "no_consent_record" : "no_org_on_recipient",
+            step_order: step.step_order,
+          },
+        });
+        await admin.from("lit_campaign_contacts").update({
+          status: "skipped",
+          next_send_at: null,
+          last_error: "consent_missing",
+          updated_at: new Date().toISOString(),
+        }).eq("id", r.id);
+        log.info("consent_skipped", {
+          recipient_id: r.id,
+          campaign_id: r.campaign_id,
+          org_id: r.org_id,
+        });
+        summary.skipped += 1;
         continue;
       }
 
@@ -597,6 +773,41 @@ serve(async (req) => {
           lastSendAt: mailboxState.last_send_at ? new Date(mailboxState.last_send_at) : null,
         });
         if (!throttle.allowed) {
+          // Log a policy-level history event when the deferral was caused
+          // by the daily cap (vs. hourly cap / spacing). This makes the
+          // Google-Sender-Guidelines compliance posture auditable in
+          // lit_outreach_history alongside consent_missing events.
+          const hitDailyCap = mailboxState.sent_today >= effectiveDailyCap;
+          if (hitDailyCap) {
+            await admin.from("lit_outreach_history").insert({
+              user_id: r.user_id,
+              campaign_id: r.campaign_id,
+              campaign_step_id: step.id,
+              company_id: r.company_id,
+              contact_id: r.contact_id,
+              channel: "email",
+              event_type: "daily_cap_reached",
+              status: "deferred",
+              subject: step.subject,
+              provider: "policy",
+              occurred_at: new Date().toISOString(),
+              metadata: {
+                recipient_email: r.email,
+                sender_email: sender.email,
+                sender_account_id: sender.id,
+                sent_today: mailboxState.sent_today,
+                cap: effectiveDailyCap,
+                retry_at: throttle.retryAt.toISOString(),
+                step_order: step.step_order,
+              },
+            });
+            log.info("daily_cap_deferred", {
+              recipient_id: r.id,
+              sender_id: sender.id,
+              sent_today: mailboxState.sent_today,
+              cap: effectiveDailyCap,
+            });
+          }
           await admin.from("lit_campaign_contacts").update({
             status: "queued",
             next_send_at: throttle.retryAt.toISOString(),

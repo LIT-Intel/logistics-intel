@@ -5007,7 +5007,38 @@ export async function getCrmCampaigns(_signal?: AbortSignal) {
     const code = error.code ? ` ${error.code}` : "";
     throw new Error(`getCrmCampaigns${code}: ${error.message}`);
   }
-  return { rows: data ?? [] };
+  const campaigns = data ?? [];
+
+  // Batched creator lookup. There is no FK from public.lit_campaigns.user_id
+  // to public.profiles.id, so PostgREST embed is not viable; we fetch the
+  // distinct creator profiles in a single follow-up SELECT. This is needed
+  // now that campaigns are org-scoped — every member of the org sees every
+  // campaign and needs to know who created it.
+  const userIds = Array.from(
+    new Set(
+      campaigns
+        .map((c: any) => c?.user_id)
+        .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+    ),
+  );
+  const creatorMap = new Map<string, { full_name: string | null; email: string | null }>();
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .in("id", userIds);
+    for (const p of profiles ?? []) {
+      creatorMap.set((p as any).id, {
+        full_name: (p as any).full_name ?? null,
+        email: (p as any).email ?? null,
+      });
+    }
+  }
+  const enriched = campaigns.map((c: any) => ({
+    ...c,
+    creator: c?.user_id ? creatorMap.get(c.user_id) ?? null : null,
+  }));
+  return { rows: enriched };
 }
 
 export async function createCrmCampaign(body: {
@@ -5774,6 +5805,38 @@ async function getCurrentUserIdOrThrow(): Promise<string> {
   return userId;
 }
 
+/**
+ * Resolve the caller's active org_id from `org_members`. Used by mutating
+ * code paths that must stamp `org_id` on the inserted row (Sub-project A
+ * campaign org-scoping — `lit_campaigns.org_id` is NOT NULL and the RLS
+ * INSERT policy requires the value to match an active org_members row).
+ *
+ * Picks the earliest-joined active membership when the user has multiple.
+ * Throws (rather than returning null) so callers fail loud at the call site
+ * instead of writing a null that the NOT NULL constraint would reject with
+ * a less helpful Postgres error.
+ */
+async function resolveActiveOrgIdOrThrow(userId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from("org_members")
+    .select("org_id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("joined_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`resolveActiveOrgId: ${error.message}`);
+  }
+  const orgId = (data as any)?.org_id ?? null;
+  if (!orgId) {
+    throw new Error(
+      "No active org membership found for current user; cannot create org-scoped record",
+    );
+  }
+  return orgId as string;
+}
+
 // ---------------- Sequences ----------------
 
 export async function listSequences(
@@ -6120,6 +6183,7 @@ export async function createCampaignDraft(input: {
   updated_at: string;
 }> {
   const userId = await getCurrentUserIdOrThrow();
+  const orgId = await resolveActiveOrgIdOrThrow(userId);
   const metrics: Record<string, unknown> = { ...(input.metrics ?? {}) };
   if (input.description && input.description.trim()) {
     metrics.description = input.description.trim();
@@ -6128,6 +6192,7 @@ export async function createCampaignDraft(input: {
     .from("lit_campaigns")
     .insert({
       user_id: userId,
+      org_id: orgId,
       name: input.name,
       channel: input.channel ?? "email",
       status: "draft",
@@ -6454,6 +6519,7 @@ export async function sendTestEmail(
   subject?: string,
   body?: string,
   includeSignature?: boolean,
+  campaignId?: string | null,
 ): Promise<
   | { ok: true; messageId: string | null; provider: string; from: string; to: string }
   | { setupRequired: true }
@@ -6471,7 +6537,7 @@ export async function sendTestEmail(
 
   try {
     const { data, error } = await supabase.functions.invoke("send-test-email", {
-      body: { toEmail, subject, body, includeSignature },
+      body: { toEmail, subject, body, includeSignature, campaign_id: campaignId ?? null },
     });
 
     if (error) {

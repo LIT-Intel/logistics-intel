@@ -6,8 +6,8 @@ const STAGES: Array<{ key: keyof CampaignFunnel; label: string; color: string }>
   { key: "enrolled", label: "Enrolled", color: "#94A3B8" },
   { key: "sent", label: "Sent", color: "#64748B" },
   { key: "opened", label: "Opened", color: "#3B82F6" },
+  { key: "clicked", label: "Clicked", color: "#6366F1" },
   { key: "replied", label: "Replied", color: "#10B981" },
-  { key: "booked", label: "Booked", color: "#8B5CF6" },
 ];
 
 export function FunnelStrip({ funnel }: { funnel: CampaignFunnel | null }) {
@@ -21,7 +21,7 @@ export function FunnelStrip({ funnel }: { funnel: CampaignFunnel | null }) {
           Funnel
         </span>
         <span className="text-[11px] text-slate-500">
-          No outreach data yet — appears once the first step sends.
+          No metrics yet — launch this campaign to start collecting.
         </span>
       </div>
     );

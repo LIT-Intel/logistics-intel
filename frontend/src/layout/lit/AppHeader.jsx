@@ -21,6 +21,7 @@ import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 import SidebarUsageChip from "@/components/shared/SidebarUsageChip";
 import "@/layout/lit/litLogo.css";
 import NotificationBell from "@/components/layout/NotificationBell";
+import { AdminScopeToggle } from "@/components/layout/AdminScopeToggle";
 
 const BASE_MOBILE_SECTIONS = [
   {
@@ -225,6 +226,8 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
               />
             </div>
+
+            <AdminScopeToggle currentOrgName={null} />
 
             <NotificationBell />
 

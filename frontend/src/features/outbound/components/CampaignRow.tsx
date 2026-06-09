@@ -48,6 +48,32 @@ function healthColorFor(c: OutboundCampaign): string {
   return "#94A3B8";
 }
 
+function formatRelativeShort(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const diffMs = Date.now() - t;
+  if (diffMs < 0) return "just now";
+  const m = Math.floor(diffMs / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  return `${Math.floor(mo / 12)}y ago`;
+}
+
+function creatorLabel(c: OutboundCampaign): string | null {
+  const cr = c.creator;
+  if (!cr) return null;
+  if (cr.full_name && cr.full_name.trim()) return cr.full_name.trim();
+  if (cr.email && cr.email.includes("@")) return cr.email.split("@")[0];
+  if (cr.email) return cr.email;
+  return null;
+}
+
 export function CampaignRow({
   campaign,
   onOpen,
@@ -122,11 +148,26 @@ export function CampaignRow({
         </div>
       </div>
 
+      {(() => {
+        const who = creatorLabel(c);
+        const when = c.createdAt ? formatRelativeShort(c.createdAt) : "";
+        if (!who && !when) return null;
+        return (
+          <div
+            className="mt-0.5 text-[10px] text-slate-500"
+            style={{ fontFamily: fontBody }}
+          >
+            {who ? `Created by ${who}` : "Created"}
+            {when ? ` · ${when}` : ""}
+          </div>
+        );
+      })()}
+
       {c.status !== "draft" && c.status !== "archived" ? (
         <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
           <FunnelStrip funnel={c.funnel} />
           {c.spark ? (
-            <Sparkline values={c.spark} color={healthColor} width={72} height={22} />
+            <Sparkline data={c.spark} color={healthColor} width={72} height={22} />
           ) : null}
         </div>
       ) : c.status === "archived" ? (

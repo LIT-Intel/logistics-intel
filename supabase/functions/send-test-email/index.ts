@@ -87,6 +87,15 @@ serve(async (req) => {
   const body = String(
     reqBody.body || "This is a test message from your Logistic Intel mailbox.",
   );
+  // Optional: campaign_id of the campaign-builder context this test was
+  // launched from. When present, the test_sent history row carries it so
+  // future builder mounts can rehydrate the hasTestSendOccurred state.
+  const campaignId =
+    typeof reqBody.campaign_id === "string" && reqBody.campaign_id
+      ? reqBody.campaign_id
+      : typeof reqBody.campaignId === "string" && reqBody.campaignId
+        ? reqBody.campaignId
+        : null;
 
   const admin = createClient(supabaseUrl, supabaseServiceRoleKey);
 
@@ -124,10 +133,11 @@ serve(async (req) => {
     eventType: "test_sent" | "test_failed",
     status: "sent" | "failed",
     messageId: string | null,
+    historyCampaignId: string | null = null,
   ) {
     await admin.from("lit_outreach_history").insert({
       user_id: user.id,
-      campaign_id: null,
+      campaign_id: historyCampaignId,
       campaign_step_id: null,
       company_id: null,
       contact_id: null,
@@ -463,7 +473,7 @@ serve(async (req) => {
       message_id: messageId,
       metadata: { provider: account.provider, to: toEmail },
     });
-    await writeHistoryRow(account.provider, "test_sent", "sent", messageId);
+    await writeHistoryRow(account.provider, "test_sent", "sent", messageId, campaignId);
     // Touch last_synced_at.
     await admin
       .from("lit_email_accounts")
@@ -482,7 +492,7 @@ serve(async (req) => {
       error_code: sendErrorCode,
       error_message: sendErrorMessage,
     });
-    await writeHistoryRow(account.provider, "test_failed", "failed", null);
+    await writeHistoryRow(account.provider, "test_failed", "failed", null, campaignId);
 
     return json(
       { ok: false, error: sendErrorMessage || sendErrorCode || "send_failed" },

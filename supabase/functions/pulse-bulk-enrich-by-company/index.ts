@@ -3,11 +3,13 @@
 // When the user saves companies from Pulse Search to a syncable system list
 // (Forwarders / Brokers — pulse_lists.syncs_to_attio = true), this function:
 //   1. Fetches each company's domain from lit_companies
-//   2. Queries Apollo mixed_people/search for decision-maker contacts
-//      (batched up to 25 org domains per call to save credits)
-//   3. Filters by HOT_TITLE_REGEX + deliverable email
-//   4. Upserts into lit_contacts (by email)
-//   5. Inserts into pulse_list_contacts with the list_id
+//   2. Resolves each domain to an Apollo org_id via mixed_companies/search
+//   3. Queries Apollo mixed_people/api_search (same endpoint as manual path)
+//      by organization_ids (primary) with domain fallback, batched per company
+//   4. Filters by HOT_TITLE_REGEX or seniority match; accepts any non-null email
+//      (deliverability left to downstream — same as manual path)
+//   5. Upserts into lit_contacts (by source+source_contact_key)
+//   6. Inserts into pulse_list_contacts with the list_id
 //      → the existing Postgres trigger fires pulse-attio-sync per contact
 //
 // Auth: platform_admin only (syncable lists are admin-owned system lists).
@@ -26,6 +28,15 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APOLLO_API_KEY = Deno.env.get("APOLLO_API_KEY") || "";
 const APOLLO_API_BASE = Deno.env.get("APOLLO_API_BASE") || "https://api.apollo.io";
+// Apollo migrated people-search from /mixed_people/search → /mixed_people/api_search.
+// API keys require the api_search path. Request/response shape is unchanged.
+const APOLLO_PEOPLE_URL = `${APOLLO_API_BASE}/api/v1/mixed_people/api_search`;
+const APOLLO_ORG_URL = `${APOLLO_API_BASE}/api/v1/mixed_companies/search`;
+const APOLLO_BULK_MATCH_URL = `${APOLLO_API_BASE}/api/v1/people/bulk_match`;
+const APOLLO_MATCH_URL = `${APOLLO_API_BASE}/api/v1/people/match`;
+// Cap unlocks per company to control Apollo credit spend.
+const MAX_UNLOCKS_PER_COMPANY = 5;
+const BULK_MATCH_MAX = 10;
 
 // ─────────────────────────────────────────────────────────────────────
 // Title matching — HOT decision-maker titles, JUNIOR exclusions
@@ -44,13 +55,28 @@ function isHotTitle(t: string): boolean {
   return HOT_TITLE_REGEX.test(s);
 }
 
-function isDeliverable(emailStatus: string | null | undefined): boolean {
-  const s = (emailStatus || "").toLowerCase();
-  return s === "verified" || s === "likely_to_engage" || s === "likely to engage";
+// Accept any non-null, non-locked email — same policy as apollo-contact-search
+// (deliverability decisions are left to downstream consumers). Only hard-reject
+// the Apollo locked-email placeholder.
+const APOLLO_LOCKED_EMAIL_PREFIX = "email_not_unlocked@";
+function isLockedEmail(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return value.startsWith(APOLLO_LOCKED_EMAIL_PREFIX);
+}
+
+// HOT seniority tags Apollo uses — mirrors what the frontend sends to
+// apollo-contact-search when clicking "Find decision-makers".
+const HOT_SENIORITIES = new Set([
+  "c_suite", "vp", "director", "manager", "partner", "owner",
+]);
+
+function isHotSeniority(s: string | null | undefined): boolean {
+  if (!s) return false;
+  return HOT_SENIORITIES.has(s.toLowerCase().trim());
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Apollo people search (batched)
+// Apollo people search — mirrors apollo-contact-search strategy exactly
 // ─────────────────────────────────────────────────────────────────────
 const HOT_TITLES_FOR_APOLLO = [
   "president", "ceo", "chief executive officer", "owner", "founder",
@@ -63,6 +89,10 @@ const HOT_TITLES_FOR_APOLLO = [
   "director of operations", "director of logistics",
   "sales manager", "business development manager",
 ];
+
+// Seniority tags — primary filter, dramatically more accurate than title regex.
+// Matches exactly what the frontend sends when the user clicks "Find decision-makers".
+const HOT_SENIORITIES_FOR_APOLLO = ["c_suite", "vp", "director", "manager", "partner", "owner"];
 
 interface ApolloContact {
   apolloId: string;
@@ -78,19 +108,37 @@ interface ApolloContact {
   organizationDomain: string | null;
 }
 
-async function apolloPeopleSearchByDomains(domains: string[]): Promise<ApolloContact[]> {
-  if (!APOLLO_API_KEY || domains.length === 0) return [];
+function normalizeDomain(input: unknown): string | null {
+  if (!input) return null;
+  return String(input)
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0]
+    .split("?")[0] || null;
+}
 
-  const body = {
-    q_organization_domains_list: domains,
-    person_titles: HOT_TITLES_FOR_APOLLO,
-    include_similar_titles: true,
-    contact_email_status: ["verified", "likely_to_engage"],
-    page: 1,
-    per_page: Math.min(domains.length * 5, 100),
+function mapPerson(p: any): ApolloContact {
+  return {
+    apolloId: p.id,
+    fullName: p.name || [p.first_name, p.last_name].filter(Boolean).join(" ") || "",
+    firstName: p.first_name || "",
+    lastName: p.last_name || "",
+    title: p.title || "",
+    email: (p.email && !isLockedEmail(p.email)) ? p.email : null,
+    emailStatus: isLockedEmail(p.email) ? "locked" : (p.email_status || null),
+    linkedinUrl: p.linkedin_url || null,
+    department: Array.isArray(p.departments) ? p.departments[0] : (p.department || null),
+    seniority: p.seniority || null,
+    organizationDomain:
+      normalizeDomain(p?.organization?.primary_domain || p?.organization?.website_url),
   };
+}
 
-  const resp = await fetch(`${APOLLO_API_BASE}/api/v1/mixed_people/search`, {
+async function apolloPost(url: string, body: Record<string, unknown>): Promise<{ ok: boolean; status: number; people: ApolloContact[]; raw: string }> {
+  console.log(`[pulse-bulk-enrich] apolloPost → ${url} body=${JSON.stringify(body)}`);
+  const resp = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -99,38 +147,155 @@ async function apolloPeopleSearchByDomains(domains: string[]): Promise<ApolloCon
     },
     body: JSON.stringify(body),
   });
-
+  const raw = await resp.text().catch(() => "");
   if (!resp.ok) {
-    const txt = await resp.text().catch(() => "");
-    log.warn("apollo_people_search_non_ok", { status: resp.status, body: txt.slice(0, 200) });
-    return [];
+    console.log(`[pulse-bulk-enrich] apolloPost ← status=${resp.status} error body=${raw.slice(0, 300)}`);
+    return { ok: false, status: resp.status, people: [], raw };
+  }
+  let data: any = null;
+  try { data = JSON.parse(raw); } catch (_) {}
+  const people: any[] = Array.isArray(data?.people) ? data.people : (Array.isArray(data?.contacts) ? data.contacts : []);
+  const mapped = people.filter((p) => p?.id).map(mapPerson);
+  const locked = mapped.filter((c) => c.emailStatus === "locked" || (c.email === null && isLockedEmail(people.find((p) => p.id === c.apolloId)?.email))).length;
+  console.log(`[pulse-bulk-enrich] apolloPost ← status=${resp.status} total=${mapped.length} locked_placeholder=${locked} has_email=${mapped.filter((c) => c.email).length}`);
+  return { ok: true, status: resp.status, people: mapped, raw };
+}
+
+async function rawApolloPost(url: string, body: Record<string, unknown>): Promise<any> {
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Api-Key": APOLLO_API_KEY,
+      "Cache-Control": "no-cache",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) return null;
+  const raw = await resp.text().catch(() => "");
+  try { return JSON.parse(raw); } catch (_) { return null; }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Email unlock via /people/bulk_match (mirrors apollo-contact-enrich)
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Unlock real emails for up to BULK_MATCH_MAX contacts per call.
+ * Mirrors the bulkMatch() pattern in apollo-contact-enrich exactly:
+ *   POST /people/bulk_match  { details: [{ id: "..." }, ...] }
+ * Response shape: { matches: [...] } or { people: [...] }
+ * Each entry may be { person: {...} } or the person object directly.
+ * Returns a Map<apolloId, unlockedEmail> for hits that resolve to a
+ * non-locked email.
+ */
+async function unlockEmails(
+  contacts: ApolloContact[],
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (contacts.length === 0) return result;
+
+  // Build identifier blocks keyed by index so we can pair back to apolloId.
+  const identifiers: Array<{ id: string }> = contacts.map((c) => ({ id: c.apolloId }));
+
+  // Chunk into batches of BULK_MATCH_MAX
+  for (let i = 0; i < identifiers.length; i += BULK_MATCH_MAX) {
+    const chunk = identifiers.slice(i, i + BULK_MATCH_MAX);
+    const chunkContacts = contacts.slice(i, i + BULK_MATCH_MAX);
+    const body: Record<string, unknown> = {
+      details: chunk,
+      reveal_personal_emails: true,
+    };
+    console.log(`[pulse-bulk-enrich] unlock bulk_match batch size=${chunk.length} ids=${chunk.map((c) => c.id).join(",")}`);
+    const resp = await fetch(APOLLO_BULK_MATCH_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": APOLLO_API_KEY,
+        "Cache-Control": "no-cache",
+      },
+      body: JSON.stringify(body),
+    });
+    const raw = await resp.text().catch(() => "");
+    if (!resp.ok) {
+      console.log(`[pulse-bulk-enrich] bulk_match failed status=${resp.status} body=${raw.slice(0, 200)}`);
+      continue;
+    }
+    let data: any = null;
+    try { data = JSON.parse(raw); } catch (_) {}
+    // Apollo bulk_match shape: { matches: [...] } or { people: [...] }
+    const arr: any[] = Array.isArray(data?.matches)
+      ? data.matches
+      : Array.isArray(data?.people)
+        ? data.people
+        : [];
+    // Each entry may itself be { person: {...} } or the person directly
+    const people = arr.map((m) => (m && m.person ? m.person : m)).filter(Boolean);
+    let unlocked = 0;
+    let stillLocked = 0;
+    people.forEach((p: any, j: number) => {
+      const apolloId = chunkContacts[j]?.apolloId;
+      if (!apolloId) return;
+      const email = p?.email;
+      if (email && !isLockedEmail(email)) {
+        result.set(apolloId, email);
+        unlocked++;
+      } else {
+        stillLocked++;
+      }
+    });
+    console.log(`[pulse-bulk-enrich] bulk_match batch result: unlocked=${unlocked} still_locked=${stillLocked}`);
+  }
+  return result;
+}
+
+function buildPeopleBody(scopeFields: Record<string, unknown>, perPage: number): Record<string, unknown> {
+  return {
+    page: 1,
+    per_page: perPage,
+    person_titles: HOT_TITLES_FOR_APOLLO,
+    person_seniorities: HOT_SENIORITIES_FOR_APOLLO,
+    include_similar_titles: true,
+    ...scopeFields,
+  };
+}
+
+// Per-company enrichment: resolve org_id first (Stage A), then people by org_id
+// (Stage B primary), then domain fallback (Stage C). Mirrors apollo-contact-search.
+async function apolloPeopleSearchByDomain(domain: string): Promise<ApolloContact[]> {
+  if (!APOLLO_API_KEY || !domain) return [];
+
+  const PER_PAGE = 50; // generous per-company fetch; no multi-domain batching
+
+  // Stage A: resolve org_id
+  let apolloOrgId: string | null = null;
+  const orgData = await rawApolloPost(APOLLO_ORG_URL, {
+    q_organization_domains_list: [domain],
+    page: 1,
+    per_page: 5,
+  });
+  const orgs: any[] = Array.isArray(orgData?.organizations) ? orgData.organizations
+    : Array.isArray(orgData?.accounts) ? orgData.accounts : [];
+  if (orgs.length > 0) {
+    // Prefer exact domain match, then first hit
+    const exact = orgs.find((o) => normalizeDomain(o?.primary_domain) === domain || normalizeDomain(o?.website_url) === domain);
+    apolloOrgId = String((exact ?? orgs[0])?.id || "").trim() || null;
   }
 
-  const data = await resp.json();
-  const people: any[] = data?.people || data?.contacts || [];
+  // Stage B: people search by org_id (most accurate)
+  if (apolloOrgId) {
+    const r = await apolloPost(APOLLO_PEOPLE_URL, buildPeopleBody({ organization_ids: [apolloOrgId] }, PER_PAGE));
+    console.log(`[pulse-bulk-enrich] Stage B org_id=${apolloOrgId} domain=${domain} → ${r.people.length} people (status=${r.status})`);
+    if (r.ok && r.people.length > 0) return r.people;
+  }
 
-  return people
-    .filter((p: any) => p?.id)
-    .map((p: any) => ({
-      apolloId: p.id,
-      fullName: p.name || [p.first_name, p.last_name].filter(Boolean).join(" ") || "",
-      firstName: p.first_name || "",
-      lastName: p.last_name || "",
-      title: p.title || "",
-      email: p.email || null,
-      emailStatus: p.email_status || null,
-      linkedinUrl: p.linkedin_url || null,
-      department: Array.isArray(p.departments) ? p.departments[0] : (p.department || null),
-      seniority: p.seniority || null,
-      organizationDomain:
-        p?.organization?.primary_domain ||
-        (p?.organization?.website_url
-          ? String(p.organization.website_url)
-              .replace(/^https?:\/\//i, "")
-              .replace(/^www\./, "")
-              .split("/")[0]
-          : null),
-    }));
+  // Stage C: domain-scoped people search as safety net (same fallback as manual path)
+  const r2 = await apolloPost(APOLLO_PEOPLE_URL, buildPeopleBody({ q_organization_domains_list: [domain] }, PER_PAGE));
+  console.log(`[pulse-bulk-enrich] Stage C domain=${domain} → ${r2.people.length} people (status=${r2.status})`);
+  if (r2.ok && r2.people.length > 0) return r2.people;
+
+  log.warn("apollo_no_results", { domain, org_id: apolloOrgId });
+  return [];
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -200,7 +365,12 @@ serve(async (req: Request) => {
     no_apollo_match: 0,
     no_decision_maker: 0,
     no_deliverable_email: 0,
+    email_unreachable: 0,
   };
+
+  // Company IDs that had no domain on file — surfaced in the response so the
+  // frontend toast can tell the user exactly which companies couldn't be enriched.
+  const skippedNoDomainCompanyIds: string[] = [];
 
   const failedCompanies: { company_id: string; reason: string }[] = [];
 
@@ -215,6 +385,7 @@ serve(async (req: Request) => {
         : null);
     if (!domain) {
       skipped.no_domain++;
+      skippedNoDomainCompanyIds.push(co.id);
       continue;
     }
     domain = domain.toLowerCase().trim();
@@ -227,27 +398,24 @@ serve(async (req: Request) => {
       ok: true,
       added_contacts: 0,
       skipped,
+      skipped_company_ids: skippedNoDomainCompanyIds,
       failed_companies: failedCompanies,
       contact_ids: [],
     });
   }
 
-  // Batch: Apollo supports up to 25 domains per mixed_people/search call.
-  // We process in batches of 25 to stay within rate limits.
-  const BATCH_SIZE = 25;
+  // Per-company enrichment: resolve org_id → people by org_id → domain fallback.
+  // This mirrors the proven apollo-contact-search 3-stage strategy exactly.
   const allContacts: ApolloContact[] = [];
 
-  for (let i = 0; i < domainsToSearch.length; i += BATCH_SIZE) {
-    const batch = domainsToSearch.slice(i, i + BATCH_SIZE);
+  for (const domain of domainsToSearch) {
     try {
-      const contacts = await apolloPeopleSearchByDomains(batch);
+      const contacts = await apolloPeopleSearchByDomain(domain);
       allContacts.push(...contacts);
     } catch (err) {
-      log.warn("apollo_batch_failed", { batch_start: i, err: String(err) });
-      for (const d of batch) {
-        const cid = domainToCompanyId.get(d);
-        if (cid) failedCompanies.push({ company_id: cid, reason: "apollo_call_failed" });
-      }
+      log.warn("apollo_domain_failed", { domain, err: String(err) });
+      const cid = domainToCompanyId.get(domain);
+      if (cid) failedCompanies.push({ company_id: cid, reason: "apollo_call_failed" });
     }
   }
 
@@ -257,28 +425,96 @@ serve(async (req: Request) => {
       ok: true,
       added_contacts: 0,
       skipped,
+      skipped_company_ids: skippedNoDomainCompanyIds,
       failed_companies: failedCompanies,
       contact_ids: [],
     });
   }
 
-  // Filter: hot title + deliverable email
-  const hotContacts = allContacts.filter(
-    (c) => isHotTitle(c.title) && c.email && isDeliverable(c.emailStatus),
-  );
+  // Filter: decision-maker by seniority (primary) OR hot-title regex (fallback).
+  // Include decision-makers even with locked emails — we'll attempt to unlock below.
+  function isDecisionMaker(c: ApolloContact): boolean {
+    if (isHotSeniority(c.seniority)) return true;
+    return isHotTitle(c.title);
+  }
 
-  const coldWithNoTitle = allContacts.filter((c) => !isHotTitle(c.title)).length;
-  const coldWithNoEmail = allContacts.filter(
-    (c) => isHotTitle(c.title) && (!c.email || !isDeliverable(c.emailStatus)),
-  ).length;
+  const coldWithNoTitle = allContacts.filter((c) => !isDecisionMaker(c)).length;
   skipped.no_decision_maker += coldWithNoTitle;
-  skipped.no_deliverable_email += coldWithNoEmail;
+
+  // Decision-makers with a real email already — no unlock needed.
+  const decisionMakers = allContacts.filter((c) => isDecisionMaker(c));
+  const alreadyHaveEmail = decisionMakers.filter((c) => c.email && !isLockedEmail(c.email));
+  // Decision-makers with a locked email placeholder — need unlock.
+  const needUnlock = decisionMakers.filter((c) => !c.email || isLockedEmail(c.email));
+
+  skipped.no_deliverable_email += needUnlock.length; // will be adjusted down after unlock
+
+  // ── Unlock step: attempt /people/bulk_match per domain, capped at
+  // MAX_UNLOCKS_PER_COMPANY per company to control credit spend.
+  // Mirrors apollo-contact-enrich's bulkMatch() pattern exactly.
+  const unlockedEmailMap = new Map<string, string>(); // apolloId → real email
+  if (needUnlock.length > 0 && APOLLO_API_KEY) {
+    // Group by company domain so we can enforce per-company cap
+    const byDomain = new Map<string, ApolloContact[]>();
+    for (const c of needUnlock) {
+      const dom = (c.organizationDomain || "").toLowerCase().trim() || "_unknown";
+      if (!byDomain.has(dom)) byDomain.set(dom, []);
+      byDomain.get(dom)!.push(c);
+    }
+    const debugPerCompany: Array<{ domain: string; people_returned: number; locked: number; unlocked: number; kept: number }> = [];
+    for (const [dom, contacts] of byDomain.entries()) {
+      const toUnlock = contacts.slice(0, MAX_UNLOCKS_PER_COMPANY);
+      console.log(`[pulse-bulk-enrich] unlock domain=${dom} candidates=${contacts.length} capped_to=${toUnlock.length}`);
+      const unlockResult = await unlockEmails(toUnlock);
+      let unlockCount = 0;
+      for (const [id, email] of unlockResult.entries()) {
+        unlockedEmailMap.set(id, email);
+        unlockCount++;
+      }
+      debugPerCompany.push({
+        domain: dom,
+        people_returned: contacts.length,
+        locked: toUnlock.length,
+        unlocked: unlockCount,
+        kept: unlockCount,
+      });
+    }
+    // Adjust skipped.email_unreachable: contacts that we attempted unlock but still got nothing
+    const attempted = needUnlock.length;
+    const successfulUnlocks = unlockedEmailMap.size;
+    skipped.email_unreachable += attempted - successfulUnlocks;
+    // Remove the ones we successfully unlocked from no_deliverable_email counter
+    skipped.no_deliverable_email -= attempted;
+    skipped.no_deliverable_email += (attempted - successfulUnlocks);
+  } else if (needUnlock.length > 0) {
+    // No API key — all locked contacts are unreachable
+    skipped.email_unreachable += needUnlock.length;
+    skipped.no_deliverable_email = 0;
+  }
+
+  // Apply unlocked emails back onto the contact objects
+  for (const c of needUnlock) {
+    const unlocked = unlockedEmailMap.get(c.apolloId);
+    if (unlocked) {
+      c.email = unlocked;
+      c.emailStatus = null; // was "locked", now real
+    }
+  }
+
+  // Final set: decision-makers with a real email (either already had one, or just unlocked)
+  const hotContacts = [
+    ...alreadyHaveEmail,
+    ...needUnlock.filter((c) => c.email && !isLockedEmail(c.email)),
+  ];
+
+  console.log(`[pulse-bulk-enrich] filter summary: total=${allContacts.length} decision_makers=${decisionMakers.length} already_had_email=${alreadyHaveEmail.length} needed_unlock=${needUnlock.length} unlocked=${unlockedEmailMap.size} hot_final=${hotContacts.length}`);
 
   if (hotContacts.length === 0) {
     return json({
       ok: true,
       added_contacts: 0,
       skipped,
+      skipped_company_ids: skippedNoDomainCompanyIds,
       failed_companies: failedCompanies,
       contact_ids: [],
     });
@@ -353,6 +589,7 @@ serve(async (req: Request) => {
     domain_count: domainsToSearch.length,
     apollo_contacts: allContacts.length,
     hot_contacts: hotContacts.length,
+    unlocked_emails: unlockedEmailMap.size,
     inserted: contactIds.length,
   });
 
@@ -360,6 +597,7 @@ serve(async (req: Request) => {
     ok: true,
     added_contacts: contactIds.length,
     skipped,
+    skipped_company_ids: skippedNoDomainCompanyIds,
     failed_companies: failedCompanies,
     contact_ids: contactIds,
   });

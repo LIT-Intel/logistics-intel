@@ -69,10 +69,31 @@ export async function createLitCampaign(campaign: {
     throw new Error("Not authenticated");
   }
 
+  // Sub-project A: lit_campaigns.org_id is NOT NULL and the new RLS INSERT
+  // policy requires the value to match an active org_members row. Resolve
+  // the caller's earliest-joined active org and stamp it on the insert.
+  const userId = session.session.user.id;
+  const { data: memberRow, error: memberErr } = await supabase
+    .from("org_members")
+    .select("org_id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("joined_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (memberErr) throw memberErr;
+  const orgId = (memberRow as any)?.org_id ?? null;
+  if (!orgId) {
+    throw new Error(
+      "No active org membership found for current user; cannot create campaign",
+    );
+  }
+
   const { data, error } = await supabase
     .from("lit_campaigns")
     .insert({
-      user_id: session.session.user.id,
+      user_id: userId,
+      org_id: orgId,
       name: campaign.name,
       description: campaign.description || null,
       campaign_type: campaign.campaign_type,

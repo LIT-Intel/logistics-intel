@@ -111,5 +111,51 @@ export const contentBlock = defineType({
         { name: "caption", type: "string" },
       ],
     }),
+    defineArrayMember({
+      type: "object",
+      name: "dataTable",
+      title: "Data table",
+      fields: [
+        { name: "caption", type: "string", title: "Caption (optional)" },
+        {
+          name: "headers",
+          type: "array",
+          title: "Column headers",
+          of: [{ type: "string" }],
+          validation: (R) => R.required().min(2),
+        },
+        {
+          name: "rows",
+          type: "array",
+          title: "Rows",
+          of: [
+            {
+              type: "object",
+              name: "row",
+              fields: [
+                {
+                  name: "cells",
+                  type: "array",
+                  of: [{ type: "text", rows: 2 }],
+                  validation: (R) => R.required().min(2),
+                },
+              ],
+              preview: {
+                select: { cells: "cells" },
+                prepare: ({ cells }) => ({ title: (cells || []).join(" | ").slice(0, 80) }),
+              },
+            },
+          ],
+          validation: (R) => R.required().min(1),
+        },
+      ],
+      preview: {
+        select: { caption: "caption", headers: "headers", rows: "rows" },
+        prepare: ({ caption, headers, rows }) => ({
+          title: caption || (headers || []).join(" | ").slice(0, 60) || "Data table",
+          subtitle: `${(rows || []).length} rows × ${(headers || []).length} cols`,
+        }),
+      },
+    }),
   ],
 });
