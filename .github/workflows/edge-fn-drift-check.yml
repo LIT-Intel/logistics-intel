@@ -1,0 +1,192 @@
+name: Edge function drift check
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/**'
+
+jobs:
+  check-drift:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Identify changed edge functions
+        id: changed
+        run: |
+          set -euo pipefail
+          # List unique slugs modified by this PR. Exclude _shared (not a deployable fn).
+          slugs=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+            | grep '^supabase/functions/' \
+            | sed 's|supabase/functions/||' \
+            | awk -F/ '{ print $1 }' \
+            | sort -u \
+            | grep -v '^_shared$' \
+            || true)
+          if [ -z "$slugs" ]; then
+            echo "No edge function source changes in this PR — skipping."
+            echo "slugs=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Slugs to check:"
+          echo "$slugs"
+          {
+            echo 'slugs<<EOF'
+            echo "$slugs"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Compare PR source vs deployed
+        if: steps.changed.outputs.slugs != ''
+        id: drift
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: jkmrfiaefxwgbvftohrb
+        run: |
+          set -uo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "::error ::SUPABASE_ACCESS_TOKEN secret is not configured on this repo."
+            echo "Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+          fail=0
+          drifted=""
+          report_file="$RUNNER_TEMP/drift-report.md"
+          : > "$report_file"
+          echo "## Edge function drift check" >> "$report_file"
+          echo "" >> "$report_file"
+          echo "Project ref: \`$PROJECT_REF\`" >> "$report_file"
+          echo "" >> "$report_file"
+
+          mkdir -p "$RUNNER_TEMP/deployed"
+
+          while IFS= read -r slug; do
+            [ -z "$slug" ] && continue
+            echo "::group::Checking $slug"
+
+            git_file="supabase/functions/$slug/index.ts"
+            if [ ! -f "$git_file" ]; then
+              echo "::warning ::Slug $slug has no git source at $git_file — would CREATE on deploy. OK."
+              echo "- \`$slug\`: not present in git (would be a new deploy). Skipped." >> "$report_file"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # Stash the PR copy so the CLI download doesn't clobber it.
+            pr_copy="$RUNNER_TEMP/pr-$slug-index.ts"
+            cp "$git_file" "$pr_copy"
+
+            # Download the currently-deployed source into a scratch directory.
+            scratch="$RUNNER_TEMP/deployed/$slug"
+            rm -rf "$scratch"
+            mkdir -p "$scratch"
+            # NOTE: supabase CLI flag verified against CLI v1.x as of 2026-06.
+            # If the flag changes upstream, adjust here. Falls back to a warning
+            # (not a failure) when the function isn't deployed yet.
+            if ! supabase functions download "$slug" \
+                --project-ref "$PROJECT_REF" \
+                --legacy-bundle 2>&1 | tee "$RUNNER_TEMP/dl-$slug.log"; then
+              if grep -qi "not found\|does not exist\|no such function" "$RUNNER_TEMP/dl-$slug.log"; then
+                echo "::warning ::$slug is not deployed yet — first deploy will create it. OK."
+                echo "- \`$slug\`: not yet deployed (first-time deploy). Skipped." >> "$report_file"
+              else
+                echo "::warning ::Could not download deployed $slug — see log above. Skipping."
+                echo "- \`$slug\`: download failed (see CI logs). Skipped." >> "$report_file"
+              fi
+              # Restore PR copy in case CLI partially wrote.
+              cp "$pr_copy" "$git_file"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # supabase functions download writes into supabase/functions/<slug>/.
+            deployed_file="$git_file"
+            if [ ! -f "$deployed_file" ]; then
+              echo "::warning ::No deployed index.ts found for $slug after download. Skipping."
+              cp "$pr_copy" "$git_file"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # Move the deployed file aside so we can restore the PR copy.
+            mv "$deployed_file" "$scratch/index.ts.deployed"
+            cp "$pr_copy" "$git_file"
+
+            # Normalize line endings + trailing newlines before diff so we
+            # don't flag pure CRLF/LF or whitespace-only drift.
+            norm_pr="$scratch/index.ts.pr.norm"
+            norm_dep="$scratch/index.ts.deployed.norm"
+            tr -d '\r' < "$pr_copy" > "$norm_pr"
+            tr -d '\r' < "$scratch/index.ts.deployed" > "$norm_dep"
+            # Ensure trailing newline on both.
+            [ -n "$(tail -c1 "$norm_pr" 2>/dev/null)" ] && echo "" >> "$norm_pr"
+            [ -n "$(tail -c1 "$norm_dep" 2>/dev/null)" ] && echo "" >> "$norm_dep"
+
+            if diff -q "$norm_pr" "$norm_dep" > /dev/null; then
+              echo "✓ $slug matches deployed"
+              echo "- \`$slug\`: matches deployed ✓" >> "$report_file"
+            else
+              echo "::error ::DRIFT in $slug — PR source differs from deployed"
+              echo "" >> "$report_file"
+              echo "### ⚠️ DRIFT: \`$slug\`" >> "$report_file"
+              echo "" >> "$report_file"
+              echo "<details><summary>Diff (PR ← → deployed, first 100 lines)</summary>" >> "$report_file"
+              echo "" >> "$report_file"
+              echo '```diff' >> "$report_file"
+              diff -u "$norm_pr" "$norm_dep" | head -100 >> "$report_file" || true
+              echo '```' >> "$report_file"
+              echo "" >> "$report_file"
+              echo "</details>" >> "$report_file"
+              echo "" >> "$report_file"
+              # Also show inline in logs.
+              diff -u "$norm_pr" "$norm_dep" | head -100 || true
+              drifted="$drifted $slug"
+              fail=1
+            fi
+            echo "::endgroup::"
+          done <<< "${{ steps.changed.outputs.slugs }}"
+
+          # Surface the report path for the comment step.
+          echo "report_file=$report_file" >> "$GITHUB_OUTPUT"
+
+          if [ "$fail" = "1" ]; then
+            echo "::error ::DRIFTED slugs:$drifted"
+            echo ""
+            echo "These functions have deployed sources that don't match git."
+            echo "Deploying from this PR would CLOBBER the live source."
+            echo ""
+            echo "Resolution: pull the deployed source first"
+            echo "(supabase functions download <slug> --project-ref $PROJECT_REF),"
+            echo "reconcile it with your PR changes, then re-push."
+            echo "See docs/ops/edge-fn-drift-ci.md for details."
+            exit 1
+          fi
+
+      - name: Post drift report comment
+        if: always() && steps.drift.outputs.report_file != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = process.env.REPORT_FILE;
+            if (!path || !fs.existsSync(path)) return;
+            const body = fs.readFileSync(path, 'utf8');
+            if (!body.trim()) return;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            if (!issue_number) return;
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });
+        env:
+          REPORT_FILE: ${{ steps.drift.outputs.report_file }}
