@@ -29,20 +29,37 @@ const FALLBACK_OPEN_RATE = 40;
 const FALLBACK_CLICK_RATE = 8;
 const FALLBACK_REPLY_RATE = 3;
 
+type TileTone = "neutral" | "blue" | "indigo" | "emerald" | "amber" | "rose";
+
+const TONE_CLASSES: Record<TileTone, { bg: string; border: string; value: string; spark: string }> = {
+  neutral: { bg: "bg-white", border: "border-slate-200", value: "text-slate-900", spark: "#3B82F6" },
+  blue:    { bg: "bg-blue-50/40", border: "border-blue-200", value: "text-blue-900", spark: "#3B82F6" },
+  indigo:  { bg: "bg-indigo-50/40", border: "border-indigo-200", value: "text-indigo-900", spark: "#6366F1" },
+  emerald: { bg: "bg-emerald-50/40", border: "border-emerald-200", value: "text-emerald-900", spark: "#10B981" },
+  amber:   { bg: "bg-amber-50/40", border: "border-amber-300", value: "text-amber-900", spark: "#F59E0B" },
+  rose:    { bg: "bg-rose-50/40", border: "border-rose-300", value: "text-rose-900", spark: "#F43F5E" },
+};
+
 interface TileProps {
   label: string;
   value: string;
   hint?: string;
   spark?: number[];
+  tone?: TileTone;
+  onClick?: () => void;
 }
 
-function Tile({ label, value, hint, spark }: TileProps) {
+function Tile({ label, value, hint, spark, tone = "neutral", onClick }: TileProps) {
+  const classes = TONE_CLASSES[tone];
   return (
-    <div className="flex min-w-[120px] flex-col gap-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+    <div
+      onClick={onClick}
+      className={`flex min-w-[120px] flex-col gap-1 rounded-2xl border ${classes.bg} ${classes.border} px-4 py-3 shadow-sm ${onClick ? "cursor-pointer transition-shadow hover:shadow-md" : ""}`}
+    >
       <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
         {label}
       </span>
-      <span className="text-2xl font-semibold tabular-nums text-slate-900">
+      <span className={`text-2xl font-bold tabular-nums ${classes.value}`}>
         {value}
       </span>
       <div className="flex items-center justify-between gap-2">
@@ -50,7 +67,7 @@ function Tile({ label, value, hint, spark }: TileProps) {
           <span className="text-[11px] text-slate-500">{hint}</span>
         ) : <span />}
         {spark && spark.length >= 2 ? (
-          <Sparkline data={spark} width={56} height={18} />
+          <Sparkline data={spark} width={56} height={18} color={classes.spark} />
         ) : null}
       </div>
     </div>
@@ -66,6 +83,12 @@ export function CampaignKpiHero({
 }: Props) {
   const isDraft = status === "draft";
   const audienceDisplay = audienceCount > 0 ? formatCount(audienceCount) : "—";
+
+  const bounceTone: TileTone = (funnel?.bounceRate ?? 0) > 10
+    ? "rose"
+    : (funnel?.bounceRate ?? 0) > 5
+      ? "amber"
+      : "neutral";
 
   return (
     <div className="relative">
@@ -101,26 +124,35 @@ export function CampaignKpiHero({
           </>
         ) : (
           <>
-            <Tile label="Sent" value={formatCount(funnel?.sent ?? null)} spark={sparkData} />
+            <Tile
+              label="Sent"
+              value={formatCount(funnel?.sent ?? null)}
+              spark={sparkData}
+              tone="neutral"
+            />
             <Tile
               label="Open Rate"
               value={formatRate(funnel?.openRate ?? null)}
               hint={funnel ? `${formatCount(funnel.opened)} opened` : undefined}
+              tone="blue"
             />
             <Tile
               label="Click Rate"
               value={formatRate(funnel?.clickRate ?? null)}
               hint={funnel ? `${formatCount(funnel.clicked)} clicked` : undefined}
+              tone="indigo"
             />
             <Tile
               label="Reply Rate"
               value={formatRate(funnel?.replyRate ?? null)}
               hint={funnel ? `${formatCount(funnel.replied)} replied` : undefined}
+              tone="emerald"
             />
             <Tile
               label="Bounce Rate"
               value={formatRate(funnel?.bounceRate ?? null)}
               hint={funnel ? `${formatCount(funnel.bounced)} bounced` : undefined}
+              tone={bounceTone}
             />
           </>
         )}
