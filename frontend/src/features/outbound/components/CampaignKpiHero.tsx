@@ -15,6 +15,7 @@ import type { CampaignFunnel, CampaignStatus } from "../types";
 import { formatCount, formatRate } from "../lib/metrics";
 import { Sparkline } from "./Sparkline";
 import { EngagementDrillIn } from "./EngagementDrillIn";
+import { RecipientsSkippedBadge } from "./RecipientsSkippedBadge";
 import type { EngagementEventType } from "../hooks/useEngagementRecipients";
 
 interface Props {
@@ -115,6 +116,12 @@ export function CampaignKpiHero({
         <span className="absolute right-3 top-3 z-10 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
           Complete
         </span>
+      )}
+
+      {campaignId && (
+        <div className="mb-3">
+          <RecipientsSkippedBadge campaignId={campaignId} />
+        </div>
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
