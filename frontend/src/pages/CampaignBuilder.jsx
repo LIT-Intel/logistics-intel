@@ -1102,6 +1102,7 @@ export default function CampaignBuilder() {
         audienceCount={selectedIds.size + manualEmails.length}
         funnel={campaignFunnel}
         sparkData={campaignSparkData}
+        campaignId={editId}
       />
       {senderLoadError ? (
         <div

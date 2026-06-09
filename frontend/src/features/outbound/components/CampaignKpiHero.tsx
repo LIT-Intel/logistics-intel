@@ -10,9 +10,12 @@
  * (open/click/reply/bounce) from the funnel data. Paused state adds
  * a grey "Paused" badge.
  */
+import { useState } from "react";
 import type { CampaignFunnel, CampaignStatus } from "../types";
 import { formatCount, formatRate } from "../lib/metrics";
 import { Sparkline } from "./Sparkline";
+import { EngagementDrillIn } from "./EngagementDrillIn";
+import type { EngagementEventType } from "../hooks/useEngagementRecipients";
 
 interface Props {
   status: CampaignStatus;
@@ -20,6 +23,7 @@ interface Props {
   funnel: CampaignFunnel | null;
   sparkData: number[];
   scheduledLabel?: string;
+  campaignId?: string | null;
 }
 
 // Industry-average fallback rates (B2B email) when org has no
@@ -80,15 +84,25 @@ export function CampaignKpiHero({
   funnel,
   sparkData,
   scheduledLabel,
+  campaignId,
 }: Props) {
   const isDraft = status === "draft";
   const audienceDisplay = audienceCount > 0 ? formatCount(audienceCount) : "—";
+  const [drill, setDrill] = useState<EngagementEventType | null>(null);
 
   const bounceTone: TileTone = (funnel?.bounceRate ?? 0) > 10
     ? "rose"
     : (funnel?.bounceRate ?? 0) > 5
       ? "amber"
       : "neutral";
+
+  // Drill-in only meaningful when we have an id AND that metric has > 0.
+  const canDrill = Boolean(campaignId) && Boolean(funnel);
+  const sentClick    = canDrill && (funnel?.sent    ?? 0) > 0 ? () => setDrill("sent")    : undefined;
+  const openClick    = canDrill && (funnel?.opened  ?? 0) > 0 ? () => setDrill("opened")  : undefined;
+  const clickedClick = canDrill && (funnel?.clicked ?? 0) > 0 ? () => setDrill("clicked") : undefined;
+  const replyClick   = canDrill && (funnel?.replied ?? 0) > 0 ? () => setDrill("replied") : undefined;
+  const bounceClick  = canDrill && (funnel?.bounced ?? 0) > 0 ? () => setDrill("bounced") : undefined;
 
   return (
     <div className="relative">
@@ -129,34 +143,48 @@ export function CampaignKpiHero({
               value={formatCount(funnel?.sent ?? null)}
               spark={sparkData}
               tone="neutral"
+              onClick={sentClick}
             />
             <Tile
               label="Open Rate"
               value={formatRate(funnel?.openRate ?? null)}
               hint={funnel ? `${formatCount(funnel.opened)} opened` : undefined}
               tone="blue"
+              onClick={openClick}
             />
             <Tile
               label="Click Rate"
               value={formatRate(funnel?.clickRate ?? null)}
               hint={funnel ? `${formatCount(funnel.clicked)} clicked` : undefined}
               tone="indigo"
+              onClick={clickedClick}
             />
             <Tile
               label="Reply Rate"
               value={formatRate(funnel?.replyRate ?? null)}
               hint={funnel ? `${formatCount(funnel.replied)} replied` : undefined}
               tone="emerald"
+              onClick={replyClick}
             />
             <Tile
               label="Bounce Rate"
               value={formatRate(funnel?.bounceRate ?? null)}
               hint={funnel ? `${formatCount(funnel.bounced)} bounced` : undefined}
               tone={bounceTone}
+              onClick={bounceClick}
             />
           </>
         )}
       </div>
+
+      {campaignId ? (
+        <EngagementDrillIn
+          open={drill !== null}
+          onClose={() => setDrill(null)}
+          campaignId={campaignId}
+          eventType={drill ?? "clicked"}
+        />
+      ) : null}
     </div>
   );
 }
