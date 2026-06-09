@@ -941,7 +941,7 @@ export default function CampaignBuilder() {
   }, [selectedStep]);
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-96px)] min-h-[640px] min-h-0 w-full max-w-[1500px] flex-col overflow-y-auto bg-[#F8FAFC]">
+    <div className="mx-auto flex h-[calc(100vh-112px)] min-h-[640px] min-h-0 w-full max-w-[1500px] flex-col overflow-hidden bg-[#F8FAFC]">
       {/* Top bar */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 lg:flex-nowrap">
         <button
