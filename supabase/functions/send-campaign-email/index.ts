@@ -220,10 +220,15 @@ serve(async (req) => {
   // halts all outbound sends until the row is cleared. Operator-controlled
   // pause for incidents, audits, or before-launch testing windows.
   // (Phase 4 spec — migration 20260603_phase4_outbound_schema.sql)
+  // Safety-hold check now respects expires_at — a hold with expires_at in
+  // the past is treated as effectively cleared, so an operator-set TTL or
+  // the migration-applied 24h default keeps a forgotten hold from silently
+  // 503-ing production indefinitely (BulkEnrich incident class).
   const { data: holds } = await admin
     .from("lit_outreach_safety_holds")
-    .select("id, reason")
+    .select("id, reason, expires_at")
     .is("cleared_at", null)
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .limit(1);
   if (holds && holds.length > 0) {
     log.warn("safety_hold_active", { hold_id: holds[0].id, reason: holds[0].reason });
@@ -346,6 +351,66 @@ serve(async (req) => {
       ),
     );
     consentByOrg.set(orgId, set);
+  }
+
+  // ─── 1.6 Auto-backfill consent for legacy / pre-wire recipients ─────────
+  //
+  // Recipients added before the AudiencePickerDrawer consent capture wire
+  // shipped (or where the picker's upsert silently failed) have no row in
+  // lit_recipient_consent and would be silently SKIPPED below. Operators
+  // launching legacy campaigns would see "0 sent / all skipped" with no
+  // obvious cause.
+  //
+  // Policy: launching a campaign IS itself the attestation that the
+  // operator believes consent exists (the picker's checkbox is UX hint;
+  // launching is the security commit). We write an audit row tagged
+  // source='legacy_pre_consent_wire' citing the user_id that launched the
+  // campaign + the campaign_id so the trail is preserved.
+  //
+  // Per-org because lit_recipient_consent is keyed (recipient_email, org_id).
+  // user_id is taken from any recipient in the batch for that org (they all
+  // belong to the same org's campaigns; user_id identifies the launcher).
+  for (const [orgId, emails] of recipientsByOrg.entries()) {
+    const consentedSet = consentByOrg.get(orgId) ?? new Set<string>();
+    const uniqueLower = Array.from(new Set(emails.map((e) => String(e).toLowerCase())));
+    const missing = uniqueLower.filter((e) => !consentedSet.has(e));
+    if (missing.length === 0) continue;
+
+    // Pick a representative recipient from this org to identify the launcher
+    // + campaign for the audit trail. Per missing email we look up the first
+    // recipient row matching it so the campaign_id is accurate.
+    const recipientsForOrg = recipients.filter((r) => r.org_id === orgId);
+    const fallbackUserId = recipientsForOrg.find((r) => r.user_id)?.user_id ?? null;
+
+    const rows = missing.map((email) => {
+      const owner = recipientsForOrg.find(
+        (r) => String(r.email ?? "").toLowerCase() === email,
+      );
+      return {
+        recipient_email: email,
+        org_id: orgId,
+        attested_by_user_id: owner?.user_id ?? fallbackUserId,
+        source: "legacy_pre_consent_wire",
+        campaign_id: owner?.campaign_id ?? null,
+      };
+    }).filter((r) => r.attested_by_user_id); // schema requires non-null
+
+    if (rows.length === 0) continue;
+
+    const { error: backfillErr } = await admin
+      .from("lit_recipient_consent")
+      .upsert(rows, { onConflict: "recipient_email,org_id", ignoreDuplicates: true });
+    if (backfillErr) {
+      log.warn("consent_backfill_failed", {
+        err: backfillErr.message,
+        count: rows.length,
+        org_id: orgId,
+      });
+    } else {
+      log.info("consent_backfill_ok", { count: rows.length, org_id: orgId });
+      for (const r of rows) consentedSet.add(r.recipient_email);
+      consentByOrg.set(orgId, consentedSet);
+    }
   }
 
   // ─── 2. Process each recipient ───────────────────────────────────────────
