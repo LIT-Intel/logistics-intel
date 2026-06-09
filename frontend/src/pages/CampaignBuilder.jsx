@@ -369,6 +369,30 @@ export default function CampaignBuilder() {
       .catch(() => setCampaignFunnel(null));
   }, [editId]);
 
+  // Rehydrate hasTestSendOccurred from DB on mount. Without this the
+  // per-session local state resets on every page reload and the
+  // pre-launch "you haven't tested yet" nudge re-appears even when the
+  // user already test-sent this campaign earlier. Pairs with Task 3
+  // (send-test-email now writes campaign_id on test_sent rows).
+  useEffect(() => {
+    if (!editId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { supabase } = await import("@/lib/supabase");
+        const { count } = await supabase
+          .from("lit_outreach_history")
+          .select("id", { count: "exact", head: true })
+          .eq("campaign_id", editId)
+          .eq("event_type", "test_sent");
+        if (!cancelled && (count ?? 0) > 0) setHasTestSendOccurred(true);
+      } catch {
+        // Non-fatal — nudge defaults to visible (safer UX).
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editId]);
+
   // Sparkline data: daily sent counts over last 14 days. Inline query
   // because it's small and used only here. Empty array for drafts.
   useEffect(() => {
