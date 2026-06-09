@@ -1,24 +1,89 @@
-// subscription-email-cron v3 — expanded trial cadence.
-// Daily sweep schedule:
-//   Day 2: trial_day_2_activation (behavior-gated — skip if user is
-//          already active in lit_activity_events)
-//   Day 3: trial_day_3_founder_note (always)
-//   Day 4: trial_tip_pulse_ai (always — "how top reps prep for calls")
-//   Day 6: trial_tip_contact_enrichment (always — "better contacts")
-//   Day 8: trial_tip_revenue_opportunity (always — "lead with $")
-//   Day 12: trial_ending_soon (always)
+// Reverse-engineered from deployed v5 of subscription-email-cron on
+// 2026-06-09 (drift audit found this hand-minified version live in
+// production. Git previously held a v3 that imported from _shared
+// modules; the deployed v5 inlines verifyCronAuth/logger to avoid
+// _shared import resolution during force-redeploy). Reformatted to
+// multi-line for readability; behavior verified line-by-line against
+// deployed EZBR sha256 4b13242eeed404da30629d79db54ab3f42c3bc77ed337e6f6fe293abba06d27d.
 //
-// Auth: X-Internal-Cron header against LIT_CRON_SECRET env (shared-secret
-// pattern used by all LIT cron-triggered edge fns — see _shared/cron_auth.ts).
-// pg_cron + pg_net injects the header from current_setting('app.lit_cron_secret').
-// Function uses its own SUPABASE_SERVICE_ROLE_KEY env to call
-// send-subscription-email (which IS strict about auth) internally.
-// Bounded blast radius: only sends to known users at known event types.
+// v5 — force redeploy to refresh gateway verify_jwt config; inlined
+// cron auth + logger so the function deploys standalone (no _shared
+// dependency). Daily sweep schedule:
+//   Day 2: trial_day_2_activation (behavior-gated)
+//   Day 3: trial_day_3_founder_note
+//   Day 4: trial_tip_pulse_ai
+//   Day 5: trial_book_demo (sales@ sender)
+//   Day 6: trial_tip_contact_enrichment
+//   Day 8: trial_tip_revenue_opportunity
+//   Day 12: trial_ending_soon
+//   + inactivity check-in for trials >= 3 days with zero activity
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
-import { verifyCronAuth } from "../_shared/cron_auth.ts";
-import { createLogger, requestId } from "../_shared/logger.ts";
+
+function verifyCronAuth(
+  req: Request,
+): { ok: true } | { ok: false; response: Response } {
+  const expected = Deno.env.get("LIT_CRON_SECRET") || "";
+  const provided = req.headers.get("X-Internal-Cron") || "";
+  if (!expected) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        fn: "subscription-email-cron",
+        event: "cron_secret_unset",
+      }),
+    );
+    return {
+      ok: false,
+      response: new Response("server misconfigured", { status: 500 }),
+    };
+  }
+  if (provided !== expected) {
+    return { ok: false, response: new Response("forbidden", { status: 403 }) };
+  }
+  return { ok: true };
+}
+
+function requestId(): string {
+  return crypto.randomUUID().split("-")[0];
+}
+
+function logInfo(event: string, fields: Record<string, unknown> = {}) {
+  console.log(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      level: "info",
+      fn: "subscription-email-cron",
+      event,
+      ...fields,
+    }),
+  );
+}
+
+function logWarn(event: string, fields: Record<string, unknown> = {}) {
+  console.warn(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      level: "warn",
+      fn: "subscription-email-cron",
+      event,
+      ...fields,
+    }),
+  );
+}
+
+function logError(event: string, fields: Record<string, unknown> = {}) {
+  console.error(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      level: "error",
+      fn: "subscription-email-cron",
+      event,
+      ...fields,
+    }),
+  );
+}
 
 const ALLOWED_EVENTS = new Set([
   "trial_welcome",
@@ -36,33 +101,41 @@ const ALLOWED_EVENTS = new Set([
   "cancellation_confirmation",
 ]);
 
-// Inactivity threshold (days) for the trial_check_in_inactive event.
-// If a trialing user has zero rows in lit_activity_events within
-// this window, we send the warm "stuck somewhere?" Cal.com nudge.
 const INACTIVE_DAYS_THRESHOLD = 3;
 
 serve(async (req: Request) => {
-  const log = createLogger("subscription-email-cron", { request_id: requestId() });
-  if (req.method === "OPTIONS") return new Response(null, { headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Internal-Cron" } });
+  const reqId = requestId();
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers":
+          "Authorization, Content-Type, X-Internal-Cron",
+      },
+    });
+  }
   const auth = verifyCronAuth(req);
   if (!auth.ok) {
-    log.warn("cron_auth_failed", { err: "X-Internal-Cron mismatch or missing" });
+    logWarn("cron_auth_failed", {
+      request_id: reqId,
+      err: "X-Internal-Cron mismatch or missing",
+    });
     return auth.response;
   }
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const db = createClient(supabaseUrl, serviceRoleKey);
   const selfUrl = `${supabaseUrl}/functions/v1/send-subscription-email`;
-
   let body: any = {};
-  try { body = await req.json(); } catch { body = {}; }
-
+  try {
+    body = await req.json();
+  } catch {
+    body = {};
+  }
   if (body?.trigger_one_off === true) {
     return await handleOneOffTrigger(db, selfUrl, serviceRoleKey, body);
   }
 
-  // Daily sweep — query trial subscriptions at each day-window.
-  // started_at is the trial start date; window is calendar-day-aware.
   function dayWindow(daysAgoStart: number, daysAgoEnd: number) {
     return {
       gte: new Date(Date.now() - daysAgoStart * 86400 * 1000).toISOString(),
@@ -70,37 +143,76 @@ serve(async (req: Request) => {
     };
   }
 
-  // The canonical org column on `subscriptions` is `organization_id`. It is
-  // nullable + currently never populated for any of the 10 live rows; the
-  // backfill in 20260530120000_subscriptions_backfill_organization_id
-  // populates it for existing rows, and billing-webhook writes it on every
-  // future event. PostgREST returns the column value (null until backfilled,
-  // real value after) — no env gate needed for the read side.
-  const select = "id, user_id, organization_id, plan_code, started_at, trial_ends_at";
-  const day12Columns = "id, user_id, organization_id, plan_code, trial_ends_at";
+  const select =
+    "id, user_id, organization_id, plan_code, started_at, trial_ends_at";
+  const day12Columns =
+    "id, user_id, organization_id, plan_code, trial_ends_at";
   const day2 = dayWindow(3, 2);
   const day3 = dayWindow(4, 3);
   const day4 = dayWindow(5, 4);
-  const day5 = dayWindow(6, 5);  // trial_book_demo trigger window
+  const day5 = dayWindow(6, 5);
   const day6 = dayWindow(7, 6);
   const day8 = dayWindow(9, 8);
 
-  const { data: day2c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day2.gte).lte("started_at", day2.lte);
-  const { data: day3c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day3.gte).lte("started_at", day3.lte);
-  const { data: day4c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day4.gte).lte("started_at", day4.lte);
-  const { data: day5c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day5.gte).lte("started_at", day5.lte);
-  const { data: day6c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day6.gte).lte("started_at", day6.lte);
-  const { data: day8c } = await db.from("subscriptions").select(select).eq("status", "trialing").gte("started_at", day8.gte).lte("started_at", day8.lte);
-  const { data: day12c } = await db.from("subscriptions").select(day12Columns).eq("status", "trialing").gte("trial_ends_at", new Date().toISOString()).lte("trial_ends_at", new Date(Date.now() + 2 * 86400 * 1000).toISOString());
+  const { data: day2c } = await db
+    .from("subscriptions")
+    .select(select)
+    .eq("status", "trialing")
+    .gte("started_at", day2.gte)
+    .lte("started_at", day2.lte);
+  const { data: day3c } = await db
+    .from("subscriptions")
+    .select(select)
+    .eq("status", "trialing")
+    .gte("started_at", day3.gte)
+    .lte("started_at", day3.lte);
+  const { data: day4c } = await db
+    .from("subscriptions")
+    .select(select)
+    .eq("status", "trialing")
+    .gte("started_at", day4.gte)
+    .lte("started_at", day4.lte);
+  const { data: day5c } = await db
+    .from("subscriptions")
+    .select(select)
+    .eq("status", "trialing")
+    .gte("started_at", day5.gte)
+    .lte("started_at", day5.lte);
+  const { data: day6c } = await db
+    .from("subscriptions")
+    .select(select)
+    .eq("status", "trialing")
+    .gte("started_at", day6.gte)
+    .lte("started_at", day6.lte);
+  const { data: day8c } = await db
+    .from("subscriptions")
+    .select(select)
+    .eq("status", "trialing")
+    .gte("started_at", day8.gte)
+    .lte("started_at", day8.lte);
+  const { data: day12c } = await db
+    .from("subscriptions")
+    .select(day12Columns)
+    .eq("status", "trialing")
+    .gte("trial_ends_at", new Date().toISOString())
+    .lte(
+      "trial_ends_at",
+      new Date(Date.now() + 2 * 86400 * 1000).toISOString(),
+    );
+  const { data: inactiveCandidates } = await db
+    .from("subscriptions")
+    .select(select)
+    .eq("status", "trialing");
 
-  // Inactivity sweep — all live trials regardless of signup age. We
-  // narrow by inactivity check below (per-user). The idempotency guard
-  // in send-subscription-email keeps us from sending twice.
-  const { data: inactiveCandidates } = await db.from("subscriptions").select(select).eq("status", "trialing");
-
-  async function getRecipientInfo(userId: string | null): Promise<{ email: string | null; firstName: string | null }> {
+  async function getRecipientInfo(
+    userId: string | null,
+  ): Promise<{ email: string | null; firstName: string | null }> {
     if (!userId) return { email: null, firstName: null };
-    const { data: profile } = await db.from("user_profiles").select("full_name").eq("user_id", userId).maybeSingle();
+    const { data: profile } = await db
+      .from("user_profiles")
+      .select("full_name")
+      .eq("user_id", userId)
+      .maybeSingle();
     const { data: authUser } = await db.auth.admin.getUserById(userId);
     const email = authUser?.user?.email ?? null;
     const fullName = (profile as any)?.full_name ?? null;
@@ -108,132 +220,311 @@ serve(async (req: Request) => {
     return { email, firstName };
   }
 
-  async function dispatchEmail(payload: Record<string, unknown>): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
+  async function dispatchEmail(
+    payload: Record<string, unknown>,
+  ): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
     try {
-      const resp = await fetch(selfUrl, { method: "POST", headers: { Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      return await resp.json().catch(() => ({ ok: false, error: "Invalid JSON from send-subscription-email" }));
-    } catch (err) { return { ok: false, error: err instanceof Error ? err.message : String(err) }; }
+      const resp = await fetch(selfUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${serviceRoleKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      return await resp.json().catch(() => ({
+        ok: false,
+        error: "Invalid JSON",
+      }));
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
-  const stats: Record<string, number> = { day_2: 0, day_3: 0, day_4: 0, day_5_book_demo: 0, day_6: 0, day_8: 0, day_12: 0, check_in_inactive: 0, skipped_day_2_active: 0, skipped_check_in_active: 0 };
+  const stats: Record<string, number> = {
+    day_2: 0,
+    day_3: 0,
+    day_4: 0,
+    day_5_book_demo: 0,
+    day_6: 0,
+    day_8: 0,
+    day_12: 0,
+    check_in_inactive: 0,
+    skipped_day_2_active: 0,
+    skipped_check_in_active: 0,
+  };
   const errors: string[] = [];
 
-  // Day 2 — behavior-gated
-  for (const sub of (day2c ?? [])) {
+  for (const sub of day2c ?? []) {
     const { email, firstName } = await getRecipientInfo(sub.user_id);
     if (!email) continue;
     if (sub.user_id && sub.started_at) {
-      const { count } = await db.from("lit_activity_events").select("id", { count: "exact", head: true }).eq("user_id", sub.user_id).gte("created_at", sub.started_at);
-      if ((count ?? 0) > 0) { stats.skipped_day_2_active++; continue; }
+      const { count } = await db
+        .from("lit_activity_events")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", sub.user_id)
+        .gte("created_at", sub.started_at);
+      if ((count ?? 0) > 0) {
+        stats.skipped_day_2_active++;
+        continue;
+      }
     }
-    const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.organization_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type: "trial_day_2_activation" });
+    const r = await dispatchEmail({
+      user_id: sub.user_id,
+      org_id: sub.organization_id,
+      subscription_id: sub.id,
+      recipient_email: email,
+      first_name: firstName,
+      plan_slug: normalizePlanCode(sub.plan_code),
+      event_type: "trial_day_2_activation",
+    });
     if (r.skipped) continue;
-    if (r.ok) stats.day_2++; else errors.push(`day2 ${email}: ${r.error}`);
+    if (r.ok) stats.day_2++;
+    else errors.push(`day2 ${email}: ${r.error}`);
   }
 
-  // Helper for day 3/4/6/8 (always-fire) sweeps
-  async function fireSweep(candidates: any[], event_type: string, statKey: string) {
+  async function fireSweep(
+    candidates: any[],
+    event_type: string,
+    statKey: string,
+  ) {
     for (const sub of candidates) {
       const { email, firstName } = await getRecipientInfo(sub.user_id);
       if (!email) continue;
-      const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.organization_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type });
+      const r = await dispatchEmail({
+        user_id: sub.user_id,
+        org_id: sub.organization_id,
+        subscription_id: sub.id,
+        recipient_email: email,
+        first_name: firstName,
+        plan_slug: normalizePlanCode(sub.plan_code),
+        event_type,
+      });
       if (r.skipped) continue;
-      if (r.ok) stats[statKey]++; else errors.push(`${event_type} ${email}: ${r.error}`);
+      if (r.ok) stats[statKey]++;
+      else errors.push(`${event_type} ${email}: ${r.error}`);
     }
   }
-
   await fireSweep(day3c ?? [], "trial_day_3_founder_note", "day_3");
   await fireSweep(day4c ?? [], "trial_tip_pulse_ai", "day_4");
-  // Day 5 — book demo from sales@. Warm Cal.com invite; routes replies
-  // to the sales inbox. Idempotent — guarded by lit_email_automation_events.
   await fireSweep(day5c ?? [], "trial_book_demo", "day_5_book_demo");
   await fireSweep(day6c ?? [], "trial_tip_contact_enrichment", "day_6");
   await fireSweep(day8c ?? [], "trial_tip_revenue_opportunity", "day_8");
 
-  // Inactivity check-in — fires when a trialing user has zero
-  // lit_activity_events rows in the last INACTIVE_DAYS_THRESHOLD days
-  // AND has not already received this email (idempotency on the receive
-  // side). Skip users we already sent on subsequent runs.
-  const inactiveCutoff = new Date(Date.now() - INACTIVE_DAYS_THRESHOLD * 86400 * 1000).toISOString();
-  for (const sub of (inactiveCandidates ?? [])) {
+  const inactiveCutoff = new Date(
+    Date.now() - INACTIVE_DAYS_THRESHOLD * 86400 * 1000,
+  ).toISOString();
+  for (const sub of inactiveCandidates ?? []) {
     const { email, firstName } = await getRecipientInfo(sub.user_id);
     if (!email) continue;
-    // Require trial age >= INACTIVE_DAYS_THRESHOLD to avoid pinging
-    // users on day 0/1 who just signed up and haven't had a chance.
-    if (sub.started_at && new Date(sub.started_at).getTime() > Date.now() - INACTIVE_DAYS_THRESHOLD * 86400 * 1000) continue;
+    if (
+      sub.started_at &&
+      new Date(sub.started_at).getTime() >
+        Date.now() - INACTIVE_DAYS_THRESHOLD * 86400 * 1000
+    ) {
+      continue;
+    }
     if (!sub.user_id) continue;
-    const { count } = await db.from("lit_activity_events").select("id", { count: "exact", head: true }).eq("user_id", sub.user_id).gte("created_at", inactiveCutoff);
-    if ((count ?? 0) > 0) { stats.skipped_check_in_active++; continue; }
-    const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.organization_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type: "trial_check_in_inactive" });
+    const { count } = await db
+      .from("lit_activity_events")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", sub.user_id)
+      .gte("created_at", inactiveCutoff);
+    if ((count ?? 0) > 0) {
+      stats.skipped_check_in_active++;
+      continue;
+    }
+    const r = await dispatchEmail({
+      user_id: sub.user_id,
+      org_id: sub.organization_id,
+      subscription_id: sub.id,
+      recipient_email: email,
+      first_name: firstName,
+      plan_slug: normalizePlanCode(sub.plan_code),
+      event_type: "trial_check_in_inactive",
+    });
     if (r.skipped) continue;
-    if (r.ok) stats.check_in_inactive++; else errors.push(`check_in ${email}: ${r.error}`);
+    if (r.ok) stats.check_in_inactive++;
+    else errors.push(`check_in ${email}: ${r.error}`);
   }
 
-  // Day 12 — trial ending
-  for (const sub of (day12c ?? [])) {
+  for (const sub of day12c ?? []) {
     const { email, firstName } = await getRecipientInfo(sub.user_id);
     if (!email) continue;
     let trialEndsDate: string | undefined;
-    if (sub.trial_ends_at) { try { trialEndsDate = new Date(sub.trial_ends_at).toLocaleDateString("en-US", { month: "long", day: "numeric" }); } catch {} }
-    const r = await dispatchEmail({ user_id: sub.user_id, org_id: sub.organization_id, subscription_id: sub.id, recipient_email: email, first_name: firstName, plan_slug: normalizePlanCode(sub.plan_code), event_type: "trial_ending_soon", trial_ends_date: trialEndsDate });
+    if (sub.trial_ends_at) {
+      try {
+        trialEndsDate = new Date(sub.trial_ends_at).toLocaleDateString(
+          "en-US",
+          { month: "long", day: "numeric" },
+        );
+      } catch {
+        // ignore date parse failures
+      }
+    }
+    const r = await dispatchEmail({
+      user_id: sub.user_id,
+      org_id: sub.organization_id,
+      subscription_id: sub.id,
+      recipient_email: email,
+      first_name: firstName,
+      plan_slug: normalizePlanCode(sub.plan_code),
+      event_type: "trial_ending_soon",
+      trial_ends_date: trialEndsDate,
+    });
     if (r.skipped) continue;
-    if (r.ok) stats.day_12++; else errors.push(`day12 ${email}: ${r.error}`);
+    if (r.ok) stats.day_12++;
+    else errors.push(`day12 ${email}: ${r.error}`);
   }
 
   if (errors.length > 0) {
-    log.error("cron_dispatch_errors", { err: `${errors.length} dispatch failures`, errors: errors.slice(0, 5), stats });
+    logError("cron_dispatch_errors", {
+      request_id: reqId,
+      err: `${errors.length} dispatch failures`,
+      errors: errors.slice(0, 5),
+      stats,
+    });
   } else {
-    log.info("cron_swept_clean", { stats });
+    logInfo("cron_swept_clean", { request_id: reqId, stats });
   }
-  return new Response(JSON.stringify({ ok: true, processed: stats, errors: errors.length ? errors : undefined }), { headers: { "Content-Type": "application/json" } });
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      processed: stats,
+      errors: errors.length ? errors : undefined,
+    }),
+    { headers: { "Content-Type": "application/json" } },
+  );
 });
 
-async function handleOneOffTrigger(db: any, selfUrl: string, serviceRoleKey: string, body: any): Promise<Response> {
+async function handleOneOffTrigger(
+  db: any,
+  selfUrl: string,
+  serviceRoleKey: string,
+  body: any,
+): Promise<Response> {
   const recipientEmail = String(body?.recipient_email || "").trim().toLowerCase();
   const eventType = String(body?.event_type || "").trim();
-  if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) return jsonResp({ ok: false, error: "invalid_recipient_email" }, 400);
-  if (!ALLOWED_EVENTS.has(eventType)) return jsonResp({ ok: false, error: "invalid_event_type", allowed: Array.from(ALLOWED_EVENTS) }, 400);
+  if (
+    !recipientEmail ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)
+  ) {
+    return jsonResp({ ok: false, error: "invalid_recipient_email" }, 400);
+  }
+  if (!ALLOWED_EVENTS.has(eventType)) {
+    return jsonResp(
+      {
+        ok: false,
+        error: "invalid_event_type",
+        allowed: Array.from(ALLOWED_EVENTS),
+      },
+      400,
+    );
+  }
   let recipientKnown = false;
   try {
-    const { data: profileMatch } = await db.from("user_profiles").select("user_id").eq("email", recipientEmail).maybeSingle();
+    const { data: profileMatch } = await db
+      .from("user_profiles")
+      .select("user_id")
+      .eq("email", recipientEmail)
+      .maybeSingle();
     if (profileMatch) recipientKnown = true;
-  } catch {}
+  } catch {
+    // ignore lookup errors; fall through to other checks
+  }
   if (!recipientKnown && body?.user_id) {
     try {
       const { data: userById } = await db.auth.admin.getUserById(body.user_id);
-      if (userById?.user?.email?.toLowerCase() === recipientEmail) recipientKnown = true;
-    } catch {}
+      if (userById?.user?.email?.toLowerCase() === recipientEmail) {
+        recipientKnown = true;
+      }
+    } catch {
+      // ignore lookup errors
+    }
   }
   if (!recipientKnown) {
-    const adminEmails = (Deno.env.get("SUPER_ADMIN_EMAILS") || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const adminEmails = (Deno.env.get("SUPER_ADMIN_EMAILS") || "")
+      .split(",")
+      .map((s: string) => s.trim().toLowerCase())
+      .filter(Boolean);
     if (adminEmails.includes(recipientEmail)) recipientKnown = true;
-    const litFounderEmails = ["vraymond@logisticintel.com", "vraymond83@gmail.com"];
+    const litFounderEmails = [
+      "vraymond@logisticintel.com",
+      "vraymond83@gmail.com",
+    ];
     if (litFounderEmails.includes(recipientEmail)) recipientKnown = true;
   }
-  if (!recipientKnown) return jsonResp({ ok: false, error: "recipient_not_known" }, 403);
+  if (!recipientKnown) {
+    return jsonResp({ ok: false, error: "recipient_not_known" }, 403);
+  }
   const dispatchPayload: Record<string, unknown> = {
-    recipient_email: recipientEmail, event_type: eventType, plan_slug: body?.plan_slug || "free_trial",
-    first_name: body?.first_name, user_id: body?.user_id, org_id: body?.org_id, subscription_id: body?.subscription_id,
-    trial_ends_date: body?.trial_ends_date, previous_plan_name: body?.previous_plan_name,
-    period_end: body?.period_end, plan_name: body?.plan_name,
+    recipient_email: recipientEmail,
+    event_type: eventType,
+    plan_slug: body?.plan_slug || "free_trial",
+    first_name: body?.first_name,
+    user_id: body?.user_id,
+    org_id: body?.org_id,
+    subscription_id: body?.subscription_id,
+    trial_ends_date: body?.trial_ends_date,
+    previous_plan_name: body?.previous_plan_name,
+    period_end: body?.period_end,
+    plan_name: body?.plan_name,
     force: body?.force === true,
   };
   try {
-    const resp = await fetch(selfUrl, { method: "POST", headers: { Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json" }, body: JSON.stringify(dispatchPayload) });
-    const json = await resp.json().catch(() => ({ ok: false, error: "invalid_send_response" }));
+    const resp = await fetch(selfUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(dispatchPayload),
+    });
+    const json = await resp.json().catch(() => ({
+      ok: false,
+      error: "invalid_send_response",
+    }));
     return jsonResp(json, resp.ok ? 200 : resp.status);
-  } catch (err) { return jsonResp({ ok: false, error: "dispatch_failed", detail: err instanceof Error ? err.message : String(err) }, 500); }
+  } catch (err) {
+    return jsonResp(
+      {
+        ok: false,
+        error: "dispatch_failed",
+        detail: err instanceof Error ? err.message : String(err),
+      },
+      500,
+    );
+  }
 }
 
-function jsonResp(body: unknown, status = 200): Response { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }); }
+function jsonResp(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
-function normalizePlanCode(code: string | null): "free_trial" | "starter" | "growth" | "scale" | "enterprise" {
+function normalizePlanCode(
+  code: string | null,
+): "free_trial" | "starter" | "growth" | "scale" | "enterprise" {
   if (!code) return "free_trial";
   const n = code.toLowerCase().trim();
-  const map: Record<string, "free_trial" | "starter" | "growth" | "scale" | "enterprise"> = {
-    trial: "free_trial", free: "free_trial", free_trial: "free_trial",
-    starter: "starter", pro: "growth", growth: "growth",
-    team: "scale", scale: "scale", enterprise: "enterprise",
+  const map: Record<
+    string,
+    "free_trial" | "starter" | "growth" | "scale" | "enterprise"
+  > = {
+    trial: "free_trial",
+    free: "free_trial",
+    free_trial: "free_trial",
+    starter: "starter",
+    pro: "growth",
+    growth: "growth",
+    team: "scale",
+    scale: "scale",
+    enterprise: "enterprise",
   };
   return map[n] ?? "free_trial";
 }
