@@ -1092,6 +1092,7 @@ export default function CampaignBuilder() {
                     : "Add at least one filled step first."
             }
             hasTestSendOccurred={hasTestSendOccurred}
+            campaignStatus={details?.status}
           />
           <SenderGuidelinesNote />
         </div>
