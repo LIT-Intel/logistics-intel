@@ -76,21 +76,29 @@ serve(async (req) => {
   //    Also pull metadata so we can read previously-saved manual recipients.
   const { data: camp, error: campErr } = await admin
     .from("lit_campaigns")
-    .select("id, user_id, name, metrics")
+    .select("id, user_id, name, metrics, org_id")
     .eq("id", campaignId)
     .maybeSingle();
   if (campErr || !camp) return json({ ok: false, error: "campaign_not_found" }, 404);
   if (camp.user_id !== user.id) return json({ ok: false, error: "forbidden" }, 403);
 
-  // 2. Resolve the caller's org_id (RLS on the new roster table requires it).
-  const { data: member } = await admin
-    .from("org_members")
-    .select("org_id")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  const orgId = member?.org_id ?? null;
+  // 2. Resolve the caller's org_id. Two-tier fallback:
+  //    (a) the campaign's own org_id (set when the campaign was created)
+  //    (b) the caller's first org_members row (org_members has joined_at,
+  //        not created_at — earlier ordering silently failed and left
+  //        org_id NULL on every recipient, which then tripped the consent
+  //        gate and skipped every send. Fix dated 2026-06-09).
+  let orgId: string | null = (camp as any)?.org_id ?? null;
+  if (!orgId) {
+    const { data: member } = await admin
+      .from("org_members")
+      .select("org_id")
+      .eq("user_id", user.id)
+      .order("joined_at", { ascending: true, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    orgId = member?.org_id ?? null;
+  }
 
   // 2b. If the campaign is bound to a Pulse List, sync the list's
   //     companies into lit_campaign_companies first. This is additive —
