@@ -81,6 +81,9 @@ export interface CampaignDetails {
   companyIds: string[];
   createdAt: string | null;
   updatedAt: string | null;
+  // Sub-project J: persisted launch anchor.
+  scheduled_start_at: string | null;
+  send_timezone: string;
 }
 
 export interface CampaignStepRow {
@@ -104,7 +107,7 @@ export async function getCampaignWithDetails(
     supabase
       .from("lit_campaigns")
       .select(
-        "id, name, status, channel, metrics, created_at, updated_at",
+        "id, name, status, channel, metrics, created_at, updated_at, scheduled_start_at, send_timezone",
       )
       .eq("id", campaignId)
       .maybeSingle(),
@@ -139,6 +142,8 @@ export async function getCampaignWithDetails(
     ),
     createdAt: c.created_at ?? null,
     updatedAt: c.updated_at ?? null,
+    scheduled_start_at: c.scheduled_start_at ?? null,
+    send_timezone: c.send_timezone ?? "UTC",
   };
 }
 
