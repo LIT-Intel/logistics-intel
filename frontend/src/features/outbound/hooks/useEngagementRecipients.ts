@@ -11,7 +11,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 
-export type EngagementEventType = "sent" | "opened" | "clicked" | "replied" | "bounced";
+export type EngagementEventType = "sent" | "opened" | "clicked" | "replied" | "bounced" | "meetings";
 
 export interface EngagementRecipient {
   recipient_id: string;

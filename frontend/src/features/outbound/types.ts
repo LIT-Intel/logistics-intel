@@ -11,6 +11,9 @@ export interface CampaignFunnel {
   replied: number;
   bounced: number;
   suppressed: number;
+  // Net "live" meetings = bookings + reschedules - cancellations.
+  // Sourced from lit_outreach_history rows logged by cal-webhook.
+  meetings: number;
   // Computed rates (0-100), null when sent === 0
   openRate: number | null;
   clickRate: number | null;

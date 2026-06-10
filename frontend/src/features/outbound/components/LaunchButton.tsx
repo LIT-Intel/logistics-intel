@@ -16,6 +16,11 @@ interface Props {
   launching?: boolean;
   disabledReason?: string;
   hasTestSendOccurred: boolean;
+  /** When provided, suppresses the "haven't tested" nudge once the
+   *  campaign has already been launched (status !== 'draft'). The nudge
+   *  is a pre-launch sanity check; after Launch fires real sends, it's
+   *  irrelevant and visually confusing. */
+  campaignStatus?: string;
 }
 
 export function LaunchButton({
@@ -24,15 +29,17 @@ export function LaunchButton({
   launching = false,
   disabledReason,
   hasTestSendOccurred,
+  campaignStatus,
 }: Props) {
   const disabled = !canLaunch || launching;
   const title = disabled
     ? (disabledReason ?? "Launch unavailable")
     : "Queue recipients and start sending.";
+  const isPostLaunch = campaignStatus != null && campaignStatus !== "draft";
 
   return (
     <div className="relative flex flex-col items-end gap-1">
-      {!hasTestSendOccurred && canLaunch && !launching && (
+      {!hasTestSendOccurred && canLaunch && !launching && !isPostLaunch && (
         <div className="absolute -top-7 right-0 z-10 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 shadow-sm">
           <span aria-hidden>⚠️</span>
           You haven't tested this email yet

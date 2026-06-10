@@ -28,6 +28,7 @@ const EVENT_LABELS: Record<EngagementEventType, string> = {
   clicked: "Clicked",
   replied: "Replied",
   bounced: "Bounced",
+  meetings: "Meetings",
 };
 
 function fmtDate(iso: string): string {

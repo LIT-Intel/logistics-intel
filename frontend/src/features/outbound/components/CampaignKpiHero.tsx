@@ -99,11 +99,12 @@ export function CampaignKpiHero({
 
   // Drill-in only meaningful when we have an id AND that metric has > 0.
   const canDrill = Boolean(campaignId) && Boolean(funnel);
-  const sentClick    = canDrill && (funnel?.sent    ?? 0) > 0 ? () => setDrill("sent")    : undefined;
-  const openClick    = canDrill && (funnel?.opened  ?? 0) > 0 ? () => setDrill("opened")  : undefined;
-  const clickedClick = canDrill && (funnel?.clicked ?? 0) > 0 ? () => setDrill("clicked") : undefined;
-  const replyClick   = canDrill && (funnel?.replied ?? 0) > 0 ? () => setDrill("replied") : undefined;
-  const bounceClick  = canDrill && (funnel?.bounced ?? 0) > 0 ? () => setDrill("bounced") : undefined;
+  const sentClick     = canDrill && (funnel?.sent     ?? 0) > 0 ? () => setDrill("sent")     : undefined;
+  const openClick     = canDrill && (funnel?.opened   ?? 0) > 0 ? () => setDrill("opened")   : undefined;
+  const clickedClick  = canDrill && (funnel?.clicked  ?? 0) > 0 ? () => setDrill("clicked")  : undefined;
+  const replyClick    = canDrill && (funnel?.replied  ?? 0) > 0 ? () => setDrill("replied")  : undefined;
+  const bounceClick   = canDrill && (funnel?.bounced  ?? 0) > 0 ? () => setDrill("bounced")  : undefined;
+  const meetingsClick = canDrill && (funnel?.meetings ?? 0) > 0 ? () => setDrill("meetings") : undefined;
 
   return (
     <div className="relative">
@@ -124,7 +125,7 @@ export function CampaignKpiHero({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-7">
         <Tile
           label="Audience"
           value={audienceDisplay}
@@ -179,6 +180,19 @@ export function CampaignKpiHero({
               hint={funnel ? `${formatCount(funnel.bounced)} bounced` : undefined}
               tone={bounceTone}
               onClick={bounceClick}
+            />
+            <Tile
+              label="Meetings"
+              value={formatCount(funnel?.meetings ?? 0)}
+              hint={
+                funnel
+                  ? (funnel.meetings ?? 0) > 0
+                    ? "Cal.com booked"
+                    : "Cal.com integration"
+                  : undefined
+              }
+              tone="emerald"
+              onClick={meetingsClick}
             />
           </>
         )}

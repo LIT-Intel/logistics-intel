@@ -26,6 +26,7 @@ import { useTemplates, usePersonas } from "@/features/outbound/hooks/useTemplate
 import { useCampaign } from "@/features/outbound/hooks/useCampaign";
 
 import { CampaignKpiHero } from "@/features/outbound/components/CampaignKpiHero";
+import { CampaignActivityTimeline } from "@/features/outbound/components/CampaignActivityTimeline";
 import { LaunchButton } from "@/features/outbound/components/LaunchButton";
 import { fetchCampaignMetricsBatch } from "@/features/outbound/api/campaignMetrics";
 import { ScheduleStrip } from "@/features/outbound/components/ScheduleStrip";
@@ -1092,6 +1093,7 @@ export default function CampaignBuilder() {
                     : "Add at least one filled step first."
             }
             hasTestSendOccurred={hasTestSendOccurred}
+            campaignStatus={details?.status}
           />
           <SenderGuidelinesNote />
         </div>
@@ -1104,6 +1106,7 @@ export default function CampaignBuilder() {
         sparkData={campaignSparkData}
         campaignId={editId}
       />
+      {editId ? <CampaignActivityTimeline campaignId={editId} /> : null}
       {senderLoadError ? (
         <div
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800"

@@ -15,6 +15,7 @@ interface RpcRow {
   replied: number;
   bounced: number;
   suppressed: number;
+  meetings: number | null;
   last_event_at: string | null;
   open_rate: number | null;
   click_rate: number | null;
@@ -46,6 +47,7 @@ export async function fetchCampaignMetricsBatch(
       replied: Number(row.replied ?? 0),
       bounced: Number(row.bounced ?? 0),
       suppressed: Number(row.suppressed ?? 0),
+      meetings: Number(row.meetings ?? 0),
       openRate: row.open_rate,
       clickRate: row.click_rate,
       replyRate: row.reply_rate,
