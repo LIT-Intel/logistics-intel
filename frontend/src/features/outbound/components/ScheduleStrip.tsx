@@ -60,7 +60,7 @@ function channelLabel(kind: BuilderStep["kind"]): string {
   return "Wait";
 }
 
-export function ScheduleStrip({ steps, launching }: { steps: BuilderStep[]; launching?: boolean }) {
+export function ScheduleStrip({ steps, launching, anchor }: { steps: BuilderStep[]; launching?: boolean; anchor?: number }) {
   const rows = useMemo(() => {
     const out: Array<{
       idx: number;
@@ -70,7 +70,7 @@ export function ScheduleStrip({ steps, launching }: { steps: BuilderStep[]; laun
       at: Date;
       relMs: number;
     }> = [];
-    let cursor = Date.now();
+    let cursor = anchor ?? Date.now();
     let nonWaitCount = 0;
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
@@ -99,7 +99,7 @@ export function ScheduleStrip({ steps, launching }: { steps: BuilderStep[]; laun
       });
     }
     return out;
-  }, [steps]);
+  }, [steps, anchor]);
 
   if (rows.length === 0) return null;
 
