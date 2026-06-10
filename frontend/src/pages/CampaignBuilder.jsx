@@ -32,6 +32,7 @@ import { CampaignActivityTimeline } from "@/features/outbound/components/Campaig
 import { LaunchButton } from "@/features/outbound/components/LaunchButton";
 import { fetchCampaignMetricsBatch } from "@/features/outbound/api/campaignMetrics";
 import { ScheduleStrip } from "@/features/outbound/components/ScheduleStrip";
+import { LaunchSchedulePicker } from "@/features/outbound/components/LaunchSchedulePicker";
 import { PersonaPanel } from "@/features/outbound/components/PersonaPanel";
 import { TimelineCanvas } from "@/features/outbound/components/TimelineCanvas";
 import { StepInspector } from "@/features/outbound/components/StepInspector";
@@ -335,6 +336,11 @@ export default function CampaignBuilder() {
   const [industry, setIndustry] = useState("any");
   const [tone, setTone] = useState("consultative");
   const [hydratedFromEdit, setHydratedFromEdit] = useState(false);
+  // Sub-project J: persisted campaign launch time + IANA TZ.
+  const [scheduledStartAt, setScheduledStartAt] = useState(null);
+  const [sendTimezone, setSendTimezone] = useState(
+    typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "UTC",
+  );
 
   const { companies, loading: companiesLoading } = useSavedCompanies();
   const { primaryEmail, known: inboxKnown } = useInboxStatus();
@@ -444,6 +450,13 @@ export default function CampaignBuilder() {
     setSteps(builderSteps);
     setSelectedStepId(builderSteps[0]?.localId ?? null);
     setSelectedIds(new Set(details.companyIds));
+    // Sub-project J: hydrate persisted launch time + TZ.
+    if (details.scheduled_start_at !== undefined) {
+      setScheduledStartAt(details.scheduled_start_at);
+    }
+    if (details.send_timezone) {
+      setSendTimezone(details.send_timezone);
+    }
     const metricsPersona = details.metrics?.persona_id;
     if (typeof metricsPersona === "string" && metricsPersona) {
       setSelectedPersonaId(metricsPersona);
@@ -713,6 +726,8 @@ export default function CampaignBuilder() {
           name: trimmedName,
           channel: baseChannel,
           metrics: mergedMetrics,
+          scheduled_start_at: scheduledStartAt,
+          send_timezone: sendTimezone,
         });
         campaignId = details.id;
       } else {
@@ -721,6 +736,8 @@ export default function CampaignBuilder() {
           channel: baseChannel,
           description: null,
           metrics: mergedMetrics,
+          scheduled_start_at: scheduledStartAt,
+          send_timezone: sendTimezone,
         });
         campaignId = created.id;
       }
@@ -778,6 +795,8 @@ export default function CampaignBuilder() {
     steps,
     tone,
     trimmedName,
+    scheduledStartAt,
+    sendTimezone,
   ]);
 
   const handleTestSend = useCallback(async () => {
@@ -1097,6 +1116,15 @@ export default function CampaignBuilder() {
             <Save className="h-2.5 w-2.5" />
             {saving ? "Saving…" : isEditMode ? "Save changes" : "Save draft"}
           </button>
+          <LaunchSchedulePicker
+            value={scheduledStartAt}
+            timezone={sendTimezone}
+            onChange={(utc, tz) => {
+              setScheduledStartAt(utc);
+              setSendTimezone(tz);
+            }}
+            disabled={details?.status === "active" || details?.status === "archived"}
+          />
           <LaunchButton
             onLaunch={handleLaunch}
             canLaunch={canLaunch}
@@ -1212,7 +1240,11 @@ export default function CampaignBuilder() {
           </button>
         </div>
       ) : null}
-      <ScheduleStrip steps={steps} launching={launching} />
+      <ScheduleStrip
+        steps={steps}
+        launching={launching}
+        anchor={scheduledStartAt ? Date.parse(scheduledStartAt) : undefined}
+      />
 
       {error || campaignError ? (
         <div
