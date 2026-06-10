@@ -1,4 +1,4 @@
-// cal-webhook v1 — receives Cal.com booking webhooks and logs them as
+// cal-webhook v2 — receives Cal.com booking webhooks and logs them as
 // meeting events on the matching campaign recipient.
 //
 // Wire-up (one-time): Cal.com Dashboard → Settings → Developer → Webhooks
@@ -9,18 +9,22 @@
 // Auth: HMAC-SHA256 of the raw JSON body, signed with CAL_WEBHOOK_SECRET,
 // sent by Cal.com as the X-Cal-Signature-256 header (hex, lowercase).
 //
-// Mapping strategy:
-//   1. Get the attendee email from payload.attendees[0].email
-//   2. Find the most recent lit_outreach_history send for that email
-//      where event_type='sent' (this gives us campaign_id + recipient_id + user_id)
-//   3. INSERT a fresh lit_outreach_history row with event_type='meeting_booked'
-//      (or 'meeting_rescheduled' / 'meeting_cancelled')
-//   4. Stash the Cal.com booking payload in metadata for later inspection.
+// Mapping strategy (Sub-project L — multi-strategy attribution):
+//   Strategy 1: attendee_match  → most recent lit_outreach_history send
+//               whose metadata.recipient_email matches the booker's email.
+//               This handles the canonical "we mailed them, they booked" path.
+//   Strategy 2: organizer_match → if Strategy 1 misses, resolve the booking's
+//               organizer.email to an auth.users row, then attach to that
+//               user's most recent active|draft campaign in lit_campaigns.
+//               This handles "person books on our calendar without ever having
+//               been on an outbound list" — the Meetings KPI still credits the
+//               campaign that's currently running.
+//   Strategy 3: unattributed    → no match available; row is written with
+//               campaign_id=NULL and metadata.attribution_path='unattributed'
+//               so it surfaces in admin reports as "unattributed booking".
 //
 // Idempotency: dedupes against metadata->>'cal_booking_id' so Cal.com
-// retries don't double-log. If no matching send is found (e.g. the
-// attendee booked without ever getting an email from us), we still
-// log a row with campaign_id=NULL so it's visible in admin reports.
+// retries don't double-log.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
@@ -58,6 +62,22 @@ function mapEventType(trigger: string): string {
   return "meeting_" + t.toLowerCase();
 }
 
+// Extract organizer email from various shapes Cal.com has shipped. The
+// canonical field is payload.organizer.email but older / cancelled-event
+// payloads sometimes carry payload.user.email or payload.organizerEmail.
+function extractOrganizerEmail(payload: any): string {
+  const candidates = [
+    payload?.organizer?.email,
+    payload?.organizerEmail,
+    payload?.user?.email,
+    payload?.eventOwner?.email,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.includes("@")) return c.trim().toLowerCase();
+  }
+  return "";
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type, X-Cal-Signature-256" } });
   if (req.method !== "POST") return new Response(JSON.stringify({ ok: false, error: "method_not_allowed" }), { status: 405, headers: { "Content-Type": "application/json" } });
@@ -86,6 +106,7 @@ serve(async (req: Request) => {
   const payload = body?.payload || {};
   const attendees: any[] = Array.isArray(payload?.attendees) ? payload.attendees : [];
   const attendeeEmail = String(attendees[0]?.email || "").trim().toLowerCase();
+  const organizerEmail = extractOrganizerEmail(payload);
   const bookingId = String(payload?.uid || payload?.bookingId || payload?.id || "").trim();
   const startTime = payload?.startTime || payload?.start_time || null;
   const meetingTitle = payload?.title || payload?.eventTitle || null;
@@ -101,6 +122,8 @@ serve(async (req: Request) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const db = createClient(supabaseUrl, serviceRoleKey);
 
+  // Dedupe: same cal_booking_id + event_type already logged? Cal.com
+  // retries on 5xx; we never want duplicates on the campaign timeline.
   const { data: existing } = await db
     .from("lit_outreach_history")
     .select("id")
@@ -113,11 +136,17 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({ ok: true, skipped: "dedupe" }), { headers: { "Content-Type": "application/json" } });
   }
 
+  // ── Attribution strategy 1: attendee_match ───────────────────────────
+  // Match the booker email to their most recent outreach send. Most recent
+  // (by created_at DESC) so a re-engagement scenario attributes to the
+  // current active campaign, not the first one the contact ever got mailed.
   let campaignId: string | null = null;
   let recipientId: string | null = null;
   let userId: string | null = null;
   let contactId: string | null = null;
   let companyId: string | null = null;
+  let attributionPath: "attendee_match" | "organizer_match" | "unattributed" = "unattributed";
+
   if (attendeeEmail) {
     const { data: lastSend } = await db
       .from("lit_outreach_history")
@@ -127,15 +156,52 @@ serve(async (req: Request) => {
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (lastSend) {
+    if (lastSend?.campaign_id) {
       campaignId = lastSend.campaign_id ?? null;
       contactId = lastSend.contact_id ?? null;
       companyId = lastSend.company_id ?? null;
       userId = lastSend.user_id ?? null;
       recipientId = (lastSend.metadata as any)?.recipient_id ?? null;
+      attributionPath = "attendee_match";
     }
   }
 
+  // ── Attribution strategy 2: organizer_match ──────────────────────────
+  // Strategy 1 missed (e.g. a prospect booked on our calendar without ever
+  // being on an outbound list, or attendee was an internal mailbox like
+  // sales@logisticintel.com). Use the booking organizer's email to find
+  // the LIT user who owns the calendar, then attribute to their most
+  // recently created active|draft campaign.
+  if (!campaignId && organizerEmail) {
+    const { data: organizerUser } = await db
+      .schema("auth" as any)
+      .from("users")
+      .select("id")
+      .eq("email", organizerEmail)
+      .limit(1)
+      .maybeSingle();
+    const organizerUserId = (organizerUser as any)?.id ?? null;
+    if (organizerUserId) {
+      const { data: recentCampaign } = await db
+        .from("lit_campaigns")
+        .select("id")
+        .eq("user_id", organizerUserId)
+        .in("status", ["active", "draft"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (recentCampaign?.id) {
+        campaignId = recentCampaign.id;
+        userId = organizerUserId;
+        attributionPath = "organizer_match";
+      }
+    }
+  }
+
+  // ── Fallback: user_id resolution ─────────────────────────────────────
+  // user_id is NOT NULL on lit_outreach_history. If neither attribution
+  // strategy resolved one, fall back to the first platform_admin so the
+  // row inserts cleanly and shows up in unattributed-meetings reports.
   if (!userId) {
     const { data: admin } = await db.from("platform_admins").select("user_id").limit(1).maybeSingle();
     userId = admin?.user_id ?? null;
@@ -152,9 +218,12 @@ serve(async (req: Request) => {
     cal_meeting_url: meetingUrl,
     cal_meeting_title: meetingTitle,
     attendee_email: attendeeEmail,
+    organizer_email: organizerEmail || null,
     recipient_email: attendeeEmail,
     recipient_id: recipientId,
-    matched_via: campaignId ? "last_send" : "unmatched",
+    // matched_via is kept for backwards-compat with anything still reading it.
+    matched_via: attributionPath === "attendee_match" ? "last_send" : (attributionPath === "organizer_match" ? "organizer" : "unmatched"),
+    attribution_path: attributionPath,
   };
 
   const { data: inserted, error: insertErr } = await db
@@ -180,6 +249,6 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({ ok: false, error: insertErr.message }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 
-  log("info", "meeting_logged", { event_type: eventType, cal_booking_id: bookingId, campaign_id: campaignId, matched: !!campaignId });
-  return new Response(JSON.stringify({ ok: true, id: inserted?.id, event_type: eventType, campaign_id: campaignId }), { headers: { "Content-Type": "application/json" } });
+  log("info", "meeting_logged", { event_type: eventType, cal_booking_id: bookingId, campaign_id: campaignId, attribution_path: attributionPath, matched: !!campaignId });
+  return new Response(JSON.stringify({ ok: true, id: inserted?.id, event_type: eventType, campaign_id: campaignId, attribution_path: attributionPath }), { headers: { "Content-Type": "application/json" } });
 });
