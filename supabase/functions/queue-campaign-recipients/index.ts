@@ -76,11 +76,29 @@ serve(async (req) => {
   //    Also pull metadata so we can read previously-saved manual recipients.
   const { data: camp, error: campErr } = await admin
     .from("lit_campaigns")
-    .select("id, user_id, name, metrics, org_id")
+    .select("id, user_id, name, metrics, org_id, scheduled_start_at")
     .eq("id", campaignId)
     .maybeSingle();
   if (campErr || !camp) return json({ ok: false, error: "campaign_not_found" }, 404);
   if (camp.user_id !== user.id) return json({ ok: false, error: "forbidden" }, 403);
+
+  // Sub-project J: anchor first-step send time to scheduled_start_at + first
+  // step's relative delay. NULL anchor falls back to now() (legacy behavior).
+  const { data: firstStep } = await admin
+    .from("lit_campaign_steps")
+    .select("id, delay_days, delay_hours, delay_minutes, step_order")
+    .eq("campaign_id", campaignId)
+    .order("step_order", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const anchorDate = (camp as any).scheduled_start_at
+    ? new Date((camp as any).scheduled_start_at)
+    : new Date();
+  const firstDelayMs =
+    ((firstStep as any)?.delay_days ?? 0) * 86_400_000 +
+    ((firstStep as any)?.delay_hours ?? 0) * 3_600_000 +
+    ((firstStep as any)?.delay_minutes ?? 0) * 60_000;
+  const firstSendAtIso = new Date(anchorDate.getTime() + firstDelayMs).toISOString();
 
   // 2. Resolve the caller's org_id. Two-tier fallback:
   //    (a) the campaign's own org_id (set when the campaign was created)
@@ -188,7 +206,7 @@ serve(async (req) => {
       linkedin_url: c.linkedin_url ?? null,
       phone: c.phone ?? null,
       status: "pending",
-      next_send_at: now,
+      next_send_at: firstSendAtIso,
       merge_vars: {},
     }));
 
@@ -224,7 +242,7 @@ serve(async (req) => {
     linkedin_url: null,
     phone: null,
     status: "pending",
-    next_send_at: now,
+    next_send_at: firstSendAtIso,
     merge_vars: m.company_name ? { company_name: m.company_name } : {},
   }));
 
