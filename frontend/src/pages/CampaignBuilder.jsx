@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   FlaskConical,
+  List as ListIcon,
   Play,
   Rocket,
   Save,
@@ -24,6 +25,7 @@ import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
 import { useUserSignature } from "@/features/outbound/hooks/useUserSignature";
 import { useTemplates, usePersonas } from "@/features/outbound/hooks/useTemplates";
 import { useCampaign } from "@/features/outbound/hooks/useCampaign";
+import { useCampaignActivityTimeline } from "@/features/outbound/hooks/useCampaignActivityTimeline";
 
 import { CampaignKpiHero } from "@/features/outbound/components/CampaignKpiHero";
 import { CampaignActivityTimeline } from "@/features/outbound/components/CampaignActivityTimeline";
@@ -345,6 +347,10 @@ export default function CampaignBuilder() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [createTemplateOpen, setCreateTemplateOpen] = useState(false);
   const [createPersonaOpen, setCreatePersonaOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const { data: activityEvents, isLoading: activityLoading, error: activityError } =
+    useCampaignActivityTimeline(editId);
+  const activityCount = activityEvents?.length ?? 0;
 
   const [saving, setSaving] = useState(false);
   const [launching, setLaunching] = useState(false);
@@ -1053,6 +1059,18 @@ export default function CampaignBuilder() {
             <Play className="h-2.5 w-2.5" />
             Preview as contact
           </button>
+          {editId ? (
+            <button
+              type="button"
+              onClick={() => setActivityOpen(true)}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+              style={{ fontFamily: fontDisplay }}
+              title="Open activity timeline"
+            >
+              <ListIcon className="h-2.5 w-2.5" />
+              Activity{activityLoading ? " (…)" : ` (${activityCount})`}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={handleTestSend}
@@ -1106,7 +1124,15 @@ export default function CampaignBuilder() {
         sparkData={campaignSparkData}
         campaignId={editId}
       />
-      {editId ? <CampaignActivityTimeline campaignId={editId} /> : null}
+      {editId ? (
+        <CampaignActivityTimeline
+          open={activityOpen}
+          onClose={() => setActivityOpen(false)}
+          events={activityEvents}
+          isLoading={activityLoading}
+          error={activityError}
+        />
+      ) : null}
       {senderLoadError ? (
         <div
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800"
