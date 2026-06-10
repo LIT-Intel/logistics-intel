@@ -10,6 +10,7 @@ interface RpcRow {
   campaign_id: string;
   enrolled: number;
   sent: number;
+  unique_sent: number;
   opened: number;
   clicked: number;
   replied: number;
@@ -42,6 +43,7 @@ export async function fetchCampaignMetricsBatch(
     out.set(row.campaign_id, {
       enrolled: Number(row.enrolled ?? 0),
       sent: Number(row.sent ?? 0),
+      uniqueSent: Number(row.unique_sent ?? 0),
       opened: Number(row.opened ?? 0),
       clicked: Number(row.clicked ?? 0),
       replied: Number(row.replied ?? 0),

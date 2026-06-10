@@ -6,6 +6,11 @@ export type CampaignHealth = "great" | "good" | "attention" | null;
 export interface CampaignFunnel {
   enrolled: number;
   sent: number;
+  // Distinct recipient emails who received at least one 'sent' event.
+  // Used by FunnelStrip as the sent-bar denominator (sent/enrolled can
+  // exceed 100% for multi-step campaigns since each recipient receives N
+  // sends; uniqueSent caps naturally at the recipient count).
+  uniqueSent: number;
   opened: number;
   clicked: number;
   replied: number;

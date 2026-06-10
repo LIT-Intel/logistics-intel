@@ -2,12 +2,33 @@ import React from "react";
 import { fontDisplay, fontMono } from "../tokens";
 import type { CampaignFunnel } from "../types";
 
-const STAGES: Array<{ key: keyof CampaignFunnel; label: string; color: string }> = [
+/**
+ * Each bar's fill % comes from a different denominator depending on the
+ * stage.
+ *
+ * - enrolled: anchor stage, always 100% width by definition.
+ * - sent: uniqueSent / enrolled. Multi-step campaigns send N times per
+ *   recipient, so funnel.sent can exceed enrolled; uniqueSent counts
+ *   distinct recipients who received at least one send, capping at
+ *   enrolled.
+ * - opened / clicked / replied: pre-computed *Rate fields from the RPC
+ *   (these divide by sent — the correct denominator for engagement
+ *   rates — and are already 0-100). Falling back to value/enrolled
+ *   would mismatch what users see in the KPI hero.
+ */
+type StageDef = {
+  key: keyof CampaignFunnel;
+  label: string;
+  color: string;
+  rateField?: keyof CampaignFunnel;
+};
+
+const STAGES: StageDef[] = [
   { key: "enrolled", label: "Enrolled", color: "#94A3B8" },
   { key: "sent", label: "Sent", color: "#64748B" },
-  { key: "opened", label: "Opened", color: "#3B82F6" },
-  { key: "clicked", label: "Clicked", color: "#6366F1" },
-  { key: "replied", label: "Replied", color: "#10B981" },
+  { key: "opened", label: "Opened", color: "#3B82F6", rateField: "openRate" },
+  { key: "clicked", label: "Clicked", color: "#6366F1", rateField: "clickRate" },
+  { key: "replied", label: "Replied", color: "#10B981", rateField: "replyRate" },
 ];
 
 export function FunnelStrip({ funnel }: { funnel: CampaignFunnel | null }) {
@@ -27,12 +48,13 @@ export function FunnelStrip({ funnel }: { funnel: CampaignFunnel | null }) {
     );
   }
 
-  const total = funnel.enrolled || 1;
+  const enrolledDenominator = funnel.enrolled || 1;
+
   return (
     <div className="flex flex-1 gap-1.5">
       {STAGES.map((stage, i) => {
         const value = Number(funnel[stage.key] ?? 0);
-        const pct = (value / total) * 100;
+        const pct = computePct(stage, funnel, enrolledDenominator);
         const prev = i > 0 ? Number(funnel[STAGES[i - 1].key] ?? 0) : null;
         const conv = prev && prev > 0 ? ((value / prev) * 100).toFixed(0) : null;
         return (
@@ -75,4 +97,26 @@ export function FunnelStrip({ funnel }: { funnel: CampaignFunnel | null }) {
       })}
     </div>
   );
+}
+
+function computePct(
+  stage: StageDef,
+  funnel: CampaignFunnel,
+  enrolledDenominator: number,
+): number {
+  if (stage.key === "enrolled") return 100;
+  if (stage.key === "sent") {
+    // uniqueSent / enrolled — caps at 100% by definition.
+    const u = Number(funnel.uniqueSent ?? 0);
+    return Math.min(100, (u / enrolledDenominator) * 100);
+  }
+  if (stage.rateField) {
+    // RPC rates already divide by sent (correct denominator). Null when
+    // sent === 0 — fall back to 0 width.
+    const r = funnel[stage.rateField];
+    if (r == null) return 0;
+    return Math.min(100, Math.max(0, Number(r)));
+  }
+  // Fallback (shouldn't hit) — use the raw value over enrolled.
+  return Math.min(100, (Number(funnel[stage.key] ?? 0) / enrolledDenominator) * 100);
 }
