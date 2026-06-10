@@ -1,27 +1,12 @@
 /**
- * CampaignActivityTimeline — chronological feed of every tracked event
- * for a campaign. Mounted below the KPI hero in CampaignBuilder so the
- * operator can audit the full stream without flipping through KPI tiles
- * one at a time.
- *
- * Event types rendered:
- *   sent        →  📤 outbound to <recipient>
- *   delivered   →  ✅ delivered (Resend confirmed)
- *   opened      →  👁 opened by <recipient>
- *   clicked     →  🔗 clicked <link>
- *   replied / status=replied  →  ↩️ replied — shows snippet inline
- *   bounced     →  ❌ bounced
- *   meeting_booked / rescheduled / cancelled  →  📅 with Cal.com link
- *   consent_missing / suppressed  →  ⛔ skipped (reason)
- *
- * Unknown event types fall through to a generic gray row so nothing is
- * silently dropped. Collapsed by default to ~10 rows; "Show all" expands.
+ * CampaignActivityTimeline — slide-over drawer showing the chronological
+ * feed of every tracked event for a campaign. Mounted by CampaignBuilder
+ * and toggled by the "Activity (N)" header button. Pattern mirrors
+ * EngagementDrillIn.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import {
   CheckCircle2,
-  ChevronDown,
-  ChevronRight,
   CircleSlash,
   Eye,
   Link as LinkIcon,
@@ -31,16 +16,16 @@ import {
   XOctagon,
   Calendar,
   CornerUpLeft,
+  X,
 } from "lucide-react";
-import {
-  type CampaignActivityEvent,
-  useCampaignActivityTimeline,
-} from "../hooks/useCampaignActivityTimeline";
+import type { CampaignActivityEvent } from "../hooks/useCampaignActivityTimeline";
 
 interface Props {
-  campaignId: string | null;
-  /** Initial visible row count before "Show all" expands. */
-  initialRows?: number;
+  open: boolean;
+  onClose: () => void;
+  events: CampaignActivityEvent[] | undefined;
+  isLoading: boolean;
+  error: unknown;
 }
 
 interface EventVisual {
@@ -52,8 +37,6 @@ interface EventVisual {
 
 function visualForEvent(event: CampaignActivityEvent): EventVisual {
   const et = event.event_type;
-  // status='replied' on a 'sent' row should display as replied —
-  // reply-receiver UPDATEs the send row instead of inserting fresh.
   if (et === "replied" || event.status === "replied") {
     return { icon: CornerUpLeft, iconBg: "bg-emerald-100", iconText: "text-emerald-700", label: "Reply" };
   }
@@ -92,20 +75,14 @@ function fmtTime(iso: string): string {
   }
 }
 
-/** Reads metadata fields the timeline cares about without dragging
- *  the whole jsonb into the row body. */
 function detailFor(event: CampaignActivityEvent): string | null {
   const md = event.metadata ?? {};
-  // Reply snippet (added by reply-receiver v17 / resend-inbound-webhook v17)
   const snippet = typeof (md as any).reply_snippet === "string" ? (md as any).reply_snippet : null;
   if (snippet) return snippet;
-  // Click URL
   const url = typeof (md as any).original_url === "string" ? (md as any).original_url : null;
   if (url && event.event_type === "clicked") return url;
-  // Meeting URL
   const meetingUrl = typeof (md as any).cal_meeting_url === "string" ? (md as any).cal_meeting_url : null;
   if (meetingUrl) return meetingUrl;
-  // Skip reason
   const reason = typeof (md as any).reason === "string" ? (md as any).reason : null;
   if (reason) return reason;
   return null;
@@ -151,66 +128,81 @@ function TimelineRow({ event }: { event: CampaignActivityEvent }) {
   );
 }
 
-export function CampaignActivityTimeline({ campaignId, initialRows = 10 }: Props) {
-  const { data, isLoading, error } = useCampaignActivityTimeline(campaignId);
-  const [expanded, setExpanded] = useState(false);
+export function CampaignActivityTimeline({ open, onClose, events, isLoading, error }: Props) {
+  // ESC-to-close
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
-  const visible = useMemo(() => {
-    if (!data) return [];
-    if (expanded) return data;
-    return data.slice(0, initialRows);
-  }, [data, expanded, initialRows]);
+  // Body scroll lock while open
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
 
-  if (!campaignId) return null;
+  const list = useMemo(() => events ?? [], [events]);
+
+  if (!open) return null;
 
   return (
-    <section className="mt-4 rounded-xl border border-slate-200 bg-white shadow-sm">
-      <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
-        <div className="flex items-baseline gap-2">
-          <h3 className="text-[13px] font-bold text-slate-900">Activity timeline</h3>
-          <span className="text-[11px] text-slate-500">
-            {isLoading
-              ? "Loading…"
-              : error
-                ? "Failed to load"
-                : `${data?.length ?? 0} event${(data?.length ?? 0) === 1 ? "" : "s"}`}
-          </span>
-        </div>
-        {data && data.length > initialRows ? (
+    <>
+      <div
+        className="fixed inset-0 z-40 bg-slate-900/40"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <aside
+        role="dialog"
+        aria-label="Campaign activity timeline"
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[480px] flex-col bg-white shadow-2xl"
+      >
+        <header className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div className="flex items-baseline gap-2">
+            <h3 className="text-[14px] font-bold text-slate-900">Activity timeline</h3>
+            <span className="text-[11px] text-slate-500">
+              {isLoading
+                ? "Loading…"
+                : error
+                  ? "Failed to load"
+                  : `${list.length} event${list.length === 1 ? "" : "s"}`}
+            </span>
+          </div>
           <button
             type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+            onClick={onClose}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Close activity timeline"
           >
-            {expanded ? (
-              <>
-                <ChevronDown className="h-3 w-3" /> Collapse
-              </>
-            ) : (
-              <>
-                <ChevronRight className="h-3 w-3" /> Show all {data.length}
-              </>
-            )}
+            <X className="h-4 w-4" />
           </button>
-        ) : null}
-      </header>
-      {isLoading ? (
-        <div className="px-4 py-6 text-center text-[12px] text-slate-500">Loading activity…</div>
-      ) : error ? (
-        <div className="px-4 py-6 text-center text-[12px] text-rose-700">
-          Failed to load activity. Try refreshing.
-        </div>
-      ) : !data || data.length === 0 ? (
-        <div className="px-4 py-6 text-center text-[12px] text-slate-500">
-          No tracked events yet. Sends, opens, clicks, replies, meetings, and skips appear here.
-        </div>
-      ) : (
-        <ul>
-          {visible.map((event) => (
-            <TimelineRow key={event.event_id} event={event} />
-          ))}
-        </ul>
-      )}
-    </section>
+        </header>
+        {isLoading ? (
+          <div className="flex-1 px-4 py-6 text-center text-[12px] text-slate-500">Loading activity…</div>
+        ) : error ? (
+          <div className="flex-1 px-4 py-6 text-center text-[12px] text-rose-700">
+            Failed to load activity. Try refreshing.
+          </div>
+        ) : list.length === 0 ? (
+          <div className="flex-1 px-4 py-6 text-center text-[12px] text-slate-500">
+            No tracked events yet. Sends, opens, clicks, replies, meetings, and skips appear here.
+          </div>
+        ) : (
+          <ul className="flex-1 min-h-0 overflow-y-auto">
+            {list.map((event) => (
+              <TimelineRow key={event.event_id} event={event} />
+            ))}
+          </ul>
+        )}
+      </aside>
+    </>
   );
 }
