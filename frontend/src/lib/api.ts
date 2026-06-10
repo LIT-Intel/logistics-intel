@@ -6173,6 +6173,9 @@ export async function createCampaignDraft(input: {
   channel?: string;
   description?: string | null;
   metrics?: Record<string, unknown>;
+  // Sub-project J: persisted launch anchor + TZ.
+  scheduled_start_at?: string | null;
+  send_timezone?: string;
 }): Promise<{
   id: string;
   name: string;
@@ -6188,16 +6191,23 @@ export async function createCampaignDraft(input: {
   if (input.description && input.description.trim()) {
     metrics.description = input.description.trim();
   }
+  const insertRow: Record<string, unknown> = {
+    user_id: userId,
+    org_id: orgId,
+    name: input.name,
+    channel: input.channel ?? "email",
+    status: "draft",
+    metrics,
+  };
+  if (input.scheduled_start_at !== undefined) {
+    insertRow.scheduled_start_at = input.scheduled_start_at;
+  }
+  if (input.send_timezone !== undefined) {
+    insertRow.send_timezone = input.send_timezone;
+  }
   const { data, error } = await supabase
     .from("lit_campaigns")
-    .insert({
-      user_id: userId,
-      org_id: orgId,
-      name: input.name,
-      channel: input.channel ?? "email",
-      status: "draft",
-      metrics,
-    })
+    .insert(insertRow)
     .select("id, name, status, channel, metrics, created_at, updated_at")
     .single();
   if (error) {

@@ -151,13 +151,22 @@ export async function getCampaignWithDetails(
 
 export async function updateCampaignBasics(
   campaignId: string,
-  patch: { name?: string; channel?: string; metrics?: Record<string, unknown> },
+  patch: {
+    name?: string;
+    channel?: string;
+    metrics?: Record<string, unknown>;
+    // Sub-project J: persisted launch anchor + TZ.
+    scheduled_start_at?: string | null;
+    send_timezone?: string;
+  },
 ): Promise<void> {
   if (!campaignId) throw new Error("updateCampaignBasics: campaignId required");
   const update: Record<string, unknown> = {};
   if (patch.name !== undefined) update.name = patch.name;
   if (patch.channel !== undefined) update.channel = patch.channel;
   if (patch.metrics !== undefined) update.metrics = patch.metrics;
+  if (patch.scheduled_start_at !== undefined) update.scheduled_start_at = patch.scheduled_start_at;
+  if (patch.send_timezone !== undefined) update.send_timezone = patch.send_timezone;
   if (Object.keys(update).length === 0) return;
   const { error } = await supabase
     .from("lit_campaigns")
