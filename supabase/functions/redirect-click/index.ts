@@ -72,11 +72,18 @@ serve(async (req) => {
         .maybeSingle();
       if (!existing) {
         // Look up the recipient row so the click history carries readable
-        // attribution (contact_id + recipient_email + company_id) instead
-        // of NULL + a UUID-fragment fallback in the analytics activity feed.
+        // attribution (recipient_email + company_id) in metadata instead
+        // of NULL in the analytics activity feed.
         // Best-effort — falls through to NULL on lookup failure rather than
         // blocking the click.
-        let contactId: string | null = null;
+        //
+        // NOTE: contact_id is intentionally NOT set on the insert.
+        // lit_outreach_history.contact_id FK targets lit_contacts.id, but
+        // link.recipient_id is a lit_campaign_contacts.id — different table.
+        // Setting it triggered lit_outreach_history_contact_id_fkey
+        // violations on every click, silently breaking all click tracking.
+        // Recipient attribution lives in metadata.recipient_id which the
+        // engagement drill-in already uses.
         let recipientEmail: string | null = null;
         let companyId: string | null = null;
         try {
@@ -86,7 +93,6 @@ serve(async (req) => {
             .eq("id", link.recipient_id)
             .maybeSingle();
           if (contact) {
-            contactId = (contact.id as string | null) ?? null;
             recipientEmail = (contact.email as string | null) ?? null;
             companyId = (contact.company_id as string | null) ?? null;
           }
@@ -94,26 +100,28 @@ serve(async (req) => {
           console.error("[redirect-click] contact lookup failed", lookupErr);
         }
 
-        await admin.from("lit_outreach_history").insert({
-          user_id: link.user_id,
-          campaign_id: link.campaign_id,
-          campaign_step_id: link.campaign_step_id,
-          company_id: companyId,
-          contact_id: contactId,
-          channel: "email",
-          event_type: "clicked",
-          status: "clicked",
-          provider: null,
-          clicked_at: now,
-          occurred_at: now,
-          metadata: {
-            link_id: link.id,
-            recipient_id: link.recipient_id,
-            recipient_email: recipientEmail,
-            original_url: link.original_url,
-            ua: req.headers.get("user-agent") ?? null,
-          },
-        });
+        await admin
+          .from("lit_outreach_history")
+          .insert({
+            user_id: link.user_id,
+            campaign_id: link.campaign_id,
+            campaign_step_id: link.campaign_step_id,
+            company_id: companyId,
+            channel: "email",
+            event_type: "clicked",
+            status: "clicked",
+            provider: null,
+            clicked_at: now,
+            occurred_at: now,
+            metadata: {
+              link_id: link.id,
+              recipient_id: link.recipient_id,
+              recipient_email: recipientEmail,
+              original_url: link.original_url,
+              ua: req.headers.get("user-agent") ?? null,
+            },
+          })
+          .throwOnError();
       }
     }
   } catch (e) {
