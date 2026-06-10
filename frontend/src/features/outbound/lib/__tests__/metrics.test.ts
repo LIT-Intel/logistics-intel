@@ -4,7 +4,7 @@ import type { CampaignFunnel } from "../../types";
 
 function f(over: Partial<CampaignFunnel> = {}): CampaignFunnel {
   return {
-    enrolled: 0, sent: 0, opened: 0, clicked: 0, replied: 0, bounced: 0, suppressed: 0,
+    enrolled: 0, sent: 0, uniqueSent: 0, opened: 0, clicked: 0, replied: 0, bounced: 0, suppressed: 0,
     openRate: null, clickRate: null, replyRate: null, bounceRate: null, lastEventAt: null,
     ...over,
   };
