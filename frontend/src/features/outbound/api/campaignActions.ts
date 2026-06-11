@@ -95,6 +95,15 @@ export interface CampaignStepRow {
   body: string | null;
   delay_days: number;
   delay_hours: number;
+  // P0-5: SELECT had been silently dropping these three columns, so on
+  // edit-load the builder lost the A/B subject variant, the signature
+  // toggle reset, and minute-precision delays got rounded away. The
+  // schema column types (verified against the live DB): delay_minutes
+  // int NOT NULL (0-59), subject_b text NULL, include_signature bool
+  // NOT NULL.
+  delay_minutes: number;
+  subject_b: string | null;
+  include_signature: boolean;
 }
 
 export async function getCampaignWithDetails(
@@ -114,7 +123,10 @@ export async function getCampaignWithDetails(
     supabase
       .from("lit_campaign_steps")
       .select(
-        "id, step_order, channel, step_type, subject, body, delay_days, delay_hours",
+        // P0-5: include delay_minutes / subject_b / include_signature so
+        // dbStepToBuilder can rehydrate the A/B variant, the signature
+        // toggle, and minute-precision delays on edit-load.
+        "id, step_order, channel, step_type, subject, body, delay_days, delay_hours, delay_minutes, subject_b, include_signature",
       )
       .eq("campaign_id", campaignId)
       .order("step_order", { ascending: true }),
