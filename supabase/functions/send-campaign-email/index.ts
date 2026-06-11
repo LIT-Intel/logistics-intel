@@ -1403,6 +1403,24 @@ async function sendEmail(args: {
       to: [to],
       subject,
       reply_to: from.email,
+      // Resend's open- and click-tracking are OFF by default. Without
+      // these flags, Resend never injects a tracking pixel, never emits
+      // email.opened webhook events, and our KPI Open Rate is structurally
+      // 0%. We additionally inject our own first-party pixel above (see
+      // section 2g.5) for cross-provider parity with Gmail + Outlook, but
+      // enabling Resend tracking gives us a belt-and-suspenders signal
+      // (e.g., works even if the recipient's mail client strips inline
+      // images but follows the Resend redirect for open tracking).
+      tracking_options: {
+        open_tracking: { enabled: true },
+        click_tracking: { enabled: true },
+      },
+      // List-Unsubscribe / List-Unsubscribe-Post for RFC 8058 one-click
+      // unsubscribe (Gmail/Yahoo bulk-sender policy Feb 2024).
+      headers: {
+        "List-Unsubscribe": listUnsubHeader,
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      },
     };
     if (isHtml) payload.html = body;
     else payload.text = body;
