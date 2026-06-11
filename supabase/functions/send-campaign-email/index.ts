@@ -38,6 +38,27 @@ const BATCH_SIZE = 25;
 const DEFAULT_DAILY_CAP = 50;
 const DEFAULT_HOURLY_CAP = 20;
 
+// DISPATCH_DRY_RUN — operator-controlled kill switch for dispatcher
+// verification. When "true", the dispatcher walks the full per-recipient
+// pipeline (suppression gate, consent gate, throttle gate, link rewrites,
+// merge-vars, pixel inject) but SKIPS the provider HTTP call to Resend /
+// Gmail / Outlook. A synthetic 'sent' row is written to lit_outreach_history
+// with metadata.dry_run = true so KPIs / counters can be exercised without
+// real inboxes being touched. The recipient is advanced exactly as if the
+// send succeeded so multi-step sequences progress normally.
+//
+// Why this exists: the 5 PM 2026-06-11 launch-checklist dry-run sent a
+// REAL email at 4:37 PM EDT because the standard verification pattern
+// (next_send_at = NOW - 5s; wait for cron tick) inherently fires Resend
+// when dispatcher runs end-to-end. This flag lets us verify mechanics
+// without burning a real send.
+//
+// Set via Supabase Edge Function secret. Default false — production
+// behavior is unchanged when the secret is absent. Reset by removing
+// the secret (NOT by setting "false" — anything other than the literal
+// string "true" is treated as off).
+const DISPATCH_DRY_RUN = Deno.env.get("DISPATCH_DRY_RUN") === "true";
+
 /**
  * Derive a stable 63-bit signed-int advisory-lock key from a UUID. Postgres
  * pg_try_advisory_xact_lock takes a bigint; collisions are acceptable
@@ -49,6 +70,71 @@ function hashRecipientLockKey(recipientId: string): number {
     h = ((h << 5) - h + recipientId.charCodeAt(i)) | 0;
   }
   return h;
+}
+
+/**
+ * Mint an HMAC-signed token for the open-tracking pixel. Mirrors the
+ * verifier in `email-pixel/index.ts` — keep the two in lockstep.
+ *
+ * Payload shape (compact JSON keys, base64url):
+ *   { r: recipient_id, s: campaign_step_id, c: campaign_id, u: user_id }
+ *
+ * Sig: HMAC-SHA256 of the base64url payload, truncated to 16 bytes,
+ *      base64url-encoded. Truncating from 32 → 16 bytes keeps the
+ *      pixel URL short for older mail clients that truncate long
+ *      links; integrity strength is still ~128-bit which is plenty for
+ *      a non-financial open-tracking signal.
+ */
+async function mintPixelToken(
+  secret: string,
+  ids: { recipient_id: string; campaign_step_id: string; campaign_id: string; user_id: string },
+): Promise<string> {
+  const payload = JSON.stringify({
+    r: ids.recipient_id,
+    s: ids.campaign_step_id,
+    c: ids.campaign_id,
+    u: ids.user_id,
+  });
+  const enc = new TextEncoder();
+  const payloadBytes = enc.encode(payload);
+  let bin = "";
+  for (const b of payloadBytes) bin += String.fromCharCode(b);
+  const payloadB64 = btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sigBuf = await crypto.subtle.sign("HMAC", key, enc.encode(payloadB64));
+  const sigBytes = new Uint8Array(sigBuf).slice(0, 16);
+  let sigBin = "";
+  for (const b of sigBytes) sigBin += String.fromCharCode(b);
+  const sigB64 = btoa(sigBin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return `${payloadB64}.${sigB64}`;
+}
+
+/**
+ * Inject the open-tracking pixel into an HTML body. Returns the body
+ * unchanged if it isn't HTML (text/plain mail can't carry an image).
+ *
+ * Pixel is placed right before `</body>` when present, otherwise
+ * appended — every major mail client (Gmail, Outlook, Apple Mail,
+ * Yahoo) renders trailing images fine. styled width=1 height=1 with
+ * alt="" so screen readers and broken-image fallbacks stay silent.
+ */
+function injectPixel(body: string, pixelUrl: string): string {
+  if (!body) return body;
+  const looksHtml = /<\/?[a-z][^>]*>/i.test(body);
+  if (!looksHtml) return body;
+  const tag = `<img src="${pixelUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;outline:none;text-decoration:none;" />`;
+  const bodyClose = /<\/body\s*>/i;
+  if (bodyClose.test(body)) {
+    return body.replace(bodyClose, `${tag}</body>`);
+  }
+  return `${body}${tag}`;
 }
 
 /** Generate a short opaque slug for click-tracking URLs. */
@@ -242,6 +328,11 @@ serve(async (req) => {
   }
 
   const startedAt = Date.now();
+  if (DISPATCH_DRY_RUN) {
+    log.info("dispatcher_dry_run_mode_active", {
+      note: "All provider sends will be skipped; synthetic 'sent' rows with metadata.dry_run=true will be written.",
+    });
+  }
   const summary = {
     picked: 0,
     sent: 0,
@@ -915,31 +1006,102 @@ serve(async (req) => {
         continue;
       }
 
+      // 2g.5 Inject the open-tracking pixel. Sub-project M fix.
+      //
+      // Why here (not in sendEmail):
+      //   - We have the recipient + step IDs in scope already; sendEmail
+      //     would have to receive five extra args.
+      //   - Pixel must sit AFTER the signature append (otherwise the
+      //     signature drops it onto the wrong line of the rendered HTML)
+      //     and AFTER merge-vars (so it doesn't get rewritten as a {{var}}).
+      //   - Pixel must sit BEFORE provider dispatch — Gmail and Outlook
+      //     both treat the body as opaque HTML and can't insert it.
+      //
+      // Pixel is a no-op for text/plain bodies (injectPixel returns the
+      // body unchanged). Resend with HTML, Gmail with HTML, Outlook with
+      // HTML all pick it up.
+      //
+      // Secret: LIT_EMAIL_PIXEL_SECRET if set, else falls back to
+      // SUPABASE_SERVICE_ROLE_KEY (already a server-side high-entropy
+      // secret no client sees). Verifier in `email-pixel/index.ts` uses
+      // the same fallback so the two stay in lockstep without operator
+      // action.
+      if (r.user_id) {
+        try {
+          const pixelSecret = Deno.env.get("LIT_EMAIL_PIXEL_SECRET")
+            || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
+            || "";
+          if (pixelSecret) {
+            const token = await mintPixelToken(pixelSecret, {
+              recipient_id: r.id,
+              campaign_step_id: step.id,
+              campaign_id: r.campaign_id,
+              user_id: r.user_id,
+            });
+            const pixelUrl = `${supabaseUrl}/functions/v1/email-pixel?t=${token}`;
+            body = injectPixel(body, pixelUrl);
+          }
+        } catch (e) {
+          // Never let pixel injection block a send. log.warn without `err`
+          // skips Sentry capture (info-level only).
+          log.warn("pixel_inject_failed", { detail: e instanceof Error ? e.message : String(e), recipient_id: r.id });
+        }
+      }
+
       // 2h. Refresh + send.
       // Resend doesn't use OAuth — the API key is set as an Edge
       // Function env. For Gmail / Outlook we still refresh as before.
+      //
+      // DRY_RUN short-circuit: when the DISPATCH_DRY_RUN env flag is set,
+      // we skip BOTH the OAuth refresh and the provider HTTP call. The
+      // recipient still gets advanced and a synthetic history row is
+      // written so dispatcher mechanics (gating, throttling, advancement,
+      // KPI roll-up) can be verified without burning a real inbox send.
       let accessToken = "";
-      if (sender.provider !== "resend") {
-        const tokenRes = await getAccessToken(admin, sender);
-        if (!tokenRes.ok) {
-          await fail(admin, r, `token:${tokenRes.error}`);
-          summary.failed += 1;
-          continue;
+      let sendRes: { ok: true; messageId: string | null } | { ok: false; error: string };
+      if (DISPATCH_DRY_RUN) {
+        const syntheticMessageId = `<dryrun-${crypto.randomUUID()}@logisticintel.com>`;
+        log.info("dispatcher_dry_run", {
+          recipient_id: r.id,
+          campaign_id: r.campaign_id,
+          step_order: step.step_order,
+          provider: sender.provider,
+          would_send_at: new Date().toISOString(),
+          would_send_to: r.email,
+          subject_length: subject.length,
+          body_length: body.length,
+          tracked_links: linkRows.length,
+        });
+        sendRes = { ok: true, messageId: syntheticMessageId };
+      } else {
+        if (sender.provider !== "resend") {
+          const tokenRes = await getAccessToken(admin, sender);
+          if (!tokenRes.ok) {
+            await fail(admin, r, `token:${tokenRes.error}`);
+            summary.failed += 1;
+            continue;
+          }
+          accessToken = tokenRes.accessToken;
         }
-        accessToken = tokenRes.accessToken;
+        sendRes = await sendEmail({
+          provider: sender.provider,
+          accessToken,
+          from: sender,
+          to: r.email,
+          subject,
+          body,
+          campaignId: r.campaign_id,
+          recipientId: r.id,
+        });
       }
-      const sendRes = await sendEmail({
-        provider: sender.provider,
-        accessToken,
-        from: sender,
-        to: r.email,
-        subject,
-        body,
-        campaignId: r.campaign_id,
-        recipientId: r.id,
-      });
 
       // 2i. Persist history row + advance/fail recipient.
+      //
+      // DRY_RUN history rows still write status='sent' / event_type='sent'
+      // so KPI counters (sent-rate, sequence-advancement) reflect the
+      // synthetic send. The `metadata.dry_run = true` flag is the audit
+      // trail that lets operators filter dry-run rows out of deliverability
+      // / reply-rate reports if needed.
       await admin.from("lit_outreach_history").insert({
         user_id: r.user_id,
         campaign_id: r.campaign_id,
@@ -961,6 +1123,7 @@ serve(async (req) => {
           step_order: step.step_order,
           ab_variant: hasVariant ? abVariant : null,
           tracked_links: linkRows.length,
+          ...(DISPATCH_DRY_RUN ? { dry_run: true } : {}),
         },
       });
 
@@ -971,7 +1134,10 @@ serve(async (req) => {
         // next tick / next dispatcher invocation sees it too). The
         // hourly/daily counters are reset by the mailbox-hourly-reset
         // and mailbox-daily-reset cron jobs (Task 6).
-        if (mailboxState && sender.provider !== "resend") {
+        //
+        // DRY_RUN intentionally does NOT bump counters: no real send
+        // happened, so warmup ramp capacity shouldn't be consumed.
+        if (mailboxState && sender.provider !== "resend" && !DISPATCH_DRY_RUN) {
           mailboxState.sent_today += 1;
           mailboxState.sent_this_hour += 1;
           mailboxState.last_send_at = new Date().toISOString();
