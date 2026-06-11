@@ -23,6 +23,11 @@ export default function RepliesTab({ campaignId, orgUserIds }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Stable key for the orgUserIds dep — JSON.stringify in the dep array
+  // is a complex expression that exhaustive-deps can't statically check.
+  // Extracted so the rule can reason about it.
+  const orgUserIdsKey = JSON.stringify(orgUserIds || null);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -62,7 +67,11 @@ export default function RepliesTab({ campaignId, orgUserIds }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [campaignId, JSON.stringify(orgUserIds || null)]);
+    // orgUserIds itself is intentionally NOT in the deps — orgUserIdsKey
+    // is the stable serialization. orgUserIds array identity changes on every
+    // render in some parents but its CONTENTS rarely do.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignId, orgUserIdsKey]);
 
   if (loading) {
     return <div className="p-6 text-sm text-slate-500">Loading replies…</div>;

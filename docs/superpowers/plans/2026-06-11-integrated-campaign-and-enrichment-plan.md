@@ -205,3 +205,119 @@ To prevent scope creep before launch:
 - [ ] Phase 1 (credits) ships before Phase 3 (phones) — protects margins
 - [ ] Section F real-world gates all fire correctly
 - [ ] No further direct-to-main commits without preview-deploy verification
+
+---
+
+## GSTACK REVIEW REPORT
+
+**Reviewed:** 2026-06-11 by `/plan-ceo-review` (claude-opus-4-7)
+**Mode:** HOLD SCOPE → user chose Option A (all enterprise-grade gaps closed before launch)
+**Branch:** `claude/review-dashboard-deploy-3AmMD`
+**Commit at review:** `78a7ca79` (the plan itself)
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Strategic verdict + launch criteria | 1 | CLEAR (Option A locked) | 5 critical findings; 7 recommendations (R1-R7) accepted; launch criteria defined |
+| Code Review | inline CR agent | Senior staff review of CampaignBuilder + outbound feature | 1 | issues_open | 6 P0 (2 fixed today as `554f6706`), 10 P1, 6 P2, 6 architectural recs |
+| Design Review | inline DR agent | Enterprise design / UX audit | 1 | issues_open | 5 top issues, 7 pattern inconsistencies, 5 vs-competitor gaps; Moves 1+3+4+5 queued |
+| Eng Review | `/plan-eng-review` | Architecture & tests | 0 | — | Recommended next gate before any merge |
+| Outside Voice | codex | Independent 2nd opinion | 0 | — | Skipped — Option A is exhaustive enough internally |
+
+### Strategic findings (CEO review)
+- **F1 CRITICAL** — "Launch ready" was undefined. Option A locks the definition: all CR P0/P1, all DR Moves 1-5, test coverage on CampaignBuilder, eslint hardening, multi-provider enrichment. 4-6 weeks.
+- **F2 WARNING** — Sub-project O simulation matrix missing Test #8 (cron + exit-rules interaction). R2 adds it.
+- **F3 WARNING** — Enrichment Phase 2 doesn't trigger Apollo retry after Edit Company save. R3 adds it.
+- **F4 WARNING** — Phase 3 missing per-user phone rate limit (org-shared quota). R4 adds it.
+- **F5 CRITICAL** — Schedule-edit semantic mismatch (user expectation vs system behavior). R5 fixes as P0.
+
+### Accepted recommendations (R1-R7) — all folded into Option A's launch checklist
+
+| # | Recommendation | Effort | When |
+|---|---|---|---|
+| R1 | `DISPATCH_DRY_RUN` env flag (no live emails during verification) | 2h | After eslint |
+| R2 | Test #8 added to Sub-project O simulation matrix | 1h | In O |
+| R3 | Auto-retry Apollo enrichment after Edit Company save | 4h | In Phase 2 |
+| R4 | Per-user phone rate limit | 4h | In Phase 3 |
+| R5 | Schedule-edit semantic UI fix | 2h-1d | THIS WEEK |
+| R6 | Kill stale L+M, redispatch time-boxed | done | done (auto-died) |
+| R7 | Wire eslint-plugin-react-hooks | 30m | NEXT |
+
+### Implementation Tasks
+
+```
+T1 (P0, 30min) — frontend/.eslintrc.js — Wire react-hooks/exhaustive-deps
+  Surfaced by: F-meta — both P0s today would have been caught at lint
+  Files: frontend/.eslintrc.js, frontend/package.json
+  Verify: `npx eslint frontend/src/pages/CampaignBuilder.jsx` flags missing deps
+
+T2 (P0, 2h) — supabase/functions/send-campaign-email/index.ts — DISPATCH_DRY_RUN
+  Surfaced by: R1 — vraymond got off-cadence email during dry-run
+  Files: supabase/functions/send-campaign-email/index.ts
+  Verify: with DISPATCH_DRY_RUN=true, dispatcher tick logs would-send but Resend NOT called
+
+T3 (P0, 2-8h) — frontend/src/pages/CampaignBuilder.jsx — Schedule semantic fix
+  Surfaced by: R5/F5 — user mental model mismatch
+  Files: CampaignBuilder.jsx, LaunchSchedulePicker.tsx (optional split)
+  Verify: tooltip or affordance clarifies "shift sequence" vs "fire next step at this time"
+
+T4 (P1, 4h) — supabase/functions/cal-webhook/index.ts — Cal.com matching (fresh L)
+  Surfaced by: Section B — L died without completing
+  Files: cal-webhook/index.ts + backfill migration for 2 orphan rows
+  Verify: synthetic webhook payload with organizer email matches a campaign
+
+T5 (P1, 4h) — multiple — Open tracking diagnosis (fresh M)
+  Surfaced by: Section B — M died without completing
+  Files: send-campaign-email, resend-events-webhook (probably)
+  Verify: test send triggers a real `opened` event in lit_outreach_history
+
+T6 (P0, 1d) — multiple — Sub-project O (with R2 Test #8)
+  Surfaced by: Section C1 — sequence exit conditions
+  Files: 1 migration + 6 edge fns + 5 frontend
+  Verify: 8/8 simulation matrix passes; recipient who books meeting stops getting follow-ups
+
+T7 (P0, 1d) — multiple — CR P0-2/P0-3/P0-4/P0-6
+  Surfaced by: Section D — 4 P0 silent bugs remaining
+  Files: BuilderStep model, save-campaign-draft edge fn (new), LaunchSchedulePicker, useEffect deps
+  Verify: each has a regression test
+
+T8 (P1, 3d) — multiple — CR P1 backlog (10 items)
+  Surfaced by: Section D
+  Files: multiple
+
+T9 (P1, 3d) — multiple — DR Moves 1+3+4+5
+  Surfaced by: Section E
+  Files: CampaignBuilder.jsx, new ToolbarButton + Chip primitives, KpiHero, type ramp
+
+T10 (P0, 2d) — multiple — Enrichment Phase 1 (credits)
+  Surfaced by: Section C2 — protects margins
+  Files: 1 migration, consume_usage edge fn, useEntitlements
+
+T11 (P0, 2d) — multiple — Enrichment Phase 2 (Edit Company + R3)
+  Surfaced by: Section C3 + R3
+  Files: update-company edge fn (new), CompanyProfileV2.tsx
+
+T12 (P0, 2d) — multiple — Enrichment Phase 3 (Apollo phones + R4)
+  Surfaced by: Section C4 + R4
+  Files: apollo-contact-enrich, apollo-phone-webhook (new), lusha-enrichment (rewrite)
+
+T13 (P0, 1d) — frontend/src/pages/CampaignBuilder.test.tsx — Vitest+RTL coverage
+  Surfaced by: Section I #3 — zero tests on the save flow
+  Files: new test file
+  Verify: create mode → fill step → save → assert API call sequence
+```
+
+### Decisions made
+- D1 — Launch criteria = Option A (all enterprise-grade gaps closed). 4-6 week target.
+
+### Unresolved decisions
+- None — Option A is unambiguous.
+
+### NOT in scope (deferred to TODOS or post-launch)
+- Campaign builder refactor to .tsx + useReducer (CR architectural rec) — post-launch
+- Real-time collaborative editing — not for launch
+- Mobile responsive design pass below 1024px — not for enterprise B2B target
+- Sub-project J.2 (step time-of-day) — deferred until cumulative-offset breaks for a real user
+
+### VERDICT
+**CLEAR — Option A is the locked launch criteria.** CEO review accepted. Eng review (`/plan-eng-review`) recommended as next gate before any merge to main. Outside voice skipped (internal review depth sufficient).
+
