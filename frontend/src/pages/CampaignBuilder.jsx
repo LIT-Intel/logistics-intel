@@ -1123,7 +1123,7 @@ export default function CampaignBuilder() {
               setScheduledStartAt(utc);
               setSendTimezone(tz);
             }}
-            disabled={details?.status === "active" || details?.status === "archived"}
+            disabled={details?.status === "archived"}
           />
           <LaunchButton
             onLaunch={handleLaunch}
