@@ -54,8 +54,22 @@ interface TileProps {
   onClick?: () => void;
 }
 
+// A sparkline is only meaningful when it has enough points to show a
+// trend AND there's actual variation. A 2-point series renders as a
+// single diagonal segment which looks like a stray UI artifact rather
+// than data — hide it. Same when every bucket is zero (no activity yet)
+// or all buckets are identical (flat line carries no info).
+function hasMeaningfulSpark(spark: number[] | undefined): spark is number[] {
+  if (!spark || spark.length < 4) return false;
+  const max = Math.max(...spark);
+  if (max <= 0) return false;
+  const min = Math.min(...spark);
+  return max !== min;
+}
+
 function Tile({ label, value, hint, spark, tone = "neutral", onClick }: TileProps) {
   const classes = TONE_CLASSES[tone];
+  const showSpark = hasMeaningfulSpark(spark);
   return (
     <div
       onClick={onClick}
@@ -71,7 +85,7 @@ function Tile({ label, value, hint, spark, tone = "neutral", onClick }: TileProp
         {hint ? (
           <span className="text-[11px] text-slate-500">{hint}</span>
         ) : <span />}
-        {spark && spark.length >= 2 ? (
+        {showSpark ? (
           <Sparkline data={spark} width={56} height={18} color={classes.spark} />
         ) : null}
       </div>
@@ -149,6 +163,7 @@ export function CampaignKpiHero({
             <Tile
               label="Sent"
               value={formatCount(funnel?.sent ?? null)}
+              hint={hasMeaningfulSpark(sparkData) ? "sends / day, last 14d" : undefined}
               spark={sparkData}
               tone="neutral"
               onClick={sentClick}
