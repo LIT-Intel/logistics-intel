@@ -969,7 +969,7 @@ export default function CampaignBuilder() {
   return (
     <div className="mx-auto flex h-[calc(100vh-112px)] min-h-[640px] min-h-0 w-full max-w-[1500px] flex-col overflow-hidden bg-[#F8FAFC]">
       {/* Top bar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 lg:flex-nowrap">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 2xl:flex-nowrap">
         <button
           type="button"
           onClick={() => navigate("/app/campaigns")}
@@ -978,7 +978,7 @@ export default function CampaignBuilder() {
         >
           <ArrowLeft className="h-3 w-3" />
         </button>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[220px] flex-1">
           <div className="flex items-center gap-1.5">
             <input
               value={name}
@@ -1001,29 +1001,29 @@ export default function CampaignBuilder() {
             </span>
           </div>
           <div
-            className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500"
+            className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-slate-500"
             style={{ fontFamily: fontBody }}
           >
             {isEditMode ? (
               campaignLoading ? (
-                <span>Loading campaign…</span>
+                <span className="whitespace-nowrap">Loading campaign…</span>
               ) : (
-                <span>Editing existing campaign</span>
+                <span className="whitespace-nowrap">Editing existing campaign</span>
               )
             ) : seedPlay ? (
-              <span>
+              <span className="whitespace-nowrap">
                 Seeded from <strong className="text-[#0F172A]">{seedPlay.name}</strong>
               </span>
             ) : (
-              <span>Build a sequence and save as draft.</span>
+              <span className="whitespace-nowrap">Build a sequence and save as draft.</span>
             )}
             <span className="text-[#CBD5E1]">·</span>
-            <span>
+            <span className="whitespace-nowrap">
               {selectedIds.size} compan{selectedIds.size === 1 ? "y" : "ies"}
               {manualEmails.length > 0 ? ` · ${manualEmails.length} manual email${manualEmails.length === 1 ? "" : "s"}` : ""}
             </span>
             <span className="text-[#CBD5E1]">·</span>
-            <span>{steps.length} step{steps.length === 1 ? "" : "s"}</span>
+            <span className="whitespace-nowrap">{steps.length} step{steps.length === 1 ? "" : "s"}</span>
             <span className="text-[#CBD5E1]">·</span>
             {/* Industry + tone selectors. Drive template-drawer filter chips
                 and inform the user's pitch style. Persisted on
