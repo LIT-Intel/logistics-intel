@@ -38,7 +38,7 @@ export function StepInspector({
   const [composerOpen, setComposerOpen] = useState(false);
   if (!step) {
     return (
-      <div className="flex h-full items-center justify-center border-l border-slate-200 bg-white px-6 text-center">
+      <div className="flex min-h-[200px] items-center justify-center border-l border-slate-200 bg-white px-6 py-12 text-center">
         <div>
           <div
             className="text-sm font-semibold text-[#0F172A]"
@@ -87,7 +87,7 @@ export function StepInspector({
   });
 
   return (
-    <div className="flex h-full flex-col overflow-hidden border-l border-slate-200 bg-white">
+    <div className="flex flex-col border-l border-slate-200 bg-white">
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 px-4 py-3.5">
         <span
           className="inline-flex h-7 w-7 items-center justify-center rounded-md"
@@ -115,7 +115,7 @@ export function StepInspector({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3.5">
+      <div className="px-4 py-3.5">
         {isWait ? (
           <Field label="Wait">
             <div className="flex flex-wrap items-center gap-2">

@@ -52,7 +52,7 @@ export function PersonaPanel({
   })();
 
   return (
-    <div className="flex h-full flex-col overflow-hidden border-r border-slate-200 bg-white">
+    <div className="flex flex-col border-r border-slate-200 bg-white">
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 px-4 py-3.5">
         <Target className="h-3.5 w-3.5 text-[#0F172A]" />
         <div
@@ -174,7 +174,7 @@ export function PersonaPanel({
         ) : null}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 pb-3">
+      <div className="px-3 pb-3">
         {sample.length === 0 && manualSample.length === 0 ? (
           <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-4 py-6 text-center">
             <Users className="mx-auto mb-2 h-4 w-4 text-slate-400" />

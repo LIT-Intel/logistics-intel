@@ -36,7 +36,7 @@ export function TimelineCanvas({
   const touchCount = steps.filter((s) => s.kind !== "wait").length;
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto bg-[#F8FAFC] px-4 py-4 pb-8 lg:px-6">
+    <div className="bg-[#F8FAFC] px-4 py-4 pb-8 lg:px-6">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div
           className="text-[13px] font-bold text-[#0F172A]"
