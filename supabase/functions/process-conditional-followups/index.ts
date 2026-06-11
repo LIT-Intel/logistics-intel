@@ -12,10 +12,16 @@
 //     metadata.url matches url_pattern (ILIKE), AND has NO
 //     'meeting_booked' / 'meeting_rescheduled' row for the same email
 //     within the primary campaign.
+//   - { kind: 'meeting_booked' }
+//     Recipient has a 'meeting_booked' row in primary campaign.
+//   - { kind: 'viewed_no_reply', wait_hours: N }
+//     Recipient has an 'opened' row >= N hours ago in primary campaign,
+//     AND no 'replied' status on any recipient row.
+//   - { kind: 'not_viewed', wait_hours: N }
+//     Recipient has NO 'opened' row, AND first 'sent' row in primary
+//     campaign occurred >= N hours ago.
 //
 // Auth: X-Internal-Cron header must match LIT_CRON_SECRET (cron-only fn).
-// May also be invoked manually by a platform admin with the same header
-// (smoke testing). Idempotency: rows past processed_at are not re-pulled.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -32,8 +38,23 @@ interface ClickedUrlNoMeetingCondition {
   kind: "clicked_url_no_meeting";
   url_pattern: string;
 }
+interface MeetingBookedCondition {
+  kind: "meeting_booked";
+}
+interface ViewedNoReplyCondition {
+  kind: "viewed_no_reply";
+  wait_hours?: number;
+}
+interface NotViewedCondition {
+  kind: "not_viewed";
+  wait_hours?: number;
+}
 
-type Condition = ClickedUrlNoMeetingCondition;
+type Condition =
+  | ClickedUrlNoMeetingCondition
+  | MeetingBookedCondition
+  | ViewedNoReplyCondition
+  | NotViewedCondition;
 
 interface TriggerRow {
   id: string;
@@ -44,28 +65,58 @@ interface TriggerRow {
 }
 
 function log(level: "info" | "warn" | "error", event: string, fields: Record<string, unknown> = {}) {
-  // eslint-disable-next-line no-console
   console[level === "error" ? "error" : "log"](
     JSON.stringify({ fn: "process-conditional-followups", level, event, ts: new Date().toISOString(), ...fields })
   );
+}
+
+interface RecipientLite {
+  id: string;
+  email: string;
+  org_id: string | null;
+  user_id: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  display_name: string | null;
+  status: string | null;
+}
+
+async function fetchRecipients(primaryCampaignId: string): Promise<RecipientLite[]> {
+  const { data, error } = await supabase
+    .from("lit_campaign_contacts")
+    .select("id, email, org_id, user_id, first_name, last_name, display_name, status")
+    .eq("campaign_id", primaryCampaignId);
+  if (error) throw new Error(`recipients_fetch_failed: ${error.message}`);
+  return ((data ?? []) as RecipientLite[]).filter((r) => !!r.email);
+}
+
+async function fetchEventEmailsByType(
+  primaryCampaignId: string,
+  eventTypes: string[],
+): Promise<Array<{ email: string; ts: string | null }>> {
+  const { data, error } = await supabase
+    .from("lit_outreach_history")
+    .select("metadata, created_at, event_type")
+    .eq("campaign_id", primaryCampaignId)
+    .in("event_type", eventTypes);
+  if (error) throw new Error(`history_fetch_failed(${eventTypes.join(",")}): ${error.message}`);
+  const out: Array<{ email: string; ts: string | null }> = [];
+  for (const row of data ?? []) {
+    const md = (row.metadata ?? {}) as Record<string, unknown>;
+    const email = String(md.recipient_email ?? "").toLowerCase();
+    if (!email) continue;
+    out.push({ email, ts: (row.created_at as string) ?? null });
+  }
+  return out;
 }
 
 async function evaluateClickedUrlNoMeeting(
   primaryCampaignId: string,
   urlPattern: string,
 ): Promise<string[]> {
-  // 1. recipients in primary campaign
-  const { data: recipients, error: recipErr } = await supabase
-    .from("lit_campaign_contacts")
-    .select("id, email, org_id, user_id, first_name, last_name, display_name")
-    .eq("campaign_id", primaryCampaignId);
-  if (recipErr) throw new Error(`recipients_fetch_failed: ${recipErr.message}`);
-  if (!recipients || recipients.length === 0) return [];
+  const recipients = await fetchRecipients(primaryCampaignId);
+  if (recipients.length === 0) return [];
 
-  const recipientEmails = recipients.map((r) => (r.email ?? "").toLowerCase()).filter(Boolean);
-  if (recipientEmails.length === 0) return [];
-
-  // 2. clicked rows for primary campaign matching url_pattern
   const { data: clicks, error: clickErr } = await supabase
     .from("lit_outreach_history")
     .select("metadata")
@@ -86,34 +137,94 @@ async function evaluateClickedUrlNoMeeting(
     if (!url || !recipientEmail) continue;
     if (patternRe.test(url)) clickedEmails.add(recipientEmail);
   }
-
   if (clickedEmails.size === 0) return [];
 
-  // 3. meeting_booked / meeting_rescheduled rows for primary campaign
-  const { data: meetings, error: mErr } = await supabase
-    .from("lit_outreach_history")
-    .select("metadata")
-    .eq("campaign_id", primaryCampaignId)
-    .in("event_type", ["meeting_booked", "meeting_rescheduled"]);
-  if (mErr) throw new Error(`meetings_fetch_failed: ${mErr.message}`);
+  const bookedRows = await fetchEventEmailsByType(primaryCampaignId, ["meeting_booked", "meeting_rescheduled"]);
+  const bookedEmails = new Set(bookedRows.map((r) => r.email));
 
-  const bookedEmails = new Set<string>();
-  for (const m of meetings ?? []) {
-    const md = (m.metadata ?? {}) as Record<string, unknown>;
-    const recipientEmail = String(md.recipient_email ?? "").toLowerCase();
-    if (recipientEmail) bookedEmails.add(recipientEmail);
-  }
-
-  // 4. matched recipients = clicked AND NOT booked
-  const matchedRecipients: string[] = [];
+  const matched: string[] = [];
   for (const r of recipients) {
-    const email = (r.email ?? "").toLowerCase();
-    if (!email) continue;
-    if (clickedEmails.has(email) && !bookedEmails.has(email)) {
-      matchedRecipients.push(r.id);
-    }
+    const email = r.email.toLowerCase();
+    if (clickedEmails.has(email) && !bookedEmails.has(email)) matched.push(r.id);
   }
-  return matchedRecipients;
+  return matched;
+}
+
+async function evaluateMeetingBooked(primaryCampaignId: string): Promise<string[]> {
+  const recipients = await fetchRecipients(primaryCampaignId);
+  if (recipients.length === 0) return [];
+  const bookedRows = await fetchEventEmailsByType(primaryCampaignId, ["meeting_booked", "meeting_rescheduled"]);
+  const bookedEmails = new Set(bookedRows.map((r) => r.email));
+  if (bookedEmails.size === 0) return [];
+  const matched: string[] = [];
+  for (const r of recipients) {
+    if (bookedEmails.has(r.email.toLowerCase())) matched.push(r.id);
+  }
+  return matched;
+}
+
+async function evaluateViewedNoReply(
+  primaryCampaignId: string,
+  waitHours: number,
+): Promise<string[]> {
+  const recipients = await fetchRecipients(primaryCampaignId);
+  if (recipients.length === 0) return [];
+  const opens = await fetchEventEmailsByType(primaryCampaignId, ["opened"]);
+  if (opens.length === 0) return [];
+
+  // earliest open per email
+  const earliestOpen = new Map<string, number>();
+  for (const o of opens) {
+    if (!o.ts) continue;
+    const t = new Date(o.ts).getTime();
+    if (isNaN(t)) continue;
+    const prev = earliestOpen.get(o.email);
+    if (prev === undefined || t < prev) earliestOpen.set(o.email, t);
+  }
+
+  const cutoff = Date.now() - waitHours * 3600_000;
+  const matched: string[] = [];
+  for (const r of recipients) {
+    const email = r.email.toLowerCase();
+    const openedAt = earliestOpen.get(email);
+    if (openedAt === undefined) continue;
+    if (openedAt > cutoff) continue; // too recent
+    if ((r.status ?? "").toLowerCase() === "replied") continue;
+    matched.push(r.id);
+  }
+  return matched;
+}
+
+async function evaluateNotViewed(
+  primaryCampaignId: string,
+  waitHours: number,
+): Promise<string[]> {
+  const recipients = await fetchRecipients(primaryCampaignId);
+  if (recipients.length === 0) return [];
+  const opens = await fetchEventEmailsByType(primaryCampaignId, ["opened"]);
+  const openedEmails = new Set(opens.map((o) => o.email));
+
+  const sends = await fetchEventEmailsByType(primaryCampaignId, ["sent"]);
+  const earliestSent = new Map<string, number>();
+  for (const s of sends) {
+    if (!s.ts) continue;
+    const t = new Date(s.ts).getTime();
+    if (isNaN(t)) continue;
+    const prev = earliestSent.get(s.email);
+    if (prev === undefined || t < prev) earliestSent.set(s.email, t);
+  }
+
+  const cutoff = Date.now() - waitHours * 3600_000;
+  const matched: string[] = [];
+  for (const r of recipients) {
+    const email = r.email.toLowerCase();
+    if (openedEmails.has(email)) continue;
+    const sentAt = earliestSent.get(email);
+    if (sentAt === undefined) continue;
+    if (sentAt > cutoff) continue;
+    matched.push(r.id);
+  }
+  return matched;
 }
 
 async function enrollRecipientsInto(
@@ -123,7 +234,6 @@ async function enrollRecipientsInto(
 ): Promise<{ enrolled: number; skipped: number }> {
   if (primaryRecipientIds.length === 0) return { enrolled: 0, skipped: 0 };
 
-  // Pull source-of-truth recipient data
   const { data: srcRecipients, error: srcErr } = await supabase
     .from("lit_campaign_contacts")
     .select("id, email, first_name, last_name, display_name, title, linkedin_url, phone, contact_id, company_id, org_id")
@@ -131,7 +241,6 @@ async function enrollRecipientsInto(
   if (srcErr) throw new Error(`src_recipients_fetch_failed: ${srcErr.message}`);
   if (!srcRecipients || srcRecipients.length === 0) return { enrolled: 0, skipped: 0 };
 
-  // Followup campaign metadata + first step
   const { data: fc, error: fcErr } = await supabase
     .from("lit_campaigns")
     .select("id, user_id, org_id")
@@ -152,7 +261,6 @@ async function enrollRecipientsInto(
   let skipped = 0;
 
   for (const r of srcRecipients) {
-    // Idempotency: same email already enrolled in followup?
     const { data: existing, error: exErr } = await supabase
       .from("lit_campaign_contacts")
       .select("id, status")
@@ -232,13 +340,22 @@ Deno.serve(async (req: Request) => {
   for (const t of triggers) {
     try {
       let matched: string[] = [];
-      if (t.condition?.kind === "clicked_url_no_meeting") {
+      const kind = t.condition?.kind;
+      if (kind === "clicked_url_no_meeting") {
         matched = await evaluateClickedUrlNoMeeting(
           t.primary_campaign_id,
-          t.condition.url_pattern
+          (t.condition as ClickedUrlNoMeetingCondition).url_pattern
         );
+      } else if (kind === "meeting_booked") {
+        matched = await evaluateMeetingBooked(t.primary_campaign_id);
+      } else if (kind === "viewed_no_reply") {
+        const waitHours = (t.condition as ViewedNoReplyCondition).wait_hours ?? 24;
+        matched = await evaluateViewedNoReply(t.primary_campaign_id, waitHours);
+      } else if (kind === "not_viewed") {
+        const waitHours = (t.condition as NotViewedCondition).wait_hours ?? 48;
+        matched = await evaluateNotViewed(t.primary_campaign_id, waitHours);
       } else {
-        log("warn", "unknown_condition_kind", { trigger_id: t.id, kind: (t.condition as { kind?: unknown })?.kind });
+        log("warn", "unknown_condition_kind", { trigger_id: t.id, kind });
       }
 
       const { enrolled, skipped } = await enrollRecipientsInto(
@@ -257,12 +374,14 @@ Deno.serve(async (req: Request) => {
 
       log("info", "trigger_processed", {
         trigger_id: t.id,
+        kind,
         matched: matched.length,
         enrolled,
         skipped,
       });
       results.push({
         trigger_id: t.id,
+        kind,
         matched: matched.length,
         enrolled,
         skipped,
