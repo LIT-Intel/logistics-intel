@@ -797,6 +797,13 @@ export default function CampaignBuilder() {
     trimmedName,
     scheduledStartAt,
     sendTimezone,
+    // P0-1: previously stale — the callback closed over the *first*
+    // render's audiencePulseListId / senderAccountId, so any change made
+    // after the initial render was silently dropped from the saved
+    // metrics blob. Re-binding on every state change is cheap and the
+    // values flow straight into mergedMetrics below.
+    audiencePulseListId,
+    senderAccountId,
   ]);
 
   const handleTestSend = useCallback(async () => {
@@ -863,7 +870,11 @@ export default function CampaignBuilder() {
     } finally {
       setTestSending(false);
     }
-  }, [testSending, primaryEmail, selectedStep, steps, manualEmails]);
+    // P0-1: editId was missing — sendTestEmail's last arg is the
+    // campaign id used by the edge fn to scope the test to the right
+    // workspace + mailbox. Without editId here, switching campaigns in
+    // the same session reused the previous editId in the closure.
+  }, [testSending, primaryEmail, selectedStep, steps, manualEmails, editId]);
 
   // Auto-save when the audience picker closes IF the campaign has been
   // saved at least once (editId set). For new campaigns we surface a
