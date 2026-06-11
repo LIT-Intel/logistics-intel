@@ -967,7 +967,7 @@ export default function CampaignBuilder() {
   }, [selectedStep]);
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-112px)] min-h-[640px] min-h-0 w-full max-w-[1500px] flex-col overflow-hidden bg-[#F8FAFC]">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col bg-[#F8FAFC] pb-12">
       {/* Top bar */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 2xl:flex-nowrap">
         <button
@@ -1268,11 +1268,18 @@ export default function CampaignBuilder() {
         </div>
       ) : null}
 
-      {/* 3-column body — Timeline + Inspector at md, full 3-pane at lg.
+      {/* 3-column body — natural-flow layout.
+          - Mobile / md: stack vertically (Audience → Sequence → Composer)
+          - lg+: 3 columns. Audience (PersonaPanel) + Composer (StepInspector) are
+            sticky at the top of the viewport so they stay in view while the Sequence
+            column grows naturally with content and scrolls with the page.
+          - Sticky columns cap at `max-h-[calc(100vh-1rem)]` so internal overflow
+            still scrolls within the column if the content is unusually tall, but the
+            page itself is the primary scroll surface.
           PersonaPanel hidden under lg; audience picker reachable via the
           top-bar Recipients button on tablets and phones. */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[1fr_340px] lg:grid-cols-[260px_1fr_340px]">
-        <div className="hidden lg:block">
+      <div className="grid grid-cols-1 items-start md:grid-cols-[1fr_340px] lg:grid-cols-[260px_1fr_340px]">
+        <div className="hidden lg:block lg:sticky lg:top-2 lg:self-start lg:max-h-[calc(100vh-1rem)] lg:overflow-y-auto">
           <PersonaPanel
             audienceCount={selectedIds.size + manualEmails.length}
             totalSavedCompanies={companies.length}
@@ -1294,19 +1301,21 @@ export default function CampaignBuilder() {
           onDelete={handleDeleteStep}
           onAddFirst={handleAddFirst}
         />
-        <StepInspector
-          step={selectedStep}
-          primaryInboxEmail={primaryEmail}
-          inboxKnown={inboxKnown}
-          templates={
-            templatesState?.result.state === "ok" ? templatesState.result.rows : []
-          }
-          onUpdate={handleUpdateStep}
-          onApplyTemplate={handleApplyTemplate}
-          onPreview={() => setPreviewOpen(true)}
-          onTestSend={handleTestSend}
-          onSaveAsTemplate={() => setCreateTemplateOpen(true)}
-        />
+        <div className="md:sticky md:top-2 md:self-start md:max-h-[calc(100vh-1rem)] md:overflow-y-auto">
+          <StepInspector
+            step={selectedStep}
+            primaryInboxEmail={primaryEmail}
+            inboxKnown={inboxKnown}
+            templates={
+              templatesState?.result.state === "ok" ? templatesState.result.rows : []
+            }
+            onUpdate={handleUpdateStep}
+            onApplyTemplate={handleApplyTemplate}
+            onPreview={() => setPreviewOpen(true)}
+            onTestSend={handleTestSend}
+            onSaveAsTemplate={() => setCreateTemplateOpen(true)}
+          />
+        </div>
       </div>
 
       <AudiencePickerDrawer
