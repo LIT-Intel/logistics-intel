@@ -18,9 +18,13 @@ import { SEQUENCES } from "@/lib/lead-sequences";
  *      client (lib/supabase.ts). This is the primary success path — if
  *      the insert fails, return 500 and skip the email.
  *   3. Send a transactional email via Resend, picking the template by
- *      `offer`. Resend template IDs live in env:
- *        - default                       → RESEND_LIT_TRIAL_WELCOME_TEMPLATE_ID
- *        - offer === "top-100-shippers-pdf" → RESEND_LIT_TOP_100_TEMPLATE_ID
+ *      (offer, alreadyAppUser). Resend template IDs live in env:
+ *        - default                                        → RESEND_LIT_TRIAL_WELCOME_TEMPLATE_ID
+ *        - offer === "top-100-shippers-pdf" + new lead    → RESEND_LIT_TOP_100_TEMPLATE_ID
+ *        - offer === "top-100-shippers-pdf" + app user    → RESEND_LIT_TOP_100_REGISTERED_TEMPLATE_ID
+ *      The registered variant pitches a cal.com demo instead of a trial
+ *      signup, since the recipient already has an account. If the
+ *      registered template id is unset, a built-in HTML fallback is used.
  *      Email failure is best-effort: logged but does NOT block success.
  *
  * Always returns JSON. Never throws.
@@ -33,7 +37,12 @@ import { SEQUENCES } from "@/lib/lead-sequences";
  *   RESEND_LIT_TOP_100_TEMPLATE_ID
  *
  * Optional env:
+ *   RESEND_LIT_TOP_100_REGISTERED_TEMPLATE_ID
+ *                                (Resend template for existing-app-user variant.
+ *                                 When unset, the inline HTML fallback below is
+ *                                 used — same content, less polish.)
  *   LIT_TOP_100_PDF_URL          (default: https://logisticintel.com/lead-magnets/top-100-shippers.pdf)
+ *   LIT_DEMO_BOOKING_URL         (default: https://cal.com/logisticintel/30min)
  *   RESEND_FROM_EMAIL            (default: "Logistic Intel <hello@logisticintel.com>")
  *   NEXT_PUBLIC_APP_URL          (default: https://app.logisticintel.com)
  */
@@ -50,6 +59,9 @@ const APP_URL =
 const TOP_100_PDF_URL =
   process.env.LIT_TOP_100_PDF_URL ||
   "https://logisticintel.com/lead-magnets/top-100-shippers.pdf";
+
+const DEMO_BOOKING_URL =
+  process.env.LIT_DEMO_BOOKING_URL || "https://cal.com/logisticintel/30min";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -193,12 +205,17 @@ export async function POST(req: NextRequest) {
     return json({ error: "store_failed" }, 500);
   }
 
-  // Skip the welcome email + funnel enrollment for emails that already
-  // belong to an app user. They'll get the in-app onboarding instead, and
-  // we don't want to duplicate the "Your LIT trial is ready" send. The
-  // lead row above is still kept so attribution + first/last-touch carry
-  // through to the existing account.
-  if (alreadyAppUser) {
+  // Branch behavior for emails that already belong to an app user:
+  //   - Top-100 PDF lead magnet: still send a fulfilling email, but use
+  //     the registered-user variant (PDF link + 30-min demo offer via
+  //     cal.com) and skip drip enrollment. They asked for the PDF; refusing
+  //     to deliver it because they're already a customer is a worse UX
+  //     than the double-email risk.
+  //   - All other offers (trial signup, etc.): short-circuit as before to
+  //     avoid double-emailing during the marketing-form-then-app-signup
+  //     race condition documented in the 2026-05-20 incident.
+  const isTop100Offer = lead.offer === "top-100-shippers-pdf";
+  if (alreadyAppUser && !isTop100Offer) {
     console.log(
       "[leads/resend] skipping welcome + enrollment — already an app user",
       lead.email,
@@ -209,9 +226,45 @@ export async function POST(req: NextRequest) {
   // Email is best-effort — wrap so any failure is logged but never blocks
   // the lead capture (Supabase row is already persisted at this point).
   try {
-    await sendResendEmail(lead);
+    await sendResendEmail(lead, { alreadyAppUser });
   } catch (e: any) {
     console.error("[leads/resend] email threw", e?.message || e);
+  }
+
+  // Registered-user PDF requests skip drip enrollment — they're already
+  // inside the product and don't need the nurture sequence. The Attio
+  // fan-out below still runs so attribution + activity logs stay accurate.
+  if (alreadyAppUser && isTop100Offer) {
+    try {
+      const attioResult = await pushInboundLeadToAttio({
+        email: lead.email,
+        source: lead.source,
+        attribution: {
+          offer: lead.offer,
+          utmSource: lead.utmSource,
+          utmMedium: lead.utmMedium,
+          utmCampaign: lead.utmCampaign,
+          referrer: lead.referrer,
+          firstTouchUtmSource: lead.firstTouch?.utmSource,
+          firstTouchUtmCampaign: lead.firstTouch?.utmCampaign,
+          firstTouchReferrer: lead.firstTouch?.referrer,
+          lastTouchUtmSource: lead.lastTouch?.utmSource,
+          lastTouchUtmCampaign: lead.lastTouch?.utmCampaign,
+          leadId: leadRow!.id,
+        },
+        jobTitle: lead.role,
+        dealName: `${lead.email} — ${lead.source} (existing user)`,
+      });
+      if (!attioResult.ok) {
+        console.warn(
+          "[leads/resend] attio push partial (registered variant)",
+          JSON.stringify(attioResult),
+        );
+      }
+    } catch (e: any) {
+      console.error("[leads/resend] attio push threw (registered)", e?.message || e);
+    }
+    return json({ ok: true, variant: "registered_app_user" });
   }
 
   // Audience-add + sequence enrollment. Both are strictly best-effort —
@@ -387,7 +440,10 @@ async function enrollLead(
   }
 }
 
-async function sendResendEmail(lead: LeadBody): Promise<void> {
+async function sendResendEmail(
+  lead: LeadBody,
+  opts: { alreadyAppUser?: boolean } = {},
+): Promise<void> {
   const key = process.env.RESEND_API_KEY;
   if (!key) {
     console.warn("[leads/resend] RESEND_API_KEY unset — skipping email");
@@ -395,16 +451,36 @@ async function sendResendEmail(lead: LeadBody): Promise<void> {
   }
 
   const isTop100 = lead.offer === "top-100-shippers-pdf";
-  const templateId = isTop100
-    ? process.env.RESEND_LIT_TOP_100_TEMPLATE_ID
-    : process.env.RESEND_LIT_TRIAL_WELCOME_TEMPLATE_ID;
+  const isRegisteredTop100 = isTop100 && Boolean(opts.alreadyAppUser);
+
+  // Template selection: registered-PDF variant gets its own template id when
+  // configured; otherwise falls through to the same TOP_100 template (the
+  // copy still works, just without the demo-offer framing). Trial-welcome
+  // path is unchanged.
+  const templateId = isRegisteredTop100
+    ? process.env.RESEND_LIT_TOP_100_REGISTERED_TEMPLATE_ID ||
+      process.env.RESEND_LIT_TOP_100_TEMPLATE_ID
+    : isTop100
+      ? process.env.RESEND_LIT_TOP_100_TEMPLATE_ID
+      : process.env.RESEND_LIT_TRIAL_WELCOME_TEMPLATE_ID;
 
   const firstName = lead.email.split("@")[0]?.split(/[._-]/)[0] || "there";
   const merge = {
     firstName,
     source: lead.source,
-    ...(isTop100 ? { pdfUrl: TOP_100_PDF_URL } : { ctaUrl: `${APP_URL}/onboarding` }),
+    ...(isTop100
+      ? {
+          pdfUrl: TOP_100_PDF_URL,
+          ...(isRegisteredTop100 ? { demoUrl: DEMO_BOOKING_URL } : {}),
+        }
+      : { ctaUrl: `${APP_URL}/onboarding` }),
   };
+
+  const subject = isRegisteredTop100
+    ? "Your Top 100 shippers PDF + a 30-min demo if you want one"
+    : isTop100
+      ? "Top 100 active shippers in your lane"
+      : "Your LIT trial is ready";
 
   // Prefer Resend "templates" path via the API key when a template ID is set.
   // Resend's transactional template send accepts the template_id as part of
@@ -420,9 +496,7 @@ async function sendResendEmail(lead: LeadBody): Promise<void> {
         body: JSON.stringify({
           from: FROM_EMAIL,
           to: [lead.email],
-          subject: isTop100
-            ? "Top 100 active shippers in your lane"
-            : "Your LIT trial is ready",
+          subject,
           template_id: templateId,
           // Resend supports template merge data via "data" or top-level keys
           // depending on dashboard config — send both for compatibility.
@@ -450,13 +524,16 @@ async function sendResendEmail(lead: LeadBody): Promise<void> {
   console.warn(
     "[leads/resend] template id unset; sending inline fallback email",
   );
+  const fallbackHtml = isRegisteredTop100
+    ? top100RegisteredFallbackHtml(merge as { firstName: string; pdfUrl?: string; demoUrl?: string })
+    : isTop100
+      ? top100FallbackHtml(merge)
+      : trialFallbackHtml(merge);
   await sendEmail({
     from: FROM_EMAIL,
     to: lead.email,
-    subject: isTop100
-      ? "Top 100 active shippers in your lane"
-      : "Your LIT trial is ready",
-    html: isTop100 ? top100FallbackHtml(merge) : trialFallbackHtml(merge),
+    subject,
+    html: fallbackHtml,
   });
 }
 
@@ -471,8 +548,35 @@ function trialFallbackHtml(m: { firstName: string; ctaUrl?: string }) {
 function top100FallbackHtml(m: { firstName: string; pdfUrl?: string }) {
   return `<!doctype html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#0b1220;line-height:1.55;">
   <h1 style="font-size:22px;font-weight:600;margin:0 0 12px;">Here's your Top 100 shippers, ${escapeHtml(m.firstName)}.</h1>
-  <p style="font-size:15px;color:#475569;margin:0 0 20px;">The most active shippers in your lane — refreshed from live customs filings.</p>
+  <p style="font-size:15px;color:#475569;margin:0 0 20px;">The most active shippers in your lane, refreshed from live customs filings.</p>
   <a href="${escapeHtml(m.pdfUrl || TOP_100_PDF_URL)}" style="display:inline-block;background:#2563eb;color:#fff;font-weight:600;font-size:14px;text-decoration:none;padding:12px 22px;border-radius:10px;">Download the PDF →</a>
+</body></html>`;
+}
+
+/**
+ * Fallback for users who already have a Logistic Intel account. They get
+ * the PDF link (it's what they asked for) plus an explicit demo offer
+ * via cal.com — since the trial-signup CTA in the standard template is
+ * not relevant to them. Drip enrollment is skipped upstream.
+ */
+function top100RegisteredFallbackHtml(m: {
+  firstName: string;
+  pdfUrl?: string;
+  demoUrl?: string;
+}) {
+  const pdf = escapeHtml(m.pdfUrl || TOP_100_PDF_URL);
+  const demo = escapeHtml(m.demoUrl || DEMO_BOOKING_URL);
+  return `<!doctype html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#0b1220;line-height:1.55;">
+  <h1 style="font-size:22px;font-weight:600;margin:0 0 12px;">Here's your Top 100 shippers, ${escapeHtml(m.firstName)}.</h1>
+  <p style="font-size:15px;color:#475569;margin:0 0 16px;">The most active U.S. import consignees from the trailing 12 months of customs filings.</p>
+  <p style="margin:0 0 22px;"><a href="${pdf}" style="display:inline-block;background:#2563eb;color:#fff;font-weight:600;font-size:14px;text-decoration:none;padding:12px 22px;border-radius:10px;">Download the PDF →</a></p>
+  <div style="margin:24px 0;padding:18px 20px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
+    <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#0f172a;text-transform:uppercase;letter-spacing:0.05em;">Already have an account</p>
+    <p style="margin:0 0 14px;font-size:14px;color:#334155;">Since you're already inside Logistic Intel, the PDF is the smaller half. The bigger half is per-shipper lane activity, HS-code mix, verified Logistics and Transportation contacts, and outreach workflows tied to live customs filings.</p>
+    <p style="margin:0 0 8px;font-size:14px;color:#334155;">Want a 30-min walkthrough on how to turn this list into a real freight prospecting motion?</p>
+    <a href="${demo}" style="display:inline-block;background:#0f172a;color:#fff;font-weight:600;font-size:14px;text-decoration:none;padding:11px 20px;border-radius:10px;">Book a 30-min demo →</a>
+  </div>
+  <p style="font-size:13px;color:#64748b;margin:18px 0 0;">If timing doesn't work, reply to this email with the lane or vertical you're focused on and we'll send back a curated cut with the contacts you need.</p>
 </body></html>`;
 }
 
