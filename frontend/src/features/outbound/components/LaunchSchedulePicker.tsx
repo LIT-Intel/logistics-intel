@@ -11,13 +11,20 @@
  * pattern used elsewhere in outbound, e.g. EngagementDrillIn).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, X } from "lucide-react";
+import { CalendarClock, Info, X } from "lucide-react";
 
 interface Props {
   value: string | null;            // ISO-8601 UTC string or null
   timezone: string;                // IANA TZ
   onChange: (utcIso: string | null, tz: string) => void;
   disabled?: boolean;
+  /**
+   * Campaign status — when "active", the picker surfaces a help note explaining
+   * that changing this time shifts the entire sequence (Day 2/3/4 all move
+   * with the anchor). Recipients who already received earlier steps keep their
+   * current cadence; this only affects future sends.
+   */
+  campaignStatus?: string | null;
 }
 
 // Convert UTC ISO to a "YYYY-MM-DDTHH:mm" string in the given TZ for the
@@ -109,9 +116,10 @@ const COMMON_TZS = [
   "Australia/Sydney",
 ];
 
-export function LaunchSchedulePicker({ value, timezone, onChange, disabled }: Props) {
+export function LaunchSchedulePicker({ value, timezone, onChange, disabled, campaignStatus }: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const isActiveCampaign = campaignStatus === "active";
 
   const tzOptions = useMemo(() => {
     const browser = (() => {
@@ -149,7 +157,13 @@ export function LaunchSchedulePicker({ value, timezone, onChange, disabled }: Pr
         type="button"
         onClick={() => !disabled && setOpen((v) => !v)}
         disabled={disabled}
-        title={isSet ? `Scheduled for ${buttonLabel}` : "Pick a launch time for this campaign"}
+        title={
+          isActiveCampaign
+            ? `Scheduled for ${buttonLabel} — changing this on an active campaign shifts the whole sequence.`
+            : isSet
+              ? `Scheduled for ${buttonLabel}`
+              : "Pick a launch time for this campaign"
+        }
         className={[
           "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
           isSet
@@ -183,6 +197,20 @@ export function LaunchSchedulePicker({ value, timezone, onChange, disabled }: Pr
               <X className="h-3 w-3" />
             </button>
           </div>
+
+          {isActiveCampaign ? (
+            <div
+              role="note"
+              className="mb-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10.5px] leading-snug text-amber-900"
+            >
+              <Info className="mt-[1px] h-3 w-3 shrink-0 text-amber-600" />
+              <span>
+                Changing this on an <strong>active</strong> campaign shifts the
+                entire sequence — Day 2, 3, 4 all move with it. Recipients who
+                already received earlier steps keep their current cadence.
+              </span>
+            </div>
+          ) : null}
 
           <label className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
             Date &amp; time

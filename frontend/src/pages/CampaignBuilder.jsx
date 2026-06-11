@@ -1135,6 +1135,7 @@ export default function CampaignBuilder() {
               setSendTimezone(tz);
             }}
             disabled={details?.status === "archived"}
+            campaignStatus={details?.status}
           />
           <LaunchButton
             onLaunch={handleLaunch}
