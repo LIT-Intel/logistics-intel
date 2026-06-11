@@ -206,6 +206,13 @@ serve(async (req) => {
       linkedin_url: c.linkedin_url ?? null,
       phone: c.phone ?? null,
       status: "pending",
+      // current_step_id MUST be NULL at enrollment. The dispatcher in
+      // send-campaign-email/index.ts interprets current_step_id as the
+      // step that was LAST SENT and advances to steps[index + 1]. If we
+      // set this to step1.id here, the dispatcher would skip step 1 and
+      // fire step 2 first. NULL = "nothing sent yet" → dispatcher sends
+      // steps[0] (step 1). Confirmed in production with Agent P (2026-06-11).
+      current_step_id: null,
       next_send_at: firstSendAtIso,
       merge_vars: {},
     }));
@@ -242,6 +249,9 @@ serve(async (req) => {
     linkedin_url: null,
     phone: null,
     status: "pending",
+    // current_step_id MUST be NULL at enrollment — see the contact-roster
+    // map above for the dispatcher-semantics reasoning.
+    current_step_id: null,
     next_send_at: firstSendAtIso,
     merge_vars: m.company_name ? { company_name: m.company_name } : {},
   }));
