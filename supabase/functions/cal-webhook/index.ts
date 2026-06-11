@@ -1,4 +1,4 @@
-// cal-webhook v2 — receives Cal.com booking webhooks and logs them as
+// cal-webhook v3 — receives Cal.com booking webhooks and logs them as
 // meeting events on the matching campaign recipient.
 //
 // Wire-up (one-time): Cal.com Dashboard → Settings → Developer → Webhooks
@@ -10,18 +10,23 @@
 // sent by Cal.com as the X-Cal-Signature-256 header (hex, lowercase).
 //
 // Mapping strategy (Sub-project L — multi-strategy attribution):
-//   Strategy 1: attendee_match  → most recent lit_outreach_history send
-//               whose metadata.recipient_email matches the booker's email.
-//               This handles the canonical "we mailed them, they booked" path.
-//   Strategy 2: organizer_match → if Strategy 1 misses, resolve the booking's
-//               organizer.email to an auth.users row, then attach to that
-//               user's most recent active|draft campaign in lit_campaigns.
-//               This handles "person books on our calendar without ever having
-//               been on an outbound list" — the Meetings KPI still credits the
-//               campaign that's currently running.
-//   Strategy 3: unattributed    → no match available; row is written with
-//               campaign_id=NULL and metadata.attribution_path='unattributed'
-//               so it surfaces in admin reports as "unattributed booking".
+//   Strategy 1: attendee_match     → most recent lit_outreach_history send
+//                whose metadata.recipient_email matches the booker (attendee)
+//                email AND whose own campaign_id is NOT NULL.
+//                This handles the canonical "we mailed them, they booked" path.
+//   Strategy 2: booker_contact_match → if Strategy 1 misses, look up the
+//                booker email in lit_campaign_contacts joined to an active
+//                campaign. Handles "contact was queued/added to a campaign
+//                but no send had landed yet."
+//   Strategy 3: organizer_match    → if Strategies 1+2 miss, resolve the
+//                booking's organizer.email to an auth.users row, then attach
+//                to that user's most recent active|draft campaign in
+//                lit_campaigns. Handles "person books on our calendar without
+//                ever having been on an outbound list" — the Meetings KPI
+//                still credits the campaign that's currently running.
+//   Strategy 4: unattributed       → no match available; row is written with
+//                campaign_id=NULL and metadata.attribution_path='unattributed'
+//                so it surfaces in admin reports as "unattributed booking".
 //
 // Idempotency: dedupes against metadata->>'cal_booking_id' so Cal.com
 // retries don't double-log.
@@ -145,17 +150,25 @@ serve(async (req: Request) => {
   let userId: string | null = null;
   let contactId: string | null = null;
   let companyId: string | null = null;
-  let attributionPath: "attendee_match" | "organizer_match" | "unattributed" = "unattributed";
+  let attributionPath:
+    | "attendee_match"
+    | "booker_contact_match"
+    | "organizer_match"
+    | "unattributed" = "unattributed";
 
   if (attendeeEmail) {
-    const { data: lastSend } = await db
+    // Pull a small window of recent sends (not just the single most recent)
+    // so a stale send row with campaign_id=NULL doesn't poison attribution.
+    // We pick the most-recent send WHERE campaign_id IS NOT NULL.
+    const { data: recentSends } = await db
       .from("lit_outreach_history")
       .select("campaign_id, contact_id, company_id, user_id, metadata")
       .eq("event_type", "sent")
       .filter("metadata->>recipient_email", "eq", attendeeEmail)
+      .not("campaign_id", "is", null)
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    const lastSend = Array.isArray(recentSends) && recentSends.length > 0 ? recentSends[0] : null;
     if (lastSend?.campaign_id) {
       campaignId = lastSend.campaign_id ?? null;
       contactId = lastSend.contact_id ?? null;
@@ -166,7 +179,31 @@ serve(async (req: Request) => {
     }
   }
 
-  // ── Attribution strategy 2: organizer_match ──────────────────────────
+  // ── Attribution strategy 2: booker_contact_match ─────────────────────
+  // Strategy 1 missed (no prior send to the booker). Look the booker email
+  // up directly in lit_campaign_contacts and pick a contact that belongs
+  // to an active campaign — this covers contacts queued/added to a campaign
+  // before the first send window fired.
+  if (!campaignId && attendeeEmail) {
+    const { data: contactRows } = await db
+      .from("lit_campaign_contacts")
+      .select("id, campaign_id, contact_id, company_id, user_id, lit_campaigns!inner(id,status)")
+      .eq("email", attendeeEmail)
+      .eq("lit_campaigns.status", "active")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const contactRow = Array.isArray(contactRows) && contactRows.length > 0 ? contactRows[0] as any : null;
+    if (contactRow?.campaign_id) {
+      campaignId = contactRow.campaign_id ?? null;
+      contactId = contactRow.contact_id ?? null;
+      companyId = contactRow.company_id ?? null;
+      userId = contactRow.user_id ?? null;
+      recipientId = contactRow.id ?? null;
+      attributionPath = "booker_contact_match";
+    }
+  }
+
+  // ── Attribution strategy 3: organizer_match ──────────────────────────
   // Strategy 1 missed (e.g. a prospect booked on our calendar without ever
   // being on an outbound list, or attendee was an internal mailbox like
   // sales@logisticintel.com). Use the booking organizer's email to find
@@ -222,7 +259,14 @@ serve(async (req: Request) => {
     recipient_email: attendeeEmail,
     recipient_id: recipientId,
     // matched_via is kept for backwards-compat with anything still reading it.
-    matched_via: attributionPath === "attendee_match" ? "last_send" : (attributionPath === "organizer_match" ? "organizer" : "unmatched"),
+    matched_via:
+      attributionPath === "attendee_match"
+        ? "last_send"
+        : attributionPath === "booker_contact_match"
+        ? "booker_contact"
+        : attributionPath === "organizer_match"
+        ? "organizer"
+        : "unmatched",
     attribution_path: attributionPath,
   };
 
