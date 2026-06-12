@@ -820,6 +820,7 @@ export default function SettingsPage() {
           isAdmin={isAdmin}
           canAccess={canAccess}
           isPartner={isPartner}
+          orgId={orgId}
           authProvider={
             (user?.app_metadata as Record<string, any> | undefined)?.provider ||
             (user?.user_metadata as Record<string, any> | undefined)?.provider ||
