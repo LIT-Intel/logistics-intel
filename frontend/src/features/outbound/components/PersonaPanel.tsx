@@ -107,15 +107,18 @@ export function PersonaPanel({
           background: "linear-gradient(160deg,#0F172A,#1E293B)",
         }}
       >
+        {/* Decorative orb — was a cyan #00F0FF glow that read as stylized
+            "AI" treatment per DR audit. Switched to a quiet slate halo so
+            the panel reads as part of the dashboard, not a marketing demo. */}
         <div
           className="pointer-events-none absolute -top-8 -right-8 h-[100px] w-[100px] rounded-full"
           style={{
             background:
-              "radial-gradient(circle,rgba(0,240,255,0.2),transparent 70%)",
+              "radial-gradient(circle,rgba(148,163,184,0.18),transparent 70%)",
           }}
         />
         <div
-          className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#00F0FF]"
+          className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-300"
           style={{ fontFamily: fontDisplay }}
         >
           <Sparkles className="h-2.5 w-2.5" />

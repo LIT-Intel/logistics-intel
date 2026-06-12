@@ -54,15 +54,13 @@ export function TimelineCanvas({
       </div>
 
       <div className="relative">
-        {/* Vertical rail */}
+        {/* Vertical rail — flat slate per DR design audit: rainbow gradient
+            previously here read as "stylized AI" and competed with the per-
+            channel chip colors. Keep the rail as a quiet connecting line. */}
         {steps.length > 0 ? (
           <div
-            className="pointer-events-none absolute top-2 bottom-2 w-0.5 rounded"
-            style={{
-              left: 19,
-              background:
-                "linear-gradient(180deg,#3B82F6 0%,#8B5CF6 50%,#EC4899 100%)",
-            }}
+            className="pointer-events-none absolute top-2 bottom-2 w-0.5 rounded bg-slate-200"
+            style={{ left: 19 }}
           />
         ) : null}
 

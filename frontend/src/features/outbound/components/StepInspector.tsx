@@ -3,6 +3,7 @@ import { Code, List as ListIcon } from "lucide-react";
 import { CHANNEL, fontDisplay, fontBody, fontMono } from "../tokens";
 import { ChannelIcon } from "./ChannelChip";
 import EmailComposerModal from "./EmailComposerModal";
+import { ToolbarButton } from "../../../components/ui/ToolbarButton";
 import type { BuilderStep, OutreachTemplate } from "../types";
 
 const VARIABLES = [
@@ -398,61 +399,59 @@ export function StepInspector({
       {/* Footer actions */}
       {!isWait ? (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
-          <button
-            type="button"
+          <ToolbarButton
             onClick={onPreview}
-            className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+            size="md"
             style={{ fontFamily: fontDisplay }}
           >
             Preview as contact
-          </button>
+          </ToolbarButton>
           {onSaveAsTemplate ? (
-            <button
-              type="button"
+            <ToolbarButton
               onClick={onSaveAsTemplate}
+              variant="primary"
+              size="md"
               disabled={
                 isEmail
                   ? !step.subject?.trim() && !step.body?.trim()
                   : !step.title?.trim() && !step.description?.trim()
               }
               title="Save this step's content as a reusable workspace template"
-              className="rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-1.5 text-[11px] font-semibold text-[#1d4ed8] transition hover:bg-[#DBEAFE] disabled:cursor-not-allowed disabled:opacity-50"
               style={{ fontFamily: fontDisplay }}
             >
               Save as template
-            </button>
+            </ToolbarButton>
           ) : null}
           {onOpenActivity ? (
-            <button
-              type="button"
+            <ToolbarButton
               onClick={onOpenActivity}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+              size="md"
+              iconLeft={<ListIcon className="h-2.5 w-2.5" />}
               style={{ fontFamily: fontDisplay }}
               title="Open activity timeline"
             >
-              <ListIcon className="h-2.5 w-2.5" />
               Activity
               {activityLoading
                 ? " (…)"
                 : typeof activityCount === "number"
                   ? ` (${activityCount})`
                   : ""}
-            </button>
+            </ToolbarButton>
           ) : null}
-          <button
-            type="button"
+          <ToolbarButton
             onClick={onTestSend}
+            size="md"
             disabled={!primaryInboxEmail}
             title={
               primaryInboxEmail
                 ? "Send this step to your inbox (or the first manual recipient if added) with sample variables."
                 : "Connect a Gmail or Outlook mailbox in Settings first."
             }
-            className="ml-auto rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+            className="ml-auto"
             style={{ fontFamily: fontDisplay }}
           >
             Test send
-          </button>
+          </ToolbarButton>
         </div>
       ) : null}
       {isEmail ? (

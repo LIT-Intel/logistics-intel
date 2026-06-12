@@ -37,6 +37,8 @@ import { PreviewModal } from "@/features/outbound/components/PreviewModal";
 import { CreateTemplateModal } from "@/features/outbound/components/CreateTemplateModal";
 import { CreatePersonaModal } from "@/features/outbound/components/CreatePersonaModal";
 import { SenderGuidelinesNote } from "@/features/outbound/components/SenderGuidelinesNote";
+import { Chip } from "@/components/ui/Chip";
+import { ToolbarButton } from "@/components/ui/ToolbarButton";
 import { findPlay } from "@/features/outbound/data/plays";
 import {
   applyLitMarketingSequenceToBuilder,
@@ -1187,17 +1189,14 @@ export default function CampaignBuilder() {
               maxLength={120}
               disabled={isEditMode && !hydratedFromEdit}
             />
-            <span
-              className="rounded-full border px-1.5 py-0 text-[9px] font-bold uppercase tracking-[0.04em]"
-              style={{
-                fontFamily: fontDisplay,
-                background: isEditMode ? "#F0FDF4" : "#E0F2FE",
-                color: isEditMode ? "#15803d" : "#0369A1",
-                borderColor: isEditMode ? "#BBF7D0" : "#BAE6FD",
-              }}
+            <Chip
+              variant={isEditMode ? "success" : "info"}
+              size="xs"
+              tone="brand"
+              style={{ fontFamily: fontDisplay }}
             >
               {isEditMode ? (details?.status || "Editing") : "Draft"}
-            </span>
+            </Chip>
           </div>
           {/* Thin meta row — breadcrumb + save guidance + success toast */}
           <div
@@ -1245,17 +1244,15 @@ export default function CampaignBuilder() {
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-          <button
-            type="button"
+          <ToolbarButton
             onClick={handleSave}
             disabled={!canSave || saving}
             title={saveGuidance ?? ""}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            iconLeft={<Save className="h-2.5 w-2.5" />}
             style={{ fontFamily: fontDisplay }}
           >
-            <Save className="h-2.5 w-2.5" />
             {saving ? "Saving…" : isEditMode ? "Save changes" : "Save draft"}
-          </button>
+          </ToolbarButton>
           <LaunchSchedulePicker
             value={scheduledStartAt}
             timezone={sendTimezone}
@@ -1309,9 +1306,7 @@ export default function CampaignBuilder() {
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800"
           style={{ fontFamily: fontBody }}
         >
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-white">
-            SENDER
-          </span>
+          <Chip variant="warning" size="sm" tone="brand">SENDER</Chip>
           <span>Couldn't load email senders: {senderLoadError}</span>
           <a
             href="/app/settings?tab=email"
@@ -1326,9 +1321,7 @@ export default function CampaignBuilder() {
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-1.5 text-[11px] text-slate-700"
           style={{ fontFamily: fontBody }}
         >
-          <span className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-white">
-            SENDER
-          </span>
+          <Chip variant="neutral" size="sm" tone="brand">SENDER</Chip>
           <label
             className="text-[11px] text-slate-500"
             htmlFor="sender-account-select"
@@ -1388,9 +1381,7 @@ export default function CampaignBuilder() {
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-blue-200 bg-blue-50 px-3 py-1.5 text-[11px] text-blue-900"
           style={{ fontFamily: fontBody }}
         >
-          <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white">
-            LINKED LIST
-          </span>
+          <Chip variant="info" size="sm" tone="brand">LINKED LIST</Chip>
           <span className="font-semibold">{audiencePulseListName || "Universal List"}</span>
           <span className="text-blue-700">
             New companies and contacts added to this list will be pulled in on the next Launch.
