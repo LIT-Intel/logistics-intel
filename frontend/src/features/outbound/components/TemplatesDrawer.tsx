@@ -139,7 +139,7 @@ export function TemplatesDrawer({ open, state, onClose, onApply, onCreate, defau
           <Layers className="h-3.5 w-3.5 text-[#0F172A]" />
           <div>
             <div
-              className="text-[13px] font-bold text-[#0F172A]"
+              className="text-[14px] font-bold text-[#0F172A]"
               style={{ fontFamily: fontDisplay }}
             >
               Template library
@@ -186,7 +186,7 @@ export function TemplatesDrawer({ open, state, onClose, onApply, onCreate, defau
         {industries.length > 1 ? (
           <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-slate-100 px-4 py-2">
             <span
-              className="mr-1 text-[9.5px] font-bold uppercase tracking-wider text-slate-400"
+              className="mr-1 text-[11px] font-bold uppercase tracking-wider text-slate-400"
               style={{ fontFamily: fontDisplay }}
             >
               Industry
@@ -198,7 +198,7 @@ export function TemplatesDrawer({ open, state, onClose, onApply, onCreate, defau
                   key={ind}
                   type="button"
                   onClick={() => setIndustryFilter(ind)}
-                  className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition"
+                  className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition"
                   style={{
                     background: active ? "#0F172A" : "#F1F5F9",
                     color: active ? "#fff" : "#475569",
@@ -216,7 +216,7 @@ export function TemplatesDrawer({ open, state, onClose, onApply, onCreate, defau
         {tones.length > 1 ? (
           <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-slate-100 px-4 py-2">
             <span
-              className="mr-1 text-[9.5px] font-bold uppercase tracking-wider text-slate-400"
+              className="mr-1 text-[11px] font-bold uppercase tracking-wider text-slate-400"
               style={{ fontFamily: fontDisplay }}
             >
               Tone
@@ -228,7 +228,7 @@ export function TemplatesDrawer({ open, state, onClose, onApply, onCreate, defau
                   key={tn}
                   type="button"
                   onClick={() => setToneFilter(tn)}
-                  className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition"
+                  className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition"
                   style={{
                     background: active ? "#3B82F6" : "#F1F5F9",
                     color: active ? "#fff" : "#475569",
@@ -321,12 +321,12 @@ function SectionLabel({
       style={{ fontFamily: fontDisplay }}
     >
       <span
-        className="text-[10px] font-bold uppercase tracking-[0.08em]"
+        className="text-[11px] font-bold uppercase tracking-[0.08em]"
         style={{ color }}
       >
         {title}
       </span>
-      <span className="text-[10px] text-slate-400">· {count}</span>
+      <span className="text-[11px] text-slate-400">· {count}</span>
       <div className="ml-1 flex-1 border-t border-slate-100" />
     </div>
   );
@@ -350,7 +350,7 @@ function TemplateRow({
     >
       <div className="flex flex-wrap items-center gap-1.5">
         <span
-          className="text-[12.5px] font-bold text-[#0F172A]"
+          className="text-[12px] font-bold text-[#0F172A]"
           style={{ fontFamily: fontDisplay }}
         >
           {tpl.name}
@@ -379,7 +379,7 @@ function TemplateRow({
           </>
         ) : null}
         <span
-          className="ml-auto rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-2.5 py-0.5 text-[10px] font-semibold text-white"
+          className="ml-auto rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-2.5 py-0.5 text-[11px] font-semibold text-white"
           style={{ fontFamily: fontDisplay }}
         >
           Use
@@ -420,7 +420,7 @@ function Tag({
   }[tone];
   return (
     <span
-      className="rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.04em]"
+      className="rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.04em]"
       style={{
         background: map.bg,
         color: map.color,

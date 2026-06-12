@@ -118,7 +118,7 @@ export function PersonaPanel({
           }}
         />
         <div
-          className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-300"
+          className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-300"
           style={{ fontFamily: fontDisplay }}
         >
           <Sparkles className="h-2.5 w-2.5" />
@@ -169,7 +169,7 @@ export function PersonaPanel({
             <button
               type="button"
               onClick={onCreatePersona}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#3B82F6] transition hover:bg-blue-50"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-[#3B82F6] transition hover:bg-blue-50"
               style={{ fontFamily: fontDisplay }}
               title="Create a new persona for your workspace"
             >
@@ -204,7 +204,7 @@ export function PersonaPanel({
               title="Recipient industry — filters template suggestions"
             >
               <span
-                className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500"
+                className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500"
                 style={{ fontFamily: fontDisplay }}
               >
                 Industry
@@ -212,7 +212,7 @@ export function PersonaPanel({
               <select
                 value={industry ?? ""}
                 onChange={(e) => onChangeIndustry?.(e.target.value)}
-                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11.5px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 style={{ fontFamily: fontBody }}
               >
                 {industryOptions!.map((o) => (
@@ -229,7 +229,7 @@ export function PersonaPanel({
               }
             >
               <span
-                className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500"
+                className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500"
                 style={{ fontFamily: fontDisplay }}
               >
                 Tone
@@ -237,7 +237,7 @@ export function PersonaPanel({
               <select
                 value={tone ?? ""}
                 onChange={(e) => onChangeTone?.(e.target.value)}
-                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11.5px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 style={{ fontFamily: fontBody }}
               >
                 {toneOptions!.map((o) => (
@@ -263,7 +263,7 @@ export function PersonaPanel({
           <button
             type="button"
             onClick={onOpenAudiencePicker}
-            className="text-[10px] font-semibold text-[#3B82F6]"
+            className="text-[11px] font-semibold text-[#3B82F6]"
             style={{ fontFamily: fontDisplay }}
           >
             View all {audienceCount} →
@@ -305,7 +305,7 @@ export function PersonaPanel({
                 className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700"
                 style={{ fontFamily: fontBody }}
               >
-                <span className="text-[10px]" aria-hidden>
+                <span className="text-[11px]" aria-hidden>
                   📧
                 </span>
                 <span className="truncate max-w-[180px]">{m.email}</span>
@@ -350,7 +350,7 @@ export function PersonaPanel({
                     {c.name}
                   </div>
                   <div
-                    className="truncate text-[10px] text-slate-500"
+                    className="truncate text-[11px] text-slate-500"
                     style={{ fontFamily: fontBody }}
                   >
                     {[c.domain, c.location, c.stage]

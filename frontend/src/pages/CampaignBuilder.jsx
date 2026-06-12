@@ -1184,7 +1184,7 @@ export default function CampaignBuilder() {
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="min-w-0 flex-1 border-none bg-transparent text-[15px] font-bold leading-tight tracking-tight text-[#0F172A] outline-none"
+              className="min-w-0 flex-1 border-none bg-transparent text-[16px] font-bold leading-tight tracking-tight text-[#0F172A] outline-none"
               style={{ fontFamily: fontDisplay }}
               maxLength={120}
               disabled={isEditMode && !hydratedFromEdit}
@@ -1200,7 +1200,7 @@ export default function CampaignBuilder() {
           </div>
           {/* Thin meta row — breadcrumb + save guidance + success toast */}
           <div
-            className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-slate-500"
+            className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-slate-500"
             style={{ fontFamily: fontBody }}
           >
             {isEditMode ? (
@@ -1333,7 +1333,7 @@ export default function CampaignBuilder() {
             id="sender-account-select"
             value={senderAccountId || ""}
             onChange={(e) => setSenderAccountId(e.target.value || null)}
-            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11.5px] font-semibold text-slate-900 outline-none focus:border-blue-300"
+            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[12px] font-semibold text-slate-900 outline-none focus:border-blue-300"
             style={{ fontFamily: fontDisplay }}
           >
             <option value="">Primary mailbox (auto)</option>
@@ -1360,14 +1360,14 @@ export default function CampaignBuilder() {
             })}
           </select>
           {senderAccountId && senderAccounts.find((a) => a.id === senderAccountId)?.provider === "resend" ? (
-            <span className="inline-flex items-center gap-1 rounded-md border border-purple-300 bg-purple-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-purple-700">
+            <span className="inline-flex items-center gap-1 rounded-md border border-purple-300 bg-purple-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em] text-purple-700">
               Resend · super-admin
             </span>
           ) : null}
           {senderAccounts.some((a) => a.status !== "connected") ? (
             <a
               href="/app/settings?tab=email"
-              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-amber-800 hover:bg-amber-100"
+              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em] text-amber-800 hover:bg-amber-100"
               style={{ fontFamily: fontDisplay }}
               title="One or more of your mailboxes needs reconnection"
             >
@@ -1392,7 +1392,7 @@ export default function CampaignBuilder() {
               setAudiencePulseListId(null);
               setAudiencePulseListName("");
             }}
-            className="ml-auto inline-flex items-center gap-1 rounded-md border border-blue-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-blue-800 hover:bg-blue-50"
+            className="ml-auto inline-flex items-center gap-1 rounded-md border border-blue-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-800 hover:bg-blue-50"
             style={{ fontFamily: fontDisplay }}
             title="Detach this list — campaign will only use the manual recipients/companies you've set"
           >
@@ -1556,7 +1556,7 @@ export default function CampaignBuilder() {
             <div className="border-b border-slate-100 px-5 py-4">
               <div
                 id="launch-modal-title"
-                className="flex items-center gap-2 text-[15px] font-bold text-[#0F172A]"
+                className="flex items-center gap-2 text-[16px] font-bold text-[#0F172A]"
                 style={{ fontFamily: fontDisplay }}
               >
                 <Rocket className="h-3.5 w-3.5 text-emerald-600" />
@@ -1570,7 +1570,7 @@ export default function CampaignBuilder() {
                 emails from <strong className="text-[#0F172A]">{primaryEmail}</strong>.
               </p>
               <ul
-                className="mt-2.5 space-y-1 text-[11.5px] text-slate-600"
+                className="mt-2.5 space-y-1 text-[12px] text-slate-600"
                 style={{ fontFamily: fontBody }}
               >
                 <li>· {selectedIds.size} compan{selectedIds.size === 1 ? "y" : "ies"}{manualEmails.length > 0 ? ` + ${manualEmails.length} manual email${manualEmails.length === 1 ? "" : "s"}` : ""}</li>

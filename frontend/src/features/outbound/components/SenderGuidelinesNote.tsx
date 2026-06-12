@@ -28,7 +28,7 @@ export function SenderGuidelinesNote({
 }: SenderGuidelinesNoteProps = {}) {
   if (variant === "popover") return <SenderGuidelinesPopover />;
   return (
-    <div className="inline-flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1 text-[10.5px] text-slate-600">
+    <div className="inline-flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
       <Info className="h-3 w-3 text-slate-400" />
       <span>
         Sends capped at 50/day per mailbox to protect deliverability.{" "}

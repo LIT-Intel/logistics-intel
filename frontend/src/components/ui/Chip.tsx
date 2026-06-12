@@ -24,8 +24,8 @@
 //   outline  — white bg + colored border (default for inline status pills)
 //
 // Sizes:
-//   xs — ~10-11px text, matches the previous hand-rolled compact chips
-//   sm — ~12px text, slightly roomier for inline use
+//   xs — 11px text (micro / overline tier of the outbound type ramp)
+//   sm — 12px text (body tier of the outbound type ramp)
 
 import React from "react";
 
@@ -68,10 +68,11 @@ const VARIANT_STYLES: Record<ChipVariant, Record<ChipTone, string>> = {
 };
 
 const SIZE_STYLES: Record<ChipSize, string> = {
-  // xs — matches the prior 10-11px hand-rolled chips (border px-1.5 py-0)
-  xs: "px-1.5 py-0 text-[10px] leading-[16px]",
-  // sm — matches the prior `px-2 py-0.5 text-[10px]` family but slightly wider
-  sm: "px-2 py-0.5 text-[11px] leading-[18px]",
+  // xs — micro chip, matches the 11px tier of the outbound type ramp
+  // (see frontend/src/features/outbound/tokens.ts → TYPE_RAMP).
+  xs: "px-1.5 py-0 text-[11px] leading-[16px]",
+  // sm — body chip, matches the 12px tier of the outbound type ramp.
+  sm: "px-2 py-0.5 text-[12px] leading-[18px]",
 };
 
 export function Chip({

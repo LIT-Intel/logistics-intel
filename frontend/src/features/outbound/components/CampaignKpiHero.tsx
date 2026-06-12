@@ -74,7 +74,7 @@ function Tile({ label, value, hint, spark, tone = "neutral", onClick }: TileProp
       onClick={onClick}
       className={`flex min-w-[120px] flex-col gap-1 rounded-2xl border ${classes.bg} ${classes.border} px-4 py-3 shadow-sm ${onClick ? "cursor-pointer transition-shadow hover:shadow-md" : ""}`}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
         {label}
       </span>
       <span className={`text-2xl font-bold tabular-nums ${classes.value}`}>
@@ -123,12 +123,12 @@ export function CampaignKpiHero({
   return (
     <div className="relative">
       {status === "paused" && (
-        <span className="absolute right-3 top-3 z-10 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+        <span className="absolute right-3 top-3 z-10 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
           Paused
         </span>
       )}
       {status === "archived" && (
-        <span className="absolute right-3 top-3 z-10 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+        <span className="absolute right-3 top-3 z-10 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
           Complete
         </span>
       )}
@@ -150,7 +150,7 @@ export function CampaignKpiHero({
         <div className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
           <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between md:gap-6">
             <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                 Audience
               </span>
               <span className="text-4xl font-bold tabular-nums text-slate-900">
@@ -166,7 +166,7 @@ export function CampaignKpiHero({
             <div className="hidden h-12 w-px shrink-0 bg-slate-200 md:block" aria-hidden="true" />
 
             <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                 Schedule
               </span>
               <span className="text-lg font-semibold text-slate-900">
@@ -180,7 +180,7 @@ export function CampaignKpiHero({
             <div className="hidden h-12 w-px shrink-0 bg-slate-200 md:block" aria-hidden="true" />
 
             <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                 Sequence
               </span>
               <span className="text-lg font-semibold text-slate-900">

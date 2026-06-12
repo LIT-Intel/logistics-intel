@@ -2,6 +2,36 @@
 // Used inline in components when a Tailwind utility doesn't fit (brand hexes,
 // gradients, channel palette). The codebase is Tailwind-first, so prefer
 // utilities; reach for these only when needed.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPE RAMP — 5-step scale for the campaign builder + outbound surface.
+//
+// Established by DR Move 5 (2026-06). Before, the surface used 9 ad-hoc pixel
+// sizes (8px / 9px / 9.5px / 10px / 10.5px / 11px / 11.5px / 12.5px / 13px /
+// 15px) that drifted across components. Every ad-hoc size has been collapsed
+// into one of the five canonical sizes below. New components MUST stick to
+// this ramp — do not reintroduce arbitrary pixel sizes.
+//
+//   text-[11px]  — micro / eyebrow / overline / chip / dense tag
+//   text-[12px]  — body (default in dense rows, drawers, inspectors)
+//   text-[14px]  — default reading size, modal body copy
+//   text-[16px]  — subhead / section title
+//   text-[22px]  — KPI value / hero number (Tailwind's `text-2xl` is also OK)
+//
+// Tailwind defaults `text-xs` (12px) and `text-sm` (14px) are allowed because
+// they coincide with the ramp. `text-2xl` (24px) is allowed for KPI numbers.
+// Anything else — `text-[10.5px]`, `text-[13px]`, etc. — is drift and should
+// be normalized to the closest tier on the way in.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const TYPE_RAMP = {
+  micro: "text-[11px]", // eyebrow, overline, chip, dense tag
+  body: "text-[12px]", // default dense body
+  default: "text-[14px]", // default reading size
+  subhead: "text-[16px]", // section title
+  hero: "text-[22px]", // KPI value / hero number
+} as const;
+export type TypeRampStep = keyof typeof TYPE_RAMP;
 
 export const ob = {
   bg: "#F8FAFC",

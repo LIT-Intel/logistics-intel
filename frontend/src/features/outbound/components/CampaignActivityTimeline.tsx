@@ -99,13 +99,13 @@ function TimelineRow({ event }: { event: CampaignActivityEvent }) {
         <Icon className={`h-3.5 w-3.5 ${v.iconText}`} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2 text-[12.5px] text-slate-900">
+        <div className="flex flex-wrap items-baseline gap-x-2 text-[12px] text-slate-900">
           <span className="font-semibold">{v.label}</span>
           {event.recipient_email ? (
-            <span className="font-mono text-[11.5px] text-slate-600">{event.recipient_email}</span>
+            <span className="font-mono text-[12px] text-slate-600">{event.recipient_email}</span>
           ) : null}
           {event.subject && !isReply ? (
-            <span className="truncate text-[11.5px] text-slate-500">· {event.subject}</span>
+            <span className="truncate text-[12px] text-slate-500">· {event.subject}</span>
           ) : null}
         </div>
         {detail ? (
@@ -121,7 +121,7 @@ function TimelineRow({ event }: { event: CampaignActivityEvent }) {
           </div>
         ) : null}
       </div>
-      <span className="shrink-0 whitespace-nowrap text-[10.5px] tabular-nums text-slate-400">
+      <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-slate-400">
         {fmtTime(event.occurred_at)}
       </span>
     </li>

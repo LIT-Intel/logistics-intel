@@ -106,7 +106,7 @@ function LinkClicksRow({
       {links.map((link) => (
         <li
           key={link.link_id}
-          className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11.5px]"
+          className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2.5 py-1.5 text-[12px]"
         >
           <span
             className="truncate text-slate-700"
@@ -114,7 +114,7 @@ function LinkClicksRow({
           >
             {link.original_url}
           </span>
-          <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold tabular-nums text-indigo-900">
+          <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold tabular-nums text-indigo-900">
             {link.click_count}×
           </span>
         </li>
@@ -162,7 +162,7 @@ function RecipientRow({
           {initials(recipient.recipient_email)}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[12.5px] font-semibold text-slate-900">
+          <div className="truncate text-[12px] font-semibold text-slate-900">
             {recipient.display_name || recipient.recipient_email}
           </div>
           <div className="flex items-center gap-1 text-[11px] text-slate-500">
@@ -176,7 +176,7 @@ function RecipientRow({
         >
           {recipient.event_count}
         </span>
-        <span className="shrink-0 text-[10px] text-slate-400 tabular-nums">
+        <span className="shrink-0 text-[11px] text-slate-400 tabular-nums">
           {fmtDate(recipient.last_event_at)}
         </span>
         {/* Sub-project O — manual exit. Renders inside the button so the
@@ -247,7 +247,7 @@ export function EngagementDrillIn({
             <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
               Engagement
             </div>
-            <h2 className="text-[15px] font-bold text-slate-900">
+            <h2 className="text-[16px] font-bold text-slate-900">
               {label} · {data?.length ?? 0} recipient{(data?.length ?? 0) === 1 ? "" : "s"}
             </h2>
           </div>

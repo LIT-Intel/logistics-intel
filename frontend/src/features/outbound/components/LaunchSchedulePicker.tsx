@@ -155,7 +155,7 @@ export function LaunchSchedulePicker({ value, timezone, onChange, disabled, camp
           className="absolute right-0 top-full z-50 mt-1 w-[280px] rounded-lg border border-slate-200 bg-white p-3 shadow-lg"
         >
           <div className="flex items-center justify-between pb-2">
-            <div className="text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">
+            <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
               Launch schedule
             </div>
             <button
@@ -171,7 +171,7 @@ export function LaunchSchedulePicker({ value, timezone, onChange, disabled, camp
           {isActiveCampaign ? (
             <div
               role="note"
-              className="mb-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10.5px] leading-snug text-amber-900"
+              className="mb-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-snug text-amber-900"
             >
               <Info className="mt-[1px] h-3 w-3 shrink-0 text-amber-600" />
               <span>
@@ -182,7 +182,7 @@ export function LaunchSchedulePicker({ value, timezone, onChange, disabled, camp
             </div>
           ) : null}
 
-          <label className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+          <label className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500">
             Date &amp; time
           </label>
           <input
@@ -198,7 +198,7 @@ export function LaunchSchedulePicker({ value, timezone, onChange, disabled, camp
             className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-200 disabled:opacity-60"
           />
 
-          <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+          <label className="mt-2 block text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500">
             Timezone
           </label>
           <select

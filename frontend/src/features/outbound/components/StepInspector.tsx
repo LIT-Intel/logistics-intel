@@ -163,7 +163,7 @@ export function StepInspector({
             <Field label="From">
               <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-[#F8FAFC] px-2.5 py-2">
                 <div
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white"
                   style={{
                     background: "#3B82F6",
                     fontFamily: fontDisplay,
@@ -185,7 +185,7 @@ export function StepInspector({
                       : "Inbox status unavailable"}
                   </div>
                   <div
-                    className="truncate text-[10px] text-slate-500"
+                    className="truncate text-[11px] text-slate-500"
                     style={{ fontFamily: fontMono }}
                   >
                     {primaryInboxEmail || "Connect Gmail in Settings"}
@@ -201,7 +201,7 @@ export function StepInspector({
                   <button
                     type="button"
                     onClick={() => onUpdate({ subject_b: "" })}
-                    className="text-[10px] font-semibold text-[#3B82F6]"
+                    className="text-[11px] font-semibold text-[#3B82F6]"
                     style={{ fontFamily: fontDisplay }}
                     title="Add an alternate subject. Each recipient sees A or B 50/50 at send time."
                   >
@@ -226,7 +226,7 @@ export function StepInspector({
                   <button
                     type="button"
                     onClick={() => onUpdate({ subject_b: undefined })}
-                    className="text-[10px] font-semibold text-rose-500"
+                    className="text-[11px] font-semibold text-rose-500"
                     style={{ fontFamily: fontDisplay }}
                     title="Remove the A/B variant — every recipient gets Subject A"
                   >
@@ -242,7 +242,7 @@ export function StepInspector({
                   style={{ fontFamily: fontBody }}
                 />
                 <p
-                  className="mt-1 text-[10.5px] text-slate-400"
+                  className="mt-1 text-[11px] text-slate-400"
                   style={{ fontFamily: fontBody }}
                 >
                   Dispatcher picks A or B uniformly per recipient. Per-variant open / click / reply rates appear in Analytics once sends accumulate.
@@ -261,7 +261,7 @@ export function StepInspector({
                 <button
                   type="button"
                   onClick={() => setComposerOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[0.04em] text-blue-700 hover:bg-blue-100"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.04em] text-blue-700 hover:bg-blue-100"
                   style={{ fontFamily: fontDisplay }}
                   title="Open the full HTML composer with live preview, sanitizer, and test send"
                 >
@@ -335,7 +335,7 @@ export function StepInspector({
               <span className="text-[12px] font-semibold text-[#0F172A]">
                 Append my email signature
               </span>
-              <span className="ml-auto text-[10.5px] text-slate-500">
+              <span className="ml-auto text-[11px] text-slate-500">
                 Edit in Settings → Preferences
               </span>
             </label>
@@ -388,7 +388,7 @@ export function StepInspector({
                   <span className="truncate font-medium text-[#0F172A]">
                     {tpl.name}
                   </span>
-                  <span className="text-[10px] text-slate-400">Use</span>
+                  <span className="text-[11px] text-slate-400">Use</span>
                 </button>
               ))}
             </div>
@@ -482,7 +482,7 @@ function Field({
     <div className="mb-3.5">
       <div className="mb-1.5 flex items-center justify-between">
         <div
-          className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400"
+          className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400"
           style={{ fontFamily: fontDisplay }}
         >
           {label}
@@ -502,7 +502,7 @@ function VariableChips({ onInsert }: { onInsert: (v: string) => void }) {
           key={v}
           type="button"
           onClick={() => onInsert(v)}
-          className="rounded border border-[#BAE6FD] bg-[#E0F2FE] px-1.5 py-0.5 text-[10px] font-semibold text-[#0369A1] transition hover:bg-[#BAE6FD]"
+          className="rounded border border-[#BAE6FD] bg-[#E0F2FE] px-1.5 py-0.5 text-[11px] font-semibold text-[#0369A1] transition hover:bg-[#BAE6FD]"
           style={{ fontFamily: fontMono }}
         >
           {v}

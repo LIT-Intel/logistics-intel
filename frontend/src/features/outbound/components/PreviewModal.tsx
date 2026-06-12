@@ -108,7 +108,7 @@ export function PreviewModal({
         <div className="flex shrink-0 items-center gap-2.5 border-b border-slate-200 px-4 py-3">
           <div>
             <div
-              className="text-[13px] font-bold text-[#0F172A]"
+              className="text-[14px] font-bold text-[#0F172A]"
               style={{ fontFamily: fontDisplay }}
             >
               Preview as contact
@@ -173,7 +173,7 @@ export function PreviewModal({
                     >
                       <header className="flex items-center gap-2 border-b border-slate-100 bg-[#FAFBFC] px-3 py-2">
                         <span
-                          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em]"
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em]"
                           style={{
                             color: meta.color,
                             background: meta.bg,
@@ -191,7 +191,7 @@ export function PreviewModal({
                           From: {resolvedSenderEmail}
                         </span>
                         <span
-                          className="ml-auto text-[10px] text-slate-400"
+                          className="ml-auto text-[11px] text-slate-400"
                           style={{ fontFamily: fontMono }}
                         >
                           to {recipientEmail}
@@ -199,7 +199,7 @@ export function PreviewModal({
                       </header>
                       <div className="px-3 py-2.5">
                         <div
-                          className="text-[13px] font-semibold text-[#0F172A]"
+                          className="text-[14px] font-semibold text-[#0F172A]"
                           style={{ fontFamily: fontDisplay }}
                         >
                           {subject || (
@@ -214,7 +214,7 @@ export function PreviewModal({
                         />
                         {missing.length > 0 && (
                           <div
-                            className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10.5px] text-[#B45309]"
+                            className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-[#B45309]"
                             style={{ fontFamily: fontBody }}
                           >
                             <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
@@ -241,7 +241,7 @@ export function PreviewModal({
                   >
                     <header className="flex items-center gap-2 border-b border-slate-100 bg-[#FAFBFC] px-3 py-2">
                       <span
-                        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em]"
+                        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em]"
                         style={{
                           color: meta.color,
                           background: meta.bg,
@@ -253,7 +253,7 @@ export function PreviewModal({
                         Day {day} · {meta.label}
                       </span>
                       <span
-                        className="ml-auto text-[10px] text-slate-400"
+                        className="ml-auto text-[11px] text-slate-400"
                         style={{ fontFamily: fontBody }}
                       >
                         Manual task — for the assigned rep
@@ -261,7 +261,7 @@ export function PreviewModal({
                     </header>
                     <div className="px-3 py-2.5">
                       <div
-                        className="text-[13px] font-semibold text-[#0F172A]"
+                        className="text-[14px] font-semibold text-[#0F172A]"
                         style={{ fontFamily: fontDisplay }}
                       >
                         {title || (
