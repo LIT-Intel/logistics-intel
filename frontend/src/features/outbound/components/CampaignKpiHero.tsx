@@ -213,12 +213,18 @@ export function CampaignKpiHero({
         )}
       </div>
 
-      {campaignId ? (
+      {/* CR P1-4: conditional mount. The drill-in subscribes to a
+          useEngagementRecipients query on mount even though it gates
+          the actual fetch on `enabled: open`. Mounting six closed
+          drill-ins (one per KPI) across every hero render still
+          pays the query-client + react subtree cost. Only mount
+          the drill-in when there's actually something to show. */}
+      {campaignId && drill !== null ? (
         <EngagementDrillIn
-          open={drill !== null}
+          open
           onClose={() => setDrill(null)}
           campaignId={campaignId}
-          eventType={drill ?? "clicked"}
+          eventType={drill}
         />
       ) : null}
     </div>
