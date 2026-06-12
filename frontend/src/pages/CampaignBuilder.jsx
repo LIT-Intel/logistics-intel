@@ -201,6 +201,34 @@ function dbStepToBuilder(row) {
   };
 }
 
+// Shared regex used by manual-recipient validation at both Save (P1-3) and
+// Launch. Loose check intentionally — server-side validation in
+// queue-campaign-recipients is the actual security boundary; this catches
+// obvious typos before persisting so users see immediate feedback.
+const MANUAL_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Partition manual recipients into valid + rejected. Valid entries get a
+// normalized email (trim + lowercase). Used by handleSave to block persist
+// on invalid input AND by confirmLaunch to block queueing.
+function validateManualRecipients(rows) {
+  const valid = [];
+  const rejected = [];
+  for (const m of rows ?? []) {
+    const email = String(m?.email || "").trim().toLowerCase();
+    if (!email || !MANUAL_EMAIL_RE.test(email)) {
+      rejected.push(m);
+      continue;
+    }
+    valid.push({
+      email,
+      first_name: typeof m?.first_name === "string" ? m.first_name : null,
+      last_name: typeof m?.last_name === "string" ? m.last_name : null,
+      company_name: typeof m?.company_name === "string" ? m.company_name : null,
+    });
+  }
+  return { valid, rejected };
+}
+
 function isStepFilled(s) {
   if (s.kind === "wait") return true;
   if (s.kind === "email") {
@@ -732,11 +760,35 @@ export default function CampaignBuilder() {
       // so reopening the campaign restores the same template shortlist.
       if (industry) metricsExtras.industry = industry;
       if (tone) metricsExtras.tone = tone;
+      // CR P1-3: validate manual recipient emails at SAVE (not only at
+      // Launch). Previously the user could persist freeform garbage into
+      // metrics.manual_recipients, then re-open the draft and re-launch
+      // it without ever seeing a validation error in the builder UI.
+      // Block save when manual emails are present but invalid; show the
+      // inline error so the user can fix them. Server-side validation in
+      // queue-campaign-recipients still runs at Launch as a backstop.
+      const { valid: validManualSave, rejected: rejectedManualSave } =
+        validateManualRecipients(manualEmails);
+      if (rejectedManualSave.length > 0) {
+        const examples = rejectedManualSave
+          .slice(0, 3)
+          .map((m) => String(m?.email || "(empty)").slice(0, 60))
+          .join(", ");
+        const extra =
+          rejectedManualSave.length > 3
+            ? ` (+${rejectedManualSave.length - 3} more)`
+            : "";
+        setError(
+          `Fix manual recipients before saving — ${rejectedManualSave.length} invalid email${rejectedManualSave.length === 1 ? "" : "s"}: ${examples}${extra}.`,
+        );
+        setSaving(false);
+        return false;
+      }
       // Persist manual recipients on every save so reopening the draft
       // shows what the user typed in. The queue function reads this on
       // Launch in addition to whatever's passed in the request body.
-      if (manualEmails.length > 0) {
-        metricsExtras.manual_recipients = manualEmails;
+      if (validManualSave.length > 0) {
+        metricsExtras.manual_recipients = validManualSave;
       } else if (isEditMode && details?.metrics?.manual_recipients) {
         // Explicitly clear if the user removed them all in this edit session.
         metricsExtras.manual_recipients = [];
@@ -960,26 +1012,13 @@ export default function CampaignBuilder() {
     setError(null);
     setSuccess(null);
     try {
-      // Validate manual recipients before queueing. Without this, malformed
-      // entries (no `email` field, junk text in the email field) used to
-      // hit the queue-campaign-recipients edge fn which silently skipped
-      // them — the user got "0 queued" with no idea why.
-      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      const validManual = [];
-      const rejectedManual = [];
-      for (const m of manualEmails) {
-        const email = String(m?.email || "").trim().toLowerCase();
-        if (!email || !EMAIL_RE.test(email)) {
-          rejectedManual.push(m);
-          continue;
-        }
-        validManual.push({
-          email,
-          first_name: typeof m?.first_name === "string" ? m.first_name : null,
-          last_name: typeof m?.last_name === "string" ? m.last_name : null,
-          company_name: typeof m?.company_name === "string" ? m.company_name : null,
-        });
-      }
+      // CR P1-3: shared validator with handleSave. Save now blocks on
+      // invalid emails, so by the time the user can launch the manual
+      // list should already be clean. We re-validate at Launch as a
+      // belt-and-suspenders check in case the metrics blob was written
+      // by an older client.
+      const { valid: validManual, rejected: rejectedManual } =
+        validateManualRecipients(manualEmails);
       if (rejectedManual.length > 0) {
         console.warn(
           "[CampaignBuilder] manual recipients rejected (no/invalid email):",
