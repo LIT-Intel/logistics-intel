@@ -172,6 +172,10 @@ export type SettingsLayoutProps = {
   integrations?: Integration[];
   workspace?: WorkspaceChip;
   isAdmin?: boolean;
+  /** Platform super-admin flag (NOT org owner/admin). Gates the platform-level
+   *  settings tabs — Exit Rules, Enrichment Providers — so org users and
+   *  end users don't see them. */
+  isPlatformAdmin?: boolean;
   canAccess?: (minPlan: string) => boolean;
   onSaveProfile?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
   onUploadAvatar?: (file: File) => Promise<{ error?: string } | void>;
@@ -192,10 +196,15 @@ export type SettingsLayoutProps = {
 };
 
 // ── Nav groups (matches the design's NAV array, curated for 6 sections) ───────
-const NAV_GROUPS: Array<{
-  group: string;
-  items: Array<{ id: SettingsSectionId; label: string; Icon: React.ComponentType<{ size?: number; color?: string }> }>;
-}> = [
+type NavItem = {
+  id: SettingsSectionId;
+  label: string;
+  Icon: React.ComponentType<{ size?: number; color?: string }>;
+  /** Platform-super-admin-only. Hidden from org owners + regular users. */
+  platformAdminOnly?: boolean;
+};
+
+const NAV_GROUPS: Array<{ group: string; items: NavItem[] }> = [
   {
     group: "Account",
     items: [
@@ -215,8 +224,9 @@ const NAV_GROUPS: Array<{
     group: "Outreach",
     items: [
       { id: "Integrations",        label: "Integrations",         Icon: Plug },
-      { id: "ExitRules",           label: "Exit Rules",           Icon: UserMinus },
-      { id: "EnrichmentProviders", label: "Enrichment Providers", Icon: Plug },
+      // Platform-super-admin-only — gated server-side AND in the nav filter below.
+      { id: "ExitRules",           label: "Exit Rules",           Icon: UserMinus, platformAdminOnly: true },
+      { id: "EnrichmentProviders", label: "Enrichment Providers", Icon: Plug,      platformAdminOnly: true },
     ],
   },
   {
@@ -277,19 +287,24 @@ function SettingsNav({
   onNav,
   search,
   onSearch,
+  isPlatformAdmin,
 }: {
   active: SettingsSectionId;
   onNav: (id: SettingsSectionId) => void;
   search: string;
   onSearch: (q: string) => void;
+  isPlatformAdmin: boolean;
 }) {
   const query = search.trim().toLowerCase();
 
   const visibleGroups = NAV_GROUPS.map((g) => ({
     ...g,
-    items: query
-      ? g.items.filter((it) => it.label.toLowerCase().includes(query))
-      : g.items,
+    items: g.items
+      // Platform-admin-only items are filtered out for non-platform-admins.
+      // This is a UX gate, NOT the security gate — the security gate is
+      // server-side (RLS on lit_org_exit_settings / lit_org_enrichment_settings).
+      .filter((it) => !it.platformAdminOnly || isPlatformAdmin)
+      .filter((it) => !query || it.label.toLowerCase().includes(query)),
   })).filter((g) => g.items.length > 0);
 
   return (
@@ -411,6 +426,35 @@ function SettingsNav({
   );
 }
 
+// ── ForbiddenSection — fallback when a non-platform-admin tries to access
+//    a super-admin-only tab via direct URL (?tab=exitrules or ?tab=enrichmentproviders).
+//    The nav already hides these for non-admins, but a stale bookmark or pasted
+//    link could land here, so we render a polite explanation instead of crashing.
+function ForbiddenSection({ sectionName }: { sectionName: string }) {
+  return (
+    <div
+      style={{
+        padding: "32px 24px",
+        textAlign: "center",
+        color: "#475569",
+        background: "#fff",
+        border: "1px solid #e2e8f0",
+        borderRadius: 12,
+        maxWidth: 560,
+        margin: "40px auto",
+      }}
+    >
+      <h2 style={{ margin: "0 0 8px", fontSize: 18, color: "#0f172a" }}>
+        {sectionName} is restricted
+      </h2>
+      <p style={{ margin: 0, fontSize: 13 }}>
+        This page is only available to platform administrators. Contact your
+        Logistic Intel account team if you believe you should have access.
+      </p>
+    </div>
+  );
+}
+
 // ── renderSection ──────────────────────────────────────────────────────────────
 function renderSection(
   section: SettingsSectionId,
@@ -493,6 +537,9 @@ function renderSection(
         />
       );
     case "ExitRules":
+      // Platform-super-admin gate. Defense-in-depth alongside the nav filter
+      // and the server-side RLS on lit_org_exit_settings.
+      if (!props.isPlatformAdmin) return <ForbiddenSection sectionName="Exit Rules" />;
       return (
         <OrgExitRulesPanel
           orgId={props.orgId ?? null}
@@ -500,6 +547,7 @@ function renderSection(
         />
       );
     case "EnrichmentProviders":
+      if (!props.isPlatformAdmin) return <ForbiddenSection sectionName="Enrichment Providers" />;
       return (
         <OrgEnrichmentSettingsPanel
           orgId={props.orgId ?? null}
@@ -597,6 +645,7 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
             onNav={handleSelectSection}
             search={search}
             onSearch={setSearch}
+            isPlatformAdmin={Boolean(props.isPlatformAdmin)}
           />
           <div
             className="lit-settings-body"

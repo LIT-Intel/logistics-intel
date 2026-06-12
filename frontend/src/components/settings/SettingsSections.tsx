@@ -71,21 +71,31 @@ export type SettingsSectionId =
   | "EnrichmentProviders"
   | "Preferences";
 
-export const SETTINGS_SECTIONS: Array<{
+type SectionMeta = {
   id: SettingsSectionId;
   title: string;
   icon: React.ComponentType<any>;
-}> = [
+  /** When true, the section only appears for platform super-admins (NOT org owners). */
+  platformAdminOnly?: boolean;
+};
+
+export const SETTINGS_SECTIONS: SectionMeta[] = [
   { id: "Profile",             title: "Profile",             icon: User },
   { id: "Workspace",           title: "Workspace",           icon: Building2 },
   { id: "Billing",             title: "Billing",             icon: Coins },
   { id: "Security",            title: "Security",            icon: ShieldCheck },
   { id: "Notifications",       title: "Notifications",       icon: Bell },
   { id: "Integrations",        title: "Integrations",        icon: Plug },
-  { id: "ExitRules",           title: "Exit Rules",          icon: ShieldCheck },
-  { id: "EnrichmentProviders", title: "Enrichment Providers", icon: Plug },
+  // Platform-super-admin-only. Hidden from org owners + regular users.
+  { id: "ExitRules",           title: "Exit Rules",           icon: ShieldCheck, platformAdminOnly: true },
+  { id: "EnrichmentProviders", title: "Enrichment Providers", icon: Plug,        platformAdminOnly: true },
   { id: "Preferences",         title: "Preferences",         icon: KeyRound },
 ];
+
+/** Filter the section list to what the current user can see. */
+export function visibleSections(opts: { isPlatformAdmin: boolean }): SectionMeta[] {
+  return SETTINGS_SECTIONS.filter((s) => !s.platformAdminOnly || opts.isPlatformAdmin);
+}
 
 // ─── Timezone options ────────────────────────────────────────────────────────
 const TIMEZONE_OPTIONS = [
