@@ -52,6 +52,12 @@ interface ApolloEnrichRequest {
   company_name?: string | null;
   reveal_personal_emails?: boolean;
   reveal_phone_number?: boolean;
+  /** Phase 3 — frontend alias for reveal_phone_number. When true,
+   *  Apollo enrichment is requested with reveal_phone_number=true,
+   *  charges 10 credits per contact, and (because Apollo's phone
+   *  pipeline is async) returns a pending status until the
+   *  apollo-phone-webhook delivers the number. */
+  unlock_phone?: boolean;
 }
 
 interface NormalizedContact {
@@ -279,7 +285,14 @@ async function apolloPost(url: string, body: Record<string, unknown>) {
 async function bulkMatch(
   identifiers: Array<Record<string, unknown>>,
   shared: { reveal_personal_emails?: boolean; reveal_phone_number?: boolean },
-): Promise<{ ok: boolean; status: number; people: any[]; raw: string }> {
+): Promise<{
+  ok: boolean;
+  status: number;
+  people: any[];
+  raw: string;
+  phone_request_ids?: Array<string | null>;
+  phone_queued?: boolean;
+}> {
   if (identifiers.length === 0) {
     return { ok: true, status: 200, people: [], raw: "" };
   }
@@ -298,26 +311,69 @@ async function bulkMatch(
       : [];
   // Each entry may itself be { person: {...} } or the person directly.
   const people = arr.map((m) => (m && m.person ? m.person : m)).filter(Boolean);
-  return { ok: true, status: r.status, people, raw: r.raw };
+  // Phase 3 — collect per-person phone request_ids when async phone unlock is on.
+  const phoneRequestIds = people.map(
+    (p: any) =>
+      (p?.phone_numbers_request_id as string | undefined) ||
+      (p?.request_id as string | undefined) ||
+      null,
+  );
+  const phoneQueued =
+    shared.reveal_phone_number === true &&
+    (r.data?.status === "queued" || phoneRequestIds.some((id) => !!id));
+  return {
+    ok: true,
+    status: r.status,
+    people,
+    raw: r.raw,
+    phone_request_ids: phoneRequestIds,
+    phone_queued: phoneQueued,
+  };
 }
 
 async function singleMatch(
   identifier: Record<string, unknown>,
   shared: { reveal_personal_emails?: boolean; reveal_phone_number?: boolean },
-): Promise<{ ok: boolean; status: number; person: any | null; raw: string }> {
+): Promise<{
+  ok: boolean;
+  status: number;
+  person: any | null;
+  raw: string;
+  phone_request_id?: string | null;
+  phone_queued?: boolean;
+}> {
   const body: Record<string, unknown> = { ...identifier };
-  // Default ON: ask Apollo to reveal email + phone when available.
-  // These can consume credits, but the user explicitly clicked Enrich.
+  // Default ON for email reveal (cheap). Phone reveal only when caller asks
+  // because it kicks Apollo into the async pipeline and changes the response shape.
   if (shared.reveal_personal_emails !== false) {
     body.reveal_personal_emails = true;
   }
-  if (shared.reveal_phone_number !== false) {
+  if (shared.reveal_phone_number === true) {
     body.reveal_phone_number = true;
   }
   const r = await apolloPost(APOLLO_MATCH_URL, body);
   if (!r.ok) return { ok: false, status: r.status, person: null, raw: r.raw };
   const person = r.data?.person || r.data?.match || null;
-  return { ok: true, status: r.status, person, raw: r.raw };
+  // Phase 3 — Apollo's async phone pipeline returns the person record
+  // immediately but adds `phone_numbers_request_id` (or `request_id` at
+  // the top level for fully async responses) until the phone webhook
+  // fires. Surface it so we can persist phone_unlock_request_id.
+  const phoneRequestId: string | null =
+    (person?.phone_numbers_request_id as string | undefined) ||
+    (r.data?.phone_numbers_request_id as string | undefined) ||
+    (r.data?.request_id as string | undefined) ||
+    null;
+  const phoneQueued =
+    shared.reveal_phone_number === true &&
+    (r.data?.status === "queued" || !!phoneRequestId);
+  return {
+    ok: true,
+    status: r.status,
+    person,
+    raw: r.raw,
+    phone_request_id: phoneRequestId,
+    phone_queued: phoneQueued,
+  };
 }
 
 /**
@@ -404,6 +460,11 @@ Deno.serve(async (req: Request) => {
 
     const fallbackDomain = normalizeDomain(body.domain ?? null);
     const fallbackOrgName = body.company_name?.trim() || null;
+    // Phase 3 — `unlock_phone` is the new frontend flag for phone unlocks.
+    // Treat as alias for `reveal_phone_number`; either upgrades the
+    // request to async phone delivery (10 credits each).
+    const phoneUnlockRequested =
+      body.unlock_phone === true || body.reveal_phone_number === true;
     // reveal_personal_emails = true: cheap unlock, returns email inline.
     // reveal_phone_number = ASYNC on Apollo's side — the response no
     // longer contains the person record directly, just a request_id
@@ -412,7 +473,7 @@ Deno.serve(async (req: Request) => {
     // through `phone_numbers[]` regardless of this flag.
     const sharedReveal = {
       reveal_personal_emails: body.reveal_personal_emails !== false,
-      reveal_phone_number: body.reveal_phone_number === true,
+      reveal_phone_number: phoneUnlockRequested,
     };
 
     // Resolve company_id slug ("company/old-navy") to a real lit_companies
@@ -456,8 +517,69 @@ Deno.serve(async (req: Request) => {
       ? PLAN_ENRICH_MONTHLY.enterprise
       : PLAN_ENRICH_MONTHLY[plan] ?? PLAN_ENRICH_MONTHLY.free_trial;
 
+    // Phase 3 — phone unlocks cost 10 credits each on top of the 1-credit
+    // email-unlock baseline. Phones go through Apollo's async pipeline.
+    const PHONE_UNLOCK_CREDITS = 10;
+    const EMAIL_UNLOCK_CREDITS = 1;
+    const perContactCost = phoneUnlockRequested
+      ? EMAIL_UNLOCK_CREDITS + PHONE_UNLOCK_CREDITS
+      : EMAIL_UNLOCK_CREDITS;
+    const creditAction = phoneUnlockRequested ? "enrich_phone" : "enrich_email";
+
+    // Phase 3 R4 — per-user daily phone-unlock cap. Apollo's plan quota is
+    // shared org-wide. Without per-USER limits a single seat could burn
+    // the entire org budget on day 1, so we add a per-user safeguard on
+    // top of the existing org-wide quota check.
+    if (phoneUnlockRequested && !bypassLimits) {
+      try {
+        // Resolve the user's plan-tier daily cap.
+        let userDailyLimit = 30;
+        try {
+          const { data: planRow } = await supabase
+            .from("plans")
+            .select("user_phone_daily_limit")
+            .eq("code", plan)
+            .maybeSingle();
+          const cap = (planRow as any)?.user_phone_daily_limit;
+          if (typeof cap === "number") userDailyLimit = cap;
+        } catch (_) {}
+
+        // Count this user's phone unlocks in the last 24h from the credit ledger.
+        const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { count: phoneUnlocksUsed } = await supabase
+          .from("lit_credit_ledger")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .eq("action", "enrich_phone")
+          .gte("created_at", since24h);
+        const usedToday = typeof phoneUnlocksUsed === "number" ? phoneUnlocksUsed : 0;
+
+        if (usedToday + targets.length > userDailyLimit) {
+          // Compute next reset: 24h after the oldest counted insert (close-enough).
+          const retryAfter = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              code: "USER_RATE_LIMITED",
+              reason: "user_rate_limited",
+              feature: "enrich_phone",
+              user_phone_unlocks_used_24h: usedToday,
+              user_phone_daily_limit: userDailyLimit,
+              requested: targets.length,
+              retry_after: retryAfter,
+              plan,
+              message: `Per-user phone unlock cap reached on the ${plan} plan (${usedToday} of ${userDailyLimit} used in last 24h).`,
+            }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      } catch (_) {
+        // If the ledger check fails, fall through — org-wide quota still applies.
+      }
+    }
+
     // Enrichment Phase 1: credit-based pre-flight. Email unlock = 1 credit.
-    // Phase 3 (phones) will charge 10. Super-admins bypass.
+    // Phase 3 (phones) charges 10 extra per contact. Super-admins bypass.
     // We pre-flight before the Apollo call so we don't burn provider credits
     // we can't bill back. Per-contact ledger insert happens after each success.
     if (!bypassLimits) {
@@ -469,15 +591,13 @@ Deno.serve(async (req: Request) => {
         if (!preErr && pre && typeof pre === "object") {
           const quota = (pre as any).quota as number | null;
           const used = ((pre as any).used_this_month as number | undefined) ?? 0;
-          // Each requested contact = 1 credit (email-unlock cost). Phones add 10
-          // each in Phase 3; we'll pass that as the credits arg later.
-          const willCost = targets.length;
+          const willCost = targets.length * perContactCost;
           if (quota !== null && quota !== undefined && used + willCost > quota) {
             return new Response(
               JSON.stringify({
                 ok: false,
                 code: "CREDIT_QUOTA_EXCEEDED",
-                feature: "enrich_email",
+                feature: creditAction,
                 credits_used: used,
                 credits_quota: quota,
                 credits_requested: willCost,
@@ -540,6 +660,8 @@ Deno.serve(async (req: Request) => {
 
     // Chunk into batches of BULK_MAX.
     const results: NormalizedContact[] = [];
+    // Phase 3 — track per-result phone request_id for the lit_contacts row.
+    const phoneRequestIdByKey = new Map<string, string | null>();
     const errors: Array<{ index: number; error: string; status?: number }> = [];
 
     for (let i = 0; i < ids.length; i += BULK_MAX) {
@@ -555,7 +677,11 @@ Deno.serve(async (req: Request) => {
           errors.push({ index: chunk[0].idx, error: "no_match", status: 404 });
           continue;
         }
-        results.push(normalizeApolloPerson(r.person));
+        const norm = normalizeApolloPerson(r.person);
+        if (phoneUnlockRequested) {
+          phoneRequestIdByKey.set(norm.source_contact_key, r.phone_request_id ?? null);
+        }
+        results.push(norm);
       } else {
         const r = await bulkMatch(chunk.map((c) => c.block), sharedReveal);
         if (!r.ok) {
@@ -570,7 +696,12 @@ Deno.serve(async (req: Request) => {
             errors.push({ index: c.idx, error: "no_match", status: 404 });
             return;
           }
-          results.push(normalizeApolloPerson(person));
+          const norm = normalizeApolloPerson(person);
+          if (phoneUnlockRequested) {
+            const reqId = (r.phone_request_ids && r.phone_request_ids[j]) || null;
+            phoneRequestIdByKey.set(norm.source_contact_key, reqId);
+          }
+          results.push(norm);
         });
       }
     }
@@ -594,6 +725,20 @@ Deno.serve(async (req: Request) => {
       // versions tried to insert source_provider / enriched_at which
       // don't exist — every upsert silently failed in the catch and
       // the contact disappeared on reload.
+      // Phase 3 — when phone unlock is requested, the phone usually arrives
+      // later via apollo-phone-webhook. Persist phone_unlock_status:
+      //   - 'pending'   → unlock requested, Apollo accepted the request
+      //   - 'delivered' → phone already present in the immediate response
+      //   - null        → no unlock requested
+      const phoneReqId = phoneRequestIdByKey.get(c.source_contact_key) ?? null;
+      let phoneUnlockStatus: string | null = null;
+      if (phoneUnlockRequested) {
+        if (c.phone) {
+          phoneUnlockStatus = "delivered";
+        } else {
+          phoneUnlockStatus = "pending";
+        }
+      }
       const row: Record<string, unknown> = {
         company_id: resolvedCompanyId,
         source: c.source,
@@ -617,6 +762,8 @@ Deno.serve(async (req: Request) => {
         verified_by_provider:
           typeof c.email_status === "string" &&
           ["verified", "valid", "deliverable"].includes(c.email_status.toLowerCase()),
+        phone_unlock_status: phoneUnlockStatus,
+        phone_unlock_request_id: phoneReqId,
         raw_payload: c.raw_payload,
       };
       try {
@@ -662,14 +809,14 @@ Deno.serve(async (req: Request) => {
         // RPC may not exist in some environments; persist still ran.
       }
 
-      // Enrichment Phase 1: credit ledger insert. Email unlock = 1 credit.
-      // Apollo phones cost 10x; once Phase 3 ships we'll route phone-unlock
-      // requests through a separate action with credits=10.
+      // Enrichment Phase 1+3: credit ledger inserts. Email unlock = 1 credit,
+      // Apollo phone unlock = 10 additional credits per contact (charged at
+      // request time, not delivery — the user committed by clicking unlock).
       if (!bypassLimits) {
         try {
           await supabase.rpc("lit_consume_credits", {
             p_action: "enrich_email",
-            p_credits: 1,
+            p_credits: EMAIL_UNLOCK_CREDITS,
             p_metadata: {
               user_id: user.id,
               org_id: orgId,
@@ -681,6 +828,24 @@ Deno.serve(async (req: Request) => {
           });
         } catch (_) {
           // RPC not deployed yet — pre-flight gate above already covered it.
+        }
+        if (phoneUnlockRequested) {
+          try {
+            await supabase.rpc("lit_consume_credits", {
+              p_action: "enrich_phone",
+              p_credits: PHONE_UNLOCK_CREDITS,
+              p_metadata: {
+                user_id: user.id,
+                org_id: orgId,
+                provider: "apollo",
+                source_contact_key: c.source_contact_key,
+                phone_unlock_status: phoneUnlockStatus,
+                phone_unlock_request_id: phoneReqId,
+              },
+            });
+          } catch (_) {
+            // RPC not deployed yet — pre-flight gate above already covered it.
+          }
         }
       }
     }
@@ -701,12 +866,25 @@ Deno.serve(async (req: Request) => {
       },
     });
 
+    // Phase 3 — decorate persisted contacts with phone unlock status so
+    // the frontend can render a "Phone pending" pill before the webhook fires.
+    const persistedWithPhoneStatus = persisted.map((c) => {
+      if (!phoneUnlockRequested) return c;
+      const reqId = phoneRequestIdByKey.get(c.source_contact_key) ?? null;
+      return {
+        ...c,
+        phone_unlock_status: c.phone ? "delivered" : "pending",
+        phone_unlock_request_id: reqId,
+      };
+    });
+
     return new Response(
       JSON.stringify({
         ok: true,
         provider: "apollo",
-        contacts: persisted,
+        contacts: persistedWithPhoneStatus,
         count: persisted.length,
+        phone_unlock_requested: phoneUnlockRequested,
         errors: errors.length ? errors : undefined,
         skipped: skipped.length ? skipped : undefined,
         persist_errors: persistErrors.length ? persistErrors : undefined,
