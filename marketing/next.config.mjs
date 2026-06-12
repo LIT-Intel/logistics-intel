@@ -129,6 +129,24 @@ const nextConfig = {
     // redirect to the canonical URL. Fetched at build time.
     const sanityAliasRedirects = await fetchSanityAliasRedirects();
 
+    // Pascal-case marketing URLs Google indexed before the canonical
+    // lowercase routes were set. 308 (permanent + method-preserving) so
+    // GSC retires the old URLs and consolidates link equity onto the
+    // lowercase canonicals. /About, /Solutions, /Resources have live
+    // lowercase counterparts; /Platform, /Search, /Billing do not —
+    // route those to the homepage (sensible parent) since they were
+    // never real marketing pages in the first place.
+    const pascalCaseRedirects = [
+      { source: "/About", destination: "/about", permanent: true },
+      { source: "/About/:path*", destination: "/about/:path*", permanent: true },
+      { source: "/Solutions", destination: "/solutions", permanent: true },
+      { source: "/Solutions/:path*", destination: "/solutions/:path*", permanent: true },
+      { source: "/Resources", destination: "/resources", permanent: true },
+      { source: "/Platform", destination: "/", permanent: true },
+      { source: "/Search", destination: "/", permanent: true },
+      { source: "/Billing", destination: "/", permanent: true },
+    ];
+
     return [
       ...appRedirects,
       { source: "/privacy", destination: "/legal/privacy", permanent: true },
@@ -138,6 +156,7 @@ const nextConfig = {
       { source: "/affiliate-program", destination: "/partners", permanent: true },
       // Old in-app affiliate apply URL — drive to the public landing.
       { source: "/partners/apply", destination: "/partners#apply", permanent: false },
+      ...pascalCaseRedirects,
       ...sanityAliasRedirects,
     ];
   },

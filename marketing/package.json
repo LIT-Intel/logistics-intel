@@ -13,7 +13,8 @@
     "sanity:deploy": "sanity deploy",
     "sanity:graphql": "sanity graphql deploy",
     "seed": "tsx scripts/seed.ts",
-    "build:lead-magnet:top100": "tsx scripts/build-top-100-pdf.tsx"
+    "build:lead-magnet:top100": "tsx scripts/build-top-100-pdf.tsx",
+    "build:favicons": "node scripts/build-favicons.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
