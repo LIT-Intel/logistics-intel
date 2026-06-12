@@ -684,8 +684,12 @@ export default function CampaignBuilder() {
   }, []);
 
   // ---- Save flow (create + edit) ----
+  // Returns true on success, false on failure (or when not eligible to save).
+  // Callers that need to react to a failed save (e.g. auto-save toast on
+  // drawer close, CR P1-2) should branch on the returned boolean. Errors are
+  // also surfaced via setError() for the inline banner.
   const handleSave = useCallback(async () => {
-    if (!canSave) return;
+    if (!canSave) return false;
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -797,9 +801,11 @@ export default function CampaignBuilder() {
         navigate(`/app/campaigns/new?edit=${campaignId}`, { replace: true });
       }
       window.setTimeout(() => setSuccess(null), 1800);
+      return true;
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to save campaign.";
       setError(message);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -901,10 +907,42 @@ export default function CampaignBuilder() {
   // saved at least once (editId set). For new campaigns we surface a
   // sticky banner instead, since auto-create on every change would
   // pollute the campaigns list with empty drafts.
+  //
+  // CR P1-2: previously the auto-save fired in a microtask and any
+  // rejection was silently swallowed. The user closed the drawer
+  // thinking their audience changes were persisted when in fact the
+  // request had failed. handleSave now returns a boolean — we surface
+  // an error toast on false so the user knows their audience edits
+  // didn't persist and can retry (or hit Save manually).
   const handleAudiencePickerClose = useCallback(() => {
     setAudienceOpen(false);
     if (canSave && editId) {
-      Promise.resolve().then(() => handleSave());
+      Promise.resolve()
+        .then(async () => {
+          const ok = await handleSave();
+          if (!ok) {
+            setToast({
+              message:
+                "Auto-save failed — your audience changes aren't saved. Click Save to retry.",
+              tone: "error",
+            });
+            window.setTimeout(() => setToast(null), 4000);
+          }
+        })
+        .catch((err) => {
+          // Defensive — handleSave shouldn't throw, but if it ever does,
+          // we still want to tell the user their audience edits are unsaved.
+          const message =
+            err instanceof Error
+              ? err.message
+              : "Auto-save failed — your audience changes are unsaved.";
+          console.warn(
+            "[CampaignBuilder] auto-save after audience close threw:",
+            err,
+          );
+          setToast({ message: `Auto-save failed — ${message}`, tone: "error" });
+          window.setTimeout(() => setToast(null), 4000);
+        });
     }
   }, [canSave, editId, handleSave]);
 
