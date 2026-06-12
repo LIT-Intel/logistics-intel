@@ -293,6 +293,52 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({ ok: false, error: insertErr.message }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 
-  log("info", "meeting_logged", { event_type: eventType, cal_booking_id: bookingId, campaign_id: campaignId, attribution_path: attributionPath, matched: !!campaignId });
-  return new Response(JSON.stringify({ ok: true, id: inserted?.id, event_type: eventType, campaign_id: campaignId, attribution_path: attributionPath }), { headers: { "Content-Type": "application/json" } });
+  // ── Sub-project O: meeting-booked exit ───────────────────────────────
+  // After successful attribution, check effective exit rules for the
+  // campaign. If exit_on_meeting_booked is true (org default OR per-campaign
+  // override), flip the recipient to status='meeting_booked' + null
+  // next_send_at so the dispatcher stops sending follow-ups.
+  //
+  // Scope: only for BOOKING_CREATED / BOOKING_CONFIRMED events. Cancellations
+  // and reschedules don't exit the sequence (a cancelled meeting may need
+  // follow-up nudges).
+  let exitApplied = false;
+  if (eventType === "meeting_booked" && campaignId) {
+    try {
+      const { data: rules } = await db.rpc("lit_effective_exit_rules", { p_campaign_id: campaignId });
+      const shouldExit = rules && (rules as any).exit_on_meeting_booked === true;
+      if (shouldExit) {
+        // Prefer the matched recipient_id; fall back to email match if missing
+        // (e.g. attendee_match path didn't carry recipient_id in metadata).
+        if (recipientId) {
+          const { error: updErr } = await db
+            .from("lit_campaign_contacts")
+            .update({ status: "meeting_booked", next_send_at: null, updated_at: new Date().toISOString() })
+            .eq("id", recipientId)
+            .eq("campaign_id", campaignId);
+          if (!updErr) exitApplied = true;
+          else log("warn", "exit_update_failed", { err: updErr.message, recipient_id: recipientId });
+        } else if (attendeeEmail) {
+          const { error: updErr } = await db
+            .from("lit_campaign_contacts")
+            .update({ status: "meeting_booked", next_send_at: null, updated_at: new Date().toISOString() })
+            .eq("campaign_id", campaignId)
+            .eq("email", attendeeEmail)
+            .in("status", ["queued", "pending"]);
+          if (!updErr) exitApplied = true;
+          else log("warn", "exit_update_by_email_failed", { err: updErr.message, email: attendeeEmail });
+        }
+        if (exitApplied) {
+          log("info", "exit_on_meeting_booked_applied", { campaign_id: campaignId, recipient_id: recipientId, attendee_email: attendeeEmail });
+        }
+      } else {
+        log("info", "exit_on_meeting_booked_disabled", { campaign_id: campaignId, rules_present: !!rules });
+      }
+    } catch (e) {
+      log("warn", "exit_rules_lookup_failed", { err: e instanceof Error ? e.message : String(e), campaign_id: campaignId });
+    }
+  }
+
+  log("info", "meeting_logged", { event_type: eventType, cal_booking_id: bookingId, campaign_id: campaignId, attribution_path: attributionPath, matched: !!campaignId, exit_applied: exitApplied });
+  return new Response(JSON.stringify({ ok: true, id: inserted?.id, event_type: eventType, campaign_id: campaignId, attribution_path: attributionPath, exit_applied: exitApplied }), { headers: { "Content-Type": "application/json" } });
 });
