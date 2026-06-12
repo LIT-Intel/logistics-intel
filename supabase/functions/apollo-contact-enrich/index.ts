@@ -456,6 +456,43 @@ Deno.serve(async (req: Request) => {
       ? PLAN_ENRICH_MONTHLY.enterprise
       : PLAN_ENRICH_MONTHLY[plan] ?? PLAN_ENRICH_MONTHLY.free_trial;
 
+    // Enrichment Phase 1: credit-based pre-flight. Email unlock = 1 credit.
+    // Phase 3 (phones) will charge 10. Super-admins bypass.
+    // We pre-flight before the Apollo call so we don't burn provider credits
+    // we can't bill back. Per-contact ledger insert happens after each success.
+    if (!bypassLimits) {
+      try {
+        const { data: pre, error: preErr } = await supabase.rpc(
+          "lit_get_credit_usage",
+          { p_org_id: orgId, p_user_id: user.id },
+        );
+        if (!preErr && pre && typeof pre === "object") {
+          const quota = (pre as any).quota as number | null;
+          const used = ((pre as any).used_this_month as number | undefined) ?? 0;
+          // Each requested contact = 1 credit (email-unlock cost). Phones add 10
+          // each in Phase 3; we'll pass that as the credits arg later.
+          const willCost = targets.length;
+          if (quota !== null && quota !== undefined && used + willCost > quota) {
+            return new Response(
+              JSON.stringify({
+                ok: false,
+                code: "CREDIT_QUOTA_EXCEEDED",
+                feature: "enrich_email",
+                credits_used: used,
+                credits_quota: quota,
+                credits_requested: willCost,
+                plan,
+                message: `Enrichment credit cap reached on the ${plan} plan (${used} of ${quota} used this month).`,
+              }),
+              { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+        }
+      } catch (_) {
+        // RPC not deployed in this env — fall through to legacy gate below.
+      }
+    }
+
     // Pre-flight: refuse if requested batch exceeds remaining cap.
     if (!bypassLimits && monthlyLimit !== PLAN_ENRICH_MONTHLY.enterprise) {
       // Try to count this month via consume_usage tables. Falls back to 0.
@@ -623,6 +660,28 @@ Deno.serve(async (req: Request) => {
         });
       } catch (_) {
         // RPC may not exist in some environments; persist still ran.
+      }
+
+      // Enrichment Phase 1: credit ledger insert. Email unlock = 1 credit.
+      // Apollo phones cost 10x; once Phase 3 ships we'll route phone-unlock
+      // requests through a separate action with credits=10.
+      if (!bypassLimits) {
+        try {
+          await supabase.rpc("lit_consume_credits", {
+            p_action: "enrich_email",
+            p_credits: 1,
+            p_metadata: {
+              user_id: user.id,
+              org_id: orgId,
+              provider: "apollo",
+              source_contact_key: c.source_contact_key,
+              email_unlocked: !!c.email,
+              phone_unlocked: !!c.phone,
+            },
+          });
+        } catch (_) {
+          // RPC not deployed yet — pre-flight gate above already covered it.
+        }
       }
     }
 

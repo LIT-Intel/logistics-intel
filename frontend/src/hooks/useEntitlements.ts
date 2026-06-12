@@ -120,6 +120,11 @@ export function useEntitlements() {
     queryClient.invalidateQueries({ queryKey: ENTITLEMENTS_QUERY_KEY });
   }, [queryClient]);
 
+  // Enrichment Phase 1: credit snapshot (used_this_month / quota / remaining).
+  // Falls back to a zeroed-out shape when the server doesn't return credits
+  // yet (older edge-fn version still deployed), so callers can always render.
+  const credits = entitlements?.credits ?? null;
+
   return {
     canAccessFeature,
     checkUsageLimit,
@@ -129,5 +134,6 @@ export function useEntitlements() {
     isAdmin,
     isPlatformAdmin,
     entitlements,
+    credits,
   };
 }

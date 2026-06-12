@@ -81,6 +81,54 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Enrichment Phase 1: resolve caller's org for credit gating.
+    // Skip the gate if we can't resolve an org (defensive; matches existing
+    // soft-fail patterns in this file).
+    let orgIdForCredits: string | null = null;
+    try {
+      const { data: omRow } = await supabase
+        .from("org_members")
+        .select("org_id")
+        .eq("user_id", user.id)
+        .order("joined_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      orgIdForCredits = (omRow as any)?.org_id ?? null;
+    } catch (_) {}
+
+    // Pre-flight credit check. Lusha specific-contact lookup = 1 enrichment;
+    // bulk lookup pulls up to 10 contacts so we reserve up to 10 credits.
+    if (orgIdForCredits) {
+      try {
+        const expectedCost =
+          requestData.linkedin_url || (requestData.first_name && requestData.last_name)
+            ? 1
+            : 10;
+        const { data: pre } = await supabase.rpc("lit_get_credit_usage", {
+          p_org_id: orgIdForCredits,
+          p_user_id: user.id,
+        });
+        const quota = (pre as any)?.quota as number | null | undefined;
+        const used = ((pre as any)?.used_this_month as number | undefined) ?? 0;
+        if (quota !== null && quota !== undefined && used + expectedCost > quota) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              code: "CREDIT_QUOTA_EXCEEDED",
+              feature: "enrich_email",
+              credits_used: used,
+              credits_quota: quota,
+              credits_requested: expectedCost,
+              message: `Enrichment credit cap reached (${used} of ${quota} used this month).`,
+            }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } catch (_) {
+        // RPC not deployed — proceed (existing behavior).
+      }
+    }
+
     let contacts = [];
 
     if (requestData.linkedin_url || (requestData.first_name && requestData.last_name)) {
@@ -116,6 +164,26 @@ Deno.serve(async (req: Request) => {
 
       if (!saveError && savedContact) {
         savedContacts.push(savedContact);
+
+        // Enrichment Phase 1: per-contact credit ledger insert (1 credit/email).
+        if (orgIdForCredits) {
+          try {
+            await supabase.rpc("lit_consume_credits", {
+              p_action: "enrich_email",
+              p_credits: 1,
+              p_metadata: {
+                user_id: user.id,
+                org_id: orgIdForCredits,
+                provider: "lusha",
+                contact_id: savedContact.id,
+                email_unlocked: !!contact.email,
+                phone_unlocked: !!contact.phone,
+              },
+            });
+          } catch (_) {
+            // RPC not deployed; pre-flight already covered it.
+          }
+        }
       }
     }
 
