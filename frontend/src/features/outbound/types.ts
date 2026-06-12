@@ -113,6 +113,13 @@ export interface BuilderStep {
   /** Whether the dispatcher should append the sender's signature to this
    *  step's body. Defaults to true. */
   includeSignature?: boolean;
+  /** J.2 — when set ("HH:MM"), the step fires at this local time in the
+   *  campaign's send_timezone, on the day computed from the delay. NULL/
+   *  undefined = legacy delay-based behavior. */
+  timeOfDayLocal?: string | null;
+  /** J.2 — when true, weekend-resolved fire times bump to next Monday at
+   *  the same time-of-day. */
+  weekdaysOnly?: boolean;
   expanded: boolean;
 }
 

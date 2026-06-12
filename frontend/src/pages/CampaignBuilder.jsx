@@ -174,6 +174,15 @@ function dbStepToBuilder(row) {
   }
   // Default to true so legacy rows get signatures appended automatically.
   const includeSig = row.include_signature !== false;
+  // J.2 — surface the new step-level scheduling hints. DB stores time
+  // as Postgres `time` ("HH:MM:SS"); the <input type="time"> input the
+  // inspector uses expects "HH:MM", but it accepts the seconds form too.
+  // Normalize to "HH:MM" for cleaner round-trip equality.
+  const rawTod = typeof row.time_of_day_local === "string" ? row.time_of_day_local : null;
+  const timeOfDayLocal = rawTod
+    ? (rawTod.length >= 5 ? rawTod.slice(0, 5) : rawTod)
+    : null;
+  const weekdaysOnly = row.weekdays_only === true;
   if (kind === "email") {
     const out = {
       ...base,
@@ -183,6 +192,8 @@ function dbStepToBuilder(row) {
       delayHours: wholeHours,
       delayMinutes: dbDelayMinutes,
       includeSignature: includeSig,
+      timeOfDayLocal,
+      weekdaysOnly,
     };
     if (row.subject_b !== undefined && row.subject_b !== null) {
       out.subject_b = row.subject_b;
@@ -197,6 +208,8 @@ function dbStepToBuilder(row) {
     delayHours: wholeHours,
     delayMinutes: dbDelayMinutes,
     includeSignature: includeSig,
+    timeOfDayLocal,
+    weekdaysOnly,
   };
 }
 
@@ -247,6 +260,17 @@ function channelFor(kind) {
 function persistPayloadFor(step, order, campaignId) {
   const clampHours = (h) => Math.max(0, Math.min(23, Math.round(Number(h) || 0)));
   const clampMinutes = (m) => Math.max(0, Math.min(59, Math.round(Number(m) || 0)));
+  // J.2 — normalize "HH:MM" from the <input type="time"> into the form
+  // the save-campaign-draft RPC expects. The RPC NULLIFs empty strings,
+  // so "" → NULL → column default. Anything else gets cast to `time`.
+  const normalizeTimeOfDay = (t) => {
+    if (typeof t !== "string") return null;
+    const trimmed = t.trim();
+    if (!trimmed) return null;
+    // Accept "HH:MM" or "HH:MM:SS"; reject obviously invalid input.
+    if (!/^\d{1,2}:\d{1,2}(:\d{1,2})?$/.test(trimmed)) return null;
+    return trimmed;
+  };
   if (step.kind === "wait") {
     return {
       campaign_id: campaignId,
@@ -272,6 +296,8 @@ function persistPayloadFor(step, order, campaignId) {
       delay_hours: clampHours(step.delayHours),
       delay_minutes: clampMinutes(step.delayMinutes),
       include_signature: step.includeSignature !== false,
+      time_of_day_local: normalizeTimeOfDay(step.timeOfDayLocal),
+      weekdays_only: step.weekdaysOnly === true,
     };
     if (step.subject_b !== undefined) {
       payload.subject_b = step.subject_b?.trim() || null;
@@ -289,6 +315,8 @@ function persistPayloadFor(step, order, campaignId) {
     delay_hours: clampHours(step.delayHours),
     delay_minutes: clampMinutes(step.delayMinutes),
     include_signature: step.includeSignature !== false,
+    time_of_day_local: normalizeTimeOfDay(step.timeOfDayLocal),
+    weekdays_only: step.weekdaysOnly === true,
   };
 }
 

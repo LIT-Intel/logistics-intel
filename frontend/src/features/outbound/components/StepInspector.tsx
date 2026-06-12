@@ -374,6 +374,68 @@ export function StepInspector({
           </Field>
         ) : null}
 
+        {/* J.2 — Step-level time-of-day + weekday-only scheduling.
+            Hidden on wait steps (no fire time). When the toggle is OFF
+            the step uses the cumulative-delay arithmetic; when ON the
+            dispatcher snaps the computed time to the requested local
+            time-of-day in the campaign's send_timezone. */}
+        {!isWait ? (
+          <Field label="Fire at specific time of day">
+            <label
+              className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2"
+              style={{ fontFamily: fontBody }}
+            >
+              <input
+                type="checkbox"
+                checked={typeof step.timeOfDayLocal === "string" && step.timeOfDayLocal.length > 0}
+                onChange={(e) =>
+                  onUpdate({
+                    timeOfDayLocal: e.target.checked ? (step.timeOfDayLocal || "09:00") : null,
+                  })
+                }
+              />
+              <span className="text-[12px] font-semibold text-[#0F172A]">
+                Send at a specific local time
+              </span>
+              {typeof step.timeOfDayLocal === "string" && step.timeOfDayLocal.length > 0 ? (
+                <input
+                  type="time"
+                  value={step.timeOfDayLocal}
+                  onChange={(e) => onUpdate({ timeOfDayLocal: e.target.value || null })}
+                  className="ml-auto rounded-md border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums text-[#0F172A] outline-none focus:border-[#3B82F6] focus:ring-2 focus:ring-blue-100"
+                  style={{ fontFamily: fontBody }}
+                  aria-label="Send time"
+                />
+              ) : null}
+            </label>
+            <label
+              className="mt-1.5 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2"
+              style={{ fontFamily: fontBody }}
+            >
+              <input
+                type="checkbox"
+                checked={step.weekdaysOnly === true}
+                onChange={(e) => onUpdate({ weekdaysOnly: e.target.checked })}
+              />
+              <span className="text-[12px] font-semibold text-[#0F172A]">
+                Weekdays only
+              </span>
+              <span className="ml-auto text-[11px] text-slate-500">
+                Sat / Sun bumps to next Monday
+              </span>
+            </label>
+            <p
+              className="mt-1.5 text-[11px] text-slate-500"
+              style={{ fontFamily: fontBody }}
+            >
+              Overrides the delay-based fire time. Time is interpreted in the
+              campaign's send timezone — e.g. <strong>9:00 AM</strong> with America/New_York
+              means the email goes out at 9 AM Eastern regardless of where the
+              recipient is.
+            </p>
+          </Field>
+        ) : null}
+
         {channelTemplates.length > 0 && !isWait ? (
           <Field label="Apply a template">
             <div className="flex flex-col gap-1.5">
