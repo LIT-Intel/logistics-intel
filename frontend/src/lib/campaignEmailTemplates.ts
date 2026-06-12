@@ -581,6 +581,7 @@ export function applyLitMarketingSequenceToBuilder(
 
   return templates.map((t, i): LitBuilderStep => ({
     localId: uid(),
+    dbId: null,
     kind: "email",
     subject: t.subject,
     body: resolveHtml(t.html),

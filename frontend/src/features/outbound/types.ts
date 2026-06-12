@@ -67,8 +67,27 @@ export interface Play {
 
 export type StepKind = ChannelKind;
 
+/**
+ * Builder-side model for a campaign step.
+ *
+ * Identity invariant — DO NOT collapse these two fields:
+ *  - `localId` is the React key. ALWAYS a fresh client-generated uid, never
+ *    reused. Used for selection, list-rendering, drag/reorder. Must be unique
+ *    within a single builder session, even across "duplicate step" actions
+ *    and across delete-then-re-add of a previously-saved step.
+ *  - `dbId` is the persisted row identity in `lit_campaign_steps.id`. `null`
+ *    for new steps that have never been saved. Populated by `dbStepToBuilder`
+ *    when hydrating an existing campaign. This is the ONLY field that may
+ *    ever be sent to the database as the row's primary key.
+ *
+ * Conflating these (e.g. `localId: row.id || uid()`) is the bug fixed in
+ * CR P0-2. If the save path later switches `upsertCampaignStep` to use
+ * onConflict: "id" instead of "campaign_id,step_order", a stale `localId`
+ * could collide with a re-added-after-delete step. Keep them separate.
+ */
 export interface BuilderStep {
   localId: string;
+  dbId: string | null;
   kind: StepKind;
   // email
   subject: string;
