@@ -4,9 +4,6 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
-  FlaskConical,
-  List as ListIcon,
-  Play,
   Rocket,
   Save,
 } from "lucide-react";
@@ -445,6 +442,46 @@ export default function CampaignBuilder() {
       .then((m) => setCampaignFunnel(m.get(editId) ?? null))
       .catch(() => setCampaignFunnel(null));
   }, [editId]);
+
+  // DR Move 4: human-readable schedule + sequence labels for the draft
+  // KPI hero. "Tue Jun 12 · 11:00 AM EDT" reads more like a real
+  // configuration summary than the raw ISO timestamp. Sequence span
+  // = max(delayDays) gives "3 emails over 14 days" — uses the last
+  // step's delay because steps store cumulative delay from launch.
+  const heroScheduledLabel = useMemo(() => {
+    if (!scheduledStartAt) return undefined;
+    const d = new Date(scheduledStartAt);
+    if (Number.isNaN(d.getTime())) return undefined;
+    try {
+      const dateStr = d.toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        timeZone: sendTimezone || undefined,
+      });
+      const timeStr = d.toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+        timeZone: sendTimezone || undefined,
+      });
+      return `${dateStr} · ${timeStr}`;
+    } catch {
+      return d.toISOString();
+    }
+  }, [scheduledStartAt, sendTimezone]);
+
+  const heroSequenceSummary = useMemo(() => {
+    const count = steps.length;
+    if (count === 0) return "No steps yet";
+    const maxDelay = steps.reduce((acc, s) => {
+      const d = Number(s?.delayDays);
+      return Number.isFinite(d) && d > acc ? d : acc;
+    }, 0);
+    const stepLabel = `${count} email${count === 1 ? "" : "s"}`;
+    if (count <= 1 || maxDelay <= 0) return stepLabel;
+    return `${stepLabel} over ${maxDelay} day${maxDelay === 1 ? "" : "s"}`;
+  }, [steps]);
 
   // Rehydrate hasTestSendOccurred from DB on mount. Without this the
   // per-session local state resets on every page reload and the
@@ -1120,12 +1157,22 @@ export default function CampaignBuilder() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col bg-[#F8FAFC] pb-12">
-      {/* Top bar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 2xl:flex-nowrap">
+      {/*
+        DR Move 1 — Slim top bar.
+        Outreach/Smartlead pattern: the campaign-level action row only
+        carries Save + Schedule + Launch. Per-step actions (Preview /
+        Activity / Test send) moved into the StepInspector footer.
+        Pitch shape (Industry / Tone) moved into the PersonaPanel left
+        rail. SenderGuidelinesNote now lives behind a ⓘ popover next to
+        Launch so it doesn't fight the row at lg widths. Save-guidance
+        text and the success toast sit in the thin meta row below the
+        title — small font, doesn't compete with the action row.
+      */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 lg:flex-nowrap">
         <button
           type="button"
           onClick={() => navigate("/app/campaigns")}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
           aria-label="Back to Outbound"
         >
           <ArrowLeft className="h-3 w-3" />
@@ -1152,6 +1199,7 @@ export default function CampaignBuilder() {
               {isEditMode ? (details?.status || "Editing") : "Draft"}
             </span>
           </div>
+          {/* Thin meta row — breadcrumb + save guidance + success toast */}
           <div
             className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-slate-500"
             style={{ fontFamily: fontBody }}
@@ -1176,87 +1224,27 @@ export default function CampaignBuilder() {
             </span>
             <span className="text-[#CBD5E1]">·</span>
             <span className="whitespace-nowrap">{steps.length} step{steps.length === 1 ? "" : "s"}</span>
-            <span className="text-[#CBD5E1]">·</span>
-            {/* Industry + tone selectors. Drive template-drawer filter chips
-                and inform the user's pitch style. Persisted on
-                lit_campaigns.metrics so re-opening keeps the choice. */}
-            <select
-              value={industry}
-              onChange={(e) => setIndustry(e.target.value)}
-              className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-200"
-              style={{ fontFamily: fontDisplay }}
-              title="Recipient industry — filters template suggestions"
-            >
-              {INDUSTRY_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id}>{o.label}</option>
-              ))}
-            </select>
-            <select
-              value={tone}
-              onChange={(e) => setTone(e.target.value)}
-              className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-200"
-              style={{ fontFamily: fontDisplay }}
-              title={TONE_OPTIONS.find((t) => t.id === tone)?.helper || "Pitch style"}
-            >
-              {TONE_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id}>{o.label}</option>
-              ))}
-            </select>
             {saveGuidance ? (
               <>
                 <span className="text-[#CBD5E1]">·</span>
                 <span className="text-[#B45309]">{saveGuidance}</span>
               </>
             ) : null}
+            {success ? (
+              <>
+                <span className="text-[#CBD5E1]">·</span>
+                <span
+                  className="inline-flex items-center gap-1 text-[#15803d]"
+                  style={{ fontFamily: fontBody }}
+                >
+                  <CheckCircle2 className="h-2.5 w-2.5" />
+                  {success}
+                </span>
+              </>
+            ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1">
-          {success ? (
-            <span
-              className="inline-flex items-center gap-1 rounded-full border border-[#BBF7D0] bg-[#F0FDF4] px-2 py-0.5 text-[10px] font-medium text-[#15803d]"
-              style={{ fontFamily: fontBody }}
-            >
-              <CheckCircle2 className="h-2.5 w-2.5" />
-              {success}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => setPreviewOpen(true)}
-            disabled={steps.filter((s) => s.kind !== "wait").length === 0}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-            style={{ fontFamily: fontDisplay }}
-          >
-            <Play className="h-2.5 w-2.5" />
-            Preview as contact
-          </button>
-          {editId ? (
-            <button
-              type="button"
-              onClick={() => setActivityOpen(true)}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
-              style={{ fontFamily: fontDisplay }}
-              title="Open activity timeline"
-            >
-              <ListIcon className="h-2.5 w-2.5" />
-              Activity{activityLoading ? " (…)" : ` (${activityCount})`}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={handleTestSend}
-            disabled={testSending || !primaryEmail}
-            title={
-              !primaryEmail
-                ? "Connect a Gmail or Outlook mailbox in Settings first."
-                : "Send the currently-selected email step to your inbox with sample variables."
-            }
-            className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-white disabled:text-slate-400"
-            style={{ fontFamily: fontDisplay }}
-          >
-            <FlaskConical className="h-2.5 w-2.5" />
-            {testSending ? "Sending…" : "Test send"}
-          </button>
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={handleSave}
@@ -1294,7 +1282,7 @@ export default function CampaignBuilder() {
             hasTestSendOccurred={hasTestSendOccurred}
             campaignStatus={details?.status}
           />
-          <SenderGuidelinesNote />
+          <SenderGuidelinesNote variant="popover" />
         </div>
       </div>
 
@@ -1304,6 +1292,8 @@ export default function CampaignBuilder() {
         funnel={campaignFunnel}
         sparkData={campaignSparkData}
         campaignId={editId}
+        scheduledLabel={heroScheduledLabel}
+        sequenceSummary={heroSequenceSummary}
       />
       {editId ? (
         <CampaignActivityTimeline
@@ -1479,6 +1469,12 @@ export default function CampaignBuilder() {
             onOpenAudiencePicker={() => setAudienceOpen(true)}
             onOpenTemplates={() => setTemplatesOpen(true)}
             onCreatePersona={() => setCreatePersonaOpen(true)}
+            industry={industry}
+            industryOptions={INDUSTRY_OPTIONS}
+            onChangeIndustry={setIndustry}
+            tone={tone}
+            toneOptions={TONE_OPTIONS}
+            onChangeTone={setTone}
           />
         </div>
         <TimelineCanvas
@@ -1502,6 +1498,9 @@ export default function CampaignBuilder() {
             onPreview={() => setPreviewOpen(true)}
             onTestSend={handleTestSend}
             onSaveAsTemplate={() => setCreateTemplateOpen(true)}
+            onOpenActivity={editId ? () => setActivityOpen(true) : undefined}
+            activityCount={activityCount}
+            activityLoading={activityLoading}
           />
         </div>
       </div>
