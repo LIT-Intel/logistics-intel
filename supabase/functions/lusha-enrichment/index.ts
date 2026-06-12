@@ -20,6 +20,10 @@ interface EnrichContactRequest {
   first_name?: string;
   last_name?: string;
   title?: string;
+  /** Phase 3 — when true, request phone reveal from Lusha (synchronous)
+   *  and charge 10 additional credits per contact on top of the email
+   *  unlock baseline. */
+  unlock_phone?: boolean;
 }
 
 Deno.serve(async (req: Request) => {
@@ -85,6 +89,7 @@ Deno.serve(async (req: Request) => {
     // Skip the gate if we can't resolve an org (defensive; matches existing
     // soft-fail patterns in this file).
     let orgIdForCredits: string | null = null;
+    let orgPlanCode = "free_trial";
     try {
       const { data: omRow } = await supabase
         .from("org_members")
@@ -94,16 +99,87 @@ Deno.serve(async (req: Request) => {
         .limit(1)
         .maybeSingle();
       orgIdForCredits = (omRow as any)?.org_id ?? null;
+      if (orgIdForCredits) {
+        const { data: org } = await supabase
+          .from("organizations")
+          .select("plan")
+          .eq("id", orgIdForCredits)
+          .maybeSingle();
+        if ((org as any)?.plan) orgPlanCode = String((org as any).plan).toLowerCase();
+      }
     } catch (_) {}
 
-    // Pre-flight credit check. Lusha specific-contact lookup = 1 enrichment;
-    // bulk lookup pulls up to 10 contacts so we reserve up to 10 credits.
-    if (orgIdForCredits) {
+    // Phase 3 — phone unlock costs 10 extra credits per contact and goes
+    // through Lusha's sync /person reveal (vs Apollo's async webhook).
+    const phoneUnlockRequested = requestData.unlock_phone === true;
+    const PHONE_UNLOCK_CREDITS = 10;
+    const EMAIL_UNLOCK_CREDITS = 1;
+
+    // Phase 3 R4 — per-user daily phone-unlock cap (mirrors apollo-contact-enrich).
+    if (phoneUnlockRequested && orgIdForCredits) {
       try {
-        const expectedCost =
+        let userDailyLimit = 30;
+        try {
+          const { data: planRow } = await supabase
+            .from("plans")
+            .select("user_phone_daily_limit")
+            .eq("code", orgPlanCode)
+            .maybeSingle();
+          const cap = (planRow as any)?.user_phone_daily_limit;
+          if (typeof cap === "number") userDailyLimit = cap;
+        } catch (_) {}
+
+        const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { count: phoneUnlocksUsed } = await supabase
+          .from("lit_credit_ledger")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .eq("action", "enrich_phone")
+          .gte("created_at", since24h);
+        const usedToday = typeof phoneUnlocksUsed === "number" ? phoneUnlocksUsed : 0;
+        // Lusha-specific lookup is single-contact; bulk pulls up to 10.
+        const requested =
           requestData.linkedin_url || (requestData.first_name && requestData.last_name)
             ? 1
             : 10;
+        if (usedToday + requested > userDailyLimit) {
+          const retryAfter = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              code: "USER_RATE_LIMITED",
+              reason: "user_rate_limited",
+              feature: "enrich_phone",
+              user_phone_unlocks_used_24h: usedToday,
+              user_phone_daily_limit: userDailyLimit,
+              requested,
+              retry_after: retryAfter,
+              plan: orgPlanCode,
+              message: `Per-user phone unlock cap reached on the ${orgPlanCode} plan (${usedToday} of ${userDailyLimit} used in last 24h).`,
+            }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } catch (_) {
+        // ledger check failed → fall through to org-wide quota
+      }
+    }
+
+    // Pre-flight credit check. Lusha specific-contact lookup = 1 enrichment;
+    // bulk lookup pulls up to 10 contacts so we reserve up to 10 credits.
+    // Phone unlock adds 10 per contact.
+    if (orgIdForCredits) {
+      try {
+        const baseCost =
+          requestData.linkedin_url || (requestData.first_name && requestData.last_name)
+            ? EMAIL_UNLOCK_CREDITS
+            : EMAIL_UNLOCK_CREDITS * 10;
+        const phoneCost = phoneUnlockRequested
+          ? (requestData.linkedin_url || (requestData.first_name && requestData.last_name)
+              ? PHONE_UNLOCK_CREDITS
+              : PHONE_UNLOCK_CREDITS * 10)
+          : 0;
+        const expectedCost = baseCost + phoneCost;
         const { data: pre } = await supabase.rpc("lit_get_credit_usage", {
           p_org_id: orgIdForCredits,
           p_user_id: user.id,
@@ -115,7 +191,7 @@ Deno.serve(async (req: Request) => {
             JSON.stringify({
               ok: false,
               code: "CREDIT_QUOTA_EXCEEDED",
-              feature: "enrich_email",
+              feature: phoneUnlockRequested ? "enrich_phone" : "enrich_email",
               credits_used: used,
               credits_quota: quota,
               credits_requested: expectedCost,
@@ -132,12 +208,12 @@ Deno.serve(async (req: Request) => {
     let contacts = [];
 
     if (requestData.linkedin_url || (requestData.first_name && requestData.last_name)) {
-      const contact = await enrichSpecificContact(requestData, domain);
+      const contact = await enrichSpecificContact(requestData, domain, phoneUnlockRequested);
       if (contact) {
         contacts = [contact];
       }
     } else {
-      contacts = await enrichCompanyContacts(domain);
+      contacts = await enrichCompanyContacts(domain, phoneUnlockRequested);
     }
 
     const savedContacts = [];
@@ -165,12 +241,13 @@ Deno.serve(async (req: Request) => {
       if (!saveError && savedContact) {
         savedContacts.push(savedContact);
 
-        // Enrichment Phase 1: per-contact credit ledger insert (1 credit/email).
+        // Enrichment Phase 1+3: per-contact credit ledger inserts.
+        // Email = 1 credit; phone unlock (when requested) = 10 extra.
         if (orgIdForCredits) {
           try {
             await supabase.rpc("lit_consume_credits", {
               p_action: "enrich_email",
-              p_credits: 1,
+              p_credits: EMAIL_UNLOCK_CREDITS,
               p_metadata: {
                 user_id: user.id,
                 org_id: orgIdForCredits,
@@ -183,6 +260,23 @@ Deno.serve(async (req: Request) => {
           } catch (_) {
             // RPC not deployed; pre-flight already covered it.
           }
+          if (phoneUnlockRequested) {
+            try {
+              await supabase.rpc("lit_consume_credits", {
+                p_action: "enrich_phone",
+                p_credits: PHONE_UNLOCK_CREDITS,
+                p_metadata: {
+                  user_id: user.id,
+                  org_id: orgIdForCredits,
+                  provider: "lusha",
+                  contact_id: savedContact.id,
+                  phone_present: !!contact.phone,
+                },
+              });
+            } catch (_) {
+              // RPC not deployed; pre-flight already covered it.
+            }
+          }
         }
       }
     }
@@ -193,6 +287,8 @@ Deno.serve(async (req: Request) => {
         company_id: requestData.company_id,
         contacts: savedContacts,
         count: savedContacts.length,
+        phone_unlock_requested: phoneUnlockRequested,
+        plan: orgPlanCode,
       }),
       {
         status: 200,
@@ -213,7 +309,8 @@ Deno.serve(async (req: Request) => {
 
 async function enrichSpecificContact(
   requestData: EnrichContactRequest,
-  domain: string
+  domain: string,
+  unlockPhone = false,
 ): Promise<any | null> {
   if (!LUSHA_API_KEY) {
     log.warn("api_key_missing_using_mock");
@@ -228,6 +325,12 @@ async function enrichSpecificContact(
     } else if (requestData.first_name && requestData.last_name) {
       body.firstName = requestData.first_name;
       body.lastName = requestData.last_name;
+    }
+    // Phase 3 — Lusha's /person endpoint includes phones inline when the
+    // request opts into them. Set the flag forwarded by callers.
+    if (unlockPhone) {
+      body.revealPhones = true;
+      body.includePhoneNumbers = true;
     }
 
     const response = await fetch(`${LUSHA_BASE_URL}/person`, {
@@ -262,14 +365,18 @@ async function enrichSpecificContact(
   }
 }
 
-async function enrichCompanyContacts(domain: string): Promise<any[]> {
+async function enrichCompanyContacts(
+  domain: string,
+  unlockPhone = false,
+): Promise<any[]> {
   if (!LUSHA_API_KEY) {
     log.warn("api_key_missing_using_mock");
     return generateMockCompanyContacts(domain);
   }
 
   try {
-    const response = await fetch(`${LUSHA_BASE_URL}/company/${encodeURIComponent(domain)}/contacts`, {
+    const url = `${LUSHA_BASE_URL}/company/${encodeURIComponent(domain)}/contacts${unlockPhone ? "?revealPhones=true" : ""}`;
+    const response = await fetch(url, {
       method: "GET",
       headers: {
         "api-token": LUSHA_API_KEY,
