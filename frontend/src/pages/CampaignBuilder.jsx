@@ -804,6 +804,18 @@ export default function CampaignBuilder() {
       // Persist manual recipients on every save so reopening the draft
       // shows what the user typed in. The queue function reads this on
       // Launch in addition to whatever's passed in the request body.
+      //
+      // TODO(CR P1-10, post-launch): manual_recipients is currently
+      // stored as freeform JSONB on lit_campaigns.metrics with no
+      // schema enforcement. The right home is a dedicated
+      // lit_campaign_manual_recipients table with FK + UNIQUE
+      // (campaign_id, lower(email)) so:
+      //   - duplicate emails can't slip into the same campaign
+      //   - server-side queries can JOIN cleanly instead of jsonb_array_elements
+      //   - per-recipient state (suppressed, bounced, replied) gets a column
+      //     instead of being inferred from event tables
+      // Deferred from CR P1 batch because it's a real migration with
+      // backfill + queue-campaign-recipients changes.
       if (validManualSave.length > 0) {
         metricsExtras.manual_recipients = validManualSave;
       } else if (isEditMode && details?.metrics?.manual_recipients) {
