@@ -12,6 +12,7 @@ import {
   MoreHorizontal,
   PanelRightClose,
   PanelRightOpen,
+  Pencil,
   Send,
   Share2,
   Sparkles,
@@ -107,6 +108,12 @@ type CDPHeaderProps = {
   availableYears?: number[];
   selectedYear?: number;
   onSelectYear?: (year: number) => void;
+  /**
+   * Enrichment Phase 2 — opens the Edit Company modal so the user can
+   * persist name / website / industry / headcount corrections back to
+   * `lit_companies`. When omitted, the pencil affordance is hidden.
+   */
+  onEditCompany?: () => void;
 };
 
 export default function CDPHeader({
@@ -132,6 +139,7 @@ export default function CDPHeader({
   availableYears,
   selectedYear,
   onSelectYear,
+  onEditCompany,
 }: CDPHeaderProps) {
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -292,6 +300,17 @@ export default function CDPHeader({
                 strokeWidth={1.8}
               />
             </button>
+            {onEditCompany && (
+              <button
+                type="button"
+                onClick={onEditCompany}
+                aria-label="Edit company"
+                title="Edit name, website, industry, headcount"
+                className="rounded p-0.5 text-slate-400 transition-colors hover:text-blue-600"
+              >
+                <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
+              </button>
+            )}
             {isSaved && (
               <LitPill tone="green">
                 <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-green-500" />

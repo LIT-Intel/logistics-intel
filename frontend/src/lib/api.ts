@@ -4920,6 +4920,62 @@ export async function enrichApolloContacts(payload: {
   return { ok: true, enriched };
 }
 
+/**
+ * Persist user-driven corrections (name / domain / website / industry /
+ * headcount) back to `lit_companies`. Enrichment Phase 2 — without this,
+ * edits in the Apollo search panel reverted on the next page load and
+ * broken records (NULL domain) could never enrich.
+ *
+ * Auth: server-side. The edge fn enforces saved-company ownership; the
+ * frontend gating is a UX hint only.
+ */
+export async function updateCompany(payload: {
+  companyId: string;
+  name?: string | null;
+  domain?: string | null;
+  website?: string | null;
+  industry?: string | null;
+  headcount?: string | number | null;
+}): Promise<{
+  ok: boolean;
+  company?: any;
+  error?: string;
+}> {
+  const requestBody: Record<string, unknown> = {
+    company_id: payload.companyId,
+  };
+  // Only include fields the caller actually set — undefined means "don't
+  // touch". Empty string means "clear" and is handled server-side.
+  if (payload.name !== undefined) requestBody.name = payload.name;
+  if (payload.domain !== undefined) requestBody.domain = payload.domain;
+  if (payload.website !== undefined) requestBody.website = payload.website;
+  if (payload.industry !== undefined) requestBody.industry = payload.industry;
+  if (payload.headcount !== undefined) requestBody.headcount = payload.headcount;
+
+  const { data, error } = await supabase.functions.invoke("update-company", {
+    body: requestBody,
+  });
+  if (error) {
+    const msg = String(error.message || "");
+    try {
+      const ctx: any = (error as any).context;
+      const cloned = ctx?.clone?.();
+      const parsed = await cloned?.json?.();
+      if (parsed && typeof parsed === "object") {
+        return {
+          ok: false,
+          error: parsed.error || parsed.message || msg,
+        };
+      }
+    } catch {}
+    return { ok: false, error: msg || "update-company failed" };
+  }
+  if (data && data.ok === false) {
+    return { ok: false, error: data.error || data.message || "Update failed" };
+  }
+  return { ok: true, company: data?.company ?? null };
+}
+
 export async function getEmailThreads(company_id: string) {
   const url = `${GW}/crm/email.threads?company_id=${encodeURIComponent(company_id)}`;
   const res = await fetch(url, { headers: { accept: "application/json" } });

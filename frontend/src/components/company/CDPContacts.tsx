@@ -25,6 +25,7 @@ import {
   enrichContacts as enrichContactsApi,
   searchApolloContacts,
   enrichApolloContacts,
+  updateCompany,
   addCompanyToCampaign,
   getCrmCampaigns,
   type ApolloContactPreview,
@@ -88,6 +89,16 @@ type CDPContactsProps = {
   companyLocation?: string | null;
   onRequestEnrich?: () => void;
   onContactsChanged?: (contacts: any[]) => void;
+  /**
+   * Fires after the "Save corrections" button in the Apollo search panel
+   * successfully persists name/domain edits back to `lit_companies`.
+   * Parent should re-fetch the company so the header pills, KPI rail,
+   * and downstream tabs see the new values. Enrichment Phase 2 (R3).
+   */
+  onCompanyMetaSaved?: (next: {
+    name?: string | null;
+    domain?: string | null;
+  }) => void;
 };
 
 const DEPT_FILTERS = [
@@ -154,6 +165,7 @@ export default function CDPContacts({
   companyLocation,
   onRequestEnrich,
   onContactsChanged,
+  onCompanyMetaSaved,
 }: CDPContactsProps) {
   const [view, setView] = useState<"list" | "card">("list");
   const [query, setQuery] = useState("");
@@ -179,6 +191,12 @@ export default function CDPContacts({
   const [apolloSelected, setApolloSelected] = useState<Set<string>>(new Set());
   const [apolloEnriching, setApolloEnriching] = useState(false);
   const [apolloEnrichError, setApolloEnrichError] = useState<string | null>(null);
+
+  // R3 — "Save corrections" persists name/domain edits back to lit_companies
+  // and auto-retries Apollo search if the user landed in this panel because
+  // the previous search failed.
+  const [savingCorrections, setSavingCorrections] = useState(false);
+  const [saveCorrectionsError, setSaveCorrectionsError] = useState<string | null>(null);
 
   // Filter state — scoped to the current company. The edge function
   // enforces actual scoping; titles/seniorities are simply hints we
@@ -323,6 +341,77 @@ export default function CDPContacts({
     } finally {
       setEnriching(false);
       setTimeout(() => setEnrichToast(null), 3500);
+    }
+  }
+
+  /**
+   * R3 — persist the user-edited company name / domain in the Apollo
+   * search panel back to `lit_companies` via the update-company edge fn.
+   *
+   * After a successful save, automatically re-trigger the Apollo search
+   * IF the user was just in a failed-enrichment flow (the previous
+   * search returned an error, surfaced setupRequired, or found zero
+   * results after a search attempt). Without that gate, headcount-only
+   * tweaks on an already-enriched account would burn an extra Apollo
+   * search credit on every save.
+   */
+  async function handleSaveCorrections() {
+    if (savingCorrections || !companyId) return;
+    const nextName = (searchCompanyName || "").trim();
+    const nextDomain = (searchCompanyDomain || "").trim();
+    // Refuse a no-op save — at least one field must differ from the
+    // current snapshot. Treat undefined / null as empty.
+    const noNameChange = nextName === String(companyName || "").trim();
+    const noDomainChange = nextDomain === String(companyDomain || "").trim();
+    if (noNameChange && noDomainChange) {
+      setSaveCorrectionsError(
+        "Edit the company name or domain before saving.",
+      );
+      return;
+    }
+    setSavingCorrections(true);
+    setSaveCorrectionsError(null);
+    try {
+      const r = await updateCompany({
+        companyId,
+        // Only forward fields the user actually changed so we don't clear
+        // a valid domain by sending an empty string.
+        ...(noNameChange ? {} : { name: nextName }),
+        ...(noDomainChange ? {} : { domain: nextDomain }),
+      });
+      if (!r.ok) {
+        setSaveCorrectionsError(r.error || "Save failed.");
+        return;
+      }
+      // Tell the parent so the header / hero pills refresh against the
+      // canonical row.
+      onCompanyMetaSaved?.({
+        name: r.company?.name ?? nextName ?? null,
+        domain: r.company?.domain ?? nextDomain ?? null,
+      });
+
+      // R3 auto-retry detection. We're in a "just failed" state when:
+      //   - the previous search hit an error (incl. COMPANY_NOT_VERIFIED), OR
+      //   - the previous search ran but returned zero results
+      const justFailed =
+        Boolean(apolloError) ||
+        apolloSetupRequired ||
+        (apolloSearched && apolloResults.length === 0);
+
+      if (justFailed) {
+        setEnrichToast("Retrying enrichment with new company info…");
+        // Defer one tick so the toast paints before the next request.
+        setTimeout(() => {
+          handleApolloSearch();
+        }, 50);
+      } else {
+        setEnrichToast("Company profile saved.");
+        setTimeout(() => setEnrichToast(null), 2500);
+      }
+    } catch (err: any) {
+      setSaveCorrectionsError(err?.message || "Save failed.");
+    } finally {
+      setSavingCorrections(false);
     }
   }
 
@@ -871,6 +960,9 @@ export default function CDPContacts({
           loadingMore={apolloLoadingMore}
           hasMore={apolloHasMore}
           currentPage={apolloPage}
+          onSaveCorrections={handleSaveCorrections}
+          savingCorrections={savingCorrections}
+          saveCorrectionsError={saveCorrectionsError}
         />
       )}
       {addOpen && (
@@ -1512,6 +1604,10 @@ type ApolloResultsPanelProps = {
   loadingMore: boolean;
   hasMore: boolean;
   currentPage: number;
+  /** R3: persist user-edited company name/domain back to lit_companies. */
+  onSaveCorrections: () => void;
+  savingCorrections: boolean;
+  saveCorrectionsError: string | null;
 };
 
 const APOLLO_DEPARTMENT_OPTIONS = [
@@ -1566,6 +1662,9 @@ function ApolloResultsPanel({
   loadingMore,
   hasMore,
   currentPage,
+  onSaveCorrections,
+  savingCorrections,
+  saveCorrectionsError,
 }: ApolloResultsPanelProps) {
   function toggle(list: string[], value: string, setter: (n: string[]) => void) {
     setter(list.includes(value) ? list.filter((x) => x !== value) : [...list, value]);
@@ -1667,6 +1766,34 @@ function ApolloResultsPanel({
             />
           </label>
         </div>
+        {/* R3 — persist edits back to lit_companies so they don't revert
+            on page refresh. Auto-retries the Apollo search when the
+            previous attempt failed (the only time the user actually
+            needs to retry). */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50/60 px-2.5 py-1.5">
+          <p className="font-body text-[10.5px] text-amber-800">
+            Edits stay local until saved. Persist the corrected name or
+            domain to this company so enrichment can succeed.
+          </p>
+          <button
+            type="button"
+            onClick={onSaveCorrections}
+            disabled={savingCorrections}
+            className="font-display inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {savingCorrections ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-3 w-3" />
+            )}
+            Save corrections to company profile
+          </button>
+        </div>
+        {saveCorrectionsError && (
+          <div className="font-body mb-2 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10.5px] text-rose-700">
+            {saveCorrectionsError}
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <div>
             <div className="font-display mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
