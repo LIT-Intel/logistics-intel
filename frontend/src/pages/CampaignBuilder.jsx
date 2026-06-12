@@ -11,9 +11,6 @@ import {
   Save,
 } from "lucide-react";
 import {
-  createCampaignDraft,
-  attachCompaniesToCampaign,
-  upsertCampaignStep,
   launchCampaign,
   sendTestEmail,
   listEmailAccounts,
@@ -51,9 +48,7 @@ import {
 import { INDUSTRY_OPTIONS, TONE_OPTIONS } from "@/features/outbound/data/templates";
 import { fontDisplay, fontBody } from "@/features/outbound/tokens";
 import {
-  updateCampaignBasics,
-  setCampaignCompanies,
-  deleteCampaignStepsFrom,
+  saveCampaignDraft,
 } from "@/features/outbound/api/campaignActions";
 import { listPulseLists, getListCompanies } from "@/features/pulse/pulseListsApi";
 
@@ -71,10 +66,15 @@ function labelFor(acc) {
 // /app/campaigns/new — create flow
 // /app/campaigns/new?edit=:id — edit flow (loads existing campaign)
 //
-// Save flow:
-//   CREATE: createCampaignDraft → attachCompaniesToCampaign → upsertCampaignStep×N
-//   EDIT:   updateCampaignBasics → setCampaignCompanies (diff) →
-//           upsertCampaignStep×N → deleteCampaignStepsFrom(N+1) (cleanup)
+// Save flow (CR P0-3, post-2026-06):
+//   CREATE & EDIT: saveCampaignDraft(...) -> save-campaign-draft edge fn
+//                  -> save_campaign_draft PL/pgSQL (single transaction)
+//
+// The legacy 4-call client sequence (createCampaignDraft + companies + N step
+// upserts + cleanup deletes) was non-transactional: a mid-sequence network
+// blip would leave the campaign with a row in lit_campaigns and only the
+// first M of N steps. The new atomic save means any failure rolls back ALL
+// writes, so the user never ends up with a corrupt half-saved draft.
 //
 // All paths use existing channel + step_type columns on lit_campaign_steps.
 // LinkedIn / call / wait persist as planned manual tasks. Test send and
@@ -749,49 +749,41 @@ export default function CampaignBuilder() {
         ? { ...(details?.metrics ?? {}), ...metricsExtras }
         : metricsExtras;
 
-      let campaignId;
-      if (isEditMode && details) {
-        await updateCampaignBasics(details.id, {
-          name: trimmedName,
-          channel: baseChannel,
-          metrics: mergedMetrics,
-          scheduled_start_at: scheduledStartAt,
-          send_timezone: sendTimezone,
-        });
-        campaignId = details.id;
-      } else {
-        const created = await createCampaignDraft({
-          name: trimmedName,
-          channel: baseChannel,
-          description: null,
-          metrics: mergedMetrics,
-          scheduled_start_at: scheduledStartAt,
-          send_timezone: sendTimezone,
-        });
-        campaignId = created.id;
-      }
-
-      // Companies — full set diff in edit mode, additive in create mode.
-      const companyIds = Array.from(selectedIds);
-      if (isEditMode) {
-        await setCampaignCompanies(campaignId, companyIds);
-      } else if (companyIds.length > 0) {
-        await attachCompaniesToCampaign(campaignId, companyIds);
-      }
-
-      // Steps — upsert by step_order; in edit mode also delete any leftover
-      // steps that the user removed from the sequence.
+      // CR P0-3: single atomic save via the save-campaign-draft edge
+      // function. The previous 4-step client sequence (createDraft +
+      // attach/set companies + N upserts + cleanup deletes) could leave
+      // a campaign in a partial state on any mid-sequence failure — the
+      // URL would flip to ?edit=:id with steps 1-2 saved and step 3
+      // missing, and the user would think they had saved a draft they
+      // hadn't. The new flow runs the whole thing inside a Postgres
+      // transaction server-side; on failure the server returns a clean
+      // error and nothing is written.
       const persistable = steps.filter(
         (s) => s.kind === "wait" || isStepFilled(s),
       );
-      let order = 1;
-      for (const s of persistable) {
-        await upsertCampaignStep(persistPayloadFor(s, order, campaignId));
-        order += 1;
-      }
-      if (isEditMode) {
-        await deleteCampaignStepsFrom(campaignId, order);
-      }
+      const stepsPayload = persistable.map((s, i) => {
+        // Strip the campaign_id field from persistPayloadFor — the edge
+        // function fills it server-side from the resolved campaign id.
+        const { campaign_id: _ignore, ...rest } = persistPayloadFor(
+          s,
+          i + 1,
+          null,
+        );
+        return rest;
+      });
+
+      const saveResult = await saveCampaignDraft({
+        campaign_id: isEditMode && details ? details.id : null,
+        name: trimmedName,
+        channel: baseChannel,
+        metrics: mergedMetrics,
+        scheduled_start_at: scheduledStartAt,
+        send_timezone: sendTimezone,
+        company_ids: Array.from(selectedIds),
+        steps: stepsPayload,
+        replace_companies: isEditMode,
+      });
+      const campaignId = saveResult.campaign_id;
 
       setSuccess(
         isEditMode
