@@ -36,6 +36,10 @@ export default function ExitConditionsPanel({ campaignId, orgId, initialOverride
   const [overrides, setOverrides] = useState<ExitOverrides>(initialOverrides ?? {});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Collapsible — default closed to match the "dense tiles → collapsible by
+  // default" pattern the user has called out across the campaign builder
+  // (see DR Move 1 + the schedule strip projection note).
+  const [open, setOpen] = useState(false);
 
   // Effective values shown in UI — overrides win over org defaults.
   const effective: EffectiveRules = {
@@ -153,10 +157,45 @@ export default function ExitConditionsPanel({ campaignId, orgId, initialOverride
         marginTop: 16,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#0f172a" }}>Exit conditions</h3>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        style={{
+          display: "flex",
+          width: "100%",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: open ? 8 : 0,
+          background: "transparent",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span
+            aria-hidden="true"
+            style={{
+              display: "inline-block",
+              transition: "transform 120ms ease",
+              transform: open ? "rotate(90deg)" : "rotate(0deg)",
+              color: "#64748b",
+              fontSize: 12,
+              lineHeight: 1,
+            }}
+          >▶</span>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#0f172a" }}>Exit conditions</h3>
+          {!open && (
+            <span style={{ fontSize: 11, color: "#94a3b8" }}>
+              ({[effective.exit_on_reply, effective.exit_on_bounce, effective.exit_on_unsubscribe, effective.exit_on_meeting_booked, effective.exit_on_attio_won].filter(Boolean).length} active)
+            </span>
+          )}
+        </div>
         {loading && <span style={{ fontSize: 11, color: "#94a3b8" }}>Loading…</span>}
-      </div>
+      </button>
+      {!open ? null : (<>
       <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px" }}>
         Recipients automatically exit this sequence when:
       </p>
@@ -231,6 +270,7 @@ export default function ExitConditionsPanel({ campaignId, orgId, initialOverride
           {saving ? "Saving…" : "Save exit conditions"}
         </button>
       </div>
+      </>)}
     </div>
   );
 }
