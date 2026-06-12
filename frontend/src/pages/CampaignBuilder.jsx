@@ -1050,17 +1050,31 @@ export default function CampaignBuilder() {
   }, [canLaunch, editId, manualEmails, navigate]);
 
   // ---- Misc keyboard handler ----
+  // CR P1-6: WCAG 2.1.2 — every dismissable overlay must be reachable by
+  // keyboard. Previously launchConfirmOpen and activityOpen were missed,
+  // so keyboard users could open them but couldn't close without
+  // tabbing to the close button. Order is topmost-first so Esc cancels
+  // the modal that's actually on top.
   useEffect(() => {
     const handler = (e) => {
       if (e.key !== "Escape") return;
       if (createTemplateOpen) setCreateTemplateOpen(false);
+      else if (launchConfirmOpen) setLaunchConfirmOpen(false);
       else if (previewOpen) setPreviewOpen(false);
       else if (audienceOpen) setAudienceOpen(false);
       else if (templatesOpen) setTemplatesOpen(false);
+      else if (activityOpen) setActivityOpen(false);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [audienceOpen, templatesOpen, previewOpen, createTemplateOpen]);
+  }, [
+    audienceOpen,
+    templatesOpen,
+    previewOpen,
+    createTemplateOpen,
+    launchConfirmOpen,
+    activityOpen,
+  ]);
 
   // ---- Save-as-template seed values from current step ----
   const templateSeed = useMemo(() => {
