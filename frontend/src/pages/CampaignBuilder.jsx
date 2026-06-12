@@ -401,8 +401,15 @@ export default function CampaignBuilder() {
   const [createTemplateOpen, setCreateTemplateOpen] = useState(false);
   const [createPersonaOpen, setCreatePersonaOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  // CR P1-5: activity timeline fetch is gated on drawer open. The drawer
+  // starts closed and most users save → leave without opening it, so the
+  // RPC-and-200-event payload only matters once they click the Activity
+  // button. The button label's event count is a known trade-off: it
+  // appears as a generic "Activity" until the drawer has been opened once.
+  // Adding a cheap server-side count would require a separate RPC; we
+  // defer that until product asks for it.
   const { data: activityEvents, isLoading: activityLoading, error: activityError } =
-    useCampaignActivityTimeline(editId);
+    useCampaignActivityTimeline(editId, { enabled: activityOpen });
   const activityCount = activityEvents?.length ?? 0;
 
   const [saving, setSaving] = useState(false);
