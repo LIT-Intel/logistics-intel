@@ -4672,6 +4672,13 @@ export type ApolloContactRecord = ApolloContactPreview & {
   enriched_at?: string | null;
   email_verification_status?: string | null;
   verified_by_provider?: boolean | null;
+  /** Phase 3 — phone unlock pipeline tracking.
+   *  'pending'   = unlock requested, Apollo will POST the phone to the
+   *                apollo-phone-webhook within seconds-to-minutes
+   *  'delivered' = phone is on the row right now
+   *  'failed'    = webhook fired without a phone (no data on file) */
+  phone_unlock_status?: "pending" | "delivered" | "failed" | null;
+  phone_unlock_request_id?: string | null;
 };
 
 export async function searchApolloContacts(
@@ -4806,6 +4813,11 @@ export async function enrichApolloContacts(payload: {
   companyId?: string | null;
   companyName?: string | null;
   companyDomain?: string | null;
+  /** Phase 3 — when true, ask Apollo to unlock the contact's phone(s).
+   *  Phones cost 10 extra credits per contact and arrive ASYNC via
+   *  the apollo-phone-webhook (the immediate response carries
+   *  phone_unlock_status='pending'). */
+  unlockPhone?: boolean;
   /** Pass as much identifying data per contact as you have. The edge
    *  function refuses too-weak identifiers (first-name only, title-only)
    *  before consuming a credit. Apollo enrichment works best when given
@@ -4829,6 +4841,9 @@ export async function enrichApolloContacts(payload: {
   enriched: ApolloContactRecord[];
   error?: string;
   setupRequired?: boolean;
+  rateLimited?: boolean;
+  retryAfter?: string | null;
+  phoneUnlockRequested?: boolean;
 }> {
   // Map camelCase frontend payload to the snake_case shape the edge
   // function expects. Per-target snake_case fields stay as-is since
@@ -4844,6 +4859,10 @@ export async function enrichApolloContacts(payload: {
     company_name: payload.companyName ?? null,
     domain: payload.companyDomain ?? null,
     reveal_personal_emails: true,
+    // Phase 3 — only forward when explicitly requested. Apollo's phone
+    // pipeline is async; setting this kicks off a webhook delivery and
+    // charges 10 extra credits per contact.
+    unlock_phone: payload.unlockPhone === true,
     contacts: payload.contacts,
   };
   const { data, error } = await supabase.functions.invoke(
@@ -4866,8 +4885,10 @@ export async function enrichApolloContacts(payload: {
     return {
       ok: false,
       enriched: [],
-      error: data.error || "Apollo enrichment failed.",
+      error: data.error || data.message || "Apollo enrichment failed.",
       setupRequired: data.code === "NOT_CONFIGURED",
+      rateLimited: data.code === "USER_RATE_LIMITED",
+      retryAfter: data.retry_after ?? null,
     };
   }
   const rawList: any[] = Array.isArray(data?.enriched)
@@ -4915,9 +4936,11 @@ export async function enrichApolloContacts(payload: {
       enriched_at: p.enriched_at ?? new Date().toISOString(),
       source: "apollo" as const,
       enrichment_status: "enriched" as const,
+      phone_unlock_status: p.phone_unlock_status ?? null,
+      phone_unlock_request_id: p.phone_unlock_request_id ?? null,
     };
   });
-  return { ok: true, enriched };
+  return { ok: true, enriched, phoneUnlockRequested: data?.phone_unlock_requested === true };
 }
 
 /**

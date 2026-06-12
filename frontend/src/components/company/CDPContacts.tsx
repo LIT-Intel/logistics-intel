@@ -65,6 +65,10 @@ type Contact = {
   apollo_person_id?: string | null;
   enriched_at?: string | null;
   enrichment_status?: string | null;
+  /** Phase 3 — phone-unlock pipeline state on this row. Rendered as
+   *  a "Phone pending" pill until the apollo-phone-webhook delivers. */
+  phone_unlock_status?: "pending" | "delivered" | "failed" | null;
+  phone_unlock_request_id?: string | null;
 };
 
 /**
@@ -803,6 +807,87 @@ export default function CDPContacts({
     }
   }
 
+  /**
+   * Phase 3 — Reveal phone. Routes through enrichApolloContacts with
+   * unlock_phone=true. Apollo charges 10 credits and replies async via
+   * apollo-phone-webhook, so we optimistically flip the row to
+   * phone_unlock_status='pending' on success.
+   */
+  async function handleRowRevealPhone(c: Contact) {
+    if (!c.apollo_person_id && !c.linkedin_url && !c.full_name) {
+      setEnrichToast("Need an Apollo id, LinkedIn URL, or full name before unlocking phone.");
+      setTimeout(() => setEnrichToast(null), 3000);
+      return;
+    }
+    if (c.phone || c.phone_unlock_status === "delivered") {
+      setEnrichToast("Phone already on file.");
+      setTimeout(() => setEnrichToast(null), 2000);
+      return;
+    }
+    if (c.phone_unlock_status === "pending") {
+      setEnrichToast("Phone unlock already pending — Apollo is delivering.");
+      setTimeout(() => setEnrichToast(null), 2500);
+      return;
+    }
+    try {
+      const result = await enrichApolloContacts({
+        companyId: companyId ?? null,
+        companyName: companyName ?? null,
+        companyDomain: companyDomain ?? null,
+        unlockPhone: true,
+        contacts: [
+          {
+            apollo_person_id: c.apollo_person_id ?? null,
+            id: c.apollo_person_id ?? null,
+            first_name: c.first_name ?? null,
+            last_name: c.last_name ?? null,
+            full_name: c.full_name ?? c.name ?? null,
+            name: c.full_name ?? c.name ?? null,
+            email: c.email ?? null,
+            linkedin_url: c.linkedin_url ?? null,
+            domain: companyDomain ?? null,
+            organization_name: companyName ?? null,
+            title: c.title ?? null,
+          },
+        ],
+      });
+      if (!result.ok) {
+        if (result.rateLimited) {
+          setEnrichToast("Daily phone unlock cap reached — try again tomorrow.");
+        } else {
+          setEnrichToast(result.error || "Phone unlock failed.");
+        }
+        setTimeout(() => setEnrichToast(null), 3500);
+        return;
+      }
+      const first = result.enriched[0];
+      const nextStatus: "pending" | "delivered" | "failed" =
+        first?.phone_unlock_status ?? (first?.phone ? "delivered" : "pending");
+      setContacts((prev) =>
+        prev.map((x) =>
+          String(x.id) === String(c.id)
+            ? ({
+                ...x,
+                phone: first?.phone ?? x.phone ?? null,
+                phone_unlock_status: nextStatus,
+                phone_unlock_request_id:
+                  first?.phone_unlock_request_id ?? x.phone_unlock_request_id ?? null,
+              } as Contact)
+            : x,
+        ),
+      );
+      setEnrichToast(
+        first?.phone
+          ? "Phone unlocked"
+          : "Phone unlock queued — 10 credits charged.",
+      );
+      setTimeout(() => setEnrichToast(null), 3000);
+    } catch (err: any) {
+      setEnrichToast(err?.message || "Phone unlock failed.");
+      setTimeout(() => setEnrichToast(null), 3000);
+    }
+  }
+
   function handleRowCopyEmail(c: Contact) {
     if (!c.email) {
       setEnrichToast("No email to copy.");
@@ -1091,6 +1176,7 @@ export default function CDPContacts({
                     onOpenDetail: setDetailContact,
                     onOutreach: setOutreachContact,
                     onEnrich: handleRowEnrich,
+                    onRevealPhone: handleRowRevealPhone,
                     onCopyEmail: handleRowCopyEmail,
                     onCopyLinkedin: handleRowCopyLinkedin,
                     onRemove: handleRowRemove,
@@ -1149,6 +1235,7 @@ type RowHandlers = {
   onOpenDetail: (c: Contact) => void;
   onOutreach: (c: Contact) => void;
   onEnrich: (c: Contact) => void;
+  onRevealPhone: (c: Contact) => void;
   onCopyEmail: (c: Contact) => void;
   onCopyLinkedin: (c: Contact) => void;
   onRemove: (c: Contact) => void;
@@ -1226,7 +1313,34 @@ function ContactRow({
         {contact.email || <span className="text-slate-300">—</span>}
       </td>
       <td className="font-mono px-3.5 py-2.5 text-[10px] text-slate-600">
-        {contact.phone || <span className="text-slate-300">—</span>}
+        {contact.phone ? (
+          contact.phone
+        ) : contact.phone_unlock_status === "pending" ? (
+          <span
+            title="Apollo is delivering this phone async — usually within a minute."
+            className="font-display inline-flex items-center gap-1 rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-amber-700"
+          >
+            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            Phone pending
+          </span>
+        ) : contact.phone_unlock_status === "failed" ? (
+          <span
+            title="Apollo confirmed no phone on file for this contact."
+            className="font-display inline-flex items-center gap-1 rounded-sm border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-rose-700"
+          >
+            No phone
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => handlers.onRevealPhone(contact)}
+            title="Unlocks phone for 10 credits"
+            className="font-display inline-flex items-center gap-1 rounded-sm border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-violet-700 hover:bg-violet-100"
+          >
+            <Phone className="h-2.5 w-2.5" />
+            Reveal (10c)
+          </button>
+        )}
       </td>
       <td className="px-3.5 py-2.5">
         <FitBadge fit={fit} />
