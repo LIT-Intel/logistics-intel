@@ -327,8 +327,18 @@ export default function CampaignBuilder() {
     listEmailAccounts()
       .then((rows) => {
         if (cancelled) return;
-        const connected = (rows || []).filter((r) => r.status === "connected");
-        setSenderAccounts(connected);
+        // CR P1-9: include accounts that are NOT connected so the user
+        // sees them as disabled options with a "Reconnect" CTA. Previously
+        // a filter of `status === "connected"` hid auth_expired /
+        // needs_reauth / disconnected rows entirely — the dropdown
+        // rendered as "no senders" and the user had no in-page hint
+        // about why their previously-working mailbox wasn't an option.
+        // We keep `connected` first in the list so the default-pick UX
+        // is unchanged for healthy accounts.
+        const all = rows || [];
+        const connected = all.filter((r) => r.status === "connected");
+        const broken = all.filter((r) => r.status !== "connected");
+        setSenderAccounts([...connected, ...broken]);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -1332,16 +1342,42 @@ export default function CampaignBuilder() {
             style={{ fontFamily: fontDisplay }}
           >
             <option value="">Primary mailbox (auto)</option>
-            {senderAccounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>
-                {labelFor(acc)}
-              </option>
-            ))}
+            {senderAccounts.map((acc) => {
+              // CR P1-9: previously broken accounts (auth_expired,
+              // needs_reauth, disconnected) were filtered out and the
+              // dropdown rendered as "no senders" with no path forward.
+              // Now they appear as disabled options with a status hint so
+              // the user can see WHICH mailbox needs reconnection and
+              // follow the Reconnect link below.
+              const isConnected = acc.status === "connected";
+              const statusHint = isConnected
+                ? ""
+                : acc.status === "auth_expired" || acc.status === "needs_reauth"
+                  ? " — reconnect required"
+                  : acc.status === "disconnected"
+                    ? " — disconnected"
+                    : ` — ${acc.status || "unavailable"}`;
+              return (
+                <option key={acc.id} value={acc.id} disabled={!isConnected}>
+                  {labelFor(acc)}{statusHint}
+                </option>
+              );
+            })}
           </select>
           {senderAccountId && senderAccounts.find((a) => a.id === senderAccountId)?.provider === "resend" ? (
             <span className="inline-flex items-center gap-1 rounded-md border border-purple-300 bg-purple-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-purple-700">
               Resend · super-admin
             </span>
+          ) : null}
+          {senderAccounts.some((a) => a.status !== "connected") ? (
+            <a
+              href="/app/settings?tab=email"
+              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-amber-800 hover:bg-amber-100"
+              style={{ fontFamily: fontDisplay }}
+              title="One or more of your mailboxes needs reconnection"
+            >
+              Reconnect mailbox
+            </a>
           ) : null}
         </div>
       ) : null}
