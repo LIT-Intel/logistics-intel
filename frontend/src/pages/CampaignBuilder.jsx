@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
@@ -89,7 +89,13 @@ function uid() {
 
 function emptyStep(kind = "email") {
   const base = {
+    // React-key identity. Always a fresh uid — never reused, never the
+    // DB id. See BuilderStep type doc in features/outbound/types.ts for
+    // the localId vs dbId invariant.
     localId: uid(),
+    // DB row identity. `null` until the step is first persisted (set
+    // by dbStepToBuilder when hydrating from lit_campaign_steps).
+    dbId: null,
     kind,
     subject: "",
     body: "",
@@ -133,7 +139,13 @@ function dbStepToBuilder(row) {
   else kind = "email";
 
   const base = {
-    localId: row.id || uid(),
+    // React-key identity. Always a fresh uid so re-hydrating after a
+    // delete-then-re-add can never collide. DO NOT reuse row.id here —
+    // localId and dbId are separate by invariant (see BuilderStep type).
+    localId: uid(),
+    // DB row identity. `row.id` is the persisted lit_campaign_steps PK.
+    // Null only if the row somehow came back without an id (defensive).
+    dbId: row.id ?? null,
     kind,
     subject: "",
     body: "",
@@ -337,6 +349,12 @@ export default function CampaignBuilder() {
   const [industry, setIndustry] = useState("any");
   const [tone, setTone] = useState("consultative");
   const [hydratedFromEdit, setHydratedFromEdit] = useState(false);
+  // CR P0-6: id-based hydration guard. The boolean `hydratedFromEdit` is kept
+  // because it gates UI (canSave, saveGuidance, inputs disabled). But for the
+  // hydration effect itself we use a ref keyed on campaign id — this prevents
+  // overwriting in-progress edits if `details` ever refetches (new object
+  // identity) while still allowing hydration to run once per campaign id.
+  const loadedCampaignId = useRef(null);
   // Sub-project J: persisted campaign launch time + IANA TZ.
   const [scheduledStartAt, setScheduledStartAt] = useState(null);
   const [sendTimezone, setSendTimezone] = useState(
@@ -439,8 +457,12 @@ export default function CampaignBuilder() {
   }, [editId]);
 
   // When edit-mode details land, hydrate state.
+  // Guard is keyed on campaign id (ref), not the `details` object identity,
+  // so a refetch that produces a new object reference will NOT re-hydrate and
+  // clobber the user's in-progress edits. Dep array uses the stable id string.
   useEffect(() => {
-    if (!isEditMode || !details || hydratedFromEdit) return;
+    if (!isEditMode || !details) return;
+    if (loadedCampaignId.current === details.id) return;
     setName(details.name);
     const builderSteps =
       details.steps.length > 0
@@ -489,8 +511,14 @@ export default function CampaignBuilder() {
     setManualEmails(persistedManual);
     if (typeof details.metrics?.industry === "string") setIndustry(details.metrics.industry);
     if (typeof details.metrics?.tone === "string") setTone(details.metrics.tone);
+    loadedCampaignId.current = details.id;
     setHydratedFromEdit(true);
-  }, [isEditMode, details, hydratedFromEdit]);
+    // CR P0-6: intentionally depend only on `details?.id` (stable string), NOT
+    // the whole `details` object. Depending on the object would re-run hydration
+    // whenever `useCampaign` refetches and clobbers any in-progress user edits.
+    // The id-keyed ref above ensures hydration runs exactly once per campaign.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditMode, details?.id]);
 
   // Create-mode hydration from ?audience_list=<id>. Runs once. Pulls
   // the list's companies, pre-fills the selectedIds, and remembers the
