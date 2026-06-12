@@ -33,6 +33,7 @@ import { LaunchButton } from "@/features/outbound/components/LaunchButton";
 import { fetchCampaignMetricsBatch } from "@/features/outbound/api/campaignMetrics";
 import { ScheduleStrip } from "@/features/outbound/components/ScheduleStrip";
 import { LaunchSchedulePicker } from "@/features/outbound/components/LaunchSchedulePicker";
+import ExitConditionsPanel from "@/features/outbound/components/ExitConditionsPanel";
 import { PersonaPanel } from "@/features/outbound/components/PersonaPanel";
 import { TimelineCanvas } from "@/features/outbound/components/TimelineCanvas";
 import { StepInspector } from "@/features/outbound/components/StepInspector";
@@ -1257,6 +1258,15 @@ export default function CampaignBuilder() {
         launching={launching}
         anchor={scheduledStartAt ? Date.parse(scheduledStartAt) : undefined}
       />
+
+      {/* Sub-project O — Exit conditions. Only meaningful for saved campaigns
+          (i.e. editing an existing campaign) because the panel needs a
+          campaignId to write exit_overrides back to lit_campaigns. */}
+      {editId ? (
+        <div style={{ padding: "0 16px" }}>
+          <ExitConditionsPanel campaignId={editId} />
+        </div>
+      ) : null}
 
       {error || campaignError ? (
         <div
