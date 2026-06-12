@@ -533,6 +533,12 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
   const initialTab = tabParamToSectionId(searchParams.get("tab")) ?? "Profile";
   const [activeSection, setActiveSection] = React.useState<SettingsSectionId>(initialTab);
   const [search, setSearch] = React.useState("");
+  // useTransition lets the nav button visually commit immediately while
+  // the heavy section subtree (WorkspaceSection's members list,
+  // BillingSection's plan grid, etc.) renders at low priority. Pairs with
+  // the React.memo on SettingsAccountSnapshot to keep INP under 100ms on
+  // section switches. Sentry flagged Workspace at 232ms before this.
+  const [, startNav] = React.useTransition();
 
   // Keep state in sync if the URL changes.
   React.useEffect(() => {
@@ -545,14 +551,18 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
 
   const handleSelectSection = React.useCallback(
     (id: SettingsSectionId) => {
-      setActiveSection(id);
-      const next = new URLSearchParams(searchParams);
-      if (id === "Profile") {
-        next.delete("tab");
-      } else {
-        next.set("tab", id.toLowerCase().replace(/\s+/g, "-"));
-      }
-      setSearchParams(next, { replace: true });
+      // URL update + state set are both deferred via startNav so the
+      // pressed/active visual feedback paints first.
+      startNav(() => {
+        setActiveSection(id);
+        const next = new URLSearchParams(searchParams);
+        if (id === "Profile") {
+          next.delete("tab");
+        } else {
+          next.set("tab", id.toLowerCase().replace(/\s+/g, "-"));
+        }
+        setSearchParams(next, { replace: true });
+      });
     },
     [searchParams, setSearchParams],
   );

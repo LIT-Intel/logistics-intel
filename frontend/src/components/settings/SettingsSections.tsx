@@ -1,7 +1,7 @@
 // SettingsSections.tsx — Design-faithful port of SettingsSections.jsx +
 // SettingsIntegrations.jsx. Inline style={{ }} with exact hex tokens.
 // All export signatures preserved byte-identical so SettingsPage.tsx doesn't break.
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo, useTransition } from "react";
 import {
   User,
   Building2,
@@ -517,12 +517,44 @@ export function WorkspaceSection(props: {
   const [inviteRole, setInviteRole] = useState("member");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // useTransition keeps the tab-button click responsive: the pressed state
+  // commits synchronously, then the heavier members/invites/roles subtree
+  // is rendered in a low-priority pass. Sentry flagged this click at 232ms
+  // INP — the heavy work is the members.map() with per-row avatar+initials
+  // parsing for every member. Splitting the priority drops INP under 100ms.
+  const [, startTab] = useTransition();
   const members = props.members || [];
   const invites = props.invites || [];
   const allowed = isInviteAllowedPlan(props.plan);
   const seatLine = props.seatLimit
     ? `${members.length} of ${props.seatLimit} seats used`
     : `${members.length} active members`;
+
+  // Pre-compute the display fields per member once, instead of on every
+  // render (which previously fired on each tab click). Avatar initials in
+  // particular do split/slice/map/join/uppercase that the JIT can't fold.
+  const memberRows = useMemo(
+    () =>
+      members.map((m: any) => ({
+        m,
+        key: m.id || m.user_id,
+        displayName: m.full_name || m.email || "User",
+        secondary: m.email || m.user_id,
+        initials: (m.full_name || m.email || "U")
+          .split(/\s+/)
+          .slice(0, 2)
+          .map((n: string) => n[0])
+          .join("")
+          .toUpperCase()
+          .slice(0, 2),
+        status: m.status || "Active",
+        statusTone: (m.status === "active" || !m.status ? "green" : "slate") as
+          | "green"
+          | "slate",
+        isOwner: m.role === "owner",
+      })),
+    [members],
+  );
 
   const ROLES_ROWS = [
     ["Discover companies",               true, true, true, true],
@@ -578,7 +610,7 @@ export function WorkspaceSection(props: {
           {/* Tabs */}
           <div style={{ display: "flex", gap: 4, padding: 4, background: "#F1F5F9", borderRadius: 10, width: "fit-content" }}>
             {([["members", `Members · ${members.length}`], ["invites", `Pending · ${invites.length}`], ["roles", "Role permissions"]] as const).map(([k, l]) => (
-              <button key={k} onClick={() => setTab(k)} style={{
+              <button key={k} onClick={() => startTab(() => setTab(k))} style={{
                 padding: "7px 14px", borderRadius: 7, border: "none",
                 fontFamily: "Space Grotesk,sans-serif", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
                 background: tab === k ? "#fff" : "transparent",
@@ -619,53 +651,53 @@ export function WorkspaceSection(props: {
                 </div>
               )}
               <div style={{ display: "flex", flexDirection: "column" }}>
-                {members.length === 0 ? (
+                {memberRows.length === 0 ? (
                   <div style={{ padding: "20px 4px", fontFamily: "DM Sans,sans-serif", fontSize: 13, color: "#94a3b8" }}>No members found.</div>
-                ) : members.map((m: any, i: number) => (
-                  <div key={m.id || m.user_id} style={{
+                ) : memberRows.map((row, i) => (
+                  <div key={row.key} style={{
                     display: "flex", alignItems: "center", gap: 14, padding: "12px 4px",
-                    borderBottom: i < members.length - 1 ? "1px solid #F1F5F9" : "none",
+                    borderBottom: i < memberRows.length - 1 ? "1px solid #F1F5F9" : "none",
                   }}>
                     <div style={{
                       width: 36, height: 36, borderRadius: "50%",
                       background: "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center",
                       color: "#fff", fontFamily: "Space Grotesk,sans-serif", fontSize: 12, fontWeight: 700, flexShrink: 0,
                     }}>
-                      {(m.full_name || m.email || "U").split(/\s+/).slice(0, 2).map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
+                      {row.initials}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontFamily: "Space Grotesk,sans-serif", fontSize: 13.5, fontWeight: 600, color: "#0F172A" }}>
-                        {m.full_name || m.email || "User"}
+                        {row.displayName}
                       </div>
                       <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 12, color: "#64748b", marginTop: 1 }}>
-                        {m.email || m.user_id}
+                        {row.secondary}
                       </div>
                     </div>
-                    <SBadge tone={m.status === "active" || !m.status ? "green" : "slate"} dot>
-                      {m.status || "Active"}
+                    <SBadge tone={row.statusTone} dot>
+                      {row.status}
                     </SBadge>
                     {props.isAdmin && (
                       <select
-                        value={m.role}
+                        value={row.m.role}
                         onChange={async (e) => {
                           setErr(null); setMsg(null);
-                          const result = await props.onUpdateRole?.(m.id || m.user_id, e.target.value);
+                          const result = await props.onUpdateRole?.(row.key, e.target.value);
                           if ((result as any)?.error) setErr((result as any).error);
                           else setMsg("Role updated");
                         }}
-                        disabled={m.role === "owner"}
-                        style={{ ...sInputStyle, width: 130, padding: "6px 10px", fontSize: 12.5, cursor: m.role === "owner" ? "not-allowed" : "pointer" }}
+                        disabled={row.isOwner}
+                        style={{ ...sInputStyle, width: 130, padding: "6px 10px", fontSize: 12.5, cursor: row.isOwner ? "not-allowed" : "pointer" }}
                       >
                         <option value="admin">Admin</option>
                         <option value="member">Member</option>
-                        {m.role === "owner" && <option value="owner">Owner</option>}
+                        {row.isOwner && <option value="owner">Owner</option>}
                       </select>
                     )}
-                    {props.isAdmin && m.role !== "owner" && (
+                    {props.isAdmin && !row.isOwner && (
                       <button
                         onClick={async () => {
                           setErr(null); setMsg(null);
-                          const result = await props.onRevoke?.(m.id || m.user_id);
+                          const result = await props.onRevoke?.(row.key);
                           if ((result as any)?.error) setErr((result as any).error);
                           else setMsg("Member removed");
                         }}

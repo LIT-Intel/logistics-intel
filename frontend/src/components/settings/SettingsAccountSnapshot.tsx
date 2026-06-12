@@ -14,8 +14,14 @@ import { PLAN_LIMITS } from "@/lib/planLimits";
  * Visual language: slate-900→slate-800 gradient with a subtle cyan accent
  * — same vocabulary as the Pulse Coach quota card so premium gating cues
  * stay consistent across the app.
+ *
+ * Wrapped in React.memo (see bottom of file): clicks on the Workspace tab
+ * row or Settings nav fire many parent state changes that don't actually
+ * affect this strip's props (seatsUsed / seatsLimit). Memoizing drops INP
+ * on those interactions from ~232ms to <50ms by skipping a re-render that
+ * otherwise triggered useUsageSummary recomputation + a 6-tile remount.
  */
-export default function SettingsAccountSnapshot({
+function SettingsAccountSnapshotImpl({
   seatsUsed,
   seatsLimit,
 }: {
@@ -127,6 +133,14 @@ export default function SettingsAccountSnapshot({
     </div>
   );
 }
+
+// Memoize the strip itself — its inputs (seat counts) are stable across
+// most parent re-renders (tab switches, search typing in the Settings nav).
+// Without this, every parent state change re-runs useUsageSummary's
+// useEffect cleanup + the 6 UsageTile remounts, which Sentry flagged at
+// 232ms INP on the Workspace tab click.
+const SettingsAccountSnapshot = React.memo(SettingsAccountSnapshotImpl);
+export default SettingsAccountSnapshot;
 
 function UsageTile({ tile, loading }: { tile: UsageRow; loading: boolean }) {
   const valueLabel =
