@@ -27,12 +27,19 @@ interface Props {
   campaignId?: string | null;
 }
 
-// Industry-average fallback rates (B2B email) when org has no
-// launched-campaign history yet. Hard-coded here per spec's "Open
-// design decisions" — empty estimate tiles look broken.
-const FALLBACK_OPEN_RATE = 40;
-const FALLBACK_CLICK_RATE = 8;
-const FALLBACK_REPLY_RATE = 3;
+// CR P1-7: industry-average fallback rates (B2B cold email) when org has
+// no launched-campaign history yet. Previous defaults (40/8/3) were
+// transactional-email territory and set unrealistic expectations for
+// cold outbound. Lowered to realistic B2B cold-outbound benchmarks:
+//   open ~20-25% (HubSpot 2025 State of Marketing; Apollo Q1 2026 benchmark)
+//   click ~3-5%  (HubSpot 2025; Mailchimp B2B avg ~2.6%, cold higher with CTAs)
+//   reply ~1-2%  (industry consensus for unwarmed cold outbound)
+// Hard-coded here per spec's "Open design decisions" — empty estimate
+// tiles look broken. Replace with org-specific historical rate as soon
+// as the workspace has launched 1+ campaigns.
+const FALLBACK_OPEN_RATE = 24;
+const FALLBACK_CLICK_RATE = 4;
+const FALLBACK_REPLY_RATE = 2;
 
 type TileTone = "neutral" | "blue" | "indigo" | "emerald" | "amber" | "rose";
 
