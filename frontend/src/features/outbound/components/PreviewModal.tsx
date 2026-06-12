@@ -360,9 +360,15 @@ function EmailBodyPreview({
 
   return (
     <div className="mt-2 overflow-hidden rounded-md border border-slate-200 bg-white">
+      {/* CR P1-8: sandbox="" — no allows. Previously "allow-same-origin"
+          let any pixel / image src loaded from the same origin run in
+          the parent's cookie scope, which is a tracking-pixel risk if
+          the template body included a hand-crafted <img src="…"> point-
+          ing back at the app origin. Static HTML email previews don't
+          need same-origin OR scripts — the iframe just renders markup. */}
       <iframe
         title="Email body preview"
-        sandbox="allow-same-origin"
+        sandbox=""
         srcDoc={srcDoc}
         style={{ width: "100%", minHeight: 560, border: 0, display: "block" }}
       />
