@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Code } from "lucide-react";
+import { Code, List as ListIcon } from "lucide-react";
 import { CHANNEL, fontDisplay, fontBody, fontMono } from "../tokens";
 import { ChannelIcon } from "./ChannelChip";
 import EmailComposerModal from "./EmailComposerModal";
@@ -22,6 +22,13 @@ interface Props {
   onPreview: () => void;
   onTestSend: () => void;
   onSaveAsTemplate?: () => void;
+  /** DR Move 1 — Activity drawer trigger. Relocated from the top bar
+   *  so per-step actions stay inside the inspector footer. Only renders
+   *  when onOpenActivity is provided AND the campaign is saved
+   *  (i.e. there's something to show in the timeline). */
+  onOpenActivity?: () => void;
+  activityCount?: number;
+  activityLoading?: boolean;
 }
 
 export function StepInspector({
@@ -34,6 +41,9 @@ export function StepInspector({
   onPreview,
   onTestSend,
   onSaveAsTemplate,
+  onOpenActivity,
+  activityCount,
+  activityLoading,
 }: Props) {
   const [composerOpen, setComposerOpen] = useState(false);
   if (!step) {
@@ -410,6 +420,23 @@ export function StepInspector({
               style={{ fontFamily: fontDisplay }}
             >
               Save as template
+            </button>
+          ) : null}
+          {onOpenActivity ? (
+            <button
+              type="button"
+              onClick={onOpenActivity}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+              style={{ fontFamily: fontDisplay }}
+              title="Open activity timeline"
+            >
+              <ListIcon className="h-2.5 w-2.5" />
+              Activity
+              {activityLoading
+                ? " (…)"
+                : typeof activityCount === "number"
+                  ? ` (${activityCount})`
+                  : ""}
             </button>
           ) : null}
           <button

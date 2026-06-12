@@ -12,6 +12,17 @@ import { fontDisplay, fontBody, fontMono } from "../tokens";
 import type { Persona, PersonasResult } from "../types";
 import type { SavedCompanyLite } from "../hooks/useSavedCompanies";
 
+interface IndustryOption {
+  id: string;
+  label: string;
+}
+
+interface ToneOption {
+  id: string;
+  label: string;
+  helper?: string;
+}
+
 interface PersonaPanelProps {
   audienceCount: number;
   totalSavedCompanies: number;
@@ -23,6 +34,16 @@ interface PersonaPanelProps {
   onOpenAudiencePicker: () => void;
   onOpenTemplates: () => void;
   onCreatePersona?: () => void;
+  /** Industry + tone selectors. Relocated from the top bar (DR Move 1).
+   *  Drives template-drawer filter chips and informs the user's pitch
+   *  style. Optional so the component can still render without these
+   *  controls (e.g. read-only contexts). */
+  industry?: string;
+  industryOptions?: IndustryOption[];
+  onChangeIndustry?: (next: string) => void;
+  tone?: string;
+  toneOptions?: ToneOption[];
+  onChangeTone?: (next: string) => void;
 }
 
 export function PersonaPanel({
@@ -36,7 +57,15 @@ export function PersonaPanel({
   onOpenAudiencePicker,
   onOpenTemplates,
   onCreatePersona,
+  industry,
+  industryOptions,
+  onChangeIndustry,
+  tone,
+  toneOptions,
+  onChangeTone,
 }: PersonaPanelProps) {
+  const showPitchControls =
+    !!industryOptions && !!toneOptions && !!onChangeIndustry && !!onChangeTone;
   const sample = selectedCompanies.slice(0, 6);
   const manualSample = manualEmails.slice(0, 6);
 
@@ -153,6 +182,71 @@ export function PersonaPanel({
           onCreatePersona={onCreatePersona}
         />
       </div>
+
+      {/* DR Move 1 — Industry + Tone controls. Relocated from the top
+          bar so the action row only carries Save / Schedule / Launch.
+          These belong with persona because they shape WHO and HOW the
+          sequence speaks, not the campaign-level lifecycle. */}
+      {showPitchControls ? (
+        <div className="px-4 pt-3 pb-1">
+          <div
+            className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400"
+            style={{ fontFamily: fontDisplay }}
+          >
+            Pitch
+          </div>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            <label
+              className="flex flex-col gap-1"
+              title="Recipient industry — filters template suggestions"
+            >
+              <span
+                className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500"
+                style={{ fontFamily: fontDisplay }}
+              >
+                Industry
+              </span>
+              <select
+                value={industry ?? ""}
+                onChange={(e) => onChangeIndustry?.(e.target.value)}
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11.5px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                style={{ fontFamily: fontBody }}
+              >
+                {industryOptions!.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label
+              className="flex flex-col gap-1"
+              title={
+                toneOptions!.find((t) => t.id === tone)?.helper || "Pitch style"
+              }
+            >
+              <span
+                className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500"
+                style={{ fontFamily: fontDisplay }}
+              >
+                Tone
+              </span>
+              <select
+                value={tone ?? ""}
+                onChange={(e) => onChangeTone?.(e.target.value)}
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11.5px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                style={{ fontFamily: fontBody }}
+              >
+                {toneOptions!.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+      ) : null}
 
       {/* Sample contacts header */}
       <div className="flex shrink-0 items-center justify-between border-t border-slate-100 px-4 pt-3 pb-1">
