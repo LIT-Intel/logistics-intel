@@ -35,6 +35,7 @@ import {
 import { SBadge, sBtnPrimary } from "./SettingsPrimitives";
 import SettingsAccountSnapshot from "./SettingsAccountSnapshot";
 import OrgExitRulesPanel from "@/features/outbound/components/OrgExitRulesPanel";
+import OrgEnrichmentSettingsPanel from "@/features/settings/components/OrgEnrichmentSettingsPanel";
 
 // Accepts ?tab=… (case/spacing tolerant) so deep links route correctly.
 function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
@@ -47,6 +48,7 @@ function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
   if (v === "notifications" || v === "alerts") return "Notifications";
   if (v === "integrations" || v === "emailaccounts" || v === "email" || v === "inbox" || v === "integration") return "Integrations";
   if (v === "exitrules" || v === "exit" || v === "sequenceexit" || v === "outreachexit") return "ExitRules";
+  if (v === "enrichmentproviders" || v === "enrichment" || v === "providers" || v === "enrich") return "EnrichmentProviders";
   if (v === "preferences" || v === "prefs" || v === "timezone" || v === "signature") return "Preferences";
   return null;
 }
@@ -212,8 +214,9 @@ const NAV_GROUPS: Array<{
   {
     group: "Outreach",
     items: [
-      { id: "Integrations", label: "Integrations", Icon: Plug },
-      { id: "ExitRules",    label: "Exit Rules",   Icon: UserMinus },
+      { id: "Integrations",        label: "Integrations",         Icon: Plug },
+      { id: "ExitRules",           label: "Exit Rules",           Icon: UserMinus },
+      { id: "EnrichmentProviders", label: "Enrichment Providers", Icon: Plug },
     ],
   },
   {
@@ -492,6 +495,13 @@ function renderSection(
     case "ExitRules":
       return (
         <OrgExitRulesPanel
+          orgId={props.orgId ?? null}
+          canWrite={Boolean(props.isAdmin)}
+        />
+      );
+    case "EnrichmentProviders":
+      return (
+        <OrgEnrichmentSettingsPanel
           orgId={props.orgId ?? null}
           canWrite={Boolean(props.isAdmin)}
         />

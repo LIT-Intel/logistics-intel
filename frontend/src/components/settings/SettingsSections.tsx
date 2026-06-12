@@ -68,6 +68,7 @@ export type SettingsSectionId =
   | "Notifications"
   | "Integrations"
   | "ExitRules"
+  | "EnrichmentProviders"
   | "Preferences";
 
 export const SETTINGS_SECTIONS: Array<{
@@ -75,14 +76,15 @@ export const SETTINGS_SECTIONS: Array<{
   title: string;
   icon: React.ComponentType<any>;
 }> = [
-  { id: "Profile",       title: "Profile",       icon: User },
-  { id: "Workspace",     title: "Workspace",     icon: Building2 },
-  { id: "Billing",       title: "Billing",       icon: Coins },
-  { id: "Security",      title: "Security",      icon: ShieldCheck },
-  { id: "Notifications", title: "Notifications", icon: Bell },
-  { id: "Integrations",  title: "Integrations",  icon: Plug },
-  { id: "ExitRules",     title: "Exit Rules",    icon: ShieldCheck },
-  { id: "Preferences",   title: "Preferences",   icon: KeyRound },
+  { id: "Profile",             title: "Profile",             icon: User },
+  { id: "Workspace",           title: "Workspace",           icon: Building2 },
+  { id: "Billing",             title: "Billing",             icon: Coins },
+  { id: "Security",            title: "Security",            icon: ShieldCheck },
+  { id: "Notifications",       title: "Notifications",       icon: Bell },
+  { id: "Integrations",        title: "Integrations",        icon: Plug },
+  { id: "ExitRules",           title: "Exit Rules",          icon: ShieldCheck },
+  { id: "EnrichmentProviders", title: "Enrichment Providers", icon: Plug },
+  { id: "Preferences",         title: "Preferences",         icon: KeyRound },
 ];
 
 // ─── Timezone options ────────────────────────────────────────────────────────
