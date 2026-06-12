@@ -35,6 +35,10 @@ interface StepPayload {
   delay_hours?: number;
   delay_minutes?: number;
   include_signature?: boolean;
+  /** J.2 — "HH:MM" or "HH:MM:SS". NULL/empty = use delay-based fire time. */
+  time_of_day_local?: string | null;
+  /** J.2 — defer to next Monday when computed day lands on Sat/Sun. */
+  weekdays_only?: boolean;
   metadata?: Record<string, unknown>;
 }
 
@@ -91,6 +95,15 @@ function normalizeStep(s: StepPayload, idx: number): Record<string, unknown> {
     typeof s.body === "string" && s.body.trim().length > 0
       ? s.body.trim()
       : null;
+  // J.2 — time_of_day_local must be a valid "HH:MM[:SS]" string. The RPC
+  // NULLIFs empty strings before casting to `time`, so we send "" when
+  // the field is absent / invalid; that preserves the legacy code path.
+  let timeOfDayLocal: string | null = null;
+  if (typeof s.time_of_day_local === "string") {
+    const t = s.time_of_day_local.trim();
+    if (/^\d{1,2}:\d{1,2}(:\d{1,2})?$/.test(t)) timeOfDayLocal = t;
+  }
+  const weekdaysOnly = s.weekdays_only === true;
   return {
     channel,
     step_type,
@@ -101,6 +114,8 @@ function normalizeStep(s: StepPayload, idx: number): Record<string, unknown> {
     delay_hours: clampInt(s.delay_hours, 0, 23, 0),
     delay_minutes: clampInt(s.delay_minutes, 0, 59, 0),
     include_signature: s.include_signature !== false,
+    time_of_day_local: timeOfDayLocal,
+    weekdays_only: weekdaysOnly,
     metadata: s.metadata && typeof s.metadata === "object" ? s.metadata : {},
   };
 }

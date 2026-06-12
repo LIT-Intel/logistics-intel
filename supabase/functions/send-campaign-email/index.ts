@@ -28,6 +28,7 @@ import { applyMergeVars, buildMergeContext } from "../_shared/merge-vars.ts";
 import { canSendNow, computeDailyCap } from "../_shared/outreach-throttle.ts";
 import { verifyCronAuth } from "../_shared/cron_auth.ts";
 import { createLogger, requestId } from "../_shared/logger.ts";
+import { applyStepSchedule } from "../_shared/step_schedule.ts";
 
 // Module-level logger for helpers (getAccessToken / sendEmail). The serve()
 // handler creates a per-request child below so each tick gets its own
@@ -267,6 +268,12 @@ type Step = {
   /** Append the sender's saved signature to the body when true. Default true
    *  for legacy rows that pre-date the column (NULL is treated as true). */
   include_signature: boolean | null;
+  /** J.2 — when set, the step fires at this local time (in the campaign's
+   *  send_timezone) on the day computed from the delays. NULL = legacy
+   *  delay-based behavior. */
+  time_of_day_local: string | null;
+  /** J.2 — when true, weekend-resolved fire times bump to next Monday. */
+  weekdays_only: boolean | null;
 };
 
 type Account = {
@@ -376,6 +383,10 @@ serve(async (req) => {
   // Cache keyed by campaign_id.
   const stepsCache = new Map<string, Step[]>();
   const senderCache = new Map<string, Account | null>();
+  // J.2 — per-campaign send_timezone. Read once when we resolve the
+  // sender (which already fetches lit_campaigns) and used by advance()
+  // when applying step-level time_of_day_local / weekdays_only.
+  const tzCache = new Map<string, string>();
   // Cache keyed by company_id.
   const companyCache = new Map<string, { name?: string | null; domain?: string | null; website?: string | null; country_code?: string | null } | null>();
   // Cache keyed by sender email_account_id for the throttle gate. Holds
@@ -526,7 +537,7 @@ serve(async (req) => {
       if (!steps) {
         const { data: stepRows, error: stepErr } = await admin
           .from("lit_campaign_steps")
-          .select("id, campaign_id, step_order, channel, step_type, subject, subject_b, body, delay_days, delay_hours, delay_minutes, include_signature")
+          .select("id, campaign_id, step_order, channel, step_type, subject, subject_b, body, delay_days, delay_hours, delay_minutes, include_signature, time_of_day_local, weekdays_only")
           .eq("campaign_id", r.campaign_id)
           .order("step_order", { ascending: true });
         if (stepErr) {
@@ -559,7 +570,7 @@ serve(async (req) => {
       // 2c. Wait steps just advance the cursor. Schedule next fire after
       //     the wait duration (the wait step's own delay_days).
       if (step.channel === "wait" || step.step_type === "wait") {
-        await advance(admin, r, step, steps[stepIndex + 1] ?? null);
+        await advance(admin, r, step, steps[stepIndex + 1] ?? null, false, tzCache.get(r.campaign_id) ?? "UTC");
         summary.advanced += 1;
         continue;
       }
@@ -581,7 +592,7 @@ serve(async (req) => {
           occurred_at: new Date().toISOString(),
           metadata: { recipient_email: r.email, step_type: step.step_type },
         });
-        await advance(admin, r, step, steps[stepIndex + 1] ?? null);
+        await advance(admin, r, step, steps[stepIndex + 1] ?? null, false, tzCache.get(r.campaign_id) ?? "UTC");
         summary.advanced += 1;
         continue;
       }
@@ -707,9 +718,12 @@ serve(async (req) => {
       if (sender === undefined) {
         const { data: camp } = await admin
           .from("lit_campaigns")
-          .select("user_id, metrics")
+          .select("user_id, metrics, send_timezone")
           .eq("id", r.campaign_id)
           .maybeSingle();
+        if (camp && typeof (camp as any).send_timezone === "string") {
+          tzCache.set(r.campaign_id, (camp as any).send_timezone || "UTC");
+        }
         if (!camp?.user_id) {
           senderCache.set(campaignKey, null);
         } else {
@@ -1154,7 +1168,7 @@ serve(async (req) => {
       });
 
       if (sendRes.ok) {
-        await advance(admin, r, step, steps[stepIndex + 1] ?? null, /* sent */ true);
+        await advance(admin, r, step, steps[stepIndex + 1] ?? null, /* sent */ true, tzCache.get(r.campaign_id) ?? "UTC");
         // Bump mailbox counters: in-memory (so subsequent recipients
         // in this same tick see the new state) AND persisted (so the
         // next tick / next dispatcher invocation sees it too). The
@@ -1219,6 +1233,7 @@ async function advance(
   step: Step,
   nextStep: Step | null,
   sent = false,
+  timezone = "UTC",
 ) {
   // Schedule the recipient's next pickup. delay_days on the FE represents
   // "wait this long BEFORE this step kicks off", so once we've finished
@@ -1235,7 +1250,20 @@ async function advance(
       Math.max(0, ref.delay_hours ?? 0) * 3_600_000 +
       Math.max(0, ref.delay_minutes ?? 0) * 60_000
     : 0;
-  const nextSendAt = new Date(Date.now() + delayMs).toISOString();
+  let nextSendAt = new Date(Date.now() + delayMs).toISOString();
+
+  // J.2 — when the NEXT step carries step-level scheduling hints, snap
+  // the delay-based time to (a) the requested local time-of-day and
+  // (b) the next weekday if weekdays_only is true. Backwards-compatible:
+  // when both hints are unset the helper returns the input unchanged so
+  // legacy campaigns keep the cumulative-offset behavior bit-for-bit.
+  if (ref && (ref.time_of_day_local || ref.weekdays_only)) {
+    nextSendAt = applyStepSchedule(nextSendAt, {
+      timeOfDayLocal: ref.time_of_day_local ?? null,
+      weekdaysOnly: Boolean(ref.weekdays_only),
+      timezone,
+    });
+  }
 
   // status stays "queued" between steps so the dispatcher re-picks the
   // recipient on its next tick when next_send_at <= now. The terminal
