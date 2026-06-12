@@ -956,6 +956,12 @@ serve(async (req) => {
         if (linkErr) log.warn("link_insert_failed", { err: linkErr.message, code: linkErr.code, recipient_id: r.id, campaign_id: r.campaign_id });
       }
 
+      // Sub-project O — {{unsubscribe_url}} template variable.
+      // Built up-front so it merges into both subject (no-op) and body before
+      // applyMergeVars runs. The same URL is also wired into the
+      // List-Unsubscribe header lower down (line ~1389) for RFC 8058 one-click.
+      const unsubscribeUrl = `${supabaseUrl}/functions/v1/email-unsubscribe?campaign=${encodeURIComponent(r.campaign_id)}&recipient=${encodeURIComponent(r.id)}`;
+
       const ctx = buildMergeContext({
         recipient: {
           email: r.email,
@@ -963,13 +969,33 @@ serve(async (req) => {
           last_name: r.last_name,
           display_name: r.display_name,
           title: r.title,
-          merge_vars: r.merge_vars ?? null,
+          merge_vars: { ...(r.merge_vars ?? {}), unsubscribe_url: unsubscribeUrl },
         },
         company,
         sender: { email: sender.email, display_name: sender.display_name },
       });
       const subject = applyMergeVars(chosenSubjectRaw, ctx, { onMissing: "blank" });
       let body = applyMergeVars(trackedBody, ctx, { onMissing: "blank" });
+
+      // Sub-project O — if the body has no explicit {{unsubscribe_url}}
+      // placeholder, append a minimal footer so the unsubscribe link is
+      // always reachable. Gmail/Yahoo bulk-sender policy is satisfied by
+      // the List-Unsubscribe header alone, but a visible link is universally
+      // safer (List-Unsubscribe UI surfaces vary by client).
+      if (body && !body.includes(unsubscribeUrl)) {
+        const looksHtmlBody = /<\/?[a-z][^>]*>/i.test(body);
+        const footerHtml = `<p style="font-size:11px;color:#94a3b8;margin-top:24px">Don't want these emails? <a href="${unsubscribeUrl}">Unsubscribe</a>.</p>`;
+        const footerText = `\n\n---\nDon't want these emails? Unsubscribe: ${unsubscribeUrl}`;
+        if (looksHtmlBody) {
+          if (/<\/body\s*>/i.test(body)) {
+            body = body.replace(/<\/body\s*>/i, `${footerHtml}</body>`);
+          } else {
+            body = `${body}${footerHtml}`;
+          }
+        } else {
+          body = `${body}${footerText}`;
+        }
+      }
 
       // Append the sender's saved signature when the step opts in.
       // include_signature is treated as boolean-with-NULL-as-true so legacy
