@@ -19,6 +19,8 @@ import {
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitFlag from "@/components/ui/LitFlag";
 import LitPill from "@/components/ui/LitPill";
+import ServiceModeChip from "@/components/intel/ServiceModeChip";
+import { useMxImportActivity } from "@/api/intel";
 import BuyingIntentTile from "@/components/intent/BuyingIntentTile";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import LaneMap from "@/components/LaneMap";
@@ -440,6 +442,12 @@ function SummaryView({
         cadence={cadence}
         containerProfile={containerProfile}
         reducedMotion={reducedMotion}
+        companyName={
+          (_profile?.companyName as string) ||
+          (_profile?.name as string) ||
+          (_profile?.identity?.companyName as string) ||
+          null
+        }
       />
       <RecentActivityCards
         recentBols={recentBols}
@@ -476,13 +484,48 @@ function CadenceAndModalMix({
   cadence,
   containerProfile,
   reducedMotion,
+  companyName,
 }: {
   cadence: CadencePoint[];
   containerProfile: ContainerProfile;
   reducedMotion: boolean;
+  companyName: string | null;
 }) {
-  // Stacked area data: FCL/LCL come from cadence; Air defaults to 0 unless
-  // backend supplies it via cadence (it doesn't yet — graceful zero).
+  // Air count: derived from MX customs import declarations where
+  // transport_type = 'Air'. ImportYeti's US-import feed does NOT track air
+  // freight, so the disclosure below explains the coverage gap when no MX
+  // air rows are on file. We never fake an air value — no air:0 hardcode.
+  const { data: mxRows } = useMxImportActivity(companyName);
+  const mxAirCount = useMemo(() => {
+    if (!Array.isArray(mxRows)) return 0;
+    return mxRows.filter(
+      (r) => String(r.transport_type || "").toLowerCase().includes("air"),
+    ).length;
+  }, [mxRows]);
+  const hasMxAir = mxAirCount > 0;
+
+  // Active service modes — derived from real signal in this account. Drives
+  // the "Service modes covered" chip strip above the chart.
+  const activeModes = useMemo(() => {
+    const modes: Array<"ocean" | "air" | "truck" | "rail"> = [];
+    if (containerProfile.fcl > 0 || containerProfile.lcl > 0) modes.push("ocean");
+    if (hasMxAir) modes.push("air");
+    const truckLike = (mxRows || []).some((r) =>
+      /(truck|rail|carretera|ferrocarril)/i.test(String(r.transport_type || "")),
+    );
+    const railOnly = (mxRows || []).some((r) =>
+      /(rail|ferrocarril|tren)/i.test(String(r.transport_type || "")),
+    );
+    if (truckLike && !railOnly) modes.push("truck");
+    if (railOnly) modes.push("rail");
+    return modes;
+  }, [containerProfile.fcl, containerProfile.lcl, hasMxAir, mxRows]);
+
+  // Stacked area data: FCL/LCL come from cadence; Air is the per-row
+  // average from MX air rows, spread across the cadence buckets. We don't
+  // pretend to know the time distribution — when MX rows lack a per-month
+  // breakdown, we leave each bucket's air bar at 0 and let the disclosure
+  // carry the air signal.
   const chartData = cadence.map((c) => ({
     label: c.label,
     fcl: c.fcl,
@@ -492,13 +535,16 @@ function CadenceAndModalMix({
 
   const fcl = containerProfile.fcl;
   const lcl = containerProfile.lcl;
-  // Air slice: 0 today (not derived). Donut keeps it for visual continuity.
-  const air = 0;
+  // Air slice: real MX-derived count. NEVER hardcoded — when zero, the
+  // donut hides the slice entirely (no fake 0% wedge) and a disclosure
+  // chip renders below the chart explaining the ImportYeti coverage gap.
+  const air = mxAirCount;
   const total = fcl + lcl + air;
   const donut = [
     { name: "FCL", value: fcl, color: "#0EA5E9" },
     { name: "LCL", value: lcl, color: "#F59E0B" },
-    { name: "Air", value: air, color: "#94A3B8" },
+    // Only push the air slice when there's REAL air data — no 0% wedges.
+    ...(air > 0 ? [{ name: "Air", value: air, color: "#8B5CF6" }] : []),
   ].filter((s) => s.value > 0);
 
   if (cadence.length === 0 && total === 0) {
@@ -511,6 +557,21 @@ function CadenceAndModalMix({
 
   return (
     <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months">
+      {/* Service modes covered — derived from real signal in this account.
+          Replaces the prior implicit FCL/LCL-only framing so the user can
+          see at a glance which legs LIT has coverage for on this shipper. */}
+      {activeModes.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+            Service modes covered
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {activeModes.map((m) => (
+              <ServiceModeChip key={m} mode={m} size="xs" />
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex flex-col gap-4 md:flex-row">
         {/* Left 70% — stacked area */}
         <div className="min-w-0 flex-1 md:basis-[70%]">
@@ -527,8 +588,8 @@ function CadenceAndModalMix({
                     <stop offset="100%" stopColor="#F59E0B" stopOpacity={0.05} />
                   </linearGradient>
                   <linearGradient id="cad-air" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#94A3B8" stopOpacity={0.5} />
-                    <stop offset="100%" stopColor="#94A3B8" stopOpacity={0.05} />
+                    <stop offset="0%" stopColor="#8B5CF6" stopOpacity={0.5} />
+                    <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
                 <XAxis
@@ -566,24 +627,39 @@ function CadenceAndModalMix({
                   animationDuration={reducedMotion ? 0 : 1600}
                   animationBegin={0}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="air"
-                  stackId="1"
-                  stroke="#94A3B8"
-                  fill="url(#cad-air)"
-                  name="Air"
-                  isAnimationActive={!reducedMotion}
-                  animationDuration={reducedMotion ? 0 : 1600}
-                  animationBegin={0}
-                />
+                {hasMxAir && (
+                  <Area
+                    type="monotone"
+                    dataKey="air"
+                    stackId="1"
+                    stroke="#8B5CF6"
+                    fill="url(#cad-air)"
+                    name="Air"
+                    isAnimationActive={!reducedMotion}
+                    animationDuration={reducedMotion ? 0 : 1600}
+                    animationBegin={0}
+                  />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <LegendDot color="#0EA5E9" label="FCL" />
             <LegendDot color="#F59E0B" label="LCL" />
-            <LegendDot color="#94A3B8" label="Air" />
+            {hasMxAir ? (
+              <LegendDot color="#8B5CF6" label={`Air · ${mxAirCount} MX`} />
+            ) : (
+              // Honest disclosure — no air series, no fake 0% slice. The
+              // ImportYeti US-import feed doesn't carry air freight; we say
+              // so explicitly with a tooltip that explains the coverage gap.
+              <span
+                className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-[2px] text-[10px] font-semibold text-slate-500"
+                title="Air freight is not tracked in the US-import BOL feed (ImportYeti coverage). When MX customs declarations carry transport_type='Air' for this importer, this chip flips to the live count."
+              >
+                <Info className="h-2.5 w-2.5" aria-hidden />
+                Air freight not tracked for US imports
+              </span>
+            )}
           </div>
         </div>
 
