@@ -8,6 +8,10 @@ on:
 jobs:
   check-drift:
     runs-on: ubuntu-latest
+    env:
+      # Opt into Node.js 24 runtime for JS actions ahead of GitHub's Jun 16, 2026
+      # forced-default. Matches supabase-auto-deploy.yml.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     permissions:
       contents: read
       pull-requests: write
