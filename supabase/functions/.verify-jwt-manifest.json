@@ -36,6 +36,7 @@
     "oauth-gmail-callback",
     "oauth-outlook-callback",
     "phantombuster-linkedin",
+    "process-conditional-followups",
     "pulse-alert-digest",
     "pulse-arrival-alerts",
     "pulse-attio-sync",
