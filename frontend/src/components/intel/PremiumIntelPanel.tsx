@@ -11,6 +11,7 @@
 
 import React from "react";
 import {
+  useDomesticInlandLeg,
   useLaneCarrierMix,
   useLaneYoyTrend,
   useMxImportActivity,
@@ -23,6 +24,7 @@ import {
   CustomsBrokerIcon,
   AirCargoIcon,
   TransborderRailIcon,
+  DomesticTransportIcon,
 } from "@/components/icons/ServiceModeIcons";
 import ServiceModeChip from "@/components/intel/ServiceModeChip";
 
@@ -283,6 +285,105 @@ function UsExportCard({ companyName }: { companyName: string }) {
             </div>
           )}
         </div>
+      )}
+    </IntelCard>
+  );
+}
+
+// ── Domestic inland leg card ────────────────────────────────────────────
+
+function DomesticInlandLegCard({ companyName }: { companyName: string }) {
+  const { data, isLoading } = useDomesticInlandLeg(companyName);
+
+  // Top 5 (entry_port -> destination_city) rows by shipment count. Mode chip
+  // uses the existing service-mode palette: rail for "Rail", drayage for the
+  // intermodal mid-range (short port-area + a rail link), truck for short
+  // hauls. This keeps the chip family coherent without inventing new modes.
+  const rows = React.useMemo(() => (data || []).slice(0, 5), [data]);
+
+  // ImportYeti's US-import feed often lists the destination_port as the
+  // inland city itself (Atlanta -> Atlanta), so we de-emphasize the visual
+  // separation when the two strings match. Still surface the data honestly.
+  const formatLeg = (entryPort: string | null, city: string | null, state: string | null) => {
+    const a = (entryPort || "").trim();
+    const b = [city, state].filter(Boolean).join(", ");
+    if (a && b && a.toLowerCase() === (city || "").toLowerCase()) {
+      return `${b}`; // same name — collapse to a single destination
+    }
+    return `${a || "—"} → ${b || "—"}`;
+  };
+
+  // Map est_mode -> ServiceModeChip key. Intermodal is the only mode in
+  // this card that doesn't have a 1:1 service-mode chip; "drayage" reads
+  // closest semantically (short rail + port handoff) and keeps the chip
+  // palette consistent.
+  const modeChip = (mode: string): "truck" | "rail" | "drayage" => {
+    const m = mode.toLowerCase();
+    if (m.startsWith("rail")) return "rail";
+    if (m.startsWith("inter")) return "drayage";
+    return "truck";
+  };
+
+  return (
+    <IntelCard
+      icon={<DomesticTransportIcon size={16} title="Domestic transportation" />}
+      title="Domestic transportation"
+      sub="Port-of-entry → destination city. Est. mode inferred from inland distance."
+    >
+      {isLoading ? (
+        <SkeletonRows count={3} />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          icon={<DomesticTransportIcon size={24} />}
+          message="No US inland leg activity yet — refresh intel to populate the port-to-destination rollup."
+        />
+      ) : (
+        <ul className="space-y-2">
+          {rows.map((r, i) => (
+            <li
+              key={`${r.entry_port ?? "-"}-${r.destination_city ?? "-"}-${i}`}
+              className="grid items-center gap-2 rounded-md px-1 py-1.5 transition-colors hover:bg-slate-50"
+              style={{ gridTemplateColumns: "minmax(0,1fr) auto auto auto" }}
+            >
+              <div className="min-w-0">
+                <div className="font-display truncate text-[12px] font-semibold text-slate-900">
+                  {formatLeg(r.entry_port, r.destination_city, r.destination_state)}
+                </div>
+              </div>
+              <ServiceModeChip
+                mode={modeChip(r.est_mode || "Truck")}
+                size="xs"
+                label={r.est_mode || "Truck"}
+              />
+              <span
+                className="font-mono w-16 text-right text-[10.5px] tabular-nums text-slate-500"
+                style={tabularStyle}
+                title="Approx. inland miles (avg)"
+              >
+                {r.approx_inland_miles == null
+                  ? "—"
+                  : `${Number(r.approx_inland_miles).toLocaleString(undefined, {
+                      maximumFractionDigits: 0,
+                    })} mi`}
+              </span>
+              <span
+                className="font-mono w-12 text-right text-[11px] font-bold tabular-nums text-slate-900"
+                style={tabularStyle}
+                title="Shipment count"
+              >
+                {Number(r.shipment_count).toLocaleString()}
+              </span>
+            </li>
+          ))}
+          <li className="mt-1 grid items-center gap-2 border-t border-slate-100 px-1 pt-1.5 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400"
+            style={{ gridTemplateColumns: "minmax(0,1fr) auto auto auto" }}
+          >
+            <span>Entry → destination</span>
+            <span className="text-right">Mode</span>
+            <span className="w-16 text-right">Inland</span>
+            <span className="w-12 text-right">Ship.</span>
+          </li>
+        </ul>
       )}
     </IntelCard>
   );
@@ -553,7 +654,7 @@ function PerLaneYoyTrendCard({ companyName }: { companyName: string }) {
 export function PremiumIntelPanel({
   companyName,
   title = "Premium Intel",
-  subtitle = "LIT-exclusive coverage: transborder, US export, customs brokers, per-lane mix.",
+  subtitle = "LIT-exclusive coverage: transborder, US export, domestic inland leg, customs brokers, per-lane mix.",
   showPremiumBadge = true,
 }: PremiumIntelPanelProps) {
   return (
@@ -581,12 +682,14 @@ export function PremiumIntelPanel({
           <ServiceModeChip mode="rail" size="xs" />
           <ServiceModeChip mode="drayage" size="xs" />
           <ServiceModeChip mode="broker" size="xs" />
+          <ServiceModeChip mode="domestic" size="xs" />
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
         <MxTransborderCard companyName={companyName} />
         <UsExportCard companyName={companyName} />
+        <DomesticInlandLegCard companyName={companyName} />
         <CustomsBrokerMixCard companyName={companyName} />
         <PerLaneCarrierMixCard companyName={companyName} />
         <div className="lg:col-span-2">

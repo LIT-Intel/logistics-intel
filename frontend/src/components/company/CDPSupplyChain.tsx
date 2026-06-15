@@ -20,7 +20,7 @@ import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitFlag from "@/components/ui/LitFlag";
 import LitPill from "@/components/ui/LitPill";
 import ServiceModeChip from "@/components/intel/ServiceModeChip";
-import { useMxImportActivity } from "@/api/intel";
+import { useDomesticInlandLeg, useMxImportActivity } from "@/api/intel";
 import BuyingIntentTile from "@/components/intent/BuyingIntentTile";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import LaneMap from "@/components/LaneMap";
@@ -496,6 +496,7 @@ function CadenceAndModalMix({
   // freight, so the disclosure below explains the coverage gap when no MX
   // air rows are on file. We never fake an air value — no air:0 hardcode.
   const { data: mxRows } = useMxImportActivity(companyName);
+  const { data: domesticRows } = useDomesticInlandLeg(companyName);
   const mxAirCount = useMemo(() => {
     if (!Array.isArray(mxRows)) return 0;
     return mxRows.filter(
@@ -503,11 +504,16 @@ function CadenceAndModalMix({
     ).length;
   }, [mxRows]);
   const hasMxAir = mxAirCount > 0;
+  const hasDomestic = Array.isArray(domesticRows) && domesticRows.length > 0;
 
   // Active service modes — derived from real signal in this account. Drives
-  // the "Service modes covered" chip strip above the chart.
+  // the "Service modes covered" chip strip above the chart. The "domestic"
+  // chip surfaces whenever there's at least one US inland leg on file (port
+  // -> destination city), giving the user visibility into the post-arrival
+  // truck/intermodal/rail movement that ImportYeti's BOL feed alone can't
+  // distinguish.
   const activeModes = useMemo(() => {
-    const modes: Array<"ocean" | "air" | "truck" | "rail"> = [];
+    const modes: Array<"ocean" | "air" | "truck" | "rail" | "domestic"> = [];
     if (containerProfile.fcl > 0 || containerProfile.lcl > 0) modes.push("ocean");
     if (hasMxAir) modes.push("air");
     const truckLike = (mxRows || []).some((r) =>
@@ -518,8 +524,9 @@ function CadenceAndModalMix({
     );
     if (truckLike && !railOnly) modes.push("truck");
     if (railOnly) modes.push("rail");
+    if (hasDomestic) modes.push("domestic");
     return modes;
-  }, [containerProfile.fcl, containerProfile.lcl, hasMxAir, mxRows]);
+  }, [containerProfile.fcl, containerProfile.lcl, hasMxAir, mxRows, hasDomestic]);
 
   // Stacked area data: FCL/LCL come from cadence; Air is the per-row
   // average from MX air rows, spread across the cadence buckets. We don't

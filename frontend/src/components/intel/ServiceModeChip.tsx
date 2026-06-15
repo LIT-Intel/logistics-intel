@@ -14,6 +14,11 @@
 //   rail    → neutral-slate (boxcar = neutral metal; balances against truck)
 //   drayage → success-emerald (port-area movement; signals "executed leg")
 //   broker  → info-blue outline (paperwork/documentation, lighter weight)
+//   domestic → neutral-slate filled (US inland leg — port-to-destination via
+//             truck/intermodal/rail. Neither hot nor critical; a steady
+//             "visibility on the last 1,000 miles" signal. Picks slate so it
+//             reads alongside rail without competing with the cross-border
+//             amber of TransborderTruck.)
 //
 // Press-spring micro-interaction (transform scale 0.97 on :active) gives
 // the chip a tactile feel without animating layout. 100ms color transition
@@ -79,6 +84,12 @@ const PALETTE: Record<ServiceMode, PaletteEntry> = {
     outline:
       "bg-white text-blue-700 border-blue-300 hover:bg-blue-50/60",
   },
+  domestic: {
+    brand:
+      "bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200/80",
+    outline:
+      "bg-white text-slate-800 border-slate-400 hover:bg-slate-50",
+  },
 };
 
 const SIZE_CLASS: Record<ServiceModeChipSize, string> = {
@@ -98,6 +109,7 @@ const LABELS: Record<ServiceMode, string> = {
   rail: "Rail",
   drayage: "Drayage",
   broker: "Broker",
+  domestic: "Domestic",
 };
 
 export function ServiceModeChip({

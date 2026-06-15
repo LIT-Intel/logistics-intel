@@ -61,6 +61,15 @@ export interface MxImportRow {
   origin_country: string | null;
 }
 
+export interface DomesticInlandLegRow {
+  entry_port: string | null;
+  destination_city: string | null;
+  destination_state: string | null;
+  shipment_count: number;
+  approx_inland_miles: number | null;
+  est_mode: "Truck" | "Intermodal" | "Rail" | string;
+}
+
 export interface UsExportRow {
   bol_number: string;
   shipment_date: string | null;
@@ -217,6 +226,45 @@ export function useMxImportActivity(
       } catch (err) {
         if (isMissingSourceError(err)) {
           warnOnce("lit_mx_import_declarations", err);
+          return [];
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+    },
+  });
+}
+
+/**
+ * Per-(entry-port -> destination-city) inland-leg rollup for a US import
+ * consignee. Returns the top inland legs with average inland miles (joined
+ * from lit_drayage_estimates) and a heuristic est_mode (Truck < 500mi <
+ * Intermodal < 1500mi < Rail). Powers the Premium Intel "Domestic
+ * transportation" card. Graceful degrade when the RPC isn't deployed.
+ */
+export function useDomesticInlandLeg(
+  companyName: string | null | undefined,
+): UseQueryResult<DomesticInlandLegRow[], Error> {
+  return useQuery<DomesticInlandLegRow[], Error>({
+    queryKey: ["intel", "domestic-inland-leg", companyName ?? ""],
+    enabled: Boolean(companyName && companyName.trim()),
+    staleTime: FIVE_MIN,
+    gcTime: THIRTY_MIN,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.rpc("lit_domestic_inland_leg", {
+          p_company_name: companyName,
+        });
+        if (error) {
+          if (isMissingSourceError(error)) {
+            warnOnce("lit_domestic_inland_leg", error);
+            return [];
+          }
+          throw error;
+        }
+        return Array.isArray(data) ? (data as DomesticInlandLegRow[]) : [];
+      } catch (err) {
+        if (isMissingSourceError(err)) {
+          warnOnce("lit_domestic_inland_leg", err);
           return [];
         }
         throw err instanceof Error ? err : new Error(String(err));

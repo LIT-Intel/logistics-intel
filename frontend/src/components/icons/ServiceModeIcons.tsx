@@ -25,6 +25,10 @@
 //   rail    → TransborderRailIcon  → neutral-slate (boxcar silhouette)
 //   drayage → DrayageIcon          → success-emerald (short-haul + chassis)
 //   broker  → CustomsBrokerIcon    → info-blue outline (clipboard + stamp)
+//   domestic → DomesticTransportIcon → neutral-slate (US inland leg: intermodal
+//             boxcar with a small port gantry crane loading it — communicates
+//             the port-to-inland handoff, distinct from Drayage's tractor +
+//             chassis and TransborderTruck's cross-border line-haul)
 
 import React from "react";
 
@@ -160,6 +164,35 @@ export function CustomsBrokerIcon({ size = 16, className, title }: IconProps) {
   );
 }
 
+/** Domestic Transportation — US inland leg. Intermodal boxcar being loaded by
+ *  a small port gantry crane. Reads as "the leg that begins at the port and
+ *  travels inland across the US" — visually distinct from Drayage (short-haul
+ *  tractor + chassis) and TransborderTruck (cross-border line-haul). */
+export function DomesticTransportIcon({ size = 16, className, title }: IconProps) {
+  return (
+    <svg {...svgProps(size, className, title)}>
+      {/* gantry crane legs + beam (left half of the icon) */}
+      <path d="M2.5 5 V13.5" />
+      <path d="M6.5 5 V8" />
+      <path d="M2 5 H7" />
+      {/* lifting cable + small spreader */}
+      <path d="M4.5 5 V7" strokeOpacity="0.7" />
+      <path d="M3.6 7 H5.4" />
+      {/* intermodal boxcar (right of the crane) */}
+      <rect x="8" y="9" width="13" height="6.5" rx="0.5" />
+      {/* corrugation / panel hint */}
+      <path d="M11 9.4 V15 M14 9.4 V15 M17 9.4 V15" strokeOpacity="0.45" />
+      {/* rail trucks (bogies) */}
+      <circle cx="10.5" cy="17" r="1.1" />
+      <circle cx="13" cy="17" r="1.1" />
+      <circle cx="16.5" cy="17" r="1.1" />
+      <circle cx="19" cy="17" r="1.1" />
+      {/* rail line under the boxcar */}
+      <path d="M8 18.5 H21.5" strokeOpacity="0.55" />
+    </svg>
+  );
+}
+
 /** Internal lookup — used by ServiceModeChip so the surface API stays string-based. */
 export const SERVICE_MODE_ICON_MAP = {
   ocean: OceanIcon,
@@ -168,6 +201,7 @@ export const SERVICE_MODE_ICON_MAP = {
   rail: TransborderRailIcon,
   drayage: DrayageIcon,
   broker: CustomsBrokerIcon,
+  domestic: DomesticTransportIcon,
 } as const;
 
 export type ServiceMode = keyof typeof SERVICE_MODE_ICON_MAP;
