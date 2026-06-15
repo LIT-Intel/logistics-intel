@@ -1,5 +1,15 @@
 {
   "_note": "verify_jwt=false fns. Auto-deploy workflow uses this list to pass --no-verify-jwt. Default for slugs NOT in this list: verify_jwt=true. Add a slug here only when its function implements its own auth (HMAC signature, public link with signed token, pg_cron X-Internal-Cron header, etc.). Source of truth for what's deployed — keep in sync.",
+  "_excluded_note": "Slugs the auto-deploy workflow SKIPS entirely. Use for: legacy fns scheduled for deletion (source still in git but broken/stale), _shared-* library wrappers (not real fns), or fns whose source is being reworked. Remove from this list when ready to redeploy.",
+  "excluded": [
+    "_shared-agentcash",
+    "_shared-lusha",
+    "firmographics-backfill",
+    "firmographics-backfill-once",
+    "invite-user",
+    "sentry-probe",
+    "send-test-email"
+  ],
   "no_verify_jwt": [
     "admin-api",
     "admin-notify",

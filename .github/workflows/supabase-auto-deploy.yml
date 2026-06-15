@@ -60,9 +60,24 @@ jobs:
         run: |
           set -euo pipefail
           force_all='${{ github.event.inputs.force_all }}'
+          # Always read the excluded list from the manifest so the same slugs
+          # are skipped whether we're doing force_all or diff-based deploy.
+          manifest='supabase/functions/.verify-jwt-manifest.json'
+          if [ -f "$manifest" ]; then
+            excluded=$(python3 -c "import json; m=json.load(open('$manifest')); print('|'.join(m.get('excluded',[])))")
+          else
+            excluded=''
+          fi
+          # Pattern matches whole-line slug equality.
+          exclude_pat="^(${excluded:-IMPOSSIBLE_NEVER_MATCH})$"
+
           if [ "$force_all" = "true" ]; then
-            echo "force_all=true — deploying ALL edge fns"
-            slugs=$(ls -1 supabase/functions/ | grep -v '^_' | grep -v '\.json$' | sort -u)
+            echo "force_all=true — deploying ALL edge fns (minus excluded list)"
+            slugs=$(ls -1 supabase/functions/ \
+              | grep -v '^_shared' \
+              | grep -v '\.json$' \
+              | grep -Ev "$exclude_pat" \
+              | sort -u)
           else
             # Diff against the previous commit on main.
             slugs=$(git diff --name-only HEAD^..HEAD \
@@ -70,8 +85,9 @@ jobs:
               | sed 's|supabase/functions/||' \
               | awk -F/ '{ print $1 }' \
               | sort -u \
-              | grep -v '^_shared$' \
+              | grep -v '^_shared' \
               | grep -v '\.json$' \
+              | grep -Ev "$exclude_pat" \
               || true)
           fi
           if [ -z "$slugs" ]; then
