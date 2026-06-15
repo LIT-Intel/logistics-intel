@@ -7,6 +7,7 @@
     "firmographics-backfill",
     "firmographics-backfill-once",
     "invite-user",
+    "iy-powerquery-probe",
     "sentry-probe",
     "send-test-email"
   ],
