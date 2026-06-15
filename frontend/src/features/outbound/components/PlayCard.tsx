@@ -37,7 +37,7 @@ export function PlayCard({
     >
       {play.badge ? (
         <span
-          className="absolute -top-2 right-2.5 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.04em] text-white shadow"
+          className="absolute -top-2 right-2.5 rounded-full px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em] text-white shadow"
           style={{
             fontFamily: fontDisplay,
             background: `linear-gradient(90deg, ${play.accent}, ${play.accent}dd)`,
@@ -60,13 +60,13 @@ export function PlayCard({
         </div>
         <div className="min-w-0">
           <div
-            className="text-[12.5px] font-bold tracking-tight text-[#0F172A]"
+            className="text-[12px] font-bold tracking-tight text-[#0F172A]"
             style={{ fontFamily: fontDisplay }}
           >
             {play.name}
           </div>
           <div
-            className="truncate text-[10px] text-slate-500"
+            className="truncate text-[11px] text-slate-500"
             style={{ fontFamily: fontBody }}
           >
             {play.persona}
@@ -86,7 +86,7 @@ export function PlayCard({
           <ChannelChip key={i} kind={ch} size={18} iconSize={9} />
         ))}
         <span
-          className="ml-1 text-[9px] text-slate-400"
+          className="ml-1 text-[11px] text-slate-400"
           style={{ fontFamily: fontMono }}
         >
           {play.steps} steps
@@ -95,13 +95,13 @@ export function PlayCard({
 
       <div className="flex items-center justify-between border-t border-slate-100 pt-2">
         <span
-          className="text-[9px] uppercase tracking-[0.08em] text-slate-400"
+          className="text-[11px] uppercase tracking-[0.08em] text-slate-400"
           style={{ fontFamily: fontDisplay, fontWeight: 600 }}
         >
           Starter play
         </span>
         <span
-          className="inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-2.5 py-1 text-[10px] font-semibold text-white shadow-[0_1px_4px_rgba(59,130,246,0.3)] transition group-hover:brightness-110"
+          className="inline-flex items-center gap-1 rounded-md bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-2.5 py-1 text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(59,130,246,0.3)] transition group-hover:brightness-110"
           style={{ fontFamily: fontDisplay }}
         >
           <Zap className="h-2.5 w-2.5" />

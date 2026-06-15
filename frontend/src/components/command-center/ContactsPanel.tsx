@@ -5,6 +5,7 @@ import { hasFeature, isAdmin } from "@/lib/access";
 import ContactCard from "@/components/contacts/ContactCard";
 import ContactProfileModal from "@/components/contacts/ContactProfileModal";
 import { enrichContact } from "@/lib/enrichment/lusha";
+import EnrichmentCreditsBadge from "@/components/enrichment/EnrichmentCreditsBadge";
 import type { ContactCore } from "@/types/contacts";
 
 function qstr(params: Record<string, string | number | null | undefined>) {
@@ -224,14 +225,17 @@ export default function ContactsPanel() {
               Decision-makers and key contacts at this company
             </p>
           </div>
-          <button
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={handleExportCsv}
-            disabled={!filteredRows.length}
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
+          <div className="flex items-center gap-2">
+            <EnrichmentCreditsBadge />
+            <button
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleExportCsv}
+              disabled={!filteredRows.length}
+            >
+              <Download className="h-4 w-4" />
+              Export CSV
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2 mb-4">

@@ -17,7 +17,7 @@ export function ForecastStrip({ audienceCount }: { audienceCount: number }) {
         </div>
         <div>
           <div
-            className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400"
+            className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400"
             style={{ fontFamily: fontDisplay }}
           >
             Audience size
@@ -31,7 +31,7 @@ export function ForecastStrip({ audienceCount }: { audienceCount: number }) {
             </span>
           </div>
           <div
-            className="text-[10px] text-slate-400"
+            className="text-[11px] text-slate-400"
             style={{ fontFamily: fontBody }}
           >
             {audienceCount > 0 ? "selected recipients" : "select recipients"}

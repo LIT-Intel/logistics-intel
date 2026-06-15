@@ -4672,6 +4672,13 @@ export type ApolloContactRecord = ApolloContactPreview & {
   enriched_at?: string | null;
   email_verification_status?: string | null;
   verified_by_provider?: boolean | null;
+  /** Phase 3 — phone unlock pipeline tracking.
+   *  'pending'   = unlock requested, Apollo will POST the phone to the
+   *                apollo-phone-webhook within seconds-to-minutes
+   *  'delivered' = phone is on the row right now
+   *  'failed'    = webhook fired without a phone (no data on file) */
+  phone_unlock_status?: "pending" | "delivered" | "failed" | null;
+  phone_unlock_request_id?: string | null;
 };
 
 export async function searchApolloContacts(
@@ -4806,6 +4813,11 @@ export async function enrichApolloContacts(payload: {
   companyId?: string | null;
   companyName?: string | null;
   companyDomain?: string | null;
+  /** Phase 3 — when true, ask Apollo to unlock the contact's phone(s).
+   *  Phones cost 10 extra credits per contact and arrive ASYNC via
+   *  the apollo-phone-webhook (the immediate response carries
+   *  phone_unlock_status='pending'). */
+  unlockPhone?: boolean;
   /** Pass as much identifying data per contact as you have. The edge
    *  function refuses too-weak identifiers (first-name only, title-only)
    *  before consuming a credit. Apollo enrichment works best when given
@@ -4829,6 +4841,9 @@ export async function enrichApolloContacts(payload: {
   enriched: ApolloContactRecord[];
   error?: string;
   setupRequired?: boolean;
+  rateLimited?: boolean;
+  retryAfter?: string | null;
+  phoneUnlockRequested?: boolean;
 }> {
   // Map camelCase frontend payload to the snake_case shape the edge
   // function expects. Per-target snake_case fields stay as-is since
@@ -4844,6 +4859,10 @@ export async function enrichApolloContacts(payload: {
     company_name: payload.companyName ?? null,
     domain: payload.companyDomain ?? null,
     reveal_personal_emails: true,
+    // Phase 3 — only forward when explicitly requested. Apollo's phone
+    // pipeline is async; setting this kicks off a webhook delivery and
+    // charges 10 extra credits per contact.
+    unlock_phone: payload.unlockPhone === true,
     contacts: payload.contacts,
   };
   const { data, error } = await supabase.functions.invoke(
@@ -4866,8 +4885,10 @@ export async function enrichApolloContacts(payload: {
     return {
       ok: false,
       enriched: [],
-      error: data.error || "Apollo enrichment failed.",
+      error: data.error || data.message || "Apollo enrichment failed.",
       setupRequired: data.code === "NOT_CONFIGURED",
+      rateLimited: data.code === "USER_RATE_LIMITED",
+      retryAfter: data.retry_after ?? null,
     };
   }
   const rawList: any[] = Array.isArray(data?.enriched)
@@ -4915,9 +4936,67 @@ export async function enrichApolloContacts(payload: {
       enriched_at: p.enriched_at ?? new Date().toISOString(),
       source: "apollo" as const,
       enrichment_status: "enriched" as const,
+      phone_unlock_status: p.phone_unlock_status ?? null,
+      phone_unlock_request_id: p.phone_unlock_request_id ?? null,
     };
   });
-  return { ok: true, enriched };
+  return { ok: true, enriched, phoneUnlockRequested: data?.phone_unlock_requested === true };
+}
+
+/**
+ * Persist user-driven corrections (name / domain / website / industry /
+ * headcount) back to `lit_companies`. Enrichment Phase 2 — without this,
+ * edits in the Apollo search panel reverted on the next page load and
+ * broken records (NULL domain) could never enrich.
+ *
+ * Auth: server-side. The edge fn enforces saved-company ownership; the
+ * frontend gating is a UX hint only.
+ */
+export async function updateCompany(payload: {
+  companyId: string;
+  name?: string | null;
+  domain?: string | null;
+  website?: string | null;
+  industry?: string | null;
+  headcount?: string | number | null;
+}): Promise<{
+  ok: boolean;
+  company?: any;
+  error?: string;
+}> {
+  const requestBody: Record<string, unknown> = {
+    company_id: payload.companyId,
+  };
+  // Only include fields the caller actually set — undefined means "don't
+  // touch". Empty string means "clear" and is handled server-side.
+  if (payload.name !== undefined) requestBody.name = payload.name;
+  if (payload.domain !== undefined) requestBody.domain = payload.domain;
+  if (payload.website !== undefined) requestBody.website = payload.website;
+  if (payload.industry !== undefined) requestBody.industry = payload.industry;
+  if (payload.headcount !== undefined) requestBody.headcount = payload.headcount;
+
+  const { data, error } = await supabase.functions.invoke("update-company", {
+    body: requestBody,
+  });
+  if (error) {
+    const msg = String(error.message || "");
+    try {
+      const ctx: any = (error as any).context;
+      const cloned = ctx?.clone?.();
+      const parsed = await cloned?.json?.();
+      if (parsed && typeof parsed === "object") {
+        return {
+          ok: false,
+          error: parsed.error || parsed.message || msg,
+        };
+      }
+    } catch {}
+    return { ok: false, error: msg || "update-company failed" };
+  }
+  if (data && data.ok === false) {
+    return { ok: false, error: data.error || data.message || "Update failed" };
+  }
+  return { ok: true, company: data?.company ?? null };
 }
 
 export async function getEmailThreads(company_id: string) {

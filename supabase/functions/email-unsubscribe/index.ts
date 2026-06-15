@@ -96,19 +96,43 @@ serve(async (req) => {
     // confirmation. RFC 8058 wants 2xx on one-click POST.
   }
 
-  // 3. Mark the campaign recipient suppressed so the dispatcher skips them
-  //    on the next tick. Status='suppressed' + suppressed_reason matches
-  //    the suppression branch already enforced in send-campaign-email.
+  // 3. Mark the campaign recipient unsubscribed so the dispatcher skips them
+  //    on the next tick. Sub-project O standardizes on status='unsubscribed'
+  //    for unsubscribe-path exits (was 'suppressed'). next_send_at is nulled
+  //    so the dispatcher's WHERE next_send_at <= now() filter never matches.
+  //    suppressed_reason is kept for backwards-compat with existing reports.
   const { error: recipUpdateErr } = await supa
     .from("lit_campaign_contacts")
     .update({
-      status: "suppressed",
+      status: "unsubscribed",
       suppressed_reason: "unsubscribed",
+      next_send_at: null,
       updated_at: nowIso,
     })
     .eq("id", recipientId);
   if (recipUpdateErr) {
-    console.error("[email-unsubscribe] recipient_suppress_failed", recipUpdateErr);
+    console.error("[email-unsubscribe] recipient_unsubscribe_failed", recipUpdateErr);
+  }
+
+  // 3b. Write a unified history event so the outreach timeline + funnel
+  //     analytics see the exit. campaign_id comes from the resolved
+  //     recipient row above (already validated to match the URL param).
+  const { error: histErr } = await supa.from("lit_outreach_history").insert({
+    campaign_id: recipient.campaign_id,
+    contact_id: null,
+    channel: "email",
+    event_type: "unsubscribed",
+    status: "unsubscribed",
+    occurred_at: nowIso,
+    metadata: {
+      recipient_id: recipientId,
+      recipient_email: emailLower,
+      source: "one_click_unsubscribe",
+    },
+  });
+  if (histErr) {
+    // Non-fatal — preferences + recipient row already updated.
+    console.warn("[email-unsubscribe] history_insert_failed", histErr.message);
   }
 
   // 4. Response. POST → JSON 200 (RFC 8058). GET → HTML confirmation page.

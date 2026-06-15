@@ -10,6 +10,24 @@
 import { invokeEdge } from "./_client";
 import type { FeatureKey, UsageLimitKey } from "@/lib/planLimits";
 
+/**
+ * Enrichment credit snapshot (Phase 1).
+ *
+ * Tracks Apollo/Lusha enrichment spend in a margin-protecting credit ledger.
+ * 1 credit = 1 email unlock (~$0.05-0.20 wholesale).
+ * Phase 3 will charge 10 credits per phone unlock to match Apollo's pricing.
+ *
+ * - quota: NULL means unlimited (Enterprise).
+ * - reset_at: ISO timestamp of the next month boundary.
+ */
+export interface CreditUsageSnapshot {
+  used_this_month: number;
+  quota: number | null;
+  remaining: number | null;
+  reset_at?: string | null;
+  plan?: string;
+}
+
 export interface EntitlementsSnapshot {
   plan: string;
   plan_name?: string;
@@ -19,6 +37,11 @@ export interface EntitlementsSnapshot {
   used: Partial<Record<UsageLimitKey, number>>;
   market_benchmark_enabled?: boolean;
   is_platform_admin?: boolean;
+  /**
+   * Enrichment credit usage snapshot (Phase 1). NULL when the credit RPC isn't
+   * deployed in this env (graceful fallback).
+   */
+  credits?: CreditUsageSnapshot | null;
   /**
    * Folded from the top-level `org_id` on the get-entitlements response so
    * consumers (e.g. campaign query, save-company gating) have a single

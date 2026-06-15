@@ -16,14 +16,33 @@ function f(over: Partial<CampaignFunnel> = {}): CampaignFunnel {
 describe("CampaignKpiHero", () => {
   afterEach(() => cleanup());
 
-  it("renders 6 tile labels for a draft campaign", () => {
-    render(<CampaignKpiHero status="draft" audienceCount={120} funnel={null} sparkData={[]} />);
+  // DR Move 4: draft hero collapsed to a single truthful summary
+  // card (audience + schedule + sequence + post-send disclosure)
+  // instead of 6 fallback-estimate tiles.
+  it("renders the draft summary card with audience, schedule, sequence, and disclosure", () => {
+    render(
+      <CampaignKpiHero
+        status="draft"
+        audienceCount={120}
+        funnel={null}
+        sparkData={[]}
+        scheduledLabel="Tue Jun 12 · 11:00 AM EDT"
+        sequenceSummary="3 emails over 14 days"
+      />,
+    );
     expect(screen.getByText(/AUDIENCE/i)).toBeInTheDocument();
-    expect(screen.getByText(/SCHEDULED/i)).toBeInTheDocument();
-    expect(screen.getByText(/EST. OPEN RATE/i)).toBeInTheDocument();
-    expect(screen.getByText(/EST. CLICK RATE/i)).toBeInTheDocument();
-    expect(screen.getByText(/EST. REPLY RATE/i)).toBeInTheDocument();
-    expect(screen.getByText(/ESTIMATED REACH/i)).toBeInTheDocument();
+    expect(screen.getByText(/SCHEDULE$/i)).toBeInTheDocument();
+    expect(screen.getByText(/SEQUENCE$/i)).toBeInTheDocument();
+    expect(screen.getByText("Tue Jun 12 · 11:00 AM EDT")).toBeInTheDocument();
+    expect(screen.getByText("3 emails over 14 days")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Open \/ click \/ reply rates appear after first send\./i),
+    ).toBeInTheDocument();
+    // No fake industry-average estimate tiles
+    expect(screen.queryByText(/EST\. OPEN RATE/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/EST\. CLICK RATE/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/EST\. REPLY RATE/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ESTIMATED REACH/i)).not.toBeInTheDocument();
   });
 
   it("renders 6 real-metric labels for an active campaign with funnel data", () => {

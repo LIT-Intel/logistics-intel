@@ -34,12 +34,17 @@ export function RecipientsSkippedBadge({ campaignId }: Props) {
         <AlertTriangle size={12} />
         {totalSkipped} recipient{totalSkipped === 1 ? "" : "s"} skipped (last 7d)
       </button>
-      <RecipientsSkippedDrillIn
-        open={open}
-        onClose={() => setOpen(false)}
-        campaignId={campaignId}
-        skips={skips}
-      />
+      {/* CR P1-4: conditional mount. The drill-in eagerly subscribes
+          to recipient-level queries on mount; only pay that cost when
+          the user actually opens the slide-over. */}
+      {open ? (
+        <RecipientsSkippedDrillIn
+          open
+          onClose={() => setOpen(false)}
+          campaignId={campaignId}
+          skips={skips}
+        />
+      ) : null}
     </>
   );
 }

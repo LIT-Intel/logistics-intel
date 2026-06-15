@@ -172,7 +172,7 @@ export function CreateTemplateModal({
               style={{ fontFamily: fontBody, lineHeight: 1.55 }}
             />
             <p
-              className="mt-1.5 text-[10px] text-slate-400"
+              className="mt-1.5 text-[11px] text-slate-400"
               style={{ fontFamily: fontMono }}
             >
               {"{{first_name}}  {{company_name}}  {{top_lane}}  {{port}}  {{quarter}}  {{competitor}}  {{industry}}  {{sender_name}}"}
@@ -224,7 +224,7 @@ function Field({
   return (
     <div className="mb-2.5">
       <div
-        className="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400"
+        className="mb-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400"
         style={{ fontFamily: fontDisplay }}
       >
         {label}

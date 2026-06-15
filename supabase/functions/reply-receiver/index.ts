@@ -337,12 +337,28 @@ async function persistReply(supa: any, args: {
   // 2. Pause future steps for this recipient. We scope by (campaign_id,
   //    contact_id) — a contact may appear in multiple campaigns; only the
   //    one this reply belongs to gets paused.
+  //
+  // Sub-project O: also check effective exit rules so a per-campaign override
+  // can opt out of reply-exit (rare but supported), and ALWAYS null
+  // next_send_at on exit so the dispatcher's WHERE next_send_at <= now()
+  // filter blocks the recipient even if a future code path overwrites status.
   if (orig.campaign_id && orig.contact_id) {
-    await supa
-      .from("lit_campaign_contacts")
-      .update({ status: "replied", updated_at: now })
-      .eq("campaign_id", orig.campaign_id)
-      .eq("contact_id", orig.contact_id);
+    let shouldExit = true;
+    try {
+      const { data: rules } = await supa.rpc("lit_effective_exit_rules", { p_campaign_id: orig.campaign_id });
+      // Default to true — exit_on_reply is "always on" per Sub-project O spec
+      // and only flipped off in pathological/test cases.
+      if (rules && (rules as any).exit_on_reply === false) shouldExit = false;
+    } catch (e) {
+      console.warn("[reply-receiver] exit_rules_lookup_failed", e);
+    }
+    if (shouldExit) {
+      await supa
+        .from("lit_campaign_contacts")
+        .update({ status: "replied", next_send_at: null, updated_at: now })
+        .eq("campaign_id", orig.campaign_id)
+        .eq("contact_id", orig.contact_id);
+    }
   }
 
   // 3. Resolve contact / company for the bell notification + (future) timeline.

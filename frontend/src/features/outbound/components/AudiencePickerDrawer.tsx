@@ -377,7 +377,7 @@ export function AudiencePickerDrawer({
           <Users className="h-4 w-4 text-[#0F172A]" />
           <div>
             <div
-              className="text-[15px] font-bold text-[#0F172A]"
+              className="text-[16px] font-bold text-[#0F172A]"
               style={{ fontFamily: fontDisplay }}
             >
               Pick recipients
@@ -404,7 +404,7 @@ export function AudiencePickerDrawer({
           <TabButton active={tab === "companies"} onClick={() => setTab("companies")}>
             <Users className="h-3 w-3" />
             Saved companies
-            <span className="ml-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[9.5px] font-bold text-blue-700">
+            <span className="ml-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-bold text-blue-700">
               {selectedCount}
             </span>
           </TabButton>
@@ -412,7 +412,7 @@ export function AudiencePickerDrawer({
             <Tag className="h-3 w-3" />
             From a list
             {appliedListIds.size > 0 ? (
-              <span className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9.5px] font-bold text-emerald-700">
+              <span className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[11px] font-bold text-emerald-700">
                 {appliedListIds.size}
               </span>
             ) : null}
@@ -420,7 +420,7 @@ export function AudiencePickerDrawer({
           <TabButton active={tab === "manual"} onClick={() => setTab("manual")}>
             <Mail className="h-3 w-3" />
             Manual emails
-            <span className="ml-1 rounded-full bg-purple-100 px-1.5 py-0.5 text-[9.5px] font-bold text-purple-700">
+            <span className="ml-1 rounded-full bg-purple-100 px-1.5 py-0.5 text-[11px] font-bold text-purple-700">
               {totalManual}
             </span>
           </TabButton>
@@ -553,7 +553,7 @@ export function AudiencePickerDrawer({
                         </div>
                       </div>
                       <span
-                        className="inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
                         style={{
                           background: dim ? "#FEF3C7" : "#D1FAE5",
                           borderColor: dim ? "#FDE68A" : "#A7F3D0",
@@ -654,7 +654,7 @@ export function AudiencePickerDrawer({
                       </div>
                       {(m.first_name || m.last_name || m.company_name) && (
                         <div
-                          className="truncate text-[10.5px] text-slate-500"
+                          className="truncate text-[11px] text-slate-500"
                           style={{ fontFamily: fontBody }}
                         >
                           {[
@@ -697,7 +697,7 @@ export function AudiencePickerDrawer({
                 {totalEmailable} email{totalEmailable === 1 ? "" : "s"} will be queued
               </span>
               <span
-                className="text-[10px] text-slate-500"
+                className="text-[11px] text-slate-500"
                 style={{ fontFamily: fontBody }}
               >
                 {enrichedSelectedCount} from {selectedCount} companies · {totalManual} manual
@@ -782,7 +782,7 @@ function ListsTab({
           <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-6 text-center">
             <AlertCircle className="mx-auto mb-1.5 h-4 w-4 text-amber-600" />
             <div
-              className="text-[11.5px] text-amber-800"
+              className="text-[12px] text-amber-800"
               style={{ fontFamily: fontBody }}
             >
               {error}
@@ -852,7 +852,7 @@ function ListsTab({
                       {l.description || (l.is_owner ? "Your list" : `Shared by ${l.owner?.name || "team"}`)}
                     </div>
                     <div
-                      className="mt-1 flex items-center gap-2 text-[10.5px] text-slate-500"
+                      className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"
                       style={{ fontFamily: fontBody }}
                     >
                       <span className="inline-flex items-center gap-1">
@@ -860,7 +860,7 @@ function ListsTab({
                         {l.company_count} compan{l.company_count === 1 ? "y" : "ies"}
                       </span>
                       {!l.is_owner ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-semibold text-slate-600">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
                           Shared
                         </span>
                       ) : null}
@@ -884,7 +884,7 @@ function ListsTab({
                   </button>
                 </div>
                 <label
-                  className="mt-2 flex cursor-pointer items-center gap-1.5 text-[10.5px] text-slate-600"
+                  className="mt-2 flex cursor-pointer items-center gap-1.5 text-[11px] text-slate-600"
                   style={{ fontFamily: fontBody }}
                 >
                   <input
@@ -920,7 +920,7 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className="-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-[11.5px] font-semibold transition"
+      className="-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-[12px] font-semibold transition"
       style={{
         borderColor: active ? "#3B82F6" : "transparent",
         color: active ? "#0F172A" : "#64748b",

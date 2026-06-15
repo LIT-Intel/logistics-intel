@@ -1,19 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
-  FlaskConical,
-  List as ListIcon,
-  Play,
   Rocket,
   Save,
 } from "lucide-react";
 import {
-  createCampaignDraft,
-  attachCompaniesToCampaign,
-  upsertCampaignStep,
   launchCampaign,
   sendTestEmail,
   listEmailAccounts,
@@ -33,6 +27,7 @@ import { LaunchButton } from "@/features/outbound/components/LaunchButton";
 import { fetchCampaignMetricsBatch } from "@/features/outbound/api/campaignMetrics";
 import { ScheduleStrip } from "@/features/outbound/components/ScheduleStrip";
 import { LaunchSchedulePicker } from "@/features/outbound/components/LaunchSchedulePicker";
+import ExitConditionsPanel from "@/features/outbound/components/ExitConditionsPanel";
 import { PersonaPanel } from "@/features/outbound/components/PersonaPanel";
 import { TimelineCanvas } from "@/features/outbound/components/TimelineCanvas";
 import { StepInspector } from "@/features/outbound/components/StepInspector";
@@ -42,6 +37,8 @@ import { PreviewModal } from "@/features/outbound/components/PreviewModal";
 import { CreateTemplateModal } from "@/features/outbound/components/CreateTemplateModal";
 import { CreatePersonaModal } from "@/features/outbound/components/CreatePersonaModal";
 import { SenderGuidelinesNote } from "@/features/outbound/components/SenderGuidelinesNote";
+import { Chip } from "@/components/ui/Chip";
+import { ToolbarButton } from "@/components/ui/ToolbarButton";
 import { findPlay } from "@/features/outbound/data/plays";
 import {
   applyLitMarketingSequenceToBuilder,
@@ -50,9 +47,7 @@ import {
 import { INDUSTRY_OPTIONS, TONE_OPTIONS } from "@/features/outbound/data/templates";
 import { fontDisplay, fontBody } from "@/features/outbound/tokens";
 import {
-  updateCampaignBasics,
-  setCampaignCompanies,
-  deleteCampaignStepsFrom,
+  saveCampaignDraft,
 } from "@/features/outbound/api/campaignActions";
 import { listPulseLists, getListCompanies } from "@/features/pulse/pulseListsApi";
 
@@ -70,10 +65,15 @@ function labelFor(acc) {
 // /app/campaigns/new — create flow
 // /app/campaigns/new?edit=:id — edit flow (loads existing campaign)
 //
-// Save flow:
-//   CREATE: createCampaignDraft → attachCompaniesToCampaign → upsertCampaignStep×N
-//   EDIT:   updateCampaignBasics → setCampaignCompanies (diff) →
-//           upsertCampaignStep×N → deleteCampaignStepsFrom(N+1) (cleanup)
+// Save flow (CR P0-3, post-2026-06):
+//   CREATE & EDIT: saveCampaignDraft(...) -> save-campaign-draft edge fn
+//                  -> save_campaign_draft PL/pgSQL (single transaction)
+//
+// The legacy 4-call client sequence (createCampaignDraft + companies + N step
+// upserts + cleanup deletes) was non-transactional: a mid-sequence network
+// blip would leave the campaign with a row in lit_campaigns and only the
+// first M of N steps. The new atomic save means any failure rolls back ALL
+// writes, so the user never ends up with a corrupt half-saved draft.
 //
 // All paths use existing channel + step_type columns on lit_campaign_steps.
 // LinkedIn / call / wait persist as planned manual tasks. Test send and
@@ -88,7 +88,13 @@ function uid() {
 
 function emptyStep(kind = "email") {
   const base = {
+    // React-key identity. Always a fresh uid — never reused, never the
+    // DB id. See BuilderStep type doc in features/outbound/types.ts for
+    // the localId vs dbId invariant.
     localId: uid(),
+    // DB row identity. `null` until the step is first persisted (set
+    // by dbStepToBuilder when hydrating from lit_campaign_steps).
+    dbId: null,
     kind,
     subject: "",
     body: "",
@@ -132,7 +138,13 @@ function dbStepToBuilder(row) {
   else kind = "email";
 
   const base = {
-    localId: row.id || uid(),
+    // React-key identity. Always a fresh uid so re-hydrating after a
+    // delete-then-re-add can never collide. DO NOT reuse row.id here —
+    // localId and dbId are separate by invariant (see BuilderStep type).
+    localId: uid(),
+    // DB row identity. `row.id` is the persisted lit_campaign_steps PK.
+    // Null only if the row somehow came back without an id (defensive).
+    dbId: row.id ?? null,
     kind,
     subject: "",
     body: "",
@@ -162,6 +174,15 @@ function dbStepToBuilder(row) {
   }
   // Default to true so legacy rows get signatures appended automatically.
   const includeSig = row.include_signature !== false;
+  // J.2 — surface the new step-level scheduling hints. DB stores time
+  // as Postgres `time` ("HH:MM:SS"); the <input type="time"> input the
+  // inspector uses expects "HH:MM", but it accepts the seconds form too.
+  // Normalize to "HH:MM" for cleaner round-trip equality.
+  const rawTod = typeof row.time_of_day_local === "string" ? row.time_of_day_local : null;
+  const timeOfDayLocal = rawTod
+    ? (rawTod.length >= 5 ? rawTod.slice(0, 5) : rawTod)
+    : null;
+  const weekdaysOnly = row.weekdays_only === true;
   if (kind === "email") {
     const out = {
       ...base,
@@ -171,6 +192,8 @@ function dbStepToBuilder(row) {
       delayHours: wholeHours,
       delayMinutes: dbDelayMinutes,
       includeSignature: includeSig,
+      timeOfDayLocal,
+      weekdaysOnly,
     };
     if (row.subject_b !== undefined && row.subject_b !== null) {
       out.subject_b = row.subject_b;
@@ -185,7 +208,37 @@ function dbStepToBuilder(row) {
     delayHours: wholeHours,
     delayMinutes: dbDelayMinutes,
     includeSignature: includeSig,
+    timeOfDayLocal,
+    weekdaysOnly,
   };
+}
+
+// Shared regex used by manual-recipient validation at both Save (P1-3) and
+// Launch. Loose check intentionally — server-side validation in
+// queue-campaign-recipients is the actual security boundary; this catches
+// obvious typos before persisting so users see immediate feedback.
+const MANUAL_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Partition manual recipients into valid + rejected. Valid entries get a
+// normalized email (trim + lowercase). Used by handleSave to block persist
+// on invalid input AND by confirmLaunch to block queueing.
+function validateManualRecipients(rows) {
+  const valid = [];
+  const rejected = [];
+  for (const m of rows ?? []) {
+    const email = String(m?.email || "").trim().toLowerCase();
+    if (!email || !MANUAL_EMAIL_RE.test(email)) {
+      rejected.push(m);
+      continue;
+    }
+    valid.push({
+      email,
+      first_name: typeof m?.first_name === "string" ? m.first_name : null,
+      last_name: typeof m?.last_name === "string" ? m.last_name : null,
+      company_name: typeof m?.company_name === "string" ? m.company_name : null,
+    });
+  }
+  return { valid, rejected };
 }
 
 function isStepFilled(s) {
@@ -207,6 +260,17 @@ function channelFor(kind) {
 function persistPayloadFor(step, order, campaignId) {
   const clampHours = (h) => Math.max(0, Math.min(23, Math.round(Number(h) || 0)));
   const clampMinutes = (m) => Math.max(0, Math.min(59, Math.round(Number(m) || 0)));
+  // J.2 — normalize "HH:MM" from the <input type="time"> into the form
+  // the save-campaign-draft RPC expects. The RPC NULLIFs empty strings,
+  // so "" → NULL → column default. Anything else gets cast to `time`.
+  const normalizeTimeOfDay = (t) => {
+    if (typeof t !== "string") return null;
+    const trimmed = t.trim();
+    if (!trimmed) return null;
+    // Accept "HH:MM" or "HH:MM:SS"; reject obviously invalid input.
+    if (!/^\d{1,2}:\d{1,2}(:\d{1,2})?$/.test(trimmed)) return null;
+    return trimmed;
+  };
   if (step.kind === "wait") {
     return {
       campaign_id: campaignId,
@@ -232,6 +296,8 @@ function persistPayloadFor(step, order, campaignId) {
       delay_hours: clampHours(step.delayHours),
       delay_minutes: clampMinutes(step.delayMinutes),
       include_signature: step.includeSignature !== false,
+      time_of_day_local: normalizeTimeOfDay(step.timeOfDayLocal),
+      weekdays_only: step.weekdaysOnly === true,
     };
     if (step.subject_b !== undefined) {
       payload.subject_b = step.subject_b?.trim() || null;
@@ -249,6 +315,8 @@ function persistPayloadFor(step, order, campaignId) {
     delay_hours: clampHours(step.delayHours),
     delay_minutes: clampMinutes(step.delayMinutes),
     include_signature: step.includeSignature !== false,
+    time_of_day_local: normalizeTimeOfDay(step.timeOfDayLocal),
+    weekdays_only: step.weekdaysOnly === true,
   };
 }
 
@@ -286,8 +354,18 @@ export default function CampaignBuilder() {
     listEmailAccounts()
       .then((rows) => {
         if (cancelled) return;
-        const connected = (rows || []).filter((r) => r.status === "connected");
-        setSenderAccounts(connected);
+        // CR P1-9: include accounts that are NOT connected so the user
+        // sees them as disabled options with a "Reconnect" CTA. Previously
+        // a filter of `status === "connected"` hid auth_expired /
+        // needs_reauth / disconnected rows entirely — the dropdown
+        // rendered as "no senders" and the user had no in-page hint
+        // about why their previously-working mailbox wasn't an option.
+        // We keep `connected` first in the list so the default-pick UX
+        // is unchanged for healthy accounts.
+        const all = rows || [];
+        const connected = all.filter((r) => r.status === "connected");
+        const broken = all.filter((r) => r.status !== "connected");
+        setSenderAccounts([...connected, ...broken]);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -336,6 +414,12 @@ export default function CampaignBuilder() {
   const [industry, setIndustry] = useState("any");
   const [tone, setTone] = useState("consultative");
   const [hydratedFromEdit, setHydratedFromEdit] = useState(false);
+  // CR P0-6: id-based hydration guard. The boolean `hydratedFromEdit` is kept
+  // because it gates UI (canSave, saveGuidance, inputs disabled). But for the
+  // hydration effect itself we use a ref keyed on campaign id — this prevents
+  // overwriting in-progress edits if `details` ever refetches (new object
+  // identity) while still allowing hydration to run once per campaign id.
+  const loadedCampaignId = useRef(null);
   // Sub-project J: persisted campaign launch time + IANA TZ.
   const [scheduledStartAt, setScheduledStartAt] = useState(null);
   const [sendTimezone, setSendTimezone] = useState(
@@ -354,8 +438,15 @@ export default function CampaignBuilder() {
   const [createTemplateOpen, setCreateTemplateOpen] = useState(false);
   const [createPersonaOpen, setCreatePersonaOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  // CR P1-5: activity timeline fetch is gated on drawer open. The drawer
+  // starts closed and most users save → leave without opening it, so the
+  // RPC-and-200-event payload only matters once they click the Activity
+  // button. The button label's event count is a known trade-off: it
+  // appears as a generic "Activity" until the drawer has been opened once.
+  // Adding a cheap server-side count would require a separate RPC; we
+  // defer that until product asks for it.
   const { data: activityEvents, isLoading: activityLoading, error: activityError } =
-    useCampaignActivityTimeline(editId);
+    useCampaignActivityTimeline(editId, { enabled: activityOpen });
   const activityCount = activityEvents?.length ?? 0;
 
   const [saving, setSaving] = useState(false);
@@ -381,6 +472,46 @@ export default function CampaignBuilder() {
       .then((m) => setCampaignFunnel(m.get(editId) ?? null))
       .catch(() => setCampaignFunnel(null));
   }, [editId]);
+
+  // DR Move 4: human-readable schedule + sequence labels for the draft
+  // KPI hero. "Tue Jun 12 · 11:00 AM EDT" reads more like a real
+  // configuration summary than the raw ISO timestamp. Sequence span
+  // = max(delayDays) gives "3 emails over 14 days" — uses the last
+  // step's delay because steps store cumulative delay from launch.
+  const heroScheduledLabel = useMemo(() => {
+    if (!scheduledStartAt) return undefined;
+    const d = new Date(scheduledStartAt);
+    if (Number.isNaN(d.getTime())) return undefined;
+    try {
+      const dateStr = d.toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        timeZone: sendTimezone || undefined,
+      });
+      const timeStr = d.toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+        timeZone: sendTimezone || undefined,
+      });
+      return `${dateStr} · ${timeStr}`;
+    } catch {
+      return d.toISOString();
+    }
+  }, [scheduledStartAt, sendTimezone]);
+
+  const heroSequenceSummary = useMemo(() => {
+    const count = steps.length;
+    if (count === 0) return "No steps yet";
+    const maxDelay = steps.reduce((acc, s) => {
+      const d = Number(s?.delayDays);
+      return Number.isFinite(d) && d > acc ? d : acc;
+    }, 0);
+    const stepLabel = `${count} email${count === 1 ? "" : "s"}`;
+    if (count <= 1 || maxDelay <= 0) return stepLabel;
+    return `${stepLabel} over ${maxDelay} day${maxDelay === 1 ? "" : "s"}`;
+  }, [steps]);
 
   // Rehydrate hasTestSendOccurred from DB on mount. Without this the
   // per-session local state resets on every page reload and the
@@ -438,8 +569,12 @@ export default function CampaignBuilder() {
   }, [editId]);
 
   // When edit-mode details land, hydrate state.
+  // Guard is keyed on campaign id (ref), not the `details` object identity,
+  // so a refetch that produces a new object reference will NOT re-hydrate and
+  // clobber the user's in-progress edits. Dep array uses the stable id string.
   useEffect(() => {
-    if (!isEditMode || !details || hydratedFromEdit) return;
+    if (!isEditMode || !details) return;
+    if (loadedCampaignId.current === details.id) return;
     setName(details.name);
     const builderSteps =
       details.steps.length > 0
@@ -488,8 +623,14 @@ export default function CampaignBuilder() {
     setManualEmails(persistedManual);
     if (typeof details.metrics?.industry === "string") setIndustry(details.metrics.industry);
     if (typeof details.metrics?.tone === "string") setTone(details.metrics.tone);
+    loadedCampaignId.current = details.id;
     setHydratedFromEdit(true);
-  }, [isEditMode, details, hydratedFromEdit]);
+    // CR P0-6: intentionally depend only on `details?.id` (stable string), NOT
+    // the whole `details` object. Depending on the object would re-run hydration
+    // whenever `useCampaign` refetches and clobbers any in-progress user edits.
+    // The id-keyed ref above ensures hydration runs exactly once per campaign.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditMode, details?.id]);
 
   // Create-mode hydration from ?audience_list=<id>. Runs once. Pulls
   // the list's companies, pre-fills the selectedIds, and remembers the
@@ -655,8 +796,12 @@ export default function CampaignBuilder() {
   }, []);
 
   // ---- Save flow (create + edit) ----
+  // Returns true on success, false on failure (or when not eligible to save).
+  // Callers that need to react to a failed save (e.g. auto-save toast on
+  // drawer close, CR P1-2) should branch on the returned boolean. Errors are
+  // also surfaced via setError() for the inline banner.
   const handleSave = useCallback(async () => {
-    if (!canSave) return;
+    if (!canSave) return false;
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -699,11 +844,47 @@ export default function CampaignBuilder() {
       // so reopening the campaign restores the same template shortlist.
       if (industry) metricsExtras.industry = industry;
       if (tone) metricsExtras.tone = tone;
+      // CR P1-3: validate manual recipient emails at SAVE (not only at
+      // Launch). Previously the user could persist freeform garbage into
+      // metrics.manual_recipients, then re-open the draft and re-launch
+      // it without ever seeing a validation error in the builder UI.
+      // Block save when manual emails are present but invalid; show the
+      // inline error so the user can fix them. Server-side validation in
+      // queue-campaign-recipients still runs at Launch as a backstop.
+      const { valid: validManualSave, rejected: rejectedManualSave } =
+        validateManualRecipients(manualEmails);
+      if (rejectedManualSave.length > 0) {
+        const examples = rejectedManualSave
+          .slice(0, 3)
+          .map((m) => String(m?.email || "(empty)").slice(0, 60))
+          .join(", ");
+        const extra =
+          rejectedManualSave.length > 3
+            ? ` (+${rejectedManualSave.length - 3} more)`
+            : "";
+        setError(
+          `Fix manual recipients before saving — ${rejectedManualSave.length} invalid email${rejectedManualSave.length === 1 ? "" : "s"}: ${examples}${extra}.`,
+        );
+        setSaving(false);
+        return false;
+      }
       // Persist manual recipients on every save so reopening the draft
       // shows what the user typed in. The queue function reads this on
       // Launch in addition to whatever's passed in the request body.
-      if (manualEmails.length > 0) {
-        metricsExtras.manual_recipients = manualEmails;
+      //
+      // TODO(CR P1-10, post-launch): manual_recipients is currently
+      // stored as freeform JSONB on lit_campaigns.metrics with no
+      // schema enforcement. The right home is a dedicated
+      // lit_campaign_manual_recipients table with FK + UNIQUE
+      // (campaign_id, lower(email)) so:
+      //   - duplicate emails can't slip into the same campaign
+      //   - server-side queries can JOIN cleanly instead of jsonb_array_elements
+      //   - per-recipient state (suppressed, bounced, replied) gets a column
+      //     instead of being inferred from event tables
+      // Deferred from CR P1 batch because it's a real migration with
+      // backfill + queue-campaign-recipients changes.
+      if (validManualSave.length > 0) {
+        metricsExtras.manual_recipients = validManualSave;
       } else if (isEditMode && details?.metrics?.manual_recipients) {
         // Explicitly clear if the user removed them all in this edit session.
         metricsExtras.manual_recipients = [];
@@ -720,49 +901,41 @@ export default function CampaignBuilder() {
         ? { ...(details?.metrics ?? {}), ...metricsExtras }
         : metricsExtras;
 
-      let campaignId;
-      if (isEditMode && details) {
-        await updateCampaignBasics(details.id, {
-          name: trimmedName,
-          channel: baseChannel,
-          metrics: mergedMetrics,
-          scheduled_start_at: scheduledStartAt,
-          send_timezone: sendTimezone,
-        });
-        campaignId = details.id;
-      } else {
-        const created = await createCampaignDraft({
-          name: trimmedName,
-          channel: baseChannel,
-          description: null,
-          metrics: mergedMetrics,
-          scheduled_start_at: scheduledStartAt,
-          send_timezone: sendTimezone,
-        });
-        campaignId = created.id;
-      }
-
-      // Companies — full set diff in edit mode, additive in create mode.
-      const companyIds = Array.from(selectedIds);
-      if (isEditMode) {
-        await setCampaignCompanies(campaignId, companyIds);
-      } else if (companyIds.length > 0) {
-        await attachCompaniesToCampaign(campaignId, companyIds);
-      }
-
-      // Steps — upsert by step_order; in edit mode also delete any leftover
-      // steps that the user removed from the sequence.
+      // CR P0-3: single atomic save via the save-campaign-draft edge
+      // function. The previous 4-step client sequence (createDraft +
+      // attach/set companies + N upserts + cleanup deletes) could leave
+      // a campaign in a partial state on any mid-sequence failure — the
+      // URL would flip to ?edit=:id with steps 1-2 saved and step 3
+      // missing, and the user would think they had saved a draft they
+      // hadn't. The new flow runs the whole thing inside a Postgres
+      // transaction server-side; on failure the server returns a clean
+      // error and nothing is written.
       const persistable = steps.filter(
         (s) => s.kind === "wait" || isStepFilled(s),
       );
-      let order = 1;
-      for (const s of persistable) {
-        await upsertCampaignStep(persistPayloadFor(s, order, campaignId));
-        order += 1;
-      }
-      if (isEditMode) {
-        await deleteCampaignStepsFrom(campaignId, order);
-      }
+      const stepsPayload = persistable.map((s, i) => {
+        // Strip the campaign_id field from persistPayloadFor — the edge
+        // function fills it server-side from the resolved campaign id.
+        const { campaign_id: _ignore, ...rest } = persistPayloadFor(
+          s,
+          i + 1,
+          null,
+        );
+        return rest;
+      });
+
+      const saveResult = await saveCampaignDraft({
+        campaign_id: isEditMode && details ? details.id : null,
+        name: trimmedName,
+        channel: baseChannel,
+        metrics: mergedMetrics,
+        scheduled_start_at: scheduledStartAt,
+        send_timezone: sendTimezone,
+        company_ids: Array.from(selectedIds),
+        steps: stepsPayload,
+        replace_companies: isEditMode,
+      });
+      const campaignId = saveResult.campaign_id;
 
       setSuccess(
         isEditMode
@@ -776,9 +949,11 @@ export default function CampaignBuilder() {
         navigate(`/app/campaigns/new?edit=${campaignId}`, { replace: true });
       }
       window.setTimeout(() => setSuccess(null), 1800);
+      return true;
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to save campaign.";
       setError(message);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -880,10 +1055,42 @@ export default function CampaignBuilder() {
   // saved at least once (editId set). For new campaigns we surface a
   // sticky banner instead, since auto-create on every change would
   // pollute the campaigns list with empty drafts.
+  //
+  // CR P1-2: previously the auto-save fired in a microtask and any
+  // rejection was silently swallowed. The user closed the drawer
+  // thinking their audience changes were persisted when in fact the
+  // request had failed. handleSave now returns a boolean — we surface
+  // an error toast on false so the user knows their audience edits
+  // didn't persist and can retry (or hit Save manually).
   const handleAudiencePickerClose = useCallback(() => {
     setAudienceOpen(false);
     if (canSave && editId) {
-      Promise.resolve().then(() => handleSave());
+      Promise.resolve()
+        .then(async () => {
+          const ok = await handleSave();
+          if (!ok) {
+            setToast({
+              message:
+                "Auto-save failed — your audience changes aren't saved. Click Save to retry.",
+              tone: "error",
+            });
+            window.setTimeout(() => setToast(null), 4000);
+          }
+        })
+        .catch((err) => {
+          // Defensive — handleSave shouldn't throw, but if it ever does,
+          // we still want to tell the user their audience edits are unsaved.
+          const message =
+            err instanceof Error
+              ? err.message
+              : "Auto-save failed — your audience changes are unsaved.";
+          console.warn(
+            "[CampaignBuilder] auto-save after audience close threw:",
+            err,
+          );
+          setToast({ message: `Auto-save failed — ${message}`, tone: "error" });
+          window.setTimeout(() => setToast(null), 4000);
+        });
     }
   }, [canSave, editId, handleSave]);
 
@@ -901,26 +1108,13 @@ export default function CampaignBuilder() {
     setError(null);
     setSuccess(null);
     try {
-      // Validate manual recipients before queueing. Without this, malformed
-      // entries (no `email` field, junk text in the email field) used to
-      // hit the queue-campaign-recipients edge fn which silently skipped
-      // them — the user got "0 queued" with no idea why.
-      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      const validManual = [];
-      const rejectedManual = [];
-      for (const m of manualEmails) {
-        const email = String(m?.email || "").trim().toLowerCase();
-        if (!email || !EMAIL_RE.test(email)) {
-          rejectedManual.push(m);
-          continue;
-        }
-        validManual.push({
-          email,
-          first_name: typeof m?.first_name === "string" ? m.first_name : null,
-          last_name: typeof m?.last_name === "string" ? m.last_name : null,
-          company_name: typeof m?.company_name === "string" ? m.company_name : null,
-        });
-      }
+      // CR P1-3: shared validator with handleSave. Save now blocks on
+      // invalid emails, so by the time the user can launch the manual
+      // list should already be clean. We re-validate at Launch as a
+      // belt-and-suspenders check in case the metrics blob was written
+      // by an older client.
+      const { valid: validManual, rejected: rejectedManual } =
+        validateManualRecipients(manualEmails);
       if (rejectedManual.length > 0) {
         console.warn(
           "[CampaignBuilder] manual recipients rejected (no/invalid email):",
@@ -945,17 +1139,31 @@ export default function CampaignBuilder() {
   }, [canLaunch, editId, manualEmails, navigate]);
 
   // ---- Misc keyboard handler ----
+  // CR P1-6: WCAG 2.1.2 — every dismissable overlay must be reachable by
+  // keyboard. Previously launchConfirmOpen and activityOpen were missed,
+  // so keyboard users could open them but couldn't close without
+  // tabbing to the close button. Order is topmost-first so Esc cancels
+  // the modal that's actually on top.
   useEffect(() => {
     const handler = (e) => {
       if (e.key !== "Escape") return;
       if (createTemplateOpen) setCreateTemplateOpen(false);
+      else if (launchConfirmOpen) setLaunchConfirmOpen(false);
       else if (previewOpen) setPreviewOpen(false);
       else if (audienceOpen) setAudienceOpen(false);
       else if (templatesOpen) setTemplatesOpen(false);
+      else if (activityOpen) setActivityOpen(false);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [audienceOpen, templatesOpen, previewOpen, createTemplateOpen]);
+  }, [
+    audienceOpen,
+    templatesOpen,
+    previewOpen,
+    createTemplateOpen,
+    launchConfirmOpen,
+    activityOpen,
+  ]);
 
   // ---- Save-as-template seed values from current step ----
   const templateSeed = useMemo(() => {
@@ -979,154 +1187,100 @@ export default function CampaignBuilder() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col bg-[#F8FAFC] pb-12">
-      {/* Top bar */}
+      {/*
+        DR Move 1 — Slim top bar.
+        Outreach/Smartlead pattern: the campaign-level action row only
+        carries Save + Schedule + Launch. Per-step actions (Preview /
+        Activity / Test send) moved into the StepInspector footer.
+        Pitch shape (Industry / Tone) moved into the PersonaPanel left
+        rail. SenderGuidelinesNote now lives behind a ⓘ popover next to
+        Launch so it doesn't fight the row at lg widths. Save-guidance
+        text and the success toast sit in the thin meta row below the
+        title — small font, doesn't compete with the action row.
+      */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 lg:flex-nowrap">
         <button
           type="button"
           onClick={() => navigate("/app/campaigns")}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
           aria-label="Back to Outbound"
         >
           <ArrowLeft className="h-3 w-3" />
         </button>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[220px] flex-1">
           <div className="flex items-center gap-1.5">
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="min-w-0 flex-1 border-none bg-transparent text-[15px] font-bold leading-tight tracking-tight text-[#0F172A] outline-none"
+              className="min-w-0 flex-1 border-none bg-transparent text-[16px] font-bold leading-tight tracking-tight text-[#0F172A] outline-none"
               style={{ fontFamily: fontDisplay }}
               maxLength={120}
               disabled={isEditMode && !hydratedFromEdit}
             />
-            <span
-              className="rounded-full border px-1.5 py-0 text-[9px] font-bold uppercase tracking-[0.04em]"
-              style={{
-                fontFamily: fontDisplay,
-                background: isEditMode ? "#F0FDF4" : "#E0F2FE",
-                color: isEditMode ? "#15803d" : "#0369A1",
-                borderColor: isEditMode ? "#BBF7D0" : "#BAE6FD",
-              }}
+            <Chip
+              variant={isEditMode ? "success" : "info"}
+              size="xs"
+              tone="brand"
+              style={{ fontFamily: fontDisplay }}
             >
               {isEditMode ? (details?.status || "Editing") : "Draft"}
-            </span>
+            </Chip>
           </div>
+          {/* Thin meta row — breadcrumb + save guidance + success toast */}
           <div
-            className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500"
+            className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-slate-500"
             style={{ fontFamily: fontBody }}
           >
             {isEditMode ? (
               campaignLoading ? (
-                <span>Loading campaign…</span>
+                <span className="whitespace-nowrap">Loading campaign…</span>
               ) : (
-                <span>Editing existing campaign</span>
+                <span className="whitespace-nowrap">Editing existing campaign</span>
               )
             ) : seedPlay ? (
-              <span>
+              <span className="whitespace-nowrap">
                 Seeded from <strong className="text-[#0F172A]">{seedPlay.name}</strong>
               </span>
             ) : (
-              <span>Build a sequence and save as draft.</span>
+              <span className="whitespace-nowrap">Build a sequence and save as draft.</span>
             )}
             <span className="text-[#CBD5E1]">·</span>
-            <span>
+            <span className="whitespace-nowrap">
               {selectedIds.size} compan{selectedIds.size === 1 ? "y" : "ies"}
               {manualEmails.length > 0 ? ` · ${manualEmails.length} manual email${manualEmails.length === 1 ? "" : "s"}` : ""}
             </span>
             <span className="text-[#CBD5E1]">·</span>
-            <span>{steps.length} step{steps.length === 1 ? "" : "s"}</span>
-            <span className="text-[#CBD5E1]">·</span>
-            {/* Industry + tone selectors. Drive template-drawer filter chips
-                and inform the user's pitch style. Persisted on
-                lit_campaigns.metrics so re-opening keeps the choice. */}
-            <select
-              value={industry}
-              onChange={(e) => setIndustry(e.target.value)}
-              className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-200"
-              style={{ fontFamily: fontDisplay }}
-              title="Recipient industry — filters template suggestions"
-            >
-              {INDUSTRY_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id}>{o.label}</option>
-              ))}
-            </select>
-            <select
-              value={tone}
-              onChange={(e) => setTone(e.target.value)}
-              className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-200"
-              style={{ fontFamily: fontDisplay }}
-              title={TONE_OPTIONS.find((t) => t.id === tone)?.helper || "Pitch style"}
-            >
-              {TONE_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id}>{o.label}</option>
-              ))}
-            </select>
+            <span className="whitespace-nowrap">{steps.length} step{steps.length === 1 ? "" : "s"}</span>
             {saveGuidance ? (
               <>
                 <span className="text-[#CBD5E1]">·</span>
                 <span className="text-[#B45309]">{saveGuidance}</span>
               </>
             ) : null}
+            {success ? (
+              <>
+                <span className="text-[#CBD5E1]">·</span>
+                <span
+                  className="inline-flex items-center gap-1 text-[#15803d]"
+                  style={{ fontFamily: fontBody }}
+                >
+                  <CheckCircle2 className="h-2.5 w-2.5" />
+                  {success}
+                </span>
+              </>
+            ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1">
-          {success ? (
-            <span
-              className="inline-flex items-center gap-1 rounded-full border border-[#BBF7D0] bg-[#F0FDF4] px-2 py-0.5 text-[10px] font-medium text-[#15803d]"
-              style={{ fontFamily: fontBody }}
-            >
-              <CheckCircle2 className="h-2.5 w-2.5" />
-              {success}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => setPreviewOpen(true)}
-            disabled={steps.filter((s) => s.kind !== "wait").length === 0}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-            style={{ fontFamily: fontDisplay }}
-          >
-            <Play className="h-2.5 w-2.5" />
-            Preview as contact
-          </button>
-          {editId ? (
-            <button
-              type="button"
-              onClick={() => setActivityOpen(true)}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
-              style={{ fontFamily: fontDisplay }}
-              title="Open activity timeline"
-            >
-              <ListIcon className="h-2.5 w-2.5" />
-              Activity{activityLoading ? " (…)" : ` (${activityCount})`}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={handleTestSend}
-            disabled={testSending || !primaryEmail}
-            title={
-              !primaryEmail
-                ? "Connect a Gmail or Outlook mailbox in Settings first."
-                : "Send the currently-selected email step to your inbox with sample variables."
-            }
-            className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-white disabled:text-slate-400"
-            style={{ fontFamily: fontDisplay }}
-          >
-            <FlaskConical className="h-2.5 w-2.5" />
-            {testSending ? "Sending…" : "Test send"}
-          </button>
-          <button
-            type="button"
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+          <ToolbarButton
             onClick={handleSave}
             disabled={!canSave || saving}
             title={saveGuidance ?? ""}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            iconLeft={<Save className="h-2.5 w-2.5" />}
             style={{ fontFamily: fontDisplay }}
           >
-            <Save className="h-2.5 w-2.5" />
             {saving ? "Saving…" : isEditMode ? "Save changes" : "Save draft"}
-          </button>
+          </ToolbarButton>
           <LaunchSchedulePicker
             value={scheduledStartAt}
             timezone={sendTimezone}
@@ -1135,6 +1289,7 @@ export default function CampaignBuilder() {
               setSendTimezone(tz);
             }}
             disabled={details?.status === "archived"}
+            campaignStatus={details?.status}
           />
           <LaunchButton
             onLaunch={handleLaunch}
@@ -1152,7 +1307,7 @@ export default function CampaignBuilder() {
             hasTestSendOccurred={hasTestSendOccurred}
             campaignStatus={details?.status}
           />
-          <SenderGuidelinesNote />
+          <SenderGuidelinesNote variant="popover" />
         </div>
       </div>
 
@@ -1162,6 +1317,8 @@ export default function CampaignBuilder() {
         funnel={campaignFunnel}
         sparkData={campaignSparkData}
         campaignId={editId}
+        scheduledLabel={heroScheduledLabel}
+        sequenceSummary={heroSequenceSummary}
       />
       {editId ? (
         <CampaignActivityTimeline
@@ -1177,9 +1334,7 @@ export default function CampaignBuilder() {
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800"
           style={{ fontFamily: fontBody }}
         >
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-white">
-            SENDER
-          </span>
+          <Chip variant="warning" size="sm" tone="brand">SENDER</Chip>
           <span>Couldn't load email senders: {senderLoadError}</span>
           <a
             href="/app/settings?tab=email"
@@ -1194,9 +1349,7 @@ export default function CampaignBuilder() {
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-1.5 text-[11px] text-slate-700"
           style={{ fontFamily: fontBody }}
         >
-          <span className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-white">
-            SENDER
-          </span>
+          <Chip variant="neutral" size="sm" tone="brand">SENDER</Chip>
           <label
             className="text-[11px] text-slate-500"
             htmlFor="sender-account-select"
@@ -1208,20 +1361,46 @@ export default function CampaignBuilder() {
             id="sender-account-select"
             value={senderAccountId || ""}
             onChange={(e) => setSenderAccountId(e.target.value || null)}
-            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11.5px] font-semibold text-slate-900 outline-none focus:border-blue-300"
+            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[12px] font-semibold text-slate-900 outline-none focus:border-blue-300"
             style={{ fontFamily: fontDisplay }}
           >
             <option value="">Primary mailbox (auto)</option>
-            {senderAccounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>
-                {labelFor(acc)}
-              </option>
-            ))}
+            {senderAccounts.map((acc) => {
+              // CR P1-9: previously broken accounts (auth_expired,
+              // needs_reauth, disconnected) were filtered out and the
+              // dropdown rendered as "no senders" with no path forward.
+              // Now they appear as disabled options with a status hint so
+              // the user can see WHICH mailbox needs reconnection and
+              // follow the Reconnect link below.
+              const isConnected = acc.status === "connected";
+              const statusHint = isConnected
+                ? ""
+                : acc.status === "auth_expired" || acc.status === "needs_reauth"
+                  ? " — reconnect required"
+                  : acc.status === "disconnected"
+                    ? " — disconnected"
+                    : ` — ${acc.status || "unavailable"}`;
+              return (
+                <option key={acc.id} value={acc.id} disabled={!isConnected}>
+                  {labelFor(acc)}{statusHint}
+                </option>
+              );
+            })}
           </select>
           {senderAccountId && senderAccounts.find((a) => a.id === senderAccountId)?.provider === "resend" ? (
-            <span className="inline-flex items-center gap-1 rounded-md border border-purple-300 bg-purple-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-purple-700">
+            <span className="inline-flex items-center gap-1 rounded-md border border-purple-300 bg-purple-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em] text-purple-700">
               Resend · super-admin
             </span>
+          ) : null}
+          {senderAccounts.some((a) => a.status !== "connected") ? (
+            <a
+              href="/app/settings?tab=email"
+              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em] text-amber-800 hover:bg-amber-100"
+              style={{ fontFamily: fontDisplay }}
+              title="One or more of your mailboxes needs reconnection"
+            >
+              Reconnect mailbox
+            </a>
           ) : null}
         </div>
       ) : null}
@@ -1230,9 +1409,7 @@ export default function CampaignBuilder() {
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-blue-200 bg-blue-50 px-3 py-1.5 text-[11px] text-blue-900"
           style={{ fontFamily: fontBody }}
         >
-          <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white">
-            LINKED LIST
-          </span>
+          <Chip variant="info" size="sm" tone="brand">LINKED LIST</Chip>
           <span className="font-semibold">{audiencePulseListName || "Universal List"}</span>
           <span className="text-blue-700">
             New companies and contacts added to this list will be pulled in on the next Launch.
@@ -1243,7 +1420,7 @@ export default function CampaignBuilder() {
               setAudiencePulseListId(null);
               setAudiencePulseListName("");
             }}
-            className="ml-auto inline-flex items-center gap-1 rounded-md border border-blue-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-blue-800 hover:bg-blue-50"
+            className="ml-auto inline-flex items-center gap-1 rounded-md border border-blue-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-800 hover:bg-blue-50"
             style={{ fontFamily: fontDisplay }}
             title="Detach this list — campaign will only use the manual recipients/companies you've set"
           >
@@ -1256,6 +1433,15 @@ export default function CampaignBuilder() {
         launching={launching}
         anchor={scheduledStartAt ? Date.parse(scheduledStartAt) : undefined}
       />
+
+      {/* Sub-project O — Exit conditions. Only meaningful for saved campaigns
+          (i.e. editing an existing campaign) because the panel needs a
+          campaignId to write exit_overrides back to lit_campaigns. */}
+      {editId ? (
+        <div style={{ padding: "0 16px" }}>
+          <ExitConditionsPanel campaignId={editId} />
+        </div>
+      ) : null}
 
       {error || campaignError ? (
         <div
@@ -1302,6 +1488,12 @@ export default function CampaignBuilder() {
             onOpenAudiencePicker={() => setAudienceOpen(true)}
             onOpenTemplates={() => setTemplatesOpen(true)}
             onCreatePersona={() => setCreatePersonaOpen(true)}
+            industry={industry}
+            industryOptions={INDUSTRY_OPTIONS}
+            onChangeIndustry={setIndustry}
+            tone={tone}
+            toneOptions={TONE_OPTIONS}
+            onChangeTone={setTone}
           />
         </div>
         <TimelineCanvas
@@ -1325,6 +1517,9 @@ export default function CampaignBuilder() {
             onPreview={() => setPreviewOpen(true)}
             onTestSend={handleTestSend}
             onSaveAsTemplate={() => setCreateTemplateOpen(true)}
+            onOpenActivity={editId ? () => setActivityOpen(true) : undefined}
+            activityCount={activityCount}
+            activityLoading={activityLoading}
           />
         </div>
       </div>
@@ -1389,7 +1584,7 @@ export default function CampaignBuilder() {
             <div className="border-b border-slate-100 px-5 py-4">
               <div
                 id="launch-modal-title"
-                className="flex items-center gap-2 text-[15px] font-bold text-[#0F172A]"
+                className="flex items-center gap-2 text-[16px] font-bold text-[#0F172A]"
                 style={{ fontFamily: fontDisplay }}
               >
                 <Rocket className="h-3.5 w-3.5 text-emerald-600" />
@@ -1403,7 +1598,7 @@ export default function CampaignBuilder() {
                 emails from <strong className="text-[#0F172A]">{primaryEmail}</strong>.
               </p>
               <ul
-                className="mt-2.5 space-y-1 text-[11.5px] text-slate-600"
+                className="mt-2.5 space-y-1 text-[12px] text-slate-600"
                 style={{ fontFamily: fontBody }}
               >
                 <li>· {selectedIds.size} compan{selectedIds.size === 1 ? "y" : "ies"}{manualEmails.length > 0 ? ` + ${manualEmails.length} manual email${manualEmails.length === 1 ? "" : "s"}` : ""}</li>

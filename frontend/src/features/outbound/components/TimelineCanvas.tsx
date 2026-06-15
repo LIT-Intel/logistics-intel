@@ -39,7 +39,7 @@ export function TimelineCanvas({
     <div className="bg-[#F8FAFC] px-4 py-4 pb-8 lg:px-6">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div
-          className="text-[13px] font-bold text-[#0F172A]"
+          className="text-[14px] font-bold text-[#0F172A]"
           style={{ fontFamily: fontDisplay }}
         >
           Sequence
@@ -54,15 +54,13 @@ export function TimelineCanvas({
       </div>
 
       <div className="relative">
-        {/* Vertical rail */}
+        {/* Vertical rail — flat slate per DR design audit: rainbow gradient
+            previously here read as "stylized AI" and competed with the per-
+            channel chip colors. Keep the rail as a quiet connecting line. */}
         {steps.length > 0 ? (
           <div
-            className="pointer-events-none absolute top-2 bottom-2 w-0.5 rounded"
-            style={{
-              left: 19,
-              background:
-                "linear-gradient(180deg,#3B82F6 0%,#8B5CF6 50%,#EC4899 100%)",
-            }}
+            className="pointer-events-none absolute top-2 bottom-2 w-0.5 rounded bg-slate-200"
+            style={{ left: 19 }}
           />
         ) : null}
 
@@ -104,7 +102,7 @@ export function TimelineCanvas({
                 Sequence complete
               </div>
               <div
-                className="mt-0.5 text-[10px] text-[#15803d]/80"
+                className="mt-0.5 text-[11px] text-[#15803d]/80"
                 style={{ fontFamily: fontBody }}
               >
                 Replies route to inbox · contacts move to "Pending follow-up" once sending ships.
@@ -188,7 +186,7 @@ function EmptyTimeline({
   return (
     <div className="flex flex-col items-center gap-2.5 rounded-md border-2 border-dashed border-slate-200 bg-white px-4 py-7 text-center">
       <div
-        className="text-[13px] font-bold text-[#0F172A]"
+        className="text-[14px] font-bold text-[#0F172A]"
         style={{ fontFamily: fontDisplay }}
       >
         Start the sequence

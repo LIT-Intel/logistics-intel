@@ -113,7 +113,7 @@ export function ScheduleStrip({ steps, launching, anchor }: { steps: BuilderStep
     >
       {noAnchor ? (
         <div
-          className="flex items-center gap-1.5 border-b border-slate-200/60 bg-amber-50/60 px-3 py-1 text-[10px] text-amber-800"
+          className="flex items-center gap-1.5 border-b border-slate-200/60 bg-amber-50/60 px-3 py-1 text-[11px] text-amber-800"
           style={{ fontFamily: fontBody }}
           role="note"
         >
@@ -129,10 +129,10 @@ export function ScheduleStrip({ steps, launching, anchor }: { steps: BuilderStep
         style={{ fontFamily: fontDisplay }}
       >
         <CalendarClock className="h-3 w-3 text-blue-600" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">
+        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
           Projected schedule
         </span>
-        <span className="text-[10px] font-mono text-slate-400">{TZ_LABEL}</span>
+        <span className="text-[11px] font-mono text-slate-400">{TZ_LABEL}</span>
       </div>
       <div className="flex flex-1 items-stretch gap-1">
         {rows.map((r) => {
@@ -148,7 +148,7 @@ export function ScheduleStrip({ steps, launching, anchor }: { steps: BuilderStep
               title={`${r.label} — ${fmtAbsolute(r.at)} (${fmtRelative(r.relMs)})`}
             >
               <div
-                className="text-[9px] font-bold uppercase tracking-[0.06em] text-slate-400"
+                className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400"
                 style={{ fontFamily: fontDisplay }}
               >
                 {r.label}
@@ -161,7 +161,7 @@ export function ScheduleStrip({ steps, launching, anchor }: { steps: BuilderStep
                 {fmtAbsolute(r.at)}
               </div>
               <div
-                className="truncate text-[10px] text-slate-500"
+                className="truncate text-[11px] text-slate-500"
                 style={{ fontFamily: fontMono }}
               >
                 {r.title}
@@ -170,7 +170,7 @@ export function ScheduleStrip({ steps, launching, anchor }: { steps: BuilderStep
           );
         })}
         <div
-          className="ml-auto shrink-0 self-center rounded-md bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500"
+          className="ml-auto shrink-0 self-center rounded-md bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500"
           style={{ fontFamily: fontBody }}
         >
           {launching ? "Launching now…" : "Times update live as you edit delays"}

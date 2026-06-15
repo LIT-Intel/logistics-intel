@@ -64,6 +64,7 @@ import CDPDetailsPanel from "@/components/company/CDPDetailsPanel";
 import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import CDPSupplyChain from "@/components/company/CDPSupplyChain";
 import CDPContacts from "@/components/company/CDPContacts";
+import EditCompanyModal from "@/components/company/EditCompanyModal";
 import CDPResearch from "@/components/company/CDPResearch";
 import { exportPulseBriefPdf } from "@/lib/pulse/exportPulseBriefPdf";
 import CDPActivity from "@/components/company/CDPActivity";
@@ -664,6 +665,8 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   // Distinct from the campaign modal (which is for outreach send), so users can
   // organize companies into lists without committing to a campaign.
   const [addToListOpen, setAddToListOpen] = useState(false);
+  // Enrichment Phase 2 — Edit Company modal (header pencil affordance).
+  const [editCompanyOpen, setEditCompanyOpen] = useState(false);
 
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -2015,6 +2018,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         })()}
         selectedYear={selectedYear}
         onSelectYear={setSelectedYear}
+        onEditCompany={
+          companyId ? () => setEditCompanyOpen(true) : undefined
+        }
       />
 
       <CompanySignalsStrip
@@ -2135,6 +2141,14 @@ function ProfilePanel({ rawId }: { rawId: string }) {
               companyDomain={companyDomain}
               companyLocation={companyAddress}
               onContactsChanged={setSavedContacts}
+              onCompanyMetaSaved={(next) => {
+                // R3: the user saved name/domain edits from the search
+                // panel. Update the canonical domain state immediately
+                // (so the header pill repaints) and refetch the bundle
+                // so KPI/profile sources stay in sync.
+                if (next.domain) setCanonicalDomain(next.domain);
+                refetchBundle?.();
+              }}
             />
           )}
           {tab === "research" && (
@@ -2412,6 +2426,42 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           setTimeout(() => setShareToast(null), 3500);
         }}
       />
+
+      {editCompanyOpen && companyId && (
+        <EditCompanyModal
+          companyId={companyId}
+          initial={{
+            name: companyName,
+            domain: companyDomain,
+            website: companyWebsite,
+            industry:
+              companyEnrichment?.industry ||
+              companyEnrichment?.enrichment_params?.firmographics?.industry ||
+              null,
+            headcount: companyEnrichment?.headcount ?? null,
+          }}
+          onClose={() => setEditCompanyOpen(false)}
+          onSaved={(updated) => {
+            if (updated.domain) setCanonicalDomain(updated.domain);
+            // Merge new industry/headcount into local enrichment state
+            // so the right rail / KPI tiles reflect the save before the
+            // bundle refetch completes.
+            if (updated.industry || updated.headcount != null) {
+              setCompanyEnrichment((prev: any) => ({
+                ...(prev ?? {}),
+                industry: updated.industry ?? prev?.industry ?? null,
+                headcount: updated.headcount ?? prev?.headcount ?? null,
+              }));
+            }
+            refetchBundle?.();
+            setShareToast({
+              tone: "success",
+              message: "Company profile saved.",
+            });
+            setTimeout(() => setShareToast(null), 3500);
+          }}
+        />
+      )}
     </div>
   );
 }

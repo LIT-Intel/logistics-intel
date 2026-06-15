@@ -11,85 +11,62 @@
  * pattern used elsewhere in outbound, e.g. EngagementDrillIn).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, X } from "lucide-react";
+import { CalendarClock, Info, X } from "lucide-react";
+import { fromZonedTime, toZonedTime, format as formatTz } from "date-fns-tz";
 
 interface Props {
   value: string | null;            // ISO-8601 UTC string or null
   timezone: string;                // IANA TZ
   onChange: (utcIso: string | null, tz: string) => void;
   disabled?: boolean;
+  /**
+   * Campaign status — when "active", the picker surfaces a help note explaining
+   * that changing this time shifts the entire sequence (Day 2/3/4 all move
+   * with the anchor). Recipients who already received earlier steps keep their
+   * current cadence; this only affects future sends.
+   */
+  campaignStatus?: string | null;
 }
 
 // Convert UTC ISO to a "YYYY-MM-DDTHH:mm" string in the given TZ for the
-// datetime-local input.
-function utcToLocalInputValue(utcIso: string | null, tz: string): string {
+// datetime-local input. Uses date-fns-tz so DST transitions are handled
+// correctly (the prior custom Intl-based math captured the offset for the
+// current instant and mis-applied it to the picked moment, causing campaigns
+// scheduled near a DST boundary to fire 1 hour early/late).
+export function utcToLocalInputValue(utcIso: string | null, tz: string): string {
   if (!utcIso) return "";
   try {
-    const d = new Date(utcIso);
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).formatToParts(d);
-    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-    return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+    const zoned = toZonedTime(utcIso, tz);
+    return formatTz(zoned, "yyyy-MM-dd'T'HH:mm", { timeZone: tz });
   } catch {
     return "";
   }
 }
 
-// Convert "YYYY-MM-DDTHH:mm" in target TZ → UTC ISO.
-function localInputToUtcIso(local: string, tz: string): string | null {
+// Convert "YYYY-MM-DDTHH:mm" wall-clock string in target TZ → UTC ISO.
+// `fromZonedTime` knows the IANA TZ offset for the *picked* moment (not "now"),
+// so it correctly disambiguates DST gap times (spring forward — the impossible
+// 2:30 AM resolves to 3:30 AM wall / 07:30Z in NY) and ambiguous fall-back
+// times (it picks the earlier of the two 1:30 AMs by default).
+export function localInputToUtcIso(local: string, tz: string): string | null {
   if (!local) return null;
-  const naive = new Date(`${local}:00Z`);
-  if (Number.isNaN(naive.getTime())) return null;
-  const partsNow = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(naive);
-  const get = (t: string) => partsNow.find((p) => p.type === t)?.value ?? "00";
-  const asUtcOfWall = Date.UTC(
-    parseInt(get("year"), 10),
-    parseInt(get("month"), 10) - 1,
-    parseInt(get("day"), 10),
-    parseInt(get("hour"), 10),
-    parseInt(get("minute"), 10),
-    parseInt(get("second"), 10),
-  );
-  const offsetMs = asUtcOfWall - naive.getTime();
-  return new Date(naive.getTime() - offsetMs).toISOString();
+  try {
+    const utc = fromZonedTime(local, tz);
+    if (Number.isNaN(utc.getTime())) return null;
+    return utc.toISOString();
+  } catch {
+    return null;
+  }
 }
 
 // "Jun 12 · 9:00 AM EDT" — compact human label for the button.
-function formatButtonLabel(utcIso: string, tz: string): string {
+export function formatButtonLabel(utcIso: string, tz: string): string {
   try {
     const d = new Date(utcIso);
-    const md = new Intl.DateTimeFormat(undefined, {
-      timeZone: tz,
-      month: "short",
-      day: "numeric",
-    }).format(d);
-    const t = new Intl.DateTimeFormat(undefined, {
-      timeZone: tz,
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(d);
-    const tzShort = new Intl.DateTimeFormat(undefined, {
-      timeZone: tz,
-      timeZoneName: "short",
-    })
-      .formatToParts(d)
-      .find((p) => p.type === "timeZoneName")?.value || "";
+    if (Number.isNaN(d.getTime())) return utcIso;
+    const md = formatTz(d, "MMM d", { timeZone: tz });
+    const t = formatTz(d, "h:mm a", { timeZone: tz });
+    const tzShort = formatTz(d, "zzz", { timeZone: tz });
     return `${md} · ${t}${tzShort ? ` ${tzShort}` : ""}`;
   } catch {
     return utcIso;
@@ -109,9 +86,10 @@ const COMMON_TZS = [
   "Australia/Sydney",
 ];
 
-export function LaunchSchedulePicker({ value, timezone, onChange, disabled }: Props) {
+export function LaunchSchedulePicker({ value, timezone, onChange, disabled, campaignStatus }: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const isActiveCampaign = campaignStatus === "active";
 
   const tzOptions = useMemo(() => {
     const browser = (() => {
@@ -149,7 +127,13 @@ export function LaunchSchedulePicker({ value, timezone, onChange, disabled }: Pr
         type="button"
         onClick={() => !disabled && setOpen((v) => !v)}
         disabled={disabled}
-        title={isSet ? `Scheduled for ${buttonLabel}` : "Pick a launch time for this campaign"}
+        title={
+          isActiveCampaign
+            ? `Scheduled for ${buttonLabel} — changing this on an active campaign shifts the whole sequence.`
+            : isSet
+              ? `Scheduled for ${buttonLabel}`
+              : "Pick a launch time for this campaign"
+        }
         className={[
           "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
           isSet
@@ -171,7 +155,7 @@ export function LaunchSchedulePicker({ value, timezone, onChange, disabled }: Pr
           className="absolute right-0 top-full z-50 mt-1 w-[280px] rounded-lg border border-slate-200 bg-white p-3 shadow-lg"
         >
           <div className="flex items-center justify-between pb-2">
-            <div className="text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">
+            <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
               Launch schedule
             </div>
             <button
@@ -184,7 +168,21 @@ export function LaunchSchedulePicker({ value, timezone, onChange, disabled }: Pr
             </button>
           </div>
 
-          <label className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+          {isActiveCampaign ? (
+            <div
+              role="note"
+              className="mb-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-snug text-amber-900"
+            >
+              <Info className="mt-[1px] h-3 w-3 shrink-0 text-amber-600" />
+              <span>
+                Changing this on an <strong>active</strong> campaign shifts the
+                entire sequence — Day 2, 3, 4 all move with it. Recipients who
+                already received earlier steps keep their current cadence.
+              </span>
+            </div>
+          ) : null}
+
+          <label className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500">
             Date &amp; time
           </label>
           <input
@@ -200,7 +198,7 @@ export function LaunchSchedulePicker({ value, timezone, onChange, disabled }: Pr
             className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-200 disabled:opacity-60"
           />
 
-          <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+          <label className="mt-2 block text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500">
             Timezone
           </label>
           <select

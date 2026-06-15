@@ -173,6 +173,33 @@ serve(async (req) => {
     },
   });
 
+  // Sub-project O — bounce exit. On hard bounce, flip the recipient row
+  // for THIS specific campaign to status='bounced' + null next_send_at so
+  // the dispatcher stops sending follow-ups. Subject to effective exit
+  // rules (default: exit_on_bounce=true, can be overridden per campaign).
+  // Complaints follow the same path because a complaint is even more
+  // severe than a bounce.
+  if ((mapped.type === "bounced" || mapped.type === "complained") && original?.campaign_id && recipient) {
+    try {
+      const { data: rules } = await admin.rpc("lit_effective_exit_rules", { p_campaign_id: original.campaign_id });
+      const shouldExit = !rules || (rules as any).exit_on_bounce !== false;
+      if (shouldExit) {
+        await admin
+          .from("lit_campaign_contacts")
+          .update({
+            status: "bounced",
+            next_send_at: null,
+            last_error: mapped.type,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("campaign_id", original.campaign_id)
+          .eq("email", recipient.toLowerCase());
+      }
+    } catch (e) {
+      console.warn("[resend-webhook] exit_rules_lookup_failed", e);
+    }
+  }
+
   // 4. Suppression on bounce / complaint. We don't have an org_id
   //    pinned to the event, so fall back to the original send's user
   //    org via lit_email_accounts when available; otherwise insert

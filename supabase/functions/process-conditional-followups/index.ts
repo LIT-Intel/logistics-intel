@@ -87,7 +87,21 @@ async function fetchRecipients(primaryCampaignId: string): Promise<RecipientLite
     .select("id, email, org_id, user_id, first_name, last_name, display_name, status")
     .eq("campaign_id", primaryCampaignId);
   if (error) throw new Error(`recipients_fetch_failed: ${error.message}`);
-  return ((data ?? []) as RecipientLite[]).filter((r) => !!r.email);
+
+  // Sub-project O — exit-status guard. Any recipient flipped to an exit
+  // status (replied, bounced, unsubscribed, meeting_booked, funnel_exited,
+  // manual_exit, suppressed, completed, failed) must NEVER be re-enrolled
+  // into a follow-up. Without this guard, a recipient who already booked a
+  // meeting (status='meeting_booked') could still match the
+  // clicked_url_no_meeting condition (the `bookedEmails` history check is
+  // a belt-and-suspenders backup, but status is the canonical exit signal).
+  const EXIT_STATUSES = new Set([
+    "replied", "bounced", "unsubscribed", "meeting_booked",
+    "funnel_exited", "manual_exit", "suppressed", "completed", "failed",
+  ]);
+  return ((data ?? []) as RecipientLite[])
+    .filter((r) => !!r.email)
+    .filter((r) => !EXIT_STATUSES.has(String(r.status ?? "").toLowerCase()));
 }
 
 async function fetchEventEmailsByType(

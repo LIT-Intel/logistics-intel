@@ -93,14 +93,14 @@ export function ExitIntentModal() {
         </button>
 
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-cyan">
-          Free download
+          Free PDF · Q2 2026
         </p>
         <h2 id="lit-exit-title" className="font-display mt-2 text-2xl font-bold text-white sm:text-3xl">
-          Get the top 100 active shippers in your lane.
+          Top 100 active U.S. shippers, ranked.
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-white/70">
-          Free PDF, sourced from CBP and the last 12 months of US import filings.
-          Drop your email — we&apos;ll send it now.
+          A freight sales target list built from trailing 12-month customs filings.
+          100 shippers, 71,262 BOLs, 26 states. Built for freight forwarders, brokers, and 3PLs.
         </p>
 
         <form onSubmit={onSubmit} className="mt-5 flex flex-col gap-2 sm:flex-row">

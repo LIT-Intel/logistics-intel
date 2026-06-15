@@ -18,6 +18,7 @@ import {
   LifeBuoy,
   UserCog,
   Coins,
+  UserMinus,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -33,6 +34,8 @@ import {
 } from "./SettingsSections";
 import { SBadge, sBtnPrimary } from "./SettingsPrimitives";
 import SettingsAccountSnapshot from "./SettingsAccountSnapshot";
+import OrgExitRulesPanel from "@/features/outbound/components/OrgExitRulesPanel";
+import OrgEnrichmentSettingsPanel from "@/features/settings/components/OrgEnrichmentSettingsPanel";
 
 // Accepts ?tab=… (case/spacing tolerant) so deep links route correctly.
 function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
@@ -44,6 +47,8 @@ function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
   if (v === "security" || v === "auth" || v === "password") return "Security";
   if (v === "notifications" || v === "alerts") return "Notifications";
   if (v === "integrations" || v === "emailaccounts" || v === "email" || v === "inbox" || v === "integration") return "Integrations";
+  if (v === "exitrules" || v === "exit" || v === "sequenceexit" || v === "outreachexit") return "ExitRules";
+  if (v === "enrichmentproviders" || v === "enrichment" || v === "providers" || v === "enrich") return "EnrichmentProviders";
   if (v === "preferences" || v === "prefs" || v === "timezone" || v === "signature") return "Preferences";
   return null;
 }
@@ -167,6 +172,10 @@ export type SettingsLayoutProps = {
   integrations?: Integration[];
   workspace?: WorkspaceChip;
   isAdmin?: boolean;
+  /** Platform super-admin flag (NOT org owner/admin). Gates the platform-level
+   *  settings tabs — Exit Rules, Enrichment Providers — so org users and
+   *  end users don't see them. */
+  isPlatformAdmin?: boolean;
   canAccess?: (minPlan: string) => boolean;
   onSaveProfile?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
   onUploadAvatar?: (file: File) => Promise<{ error?: string } | void>;
@@ -183,13 +192,19 @@ export type SettingsLayoutProps = {
   onDisconnectIntegration?: (id: string) => Promise<void>;
   isPartner?: boolean;
   authProvider?: string | null;
+  orgId?: string | null;
 };
 
 // ── Nav groups (matches the design's NAV array, curated for 6 sections) ───────
-const NAV_GROUPS: Array<{
-  group: string;
-  items: Array<{ id: SettingsSectionId; label: string; Icon: React.ComponentType<{ size?: number; color?: string }> }>;
-}> = [
+type NavItem = {
+  id: SettingsSectionId;
+  label: string;
+  Icon: React.ComponentType<{ size?: number; color?: string }>;
+  /** Platform-super-admin-only. Hidden from org owners + regular users. */
+  platformAdminOnly?: boolean;
+};
+
+const NAV_GROUPS: Array<{ group: string; items: NavItem[] }> = [
   {
     group: "Account",
     items: [
@@ -208,7 +223,10 @@ const NAV_GROUPS: Array<{
   {
     group: "Outreach",
     items: [
-      { id: "Integrations", label: "Integrations", Icon: Plug },
+      { id: "Integrations",        label: "Integrations",         Icon: Plug },
+      // Platform-super-admin-only — gated server-side AND in the nav filter below.
+      { id: "ExitRules",           label: "Exit Rules",           Icon: UserMinus, platformAdminOnly: true },
+      { id: "EnrichmentProviders", label: "Enrichment Providers", Icon: Plug,      platformAdminOnly: true },
     ],
   },
   {
@@ -269,19 +287,24 @@ function SettingsNav({
   onNav,
   search,
   onSearch,
+  isPlatformAdmin,
 }: {
   active: SettingsSectionId;
   onNav: (id: SettingsSectionId) => void;
   search: string;
   onSearch: (q: string) => void;
+  isPlatformAdmin: boolean;
 }) {
   const query = search.trim().toLowerCase();
 
   const visibleGroups = NAV_GROUPS.map((g) => ({
     ...g,
-    items: query
-      ? g.items.filter((it) => it.label.toLowerCase().includes(query))
-      : g.items,
+    items: g.items
+      // Platform-admin-only items are filtered out for non-platform-admins.
+      // This is a UX gate, NOT the security gate — the security gate is
+      // server-side (RLS on lit_org_exit_settings / lit_org_enrichment_settings).
+      .filter((it) => !it.platformAdminOnly || isPlatformAdmin)
+      .filter((it) => !query || it.label.toLowerCase().includes(query)),
   })).filter((g) => g.items.length > 0);
 
   return (
@@ -403,6 +426,35 @@ function SettingsNav({
   );
 }
 
+// ── ForbiddenSection — fallback when a non-platform-admin tries to access
+//    a super-admin-only tab via direct URL (?tab=exitrules or ?tab=enrichmentproviders).
+//    The nav already hides these for non-admins, but a stale bookmark or pasted
+//    link could land here, so we render a polite explanation instead of crashing.
+function ForbiddenSection({ sectionName }: { sectionName: string }) {
+  return (
+    <div
+      style={{
+        padding: "32px 24px",
+        textAlign: "center",
+        color: "#475569",
+        background: "#fff",
+        border: "1px solid #e2e8f0",
+        borderRadius: 12,
+        maxWidth: 560,
+        margin: "40px auto",
+      }}
+    >
+      <h2 style={{ margin: "0 0 8px", fontSize: 18, color: "#0f172a" }}>
+        {sectionName} is restricted
+      </h2>
+      <p style={{ margin: 0, fontSize: 13 }}>
+        This page is only available to platform administrators. Contact your
+        Logistic Intel account team if you believe you should have access.
+      </p>
+    </div>
+  );
+}
+
 // ── renderSection ──────────────────────────────────────────────────────────────
 function renderSection(
   section: SettingsSectionId,
@@ -484,6 +536,24 @@ function renderSection(
           isPartner={props.isPartner}
         />
       );
+    case "ExitRules":
+      // Platform-super-admin gate. Defense-in-depth alongside the nav filter
+      // and the server-side RLS on lit_org_exit_settings.
+      if (!props.isPlatformAdmin) return <ForbiddenSection sectionName="Exit Rules" />;
+      return (
+        <OrgExitRulesPanel
+          orgId={props.orgId ?? null}
+          canWrite={Boolean(props.isAdmin)}
+        />
+      );
+    case "EnrichmentProviders":
+      if (!props.isPlatformAdmin) return <ForbiddenSection sectionName="Enrichment Providers" />;
+      return (
+        <OrgEnrichmentSettingsPanel
+          orgId={props.orgId ?? null}
+          canWrite={Boolean(props.isAdmin)}
+        />
+      );
     case "Preferences":
       return (
         <PreferencesSection
@@ -521,6 +591,12 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
   const initialTab = tabParamToSectionId(searchParams.get("tab")) ?? "Profile";
   const [activeSection, setActiveSection] = React.useState<SettingsSectionId>(initialTab);
   const [search, setSearch] = React.useState("");
+  // useTransition lets the nav button visually commit immediately while
+  // the heavy section subtree (WorkspaceSection's members list,
+  // BillingSection's plan grid, etc.) renders at low priority. Pairs with
+  // the React.memo on SettingsAccountSnapshot to keep INP under 100ms on
+  // section switches. Sentry flagged Workspace at 232ms before this.
+  const [, startNav] = React.useTransition();
 
   // Keep state in sync if the URL changes.
   React.useEffect(() => {
@@ -533,14 +609,18 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
 
   const handleSelectSection = React.useCallback(
     (id: SettingsSectionId) => {
-      setActiveSection(id);
-      const next = new URLSearchParams(searchParams);
-      if (id === "Profile") {
-        next.delete("tab");
-      } else {
-        next.set("tab", id.toLowerCase().replace(/\s+/g, "-"));
-      }
-      setSearchParams(next, { replace: true });
+      // URL update + state set are both deferred via startNav so the
+      // pressed/active visual feedback paints first.
+      startNav(() => {
+        setActiveSection(id);
+        const next = new URLSearchParams(searchParams);
+        if (id === "Profile") {
+          next.delete("tab");
+        } else {
+          next.set("tab", id.toLowerCase().replace(/\s+/g, "-"));
+        }
+        setSearchParams(next, { replace: true });
+      });
     },
     [searchParams, setSearchParams],
   );
@@ -565,6 +645,7 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
             onNav={handleSelectSection}
             search={search}
             onSearch={setSearch}
+            isPlatformAdmin={Boolean(props.isPlatformAdmin)}
           />
           <div
             className="lit-settings-body"

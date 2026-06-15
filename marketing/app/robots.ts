@@ -24,6 +24,24 @@ export default function robots(): MetadataRoute.Robots {
     "/admin/",
     "/settings/",
     "/campaigns/",
+    // Pascal-case Vite-app routes Google crawled before the SPA was split
+    // off the marketing host. These don't resolve as marketing pages and
+    // shouldn't be re-indexed. Modern crawlers honor wildcards + leading
+    // anchors here; case is significant in robots so lowercase rules above
+    // don't cover these.
+    "/Admin*",
+    "/AdminAgent",
+    "/AdminDashboard",
+    "/AffiliateDashboard",
+    "/Campaigns",
+    "/CMSManager",
+    "/Dashboard",
+    "/Diagnostic",
+    "/LeadProspecting",
+    // Next.js asset bundles — no value in Google crawling our font/media
+    // payloads, and they generate index-coverage noise ("Crawled, currently
+    // not indexed") for every hashed filename.
+    "/_next/static/media/",
   ];
 
   return {

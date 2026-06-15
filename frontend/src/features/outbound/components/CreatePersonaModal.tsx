@@ -125,7 +125,7 @@ export function CreatePersonaModal({ open, onClose, onCreated }: Props) {
                 placeholder="VP Logistics · mid-market importer"
                 maxLength={120}
                 disabled={saving}
-                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-[13px] text-[#0F172A] focus:border-[#3B82F6] focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-[14px] text-[#0F172A] focus:border-[#3B82F6] focus:outline-none focus:ring-2 focus:ring-blue-100"
                 style={{ fontFamily: fontBody }}
               />
             </Field>
@@ -176,7 +176,7 @@ export function CreatePersonaModal({ open, onClose, onCreated }: Props) {
                 placeholder="15-min comparison vs. your current routing"
                 maxLength={200}
                 disabled={saving}
-                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-[13px] text-[#0F172A] focus:border-[#3B82F6] focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-[14px] text-[#0F172A] focus:border-[#3B82F6] focus:outline-none focus:ring-2 focus:ring-blue-100"
                 style={{ fontFamily: fontBody }}
               />
             </Field>
@@ -239,7 +239,7 @@ function Field({
         {required ? <span className="text-rose-500">*</span> : null}
       </label>
       {hint ? (
-        <div className="mt-0.5 text-[10.5px] text-slate-400" style={{ fontFamily: fontBody }}>
+        <div className="mt-0.5 text-[11px] text-slate-400" style={{ fontFamily: fontBody }}>
           {hint}
         </div>
       ) : null}

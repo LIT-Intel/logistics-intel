@@ -7,13 +7,37 @@
  * breakdown (URL + click count) sourced from lit_outreach_links.
  */
 import { useState } from "react";
-import { X, Mail, ChevronRight, ChevronDown } from "lucide-react";
+import { X, Mail, ChevronRight, ChevronDown, UserMinus } from "lucide-react";
 import {
   useEngagementRecipients,
   useRecipientLinkClicks,
   type EngagementEventType,
   type EngagementRecipient,
 } from "../hooks/useEngagementRecipients";
+import { supabase } from "@/lib/supabase";
+
+// Sub-project O — manual recipient exit. Calls recipient-exit-manual edge fn
+// with the auth'd user's JWT. The edge fn enforces ownership (campaign owner,
+// platform admin, or active org member) so the frontend check is just UX.
+async function removeFromSequence(recipientId: string, campaignId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) return { ok: false, error: "not_authenticated" };
+  const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || (window as any).SUPABASE_URL;
+  if (!supabaseUrl) return { ok: false, error: "supabase_url_missing" };
+  try {
+    const resp = await fetch(`${supabaseUrl}/functions/v1/recipient-exit-manual`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ campaign_id: campaignId, recipient_id: recipientId, reason: "removed_from_drill_in" }),
+    });
+    if (!resp.ok) return { ok: false, error: `http_${resp.status}` };
+    const body = await resp.json().catch(() => ({}));
+    return { ok: !!body?.ok, error: body?.error };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
 
 interface Props {
   open: boolean;
@@ -82,7 +106,7 @@ function LinkClicksRow({
       {links.map((link) => (
         <li
           key={link.link_id}
-          className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11.5px]"
+          className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2.5 py-1.5 text-[12px]"
         >
           <span
             className="truncate text-slate-700"
@@ -90,7 +114,7 @@ function LinkClicksRow({
           >
             {link.original_url}
           </span>
-          <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold tabular-nums text-indigo-900">
+          <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold tabular-nums text-indigo-900">
             {link.click_count}×
           </span>
         </li>
@@ -109,7 +133,23 @@ function RecipientRow({
   expandable: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removed, setRemoved] = useState(false);
   const Chevron = expanded ? ChevronDown : ChevronRight;
+
+  const handleRemove = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!campaignId || !recipient.recipient_id) return;
+    if (!window.confirm(`Remove ${recipient.recipient_email} from this sequence? They will not receive any further sends.`)) return;
+    setRemoving(true);
+    const result = await removeFromSequence(recipient.recipient_id, campaignId);
+    setRemoving(false);
+    if (result.ok) {
+      setRemoved(true);
+    } else {
+      window.alert(`Failed to remove: ${result.error ?? "unknown"}`);
+    }
+  };
   return (
     <li className="border-b border-slate-100 last:border-none">
       <button
@@ -122,7 +162,7 @@ function RecipientRow({
           {initials(recipient.recipient_email)}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[12.5px] font-semibold text-slate-900">
+          <div className="truncate text-[12px] font-semibold text-slate-900">
             {recipient.display_name || recipient.recipient_email}
           </div>
           <div className="flex items-center gap-1 text-[11px] text-slate-500">
@@ -136,8 +176,29 @@ function RecipientRow({
         >
           {recipient.event_count}
         </span>
-        <span className="shrink-0 text-[10px] text-slate-400 tabular-nums">
+        <span className="shrink-0 text-[11px] text-slate-400 tabular-nums">
           {fmtDate(recipient.last_event_at)}
+        </span>
+        {/* Sub-project O — manual exit. Renders inside the button so the
+            row stays clickable for expand; stopPropagation in handler. */}
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={handleRemove}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") handleRemove(e as unknown as React.MouseEvent);
+          }}
+          title={removed ? "Removed from sequence" : "Remove from sequence"}
+          className={`shrink-0 flex h-6 w-6 items-center justify-center rounded-md transition ${
+            removed
+              ? "bg-slate-100 text-slate-400 cursor-default"
+              : removing
+              ? "bg-slate-100 text-slate-400 cursor-wait"
+              : "text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+          }`}
+          aria-disabled={removed || removing}
+        >
+          <UserMinus className="h-3 w-3" />
         </span>
         {expandable ? (
           <Chevron className="h-3 w-3 shrink-0 text-slate-400" />
@@ -186,7 +247,7 @@ export function EngagementDrillIn({
             <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
               Engagement
             </div>
-            <h2 className="text-[15px] font-bold text-slate-900">
+            <h2 className="text-[16px] font-bold text-slate-900">
               {label} · {data?.length ?? 0} recipient{(data?.length ?? 0) === 1 ? "" : "s"}
             </h2>
           </div>

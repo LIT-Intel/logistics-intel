@@ -109,7 +109,7 @@ export function CampaignRow({
           }}
         />
         <div
-          className="text-[13px] font-bold tracking-tight text-[#0F172A]"
+          className="text-[14px] font-bold tracking-tight text-[#0F172A]"
           style={{ fontFamily: fontDisplay }}
         >
           {c.name}
@@ -120,7 +120,7 @@ export function CampaignRow({
           ))}
         </div>
         <span
-          className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+          className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
           style={{
             color: status.color,
             background: status.bg,
@@ -137,7 +137,7 @@ export function CampaignRow({
         <div className="ml-auto flex items-center gap-2">
           {c.recipients !== null ? (
             <span
-              className="hidden text-[10px] text-slate-500 sm:inline-flex sm:items-center sm:gap-1"
+              className="hidden text-[11px] text-slate-500 sm:inline-flex sm:items-center sm:gap-1"
               style={{ fontFamily: fontBody }}
             >
               <Clock4 className="h-2.5 w-2.5 text-slate-400" />
@@ -154,7 +154,7 @@ export function CampaignRow({
         if (!who && !when) return null;
         return (
           <div
-            className="mt-0.5 text-[10px] text-slate-500"
+            className="mt-0.5 text-[11px] text-slate-500"
             style={{ fontFamily: fontBody }}
           >
             {who ? `Created by ${who}` : "Created"}
@@ -172,14 +172,14 @@ export function CampaignRow({
         </div>
       ) : c.status === "archived" ? (
         <div
-          className="mt-1.5 flex items-center gap-1.5 text-[10px] text-slate-400"
+          className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400"
           style={{ fontFamily: fontBody }}
         >
           Archived — restore from the actions menu to keep editing.
         </div>
       ) : (
         <div
-          className="mt-1.5 flex items-center gap-1.5 text-[10px] text-slate-400"
+          className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400"
           style={{ fontFamily: fontBody }}
         >
           <Edit3 className="h-2.5 w-2.5" />
@@ -191,7 +191,7 @@ export function CampaignRow({
         <div className="mt-2 flex items-center gap-1.5 rounded-md border border-[#FDE68A] bg-[#FFFBEB] px-2.5 py-1.5">
           <AlertTriangle className="h-2.5 w-2.5 text-[#B45309]" />
           <span
-            className="text-[10px] font-medium text-[#B45309]"
+            className="text-[11px] font-medium text-[#B45309]"
             style={{ fontFamily: fontBody }}
           >
             {c.alert}

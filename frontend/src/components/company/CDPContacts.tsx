@@ -25,6 +25,7 @@ import {
   enrichContacts as enrichContactsApi,
   searchApolloContacts,
   enrichApolloContacts,
+  updateCompany,
   addCompanyToCampaign,
   getCrmCampaigns,
   type ApolloContactPreview,
@@ -64,6 +65,10 @@ type Contact = {
   apollo_person_id?: string | null;
   enriched_at?: string | null;
   enrichment_status?: string | null;
+  /** Phase 3 — phone-unlock pipeline state on this row. Rendered as
+   *  a "Phone pending" pill until the apollo-phone-webhook delivers. */
+  phone_unlock_status?: "pending" | "delivered" | "failed" | null;
+  phone_unlock_request_id?: string | null;
 };
 
 /**
@@ -88,6 +93,16 @@ type CDPContactsProps = {
   companyLocation?: string | null;
   onRequestEnrich?: () => void;
   onContactsChanged?: (contacts: any[]) => void;
+  /**
+   * Fires after the "Save corrections" button in the Apollo search panel
+   * successfully persists name/domain edits back to `lit_companies`.
+   * Parent should re-fetch the company so the header pills, KPI rail,
+   * and downstream tabs see the new values. Enrichment Phase 2 (R3).
+   */
+  onCompanyMetaSaved?: (next: {
+    name?: string | null;
+    domain?: string | null;
+  }) => void;
 };
 
 const DEPT_FILTERS = [
@@ -154,6 +169,7 @@ export default function CDPContacts({
   companyLocation,
   onRequestEnrich,
   onContactsChanged,
+  onCompanyMetaSaved,
 }: CDPContactsProps) {
   const [view, setView] = useState<"list" | "card">("list");
   const [query, setQuery] = useState("");
@@ -179,6 +195,12 @@ export default function CDPContacts({
   const [apolloSelected, setApolloSelected] = useState<Set<string>>(new Set());
   const [apolloEnriching, setApolloEnriching] = useState(false);
   const [apolloEnrichError, setApolloEnrichError] = useState<string | null>(null);
+
+  // R3 — "Save corrections" persists name/domain edits back to lit_companies
+  // and auto-retries Apollo search if the user landed in this panel because
+  // the previous search failed.
+  const [savingCorrections, setSavingCorrections] = useState(false);
+  const [saveCorrectionsError, setSaveCorrectionsError] = useState<string | null>(null);
 
   // Filter state — scoped to the current company. The edge function
   // enforces actual scoping; titles/seniorities are simply hints we
@@ -323,6 +345,77 @@ export default function CDPContacts({
     } finally {
       setEnriching(false);
       setTimeout(() => setEnrichToast(null), 3500);
+    }
+  }
+
+  /**
+   * R3 — persist the user-edited company name / domain in the Apollo
+   * search panel back to `lit_companies` via the update-company edge fn.
+   *
+   * After a successful save, automatically re-trigger the Apollo search
+   * IF the user was just in a failed-enrichment flow (the previous
+   * search returned an error, surfaced setupRequired, or found zero
+   * results after a search attempt). Without that gate, headcount-only
+   * tweaks on an already-enriched account would burn an extra Apollo
+   * search credit on every save.
+   */
+  async function handleSaveCorrections() {
+    if (savingCorrections || !companyId) return;
+    const nextName = (searchCompanyName || "").trim();
+    const nextDomain = (searchCompanyDomain || "").trim();
+    // Refuse a no-op save — at least one field must differ from the
+    // current snapshot. Treat undefined / null as empty.
+    const noNameChange = nextName === String(companyName || "").trim();
+    const noDomainChange = nextDomain === String(companyDomain || "").trim();
+    if (noNameChange && noDomainChange) {
+      setSaveCorrectionsError(
+        "Edit the company name or domain before saving.",
+      );
+      return;
+    }
+    setSavingCorrections(true);
+    setSaveCorrectionsError(null);
+    try {
+      const r = await updateCompany({
+        companyId,
+        // Only forward fields the user actually changed so we don't clear
+        // a valid domain by sending an empty string.
+        ...(noNameChange ? {} : { name: nextName }),
+        ...(noDomainChange ? {} : { domain: nextDomain }),
+      });
+      if (!r.ok) {
+        setSaveCorrectionsError(r.error || "Save failed.");
+        return;
+      }
+      // Tell the parent so the header / hero pills refresh against the
+      // canonical row.
+      onCompanyMetaSaved?.({
+        name: r.company?.name ?? nextName ?? null,
+        domain: r.company?.domain ?? nextDomain ?? null,
+      });
+
+      // R3 auto-retry detection. We're in a "just failed" state when:
+      //   - the previous search hit an error (incl. COMPANY_NOT_VERIFIED), OR
+      //   - the previous search ran but returned zero results
+      const justFailed =
+        Boolean(apolloError) ||
+        apolloSetupRequired ||
+        (apolloSearched && apolloResults.length === 0);
+
+      if (justFailed) {
+        setEnrichToast("Retrying enrichment with new company info…");
+        // Defer one tick so the toast paints before the next request.
+        setTimeout(() => {
+          handleApolloSearch();
+        }, 50);
+      } else {
+        setEnrichToast("Company profile saved.");
+        setTimeout(() => setEnrichToast(null), 2500);
+      }
+    } catch (err: any) {
+      setSaveCorrectionsError(err?.message || "Save failed.");
+    } finally {
+      setSavingCorrections(false);
     }
   }
 
@@ -714,6 +807,87 @@ export default function CDPContacts({
     }
   }
 
+  /**
+   * Phase 3 — Reveal phone. Routes through enrichApolloContacts with
+   * unlock_phone=true. Apollo charges 10 credits and replies async via
+   * apollo-phone-webhook, so we optimistically flip the row to
+   * phone_unlock_status='pending' on success.
+   */
+  async function handleRowRevealPhone(c: Contact) {
+    if (!c.apollo_person_id && !c.linkedin_url && !c.full_name) {
+      setEnrichToast("Need an Apollo id, LinkedIn URL, or full name before unlocking phone.");
+      setTimeout(() => setEnrichToast(null), 3000);
+      return;
+    }
+    if (c.phone || c.phone_unlock_status === "delivered") {
+      setEnrichToast("Phone already on file.");
+      setTimeout(() => setEnrichToast(null), 2000);
+      return;
+    }
+    if (c.phone_unlock_status === "pending") {
+      setEnrichToast("Phone unlock already pending — Apollo is delivering.");
+      setTimeout(() => setEnrichToast(null), 2500);
+      return;
+    }
+    try {
+      const result = await enrichApolloContacts({
+        companyId: companyId ?? null,
+        companyName: companyName ?? null,
+        companyDomain: companyDomain ?? null,
+        unlockPhone: true,
+        contacts: [
+          {
+            apollo_person_id: c.apollo_person_id ?? null,
+            id: c.apollo_person_id ?? null,
+            first_name: c.first_name ?? null,
+            last_name: c.last_name ?? null,
+            full_name: c.full_name ?? c.name ?? null,
+            name: c.full_name ?? c.name ?? null,
+            email: c.email ?? null,
+            linkedin_url: c.linkedin_url ?? null,
+            domain: companyDomain ?? null,
+            organization_name: companyName ?? null,
+            title: c.title ?? null,
+          },
+        ],
+      });
+      if (!result.ok) {
+        if (result.rateLimited) {
+          setEnrichToast("Daily phone unlock cap reached — try again tomorrow.");
+        } else {
+          setEnrichToast(result.error || "Phone unlock failed.");
+        }
+        setTimeout(() => setEnrichToast(null), 3500);
+        return;
+      }
+      const first = result.enriched[0];
+      const nextStatus: "pending" | "delivered" | "failed" =
+        first?.phone_unlock_status ?? (first?.phone ? "delivered" : "pending");
+      setContacts((prev) =>
+        prev.map((x) =>
+          String(x.id) === String(c.id)
+            ? ({
+                ...x,
+                phone: first?.phone ?? x.phone ?? null,
+                phone_unlock_status: nextStatus,
+                phone_unlock_request_id:
+                  first?.phone_unlock_request_id ?? x.phone_unlock_request_id ?? null,
+              } as Contact)
+            : x,
+        ),
+      );
+      setEnrichToast(
+        first?.phone
+          ? "Phone unlocked"
+          : "Phone unlock queued — 10 credits charged.",
+      );
+      setTimeout(() => setEnrichToast(null), 3000);
+    } catch (err: any) {
+      setEnrichToast(err?.message || "Phone unlock failed.");
+      setTimeout(() => setEnrichToast(null), 3000);
+    }
+  }
+
   function handleRowCopyEmail(c: Contact) {
     if (!c.email) {
       setEnrichToast("No email to copy.");
@@ -871,6 +1045,9 @@ export default function CDPContacts({
           loadingMore={apolloLoadingMore}
           hasMore={apolloHasMore}
           currentPage={apolloPage}
+          onSaveCorrections={handleSaveCorrections}
+          savingCorrections={savingCorrections}
+          saveCorrectionsError={saveCorrectionsError}
         />
       )}
       {addOpen && (
@@ -999,6 +1176,7 @@ export default function CDPContacts({
                     onOpenDetail: setDetailContact,
                     onOutreach: setOutreachContact,
                     onEnrich: handleRowEnrich,
+                    onRevealPhone: handleRowRevealPhone,
                     onCopyEmail: handleRowCopyEmail,
                     onCopyLinkedin: handleRowCopyLinkedin,
                     onRemove: handleRowRemove,
@@ -1057,6 +1235,7 @@ type RowHandlers = {
   onOpenDetail: (c: Contact) => void;
   onOutreach: (c: Contact) => void;
   onEnrich: (c: Contact) => void;
+  onRevealPhone: (c: Contact) => void;
   onCopyEmail: (c: Contact) => void;
   onCopyLinkedin: (c: Contact) => void;
   onRemove: (c: Contact) => void;
@@ -1134,7 +1313,34 @@ function ContactRow({
         {contact.email || <span className="text-slate-300">—</span>}
       </td>
       <td className="font-mono px-3.5 py-2.5 text-[10px] text-slate-600">
-        {contact.phone || <span className="text-slate-300">—</span>}
+        {contact.phone ? (
+          contact.phone
+        ) : contact.phone_unlock_status === "pending" ? (
+          <span
+            title="Apollo is delivering this phone async — usually within a minute."
+            className="font-display inline-flex items-center gap-1 rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-amber-700"
+          >
+            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            Phone pending
+          </span>
+        ) : contact.phone_unlock_status === "failed" ? (
+          <span
+            title="Apollo confirmed no phone on file for this contact."
+            className="font-display inline-flex items-center gap-1 rounded-sm border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-rose-700"
+          >
+            No phone
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => handlers.onRevealPhone(contact)}
+            title="Unlocks phone for 10 credits"
+            className="font-display inline-flex items-center gap-1 rounded-sm border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-violet-700 hover:bg-violet-100"
+          >
+            <Phone className="h-2.5 w-2.5" />
+            Reveal (10c)
+          </button>
+        )}
       </td>
       <td className="px-3.5 py-2.5">
         <FitBadge fit={fit} />
@@ -1512,6 +1718,10 @@ type ApolloResultsPanelProps = {
   loadingMore: boolean;
   hasMore: boolean;
   currentPage: number;
+  /** R3: persist user-edited company name/domain back to lit_companies. */
+  onSaveCorrections: () => void;
+  savingCorrections: boolean;
+  saveCorrectionsError: string | null;
 };
 
 const APOLLO_DEPARTMENT_OPTIONS = [
@@ -1566,6 +1776,9 @@ function ApolloResultsPanel({
   loadingMore,
   hasMore,
   currentPage,
+  onSaveCorrections,
+  savingCorrections,
+  saveCorrectionsError,
 }: ApolloResultsPanelProps) {
   function toggle(list: string[], value: string, setter: (n: string[]) => void) {
     setter(list.includes(value) ? list.filter((x) => x !== value) : [...list, value]);
@@ -1667,6 +1880,34 @@ function ApolloResultsPanel({
             />
           </label>
         </div>
+        {/* R3 — persist edits back to lit_companies so they don't revert
+            on page refresh. Auto-retries the Apollo search when the
+            previous attempt failed (the only time the user actually
+            needs to retry). */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50/60 px-2.5 py-1.5">
+          <p className="font-body text-[10.5px] text-amber-800">
+            Edits stay local until saved. Persist the corrected name or
+            domain to this company so enrichment can succeed.
+          </p>
+          <button
+            type="button"
+            onClick={onSaveCorrections}
+            disabled={savingCorrections}
+            className="font-display inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {savingCorrections ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-3 w-3" />
+            )}
+            Save corrections to company profile
+          </button>
+        </div>
+        {saveCorrectionsError && (
+          <div className="font-body mb-2 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10.5px] text-rose-700">
+            {saveCorrectionsError}
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <div>
             <div className="font-display mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">

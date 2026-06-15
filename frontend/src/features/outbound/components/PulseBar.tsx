@@ -77,14 +77,14 @@ export function PulseBar({ campaigns }: { campaigns: OutboundCampaign[] }) {
           >
             <div className="flex items-center justify-between gap-1">
               <div
-                className="truncate text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400"
+                className="truncate text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400"
                 style={{ fontFamily: fontDisplay }}
               >
                 {t.label}
               </div>
               {t.pending ? (
                 <span
-                  className="rounded-full bg-slate-200/60 px-1.5 py-0 text-[8px] font-semibold text-slate-500"
+                  className="rounded-full bg-slate-200/60 px-1.5 py-0 text-[11px] font-semibold text-slate-500"
                   style={{ fontFamily: fontDisplay }}
                 >
                   pending
@@ -93,14 +93,14 @@ export function PulseBar({ campaigns }: { campaigns: OutboundCampaign[] }) {
             </div>
             <div className="mt-0.5 flex items-baseline gap-1">
               <span
-                className="text-[15px] font-bold leading-tight tracking-tight text-[#0F172A]"
+                className="text-[16px] font-bold leading-tight tracking-tight text-[#0F172A]"
                 style={{ fontFamily: fontMono }}
               >
                 {t.value}
               </span>
             </div>
             <div
-              className="mt-0.5 truncate text-[10px] text-slate-400"
+              className="mt-0.5 truncate text-[11px] text-slate-400"
               style={{ fontFamily: fontBody }}
             >
               {t.sub}
@@ -111,14 +111,14 @@ export function PulseBar({ campaigns }: { campaigns: OutboundCampaign[] }) {
         <div className="bg-gradient-to-b from-[#F0F9FF] to-white px-3 py-2 lg:min-w-[170px]">
           <div className="flex items-center justify-between gap-1">
             <div
-              className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.08em] text-[#0369A1]"
+              className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#0369A1]"
               style={{ fontFamily: fontDisplay }}
             >
               <Target className="h-2.5 w-2.5" />
               Goal
             </div>
             <span
-              className="text-[9px] font-bold text-[#0369A1]"
+              className="text-[11px] font-bold text-[#0369A1]"
               style={{ fontFamily: fontMono }}
             >
               —
@@ -140,7 +140,7 @@ export function PulseBar({ campaigns }: { campaigns: OutboundCampaign[] }) {
             />
           </div>
           <div
-            className="mt-0.5 truncate text-[10px] font-medium text-[#0369A1]"
+            className="mt-0.5 truncate text-[11px] font-medium text-[#0369A1]"
             style={{ fontFamily: fontBody }}
           >
             Quarterly goal — coming soon

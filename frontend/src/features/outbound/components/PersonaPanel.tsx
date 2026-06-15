@@ -12,6 +12,17 @@ import { fontDisplay, fontBody, fontMono } from "../tokens";
 import type { Persona, PersonasResult } from "../types";
 import type { SavedCompanyLite } from "../hooks/useSavedCompanies";
 
+interface IndustryOption {
+  id: string;
+  label: string;
+}
+
+interface ToneOption {
+  id: string;
+  label: string;
+  helper?: string;
+}
+
 interface PersonaPanelProps {
   audienceCount: number;
   totalSavedCompanies: number;
@@ -23,6 +34,16 @@ interface PersonaPanelProps {
   onOpenAudiencePicker: () => void;
   onOpenTemplates: () => void;
   onCreatePersona?: () => void;
+  /** Industry + tone selectors. Relocated from the top bar (DR Move 1).
+   *  Drives template-drawer filter chips and informs the user's pitch
+   *  style. Optional so the component can still render without these
+   *  controls (e.g. read-only contexts). */
+  industry?: string;
+  industryOptions?: IndustryOption[];
+  onChangeIndustry?: (next: string) => void;
+  tone?: string;
+  toneOptions?: ToneOption[];
+  onChangeTone?: (next: string) => void;
 }
 
 export function PersonaPanel({
@@ -36,7 +57,15 @@ export function PersonaPanel({
   onOpenAudiencePicker,
   onOpenTemplates,
   onCreatePersona,
+  industry,
+  industryOptions,
+  onChangeIndustry,
+  tone,
+  toneOptions,
+  onChangeTone,
 }: PersonaPanelProps) {
+  const showPitchControls =
+    !!industryOptions && !!toneOptions && !!onChangeIndustry && !!onChangeTone;
   const sample = selectedCompanies.slice(0, 6);
   const manualSample = manualEmails.slice(0, 6);
 
@@ -78,15 +107,18 @@ export function PersonaPanel({
           background: "linear-gradient(160deg,#0F172A,#1E293B)",
         }}
       >
+        {/* Decorative orb — was a cyan #00F0FF glow that read as stylized
+            "AI" treatment per DR audit. Switched to a quiet slate halo so
+            the panel reads as part of the dashboard, not a marketing demo. */}
         <div
           className="pointer-events-none absolute -top-8 -right-8 h-[100px] w-[100px] rounded-full"
           style={{
             background:
-              "radial-gradient(circle,rgba(0,240,255,0.2),transparent 70%)",
+              "radial-gradient(circle,rgba(148,163,184,0.18),transparent 70%)",
           }}
         />
         <div
-          className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#00F0FF]"
+          className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-300"
           style={{ fontFamily: fontDisplay }}
         >
           <Sparkles className="h-2.5 w-2.5" />
@@ -137,7 +169,7 @@ export function PersonaPanel({
             <button
               type="button"
               onClick={onCreatePersona}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#3B82F6] transition hover:bg-blue-50"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-[#3B82F6] transition hover:bg-blue-50"
               style={{ fontFamily: fontDisplay }}
               title="Create a new persona for your workspace"
             >
@@ -154,6 +186,71 @@ export function PersonaPanel({
         />
       </div>
 
+      {/* DR Move 1 — Industry + Tone controls. Relocated from the top
+          bar so the action row only carries Save / Schedule / Launch.
+          These belong with persona because they shape WHO and HOW the
+          sequence speaks, not the campaign-level lifecycle. */}
+      {showPitchControls ? (
+        <div className="px-4 pt-3 pb-1">
+          <div
+            className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400"
+            style={{ fontFamily: fontDisplay }}
+          >
+            Pitch
+          </div>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            <label
+              className="flex flex-col gap-1"
+              title="Recipient industry — filters template suggestions"
+            >
+              <span
+                className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500"
+                style={{ fontFamily: fontDisplay }}
+              >
+                Industry
+              </span>
+              <select
+                value={industry ?? ""}
+                onChange={(e) => onChangeIndustry?.(e.target.value)}
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                style={{ fontFamily: fontBody }}
+              >
+                {industryOptions!.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label
+              className="flex flex-col gap-1"
+              title={
+                toneOptions!.find((t) => t.id === tone)?.helper || "Pitch style"
+              }
+            >
+              <span
+                className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500"
+                style={{ fontFamily: fontDisplay }}
+              >
+                Tone
+              </span>
+              <select
+                value={tone ?? ""}
+                onChange={(e) => onChangeTone?.(e.target.value)}
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                style={{ fontFamily: fontBody }}
+              >
+                {toneOptions!.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+      ) : null}
+
       {/* Sample contacts header */}
       <div className="flex shrink-0 items-center justify-between border-t border-slate-100 px-4 pt-3 pb-1">
         <div
@@ -166,7 +263,7 @@ export function PersonaPanel({
           <button
             type="button"
             onClick={onOpenAudiencePicker}
-            className="text-[10px] font-semibold text-[#3B82F6]"
+            className="text-[11px] font-semibold text-[#3B82F6]"
             style={{ fontFamily: fontDisplay }}
           >
             View all {audienceCount} →
@@ -208,7 +305,7 @@ export function PersonaPanel({
                 className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700"
                 style={{ fontFamily: fontBody }}
               >
-                <span className="text-[10px]" aria-hidden>
+                <span className="text-[11px]" aria-hidden>
                   📧
                 </span>
                 <span className="truncate max-w-[180px]">{m.email}</span>
@@ -253,7 +350,7 @@ export function PersonaPanel({
                     {c.name}
                   </div>
                   <div
-                    className="truncate text-[10px] text-slate-500"
+                    className="truncate text-[11px] text-slate-500"
                     style={{ fontFamily: fontBody }}
                   >
                     {[c.domain, c.location, c.stage]

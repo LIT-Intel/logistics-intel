@@ -670,7 +670,7 @@ table{max-width:100%;}
               value={subject}
               onChange={(e) => { setSubject(e.target.value); setDirty(true); }}
               placeholder="Subject — keep it under 50 chars for inbox truncation"
-              className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-semibold text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-300"
+              className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[14px] font-semibold text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-300"
               style={{ fontFamily: fontDisplay }}
             />
           </div>
@@ -711,14 +711,14 @@ table{max-width:100%;}
           <div className={`flex min-h-0 flex-col border-r border-slate-200 ${mode === "visual" ? "bg-white" : "bg-[#0F172A]"}`}>
             {/* Pane header — mode toggle replaces the static label */}
             <div
-              className={`flex items-center justify-between border-b px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] ${
+              className={`flex items-center justify-between border-b px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em] ${
                 mode === "visual"
                   ? "border-slate-200 bg-slate-50 text-slate-500"
                   : "border-slate-800 bg-[#0B1220] text-slate-400"
               }`}
               style={{ fontFamily: fontDisplay }}
             >
-              <div className={`inline-flex rounded-md border p-0.5 text-[10px] ${
+              <div className={`inline-flex rounded-md border p-0.5 text-[11px] ${
                 mode === "visual" ? "border-slate-200 bg-white" : "border-slate-700 bg-[#111B30]"
               }`}>
                 {[
@@ -776,20 +776,20 @@ table{max-width:100%;}
                   </ToolbarBtn>
                   {imageMenuOpen ? (
                     <div className="absolute left-0 top-full z-20 mt-1 w-[320px] rounded-lg border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
-                      <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500" style={{ fontFamily: fontDisplay }}>
+                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500" style={{ fontFamily: fontDisplay }}>
                         Upload from device
                       </div>
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
                         disabled={imageUploading}
-                        className="mb-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11.5px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                        className="mb-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                         style={{ fontFamily: fontDisplay }}
                       >
                         {imageUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImageIcon className="h-3 w-3" />}
                         Choose image (max 10 MB)
                       </button>
-                      <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500" style={{ fontFamily: fontDisplay }}>
+                      <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500" style={{ fontFamily: fontDisplay }}>
                         Or paste an image URL
                       </div>
                       <div className="flex gap-1.5">
@@ -797,7 +797,7 @@ table{max-width:100%;}
                           value={imageUrlInput}
                           onChange={(e) => setImageUrlInput(e.target.value)}
                           placeholder="https://cdn.example.com/hero.png"
-                          className="flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11.5px] outline-none placeholder:text-slate-400 focus:border-blue-300"
+                          className="flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] outline-none placeholder:text-slate-400 focus:border-blue-300"
                           style={{ fontFamily: fontBody }}
                         />
                         <button
@@ -838,21 +838,21 @@ table{max-width:100%;}
                   </ToolbarBtn>
                   {ytMenuOpen ? (
                     <div className="absolute left-0 top-full z-20 mt-1 w-[340px] rounded-lg border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
-                      <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500" style={{ fontFamily: fontDisplay }}>
+                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500" style={{ fontFamily: fontDisplay }}>
                         YouTube URL
                       </div>
                       <input
                         value={ytInput}
                         onChange={(e) => { setYtInput(e.target.value); setYtError(null); }}
                         placeholder="https://www.youtube.com/watch?v=..."
-                        className="mb-2 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11.5px] outline-none placeholder:text-slate-400 focus:border-blue-300"
+                        className="mb-2 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] outline-none placeholder:text-slate-400 focus:border-blue-300"
                         style={{ fontFamily: fontBody }}
                         onKeyDown={(e) => { if (e.key === "Enter") handleInsertYouTube(); }}
                       />
                       {ytError ? (
-                        <div className="mb-2 text-[10.5px] text-rose-600" style={{ fontFamily: fontBody }}>{ytError}</div>
+                        <div className="mb-2 text-[11px] text-rose-600" style={{ fontFamily: fontBody }}>{ytError}</div>
                       ) : (
-                        <div className="mb-2 text-[10.5px] text-slate-500" style={{ fontFamily: fontBody }}>
+                        <div className="mb-2 text-[11px] text-slate-500" style={{ fontFamily: fontBody }}>
                           Inserts an email-safe clickable thumbnail (no iframe).
                         </div>
                       )}
@@ -895,7 +895,7 @@ table{max-width:100%;}
                 onChange={(e) => { setBody(e.target.value); setDirty(true); }}
                 spellCheck={false}
                 placeholder={PLACEHOLDER_HTML}
-                className="min-h-0 flex-1 resize-none border-0 bg-[#0F172A] px-4 py-3 text-[12.5px] leading-relaxed text-slate-100 outline-none placeholder:text-slate-500"
+                className="min-h-0 flex-1 resize-none border-0 bg-[#0F172A] px-4 py-3 text-[12px] leading-relaxed text-slate-100 outline-none placeholder:text-slate-500"
                 style={{ fontFamily: fontMono }}
                 onKeyDown={(e) => {
                   if (e.key === "Tab") {
@@ -929,14 +929,14 @@ table{max-width:100%;}
           {/* Live preview */}
           <div className="flex min-h-0 flex-col bg-slate-100">
             <div
-              className="flex items-center justify-between border-b border-slate-200 bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500"
+              className="flex items-center justify-between border-b border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500"
               style={{ fontFamily: fontDisplay }}
             >
               <span className="inline-flex items-center gap-1.5">
                 <Eye className="h-3 w-3" />
                 Live Preview
               </span>
-              <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 text-[10px]">
+              <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 text-[11px]">
                 {[
                   { k: "desktop", label: "Desktop", icon: Monitor },
                   { k: "mobile", label: "Mobile", icon: Smartphone },
@@ -989,7 +989,7 @@ table{max-width:100%;}
             {tokenOpen ? (
               <div className="absolute bottom-full left-0 z-10 mb-1 w-[280px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
                 <div
-                  className="border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500"
+                  className="border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500"
                   style={{ fontFamily: fontDisplay }}
                 >
                   Merge tokens
@@ -1004,20 +1004,20 @@ table{max-width:100%;}
                       >
                         <div className="min-w-0">
                           <div
-                            className="truncate text-[11.5px] font-semibold text-slate-900"
+                            className="truncate text-[12px] font-semibold text-slate-900"
                             style={{ fontFamily: fontDisplay }}
                           >
                             {t.label}
                           </div>
                           <div
-                            className="truncate text-[10.5px] text-slate-500"
+                            className="truncate text-[11px] text-slate-500"
                             style={{ fontFamily: fontMono }}
                           >
                             {t.token}
                           </div>
                         </div>
                         <div
-                          className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600"
+                          className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600"
                           style={{ fontFamily: fontBody }}
                         >
                           {t.sample}
@@ -1048,7 +1048,7 @@ table{max-width:100%;}
               value={testTo}
               onChange={(e) => setTestTo(e.target.value)}
               placeholder="you@yourdomain.com"
-              className="w-[220px] rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11.5px] text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-300"
+              className="w-[220px] rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-300"
               style={{ fontFamily: fontBody }}
             />
             <button
@@ -1112,7 +1112,7 @@ table{max-width:100%;}
                   key={p}
                   type="button"
                   onClick={() => applyImageWidth(p)}
-                  className="inline-flex h-7 items-center justify-center rounded-[4px] px-2 text-[10.5px] font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                  className="inline-flex h-7 items-center justify-center rounded-[4px] px-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900"
                   title={`Resize to ${p}%`}
                 >
                   {p}%
@@ -1122,7 +1122,7 @@ table{max-width:100%;}
               <button
                 type="button"
                 onClick={removeImage}
-                className="inline-flex h-7 items-center justify-center rounded-[4px] px-2 text-[10.5px] font-semibold text-rose-600 hover:bg-rose-50"
+                className="inline-flex h-7 items-center justify-center rounded-[4px] px-2 text-[11px] font-semibold text-rose-600 hover:bg-rose-50"
                 title="Remove image"
               >
                 <Trash2 className="mr-1 h-3 w-3" />

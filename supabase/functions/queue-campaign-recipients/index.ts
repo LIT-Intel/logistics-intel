@@ -27,6 +27,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { applyStepSchedule } from "../_shared/step_schedule.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -76,7 +77,7 @@ serve(async (req) => {
   //    Also pull metadata so we can read previously-saved manual recipients.
   const { data: camp, error: campErr } = await admin
     .from("lit_campaigns")
-    .select("id, user_id, name, metrics, org_id, scheduled_start_at")
+    .select("id, user_id, name, metrics, org_id, scheduled_start_at, send_timezone")
     .eq("id", campaignId)
     .maybeSingle();
   if (campErr || !camp) return json({ ok: false, error: "campaign_not_found" }, 404);
@@ -86,7 +87,7 @@ serve(async (req) => {
   // step's relative delay. NULL anchor falls back to now() (legacy behavior).
   const { data: firstStep } = await admin
     .from("lit_campaign_steps")
-    .select("id, delay_days, delay_hours, delay_minutes, step_order")
+    .select("id, delay_days, delay_hours, delay_minutes, step_order, time_of_day_local, weekdays_only")
     .eq("campaign_id", campaignId)
     .order("step_order", { ascending: true })
     .limit(1)
@@ -98,7 +99,16 @@ serve(async (req) => {
     ((firstStep as any)?.delay_days ?? 0) * 86_400_000 +
     ((firstStep as any)?.delay_hours ?? 0) * 3_600_000 +
     ((firstStep as any)?.delay_minutes ?? 0) * 60_000;
-  const firstSendAtIso = new Date(anchorDate.getTime() + firstDelayMs).toISOString();
+  let firstSendAtIso = new Date(anchorDate.getTime() + firstDelayMs).toISOString();
+  // J.2 — first-step time-of-day + weekday-only adjustments. No-op when
+  // the first step doesn't carry the new hints (legacy behavior preserved).
+  if (firstStep && ((firstStep as any).time_of_day_local || (firstStep as any).weekdays_only)) {
+    firstSendAtIso = applyStepSchedule(firstSendAtIso, {
+      timeOfDayLocal: (firstStep as any).time_of_day_local ?? null,
+      weekdaysOnly: Boolean((firstStep as any).weekdays_only),
+      timezone: (camp as any).send_timezone || "UTC",
+    });
+  }
 
   // 2. Resolve the caller's org_id. Two-tier fallback:
   //    (a) the campaign's own org_id (set when the campaign was created)

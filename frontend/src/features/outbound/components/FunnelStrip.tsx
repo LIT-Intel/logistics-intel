@@ -36,7 +36,7 @@ export function FunnelStrip({ funnel }: { funnel: CampaignFunnel | null }) {
     return (
       <div className="flex flex-1 items-center gap-2 rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-3 py-2">
         <span
-          className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400"
+          className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400"
           style={{ fontFamily: fontDisplay }}
         >
           Funnel
@@ -69,7 +69,7 @@ export function FunnelStrip({ funnel }: { funnel: CampaignFunnel | null }) {
                 </span>
                 {conv !== null && (
                   <span
-                    className="ml-1 text-[9px] text-slate-400"
+                    className="ml-1 text-[11px] text-slate-400"
                     style={{ fontFamily: fontMono }}
                   >
                     {conv}%
@@ -87,7 +87,7 @@ export function FunnelStrip({ funnel }: { funnel: CampaignFunnel | null }) {
               />
             </div>
             <div
-              className="text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-400"
+              className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400"
               style={{ fontFamily: fontDisplay }}
             >
               {stage.label}

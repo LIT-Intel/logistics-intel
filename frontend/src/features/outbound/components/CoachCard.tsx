@@ -137,7 +137,7 @@ export function CoachCard({
           Pulse Coach
         </div>
         <span
-          className="text-[10px] text-slate-500"
+          className="text-[11px] text-slate-500"
           style={{ fontFamily: fontMono }}
         >
           {tipIdx + 1}/{tips.length}

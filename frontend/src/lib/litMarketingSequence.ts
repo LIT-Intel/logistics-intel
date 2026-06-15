@@ -775,7 +775,13 @@ export const LIT_MARKETING_14_TOUCH: LitMarketingTouch[] = LIT_MARKETING_BROKER_
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type LitBuilderStep = {
+  // React-key identity. Always a fresh uid — never the DB id. Mirrors
+  // the BuilderStep invariant in features/outbound/types.ts.
   localId: string;
+  // DB row identity. Always null for seed-builder output (these steps
+  // have never been persisted). Populated only when hydrating from a
+  // saved campaign via dbStepToBuilder.
+  dbId: string | null;
   kind: LitTouchKind | "wait";
   subject: string;
   body: string;
@@ -833,6 +839,7 @@ export function applyLitMarketing14TouchSequenceToBuilder(
     if (touch.touchIndex === 7) {
       out.push({
         localId: uid(),
+        dbId: null,
         kind: "wait",
         subject: "",
         body: "",
@@ -850,6 +857,7 @@ export function applyLitMarketing14TouchSequenceToBuilder(
     if (touch.kind === "email") {
       out.push({
         localId: uid(),
+        dbId: null,
         kind: "email",
         subject: touch.subject ?? "",
         body: touch.html ? resolveHtml(touch.html) : "",
@@ -871,6 +879,7 @@ export function applyLitMarketing14TouchSequenceToBuilder(
       // the script so reps can copy-paste it from the inspector.
       out.push({
         localId: uid(),
+        dbId: null,
         kind: touch.kind,
         subject: "",
         body: "",

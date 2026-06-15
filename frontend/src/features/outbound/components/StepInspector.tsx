@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { Code } from "lucide-react";
+import { Code, List as ListIcon } from "lucide-react";
 import { CHANNEL, fontDisplay, fontBody, fontMono } from "../tokens";
 import { ChannelIcon } from "./ChannelChip";
 import EmailComposerModal from "./EmailComposerModal";
+import { ToolbarButton } from "../../../components/ui/ToolbarButton";
 import type { BuilderStep, OutreachTemplate } from "../types";
 
 const VARIABLES = [
@@ -22,6 +23,13 @@ interface Props {
   onPreview: () => void;
   onTestSend: () => void;
   onSaveAsTemplate?: () => void;
+  /** DR Move 1 — Activity drawer trigger. Relocated from the top bar
+   *  so per-step actions stay inside the inspector footer. Only renders
+   *  when onOpenActivity is provided AND the campaign is saved
+   *  (i.e. there's something to show in the timeline). */
+  onOpenActivity?: () => void;
+  activityCount?: number;
+  activityLoading?: boolean;
 }
 
 export function StepInspector({
@@ -34,6 +42,9 @@ export function StepInspector({
   onPreview,
   onTestSend,
   onSaveAsTemplate,
+  onOpenActivity,
+  activityCount,
+  activityLoading,
 }: Props) {
   const [composerOpen, setComposerOpen] = useState(false);
   if (!step) {
@@ -152,7 +163,7 @@ export function StepInspector({
             <Field label="From">
               <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-[#F8FAFC] px-2.5 py-2">
                 <div
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white"
                   style={{
                     background: "#3B82F6",
                     fontFamily: fontDisplay,
@@ -174,7 +185,7 @@ export function StepInspector({
                       : "Inbox status unavailable"}
                   </div>
                   <div
-                    className="truncate text-[10px] text-slate-500"
+                    className="truncate text-[11px] text-slate-500"
                     style={{ fontFamily: fontMono }}
                   >
                     {primaryInboxEmail || "Connect Gmail in Settings"}
@@ -190,7 +201,7 @@ export function StepInspector({
                   <button
                     type="button"
                     onClick={() => onUpdate({ subject_b: "" })}
-                    className="text-[10px] font-semibold text-[#3B82F6]"
+                    className="text-[11px] font-semibold text-[#3B82F6]"
                     style={{ fontFamily: fontDisplay }}
                     title="Add an alternate subject. Each recipient sees A or B 50/50 at send time."
                   >
@@ -215,7 +226,7 @@ export function StepInspector({
                   <button
                     type="button"
                     onClick={() => onUpdate({ subject_b: undefined })}
-                    className="text-[10px] font-semibold text-rose-500"
+                    className="text-[11px] font-semibold text-rose-500"
                     style={{ fontFamily: fontDisplay }}
                     title="Remove the A/B variant — every recipient gets Subject A"
                   >
@@ -231,7 +242,7 @@ export function StepInspector({
                   style={{ fontFamily: fontBody }}
                 />
                 <p
-                  className="mt-1 text-[10.5px] text-slate-400"
+                  className="mt-1 text-[11px] text-slate-400"
                   style={{ fontFamily: fontBody }}
                 >
                   Dispatcher picks A or B uniformly per recipient. Per-variant open / click / reply rates appear in Analytics once sends accumulate.
@@ -250,7 +261,7 @@ export function StepInspector({
                 <button
                   type="button"
                   onClick={() => setComposerOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[0.04em] text-blue-700 hover:bg-blue-100"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.04em] text-blue-700 hover:bg-blue-100"
                   style={{ fontFamily: fontDisplay }}
                   title="Open the full HTML composer with live preview, sanitizer, and test send"
                 >
@@ -324,7 +335,7 @@ export function StepInspector({
               <span className="text-[12px] font-semibold text-[#0F172A]">
                 Append my email signature
               </span>
-              <span className="ml-auto text-[10.5px] text-slate-500">
+              <span className="ml-auto text-[11px] text-slate-500">
                 Edit in Settings → Preferences
               </span>
             </label>
@@ -363,6 +374,68 @@ export function StepInspector({
           </Field>
         ) : null}
 
+        {/* J.2 — Step-level time-of-day + weekday-only scheduling.
+            Hidden on wait steps (no fire time). When the toggle is OFF
+            the step uses the cumulative-delay arithmetic; when ON the
+            dispatcher snaps the computed time to the requested local
+            time-of-day in the campaign's send_timezone. */}
+        {!isWait ? (
+          <Field label="Fire at specific time of day">
+            <label
+              className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2"
+              style={{ fontFamily: fontBody }}
+            >
+              <input
+                type="checkbox"
+                checked={typeof step.timeOfDayLocal === "string" && step.timeOfDayLocal.length > 0}
+                onChange={(e) =>
+                  onUpdate({
+                    timeOfDayLocal: e.target.checked ? (step.timeOfDayLocal || "09:00") : null,
+                  })
+                }
+              />
+              <span className="text-[12px] font-semibold text-[#0F172A]">
+                Send at a specific local time
+              </span>
+              {typeof step.timeOfDayLocal === "string" && step.timeOfDayLocal.length > 0 ? (
+                <input
+                  type="time"
+                  value={step.timeOfDayLocal}
+                  onChange={(e) => onUpdate({ timeOfDayLocal: e.target.value || null })}
+                  className="ml-auto rounded-md border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums text-[#0F172A] outline-none focus:border-[#3B82F6] focus:ring-2 focus:ring-blue-100"
+                  style={{ fontFamily: fontBody }}
+                  aria-label="Send time"
+                />
+              ) : null}
+            </label>
+            <label
+              className="mt-1.5 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2"
+              style={{ fontFamily: fontBody }}
+            >
+              <input
+                type="checkbox"
+                checked={step.weekdaysOnly === true}
+                onChange={(e) => onUpdate({ weekdaysOnly: e.target.checked })}
+              />
+              <span className="text-[12px] font-semibold text-[#0F172A]">
+                Weekdays only
+              </span>
+              <span className="ml-auto text-[11px] text-slate-500">
+                Sat / Sun bumps to next Monday
+              </span>
+            </label>
+            <p
+              className="mt-1.5 text-[11px] text-slate-500"
+              style={{ fontFamily: fontBody }}
+            >
+              Overrides the delay-based fire time. Time is interpreted in the
+              campaign's send timezone — e.g. <strong>9:00 AM</strong> with America/New_York
+              means the email goes out at 9 AM Eastern regardless of where the
+              recipient is.
+            </p>
+          </Field>
+        ) : null}
+
         {channelTemplates.length > 0 && !isWait ? (
           <Field label="Apply a template">
             <div className="flex flex-col gap-1.5">
@@ -377,7 +450,7 @@ export function StepInspector({
                   <span className="truncate font-medium text-[#0F172A]">
                     {tpl.name}
                   </span>
-                  <span className="text-[10px] text-slate-400">Use</span>
+                  <span className="text-[11px] text-slate-400">Use</span>
                 </button>
               ))}
             </div>
@@ -388,44 +461,59 @@ export function StepInspector({
       {/* Footer actions */}
       {!isWait ? (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
-          <button
-            type="button"
+          <ToolbarButton
             onClick={onPreview}
-            className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+            size="md"
             style={{ fontFamily: fontDisplay }}
           >
             Preview as contact
-          </button>
+          </ToolbarButton>
           {onSaveAsTemplate ? (
-            <button
-              type="button"
+            <ToolbarButton
               onClick={onSaveAsTemplate}
+              variant="primary"
+              size="md"
               disabled={
                 isEmail
                   ? !step.subject?.trim() && !step.body?.trim()
                   : !step.title?.trim() && !step.description?.trim()
               }
               title="Save this step's content as a reusable workspace template"
-              className="rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-1.5 text-[11px] font-semibold text-[#1d4ed8] transition hover:bg-[#DBEAFE] disabled:cursor-not-allowed disabled:opacity-50"
               style={{ fontFamily: fontDisplay }}
             >
               Save as template
-            </button>
+            </ToolbarButton>
           ) : null}
-          <button
-            type="button"
+          {onOpenActivity ? (
+            <ToolbarButton
+              onClick={onOpenActivity}
+              size="md"
+              iconLeft={<ListIcon className="h-2.5 w-2.5" />}
+              style={{ fontFamily: fontDisplay }}
+              title="Open activity timeline"
+            >
+              Activity
+              {activityLoading
+                ? " (…)"
+                : typeof activityCount === "number"
+                  ? ` (${activityCount})`
+                  : ""}
+            </ToolbarButton>
+          ) : null}
+          <ToolbarButton
             onClick={onTestSend}
+            size="md"
             disabled={!primaryInboxEmail}
             title={
               primaryInboxEmail
                 ? "Send this step to your inbox (or the first manual recipient if added) with sample variables."
                 : "Connect a Gmail or Outlook mailbox in Settings first."
             }
-            className="ml-auto rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+            className="ml-auto"
             style={{ fontFamily: fontDisplay }}
           >
             Test send
-          </button>
+          </ToolbarButton>
         </div>
       ) : null}
       {isEmail ? (
@@ -456,7 +544,7 @@ function Field({
     <div className="mb-3.5">
       <div className="mb-1.5 flex items-center justify-between">
         <div
-          className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400"
+          className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400"
           style={{ fontFamily: fontDisplay }}
         >
           {label}
@@ -476,7 +564,7 @@ function VariableChips({ onInsert }: { onInsert: (v: string) => void }) {
           key={v}
           type="button"
           onClick={() => onInsert(v)}
-          className="rounded border border-[#BAE6FD] bg-[#E0F2FE] px-1.5 py-0.5 text-[10px] font-semibold text-[#0369A1] transition hover:bg-[#BAE6FD]"
+          className="rounded border border-[#BAE6FD] bg-[#E0F2FE] px-1.5 py-0.5 text-[11px] font-semibold text-[#0369A1] transition hover:bg-[#BAE6FD]"
           style={{ fontFamily: fontMono }}
         >
           {v}

@@ -89,6 +89,21 @@ serve(async (req) => {
     return json({ ok: false, error: error.message }, 500);
   }
 
+  // Enrichment Phase 1: fold credit usage into the snapshot. RPC returns
+  // { used_this_month, quota, remaining, reset_at, plan }. NULL quota =
+  // unlimited (Enterprise). Soft-fail if the RPC isn't deployed yet so we
+  // don't break the existing UI gating on rollback.
+  let credits: Record<string, unknown> | null = null;
+  try {
+    const { data: creditData, error: creditErr } = await adminClient.rpc(
+      "lit_get_credit_usage",
+      { p_org_id: orgId, p_user_id: user.id },
+    );
+    if (!creditErr) credits = creditData as Record<string, unknown>;
+  } catch (_) {
+    // RPC may not exist in some environments; ignore.
+  }
+
   const { data: paRow } = await adminClient
     .from("platform_admins")
     .select("user_id")
@@ -96,9 +111,14 @@ serve(async (req) => {
     .maybeSingle();
   const isPlatformAdmin = paRow !== null;
 
+  const entitlements =
+    data && typeof data === "object"
+      ? { ...(data as Record<string, unknown>), credits }
+      : data;
+
   return json({
     ok: true,
-    entitlements: data,
+    entitlements,
     org_id: orgId,
     user_id: user.id,
     is_platform_admin: isPlatformAdmin,

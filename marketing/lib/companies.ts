@@ -186,11 +186,19 @@ export async function listCompanySlugs(opts: {
   const { limit = 50000, offset = 0, minShipments = MIN_SHIPMENTS_FOR_INDEX } = opts;
   const c = client();
   if (!c) return [];
+  // WHERE clauses here MUST be a superset of getCompanyBySlug's filters so
+  // every slug we emit resolves to a real page. Today getCompanyBySlug uses
+  // `is_active = true AND seo_slug = slug`; we additionally require
+  // `shipments >= MIN_SHIPMENTS_FOR_INDEX` (concentrated quality > diluted
+  // quantity) and a non-null company_name (defensive — sentinel rows with
+  // null names would render an empty profile). If you relax these, also
+  // update the page's notFound() guard.
   const { data, error } = await c
     .from("lit_company_directory")
     .select("seo_slug, updated_at")
     .eq("is_active", true)
     .not("seo_slug", "is", null)
+    .not("company_name", "is", null)
     .gte("shipments", minShipments)
     .order("teu", { ascending: false, nullsFirst: false })
     .range(offset, offset + limit - 1);
@@ -199,6 +207,39 @@ export async function listCompanySlugs(opts: {
     return [];
   }
   return ((data as unknown) || []) as Array<{ seo_slug: string; updated_at: string | null }>;
+}
+
+/**
+ * Fetch ALL indexable slugs by paginating through PostgREST's per-request
+ * row cap. Supabase's `PGRST_MAX_ROWS` defaults to 1,000 — passing
+ * `range(0, 49999)` silently caps to 1,000 server-side. Without this loop
+ * the companies sitemap was emitting only ~28% of the eligible corpus
+ * (1,000 of 3,508), leaving ~71% of programmatic SEO surface invisible
+ * to Google's discovery queue.
+ *
+ * Loops in 1,000-row chunks (the PostgREST cap, used as the page size
+ * since asking for more is pointless) until the DB returns fewer rows
+ * than the chunk size (end-of-data signal) or until we've hit the hard
+ * ceiling of 50,000 — Google's per-sitemap URL limit and a backstop
+ * against runaway loops if the table ever grows past that.
+ *
+ * Maintains the same ordering as `listCompanySlugs` (teu desc) so the
+ * highest-value pages cluster at the top of the sitemap.
+ */
+export async function listAllCompanySlugs(
+  opts: { minShipments?: number; pageSize?: number; hardCap?: number } = {},
+): Promise<Array<{ seo_slug: string; updated_at: string | null }>> {
+  const { minShipments = MIN_SHIPMENTS_FOR_INDEX, pageSize = 1000, hardCap = 50000 } = opts;
+  const all: Array<{ seo_slug: string; updated_at: string | null }> = [];
+  for (let offset = 0; offset < hardCap; offset += pageSize) {
+    const remaining = hardCap - offset;
+    const chunkLimit = Math.min(pageSize, remaining);
+    const chunk = await listCompanySlugs({ limit: chunkLimit, offset, minShipments });
+    if (chunk.length === 0) break;
+    all.push(...chunk);
+    if (chunk.length < chunkLimit) break;
+  }
+  return all;
 }
 
 /**

@@ -104,7 +104,7 @@ export function StepCard({
           <ChannelIcon kind={step.kind} size={18} />
         </button>
         <span
-          className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.04em] text-slate-400"
+          className="mt-1.5 text-[11px] font-bold uppercase tracking-[0.04em] text-slate-400"
           style={{ fontFamily: fontDisplay }}
         >
           DAY {day}
@@ -125,7 +125,7 @@ export function StepCard({
       >
         <div className="flex flex-wrap items-center gap-2.5">
           <span
-            className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em]"
+            className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em]"
             style={{
               color: meta.color,
               background: meta.bg,
@@ -137,7 +137,7 @@ export function StepCard({
             {meta.label}
           </span>
           <div
-            className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#0F172A]"
+            className="min-w-0 flex-1 truncate text-[14px] font-semibold text-[#0F172A]"
             style={{ fontFamily: fontDisplay }}
           >
             {summaryFor(step)}

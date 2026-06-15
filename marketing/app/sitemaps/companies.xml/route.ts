@@ -1,4 +1,4 @@
-import { listCompanySlugs } from "@/lib/companies";
+import { listAllCompanySlugs } from "@/lib/companies";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 21600; // 6h
@@ -15,11 +15,16 @@ export const revalidate = 21600; // 6h
  * via <sitemap><loc>…</loc></sitemap>.
  *
  * Output: raw XML, public, cached at the edge with 6h SWR.
+ *
+ * Uses `listAllCompanySlugs` (paginates around PostgREST's per-request
+ * 1,000-row cap) rather than a single `listCompanySlugs` call. The
+ * earlier single-call version was silently truncating ~71% of the
+ * eligible corpus before reaching Google.
  */
 const SITE_URL = "https://logisticintel.com";
 
 export async function GET() {
-  const slugs = await listCompanySlugs({ limit: 50000, offset: 0 });
+  const slugs = await listAllCompanySlugs();
 
   const now = new Date().toISOString();
   const urls = slugs.map((row) => {

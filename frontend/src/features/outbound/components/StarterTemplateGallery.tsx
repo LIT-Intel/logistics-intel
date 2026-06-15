@@ -37,7 +37,7 @@ export default function StarterTemplateGallery({ open, onClose, onPick }: Props)
           </div>
           <div className="min-w-0 flex-1">
             <div
-              className="text-[15px] font-bold text-[#0F172A]"
+              className="text-[16px] font-bold text-[#0F172A]"
               style={{ fontFamily: fontDisplay }}
             >
               Starter Templates
@@ -103,13 +103,13 @@ export default function StarterTemplateGallery({ open, onClose, onPick }: Props)
                   {t.name}
                 </div>
                 <div
-                  className="text-[11.5px] leading-relaxed text-slate-600"
+                  className="text-[12px] leading-relaxed text-slate-600"
                   style={{ fontFamily: fontBody }}
                 >
                   {t.description}
                 </div>
                 <div
-                  className="mt-1 truncate rounded-md bg-slate-50 px-2 py-1 text-[10.5px] text-slate-700"
+                  className="mt-1 truncate rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-700"
                   style={{ fontFamily: fontBody }}
                   title={t.subject}
                 >
@@ -117,7 +117,7 @@ export default function StarterTemplateGallery({ open, onClose, onPick }: Props)
                 </div>
                 <div className="mt-auto flex items-center justify-between gap-2 pt-2">
                   <span
-                    className="rounded-full border px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.04em]"
+                    className="rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.04em]"
                     style={{
                       fontFamily: fontDisplay,
                       borderColor: t.accent + "55",

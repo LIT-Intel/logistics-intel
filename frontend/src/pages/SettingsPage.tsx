@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "@/auth/AuthProvider";
+import { useEntitlements } from "@/hooks/useEntitlements";
 import { supabase } from "@/lib/supabase";
 import { updateProfile } from "@/auth/supabaseAuthClient";
 import { UploadFile } from "@/api/integrations";
@@ -42,6 +43,7 @@ function requireNoError(
 
 export default function SettingsPage() {
   const { user, plan, isSuperAdmin } = useAuth();
+  const entitlements = useEntitlements();
   const mountedRef = useRef(true);
 
   const [profile, setProfile] = useState<JsonMap>({});
@@ -66,6 +68,11 @@ export default function SettingsPage() {
   const [isPartner, setIsPartner] = useState(false);
 
   const isAdminEmail = isSuperAdmin;
+  // Platform super-admin signal — either the bootstrap super-admin email
+  // (isSuperAdmin from useAuth) OR a row in the platform_admins table
+  // (surfaced by useEntitlements). Gates platform-only settings tabs
+  // (Exit Rules, Enrichment Providers). Org owners/admins do NOT qualify.
+  const platformAdminFlag = isSuperAdmin || Boolean(entitlements?.isPlatformAdmin);
 
   const currentMembership = orgMembers.find(
     (member) => member.user_id === user?.id
@@ -818,8 +825,10 @@ export default function SettingsPage() {
             joinedLabel,
           }}
           isAdmin={isAdmin}
+          isPlatformAdmin={platformAdminFlag}
           canAccess={canAccess}
           isPartner={isPartner}
+          orgId={orgId}
           authProvider={
             (user?.app_metadata as Record<string, any> | undefined)?.provider ||
             (user?.user_metadata as Record<string, any> | undefined)?.provider ||

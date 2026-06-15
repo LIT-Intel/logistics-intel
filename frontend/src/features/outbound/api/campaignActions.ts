@@ -255,10 +255,101 @@ export async function setCampaignCompanies(
   }
 }
 
+// ---------------------------------------------------------- Atomic save
+//
+// CR P0-3: single-call atomic create/update for a campaign draft. Replaces
+// the legacy 4-step client sequence (createCampaignDraft + companies + N
+// step upserts + cleanup-deletes) which left campaigns in a partial state
+// when one step failed mid-sequence. The server-side `save-campaign-draft`
+// edge function wraps everything in a Postgres SECURITY DEFINER function
+// that runs inside a single implicit transaction — any failure rolls back
+// ALL writes.
+//
+// On the success path, returns the campaign id + the persisted step ids in
+// 1-based order so the caller can flip its URL / state. On failure throws
+// with a clean error message (or whatever the edge function bubbles up
+// from the RPC), so the caller can surface it without worrying about
+// partial state on the server.
+
+export interface SaveCampaignDraftStep {
+  channel: string;
+  step_type: string;
+  subject?: string | null;
+  subject_b?: string | null;
+  body?: string | null;
+  delay_days?: number;
+  delay_hours?: number;
+  delay_minutes?: number;
+  include_signature?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SaveCampaignDraftInput {
+  campaign_id?: string | null;
+  name: string;
+  channel?: string;
+  metrics?: Record<string, unknown>;
+  scheduled_start_at?: string | null;
+  send_timezone?: string;
+  company_ids: string[];
+  steps: SaveCampaignDraftStep[];
+  /** true = edit mode (full company diff). false = create mode (additive). */
+  replace_companies: boolean;
+}
+
+export interface SaveCampaignDraftResult {
+  campaign_id: string;
+  is_edit: boolean;
+  step_ids: string[];
+  step_count: number;
+}
+
+export async function saveCampaignDraft(
+  input: SaveCampaignDraftInput,
+): Promise<SaveCampaignDraftResult> {
+  const { data, error } = await supabase.functions.invoke(
+    "save-campaign-draft",
+    { body: input },
+  );
+  if (error) {
+    // supabase-js wraps non-2xx into FunctionsHttpError; pull the JSON body
+    // out so the user sees the real RPC error instead of a generic 400.
+    let detail = error.message || "save_failed";
+    const ctx = (error as { context?: { json?: () => Promise<unknown> } }).context;
+    if (ctx?.json) {
+      try {
+        const parsed = (await ctx.json()) as { error?: string };
+        if (parsed?.error) detail = parsed.error;
+      } catch {
+        // fall back to the plain message
+      }
+    }
+    throw new Error(`saveCampaignDraft: ${detail}`);
+  }
+  if (!data || (data as { ok?: boolean }).ok === false) {
+    const detail = (data as { error?: string })?.error ?? "save_failed";
+    throw new Error(`saveCampaignDraft: ${detail}`);
+  }
+  const result = data as SaveCampaignDraftResult & { ok?: boolean };
+  if (!result.campaign_id) {
+    throw new Error("saveCampaignDraft: missing campaign_id in response");
+  }
+  return {
+    campaign_id: result.campaign_id,
+    is_edit: Boolean(result.is_edit),
+    step_ids: Array.isArray(result.step_ids) ? result.step_ids : [],
+    step_count: Number(result.step_count ?? 0),
+  };
+}
+
 /**
  * Delete all campaign steps with step_order >= startOrder. Used by edit-mode
  * save to drop steps that the user removed from the sequence (we upsert the
  * new sequence steps 1..N then delete any leftovers > N).
+ *
+ * Kept exported for callers other than the Builder's main save flow.
+ * The Builder itself now goes through `saveCampaignDraft` (CR P0-3) which
+ * handles step cleanup atomically server-side.
  */
 export async function deleteCampaignStepsFrom(
   campaignId: string,
