@@ -11,10 +11,13 @@
 
 import React from "react";
 import {
+  useDatabaseFreshness,
   useDomesticInlandLeg,
   useLaneCarrierMix,
   useLaneYoyTrend,
   useMxImportActivity,
+  usePqCompanyAggregates,
+  usePqSupplierAggregates,
   useUsExportActivity,
   type LaneCarrierMixRow,
 } from "@/api/intel";
@@ -463,13 +466,30 @@ function CustomsBrokerMixCard({ companyName }: { companyName: string }) {
 
 // ── Per-lane carrier mix card ───────────────────────────────────────────
 
+// Format a lane endpoint as "City, ST CC" — e.g. "Long Beach, CA US".
+// Falls back gracefully when city/state are null (origin-side gap).
+function formatLaneEndpoint(
+  city: string | null | undefined,
+  state: string | null | undefined,
+  country: string | null | undefined,
+): string {
+  const cs = [city, state].filter((v): v is string => Boolean(v && v.trim())).join(", ");
+  const cc = (country || "").trim();
+  if (cs && cc) return `${cs} ${cc}`;
+  if (cs) return cs;
+  if (cc) return cc;
+  return "—";
+}
+
 function PerLaneCarrierMixCard({ companyName }: { companyName: string }) {
   const { data, isLoading } = useLaneCarrierMix(companyName);
 
   const lanes = React.useMemo(() => {
     const map = new Map<string, { lane: string; carriers: LaneCarrierMixRow[] }>();
     for (const row of data || []) {
-      const key = `${row.origin_country ?? "—"}→${row.destination_country ?? "—"}`;
+      const origin = formatLaneEndpoint(row.origin_city, row.origin_state, row.origin_country);
+      const dest = formatLaneEndpoint(row.destination_city, row.destination_state, row.destination_country);
+      const key = `${origin} → ${dest}`;
       if (!map.has(key)) {
         map.set(key, { lane: key, carriers: [] });
       }
@@ -556,16 +576,22 @@ function PerLaneCarrierMixCard({ companyName }: { companyName: string }) {
 function PerLaneYoyTrendCard({ companyName }: { companyName: string }) {
   const { data, isLoading } = useLaneYoyTrend(companyName);
 
+  // Sliding 12-month windows anchored to now() — replaces hardcoded
+  // 2024/25/26 columns. trailing_12m DESC sort matches RPC default.
   const rows = React.useMemo(() => {
     return (data || [])
-      .map((r) => ({
-        lane: `${r.origin_country ?? "—"}→${r.destination_country ?? "—"}`,
-        p2024: Number(r.period_2024) || 0,
-        p2025: Number(r.period_2025) || 0,
-        p2026: Number(r.period_2026) || 0,
-        yoy: r.yoy_pct == null ? null : Number(r.yoy_pct),
-      }))
-      .sort((a, b) => b.p2026 + b.p2025 - (a.p2026 + a.p2025))
+      .map((r) => {
+        const origin = formatLaneEndpoint(r.origin_city, r.origin_state, r.origin_country);
+        const dest = formatLaneEndpoint(r.destination_city, r.destination_state, r.destination_country);
+        return {
+          lane: `${origin} → ${dest}`,
+          trailing: Number(r.trailing_12m) || 0,
+          prior: Number(r.prior_12m) || 0,
+          priorPrior: Number(r.prior_prior_12m) || 0,
+          yoy: r.yoy_pct == null ? null : Number(r.yoy_pct),
+        };
+      })
+      .sort((a, b) => b.trailing - a.trailing)
       .slice(0, 6);
   }, [data]);
 
@@ -573,14 +599,14 @@ function PerLaneYoyTrendCard({ companyName }: { companyName: string }) {
     <IntelCard
       icon={<TransborderRailIcon size={16} title="YoY trend" />}
       title="Per-Lane YoY Trend"
-      sub="Shipment counts · 2024 → 2026"
+      sub="Trailing 12m vs prior 12m · sliding window"
     >
       {isLoading ? (
         <SkeletonRows count={4} />
       ) : rows.length === 0 ? (
         <EmptyState
           icon={<TransborderRailIcon size={24} />}
-          message="No YoY trend recorded yet — refresh intel to populate the 2024→2026 rollup."
+          message="No YoY trend recorded yet — refresh intel to populate the sliding-window rollup."
         />
       ) : (
         <div className="space-y-2">
@@ -599,38 +625,48 @@ function PerLaneYoyTrendCard({ companyName }: { companyName: string }) {
                 className="grid items-center gap-2 rounded-md px-1 py-1 transition-colors hover:bg-slate-50"
                 style={{ gridTemplateColumns: "minmax(0,1fr) auto auto auto auto" }}
               >
-                <span className="font-display truncate text-[11.5px] font-semibold text-slate-900">
+                <span
+                  className="font-display truncate text-[11.5px] font-semibold text-slate-900"
+                  title={r.lane}
+                >
                   {r.lane}
                 </span>
                 <span
-                  className="font-mono w-10 text-right text-[10.5px] tabular-nums text-slate-500"
+                  className="font-mono w-12 text-right text-[10.5px] tabular-nums text-slate-500"
                   style={tabularStyle}
-                  title="2024"
+                  title="prior-prior 12m (24–36 months ago)"
                 >
-                  {r.p2024.toLocaleString()}
+                  {r.priorPrior.toLocaleString()}
                 </span>
                 <span
-                  className="font-mono w-10 text-right text-[10.5px] tabular-nums text-slate-700"
+                  className="font-mono w-12 text-right text-[10.5px] tabular-nums text-slate-700"
                   style={tabularStyle}
-                  title="2025"
+                  title="prior 12m (12–24 months ago)"
                 >
-                  {r.p2025.toLocaleString()}
+                  {r.prior.toLocaleString()}
                 </span>
                 <span
-                  className="font-mono w-10 text-right text-[10.5px] tabular-nums font-bold text-slate-900"
+                  className="font-mono w-12 text-right text-[10.5px] tabular-nums font-bold text-slate-900"
                   style={tabularStyle}
-                  title="2026"
+                  title="trailing 12m"
                 >
-                  {r.p2026.toLocaleString()}
+                  {r.trailing.toLocaleString()}
                 </span>
-                <span
-                  className={`font-mono w-14 text-right text-[11px] tabular-nums font-bold ${tone}`}
-                  style={tabularStyle}
-                >
-                  {r.yoy == null
-                    ? "—"
-                    : `${r.yoy > 0 ? "+" : ""}${r.yoy.toFixed(1)}%`}
-                </span>
+                {r.yoy == null ? (
+                  <span
+                    className="inline-flex items-center justify-end rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9.5px] font-medium text-slate-500"
+                    title="No prior-12m baseline available"
+                  >
+                    Insufficient history
+                  </span>
+                ) : (
+                  <span
+                    className={`font-mono w-14 text-right text-[11px] tabular-nums font-bold ${tone}`}
+                    style={tabularStyle}
+                  >
+                    {`${r.yoy > 0 ? "+" : ""}${r.yoy.toFixed(1)}%`}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -638,14 +674,327 @@ function PerLaneYoyTrendCard({ companyName }: { companyName: string }) {
             style={{ gridTemplateColumns: "minmax(0,1fr) auto auto auto auto" }}
           >
             <span>Lane</span>
-            <span className="w-10 text-right">'24</span>
-            <span className="w-10 text-right">'25</span>
-            <span className="w-10 text-right">'26</span>
+            <span className="w-12 text-right">-24m</span>
+            <span className="w-12 text-right">-12m</span>
+            <span className="w-12 text-right">T12m</span>
             <span className="w-14 text-right">YoY</span>
           </div>
         </div>
       )}
     </IntelCard>
+  );
+}
+
+// ── Customs Offices card (Gap 2) ────────────────────────────────────────
+
+function CustomsOfficesCard({ companyName }: { companyName: string }) {
+  const { data, isLoading } = usePqCompanyAggregates(companyName);
+
+  // Dedup customs offices across all 4 PQ source feeds (us-import / us-export
+  // / mx-import / mx-export). The same office may surface from multiple
+  // sources; we want a single chip list.
+  const offices = React.useMemo(() => {
+    const seen = new Set<string>();
+    for (const row of data || []) {
+      for (const o of row.customs_offices || []) {
+        const t = (o || "").trim();
+        if (t) seen.add(t);
+      }
+    }
+    return Array.from(seen).sort();
+  }, [data]);
+
+  return (
+    <IntelCard
+      icon={<CustomsBrokerIcon size={16} title="Customs offices" />}
+      title="Customs Offices"
+      sub="Ports / airports / customs houses this company clears through"
+    >
+      {isLoading ? (
+        <SkeletonRows count={2} />
+      ) : offices.length === 0 ? (
+        <EmptyState
+          icon={<CustomsBrokerIcon size={24} />}
+          message="No customs-office aggregate recorded — refresh intel to pull from PowerQuery /companies."
+        />
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {offices.map((o) => (
+            <span
+              key={o}
+              className="font-mono inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10.5px] text-slate-700"
+              style={tabularStyle}
+            >
+              {o}
+            </span>
+          ))}
+        </div>
+      )}
+    </IntelCard>
+  );
+}
+
+// ── Product Profile card (Gap 2) ────────────────────────────────────────
+
+function ProductProfileCard({ companyName }: { companyName: string }) {
+  const { data, isLoading } = usePqCompanyAggregates(companyName);
+  const [expanded, setExpanded] = React.useState(false);
+
+  const products = React.useMemo(() => {
+    const seen = new Set<string>();
+    for (const row of data || []) {
+      for (const p of row.product_descriptions || []) {
+        const t = (p || "").trim();
+        if (t) seen.add(t);
+      }
+    }
+    return Array.from(seen);
+  }, [data]);
+
+  const shown = expanded ? products : products.slice(0, 5);
+  const more = products.length - shown.length;
+
+  return (
+    <IntelCard
+      icon={<OceanIcon size={16} title="Product profile" />}
+      title="Product Profile"
+      sub="Top product descriptions across customs filings"
+    >
+      {isLoading ? (
+        <SkeletonRows count={3} />
+      ) : products.length === 0 ? (
+        <EmptyState
+          icon={<OceanIcon size={24} />}
+          message="No product descriptions recorded — refresh intel to pull from PowerQuery /companies."
+        />
+      ) : (
+        <div>
+          <ul className="space-y-1.5">
+            {shown.map((p) => (
+              <li
+                key={p}
+                className="font-display truncate rounded bg-slate-50/60 px-2 py-1 text-[11.5px] text-slate-800"
+                title={p}
+              >
+                {p}
+              </li>
+            ))}
+          </ul>
+          {more > 0 && !expanded && (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="font-display mt-2 text-[10.5px] font-semibold text-blue-600 hover:text-blue-700"
+            >
+              Show all {products.length} →
+            </button>
+          )}
+          {expanded && products.length > 5 && (
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="font-display mt-2 text-[10.5px] font-semibold text-slate-500 hover:text-slate-700"
+            >
+              Show less
+            </button>
+          )}
+        </div>
+      )}
+    </IntelCard>
+  );
+}
+
+// ── Incoterms card (Gap 2) ──────────────────────────────────────────────
+
+function IncotermsCard({ companyName }: { companyName: string }) {
+  const { data, isLoading } = usePqCompanyAggregates(companyName);
+
+  // Count each incoterm across feeds. PowerQuery returns the term strings
+  // directly (FOB / CIF / EXW / DDP …); we tally with a Map.
+  const stats = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of data || []) {
+      for (const t of row.incoterms || []) {
+        const k = (t || "").trim().toUpperCase();
+        if (!k) continue;
+        counts.set(k, (counts.get(k) || 0) + 1);
+      }
+    }
+    const total = Array.from(counts.values()).reduce((s, n) => s + n, 0);
+    return Array.from(counts.entries())
+      .map(([term, count]) => ({
+        term,
+        count,
+        share: total > 0 ? Math.round((count / total) * 100) : 0,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }, [data]);
+
+  return (
+    <IntelCard
+      icon={<OceanIcon size={16} title="Incoterms" />}
+      title="Incoterms"
+      sub="Distribution of Incoterms across observed filings"
+    >
+      {isLoading ? (
+        <SkeletonRows count={3} />
+      ) : stats.length === 0 ? (
+        <EmptyState
+          icon={<OceanIcon size={24} />}
+          message="No Incoterms recorded — refresh intel to pull from PowerQuery /companies."
+        />
+      ) : (
+        <ul className="space-y-2">
+          {stats.map((s) => (
+            <li key={s.term} className="flex items-center gap-3 px-1">
+              <span
+                className="font-mono w-12 shrink-0 text-[11px] font-bold text-slate-900"
+                style={tabularStyle}
+              >
+                {s.term}
+              </span>
+              <div className="h-1.5 flex-1 overflow-hidden rounded bg-slate-100">
+                <div
+                  className="h-full bg-blue-500"
+                  style={{ width: `${Math.max(2, s.share)}%` }}
+                />
+              </div>
+              <span
+                className="font-mono w-10 shrink-0 text-right text-[10.5px] tabular-nums text-slate-500"
+                style={tabularStyle}
+              >
+                {s.share}%
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </IntelCard>
+  );
+}
+
+// ── Top Overseas Suppliers card (Gap 3) ─────────────────────────────────
+
+function TopSuppliersCard({ companyName }: { companyName: string }) {
+  const { data, isLoading } = usePqSupplierAggregates(companyName);
+
+  // Sort by shipment_count DESC; take top 10. PQ /suppliers returns one row
+  // per (buyer, supplier) pair; the hook already orders + caps server-side,
+  // we just trim defensively here.
+  const rows = React.useMemo(() => (data || []).slice(0, 10), [data]);
+
+  // Best-effort flag emoji from supplier_country (ISO-2). If country is null
+  // or longer than 2 chars we just skip the flag rather than guess.
+  const countryFlag = (country: string | null): string | null => {
+    if (!country) return null;
+    const c = country.trim().toUpperCase();
+    if (c.length !== 2 || !/^[A-Z]{2}$/.test(c)) return null;
+    // Regional indicator symbol letters: A = U+1F1E6
+    const codePoints = [...c].map((ch) => 0x1f1e6 + (ch.charCodeAt(0) - 65));
+    return String.fromCodePoint(...codePoints);
+  };
+
+  return (
+    <IntelCard
+      icon={<OceanIcon size={16} title="Top suppliers" />}
+      title="Top Overseas Suppliers"
+      sub="Largest suppliers by shipment count"
+    >
+      {isLoading ? (
+        <SkeletonRows count={4} />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          icon={<OceanIcon size={24} />}
+          message="No supplier aggregates recorded — refresh intel to pull from PowerQuery /suppliers."
+        />
+      ) : (
+        <ul className="space-y-2">
+          {rows.map((r) => {
+            const flag = countryFlag(r.supplier_country);
+            const lastShip = r.last_shipment_date
+              ? new Date(r.last_shipment_date).toLocaleDateString(undefined, {
+                  year: "numeric",
+                  month: "short",
+                })
+              : null;
+            const product = (r.top_products && r.top_products[0]) || null;
+            return (
+              <li
+                key={`${r.supplier_name}-${r.supplier_country ?? ""}`}
+                className="grid items-center gap-2 rounded-md px-1 py-1.5 transition-colors hover:bg-slate-50"
+                style={{ gridTemplateColumns: "auto minmax(0,1fr) auto auto" }}
+              >
+                <span className="text-[14px]" aria-hidden>
+                  {flag || <span className="font-mono text-[9.5px] text-slate-400">{r.supplier_country || "—"}</span>}
+                </span>
+                <div className="min-w-0">
+                  <div
+                    className="font-display truncate text-[12px] font-semibold text-slate-900"
+                    title={r.supplier_name}
+                  >
+                    {r.supplier_name}
+                  </div>
+                  {product && (
+                    <div
+                      className="font-body truncate text-[10.5px] text-slate-500"
+                      title={product}
+                    >
+                      {product}
+                    </div>
+                  )}
+                </div>
+                <span
+                  className="font-mono w-16 text-right text-[10.5px] tabular-nums text-slate-500"
+                  style={tabularStyle}
+                  title="Last shipment"
+                >
+                  {lastShip || "—"}
+                </span>
+                <span
+                  className="font-mono w-12 text-right text-[11px] font-bold tabular-nums text-slate-900"
+                  style={tabularStyle}
+                  title="Shipment count"
+                >
+                  {(r.shipment_count ?? 0).toLocaleString()}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </IntelCard>
+  );
+}
+
+// ── Data freshness chip (Gap 5) ─────────────────────────────────────────
+
+function DataFreshnessChip() {
+  const { data } = useDatabaseFreshness();
+  if (!data || data.age_days == null) {
+    return (
+      <span
+        className="font-display inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-1.5 py-[2px] text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-500"
+        title="ImportYeti dataset freshness unavailable"
+      >
+        Data freshness: —
+      </span>
+    );
+  }
+  // Visual tone: green ≤7d, amber 8-30d, red >30d. Operator-readable.
+  const tone =
+    data.age_days <= 7
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : data.age_days <= 30
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-rose-200 bg-rose-50 text-rose-700";
+  return (
+    <span
+      className={`font-display inline-flex items-center rounded-full border px-1.5 py-[2px] text-[9px] font-semibold uppercase tracking-[0.06em] ${tone}`}
+      title={`Source dataset last refreshed ${data.last_updated ?? "—"}`}
+    >
+      Data freshness: {data.age_days}d ago
+    </span>
   );
 }
 
@@ -672,6 +1021,7 @@ export function PremiumIntelPanel({
                 Premium
               </span>
             )}
+            <DataFreshnessChip />
           </div>
           <p className="font-body mt-1 text-[12px] text-slate-600">{subtitle}</p>
         </div>
@@ -691,6 +1041,10 @@ export function PremiumIntelPanel({
         <UsExportCard companyName={companyName} />
         <DomesticInlandLegCard companyName={companyName} />
         <CustomsBrokerMixCard companyName={companyName} />
+        <CustomsOfficesCard companyName={companyName} />
+        <ProductProfileCard companyName={companyName} />
+        <IncotermsCard companyName={companyName} />
+        <TopSuppliersCard companyName={companyName} />
         <PerLaneCarrierMixCard companyName={companyName} />
         <div className="lg:col-span-2">
           <PerLaneYoyTrendCard companyName={companyName} />

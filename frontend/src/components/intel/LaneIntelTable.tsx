@@ -73,6 +73,21 @@ function inferLaneMode(
   return "ocean";
 }
 
+// Format "City, ST CC" — origin side may be country-only until the source
+// feed gains origin city/state (lit_unified_shipments gap).
+function fmtEndpoint(
+  city: string | null | undefined,
+  state: string | null | undefined,
+  country: string | null | undefined,
+): string {
+  const cs = [city, state].filter((v): v is string => Boolean(v && v.trim())).join(", ");
+  const cc = (country || "").trim();
+  if (cs && cc) return `${cs} ${cc}`;
+  if (cs) return cs;
+  if (cc) return cc;
+  return "—";
+}
+
 function joinRows(
   mix: LaneCarrierMixRow[],
   trend: LaneYoyTrendRow[],
@@ -80,13 +95,15 @@ function joinRows(
   const byLane = new Map<string, LaneRow>();
 
   for (const m of mix) {
-    const key = `${m.origin_country ?? ""}→${m.destination_country ?? ""}`;
+    const origin = fmtEndpoint(m.origin_city, m.origin_state, m.origin_country);
+    const destination = fmtEndpoint(m.destination_city, m.destination_state, m.destination_country);
+    const key = `${origin}→${destination}`;
     const existing = byLane.get(key);
     const inc = Number(m.shipment_count) || 0;
     if (!existing) {
       byLane.set(key, {
-        origin: m.origin_country || "—",
-        destination: m.destination_country || "—",
+        origin,
+        destination,
         mode: inferLaneMode(m.origin_country, m.destination_country, m.carrier),
         shipments: inc,
         teu: 0, // carrier-mix RPC doesn't carry TEU; left as 0 for now.
@@ -103,31 +120,35 @@ function joinRows(
           Number(m.share_pct) >
             (Number(
               mix.find(
-                (x) =>
-                  x.origin_country === existing.origin &&
-                  x.destination_country === existing.destination &&
-                  x.carrier === existing.topCarrier,
+                (x) => {
+                  const xo = fmtEndpoint(x.origin_city, x.origin_state, x.origin_country);
+                  const xd = fmtEndpoint(x.destination_city, x.destination_state, x.destination_country);
+                  return xo === existing.origin && xd === existing.destination && x.carrier === existing.topCarrier;
+                },
               )?.share_pct ?? 0,
             )))
       ) {
         existing.topCarrier = m.carrier || existing.topCarrier;
-        existing.mode = inferLaneMode(existing.origin, existing.destination, m.carrier);
+        existing.mode = inferLaneMode(m.origin_country, m.destination_country, m.carrier);
       }
     }
   }
 
   for (const t of trend) {
-    const key = `${t.origin_country ?? ""}→${t.destination_country ?? ""}`;
+    const origin = fmtEndpoint(t.origin_city, t.origin_state, t.origin_country);
+    const destination = fmtEndpoint(t.destination_city, t.destination_state, t.destination_country);
+    const key = `${origin}→${destination}`;
     const row = byLane.get(key);
     if (row) {
       row.yoyPct = t.yoy_pct;
     } else {
-      // Trend row with no carrier-mix peer — still surface as a lane.
+      // Trend row with no carrier-mix peer — surface anyway. Use sliding
+      // 12-month sum as the headline shipment count.
       const total =
-        Number(t.period_2024) + Number(t.period_2025) + Number(t.period_2026);
+        Number(t.trailing_12m) + Number(t.prior_12m) + Number(t.prior_prior_12m);
       byLane.set(key, {
-        origin: t.origin_country || "—",
-        destination: t.destination_country || "—",
+        origin,
+        destination,
         mode: inferLaneMode(t.origin_country, t.destination_country, null),
         shipments: total,
         teu: 0,
@@ -346,7 +367,10 @@ export function LaneIntelTable({ companyName }: LaneIntelTableProps) {
                   className="border-b border-slate-100 transition-colors hover:bg-slate-50/60 last:border-b-0"
                 >
                   <td className="px-3 py-2.5">
-                    <div className="font-display text-[12px] font-semibold text-slate-900">
+                    <div
+                      className="font-display max-w-[320px] truncate text-[12px] font-semibold text-slate-900"
+                      title={`${r.origin} → ${r.destination}`}
+                    >
                       <span>{r.origin}</span>
                       <span className="mx-1.5 text-slate-300">→</span>
                       <span>{r.destination}</span>

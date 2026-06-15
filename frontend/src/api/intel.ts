@@ -32,7 +32,13 @@ const THIRTY_MIN = 30 * 60 * 1000;
 // ── Types ───────────────────────────────────────────────────────────────
 
 export interface LaneCarrierMixRow {
+  // City/state present after 2026-06-15 migration. Origin side currently
+  // null (source-data gap in lit_unified_shipments) — see migration comment.
+  origin_city: string | null;
+  origin_state: string | null;
   origin_country: string | null;
+  destination_city: string | null;
+  destination_state: string | null;
   destination_country: string | null;
   carrier: string | null;
   shipment_count: number;
@@ -40,12 +46,55 @@ export interface LaneCarrierMixRow {
 }
 
 export interface LaneYoyTrendRow {
+  origin_city: string | null;
+  origin_state: string | null;
   origin_country: string | null;
+  destination_city: string | null;
+  destination_state: string | null;
   destination_country: string | null;
-  period_2024: number;
-  period_2025: number;
-  period_2026: number;
+  // Sliding 12-month windows anchored to now() — replaces the old
+  // hardcoded period_2024/period_2025/period_2026 columns.
+  trailing_12m: number;
+  prior_12m: number;
+  prior_prior_12m: number;
   yoy_pct: number | null;
+}
+
+export interface PqCompanyAggregateRow {
+  source: string;
+  company_name: string;
+  company_address: string[] | null;
+  company_country_code: string | null;
+  company_country: string | null;
+  total_shipments: number | null;
+  name_variations: string[] | null;
+  customs_offices: string[] | null;
+  product_descriptions: string[] | null;
+  incoterms: string[] | null;
+  fetched_at: string;
+}
+
+export interface PqSupplierAggregateRow {
+  source: string;
+  buyer_company_name: string;
+  supplier_name: string;
+  supplier_country: string | null;
+  shipment_count: number | null;
+  top_products: string[] | null;
+  first_shipment_date: string | null;
+  last_shipment_date: string | null;
+}
+
+export interface DatabaseFreshnessRow {
+  last_updated: string | null;
+  age_days: number | null;
+  fetched_at: string | null;
+}
+
+export interface PqCreditsSummaryRow {
+  credits_remaining: number | null;
+  credits_burned_30d: number | null;
+  last_sync_at: string | null;
 }
 
 export interface MxImportRow {
@@ -266,6 +315,156 @@ export function useDomesticInlandLeg(
         if (isMissingSourceError(err)) {
           warnOnce("lit_domestic_inland_leg", err);
           return [];
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+    },
+  });
+}
+
+/**
+ * Per-company PowerQuery aggregate rows (customs_offices / product_descriptions
+ * / incoterms / name_variations). Reads lit_pq_company_aggregates across all
+ * four source feeds (us-import / us-export / mx-import / mx-export) and lets
+ * the UI merge them into a single set of cards.
+ */
+export function usePqCompanyAggregates(
+  companyName: string | null | undefined,
+): UseQueryResult<PqCompanyAggregateRow[], Error> {
+  return useQuery<PqCompanyAggregateRow[], Error>({
+    queryKey: ["intel", "pq-company-aggregates", companyName ?? ""],
+    enabled: Boolean(companyName && companyName.trim()),
+    staleTime: FIVE_MIN,
+    gcTime: THIRTY_MIN,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from("lit_pq_company_aggregates")
+          .select(
+            "source, company_name, company_address, company_country_code, company_country, total_shipments, name_variations, customs_offices, product_descriptions, incoterms, fetched_at",
+          )
+          .ilike("company_name", `%${companyName}%`)
+          .order("total_shipments", { ascending: false, nullsFirst: false })
+          .limit(20);
+        if (error) {
+          if (isMissingSourceError(error)) {
+            warnOnce("lit_pq_company_aggregates", error);
+            return [];
+          }
+          throw error;
+        }
+        return Array.isArray(data) ? (data as PqCompanyAggregateRow[]) : [];
+      } catch (err) {
+        if (isMissingSourceError(err)) {
+          warnOnce("lit_pq_company_aggregates", err);
+          return [];
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+    },
+  });
+}
+
+/**
+ * Top overseas suppliers for a buyer. Reads lit_pq_supplier_aggregates and
+ * orders by shipment_count DESC. Card shows the top 10.
+ */
+export function usePqSupplierAggregates(
+  companyName: string | null | undefined,
+): UseQueryResult<PqSupplierAggregateRow[], Error> {
+  return useQuery<PqSupplierAggregateRow[], Error>({
+    queryKey: ["intel", "pq-supplier-aggregates", companyName ?? ""],
+    enabled: Boolean(companyName && companyName.trim()),
+    staleTime: FIVE_MIN,
+    gcTime: THIRTY_MIN,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from("lit_pq_supplier_aggregates")
+          .select(
+            "source, buyer_company_name, supplier_name, supplier_country, shipment_count, top_products, first_shipment_date, last_shipment_date",
+          )
+          .ilike("buyer_company_name", `%${companyName}%`)
+          .order("shipment_count", { ascending: false, nullsFirst: false })
+          .limit(50);
+        if (error) {
+          if (isMissingSourceError(error)) {
+            warnOnce("lit_pq_supplier_aggregates", error);
+            return [];
+          }
+          throw error;
+        }
+        return Array.isArray(data) ? (data as PqSupplierAggregateRow[]) : [];
+      } catch (err) {
+        if (isMissingSourceError(err)) {
+          warnOnce("lit_pq_supplier_aggregates", err);
+          return [];
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+    },
+  });
+}
+
+/**
+ * Cached ImportYeti /database-updated freshness. Reads lit_internal_meta
+ * via the lit_get_database_freshness RPC. Server-side cache TTL is 6h —
+ * the badge is per-session at the UI layer (queryClient gc).
+ */
+export function useDatabaseFreshness(): UseQueryResult<DatabaseFreshnessRow | null, Error> {
+  return useQuery<DatabaseFreshnessRow | null, Error>({
+    queryKey: ["intel", "database-freshness"],
+    staleTime: 30 * 60 * 1000, // 30m client cache
+    gcTime: THIRTY_MIN,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.rpc("lit_get_database_freshness");
+        if (error) {
+          if (isMissingSourceError(error)) {
+            warnOnce("lit_get_database_freshness", error);
+            return null;
+          }
+          throw error;
+        }
+        const rows = Array.isArray(data) ? (data as DatabaseFreshnessRow[]) : [];
+        return rows[0] ?? null;
+      } catch (err) {
+        if (isMissingSourceError(err)) {
+          warnOnce("lit_get_database_freshness", err);
+          return null;
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+    },
+  });
+}
+
+/**
+ * Live PowerQuery credits gauge — creditsRemaining from latest sync +
+ * 30-day burn from lit_credit_ledger. Powers the admin Enrichment
+ * Providers panel gauge.
+ */
+export function usePqCreditsSummary(): UseQueryResult<PqCreditsSummaryRow | null, Error> {
+  return useQuery<PqCreditsSummaryRow | null, Error>({
+    queryKey: ["intel", "pq-credits-summary"],
+    staleTime: FIVE_MIN,
+    gcTime: THIRTY_MIN,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.rpc("lit_get_pq_credits_summary");
+        if (error) {
+          if (isMissingSourceError(error)) {
+            warnOnce("lit_get_pq_credits_summary", error);
+            return null;
+          }
+          throw error;
+        }
+        const rows = Array.isArray(data) ? (data as PqCreditsSummaryRow[]) : [];
+        return rows[0] ?? null;
+      } catch (err) {
+        if (isMissingSourceError(err)) {
+          warnOnce("lit_get_pq_credits_summary", err);
+          return null;
         }
         throw err instanceof Error ? err : new Error(String(err));
       }

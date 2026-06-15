@@ -13,6 +13,70 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { usePqCreditsSummary } from "@/api/intel";
+
+// PowerQuery credits gauge — surfaces live creditsRemaining from the latest
+// iy-powerquery-sync response (cached in lit_internal_meta) + 30-day burn
+// summed from lit_credit_ledger. Platform-admin-only panel — RLS protects
+// the underlying tables, the chip is just operator UX.
+function PqCreditsGauge() {
+  const { data, isLoading } = usePqCreditsSummary();
+  const remaining = data?.credits_remaining ?? null;
+  const burned = data?.credits_burned_30d ?? 0;
+  const lastSync = data?.last_sync_at
+    ? new Date(data.last_sync_at).toLocaleString()
+    : null;
+
+  // Visual tone: green > 1000, amber 100–1000, red < 100.
+  const tone =
+    remaining == null
+      ? { border: "#e2e8f0", bg: "#f8fafc", fg: "#64748b" }
+      : remaining < 100
+        ? { border: "#fecaca", bg: "#fef2f2", fg: "#b91c1c" }
+        : remaining < 1000
+          ? { border: "#fed7aa", bg: "#fff7ed", fg: "#c2410c" }
+          : { border: "#bbf7d0", bg: "#f0fdf4", fg: "#15803d" };
+
+  return (
+    <div
+      style={{
+        marginTop: 24,
+        padding: 14,
+        border: `1px solid ${tone.border}`,
+        borderRadius: 8,
+        background: tone.bg,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            ImportYeti PowerQuery credits
+          </div>
+          <div style={{ marginTop: 4, display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: 22, fontWeight: 700, color: tone.fg, fontVariantNumeric: "tabular-nums" }}>
+              {isLoading
+                ? "…"
+                : remaining == null
+                  ? "—"
+                  : remaining.toLocaleString()}
+            </span>
+            <span style={{ fontSize: 11, color: "#64748b" }}>remaining</span>
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 11, color: "#64748b" }}>
+            30-day burn: <span style={{ fontWeight: 600, color: "#0f172a", fontVariantNumeric: "tabular-nums" }}>{burned.toLocaleString()}</span>
+          </div>
+          {lastSync && (
+            <div style={{ marginTop: 2, fontSize: 10, color: "#94a3b8" }}>
+              Last sync: {lastSync}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type ProviderName = "apollo" | "lusha" | "tier3";
 
@@ -300,6 +364,8 @@ export default function OrgEnrichmentSettingsPanel({
         {savedAt && <span style={{ fontSize: 11, color: "#94a3b8" }}>Saved at {savedAt}</span>}
         {!canWrite && <span style={{ fontSize: 11, color: "#94a3b8" }}>Read-only · org admin required</span>}
       </div>
+
+      <PqCreditsGauge />
     </div>
   );
 }

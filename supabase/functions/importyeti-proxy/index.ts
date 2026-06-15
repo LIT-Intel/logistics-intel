@@ -1434,6 +1434,73 @@ Deno.serve(async (req: Request) => {
     } catch { /* ignore */ }
 
     // ── Usage gate (search) ─────────────────────────────────────────────
+    // ── database_updated action (Gap 5) ───────────────────────────────
+    // Lightweight read of IY's /v1.0/database-updated endpoint. Cached
+    // server-side in lit_internal_meta with a 6-hour TTL so the per-session
+    // freshness chip on the Premium Intel panel doesn't burn credits.
+    if (resolvedAction === "database_updated") {
+      try {
+        const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+        const { data: cached } = await supabase
+          .from("lit_internal_meta")
+          .select("meta_value, updated_at")
+          .eq("meta_key", "importyeti_database_updated")
+          .maybeSingle();
+        const cachedAt = cached?.updated_at ? new Date(cached.updated_at).getTime() : 0;
+        const isFresh = cached && Date.now() - cachedAt < SIX_HOURS_MS;
+        if (isFresh) {
+          return jsonResponse({
+            ok: true,
+            cached: true,
+            last_updated: (cached!.meta_value as any)?.last_updated ?? null,
+            fetched_at: cached!.updated_at,
+          });
+        }
+        // Refresh from upstream. Endpoint is read-only metadata; doesn't burn
+        // PowerQuery credits per IY docs.
+        const env = buildEnvConfig();
+        if (!env.isValid || !env.apiKey) {
+          return jsonResponse(
+            { ok: false, error: "ImportYeti not configured", code: "PROXY_NOT_CONFIGURED" },
+            503,
+          );
+        }
+        const baseRaw = (Deno.env.get("IMPORTYETI_API_BASE") || "https://data.importyeti.com/v1.0").replace(/\/+$/, "");
+        const upstreamResp = await fetch(`${baseRaw}/database-updated`, {
+          method: "GET",
+          headers: { IYApiKey: env.apiKey, Accept: "application/json" },
+        });
+        let payload: any = {};
+        try { payload = await upstreamResp.json(); } catch { payload = {}; }
+        const lastUpdated = normalizeString(
+          payload?.last_updated ?? payload?.lastUpdated ?? payload?.updated_at ?? null,
+        );
+        const metaValue = { last_updated: lastUpdated, raw: payload };
+        await supabase
+          .from("lit_internal_meta")
+          .upsert(
+            {
+              meta_key: "importyeti_database_updated",
+              meta_value: metaValue,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "meta_key" },
+          );
+        return jsonResponse({
+          ok: true,
+          cached: false,
+          last_updated: lastUpdated,
+          fetched_at: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        console.error("[importyeti-proxy] database_updated failed", err);
+        return jsonResponse(
+          { ok: false, error: err?.message || "database_updated_failed" },
+          500,
+        );
+      }
+    }
+
     if (resolvedAction === "search") {
       const { data: gateData, error: gateError } = await supabase.rpc("check_usage_limit", {
         p_org_id: orgIdForUsage,

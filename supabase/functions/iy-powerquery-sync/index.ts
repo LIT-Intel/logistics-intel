@@ -37,7 +37,16 @@ type SyncSource =
   | "mx-export"
   | "us-export"
   | "mx-brokers"
-  | "us-companies";
+  | "us-companies"
+  // Companies aggregates (Gap 2)
+  | "us-import-companies"
+  | "us-export-companies"
+  | "mx-import-companies"
+  | "mx-export-companies"
+  // Suppliers aggregates (Gap 3)
+  | "us-import-suppliers"
+  | "mx-import-suppliers"
+  | "mx-export-suppliers";
 
 interface SyncRequest {
   source: SyncSource;
@@ -137,6 +146,26 @@ Deno.serve(async (req: Request) => {
       pageSize,
       log: reqLog,
     });
+    // Cache creditsRemaining for the admin gauge (Gap 5). Best-effort —
+    // we don't fail the sync if the kv write hiccups.
+    if (typeof summary.credits_remaining === "number") {
+      try {
+        await auth.admin
+          .from("lit_internal_meta")
+          .upsert(
+            {
+              meta_key: "importyeti_credits_remaining",
+              meta_value: { credits_remaining: summary.credits_remaining },
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "meta_key" },
+          );
+      } catch (metaErr) {
+        reqLog.warn("credits_meta_write_failed", {
+          err: metaErr instanceof Error ? metaErr.message : String(metaErr),
+        });
+      }
+    }
     reqLog.info("sync_completed", { ...summary });
     return json({ ok: true, ...summary });
   } catch (err) {
@@ -281,6 +310,23 @@ function resolveEndpoint(source: SyncSource): string {
       return "/powerquery/mx-import/brokers";
     case "us-companies":
       return "/powerquery/us-import/companies";
+    // Companies aggregates (Gap 2) — richer endpoints per IY docs (carries
+    // customs_offices / product_descriptions / incoterms / name_variations).
+    case "us-import-companies":
+      return "/powerquery/us-import/companies";
+    case "us-export-companies":
+      return "/powerquery/us-export/companies";
+    case "mx-import-companies":
+      return "/powerquery/mx-import/companies";
+    case "mx-export-companies":
+      return "/powerquery/mx-export/companies";
+    // Suppliers aggregates (Gap 3) — per-buyer supplier rollup.
+    case "us-import-suppliers":
+      return "/powerquery/us-import/suppliers";
+    case "mx-import-suppliers":
+      return "/powerquery/mx-import/suppliers";
+    case "mx-export-suppliers":
+      return "/powerquery/mx-export/suppliers";
     default:
       throw new Error(`unknown_source:${source}`);
   }
@@ -392,7 +438,113 @@ async function upsertRows(
       // Companies aggregate writes into lit_company_index (existing). For now
       // we just count rows; the proxy already owns company-row hydration.
       return rows.length;
+    case "us-import-companies":
+    case "us-export-companies":
+    case "mx-import-companies":
+    case "mx-export-companies":
+      return upsertCompanyAggregates(admin, rows, source);
+    case "us-import-suppliers":
+    case "mx-import-suppliers":
+    case "mx-export-suppliers":
+      return upsertSupplierAggregates(admin, rows, source);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Companies aggregates (Gap 2)
+// ---------------------------------------------------------------------------
+async function upsertCompanyAggregates(
+  admin: SupabaseClient,
+  rows: any[],
+  source: string,
+): Promise<number> {
+  const mapped = rows
+    .map((r) => {
+      const name = pickStr(r?.company_name ?? r?.name);
+      if (!name) return null;
+      return {
+        source,
+        company_name: name,
+        company_address: pickStrArr(r?.company_address ?? r?.addresses),
+        company_country_code: pickStr(r?.company_country_code ?? r?.country_code),
+        company_country: pickStr(r?.company_country ?? r?.country),
+        total_shipments: pickNum(r?.total_shipments ?? r?.shipments) ?? null,
+        name_variations: pickStrArr(r?.name_variations ?? r?.aliases),
+        customs_offices: pickStrArr(r?.customs_offices ?? r?.ports),
+        product_descriptions: pickStrArr(r?.product_descriptions ?? r?.products),
+        incoterms: pickStrArr(r?.incoterms),
+        raw_payload: r,
+        updated_at: new Date().toISOString(),
+      };
+    })
+    .filter((x) => x !== null) as any[];
+  if (!mapped.length) return 0;
+  const { error, count } = await admin
+    .from("lit_pq_company_aggregates")
+    .upsert(mapped, { onConflict: "source,company_name", count: "exact" });
+  if (error) throw new Error(`upsert_company_aggregates_failed: ${error.message}`);
+  return count ?? mapped.length;
+}
+
+// ---------------------------------------------------------------------------
+// Suppliers aggregates (Gap 3)
+// ---------------------------------------------------------------------------
+async function upsertSupplierAggregates(
+  admin: SupabaseClient,
+  rows: any[],
+  source: string,
+): Promise<number> {
+  // Suppliers endpoint shape:
+  //   { buyer_company_name, suppliers: [{ name, country, shipment_count, ... }] }
+  // OR flattened rows where each row is one buyer/supplier pair. We support
+  // both: if a row carries a `suppliers` array we expand it; otherwise we
+  // treat the row as already-flattened.
+  const flattened: any[] = [];
+  for (const r of rows) {
+    const buyer = pickStr(r?.buyer_company_name ?? r?.company_name ?? r?.buyer);
+    if (!buyer) continue;
+    if (Array.isArray(r?.suppliers)) {
+      for (const s of r.suppliers) {
+        flattened.push({ buyer, sup: s });
+      }
+    } else {
+      flattened.push({ buyer, sup: r });
+    }
+  }
+  const mapped = flattened
+    .map(({ buyer, sup }) => {
+      const supplierName = pickStr(sup?.supplier_name ?? sup?.name);
+      if (!supplierName) return null;
+      return {
+        source,
+        buyer_company_name: buyer,
+        supplier_name: supplierName,
+        supplier_country: pickStr(sup?.supplier_country ?? sup?.country),
+        shipment_count: pickNum(sup?.shipment_count ?? sup?.count) ?? null,
+        top_products: pickStrArr(sup?.top_products ?? sup?.product_descriptions),
+        first_shipment_date: pickDate(sup?.first_shipment_date ?? sup?.first_shipment),
+        last_shipment_date: pickDate(sup?.last_shipment_date ?? sup?.last_shipment),
+        raw_payload: sup,
+      };
+    })
+    .filter((x) => x !== null) as any[];
+  if (!mapped.length) return 0;
+  const { error, count } = await admin
+    .from("lit_pq_supplier_aggregates")
+    .upsert(mapped, {
+      onConflict: "source,buyer_company_name,supplier_name",
+      count: "exact",
+    });
+  if (error) throw new Error(`upsert_supplier_aggregates_failed: ${error.message}`);
+  return count ?? mapped.length;
+}
+
+function pickStrArr(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const out = v
+    .map((x) => (typeof x === "string" ? x.trim() : null))
+    .filter((x): x is string => Boolean(x && x.length));
+  return out.length ? out : null;
 }
 
 async function upsertMxImportDeclarations(
