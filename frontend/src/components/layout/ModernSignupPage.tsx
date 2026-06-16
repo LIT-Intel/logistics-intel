@@ -164,11 +164,19 @@ export default function ModernSignupPage() {
     try {
       setErr("");
       setLoading(true);
+      // For invite flow: thread the invite token through the email confirmation
+      // URL so AuthCallback can route the user to /accept-invite (not /onboarding)
+      // after they click the confirmation link. Without this, the token is lost
+      // and the invited user falls into the "fresh signup → /onboarding" branch.
+      const emailRedirectTo = isInviteFlow
+        ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(postInvitePath)}`
+        : `${window.location.origin}/auth/callback`;
+
       await registerWithEmailPassword({
         fullName,
         email,
         password,
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo,
       });
 
       if (isInviteFlow) {
