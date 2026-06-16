@@ -127,6 +127,16 @@ export interface CompanyDataRelevance {
   unifiedShipmentCount: number;
 }
 
+export interface CompanyModeCounts {
+  ocean: number;
+  air: number;
+  truck: number;
+  rail: number;
+  drayage: number;
+  broker: number;
+  domestic: number;
+}
+
 export interface UsExportRow {
   bol_number: string;
   shipment_date: string | null;
@@ -575,6 +585,58 @@ export function useUsExportActivity(
         if (isMissingSourceError(err)) {
           warnOnce("lit_us_export_bols", err);
           return [];
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+    },
+  });
+}
+
+/**
+ * Per-mode shipment counts for a single company across all three shipment
+ * sources (lit_unified_shipments / lit_mx_import_declarations / drayage legs).
+ *
+ * Powers the Supply Chain tab's ServiceModeFilterChips: chips for modes
+ * with `count === 0` render disabled (greyed out, no-op click, tooltip).
+ *
+ * RPC: lit_company_mode_counts(p_company_name) — see migration
+ * supabase/migrations/20260616_lit_company_mode_counts.sql.
+ */
+export function useCompanyModeCounts(
+  companyName: string | null | undefined,
+): UseQueryResult<CompanyModeCounts | null, Error> {
+  return useQuery<CompanyModeCounts | null, Error>({
+    queryKey: ["intel", "company-mode-counts", companyName ?? ""],
+    enabled: Boolean(companyName && companyName.trim()),
+    staleTime: FIVE_MIN,
+    gcTime: THIRTY_MIN,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.rpc("lit_company_mode_counts", {
+          p_company_name: companyName,
+        });
+        if (error) {
+          if (isMissingSourceError(error)) {
+            warnOnce("lit_company_mode_counts", error);
+            return null;
+          }
+          throw error;
+        }
+        const row = Array.isArray(data) ? data[0] : data;
+        if (!row) return null;
+        return {
+          ocean: Number(row.ocean) || 0,
+          air: Number(row.air) || 0,
+          truck: Number(row.truck) || 0,
+          rail: Number(row.rail) || 0,
+          drayage: Number(row.drayage) || 0,
+          broker: Number(row.broker) || 0,
+          domestic: Number(row.domestic) || 0,
+        };
+      } catch (err) {
+        if (isMissingSourceError(err)) {
+          warnOnce("lit_company_mode_counts", err);
+          return null;
         }
         throw err instanceof Error ? err : new Error(String(err));
       }

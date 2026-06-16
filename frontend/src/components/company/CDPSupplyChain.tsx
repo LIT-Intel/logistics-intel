@@ -30,7 +30,11 @@ import DomesticInlandLegCard from "@/components/intel/cards/DomesticInlandLegCar
 import SupplierConcentrationDonut from "@/components/intel/cards/SupplierConcentrationDonut";
 import CustomsBrokerMixSubcard from "@/components/intel/cards/CustomsBrokerMixSubcard";
 import HsCodeTopBar from "@/components/intel/cards/HsCodeTopBar";
-import { useDomesticInlandLeg, useMxImportActivity } from "@/api/intel";
+import {
+  useCompanyModeCounts,
+  useDomesticInlandLeg,
+  useMxImportActivity,
+} from "@/api/intel";
 import BuyingIntentTile from "@/components/intent/BuyingIntentTile";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import LaneMap from "@/components/LaneMap";
@@ -124,6 +128,11 @@ function CDPSupplyChainBody({
     (profile?.name as string) ||
     (profile?.identity?.companyName as string) ||
     "";
+
+  // Per-mode shipment counts → drives chip enable/disable so users can't
+  // click a mode the company has zero activity in (see feedback 2026-06-16).
+  // Returns null (graceful) when RPC isn't deployed; chips stay enabled.
+  const modeCountsQuery = useCompanyModeCounts(companyName || null);
 
   // ── Aggregates ───────────────────────────────────────────────────────
   // Two views of the company's routes:
@@ -244,7 +253,7 @@ function CDPSupplyChainBody({
           charts can scope. On <sm, the chip strip horizontally scrolls so
           all 8 chips remain reachable without wrapping into a tall stack. */}
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-        <ServiceModeFilterChips />
+        <ServiceModeFilterChips modeCounts={modeCountsQuery.data ?? null} />
         <DataFreshnessChip />
       </div>
 
