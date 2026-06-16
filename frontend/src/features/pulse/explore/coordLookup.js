@@ -85,19 +85,45 @@ function resolveCountryKey(country) {
   return null;
 }
 
-export function lookupCoords({ city, state, country }) {
+// 2-letter USPS code helper for US state fallback.
+const STATE_NAME_TO_CODE = {
+  'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA','colorado':'CO',
+  'connecticut':'CT','delaware':'DE','district of columbia':'DC','florida':'FL','georgia':'GA',
+  'hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA','kansas':'KS','kentucky':'KY',
+  'louisiana':'LA','maine':'ME','maryland':'MD','massachusetts':'MA','michigan':'MI','minnesota':'MN',
+  'mississippi':'MS','missouri':'MO','montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH',
+  'new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND',
+  'ohio':'OH','oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC',
+  'south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA',
+  'washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY','puerto rico':'PR',
+};
+
+function stateCode(state) {
+  if (!state) return null;
+  const s = String(state).trim();
+  if (s.length === 2) return s.toUpperCase();
+  return STATE_NAME_TO_CODE[s.toLowerCase()] ?? null;
+}
+
+export function lookupCoords({ latitude, longitude, city, state, country }) {
+  // 0. Prefer real lat/lng from the row (V6 has 99.97% coverage).
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    return { lat: Number(latitude), lng: Number(longitude), source: 'row' };
+  }
+
   // 1. Metro lookup: city|STATE → airport code → coords.
-  const mk = metroKey(city, state);
+  const code2 = stateCode(state);
+  const mk = code2 && city ? `${city.trim().toLowerCase()}|${code2}` : null;
   if (mk) {
-    const code = CITY_STATE_METRO[mk];
-    if (code && US_METRO_COORDS[code]) {
-      return { ...toLatLng(US_METRO_COORDS[code]), source: 'metro' };
+    const airport = CITY_STATE_METRO[mk];
+    if (airport && US_METRO_COORDS[airport]) {
+      return { ...toLatLng(US_METRO_COORDS[airport]), source: 'metro' };
     }
   }
 
-  // 2. State centroid fallback.
-  if (state) {
-    const stateCoords = US_STATE_CENTROIDS[state.toUpperCase()];
+  // 2. State centroid fallback (handles "California" → "CA").
+  if (code2) {
+    const stateCoords = US_STATE_CENTROIDS[code2];
     if (stateCoords) {
       return { ...toLatLng(stateCoords), source: 'state' };
     }

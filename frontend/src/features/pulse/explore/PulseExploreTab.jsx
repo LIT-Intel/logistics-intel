@@ -35,7 +35,7 @@ export default function PulseExploreTab() {
   const [sidebarTool, setSidebarTool] = useState('filter');
   const [mapTool, setMapTool] = useState('select');
   const [mapMode, setMapMode] = useState('bubbles');
-  const [legendOpen, setLegendOpen] = useState(true);
+  const [legendOpen, setLegendOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [saveListOpen, setSaveListOpen] = useState(false);
@@ -44,17 +44,18 @@ export default function PulseExploreTab() {
   useExploreInsights(rows);
 
   const headerTotals = useMemo(() => {
-    if (!rows.length) return { total: 0, totalAnnualSales: 0, totalGpPotential: 0 };
+    if (!rows.length) return { total: 0, totalAnnualSales: 0, totalTeu: 0 };
     let totalAnnualSales = 0;
-    let totalGpPotential = 0;
+    let totalTeu = 0;
     for (const r of rows) {
+      // V6 stores Estimated Annual Revenue as raw value (likely millions);
+      // sum without unit multiplication. KPI displays the running total.
       const rev = typeof r.revenue === 'string' ? parseFloat(r.revenue) : (r.revenue ?? 0);
-      // V6 ingest stores revenue as billions (e.g. "385.6" = $385.6B).
-      if (Number.isFinite(rev)) totalAnnualSales += rev * 1_000_000_000;
-      const gp = r.gp_potential ?? 0;
-      if (Number.isFinite(gp)) totalGpPotential += gp;
+      if (Number.isFinite(rev)) totalAnnualSales += rev;
+      const teu = typeof r.teu === 'number' ? r.teu : (r.teu ? Number(r.teu) : 0);
+      if (Number.isFinite(teu)) totalTeu += teu;
     }
-    return { total: rows.length, totalAnnualSales, totalGpPotential };
+    return { total: rows.length, totalAnnualSales, totalTeu };
   }, [rows]);
 
   const toggleSelection = useCallback((id) => {

@@ -92,7 +92,7 @@ function HeatLayer({ rows, sizeMode, on }) {
     if (!on) return undefined;
     const points = rows
       .map((r) => {
-        const c = lookupCoords({ city: r.city, state: r.state, country: r.country });
+        const c = lookupCoords({ latitude: r.latitude, longitude: r.longitude, city: r.city, state: r.state, country: r.country });
         if (!c) return null;
         const v = sizeMode === 'teu' ? r.teu
           : sizeMode === 'shipments' ? r.shipments
@@ -119,7 +119,7 @@ export default function ExploreMap({ rows, colorMode, sizeMode, selection, onBub
   const points = useMemo(() => {
     return rows
       .map((r) => {
-        const c = lookupCoords({ city: r.city, state: r.state, country: r.country });
+        const c = lookupCoords({ latitude: r.latitude, longitude: r.longitude, city: r.city, state: r.state, country: r.country });
         if (!c) return null;
         return {
           type: 'Feature',

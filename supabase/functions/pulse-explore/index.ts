@@ -35,7 +35,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const MAX_ROWS = 10_000;
+const MAX_ROWS = 100_000;
+const PAGE_SIZE = 1000;
 
 type Geo = {
   region?: string;
@@ -104,17 +105,15 @@ function expandStates(geo: Geo | undefined): string[] {
   return Array.from(new Set([...fromRegion, ...fromExplicit].map((s) => s.toUpperCase())));
 }
 
-async function fetchDirectory(
-  admin: any,
-  f: Filters,
-): Promise<Row[]> {
+function buildDirectoryQueryBase(admin: any, f: Filters) {
   const states = expandStates(f.geo);
   let q = admin
     .from("lit_company_directory")
     .select(
       "id, company_name, canonical_name, canonical_domain, city, state, country, " +
+        "latitude, longitude, " +
         "industry, vertical, employee_count, revenue, teu, shipments, lcl, value_usd, " +
-        "top_dimensions, gp_potential, " +
+        "top_dimensions, top_forwarders, gp_potential, " +
         "opportunity_consolidation_score, opportunity_vulnerable_score, " +
         "opportunity_velocity_score, opportunity_composite_score, " +
         "last_opportunity_recompute_at",
@@ -128,13 +127,27 @@ async function fetchDirectory(
   if (f.size?.shipments_max != null) q = q.lte("shipments", f.size.shipments_max);
   if (f.size?.spend_min != null) q = q.gte("value_usd", f.size.spend_min);
   if (f.size?.spend_max != null) q = q.lte("value_usd", f.size.spend_max);
-  q = q.limit(MAX_ROWS);
-  const { data, error } = await q;
-  if (error) {
-    console.error("[pulse-explore] directory query failed", error);
-    return [];
+  return q;
+}
+
+async function fetchDirectory(admin: any, f: Filters): Promise<Row[]> {
+  // Paginate via .range() because Supabase's PostgREST gateway caps single
+  // .limit() responses at the project default (typically 1000 rows). To
+  // return up to MAX_ROWS we walk PAGE_SIZE chunks until the chunk comes
+  // back short.
+  const out: Row[] = [];
+  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
+    const q = buildDirectoryQueryBase(admin, f).range(from, from + PAGE_SIZE - 1);
+    const { data, error } = await q;
+    if (error) {
+      console.error("[pulse-explore] directory page failed", { from, error });
+      break;
+    }
+    if (!data || data.length === 0) break;
+    for (const r of data) out.push(normalizeDirectoryRow(r as any));
+    if (data.length < PAGE_SIZE) break;
   }
-  return (data ?? []).map((r: any) => normalizeDirectoryRow(r));
+  return out;
 }
 
 // Directory rows store full state names ('California'); convert state codes
@@ -168,6 +181,8 @@ function normalizeDirectoryRow(r: any): Row {
     city: r.city ?? null,
     state: r.state ?? null,
     country: r.country ?? null,
+    latitude: r.latitude ?? null,
+    longitude: r.longitude ?? null,
     industry: r.industry ?? null,
     vertical: r.vertical ?? null,
     employee_count: r.employee_count ?? null,
@@ -177,6 +192,7 @@ function normalizeDirectoryRow(r: any): Row {
     lcl: r.lcl ?? null,
     value_usd: r.value_usd ?? null,
     top_dimensions: r.top_dimensions ?? null,
+    top_forwarders: r.top_forwarders ?? null,
     gp_potential: r.gp_potential ?? null,
     opportunity_consolidation_score: Number(r.opportunity_consolidation_score ?? 0),
     opportunity_vulnerable_score: Number(r.opportunity_vulnerable_score ?? 0),

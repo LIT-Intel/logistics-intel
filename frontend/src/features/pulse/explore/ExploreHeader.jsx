@@ -51,7 +51,7 @@ export default function ExploreHeader({
 }) {
   const totalAccounts = totals?.total ?? 0;
   const totalSales = totals?.totalAnnualSales ?? 0;
-  const totalGp = totals?.totalGpPotential ?? 0;
+  const totalTeu = totals?.totalTeu ?? 0;
 
   return (
     <header className="bg-[#0F1828] text-slate-100 border-b border-slate-800/60 shadow-sm">
@@ -82,7 +82,7 @@ export default function ExploreHeader({
       <div className="flex items-baseline gap-8 px-4 py-2.5 bg-slate-950/30 border-t border-slate-800/40">
         <Kpi label="accounts" value={fmtNum(totalAccounts)} />
         <Kpi label="annual sales" value={fmtCurrency(totalSales)} />
-        <Kpi label="GP potential" value={fmtCurrency(totalGp)} />
+        <Kpi label="TEU 12m" value={fmtNum(totalTeu)} />
       </div>
     </header>
   );
