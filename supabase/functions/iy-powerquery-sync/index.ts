@@ -46,7 +46,17 @@ type SyncSource =
   // Suppliers aggregates (Gap 3)
   | "us-import-suppliers"
   | "mx-import-suppliers"
-  | "mx-export-suppliers";
+  | "mx-export-suppliers"
+  // US-import scaffolds added 2026-06-16 — not yet confirmed available on
+  // our PowerQuery tier. The runner probes each endpoint once and bails
+  // gracefully on 404 (logs `iy_endpoint_not_available`) so we don't burn
+  // credits beyond the initial 404 response. Tables are NOT created yet —
+  // we'll add them once the user confirms the endpoints are exposed.
+  | "us-import-bols"
+  | "us-import-carriers"
+  | "us-import-ports"
+  | "us-import-products"
+  | "us-import-lanes";
 
 interface SyncRequest {
   source: SyncSource;
@@ -235,6 +245,18 @@ async function runSync(args: {
         `PQ_ACCESS_DENIED: HTTP ${status} on ${endpoint} (first-page tier check)`,
       );
     }
+    // 404 = endpoint not present in our PowerQuery tier (e.g. us-import-bols
+    // scaffolded 2026-06-16 may not be exposed yet). Log + bail clean rather
+    // than burning further credits. The probe itself is free since IY only
+    // charges on successful response bodies.
+    if (status === 404 && page === 1) {
+      log.warn("iy_endpoint_not_available", {
+        endpoint,
+        source: body.source,
+      });
+      summary.aborted_reason = "endpoint_not_in_pq_tier";
+      break;
+    }
     if (status >= 400) {
       summary.errors.push(`HTTP ${status} on page ${page}`);
       log.error("iy_http_error", { status, page, url });
@@ -327,6 +349,18 @@ function resolveEndpoint(source: SyncSource): string {
       return "/powerquery/mx-import/suppliers";
     case "mx-export-suppliers":
       return "/powerquery/mx-export/suppliers";
+    // US-import scaffold endpoints (2026-06-16). May 404 on our PowerQuery
+    // tier — runner handles that gracefully without burning credits.
+    case "us-import-bols":
+      return "/powerquery/us-import/bols";
+    case "us-import-carriers":
+      return "/powerquery/us-import/carriers";
+    case "us-import-ports":
+      return "/powerquery/us-import/ports";
+    case "us-import-products":
+      return "/powerquery/us-import/products";
+    case "us-import-lanes":
+      return "/powerquery/us-import/lanes";
     default:
       throw new Error(`unknown_source:${source}`);
   }
@@ -447,6 +481,15 @@ async function upsertRows(
     case "mx-import-suppliers":
     case "mx-export-suppliers":
       return upsertSupplierAggregates(admin, rows, source);
+    // US-import scaffolds — no tables yet. Count fetched rows without
+    // upserting so the operator sees rows_fetched > 0 = endpoint live,
+    // then we can add the matching tables.
+    case "us-import-bols":
+    case "us-import-carriers":
+    case "us-import-ports":
+    case "us-import-products":
+    case "us-import-lanes":
+      return rows.length;
   }
 }
 

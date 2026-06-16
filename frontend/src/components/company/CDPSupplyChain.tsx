@@ -9,9 +9,6 @@ import {
 import {
   Area,
   AreaChart,
-  Cell,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -20,6 +17,19 @@ import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitFlag from "@/components/ui/LitFlag";
 import LitPill from "@/components/ui/LitPill";
 import ServiceModeChip from "@/components/intel/ServiceModeChip";
+import { SupplyChainFilterProvider } from "@/components/intel/SupplyChainFilterContext";
+import ServiceModeFilterChips from "@/components/intel/ServiceModeFilterChips";
+import DataFreshnessChip from "@/components/intel/cards/DataFreshnessChip";
+import ServiceModeDonut from "@/components/intel/cards/ServiceModeDonut";
+import TopTradePartnersBar from "@/components/intel/cards/TopTradePartnersBar";
+import MxTransborderKpi from "@/components/intel/cards/MxTransborderKpi";
+import UsExportKpi from "@/components/intel/cards/UsExportKpi";
+import LaneMixStackedBar from "@/components/intel/cards/LaneMixStackedBar";
+import LaneYoyBarChart from "@/components/intel/cards/LaneYoyBarChart";
+import DomesticInlandLegCard from "@/components/intel/cards/DomesticInlandLegCard";
+import SupplierConcentrationDonut from "@/components/intel/cards/SupplierConcentrationDonut";
+import CustomsBrokerMixSubcard from "@/components/intel/cards/CustomsBrokerMixSubcard";
+import HsCodeTopBar from "@/components/intel/cards/HsCodeTopBar";
 import { useDomesticInlandLeg, useMxImportActivity } from "@/api/intel";
 import BuyingIntentTile from "@/components/intent/BuyingIntentTile";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
@@ -61,6 +71,11 @@ type CDPSupplyChainProps = {
   years?: number[];
   onSelectYear?: (year: number) => void;
   onOpenPulseLive?: () => void;
+  /** Resolved canonical company name — passed down from CompanyProfileV2 so
+   *  the Premium-Intel-folded cards (MX transborder, US export, broker mix,
+   *  lane carrier mix, YoY, supplier concentration, top trade partners) can
+   *  query their PowerQuery-backed RPCs without re-deriving the name. */
+  companyName?: string | null;
 };
 
 /**
@@ -82,15 +97,33 @@ type CDPSupplyChainProps = {
  * a backend field is missing, we surface a fallback message and mark
  * the module so a future enrichment pass can flip it on.
  */
-export default function CDPSupplyChain({
+export default function CDPSupplyChain(props: CDPSupplyChainProps) {
+  // Wrap the whole tab in the filter context so the chip strip + every chart
+  // share `activeMode` / `selectedHs`. Provider must live OUTSIDE the inner
+  // body component so the body itself can `useSupplyChainFilter()`.
+  return (
+    <SupplyChainFilterProvider>
+      <CDPSupplyChainBody {...props} />
+    </SupplyChainFilterProvider>
+  );
+}
+
+function CDPSupplyChainBody({
   profile,
   routeKpis,
   selectedYear,
   years,
   onSelectYear,
   onOpenPulseLive,
+  companyName: companyNameProp,
 }: CDPSupplyChainProps) {
   const [sub, setSub] = useState<SubTabId>("summary");
+  const companyName =
+    (companyNameProp && String(companyNameProp).trim()) ||
+    (profile?.companyName as string) ||
+    (profile?.name as string) ||
+    (profile?.identity?.companyName as string) ||
+    "";
 
   // ── Aggregates ───────────────────────────────────────────────────────
   // Two views of the company's routes:
@@ -206,20 +239,35 @@ export default function CDPSupplyChain({
 
   return (
     <div className="flex flex-col gap-3.5">
+      {/* Top header strip — filter chips (left) + freshness chip (right). The
+          filter chips drive `SupplyChainFilterContext.activeMode` so child
+          charts can scope. On <sm, the chip strip horizontally scrolls so
+          all 8 chips remain reachable without wrapping into a tall stack. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <ServiceModeFilterChips />
+        <DataFreshnessChip />
+      </div>
+
       {/* Sub-tabs (left) + year selector (right). Sub-tab styling uses the
           same blue language as the main tab row above so the visual
           hierarchy reads as "tab → sub-tab" instead of two competing pill
           groups. Year selector is pulled out as its own chip on the right
-          with a calendar icon affordance. */}
+          with a calendar icon affordance. On <sm the sub-tab row uses
+          horizontal scroll so it never wraps into a 2-row pill stack. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
+        <div
+          className={[
+            "inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm",
+            "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          ].join(" ")}
+        >
           {SUB_TABS.map((s) => (
             <button
               key={s.id}
               type="button"
               onClick={() => setSub(s.id)}
               className={[
-                "font-display whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                "font-display whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors min-h-[40px]",
                 sub === s.id
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
@@ -289,6 +337,7 @@ export default function CDPSupplyChain({
           globeLanes={globeLanes}
           onOpenPulseLive={onOpenPulseLive}
           onOpenLanesTab={() => setSub("lanes")}
+          companyName={companyName}
         />
       )}
       {sub === "lanes" && (
@@ -299,15 +348,19 @@ export default function CDPSupplyChain({
           forwarders={forwarders}
           containerProfile={containerProfile}
           recentBols={recentBols}
+          companyName={companyName}
         />
       )}
       {sub === "suppliers" && (
         <SuppliersView
           profile={profile}
           recentBols={recentBols}
+          companyName={companyName}
         />
       )}
-      {sub === "products" && <ProductsView products={products} />}
+      {sub === "products" && (
+        <ProductsView products={products} recentBols={recentBols} />
+      )}
     </div>
   );
 }
@@ -325,7 +378,7 @@ function StrategicBriefBanner({
 }) {
   return (
     <div
-      className="relative overflow-hidden rounded-xl border p-[18px]"
+      className="relative overflow-hidden rounded-xl border p-3 sm:p-4 md:p-5"
       style={{
         background:
           "linear-gradient(135deg, #0B1736 0%, #0F1D38 60%, #102240 100%)",
@@ -354,7 +407,7 @@ function StrategicBriefBanner({
         </span>
       </div>
       <div
-        className="font-display text-[18px] font-semibold leading-relaxed tracking-tight"
+        className="font-display text-[15px] font-semibold leading-snug tracking-tight sm:text-[17px] md:text-[18px] md:leading-relaxed"
         style={{ color: "#F8FAFC" }}
       >
         {headline || (
@@ -364,7 +417,7 @@ function StrategicBriefBanner({
         )}
       </div>
       <div
-        className="font-body relative mt-2 max-w-[680px] text-[13px] leading-relaxed"
+        className="font-body relative mt-2 max-w-[680px] text-[12px] leading-relaxed sm:text-[13px]"
         style={{ color: "#CBD5E1" }}
       >
         {canonicalLanes.length > 0 ? (
@@ -404,6 +457,7 @@ function SummaryView({
   globeLanes,
   onOpenPulseLive,
   onOpenLanesTab,
+  companyName,
 }: {
   profile: any;
   cadence: CadencePoint[];
@@ -416,17 +470,55 @@ function SummaryView({
   globeLanes: any[];
   onOpenPulseLive?: () => void;
   onOpenLanesTab?: () => void;
+  companyName: string;
 }) {
   const reducedMotion = usePrefersReducedMotion();
 
-  // Consolidated Summary order (post-feedback):
-  //   1. TopLanesCard — globe + ranked lane list + container-mix bar
-  //      (the equipment footprint card was removed; its container bar
-  //      is now merged into this hero card.)
-  //   2. CadenceAndModalMix — area chart + donut
-  //   3. RecentActivityCards — 5 BOL previews + Pulse LIVE link
-  // Removed: ShipperVitalsStrip (dup of CDPHeader), EquipmentAndLaneFootprint
-  // (dup of TopLanes), CarrierMixLive (lives in Pulse LIVE tab).
+  // Derive the seven-mode shipment counts that feed the ServiceModeDonut.
+  // Ocean from container profile (fcl+lcl), Air/Truck/Rail from MX transport
+  // type strings. Drayage/Domestic come from the domestic inland-leg RPC.
+  // Broker = MX declarations with a customs_broker_name set.
+  const { data: mxRows } = useMxImportActivity(companyName || null);
+  const { data: domesticRows } = useDomesticInlandLeg(companyName || null);
+  const donutCounts = useMemo(() => {
+    const counts = {
+      ocean: containerProfile.fcl + containerProfile.lcl,
+      air: 0,
+      truck: 0,
+      rail: 0,
+      drayage: 0,
+      broker: 0,
+      domestic: 0,
+    };
+    for (const r of mxRows || []) {
+      const m = String(r.transport_type || "").toLowerCase();
+      if (m.includes("air")) counts.air += 1;
+      else if (m.includes("rail") || m.includes("ferrocarril")) counts.rail += 1;
+      else if (m.includes("sea") || m.includes("ocean")) counts.ocean += 1;
+      else counts.truck += 1;
+      if ((r.customs_broker_name || "").trim()) counts.broker += 1;
+    }
+    for (const d of domesticRows || []) {
+      const m = String(d.est_mode || "").toLowerCase();
+      if (m.startsWith("inter")) counts.drayage += (d.shipment_count || 0);
+      else counts.domestic += (d.shipment_count || 0);
+    }
+    return counts;
+  }, [containerProfile.fcl, containerProfile.lcl, mxRows, domesticRows]);
+
+  // Per-lane TEU totals — used by LaneMixStackedBar's right rail. Derived
+  // from recentBols + canonicalLanes country-pair match.
+  // (Calculated here so the same data feeds both Summary's KPIs and Lanes'
+  // stacked bar consumers via the LaneMix component pulling its own data.)
+
+  // Consolidated Summary order (post-rebuild):
+  //   1. BuyingIntentTile
+  //   2. ServiceModeDonut (interactive — drives filter)
+  //   3. TopLanesCard (globe + lane list + container mix)
+  //   4. CadenceAndModalMix (area chart + small donut)
+  //   5. MxTransborderKpi + UsExportKpi (compact KPIs side-by-side)
+  //   6. TopTradePartnersBar (PowerQuery top-5 suppliers)
+  //   7. RecentActivityCards
   return (
     <>
       <BuyingIntentTile profile={_profile} recentBols={recentBols} />
@@ -442,13 +534,18 @@ function SummaryView({
         cadence={cadence}
         containerProfile={containerProfile}
         reducedMotion={reducedMotion}
-        companyName={
-          (_profile?.companyName as string) ||
-          (_profile?.name as string) ||
-          (_profile?.identity?.companyName as string) ||
-          null
-        }
+        companyName={companyName || null}
+        donutCounts={donutCounts}
       />
+      {companyName && (
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-2">
+          <MxTransborderKpi companyName={companyName} />
+          <UsExportKpi companyName={companyName} />
+        </div>
+      )}
+      {companyName && (
+        <TopTradePartnersBar companyName={companyName} />
+      )}
       <RecentActivityCards
         recentBols={recentBols}
         onOpenPulseLive={onOpenPulseLive}
@@ -485,11 +582,21 @@ function CadenceAndModalMix({
   containerProfile,
   reducedMotion,
   companyName,
+  donutCounts,
 }: {
   cadence: CadencePoint[];
   containerProfile: ContainerProfile;
   reducedMotion: boolean;
   companyName: string | null;
+  donutCounts: {
+    ocean: number;
+    air: number;
+    truck: number;
+    rail: number;
+    drayage: number;
+    broker: number;
+    domestic: number;
+  };
 }) {
   // Air count: derived from MX customs import declarations where
   // transport_type = 'Air'. ImportYeti's US-import feed does NOT track air
@@ -556,14 +663,14 @@ function CadenceAndModalMix({
 
   if (cadence.length === 0 && total === 0) {
     return (
-      <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months">
+      <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months · click a slice to filter">
         <EmptyMessage text="No cadence data on file yet — try Refresh Intel to pull the latest shipments." />
       </LitSectionCard>
     );
   }
 
   return (
-    <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months">
+    <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months · click a slice to filter">
       {/* Service modes covered — derived from real signal in this account.
           Replaces the prior implicit FCL/LCL-only framing so the user can
           see at a glance which legs LIT has coverage for on this shipper. */}
@@ -579,10 +686,11 @@ function CadenceAndModalMix({
           </div>
         </div>
       )}
-      <div className="flex flex-col gap-4 md:flex-row">
-        {/* Left 70% — stacked area */}
-        <div className="min-w-0 flex-1 md:basis-[70%]">
-          <div style={{ height: 240 }}>
+      <div className="flex flex-col gap-4 lg:flex-row">
+        {/* Left ≥lg 60% / <lg full-width — stacked area. Mobile-first
+            heights so the chart never crushes vertically on a phone. */}
+        <div className="min-w-0 flex-1 lg:basis-[60%]">
+          <div className="h-[200px] sm:h-[240px] md:h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs>
@@ -610,6 +718,7 @@ function CadenceAndModalMix({
                     fontSize: 11,
                     border: "1px solid #E2E8F0",
                     borderRadius: 6,
+                    maxWidth: 240,
                   }}
                 />
                 <Area
@@ -670,46 +779,10 @@ function CadenceAndModalMix({
           </div>
         </div>
 
-        {/* Right 30% — donut */}
-        <div className="flex min-w-0 flex-col items-center justify-center md:basis-[30%]">
-          <div className="relative" style={{ width: 180, height: 180 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={donut.length > 0 ? donut : [{ name: "—", value: 1, color: "#E2E8F0" }]}
-                  innerRadius="60%"
-                  outerRadius="90%"
-                  paddingAngle={2}
-                  dataKey="value"
-                  isAnimationActive={!reducedMotion}
-                  animationDuration={reducedMotion ? 0 : 1200}
-                  animationBegin={reducedMotion ? 0 : 800}
-                  stroke="none"
-                >
-                  {(donut.length > 0 ? donut : [{ name: "—", value: 1, color: "#E2E8F0" }]).map(
-                    (s, i) => (
-                      <Cell key={i} fill={s.color} />
-                    ),
-                  )}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    fontSize: 11,
-                    border: "1px solid #E2E8F0",
-                    borderRadius: 6,
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <div className="font-display text-[22px] font-bold leading-none text-slate-900">
-                {formatCompactNumber(total)}
-              </div>
-              <div className="font-display mt-1 text-[9px] font-semibold uppercase tracking-wider text-slate-500">
-                Shipments
-              </div>
-            </div>
-          </div>
+        {/* Right ≥lg 40% / <lg full-width — interactive ServiceModeDonut
+            (drives tab filter). */}
+        <div className="flex min-w-0 flex-col lg:basis-[40%]">
+          <ServiceModeDonut counts={donutCounts} embedded />
         </div>
       </div>
     </LitSectionCard>
@@ -973,6 +1046,7 @@ function LanesView({
   forwarders,
   containerProfile,
   recentBols,
+  companyName,
 }: {
   canonicalLanes: any[];
   globeLanes?: any[];
@@ -980,18 +1054,50 @@ function LanesView({
   forwarders: ForwarderRow[];
   containerProfile: ContainerProfile;
   recentBols: any[];
+  companyName: string;
 }) {
-  // Trade Lanes tab — globe is owned by Summary. Here we render the
-  // complete list of lanes (no slice cap) plus the combined intelligence
-  // table with per-lane carrier/forwarder/last-activity bindings.
+  // Per-lane TEU totals derived from recent BOLs that match a lane's
+  // country pair. Passed to LaneMixStackedBar so its right-rail can show
+  // total TEU per lane next to the carrier-mix bar.
+  const laneTeuTotals = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const lane of canonicalLanes) {
+      const fromLabel = laneEndpointLabel(lane.fromMeta, undefined);
+      const toLabel = laneEndpointLabel(lane.toMeta, undefined);
+      const key = `${fromLabel} → ${toLabel}`;
+      let teuSum = 0;
+      for (const b of recentBols) {
+        if (!bolMatchesLane(b, lane)) continue;
+        teuSum += Number(b?.teu) || Number(b?.containers_teu) || 0;
+      }
+      if (teuSum > 0) totals[key] = teuSum;
+    }
+    return totals;
+  }, [canonicalLanes, recentBols]);
+
+  // Trade Lanes tab — premium charted views first, then the legacy table.
+  //   1. LaneMixStackedBar (top lanes × top-3 carriers)
+  //   2. LaneYoyBarChart (YoY trailing/prior/prior-prior)
+  //   3. DomesticInlandLegCard (port-of-entry → destination)
+  //   4. CombinedLaneIntelligenceTable (full table — operator drill-down)
   return (
-    <CombinedLaneIntelligenceTable
-      canonicalLanes={canonicalLanes}
-      carriers={carriers}
-      forwarders={forwarders}
-      containerProfile={containerProfile}
-      recentBols={recentBols}
-    />
+    <>
+      {companyName && (
+        <LaneMixStackedBar
+          companyName={companyName}
+          laneTeuTotals={laneTeuTotals}
+        />
+      )}
+      {companyName && <LaneYoyBarChart companyName={companyName} />}
+      {companyName && <DomesticInlandLegCard companyName={companyName} />}
+      <CombinedLaneIntelligenceTable
+        canonicalLanes={canonicalLanes}
+        carriers={carriers}
+        forwarders={forwarders}
+        containerProfile={containerProfile}
+        recentBols={recentBols}
+      />
+    </>
   );
 }
 
@@ -1002,9 +1108,11 @@ function LanesView({
 function SuppliersView({
   profile,
   recentBols,
+  companyName,
 }: {
   profile: any;
   recentBols: any[];
+  companyName: string;
 }) {
   const navigate = useNavigate();
   // F1: full supplier list (limit=Infinity), paginated client-side. Top 50
@@ -1033,7 +1141,10 @@ function SuppliersView({
     });
   }, [openSupplier, recentBols]);
 
-  const companyName =
+  // Display fallback for the supplier subtitle when the parent didn't pass a
+  // resolved companyName (renders as "this receiver" rather than a blank).
+  const displayCompanyName =
+    companyName ||
     (profile?.companyName as string) ||
     (profile?.name as string) ||
     "this receiver";
@@ -1058,9 +1169,15 @@ function SuppliersView({
 
   return (
     <>
+      {companyName && (
+        <SupplierConcentrationDonut companyName={companyName} />
+      )}
+      {companyName && (
+        <CustomsBrokerMixSubcard companyName={companyName} />
+      )}
       <LitSectionCard
         title={`${allSuppliers.length.toLocaleString()} unique suppliers`}
-        sub={`Shipping to ${companyName} in the last 12 months · ranked by share`}
+        sub={`Shipping to ${displayCompanyName} in the last 12 months · ranked by share`}
         padded={false}
       >
         <div className="max-h-[680px] overflow-y-auto">
@@ -1088,7 +1205,7 @@ function SuppliersView({
       <SupplierDrawer
         supplier={openSupplier}
         supplierBols={supplierBols}
-        receiverName={companyName}
+        receiverName={displayCompanyName}
         receiverId={companyId}
         onClose={() => setOpenSupplier(null)}
         onOpenFullProfile={() => {
@@ -1100,7 +1217,7 @@ function SuppliersView({
               supplierBols,
               originReceiver: {
                 id: companyId || undefined,
-                name: companyName,
+                name: displayCompanyName,
               },
             },
           });
@@ -1345,36 +1462,44 @@ function SupplierDrawer({
   );
 }
 
-function ProductsView({ products }: { products: ProductRow[] }) {
-  if (products.length === 0) {
-    return (
-      <LitSectionCard
-        title="Products / Commodities"
-        sub="From BOL descriptions"
-      >
-        <EmptyMessage text="No product data on file yet — try Refresh Intel to pull the latest shipments." />
-      </LitSectionCard>
-    );
-  }
+function ProductsView({
+  products,
+  recentBols,
+}: {
+  products: ProductRow[];
+  recentBols: any[];
+}) {
   const productTotal = products.reduce((s, p) => s + p.count, 0);
   return (
-    <LitSectionCard
-      title="Products / Commodities"
-      sub={`Top ${products.length}`}
-    >
-      <div className="flex flex-col gap-2.5">
-        {products.map((p) => (
-          <SplitBar
-            key={p.label}
-            label={p.label}
-            value={p.count}
-            total={productTotal}
-            color="#F59E0B"
-            sublabel={p.hsCode ? `HS ${p.hsCode}` : null}
-          />
-        ))}
-      </div>
-    </LitSectionCard>
+    <>
+      <HsCodeTopBar recentBols={recentBols} />
+      {products.length === 0 ? (
+        <LitSectionCard
+          title="Products / Commodities"
+          sub="From BOL descriptions"
+        >
+          <EmptyMessage text="No product data on file yet — try Refresh Intel to pull the latest shipments." />
+        </LitSectionCard>
+      ) : (
+        <LitSectionCard
+          title="Products / Commodities"
+          sub={`Top ${products.length}`}
+        >
+          <div className="flex flex-col gap-2.5">
+            {products.map((p) => (
+              <SplitBar
+                key={p.label}
+                label={p.label}
+                value={p.count}
+                total={productTotal}
+                color="#F59E0B"
+                sublabel={p.hsCode ? `HS ${p.hsCode}` : null}
+              />
+            ))}
+          </div>
+        </LitSectionCard>
+      )}
+    </>
   );
 }
 
@@ -2075,7 +2200,7 @@ function CombinedLaneIntelligenceTable({
     >
       <div className="max-h-[560px] overflow-x-auto overflow-y-auto">
         <table className="w-full border-collapse">
-          <thead className="sticky top-0 z-[1]">
+          <thead className="sticky top-0 z-[2]">
             <tr className="bg-[#FAFBFC]">
               {[
                 "Lane",
@@ -2087,10 +2212,16 @@ function CombinedLaneIntelligenceTable({
                 "FCL/LCL",
                 "Trend",
                 "Last activity",
-              ].map((h) => (
+              ].map((h, idx) => (
                 <th
                   key={h}
-                  className="font-display whitespace-nowrap border-b border-slate-100 px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400"
+                  className={[
+                    "font-display whitespace-nowrap border-b border-slate-100 px-3 py-1.5 text-left text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400 md:py-2.5",
+                    // First column sticks left on <md so the lane identity
+                    // is always visible while the user scrolls horizontally
+                    // through carrier/forwarder/container columns.
+                    idx === 0 ? "sticky left-0 z-[3] bg-[#FAFBFC]" : "",
+                  ].join(" ")}
                 >
                   {h}
                 </th>
@@ -2125,7 +2256,9 @@ function CombinedLaneIntelligenceTable({
                     i === arr.length - 1 ? "last:border-b-0" : "",
                   ].join(" ")}
                 >
-                  <td className="px-3 py-2.5">
+                  {/* First column sticky-left on <md so the lane identity
+                      stays anchored as the user scrolls horizontally. */}
+                  <td className="sticky left-0 z-[1] bg-white px-3 py-1.5 md:py-2.5">
                     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                       <LitFlag
                         code={lane.fromMeta?.countryCode}
@@ -2149,15 +2282,15 @@ function CombinedLaneIntelligenceTable({
                       </span>
                     </span>
                   </td>
-                  <td className="font-mono px-3 py-2.5 text-[11px] text-slate-700">
+                  <td className="font-mono px-3 py-1.5 text-[11px] text-slate-700 md:py-2.5">
                     {(Number(lane.shipments) || 0).toLocaleString()}
                   </td>
-                  <td className="font-mono px-3 py-2.5 text-[11px] text-slate-700">
+                  <td className="font-mono px-3 py-1.5 text-[11px] text-slate-700 md:py-2.5">
                     {Number(lane.teu) > 0
                       ? Math.round(Number(lane.teu)).toLocaleString()
                       : "—"}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-1.5 md:py-2.5">
                     {topCarrier ? (
                       <span className="font-display text-[11px] font-semibold text-slate-900">
                         {topCarrier}
@@ -2166,7 +2299,7 @@ function CombinedLaneIntelligenceTable({
                       <span className="font-body text-[11px] text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-1.5 md:py-2.5">
                     {topForwarder ? (
                       <span className="font-display truncate text-[11px] font-semibold text-slate-900">
                         {topForwarder}
@@ -2175,14 +2308,14 @@ function CombinedLaneIntelligenceTable({
                       <span className="font-body text-[11px] text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-1.5 md:py-2.5">
                     {container && container !== "—" ? (
                       <LitPill tone="slate">{container}</LitPill>
                     ) : (
                       <span className="font-body text-[11px] text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-1.5 md:py-2.5">
                     {fclLcl && fclLcl !== "—" ? (
                       <LitPill tone={fclLcl === "FCL" ? "blue" : "purple"}>
                         {fclLcl}
@@ -2191,7 +2324,7 @@ function CombinedLaneIntelligenceTable({
                       <span className="font-body text-[11px] text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-1.5 md:py-2.5">
                     {trend ? (
                       <span
                         className={[
@@ -2210,7 +2343,7 @@ function CombinedLaneIntelligenceTable({
                       <span className="text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="font-mono px-3 py-2.5 text-[10px] text-slate-500">
+                  <td className="font-mono px-3 py-1.5 text-[10px] text-slate-500 md:py-2.5">
                     {lastDate ? formatRelativeShort(lastDate) : "—"}
                   </td>
                 </tr>
