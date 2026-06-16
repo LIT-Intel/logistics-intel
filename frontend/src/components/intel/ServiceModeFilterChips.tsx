@@ -4,10 +4,17 @@
 // mode in SupplyChainFilterContext; clicking the active mode again clears it.
 // Active chip gets a colored ring + faint scale-up; inactive chips render
 // grayscale with reduced opacity so the active mode reads at a glance.
+//
+// When `modeCounts` is provided, modes with `count === 0` render disabled:
+// greyed out, non-interactive, and tooltipped with "No <mode> activity for
+// this company". The "All" pill is always interactive. When `modeCounts` is
+// null/undefined (graceful default — e.g. RPC not deployed yet), all chips
+// stay interactive so the UI never regresses.
 
 import React from "react";
 import { SERVICE_MODE_ICON_MAP, type ServiceMode } from "@/components/icons/ServiceModeIcons";
 import { useSupplyChainFilter } from "./SupplyChainFilterContext";
+import type { CompanyModeCounts } from "@/api/intel";
 
 const MODES: ServiceMode[] = ["ocean", "air", "truck", "rail", "drayage", "broker", "domestic"];
 
@@ -43,7 +50,18 @@ const TEXT: Record<ServiceMode, string> = {
   domestic: "text-slate-800",
 };
 
-export default function ServiceModeFilterChips() {
+export interface ServiceModeFilterChipsProps {
+  /**
+   * Per-mode shipment counts for the currently viewed company. When null/
+   * undefined, all chips render enabled (graceful default). When provided,
+   * chips for modes with `count === 0` render disabled and non-interactive.
+   */
+  modeCounts?: CompanyModeCounts | null;
+}
+
+export default function ServiceModeFilterChips({
+  modeCounts,
+}: ServiceModeFilterChipsProps = {}) {
   const { activeMode, setActiveMode } = useSupplyChainFilter();
 
   return (
@@ -78,20 +96,39 @@ export default function ServiceModeFilterChips() {
         const Icon = SERVICE_MODE_ICON_MAP[m];
         const isActive = activeMode === m;
         const dim = activeMode !== null && !isActive;
+        // When counts unknown, treat as enabled (graceful default).
+        const count = modeCounts ? modeCounts[m] : null;
+        const disabled = count !== null && count === 0;
+        const tooltip = disabled
+          ? `No ${LABELS[m]} activity for this company`
+          : count !== null
+            ? `${LABELS[m]} · ${count.toLocaleString()} shipments`
+            : LABELS[m];
         return (
           <button
             key={m}
             type="button"
             aria-pressed={isActive}
-            onClick={() => setActiveMode(isActive ? null : m)}
+            aria-disabled={disabled || undefined}
+            disabled={disabled}
+            title={tooltip}
+            onClick={() => {
+              if (disabled) return;
+              setActiveMode(isActive ? null : m);
+            }}
             className={[
-              "font-display inline-flex shrink-0 items-center gap-1 rounded-full border bg-white px-2 py-1 text-[10.5px] font-semibold tabular-nums min-h-[36px] min-w-[64px] justify-center",
-              "transition-all duration-[120ms] ease-out hover:shadow-sm active:scale-[0.97]",
-              isActive
-                ? `border-transparent ring-2 ring-offset-2 ring-offset-white scale-105 shadow-sm ${RING[m]} ${TEXT[m]}`
-                : dim
-                  ? "border-slate-200 text-slate-400 grayscale opacity-60 hover:opacity-100 hover:grayscale-0 hover:text-slate-700"
-                  : `border-slate-200 ${TEXT[m]} hover:border-slate-300`,
+              "font-display inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10.5px] font-semibold tabular-nums min-h-[36px] min-w-[64px] justify-center",
+              "transition-all duration-[120ms] ease-out",
+              disabled
+                ? "bg-slate-50 border-slate-200 text-slate-400 opacity-40 grayscale cursor-not-allowed pointer-events-none"
+                : [
+                    "bg-white hover:shadow-sm active:scale-[0.97]",
+                    isActive
+                      ? `border-transparent ring-2 ring-offset-2 ring-offset-white scale-105 shadow-sm ${RING[m]} ${TEXT[m]}`
+                      : dim
+                        ? "border-slate-200 text-slate-400 grayscale opacity-60 hover:opacity-100 hover:grayscale-0 hover:text-slate-700"
+                        : `border-slate-200 ${TEXT[m]} hover:border-slate-300`,
+                  ].join(" "),
             ].join(" ")}
           >
             <Icon size={12} />
