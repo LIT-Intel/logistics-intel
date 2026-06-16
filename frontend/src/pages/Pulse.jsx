@@ -71,6 +71,8 @@ import {
 } from '@/features/pulse/pulseCoachClassify';
 import QueryInterpretation from '@/features/pulse/QueryInterpretation';
 import PulseMap from '@/features/pulse/PulseMap';
+import PulseTabs from '@/features/pulse/explore/PulseTabs';
+import PulseExploreTab from '@/features/pulse/explore/PulseExploreTab';
 import { UpgradeRequiredInline } from '@/components/common/UpgradeRequired';
 
 const PLACEHOLDER_EXAMPLES = [
@@ -871,7 +873,12 @@ export default function Pulse() {
 
   const resultCount = results.length;
 
+  // Phase 4 will plumb this from useEntitlements() — see plan Task 34.
+  const exploreEnabled = true;
+
   return (
+    <PulseTabs exploreEnabled={exploreEnabled}>
+      {({ tab }) => tab === 'explore' ? <PulseExploreTab /> : (
     <div className="relative -mx-[10px] -my-4 flex min-h-[calc(100vh-120px)] flex-col overflow-x-hidden bg-[#F8FAFC]">
       {/* Refined ambient backdrop — single soft blue/violet glow.
           Sized smaller than v1, anchored to the top so it frames the
@@ -1231,6 +1238,8 @@ export default function Pulse() {
         onSaved={() => setLibraryRefreshKey((k) => k + 1)}
       />
     </div>
+      )}
+    </PulseTabs>
   );
 }
 
