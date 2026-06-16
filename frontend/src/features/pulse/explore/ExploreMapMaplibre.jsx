@@ -115,13 +115,21 @@ function makeClusterEl(count) {
 
 export default function ExploreMapMaplibre({
   rows, colorMode, sizeMode, selection, onBubbleClick, mapMode = 'bubbles',
+  onBboxChange,
+  lassoActive = false,
+  onLassoSelect,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
+  const lassoRectRef = useRef(null);
+  const lassoStartRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [bbox, setBbox] = useState([-130, 20, -65, 50]);
+
+  // Expose bbox to parent on every move.
+  useEffect(() => { onBboxChange?.(bbox); }, [bbox, onBboxChange]);
 
   // 1. Initialize the map once.
   useEffect(() => {
@@ -259,6 +267,101 @@ export default function ExploreMapMaplibre({
       markersRef.current.push(marker);
     }
   }, [ready, cluster, bbox, zoom, colorMode, sizeMode, maxValue, selSet, onBubbleClick, mapMode]);
+
+  // 5. Lasso rectangle drag — v1 uses a screen-space rectangle for
+  // simplicity. While lassoActive, the map's drag pan is disabled and
+  // mousedown/move/up draw a translucent cyan box. On mouseup we resolve
+  // the rect's screen corners to lng/lat and emit the IDs of every row
+  // whose coords fall inside. Polygon lasso is a v1.5 follow-up.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return undefined;
+    if (lassoActive) {
+      map.dragPan.disable();
+      map.getCanvas().style.cursor = 'crosshair';
+    } else {
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = '';
+    }
+    if (!lassoActive) return undefined;
+
+    function ensureRect() {
+      if (lassoRectRef.current) return lassoRectRef.current;
+      const rect = document.createElement('div');
+      rect.style.cssText =
+        'position:absolute;pointer-events:none;border:1.5px dashed #06B6D4;' +
+        'background:rgba(6,182,212,0.12);z-index:5;display:none;';
+      containerRef.current.appendChild(rect);
+      lassoRectRef.current = rect;
+      return rect;
+    }
+
+    function onDown(e) {
+      const orig = e.originalEvent;
+      lassoStartRef.current = { x: orig.clientX, y: orig.clientY };
+      const rect = ensureRect();
+      const containerBox = containerRef.current.getBoundingClientRect();
+      Object.assign(rect.style, {
+        display: 'block',
+        left: `${orig.clientX - containerBox.left}px`,
+        top: `${orig.clientY - containerBox.top}px`,
+        width: '0px', height: '0px',
+      });
+    }
+    function onMove(e) {
+      if (!lassoStartRef.current) return;
+      const start = lassoStartRef.current;
+      const orig = e.originalEvent;
+      const containerBox = containerRef.current.getBoundingClientRect();
+      const x = Math.min(start.x, orig.clientX);
+      const y = Math.min(start.y, orig.clientY);
+      const w = Math.abs(orig.clientX - start.x);
+      const h = Math.abs(orig.clientY - start.y);
+      const rect = ensureRect();
+      Object.assign(rect.style, {
+        left: `${x - containerBox.left}px`, top: `${y - containerBox.top}px`,
+        width: `${w}px`, height: `${h}px`,
+      });
+    }
+    function onUp(e) {
+      const start = lassoStartRef.current;
+      lassoStartRef.current = null;
+      if (lassoRectRef.current) lassoRectRef.current.style.display = 'none';
+      if (!start) return;
+      const orig = e.originalEvent;
+      const containerBox = containerRef.current.getBoundingClientRect();
+      const x1 = Math.min(start.x, orig.clientX) - containerBox.left;
+      const y1 = Math.min(start.y, orig.clientY) - containerBox.top;
+      const x2 = Math.max(start.x, orig.clientX) - containerBox.left;
+      const y2 = Math.max(start.y, orig.clientY) - containerBox.top;
+      // Ignore micro-drags.
+      if (Math.abs(x2 - x1) < 6 || Math.abs(y2 - y1) < 6) return;
+      const sw = map.unproject([x1, y2]);
+      const ne = map.unproject([x2, y1]);
+      const minLng = Math.min(sw.lng, ne.lng);
+      const maxLng = Math.max(sw.lng, ne.lng);
+      const minLat = Math.min(sw.lat, ne.lat);
+      const maxLat = Math.max(sw.lat, ne.lat);
+      const ids = [];
+      for (const p of points) {
+        const [lng, lat] = p.geometry.coordinates;
+        if (lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat) {
+          ids.push(p.properties.row.id);
+        }
+      }
+      onLassoSelect?.(ids);
+    }
+
+    map.on('mousedown', onDown);
+    map.on('mousemove', onMove);
+    map.on('mouseup', onUp);
+    return () => {
+      map.off('mousedown', onDown);
+      map.off('mousemove', onMove);
+      map.off('mouseup', onUp);
+      if (lassoRectRef.current) lassoRectRef.current.style.display = 'none';
+    };
+  }, [ready, lassoActive, points, onLassoSelect]);
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%' }} />

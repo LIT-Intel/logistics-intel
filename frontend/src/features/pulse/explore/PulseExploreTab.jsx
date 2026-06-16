@@ -5,7 +5,7 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
-import { Compass, Sparkles, ChevronDown, ChevronUp, Table2 } from 'lucide-react';
+import { Compass, Sparkles, ChevronDown, ChevronUp, Table2, Lasso, BoxSelect } from 'lucide-react';
 import { useExploreState } from './useExploreState';
 import { useExploreAccounts } from './useExploreAccounts';
 import { useExploreInsights } from './useExploreInsights';
@@ -22,6 +22,7 @@ import SaveAsViewModal from './SaveAsViewModal';
 import BulkSaveToListModal from './BulkSaveToListModal';
 import { downloadCsv } from './exportCsv';
 import { parseExploreQuery, parsedToFilters, hasAnyFilter } from '@/api/pulse-explore-parse';
+import { lookupCoords } from './coordLookup';
 import ExploreQuickCard from './ExploreQuickCard';
 
 const PROMPTS = [
@@ -44,6 +45,8 @@ export default function PulseExploreTab() {
   const [saveListOpen, setSaveListOpen] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(false); // bottom drawer collapsed by default
+  const [mapBbox, setMapBbox] = useState(null); // [w,s,e,n] from MapLibre
+  const [lassoActive, setLassoActive] = useState(false);
 
   const fetchEnabled = hasAnyFilter(state.filters);
   const { data, isLoading, error } = useExploreAccounts(state.filters, null, { enabled: fetchEnabled });
@@ -120,6 +123,38 @@ export default function PulseExploreTab() {
 
   const onSubmitSearch = useCallback(() => doSearch(query), [doSearch, query]);
 
+  const onSelectAllInView = useCallback(() => {
+    if (!mapBbox || !rows.length) {
+      toast('No accounts in view yet');
+      return;
+    }
+    const [w, s, e, n] = mapBbox;
+    const ids = [];
+    for (const r of rows) {
+      const c = lookupCoords({ latitude: r.latitude, longitude: r.longitude, city: r.city, state: r.state, country: r.country });
+      if (!c) continue;
+      if (c.lng >= w && c.lng <= e && c.lat >= s && c.lat <= n) ids.push(r.id);
+    }
+    if (!ids.length) {
+      toast('No plottable accounts in current view');
+      return;
+    }
+    const merged = Array.from(new Set([...(state.selection ?? []), ...ids]));
+    setSelection(merged);
+    toast.success(`Selected ${ids.length} accounts in view`);
+  }, [mapBbox, rows, state.selection, setSelection]);
+
+  const onLassoSelect = useCallback((ids) => {
+    setLassoActive(false);
+    if (!ids?.length) {
+      toast('Lasso caught nothing');
+      return;
+    }
+    const merged = Array.from(new Set([...(state.selection ?? []), ...ids]));
+    setSelection(merged);
+    toast.success(`Lassoed ${ids.length} accounts`);
+  }, [state.selection, setSelection]);
+
   const activeIndustry = state.filters?.industry?.[0];
   const selectedRows = useMemo(
     () => rows.filter((r) => new Set(state.selection ?? []).has(r.id)),
@@ -182,7 +217,35 @@ export default function PulseExploreTab() {
               selection={state.selection}
               onBubbleClick={setActiveRow}
               mapMode={mapMode}
+              onBboxChange={setMapBbox}
+              lassoActive={lassoActive}
+              onLassoSelect={onLassoSelect}
             />
+            {/* Right-side floating selection buttons */}
+            {fetchEnabled && (
+              <div className="absolute right-3 top-3 z-20 flex flex-col gap-1.5">
+                <button
+                  type="button"
+                  onClick={onSelectAllInView}
+                  title="Select all accounts in current map view"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-white/95 backdrop-blur shadow ring-1 ring-slate-200 text-slate-700 hover:text-cyan-700 px-2.5 py-1.5 text-xs font-medium"
+                >
+                  <BoxSelect size={13} /> Select in view
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLassoActive((v) => !v)}
+                  title={lassoActive ? 'Cancel lasso' : 'Drag a rectangle to lasso-select accounts'}
+                  className={`inline-flex items-center gap-1.5 rounded-md backdrop-blur shadow ring-1 px-2.5 py-1.5 text-xs font-medium ${
+                    lassoActive
+                      ? 'bg-cyan-500 text-white ring-cyan-600'
+                      : 'bg-white/95 ring-slate-200 text-slate-700 hover:text-cyan-700'
+                  }`}
+                >
+                  <Lasso size={13} /> {lassoActive ? 'Drag a rectangle…' : 'Lasso'}
+                </button>
+              </div>
+            )}
             {fetchEnabled && legendOpen && (
               <IndustryLegendOverlay
                 rows={rows}
