@@ -16,7 +16,7 @@
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight, Bookmark, ExternalLink, MapPin, RefreshCw,
-  TrendingUp, Ship, Building2, X,
+  TrendingUp, Ship, Building2, X, Search,
 } from 'lucide-react';
 import { useImportYetiRefresh } from './useImportYetiRefresh';
 
@@ -146,6 +146,13 @@ export default function ExploreQuickCard({ row, onClose, onSaveToList }) {
   const topForwarder = Array.isArray(row.top_forwarders) ? row.top_forwarders[0] : null;
   const refreshDisabled = isCached24h(row) || refresh.isPending;
 
+  // Directory-only rows live in lit_company_directory (the V6/Panjiva seed
+  // dataset). They don't yet have a lit_companies row, so /app/companies/:id
+  // would show an empty profile. The user has to search first to pull
+  // ImportYeti data + create the lit_companies row. Live rows already
+  // have a profile and can be opened directly.
+  const hasLiveProfile = Array.isArray(row.data_sources) && row.data_sources.includes('live');
+
   return (
     <div className="flex h-full flex-col bg-white">
       {/* Header — name + close */}
@@ -241,13 +248,30 @@ export default function ExploreQuickCard({ row, onClose, onSaveToList }) {
 
       {/* Actions */}
       <footer className="border-t border-slate-200 bg-slate-50 px-3 py-2.5 space-y-1.5">
-        <button
-          type="button"
-          onClick={() => navigate(`/app/companies/${row.id}`)}
-          className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 text-white text-xs font-medium px-3 py-2 hover:bg-slate-700"
-        >
-          Open in Command Center <ArrowRight size={12} />
-        </button>
+        {hasLiveProfile ? (
+          <button
+            type="button"
+            onClick={() => navigate(`/app/companies/${row.id}`)}
+            className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 text-white text-xs font-medium px-3 py-2 hover:bg-slate-700"
+          >
+            Open in Command Center <ArrowRight size={12} />
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => navigate(`/app/search?q=${encodeURIComponent(row.company_name)}`)}
+              className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 text-white text-xs font-medium px-3 py-2 hover:bg-slate-700"
+              title="Run a fresh search to pull live shipment data, then this company will be openable in Command Center"
+            >
+              <Search size={12} /> Search for live data
+            </button>
+            <p className="text-[10px] text-slate-500 leading-snug text-center">
+              Directory data only. Search first to pull live shipments + contacts,
+              then the company opens in Command Center.
+            </p>
+          </>
+        )}
         <div className="grid grid-cols-2 gap-1.5">
           <button
             type="button"
@@ -259,8 +283,12 @@ export default function ExploreQuickCard({ row, onClose, onSaveToList }) {
           <button
             type="button"
             onClick={() => refresh.mutate({ companyId: row.id })}
-            disabled={refreshDisabled}
-            title={isCached24h(row) ? 'Cached — under 24h old' : 'Refresh from ImportYeti'}
+            disabled={refreshDisabled || !hasLiveProfile}
+            title={
+              !hasLiveProfile ? 'Search this company first to enable refresh'
+              : isCached24h(row) ? 'Cached — under 24h old'
+              : 'Refresh from ImportYeti'
+            }
             className="inline-flex items-center justify-center gap-1 rounded-md bg-white ring-1 ring-slate-200 text-slate-700 text-xs px-2 py-1.5 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <RefreshCw size={12} className={refresh.isPending ? 'animate-spin' : ''} />

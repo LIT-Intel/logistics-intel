@@ -9,9 +9,11 @@ function Btn({ icon, label, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition"
+      title={label}
+      aria-label={label}
+      className="inline-flex items-center gap-1.5 rounded px-2 sm:px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition shrink-0"
     >
-      {icon}{label}
+      {icon}<span className="hidden md:inline">{label}</span>
     </button>
   );
 }
@@ -28,7 +30,7 @@ export default function SelectionActionBar({
 }) {
   if (!selectionCount) return null;
   return (
-    <div className="flex items-center gap-1 border-b border-slate-200 bg-cyan-50/40 px-3 py-1.5 text-sm">
+    <div className="flex items-center gap-1 border-b border-slate-200 bg-cyan-50/40 px-3 py-1.5 text-sm overflow-x-auto whitespace-nowrap">
       <span className="font-medium text-cyan-900 mr-2">
         {selectionCount.toLocaleString()} of {totalCount.toLocaleString()} selected
       </span>
@@ -41,7 +43,7 @@ export default function SelectionActionBar({
       >
         <X size={12} />
       </button>
-      <span className="h-4 w-px bg-slate-300 mx-2" />
+      <span className="h-4 w-px bg-slate-300 mx-2 shrink-0" />
       <Btn icon={<FolderPlus size={13} />} label="Save to list" onClick={onSaveToList} />
       <Btn icon={<Bookmark size={13} />} label="Save view" onClick={onSaveAsView} />
       <Btn icon={<Send size={13} />} label="Add to campaign" onClick={onAddToCampaign} />

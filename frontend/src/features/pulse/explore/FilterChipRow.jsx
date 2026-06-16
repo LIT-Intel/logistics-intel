@@ -61,7 +61,7 @@ export default function FilterChipRow({ filters, onChange }) {
   const chips = flattenFilters(filters);
   if (!chips.length) return null;
   return (
-    <div className="flex flex-wrap gap-1.5 items-center px-4 py-2 bg-white border-b border-slate-200">
+    <div className="flex flex-wrap gap-1.5 items-center px-3 sm:px-4 py-1.5 sm:py-2 bg-white border-b border-slate-200 overflow-x-auto">
       {chips.map((c, i) => (
         <span
           key={`${c.category}:${c.value}:${i}`}

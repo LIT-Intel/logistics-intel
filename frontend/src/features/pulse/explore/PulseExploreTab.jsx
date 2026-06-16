@@ -184,13 +184,15 @@ export default function PulseExploreTab() {
       />
       <FilterChipRow filters={state.filters} onChange={setFilters} />
       <div className="flex flex-1 min-h-0">
-        <ExploreSidebar
-          active={sidebarTool}
-          onSelect={(t) => {
-            setSidebarTool(t);
-            if (t === 'bookmark') setViewOpen(true);
-          }}
-        />
+        <div className="hidden sm:block">
+          <ExploreSidebar
+            active={sidebarTool}
+            onSelect={(t) => {
+              setSidebarTool(t);
+              if (t === 'bookmark') setViewOpen(true);
+            }}
+          />
+        </div>
         <div className="flex-1 min-w-0 min-h-0 relative flex flex-col">
           {parsing && (
             <div className="absolute inset-x-0 top-0 z-30 bg-cyan-50 text-cyan-800 text-xs py-1.5 text-center border-b border-cyan-200">
@@ -221,28 +223,32 @@ export default function PulseExploreTab() {
               lassoActive={lassoActive}
               onLassoSelect={onLassoSelect}
             />
-            {/* Right-side floating selection buttons */}
+            {/* Right-side floating selection buttons — labels hide on xs */}
             {fetchEnabled && (
-              <div className="absolute right-3 top-3 z-20 flex flex-col gap-1.5">
+              <div className="absolute right-2 top-2 sm:right-3 sm:top-3 z-20 flex flex-col gap-1.5">
                 <button
                   type="button"
                   onClick={onSelectAllInView}
                   title="Select all accounts in current map view"
-                  className="inline-flex items-center gap-1.5 rounded-md bg-white/95 backdrop-blur shadow ring-1 ring-slate-200 text-slate-700 hover:text-cyan-700 px-2.5 py-1.5 text-xs font-medium"
+                  aria-label="Select all in view"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-white/95 backdrop-blur shadow ring-1 ring-slate-200 text-slate-700 hover:text-cyan-700 px-2 sm:px-2.5 py-1.5 text-xs font-medium"
                 >
-                  <BoxSelect size={13} /> Select in view
+                  <BoxSelect size={13} />
+                  <span className="hidden sm:inline">Select in view</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setLassoActive((v) => !v)}
                   title={lassoActive ? 'Cancel lasso' : 'Drag a rectangle to lasso-select accounts'}
-                  className={`inline-flex items-center gap-1.5 rounded-md backdrop-blur shadow ring-1 px-2.5 py-1.5 text-xs font-medium ${
+                  aria-label="Lasso select"
+                  className={`inline-flex items-center gap-1.5 rounded-md backdrop-blur shadow ring-1 px-2 sm:px-2.5 py-1.5 text-xs font-medium ${
                     lassoActive
                       ? 'bg-cyan-500 text-white ring-cyan-600'
                       : 'bg-white/95 ring-slate-200 text-slate-700 hover:text-cyan-700'
                   }`}
                 >
-                  <Lasso size={13} /> {lassoActive ? 'Drag a rectangle…' : 'Lasso'}
+                  <Lasso size={13} />
+                  <span className="hidden sm:inline">{lassoActive ? 'Drag a rectangle…' : 'Lasso'}</span>
                 </button>
               </div>
             )}
@@ -340,16 +346,25 @@ export default function PulseExploreTab() {
           </div>
         </div>
         {activeRow && (
-          <div className="w-[380px] shrink-0 border-l border-slate-200">
-            <ExploreQuickCard
-              row={activeRow}
-              onClose={() => setActiveRow(null)}
-              onSaveToList={(r) => {
-                if (!state.selection?.includes(r.id)) setSelection([...(state.selection ?? []), r.id]);
-                setSaveListOpen(true);
-              }}
+          <>
+            {/* Mobile scrim — taps outside the panel close it */}
+            <button
+              type="button"
+              aria-label="Close panel"
+              onClick={() => setActiveRow(null)}
+              className="fixed inset-0 z-40 bg-slate-950/40 lg:hidden"
             />
-          </div>
+            <div className="fixed lg:relative right-0 top-0 z-50 lg:z-0 h-full lg:h-auto w-[92vw] max-w-[380px] lg:w-[380px] shrink-0 border-l border-slate-200 bg-white shadow-2xl lg:shadow-none">
+              <ExploreQuickCard
+                row={activeRow}
+                onClose={() => setActiveRow(null)}
+                onSaveToList={(r) => {
+                  if (!state.selection?.includes(r.id)) setSelection([...(state.selection ?? []), r.id]);
+                  setSaveListOpen(true);
+                }}
+              />
+            </div>
+          </>
         )}
       </div>
       <BulkRefreshModal open={bulkOpen} onClose={() => setBulkOpen(false)} rows={selectedRows} />
