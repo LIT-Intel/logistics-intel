@@ -66,6 +66,34 @@ export default function AuthCallback() {
           return;
         }
 
+        // Bulletproof: if the user already has a workspace membership, they're
+        // done with onboarding regardless of metadata. Joining a workspace IS
+        // onboarding. Handles the case where email confirmation arrived AFTER
+        // the user already accepted an invite (server-side metadata write may
+        // not have propagated to this JWT yet).
+        let hasWorkspaceMembership = false;
+        try {
+          const { data: memberships } = await auth
+            .from('org_members')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('status', 'active')
+            .limit(1);
+          hasWorkspaceMembership = Array.isArray(memberships) && memberships.length > 0;
+        } catch {
+          // If the query fails (RLS or network), fall through to metadata check.
+          hasWorkspaceMembership = false;
+        }
+
+        if (hasWorkspaceMembership) {
+          // Mark onboarding complete and route straight to the dashboard.
+          if (meta.onboarding_completed !== true) {
+            await auth.auth.updateUser({ data: { onboarding_completed: true } });
+          }
+          navigate(nextParam && !nextParam.includes('/onboarding') ? nextParam : '/app/dashboard', { replace: true });
+          return;
+        }
+
         // Primary: flag written at registration via signUp options.data
         // Secondary: account < 30 min old = first confirmation click
         const createdAt = new Date(user.created_at || 0);
