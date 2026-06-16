@@ -35,7 +35,7 @@ create policy "user reads own map selections"
   using (user_id = auth.uid()
          or (org_id is not null and exists (
            select 1 from org_members om
-           where om.organization_id = lit_pulse_map_selections.org_id
+           where om.org_id = lit_pulse_map_selections.org_id
              and om.user_id = auth.uid())));
 
 create policy "user inserts own map selections"
