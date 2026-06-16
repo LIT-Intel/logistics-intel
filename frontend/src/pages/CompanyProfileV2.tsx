@@ -72,9 +72,9 @@ import CDPRateBenchmark from "@/components/company/CDPRateBenchmark";
 import CDPRevenueOpportunity from "@/components/company/CDPRevenueOpportunity";
 import CompanyInboxTab from "@/components/company/CompanyInboxTab";
 import CompanyProfileGuard from "@/components/company/CompanyProfileGuard";
-import PremiumIntelPanel from "@/components/intel/PremiumIntelPanel";
-import LaneIntelTable from "@/components/intel/LaneIntelTable";
-import { useEntitlements } from "@/hooks/useEntitlements";
+// Premium Intel tab was retired 2026-06-16 — its cards were folded into the
+// Supply Chain tab (see frontend/src/components/intel/cards/*). The
+// PremiumIntelPanel + LaneIntelTable files were deleted at the same time.
 import { useCompanyProfile } from "@/hooks/useCompanyProfile";
 import { loadSyntheticProfile } from "@/lib/companyProfileFallback";
 import {
@@ -295,7 +295,7 @@ const VISIBLE_TABS = [
   { id: "inbox", label: "Inbox", Icon: Inbox },
 ] as const;
 const MORE_TABS = [
-  { id: "premium", label: "Premium Intel", Icon: Sparkles, premium: true },
+  // "premium" tab removed 2026-06-16 — Premium Intel cards folded into Supply Chain.
   { id: "research", label: "Pulse AI", Icon: Sparkles },
   { id: "rates", label: "Rate Benchmark", Icon: Anchor },
   { id: "revenue", label: "Revenue Opportunity", Icon: TrendingUp },
@@ -365,20 +365,15 @@ class V2ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
 function CompanyTabsRow({
   tab,
   onSelect,
-  showPremiumIntel,
 }: {
   tab: TabId;
   onSelect: (id: TabId) => void;
-  showPremiumIntel: boolean;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement | null>(null);
-  // Filter MORE_TABS by entitlement — Premium Intel is hidden entirely
-  // when the user's plan doesn't enable it (and they aren't platform admin).
-  const moreTabs = useMemo(
-    () => MORE_TABS.filter((t) => (t.id === "premium" ? showPremiumIntel : true)),
-    [showPremiumIntel],
-  );
+  // Premium Intel was retired 2026-06-16 — no more per-tab entitlement
+  // filtering needed; every MORE_TABS entry shows for every user.
+  const moreTabs = MORE_TABS;
   const activeInOverflow = moreTabs.some((t) => t.id === tab);
 
   // Outside-click dismissal.
@@ -477,11 +472,6 @@ function CompanyTabsRow({
                   <span className="inline-flex items-center gap-2">
                     <Icon className="h-3 w-3" />
                     {t.label}
-                    {"premium" in t && t.premium && (
-                      <span className="font-display ml-1 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-1.5 py-[1px] text-[8.5px] font-bold uppercase tracking-[0.08em] text-amber-700">
-                        Premium
-                      </span>
-                    )}
                   </span>
                   <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden />
                 </button>
@@ -544,14 +534,8 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   const navigate = useNavigate();
   const auth = useAuth();
   const { user, fullName } = auth ?? ({} as any);
-  // Premium-Intel gating — JWT-verified entitlement snapshot. Platform
-  // admins ALWAYS see the tab; workspace admins/owners do not unless
-  // entitlements.flags.premium_intel is enabled for their org. The check
-  // is UX-only; the security boundary is in the backend RPCs themselves.
-  const { isPlatformAdmin, entitlements } = useEntitlements();
-  const premiumIntelEnabled =
-    isPlatformAdmin ||
-    Boolean((entitlements as any)?.flags?.premium_intel);
+  // Premium Intel tab was retired 2026-06-16 — its cards were folded into
+  // the Supply Chain tab. Entitlement gating was removed at the same time.
 
   // Aggregator-side identity (drives directory-only branch + canonical UUID
   // when the URL param is a slug). The legacy page derives companyId from
@@ -2060,7 +2044,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       {/* Tab bar — F5 trim: 5 visible + More overflow. The More dropdown
           surfaces Pulse AI / Rate Benchmark / Revenue Opportunity without
           horizontal scroll on mobile. */}
-      <CompanyTabsRow tab={tab} onSelect={setTab} showPremiumIntel={premiumIntelEnabled} />
+      <CompanyTabsRow tab={tab} onSelect={setTab} />
 
 
       {refreshLimitState && (
@@ -2099,6 +2083,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 years={years}
                 onSelectYear={setSelectedYear}
                 onOpenPulseLive={() => setTab("live")}
+                companyName={companyName}
               />
             )
           )}
@@ -2108,30 +2093,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
               companyName={companyName}
             />
           )}
-          {tab === "premium" && premiumIntelEnabled && (
-            <div className="flex flex-col gap-3.5">
-              <PremiumIntelPanel
-                companyName={companyName}
-                title={`Premium Intel · ${companyName}`}
-              />
-              <LaneIntelTable companyName={companyName} />
-            </div>
-          )}
-          {tab === "premium" && !premiumIntelEnabled && (
-            // Defensive fallback: deep-link with ?tab=premium when the user
-            // doesn't have entitlement. Tab itself is hidden from the menu;
-            // this just stops the body from being blank.
-            <div className="mx-auto mt-8 max-w-xl rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-              <h3 className="font-display text-[15px] font-bold text-slate-900">
-                Premium Intel is not enabled on your plan
-              </h3>
-              <p className="font-body mt-2 text-[12.5px] text-slate-600">
-                Per-lane carrier mix, YoY trend, MX transborder activity, and
-                customs broker mix are part of LIT's Premium Intel coverage.
-                Talk to your admin to enable the feature on this workspace.
-              </p>
-            </div>
-          )}
+          {/* Premium Intel tab was retired 2026-06-16. If a user deep-links
+              with ?tab=premium we transparently redirect by leaving no
+              renderer; the body stays empty and the More menu no longer
+              offers the tab. The premium-folded cards now live in the
+              Supply Chain tab. */}
           {tab === "rates" && (
             <CDPRateBenchmark
               companyName={companyName}
