@@ -19,7 +19,7 @@ import ExploreSidebar from './ExploreSidebar';
 import FilterChipRow from './FilterChipRow';
 import IndustryLegendOverlay from './IndustryLegendOverlay';
 import ExploreMapTools from './ExploreMapTools';
-import ExploreMap from './ExploreMap';
+import ExploreMap from './ExploreMapMaplibre';
 import ExploreAccountTable from './ExploreAccountTable';
 import SelectionActionBar from './SelectionActionBar';
 import BulkRefreshModal from './BulkRefreshModal';
