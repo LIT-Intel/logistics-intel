@@ -53,6 +53,7 @@
     "send-campaign-email",
     "send-lit-marketing-email",
     "send-org-invite",
+    "signup-with-invite",
     "stripe-connect-webhook",
     "subscription-email-cron",
     "sync-inbox-cron",
