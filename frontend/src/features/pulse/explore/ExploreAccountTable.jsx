@@ -81,9 +81,9 @@ const COLUMNS = [
   { id: 'location', flex: 1.2, label: 'Location', justify: 'left' },
   { id: 'industry', flex: 1, label: 'Industry', justify: 'left' },
   { id: 'vertical', flex: 1, label: 'Vertical', justify: 'left' },
-  { id: 'dims', width: 220, label: 'Top Dimensions', justify: 'left' },
-  { id: 'teu', width: 90, label: 'TEU Vol.', justify: 'right' },
-  { id: 'sales', width: 100, label: 'Annual Sales', justify: 'right' },
+  { id: 'dims', width: 240, label: 'Origin → Destination', justify: 'left' },
+  { id: 'teu', width: 90, label: 'TEU 12m', justify: 'right' },
+  { id: 'sales', width: 110, label: 'Annual Sales (US)', justify: 'right' },
   { id: 'opp', width: 90, label: 'Opp Score', justify: 'right' },
   { id: 'fresh', width: 80, label: 'Status', justify: 'center' },
 ];
@@ -132,7 +132,10 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
         <div className="flex items-center justify-end px-2 tabular-nums text-slate-700">
           {fmtInt(row.teu)}
         </div>
-        <div className="flex items-center justify-end px-2 tabular-nums text-slate-700">
+        <div
+          className="flex items-center justify-end px-2 tabular-nums text-slate-700"
+          title="Estimated annual revenue for the US entity (V6). TEU reflects all US-bound shipments; the two can diverge for subsidiaries of global parents."
+        >
           {fmtMoneyM(row.revenue != null ? Number(row.revenue) : null)}
         </div>
         <div className="flex items-center justify-end px-2 tabular-nums font-medium text-slate-900">
