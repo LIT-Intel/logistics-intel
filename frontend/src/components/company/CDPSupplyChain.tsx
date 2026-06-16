@@ -21,14 +21,11 @@ import { SupplyChainFilterProvider } from "@/components/intel/SupplyChainFilterC
 import ServiceModeFilterChips from "@/components/intel/ServiceModeFilterChips";
 import DataFreshnessChip from "@/components/intel/cards/DataFreshnessChip";
 import ServiceModeDonut from "@/components/intel/cards/ServiceModeDonut";
-import TopTradePartnersBar from "@/components/intel/cards/TopTradePartnersBar";
 import MxTransborderKpi from "@/components/intel/cards/MxTransborderKpi";
 import UsExportKpi from "@/components/intel/cards/UsExportKpi";
 import LaneMixStackedBar from "@/components/intel/cards/LaneMixStackedBar";
 import LaneYoyBarChart from "@/components/intel/cards/LaneYoyBarChart";
 import DomesticInlandLegCard from "@/components/intel/cards/DomesticInlandLegCard";
-import SupplierConcentrationDonut from "@/components/intel/cards/SupplierConcentrationDonut";
-import CustomsBrokerMixSubcard from "@/components/intel/cards/CustomsBrokerMixSubcard";
 import HsCodeTopBar from "@/components/intel/cards/HsCodeTopBar";
 import {
   useCompanyModeCounts,
@@ -522,12 +519,12 @@ function SummaryView({
 
   // Consolidated Summary order (post-rebuild):
   //   1. BuyingIntentTile
-  //   2. ServiceModeDonut (interactive — drives filter)
-  //   3. TopLanesCard (globe + lane list + container mix)
-  //   4. CadenceAndModalMix (area chart + small donut)
-  //   5. MxTransborderKpi + UsExportKpi (compact KPIs side-by-side)
-  //   6. TopTradePartnersBar (PowerQuery top-5 suppliers)
-  //   7. RecentActivityCards
+  //   2. TopLanesCard (globe + lane list + container mix)
+  //   3. CadenceAndModalMix (area chart + small donut)
+  //   4. MxTransborderKpi + UsExportKpi (compact KPIs side-by-side, hide-on-empty)
+  //   5. RecentActivityCards
+  // Removed 2026-06-16: TopTradePartnersBar — credit-burning PQ sync (11 credits / 0 rows for Walmart).
+  // Existing Suppliers tab covers this via free BOL-derived aggregation.
   return (
     <>
       <BuyingIntentTile profile={_profile} recentBols={recentBols} />
@@ -551,9 +548,6 @@ function SummaryView({
           <MxTransborderKpi companyName={companyName} />
           <UsExportKpi companyName={companyName} />
         </div>
-      )}
-      {companyName && (
-        <TopTradePartnersBar companyName={companyName} />
       )}
       <RecentActivityCards
         recentBols={recentBols}
@@ -1178,12 +1172,6 @@ function SuppliersView({
 
   return (
     <>
-      {companyName && (
-        <SupplierConcentrationDonut companyName={companyName} />
-      )}
-      {companyName && (
-        <CustomsBrokerMixSubcard companyName={companyName} />
-      )}
       <LitSectionCard
         title={`${allSuppliers.length.toLocaleString()} unique suppliers`}
         sub={`Shipping to ${displayCompanyName} in the last 12 months · ranked by share`}
