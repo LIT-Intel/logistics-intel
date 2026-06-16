@@ -16,6 +16,7 @@ import {
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import { usePqSupplierAggregates } from "@/api/intel";
 import { useEntitlements } from "@/hooks/useEntitlements";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 interface TopTradePartnersBarProps {
   companyName: string;
@@ -36,6 +37,10 @@ export default function TopTradePartnersBar({
 }: TopTradePartnersBarProps) {
   const { data, isLoading } = usePqSupplierAggregates(companyName);
   const { isPlatformAdmin } = useEntitlements();
+  const { isMobile } = useBreakpoint();
+  // Supplier name truncate — 18 chars on <sm so even on a 360px-wide phone
+  // the bar still gets ~60% of the row; 32 on ≥sm. Full name in the tooltip.
+  const truncLen = isMobile ? 18 : 32;
 
   const rows = React.useMemo(() => {
     return (data || [])
@@ -43,8 +48,8 @@ export default function TopTradePartnersBar({
       .map((r) => ({
         name: r.supplier_name,
         shortName:
-          r.supplier_name.length > 28
-            ? r.supplier_name.slice(0, 27) + "…"
+          r.supplier_name.length > truncLen
+            ? r.supplier_name.slice(0, truncLen - 1) + "…"
             : r.supplier_name,
         count: Number(r.shipment_count) || 0,
         country: r.supplier_country,
@@ -52,7 +57,7 @@ export default function TopTradePartnersBar({
         flag: countryFlag(r.supplier_country),
       }))
       .filter((r) => r.count > 0);
-  }, [data]);
+  }, [data, truncLen]);
 
   if (isLoading) {
     return (
@@ -73,8 +78,12 @@ export default function TopTradePartnersBar({
     );
   }
 
-  // Height: 44px per row + padding so the chart frame is predictable.
-  const height = rows.length * 44 + 24;
+  // Height: per-row height scales with bar size + label height; mobile rows
+  // are taller so the bars are easier to tap (≥36px effective row).
+  const rowHeight = isMobile ? 42 : 48;
+  const height = rows.length * rowHeight + 24;
+  const yAxisWidth = isMobile ? 130 : 200;
+  const barSize = isMobile ? 22 : 30;
 
   return (
     <LitSectionCard title="Top trade partners" sub="Top 5 suppliers by shipment count">
@@ -95,7 +104,7 @@ export default function TopTradePartnersBar({
             <YAxis
               type="category"
               dataKey="shortName"
-              width={170}
+              width={yAxisWidth}
               tick={{ fontSize: 11, fill: "#334155" }}
               tickLine={false}
               axisLine={false}
@@ -104,7 +113,7 @@ export default function TopTradePartnersBar({
             <Bar
               dataKey="count"
               radius={[0, 4, 4, 0]}
-              barSize={22}
+              barSize={barSize}
               fill="url(#topPartnerGrad)"
               isAnimationActive
               animationDuration={700}
@@ -128,10 +137,10 @@ function PartnerTooltip({ active, payload }: { active?: boolean; payload?: any[]
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (
-    <div className="font-display rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] text-white shadow-lg">
-      <div className="flex items-center gap-2 font-semibold">
-        {p.flag && <span aria-hidden>{p.flag}</span>}
-        <span>{p.name}</span>
+    <div className="font-display max-w-[240px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] text-white shadow-lg">
+      <div className="flex items-start gap-2 font-semibold">
+        {p.flag && <span className="text-base shrink-0 sm:text-lg" aria-hidden>{p.flag}</span>}
+        <span className="break-words">{p.name}</span>
       </div>
       <div
         className="opacity-90 tabular-nums"

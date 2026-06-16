@@ -50,9 +50,24 @@ export default function ServiceModeFilterChips() {
     <div
       role="toolbar"
       aria-label="Filter Supply Chain by service mode"
-      className="flex flex-wrap items-center gap-1.5"
+      className={[
+        // <sm: horizontal scroll w/ right-edge fade so all 8 chips stay
+        //      reachable on phones without wrapping into a 3-row stack.
+        // ≥sm: original flex-wrap behaviour.
+        "relative -mx-1 flex max-w-full items-center gap-1.5 overflow-x-auto px-1 scroll-smooth",
+        "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0",
+      ].join(" ")}
+      style={{
+        // 12px right-edge fade mask on mobile only — clipped on ≥sm via
+        // the sm:overflow-visible class so wrap behaviour stays clean.
+        WebkitMaskImage:
+          "linear-gradient(to right, #000 0, #000 calc(100% - 12px), transparent 100%)",
+        maskImage:
+          "linear-gradient(to right, #000 0, #000 calc(100% - 12px), transparent 100%)",
+      }}
     >
-      <span className="font-display mr-1 text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+      <span className="font-display mr-1 shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
         Filter by mode
       </span>
       <AllPill
@@ -70,7 +85,7 @@ export default function ServiceModeFilterChips() {
             aria-pressed={isActive}
             onClick={() => setActiveMode(isActive ? null : m)}
             className={[
-              "font-display inline-flex items-center gap-1 rounded-full border bg-white px-2 py-1 text-[10.5px] font-semibold tabular-nums",
+              "font-display inline-flex shrink-0 items-center gap-1 rounded-full border bg-white px-2 py-1 text-[10.5px] font-semibold tabular-nums min-h-[36px] min-w-[64px] justify-center",
               "transition-all duration-[120ms] ease-out hover:shadow-sm active:scale-[0.97]",
               isActive
                 ? `border-transparent ring-2 ring-offset-2 ring-offset-white scale-105 shadow-sm ${RING[m]} ${TEXT[m]}`
@@ -95,7 +110,7 @@ function AllPill({ active, onClick }: { active: boolean; onClick: () => void }) 
       aria-pressed={active}
       onClick={onClick}
       className={[
-        "font-display inline-flex items-center rounded-full border px-2.5 py-1 text-[10.5px] font-semibold",
+        "font-display inline-flex shrink-0 items-center justify-center rounded-full border px-2.5 py-1 text-[10.5px] font-semibold min-h-[36px] min-w-[64px]",
         "transition-all duration-[120ms] ease-out hover:shadow-sm active:scale-[0.97]",
         active
           ? "border-blue-600 bg-blue-600 text-white shadow-sm"

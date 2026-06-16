@@ -147,8 +147,10 @@ export default function ServiceModeDonut({
   }
 
   const body = (
-    <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6">
-        <div className="relative" style={{ width: 220, height: 220 }}>
+    <div className="flex flex-col items-center gap-3 md:flex-row md:items-start md:gap-6">
+        {/* Responsive donut wrapper — heights scale up at sm/md/lg so the
+            chart stays legible on phones without dominating the screen. */}
+        <div className="relative aspect-square w-full max-w-[260px] sm:max-w-[220px] md:max-w-[260px]">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
@@ -180,7 +182,7 @@ export default function ServiceModeDonut({
           </ResponsiveContainer>
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
             <div
-              className="font-display text-[26px] font-bold leading-none text-slate-900 tabular-nums"
+              className="font-display text-xl font-bold leading-none text-slate-900 tabular-nums sm:text-2xl md:text-[26px]"
               style={{ fontVariantNumeric: "tabular-nums" }}
             >
               {animated.toLocaleString()}

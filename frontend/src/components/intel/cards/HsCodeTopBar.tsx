@@ -16,6 +16,7 @@ import {
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import { useSupplyChainFilter } from "@/components/intel/SupplyChainFilterContext";
 import { getBolHs } from "@/lib/bols/helpers";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 interface HsCodeTopBarProps {
   recentBols: any[];
@@ -32,6 +33,13 @@ export default function HsCodeTopBar({
   enrichmentByChapter,
 }: HsCodeTopBarProps) {
   const { selectedHs, setSelectedHs } = useSupplyChainFilter();
+  const { isMobile } = useBreakpoint();
+  // Top 6 on <sm so each row has room to read; full top-10 on ≥sm. Label
+  // truncates to a short HS chapter form on mobile (e.g. "HS 84" stays as
+  // is; longer labels with descriptions get clipped to 8 chars). Full
+  // label still surfaces in the Tooltip on tap.
+  const topN = isMobile ? 6 : 10;
+  const barSize = isMobile ? 22 : 30;
 
   const rows = React.useMemo(() => {
     const counts = new Map<string, number>();
@@ -43,15 +51,20 @@ export default function HsCodeTopBar({
       counts.set(ch, (counts.get(ch) || 0) + 1);
     }
     return Array.from(counts.entries())
-      .map(([ch, count]) => ({
-        chapter: ch,
-        label: `HS ${ch}`,
-        count,
-        description: enrichmentByChapter?.[ch] || null,
-      }))
+      .map(([ch, count]) => {
+        const fullLabel = `HS ${ch}`;
+        return {
+          chapter: ch,
+          label: fullLabel,
+          shortLabel:
+            isMobile && fullLabel.length > 8 ? fullLabel.slice(0, 7) + "…" : fullLabel,
+          count,
+          description: enrichmentByChapter?.[ch] || null,
+        };
+      })
       .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-  }, [recentBols, enrichmentByChapter]);
+      .slice(0, topN);
+  }, [recentBols, enrichmentByChapter, topN, isMobile]);
 
   if (rows.length === 0) {
     return (
@@ -61,7 +74,9 @@ export default function HsCodeTopBar({
     );
   }
 
-  const height = rows.length * 32 + 24;
+  // Per-row height scales with barSize so taller mobile bars still get
+  // appropriate vertical room. ResponsiveContainer handles the width side.
+  const height = rows.length * (barSize + 10) + 24;
 
   return (
     <LitSectionCard
@@ -93,8 +108,8 @@ export default function HsCodeTopBar({
             <XAxis type="number" hide />
             <YAxis
               type="category"
-              dataKey="label"
-              width={64}
+              dataKey="shortLabel"
+              width={isMobile ? 52 : 64}
               tick={{ fontSize: 11, fill: "#334155" }}
               tickLine={false}
               axisLine={false}
@@ -103,7 +118,7 @@ export default function HsCodeTopBar({
             <Bar
               dataKey="count"
               radius={[0, 4, 4, 0]}
-              barSize={18}
+              barSize={barSize}
               isAnimationActive
               animationDuration={700}
               onClick={(d: any) => {
@@ -134,8 +149,8 @@ function HsTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (
-    <div className="font-display rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] text-white shadow-lg">
-      <div className="font-semibold">{p.label}</div>
+    <div className="font-display max-w-[240px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] text-white shadow-lg">
+      <div className="break-words font-semibold">{p.label}</div>
       {p.description && (
         <div className="text-[10px] opacity-75">{p.description}</div>
       )}

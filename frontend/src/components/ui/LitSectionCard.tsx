@@ -84,7 +84,7 @@ export default function LitSectionCard({
               : undefined
           }
           className={cn(
-            "flex shrink-0 items-center justify-between gap-2 px-4 py-3",
+            "flex shrink-0 items-center justify-between gap-2 px-3 py-2.5 sm:px-4 sm:py-3",
             (open || !collapsible) ? "border-b border-slate-100" : "",
             accentHeader && "bg-[#FAFBFC]",
             headerInteractive && "cursor-pointer select-none transition hover:bg-slate-50/40",
@@ -129,7 +129,13 @@ export default function LitSectionCard({
         <div
           className={cn(
             "flex-1 min-h-0",
-            padded ? (dense ? "p-3" : "p-4") : "",
+            // Mobile-first: tighter padding on phones, default desktop padding
+            // at sm and up. `dense` keeps its p-3 contract on both tiers.
+            padded
+              ? dense
+                ? "p-3"
+                : "px-3 py-3 sm:px-4 sm:py-3.5"
+              : "",
             bodyClassName,
           )}
         >

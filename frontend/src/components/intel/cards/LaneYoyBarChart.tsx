@@ -18,6 +18,7 @@ import {
 } from "recharts";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import { useLaneYoyTrend } from "@/api/intel";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 interface LaneYoyBarChartProps {
   companyName: string;
@@ -103,6 +104,11 @@ function formatLaneOrigin(country: string | null | undefined): string {
 
 export default function LaneYoyBarChart({ companyName }: LaneYoyBarChartProps) {
   const { data, isLoading } = useLaneYoyTrend(companyName);
+  const { isMobile } = useBreakpoint();
+  // Responsive scoping: 4 lanes on <md (so each bar group has room on a
+  // phone), 6 on ≥md. Label truncation tightens to 18 chars on mobile.
+  const topN = isMobile ? 4 : 6;
+  const truncLen = isMobile ? 18 : 28;
 
   const rows = React.useMemo(() => {
     return (data || [])
@@ -116,10 +122,8 @@ export default function LaneYoyBarChart({ companyName }: LaneYoyBarChartProps) {
         const lane = `${origin} → ${dest}`;
         return {
           lane,
-          // Fix 4 — wider truncation (24 chars) so destination city is
-          // legible; full lane string in Tooltip.
           shortLane:
-            lane.length > 24 ? lane.slice(0, 23) + "…" : lane,
+            lane.length > truncLen ? lane.slice(0, truncLen - 1) + "…" : lane,
           priorPrior: Number(r.prior_prior_12m) || 0,
           prior: Number(r.prior_12m) || 0,
           trailing: Number(r.trailing_12m) || 0,
@@ -128,8 +132,8 @@ export default function LaneYoyBarChart({ companyName }: LaneYoyBarChartProps) {
         };
       })
       .sort((a, b) => b.trailing - a.trailing)
-      .slice(0, 6);
-  }, [data]);
+      .slice(0, topN);
+  }, [data, topN, truncLen]);
 
   if (isLoading) {
     return (
@@ -146,18 +150,18 @@ export default function LaneYoyBarChart({ companyName }: LaneYoyBarChartProps) {
     );
   }
 
-  const height = 360;
-
   return (
     <LitSectionCard
       title="Lane YoY trend"
       sub="3 trailing-12m windows · YoY delta above trailing bar"
     >
-      <div style={{ width: "100%", height }}>
+      {/* Responsive chart height — taller bottom margin on mobile to give
+          steeper -45° labels room before the chart's bottom edge. */}
+      <div className="h-[300px] w-full md:h-[360px]">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={rows}
-            margin={{ top: 24, right: 8, left: 0, bottom: 56 }}
+            margin={{ top: 24, right: 8, left: 0, bottom: isMobile ? 16 : 56 }}
             barCategoryGap="22%"
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
@@ -167,9 +171,9 @@ export default function LaneYoyBarChart({ companyName }: LaneYoyBarChartProps) {
               tickLine={false}
               axisLine={{ stroke: "#E2E8F0" }}
               interval={0}
-              angle={-25}
+              angle={isMobile ? -45 : -25}
               textAnchor="end"
-              height={80}
+              height={isMobile ? 100 : 80}
             />
             <YAxis
               tick={{ fontSize: 10, fill: "#94A3B8" }}
@@ -271,8 +275,8 @@ function YoyTooltip({ active, payload, label }: { active?: boolean; payload?: an
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
   return (
-    <div className="font-display min-w-[200px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] text-white shadow-lg">
-      <div className="mb-1 font-semibold">{row.lane || label}</div>
+    <div className="font-display min-w-[200px] max-w-[240px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] text-white shadow-lg">
+      <div className="mb-1 break-words font-semibold">{row.lane || label}</div>
       <div
         className="space-y-0.5 text-[10.5px] opacity-90 tabular-nums"
         style={{ fontVariantNumeric: "tabular-nums" }}

@@ -107,8 +107,10 @@ export default function SupplierConcentrationDonut({
         others.length > 0 ? ` + ${others.length} in Other` : ""
       }`}
     >
-      <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start sm:gap-6">
-        <div className="relative" style={{ width: 200, height: 200 }}>
+      <div className="flex flex-col items-center gap-3 md:flex-row md:items-start md:gap-6">
+        {/* Responsive donut wrapper — legend stacks below chart on <md,
+            sits beside chart on ≥md. */}
+        <div className="relative aspect-square w-full max-w-[240px] sm:max-w-[220px] md:max-w-[260px]">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie

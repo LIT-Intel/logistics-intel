@@ -20,6 +20,7 @@ import {
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import { useLaneCarrierMix, useLaneYoyTrend, useDomesticInlandLeg } from "@/api/intel";
 import { useSupplyChainFilter } from "@/components/intel/SupplyChainFilterContext";
+import { useBreakpoint } from "@/hooks/useBreakpoint";
 
 interface LaneMixStackedBarProps {
   companyName: string;
@@ -145,6 +146,15 @@ export default function LaneMixStackedBar({
 }: LaneMixStackedBarProps) {
   const { activeMode } = useSupplyChainFilter();
   const isDomestic = activeMode === "domestic";
+  const { isMobile } = useBreakpoint();
+  // Lane label truncation — 16 chars on <md keeps the YAxis category column
+  // narrow enough that the bar itself isn't squeezed on phones; 28 on ≥md
+  // restores legibility on desktop. Full lane string lives in the Tooltip.
+  const truncLen = isMobile ? 16 : 28;
+  const yAxisWidth = isMobile ? 130 : 210;
+  // barSize per spec: 28 on mobile, 36 on ≥md. Drives Recharts `barSize` so
+  // the bars are easier to tap on touch.
+  const barSize = isMobile ? 28 : 36;
 
   const { data: mix, isLoading: mixLoading } = useLaneCarrierMix(companyName);
   const { data: yoy } = useLaneYoyTrend(companyName);
@@ -189,7 +199,7 @@ export default function LaneMixStackedBar({
           const count = Number(d.shipment_count) || 0;
           return {
             lane,
-            shortLane: lane.length > 38 ? lane.slice(0, 37) + "…" : lane,
+            shortLane: lane.length > truncLen ? lane.slice(0, truncLen - 1) + "…" : lane,
             c1: count,
             c1Name: d.est_mode || "Domestic",
             c2: 0,
@@ -250,7 +260,7 @@ export default function LaneMixStackedBar({
         return {
           lane: g.lane,
           shortLane:
-            g.lane.length > 38 ? g.lane.slice(0, 37) + "…" : g.lane,
+            g.lane.length > truncLen ? g.lane.slice(0, truncLen - 1) + "…" : g.lane,
           c1: sorted[0]?.count ?? 0,
           c1Name: sorted[0]?.name ?? null,
           c2: sorted[1]?.count ?? 0,
@@ -264,7 +274,7 @@ export default function LaneMixStackedBar({
       })
       .sort((a, b) => b.total - a.total)
       .slice(0, 8);
-  }, [mix, laneTeuTotals, yoyByLane, isDomestic, domesticRows, activeMode]);
+  }, [mix, laneTeuTotals, yoyByLane, isDomestic, domesticRows, activeMode, truncLen]);
 
   const isLoading = isDomestic ? domesticLoading : mixLoading;
   if (isLoading) {
@@ -282,8 +292,6 @@ export default function LaneMixStackedBar({
     );
   }
 
-  const height = rows.length * 38 + 36;
-
   return (
     <LitSectionCard
       title="Lane mix"
@@ -291,7 +299,10 @@ export default function LaneMixStackedBar({
       padded={false}
     >
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]">
-        <div style={{ width: "100%", height }} className="px-3 py-2">
+        {/* Responsive chart height — taller on desktop where the right-rail
+            TEU column sits beside the chart; compact on mobile so the chart
+            doesn't dominate the screen. */}
+        <div className="h-[260px] w-full px-3 py-2 sm:h-[320px] md:h-[400px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={rows}
@@ -307,7 +318,7 @@ export default function LaneMixStackedBar({
               <YAxis
                 type="category"
                 dataKey="shortLane"
-                width={210}
+                width={yAxisWidth}
                 tick={{ fontSize: 10.5, fill: "#1E293B" }}
                 tickLine={false}
                 axisLine={false}
@@ -317,7 +328,7 @@ export default function LaneMixStackedBar({
                 dataKey="c1"
                 stackId="lane"
                 fill={CARRIER_COLORS[0]}
-                barSize={18}
+                barSize={barSize}
                 isAnimationActive
                 animationDuration={700}
               >
@@ -329,7 +340,7 @@ export default function LaneMixStackedBar({
                 dataKey="c2"
                 stackId="lane"
                 fill={CARRIER_COLORS[1]}
-                barSize={18}
+                barSize={barSize}
                 isAnimationActive
                 animationDuration={700}
               >
@@ -341,7 +352,7 @@ export default function LaneMixStackedBar({
                 dataKey="c3"
                 stackId="lane"
                 fill={CARRIER_COLORS[2]}
-                barSize={18}
+                barSize={barSize}
                 radius={[0, 4, 4, 0]}
                 isAnimationActive
                 animationDuration={700}
@@ -353,7 +364,10 @@ export default function LaneMixStackedBar({
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <aside className="border-t border-slate-100 px-3 py-3 text-[10px] lg:border-l lg:border-t-0">
+        {/* Right rail with per-lane totals — hidden on <sm so the chart gets
+            the full width on phones; surfaces at sm and up. Lane-total info
+            on mobile is reachable via the Tooltip on tap. */}
+        <aside className="hidden border-t border-slate-100 px-3 py-3 text-[10px] sm:block lg:border-l lg:border-t-0">
           <div className="font-display mb-2 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">
             Lane totals
           </div>
@@ -418,8 +432,8 @@ function StackedTooltip({ active, payload, label }: { active?: boolean; payload?
     { name: row.c3Name, count: row.c3, color: CARRIER_COLORS[2] },
   ].filter((s) => s.name && s.count > 0);
   return (
-    <div className="font-display min-w-[200px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] text-white shadow-lg">
-      <div className="mb-1 font-semibold">{label || row.lane}</div>
+    <div className="font-display min-w-[200px] max-w-[240px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] text-white shadow-lg">
+      <div className="mb-1 break-words font-semibold">{label || row.lane}</div>
       <div
         className="mb-1.5 text-[10px] opacity-75 tabular-nums"
         style={{ fontVariantNumeric: "tabular-nums" }}

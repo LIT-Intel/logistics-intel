@@ -241,8 +241,9 @@ function CDPSupplyChainBody({
     <div className="flex flex-col gap-3.5">
       {/* Top header strip — filter chips (left) + freshness chip (right). The
           filter chips drive `SupplyChainFilterContext.activeMode` so child
-          charts can scope. */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+          charts can scope. On <sm, the chip strip horizontally scrolls so
+          all 8 chips remain reachable without wrapping into a tall stack. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <ServiceModeFilterChips />
         <DataFreshnessChip />
       </div>
@@ -251,16 +252,22 @@ function CDPSupplyChainBody({
           same blue language as the main tab row above so the visual
           hierarchy reads as "tab → sub-tab" instead of two competing pill
           groups. Year selector is pulled out as its own chip on the right
-          with a calendar icon affordance. */}
+          with a calendar icon affordance. On <sm the sub-tab row uses
+          horizontal scroll so it never wraps into a 2-row pill stack. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
+        <div
+          className={[
+            "inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm",
+            "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          ].join(" ")}
+        >
           {SUB_TABS.map((s) => (
             <button
               key={s.id}
               type="button"
               onClick={() => setSub(s.id)}
               className={[
-                "font-display whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                "font-display whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors min-h-[40px]",
                 sub === s.id
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
@@ -371,7 +378,7 @@ function StrategicBriefBanner({
 }) {
   return (
     <div
-      className="relative overflow-hidden rounded-xl border p-[18px]"
+      className="relative overflow-hidden rounded-xl border p-3 sm:p-4 md:p-5"
       style={{
         background:
           "linear-gradient(135deg, #0B1736 0%, #0F1D38 60%, #102240 100%)",
@@ -400,7 +407,7 @@ function StrategicBriefBanner({
         </span>
       </div>
       <div
-        className="font-display text-[18px] font-semibold leading-relaxed tracking-tight"
+        className="font-display text-[15px] font-semibold leading-snug tracking-tight sm:text-[17px] md:text-[18px] md:leading-relaxed"
         style={{ color: "#F8FAFC" }}
       >
         {headline || (
@@ -410,7 +417,7 @@ function StrategicBriefBanner({
         )}
       </div>
       <div
-        className="font-body relative mt-2 max-w-[680px] text-[13px] leading-relaxed"
+        className="font-body relative mt-2 max-w-[680px] text-[12px] leading-relaxed sm:text-[13px]"
         style={{ color: "#CBD5E1" }}
       >
         {canonicalLanes.length > 0 ? (
@@ -531,7 +538,7 @@ function SummaryView({
         donutCounts={donutCounts}
       />
       {companyName && (
-        <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-2">
           <MxTransborderKpi companyName={companyName} />
           <UsExportKpi companyName={companyName} />
         </div>
@@ -679,10 +686,11 @@ function CadenceAndModalMix({
           </div>
         </div>
       )}
-      <div className="flex flex-col gap-4 md:flex-row">
-        {/* Left 60% — stacked area */}
-        <div className="min-w-0 flex-1 md:basis-[60%]">
-          <div style={{ height: 240 }}>
+      <div className="flex flex-col gap-4 lg:flex-row">
+        {/* Left ≥lg 60% / <lg full-width — stacked area. Mobile-first
+            heights so the chart never crushes vertically on a phone. */}
+        <div className="min-w-0 flex-1 lg:basis-[60%]">
+          <div className="h-[200px] sm:h-[240px] md:h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs>
@@ -710,6 +718,7 @@ function CadenceAndModalMix({
                     fontSize: 11,
                     border: "1px solid #E2E8F0",
                     borderRadius: 6,
+                    maxWidth: 240,
                   }}
                 />
                 <Area
@@ -770,8 +779,9 @@ function CadenceAndModalMix({
           </div>
         </div>
 
-        {/* Right 40% — interactive ServiceModeDonut (drives tab filter) */}
-        <div className="flex min-w-0 flex-col md:basis-[40%]">
+        {/* Right ≥lg 40% / <lg full-width — interactive ServiceModeDonut
+            (drives tab filter). */}
+        <div className="flex min-w-0 flex-col lg:basis-[40%]">
           <ServiceModeDonut counts={donutCounts} embedded />
         </div>
       </div>
@@ -2190,7 +2200,7 @@ function CombinedLaneIntelligenceTable({
     >
       <div className="max-h-[560px] overflow-x-auto overflow-y-auto">
         <table className="w-full border-collapse">
-          <thead className="sticky top-0 z-[1]">
+          <thead className="sticky top-0 z-[2]">
             <tr className="bg-[#FAFBFC]">
               {[
                 "Lane",
@@ -2202,10 +2212,16 @@ function CombinedLaneIntelligenceTable({
                 "FCL/LCL",
                 "Trend",
                 "Last activity",
-              ].map((h) => (
+              ].map((h, idx) => (
                 <th
                   key={h}
-                  className="font-display whitespace-nowrap border-b border-slate-100 px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400"
+                  className={[
+                    "font-display whitespace-nowrap border-b border-slate-100 px-3 py-1.5 text-left text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400 md:py-2.5",
+                    // First column sticks left on <md so the lane identity
+                    // is always visible while the user scrolls horizontally
+                    // through carrier/forwarder/container columns.
+                    idx === 0 ? "sticky left-0 z-[3] bg-[#FAFBFC]" : "",
+                  ].join(" ")}
                 >
                   {h}
                 </th>
@@ -2240,7 +2256,9 @@ function CombinedLaneIntelligenceTable({
                     i === arr.length - 1 ? "last:border-b-0" : "",
                   ].join(" ")}
                 >
-                  <td className="px-3 py-2.5">
+                  {/* First column sticky-left on <md so the lane identity
+                      stays anchored as the user scrolls horizontally. */}
+                  <td className="sticky left-0 z-[1] bg-white px-3 py-1.5 md:py-2.5">
                     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                       <LitFlag
                         code={lane.fromMeta?.countryCode}
@@ -2264,15 +2282,15 @@ function CombinedLaneIntelligenceTable({
                       </span>
                     </span>
                   </td>
-                  <td className="font-mono px-3 py-2.5 text-[11px] text-slate-700">
+                  <td className="font-mono px-3 py-1.5 text-[11px] text-slate-700 md:py-2.5">
                     {(Number(lane.shipments) || 0).toLocaleString()}
                   </td>
-                  <td className="font-mono px-3 py-2.5 text-[11px] text-slate-700">
+                  <td className="font-mono px-3 py-1.5 text-[11px] text-slate-700 md:py-2.5">
                     {Number(lane.teu) > 0
                       ? Math.round(Number(lane.teu)).toLocaleString()
                       : "—"}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-1.5 md:py-2.5">
                     {topCarrier ? (
                       <span className="font-display text-[11px] font-semibold text-slate-900">
                         {topCarrier}
@@ -2281,7 +2299,7 @@ function CombinedLaneIntelligenceTable({
                       <span className="font-body text-[11px] text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-1.5 md:py-2.5">
                     {topForwarder ? (
                       <span className="font-display truncate text-[11px] font-semibold text-slate-900">
                         {topForwarder}
@@ -2290,14 +2308,14 @@ function CombinedLaneIntelligenceTable({
                       <span className="font-body text-[11px] text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-1.5 md:py-2.5">
                     {container && container !== "—" ? (
                       <LitPill tone="slate">{container}</LitPill>
                     ) : (
                       <span className="font-body text-[11px] text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-1.5 md:py-2.5">
                     {fclLcl && fclLcl !== "—" ? (
                       <LitPill tone={fclLcl === "FCL" ? "blue" : "purple"}>
                         {fclLcl}
@@ -2306,7 +2324,7 @@ function CombinedLaneIntelligenceTable({
                       <span className="font-body text-[11px] text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-1.5 md:py-2.5">
                     {trend ? (
                       <span
                         className={[
@@ -2325,7 +2343,7 @@ function CombinedLaneIntelligenceTable({
                       <span className="text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="font-mono px-3 py-2.5 text-[10px] text-slate-500">
+                  <td className="font-mono px-3 py-1.5 text-[10px] text-slate-500 md:py-2.5">
                     {lastDate ? formatRelativeShort(lastDate) : "—"}
                   </td>
                 </tr>

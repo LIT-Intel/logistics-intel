@@ -221,8 +221,9 @@ export default function CDPHeader({
 
   return (
     <div className="shrink-0 border-b border-slate-200 bg-white">
-      {/* Breadcrumb / meta row */}
-      <div className="flex items-center justify-between gap-3 px-6 pt-3">
+      {/* Breadcrumb / meta row. Mobile-first padding so the breadcrumb +
+          meta strip never hugs the screen edge on phones. */}
+      <div className="flex items-center justify-between gap-3 px-3 pt-3 sm:px-6">
         <div className="font-body flex min-w-0 items-center gap-1.5 text-[12px] text-slate-500">
           <button
             type="button"
@@ -271,7 +272,7 @@ export default function CDPHeader({
           H1 bumped from 22px to clamp(26px, 2.4vw, 32px) so the company
           name reads as the editorial subject of the page, not a small
           breadcrumb label. */}
-      <div className="flex flex-wrap items-start gap-3.5 px-6 pb-3 pt-3.5">
+      <div className="flex flex-wrap items-start gap-3 px-3 pb-3 pt-3 sm:gap-3.5 sm:px-6 sm:pt-3.5">
         <div className="shrink-0">
           <CompanyAvatar name={company.name} domain={domain} size="lg" />
         </div>
@@ -281,8 +282,7 @@ export default function CDPHeader({
           </div>
           <div className="mb-1.5 flex flex-wrap items-center gap-2">
             <h1
-              className="font-display m-0 truncate font-semibold leading-[1.05] tracking-[-0.015em] text-slate-900"
-              style={{ fontSize: "clamp(26px, 2.4vw, 32px)" }}
+              className="font-display m-0 truncate text-2xl font-semibold leading-[1.05] tracking-[-0.015em] text-slate-900 sm:text-3xl md:text-4xl"
               title={company.name}
             >
               {company.name}
@@ -373,8 +373,9 @@ export default function CDPHeader({
           </div>
         </div>
 
-        {/* Action cluster */}
-        <div className="flex shrink-0 items-center gap-1.5">
+        {/* Action cluster — wraps on <sm so all CTAs stay reachable on a
+            phone without horizontal overflow; stays single-row on ≥sm. */}
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-1.5 sm:w-auto">
           {company.website && (
             <LitHeaderIconBtn
               icon={<ExternalLink className="h-3.5 w-3.5" />}
