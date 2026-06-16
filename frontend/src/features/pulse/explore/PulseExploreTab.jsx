@@ -22,7 +22,7 @@ import SaveAsViewModal from './SaveAsViewModal';
 import BulkSaveToListModal from './BulkSaveToListModal';
 import { downloadCsv } from './exportCsv';
 import { parseExploreQuery, parsedToFilters, hasAnyFilter } from '@/api/pulse-explore-parse';
-import PulseQuickCard from '@/features/pulse/PulseQuickCard';
+import ExploreQuickCard from './ExploreQuickCard';
 
 const PROMPTS = [
   'Vulnerable incumbents in the Southeast',
@@ -277,8 +277,15 @@ export default function PulseExploreTab() {
           </div>
         </div>
         {activeRow && (
-          <div className="w-[420px] shrink-0 border-l border-slate-200 bg-white overflow-auto">
-            <PulseQuickCard row={activeRow} onClose={() => setActiveRow(null)} />
+          <div className="w-[380px] shrink-0 border-l border-slate-200">
+            <ExploreQuickCard
+              row={activeRow}
+              onClose={() => setActiveRow(null)}
+              onSaveToList={(r) => {
+                if (!state.selection?.includes(r.id)) setSelection([...(state.selection ?? []), r.id]);
+                setSaveListOpen(true);
+              }}
+            />
           </div>
         )}
       </div>
