@@ -10,13 +10,17 @@ import 'react-virtualized/styles.css';
 const ROW_HEIGHT = 38;
 const HEADER_HEIGHT = 32;
 
-function fmtMoney(n) {
-  if (n == null) return '—';
-  if (n >= 1_000_000_000_000) return `$${(n / 1_000_000_000_000).toFixed(1)}T`;
-  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`;
-  return `$${n.toLocaleString()}`;
+// V6 "Estimated Annual Revenue" is stored as a numeric value in millions of
+// USD (e.g. "59.64" = $59.64M). We display in that unit to match what users
+// see in the V6 source and on company profile pages.
+function fmtMoneyM(n) {
+  if (n == null || !Number.isFinite(Number(n))) return '—';
+  const v = Number(n);
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}T`; // 1M millions = 1T
+  if (v >= 1_000) return `$${(v / 1_000).toFixed(2)}B`;          // 1k millions = 1B
+  if (v >= 1) return `$${v.toFixed(2)}M`;
+  if (v >= 0.001) return `$${(v * 1000).toFixed(0)}k`;
+  return `$${v.toLocaleString()}`;
 }
 
 function fmtInt(n) {
@@ -129,7 +133,7 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
           {fmtInt(row.teu)}
         </div>
         <div className="flex items-center justify-end px-2 tabular-nums text-slate-700">
-          {fmtMoney(row.value_usd != null ? row.value_usd : (row.revenue != null ? Number(row.revenue) : null))}
+          {fmtMoneyM(row.revenue != null ? Number(row.revenue) : null)}
         </div>
         <div className="flex items-center justify-end px-2 tabular-nums font-medium text-slate-900">
           {row.opportunity_composite_score?.toFixed(0) ?? '—'}

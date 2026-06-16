@@ -13,16 +13,26 @@ function fmtNum(n) {
   return n.toLocaleString();
 }
 
-function fmtCurrency(n) {
-  if (n == null) return '—';
-  return `$${fmtNum(n)}`;
+// V6 Annual Revenue is stored in millions of USD. The KPI strip receives
+// the sum of those values, so 8,190 (millions) renders as $8.19B.
+function fmtCurrencyMillions(n) {
+  if (n == null || !Number.isFinite(Number(n))) return '—';
+  const v = Number(n); // value is already in millions
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}T`;
+  if (v >= 1_000) return `$${(v / 1_000).toFixed(2)}B`;
+  if (v >= 1) return `$${v.toFixed(1)}M`;
+  return `$${v.toFixed(2)}M`;
 }
 
 function ModeToggle({ value, onChange }) {
+  // LIT-branded names (not DSV's "Bubbles / Heat / Clusters").
+  // - Map: standard pins with auto-cluster only at far-out zoom
+  // - Heat: density gradient overlay (no pins)
+  // - Region: aggregate counts by metro/state (pins always grouped)
   const modes = [
-    { id: 'bubbles', label: 'Bubbles', icon: '●' },
+    { id: 'bubbles', label: 'Map', icon: '●' },
     { id: 'heat', label: 'Heat', icon: '◉' },
-    { id: 'clusters', label: 'Clusters', icon: '◎' },
+    { id: 'clusters', label: 'Region', icon: '◎' },
   ];
   return (
     <div className="inline-flex rounded-lg overflow-hidden border border-slate-700 shrink-0">
@@ -86,7 +96,7 @@ export default function ExploreHeader({
       {/* KPI strip — wraps on mobile, lets values keep their size */}
       <div className="flex flex-wrap items-baseline gap-x-5 sm:gap-x-8 gap-y-1 px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-950/30 border-t border-slate-800/40">
         <Kpi label="accounts" value={fmtNum(totalAccounts)} />
-        <Kpi label="annual sales" value={fmtCurrency(totalSales)} />
+        <Kpi label="annual sales" value={fmtCurrencyMillions(totalSales)} />
         <Kpi label="TEU 12m" value={fmtNum(totalTeu)} />
       </div>
     </header>

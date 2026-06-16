@@ -2,15 +2,15 @@
 // icons. Tools: filter, bookmark, layers, analytics, insights, library.
 // Matches the DSV Sales Explorer V6 reference.
 
-import { Filter, Bookmark, Layers, BarChart3, Sparkles, Library } from 'lucide-react';
+import { Filter, Bookmark } from 'lucide-react';
 
+// Sidebar surfaces ONLY tools with a real action wired up. Analytics /
+// Insights / Library / Layers were decorative placeholders that confused
+// users (they did nothing on click); removed until they ship real
+// functionality.
 const TOOLS = [
   { id: 'filter', icon: Filter, label: 'Filters' },
   { id: 'bookmark', icon: Bookmark, label: 'Saved views' },
-  { id: 'layers', icon: Layers, label: 'Map layers' },
-  { id: 'analytics', icon: BarChart3, label: 'Analytics' },
-  { id: 'insights', icon: Sparkles, label: 'Insights' },
-  { id: 'library', icon: Library, label: 'Library' },
 ];
 
 export default function ExploreSidebar({ active, onSelect }) {

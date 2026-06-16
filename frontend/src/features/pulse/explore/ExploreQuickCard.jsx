@@ -237,11 +237,22 @@ export default function ExploreQuickCard({ row, onClose, onSaveToList }) {
           </section>
         )}
 
-        {/* Annual revenue */}
+        {/* Annual revenue — V6 stores in millions of USD */}
         {row.revenue && (
           <section className="border-b border-slate-100 px-4 py-3 text-xs">
             <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">Estimated annual revenue</div>
-            <div className="font-semibold text-slate-900 tabular-nums">{row.revenue}</div>
+            <div className="font-semibold text-slate-900 tabular-nums">
+              {(() => {
+                const v = Number(row.revenue);
+                if (!Number.isFinite(v)) return row.revenue;
+                if (v >= 1_000) return `$${(v / 1_000).toFixed(2)}B`;
+                if (v >= 1) return `$${v.toFixed(2)}M`;
+                return `$${(v * 1000).toFixed(0)}k`;
+              })()}
+              {row.data_sources?.includes('live') ? null : (
+                <span className="ml-1.5 text-[10px] font-normal text-slate-400">(directory estimate)</span>
+              )}
+            </div>
           </section>
         )}
       </div>

@@ -124,8 +124,14 @@ export default function PulseExploreTab() {
   const onSubmitSearch = useCallback(() => doSearch(query), [doSearch, query]);
 
   const onSelectAllInView = useCallback(() => {
-    if (!mapBbox || !rows.length) {
-      toast('No accounts in view yet');
+    // eslint-disable-next-line no-console
+    console.log('[pulse-explore] select-in-view click', { mapBbox, rows: rows.length });
+    if (!mapBbox) {
+      toast('Map not ready yet — pan or zoom once, then try again');
+      return;
+    }
+    if (!rows.length) {
+      toast('No accounts loaded yet');
       return;
     }
     const [w, s, e, n] = mapBbox;
@@ -136,23 +142,27 @@ export default function PulseExploreTab() {
       if (c.lng >= w && c.lng <= e && c.lat >= s && c.lat <= n) ids.push(r.id);
     }
     if (!ids.length) {
-      toast('No plottable accounts in current view');
+      toast('No plottable accounts in current view — try zooming out');
       return;
     }
     const merged = Array.from(new Set([...(state.selection ?? []), ...ids]));
     setSelection(merged);
-    toast.success(`Selected ${ids.length} accounts in view`);
+    setResultsOpen(true); // expand drawer so user SEES the selection
+    toast.success(`Selected ${ids.length.toLocaleString()} accounts in view`);
   }, [mapBbox, rows, state.selection, setSelection]);
 
   const onLassoSelect = useCallback((ids) => {
+    // eslint-disable-next-line no-console
+    console.log('[pulse-explore] lasso emit', { ids: ids?.length ?? 0 });
     setLassoActive(false);
     if (!ids?.length) {
-      toast('Lasso caught nothing');
+      toast('Lasso caught nothing — try a wider drag');
       return;
     }
     const merged = Array.from(new Set([...(state.selection ?? []), ...ids]));
     setSelection(merged);
-    toast.success(`Lassoed ${ids.length} accounts`);
+    setResultsOpen(true);
+    toast.success(`Lassoed ${ids.length.toLocaleString()} accounts`);
   }, [state.selection, setSelection]);
 
   const activeIndustry = state.filters?.industry?.[0];

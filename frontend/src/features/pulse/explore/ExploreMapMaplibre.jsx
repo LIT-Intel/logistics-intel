@@ -175,11 +175,16 @@ export default function ExploreMapMaplibre({
       .filter(Boolean);
   }, [rows]);
 
+  // Map mode controls cluster aggressiveness:
+  // - "bubbles" (Map):   moderate radius, clusters only at far zoom (maxZoom 8)
+  // - "clusters" (Region): wider radius, always-on aggregation (maxZoom 20)
+  const clusterRadius = mapMode === 'clusters' ? 90 : 60;
+  const clusterMaxZoom = mapMode === 'clusters' ? 20 : 8;
   const cluster = useMemo(() => {
-    const s = new Supercluster({ radius: 60, maxZoom: 8 });
+    const s = new Supercluster({ radius: clusterRadius, maxZoom: clusterMaxZoom });
     s.load(points);
     return s;
-  }, [points]);
+  }, [points, clusterRadius, clusterMaxZoom]);
 
   const maxValue = useMemo(() => {
     const key = sizeMode === 'teu' ? 'teu'
