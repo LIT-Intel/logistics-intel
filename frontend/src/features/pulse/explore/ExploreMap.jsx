@@ -5,6 +5,7 @@
 import { useMemo, useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import 'leaflet.heat';
 import Supercluster from 'supercluster';
 import { lookupCoords } from './coordLookup';
 import { industryColor, workflowColor, opportunityColor } from './bubblePalettes';
@@ -85,8 +86,34 @@ function BboxTracker({ onBbox }) {
   return null;
 }
 
-export default function ExploreMap({ rows, colorMode, sizeMode, selection, onBubbleClick }) {
+function HeatLayer({ rows, sizeMode, on }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!on) return undefined;
+    const points = rows
+      .map((r) => {
+        const c = lookupCoords({ city: r.city, state: r.state, country: r.country });
+        if (!c) return null;
+        const v = sizeMode === 'teu' ? r.teu
+          : sizeMode === 'shipments' ? r.shipments
+          : sizeMode === 'spend' ? r.value_usd
+          : r.opportunity_composite_score;
+        if (!v) return null;
+        return [c.lat, c.lng, Math.log10(v + 1)];
+      })
+      .filter(Boolean);
+    if (!points.length) return undefined;
+    const layer = L.heatLayer(points, { radius: 25, blur: 18, maxZoom: 8 });
+    layer.addTo(map);
+    return () => { map.removeLayer(layer); };
+  }, [map, rows, sizeMode, on]);
+  return null;
+}
+
+export default function ExploreMap({ rows, colorMode, sizeMode, selection, onBubbleClick, mapMode = 'bubbles' }) {
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  const heatOn = mapMode === 'heat';
+  const bubblesOn = mapMode !== 'heat';
   const [bbox, setBbox] = useState([-130, 20, -65, 50]);
 
   const points = useMemo(() => {
@@ -129,7 +156,8 @@ export default function ExploreMap({ rows, colorMode, sizeMode, selection, onBub
       />
       <ZoomListener onZoom={setZoom} />
       <BboxTracker onBbox={setBbox} />
-      {items.map((it) => {
+      <HeatLayer rows={rows} sizeMode={sizeMode} on={heatOn} />
+      {bubblesOn && items.map((it) => {
         const [lng, lat] = it.geometry.coordinates;
         if (it.properties.cluster) {
           return (
