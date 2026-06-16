@@ -8,6 +8,7 @@ import { TransborderTruckIcon } from "@/components/icons/ServiceModeIcons";
 import ServiceModeChip from "@/components/intel/ServiceModeChip";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import { useMxImportActivity } from "@/api/intel";
+import { useEntitlements } from "@/hooks/useEntitlements";
 
 interface MxTransborderKpiProps {
   companyName: string;
@@ -17,6 +18,7 @@ const tabularStyle: React.CSSProperties = { fontVariantNumeric: "tabular-nums" }
 
 export default function MxTransborderKpi({ companyName }: MxTransborderKpiProps) {
   const { data, isLoading } = useMxImportActivity(companyName);
+  const { isPlatformAdmin } = useEntitlements();
 
   const stats = React.useMemo(() => {
     const rows = data || [];
@@ -33,6 +35,21 @@ export default function MxTransborderKpi({ companyName }: MxTransborderKpiProps)
     return { total: rows.length, totalValue, modeBreakdown };
   }, [data]);
 
+  // Hide-on-empty: regular users see no clutter for companies without MX
+  // customs data. Platform admins still see an actionable "run sync"
+  // affordance so they can trigger enrichment.
+  if (!isLoading && stats.total === 0) {
+    if (!isPlatformAdmin) return null;
+    return (
+      <LitSectionCard
+        title="MX transborder"
+        sub="Mexican customs declarations · truck / rail / air"
+      >
+        <AdminEmpty />
+      </LitSectionCard>
+    );
+  }
+
   return (
     <LitSectionCard
       title="MX transborder"
@@ -40,8 +57,6 @@ export default function MxTransborderKpi({ companyName }: MxTransborderKpiProps)
     >
       {isLoading ? (
         <Skeleton />
-      ) : stats.total === 0 ? (
-        <Empty />
       ) : (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
@@ -110,15 +125,18 @@ function Skeleton() {
   );
 }
 
-function Empty() {
+function AdminEmpty() {
   return (
-    <div className="flex flex-col items-center justify-center py-4 text-center">
+    <div className="flex flex-col items-center justify-center gap-1.5 py-3 text-center">
       <div className="text-slate-300">
         <TransborderTruckIcon size={20} />
       </div>
-      <p className="font-body mt-1.5 text-[11px] text-slate-500">
-        No MX declarations yet — refresh intel.
+      <p className="font-body text-[11px] text-slate-500">
+        No MX declarations yet
       </p>
+      <span className="font-display inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-[2px] text-[9.5px] font-semibold uppercase tracking-wide text-amber-700">
+        Admin · run sync
+      </span>
     </div>
   );
 }

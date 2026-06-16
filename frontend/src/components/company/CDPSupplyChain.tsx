@@ -9,9 +9,6 @@ import {
 import {
   Area,
   AreaChart,
-  Cell,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -518,7 +515,6 @@ function SummaryView({
   return (
     <>
       <BuyingIntentTile profile={_profile} recentBols={recentBols} />
-      <ServiceModeDonut counts={donutCounts} />
       <TopLanesCard
         canonicalLanes={canonicalLanes}
         globeLanes={globeLanes}
@@ -532,6 +528,7 @@ function SummaryView({
         containerProfile={containerProfile}
         reducedMotion={reducedMotion}
         companyName={companyName || null}
+        donutCounts={donutCounts}
       />
       {companyName && (
         <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
@@ -578,11 +575,21 @@ function CadenceAndModalMix({
   containerProfile,
   reducedMotion,
   companyName,
+  donutCounts,
 }: {
   cadence: CadencePoint[];
   containerProfile: ContainerProfile;
   reducedMotion: boolean;
   companyName: string | null;
+  donutCounts: {
+    ocean: number;
+    air: number;
+    truck: number;
+    rail: number;
+    drayage: number;
+    broker: number;
+    domestic: number;
+  };
 }) {
   // Air count: derived from MX customs import declarations where
   // transport_type = 'Air'. ImportYeti's US-import feed does NOT track air
@@ -649,14 +656,14 @@ function CadenceAndModalMix({
 
   if (cadence.length === 0 && total === 0) {
     return (
-      <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months">
+      <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months · click a slice to filter">
         <EmptyMessage text="No cadence data on file yet — try Refresh Intel to pull the latest shipments." />
       </LitSectionCard>
     );
   }
 
   return (
-    <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months">
+    <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months · click a slice to filter">
       {/* Service modes covered — derived from real signal in this account.
           Replaces the prior implicit FCL/LCL-only framing so the user can
           see at a glance which legs LIT has coverage for on this shipper. */}
@@ -673,8 +680,8 @@ function CadenceAndModalMix({
         </div>
       )}
       <div className="flex flex-col gap-4 md:flex-row">
-        {/* Left 70% — stacked area */}
-        <div className="min-w-0 flex-1 md:basis-[70%]">
+        {/* Left 60% — stacked area */}
+        <div className="min-w-0 flex-1 md:basis-[60%]">
           <div style={{ height: 240 }}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -763,46 +770,9 @@ function CadenceAndModalMix({
           </div>
         </div>
 
-        {/* Right 30% — donut */}
-        <div className="flex min-w-0 flex-col items-center justify-center md:basis-[30%]">
-          <div className="relative" style={{ width: 180, height: 180 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={donut.length > 0 ? donut : [{ name: "—", value: 1, color: "#E2E8F0" }]}
-                  innerRadius="60%"
-                  outerRadius="90%"
-                  paddingAngle={2}
-                  dataKey="value"
-                  isAnimationActive={!reducedMotion}
-                  animationDuration={reducedMotion ? 0 : 1200}
-                  animationBegin={reducedMotion ? 0 : 800}
-                  stroke="none"
-                >
-                  {(donut.length > 0 ? donut : [{ name: "—", value: 1, color: "#E2E8F0" }]).map(
-                    (s, i) => (
-                      <Cell key={i} fill={s.color} />
-                    ),
-                  )}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    fontSize: 11,
-                    border: "1px solid #E2E8F0",
-                    borderRadius: 6,
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <div className="font-display text-[22px] font-bold leading-none text-slate-900">
-                {formatCompactNumber(total)}
-              </div>
-              <div className="font-display mt-1 text-[9px] font-semibold uppercase tracking-wider text-slate-500">
-                Shipments
-              </div>
-            </div>
-          </div>
+        {/* Right 40% — interactive ServiceModeDonut (drives tab filter) */}
+        <div className="flex min-w-0 flex-col md:basis-[40%]">
+          <ServiceModeDonut counts={donutCounts} embedded />
         </div>
       </div>
     </LitSectionCard>

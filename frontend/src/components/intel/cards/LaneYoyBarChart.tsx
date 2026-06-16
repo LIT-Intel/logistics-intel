@@ -29,17 +29,76 @@ const COLOR_TRAILING_UP = "#10B981"; // emerald-500
 const COLOR_TRAILING_DOWN = "#F43F5E"; // rose-500
 const COLOR_TRAILING_FLAT = "#3B82F6"; // blue-500 (no prior baseline)
 
+// Compact country-name -> 2-letter ISO code map. Mirrors LaneMixStackedBar
+// so both charts produce identical lane keys (used as the join key for the
+// stacked-bar's YoY chip overlay).
+const COUNTRY_SHORT: Record<string, string> = {
+  "united states of america": "US",
+  "united states": "US",
+  usa: "US",
+  "united kingdom": "UK",
+  "south korea": "KR",
+  "republic of korea": "KR",
+  "north korea": "KP",
+  "viet nam": "VN",
+  vietnam: "VN",
+  "people's republic of china": "CN",
+  china: "CN",
+  taiwan: "TW",
+  "hong kong": "HK",
+  germany: "DE",
+  france: "FR",
+  spain: "ES",
+  italy: "IT",
+  netherlands: "NL",
+  belgium: "BE",
+  india: "IN",
+  bangladesh: "BD",
+  pakistan: "PK",
+  thailand: "TH",
+  indonesia: "ID",
+  malaysia: "MY",
+  philippines: "PH",
+  japan: "JP",
+  singapore: "SG",
+  cambodia: "KH",
+  jordan: "JO",
+  morocco: "MA",
+  guatemala: "GT",
+  mexico: "MX",
+  canada: "CA",
+  brazil: "BR",
+  australia: "AU",
+};
+
+function shortCountry(country: string | null | undefined): string {
+  const c = (country || "").trim();
+  if (!c) return "";
+  if (/^[A-Z]{2,3}$/.test(c)) return c;
+  return COUNTRY_SHORT[c.toLowerCase()] || c;
+}
+
+// Fix 4 — Destination format: "City, ST CC"; country-only fallback when no
+// city. Origin is country-only by design (Fix 3/4 spec — source-data gap).
 function formatLaneEndpoint(
   city: string | null | undefined,
   state: string | null | undefined,
   country: string | null | undefined,
 ): string {
-  const cs = [city, state].filter((v): v is string => Boolean(v && v.trim())).join(", ");
-  const cc = (country || "").trim();
-  if (cs && cc) return `${cs} ${cc}`;
-  if (cs) return cs;
-  if (cc) return cc;
-  return "—";
+  const ci = (city || "").trim();
+  const st = (state || "").trim();
+  const cc = shortCountry(country);
+  if (!ci) return cc || "—";
+  if (st && cc) return `${ci}, ${st} ${cc}`;
+  if (st) return `${ci}, ${st}`;
+  if (cc) return `${ci} ${cc}`;
+  return ci;
+}
+
+function formatLaneOrigin(country: string | null | undefined): string {
+  const c = (country || "").trim();
+  if (!c) return "—";
+  return c;
 }
 
 export default function LaneYoyBarChart({ companyName }: LaneYoyBarChartProps) {
@@ -48,11 +107,7 @@ export default function LaneYoyBarChart({ companyName }: LaneYoyBarChartProps) {
   const rows = React.useMemo(() => {
     return (data || [])
       .map((r) => {
-        const origin = formatLaneEndpoint(
-          r.origin_city,
-          r.origin_state,
-          r.origin_country,
-        );
+        const origin = formatLaneOrigin(r.origin_country);
         const dest = formatLaneEndpoint(
           r.destination_city,
           r.destination_state,
@@ -61,8 +116,10 @@ export default function LaneYoyBarChart({ companyName }: LaneYoyBarChartProps) {
         const lane = `${origin} → ${dest}`;
         return {
           lane,
+          // Fix 4 — wider truncation (24 chars) so destination city is
+          // legible; full lane string in Tooltip.
           shortLane:
-            lane.length > 26 ? lane.slice(0, 25) + "…" : lane,
+            lane.length > 24 ? lane.slice(0, 23) + "…" : lane,
           priorPrior: Number(r.prior_prior_12m) || 0,
           prior: Number(r.prior_12m) || 0,
           trailing: Number(r.trailing_12m) || 0,
@@ -89,7 +146,7 @@ export default function LaneYoyBarChart({ companyName }: LaneYoyBarChartProps) {
     );
   }
 
-  const height = 320;
+  const height = 360;
 
   return (
     <LitSectionCard
@@ -100,7 +157,7 @@ export default function LaneYoyBarChart({ companyName }: LaneYoyBarChartProps) {
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={rows}
-            margin={{ top: 24, right: 8, left: 0, bottom: 36 }}
+            margin={{ top: 24, right: 8, left: 0, bottom: 56 }}
             barCategoryGap="22%"
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
@@ -110,9 +167,9 @@ export default function LaneYoyBarChart({ companyName }: LaneYoyBarChartProps) {
               tickLine={false}
               axisLine={{ stroke: "#E2E8F0" }}
               interval={0}
-              angle={-12}
+              angle={-25}
               textAnchor="end"
-              height={56}
+              height={80}
             />
             <YAxis
               tick={{ fontSize: 10, fill: "#94A3B8" }}

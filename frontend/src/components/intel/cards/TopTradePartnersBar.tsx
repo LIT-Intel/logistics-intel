@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import { usePqSupplierAggregates } from "@/api/intel";
+import { useEntitlements } from "@/hooks/useEntitlements";
 
 interface TopTradePartnersBarProps {
   companyName: string;
@@ -34,6 +35,7 @@ export default function TopTradePartnersBar({
   onPartnerSelect,
 }: TopTradePartnersBarProps) {
   const { data, isLoading } = usePqSupplierAggregates(companyName);
+  const { isPlatformAdmin } = useEntitlements();
 
   const rows = React.useMemo(() => {
     return (data || [])
@@ -61,9 +63,12 @@ export default function TopTradePartnersBar({
   }
 
   if (rows.length === 0) {
+    // Hide-on-empty for regular users; admins still see an actionable
+    // "run sync" affordance so they can trigger enrichment.
+    if (!isPlatformAdmin) return null;
     return (
       <LitSectionCard title="Top trade partners" sub="By shipment count">
-        <EmptyState />
+        <AdminEmpty />
       </LitSectionCard>
     );
   }
@@ -163,13 +168,15 @@ function SkeletonBars({ rows }: { rows: number }) {
   );
 }
 
-function EmptyState() {
+function AdminEmpty() {
   return (
-    <div className="px-6 py-8 text-center">
+    <div className="flex flex-col items-center justify-center gap-1.5 px-6 py-6 text-center">
       <p className="font-body text-[11.5px] text-slate-500">
-        No supplier aggregates yet — refresh intel to populate the top-partners
-        ranking.
+        No supplier aggregates yet
       </p>
+      <span className="font-display inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-[2px] text-[9.5px] font-semibold uppercase tracking-wide text-amber-700">
+        Admin · run sync
+      </span>
     </div>
   );
 }

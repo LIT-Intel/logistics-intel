@@ -18,7 +18,8 @@ import {
   YAxis,
 } from "recharts";
 import LitSectionCard from "@/components/ui/LitSectionCard";
-import { useLaneCarrierMix, useLaneYoyTrend } from "@/api/intel";
+import { useLaneCarrierMix, useLaneYoyTrend, useDomesticInlandLeg } from "@/api/intel";
+import { useSupplyChainFilter } from "@/components/intel/SupplyChainFilterContext";
 
 interface LaneMixStackedBarProps {
   companyName: string;
@@ -26,36 +27,142 @@ interface LaneMixStackedBarProps {
   laneTeuTotals?: Record<string, number>;
 }
 
+// Compact country-name -> 2-letter ISO code map for common cases. Keeps lane
+// labels short ("Bentonville, AR US" vs "Bentonville, AR United States of
+// America"). Returns the original string when no match — graceful degrade.
+const COUNTRY_SHORT: Record<string, string> = {
+  "united states of america": "US",
+  "united states": "US",
+  usa: "US",
+  "united kingdom": "UK",
+  "south korea": "KR",
+  "republic of korea": "KR",
+  "north korea": "KP",
+  "viet nam": "VN",
+  vietnam: "VN",
+  "people's republic of china": "CN",
+  china: "CN",
+  taiwan: "TW",
+  "hong kong": "HK",
+  germany: "DE",
+  france: "FR",
+  spain: "ES",
+  italy: "IT",
+  netherlands: "NL",
+  belgium: "BE",
+  india: "IN",
+  bangladesh: "BD",
+  pakistan: "PK",
+  thailand: "TH",
+  indonesia: "ID",
+  malaysia: "MY",
+  philippines: "PH",
+  japan: "JP",
+  singapore: "SG",
+  cambodia: "KH",
+  jordan: "JO",
+  morocco: "MA",
+  guatemala: "GT",
+  mexico: "MX",
+  canada: "CA",
+  brazil: "BR",
+  australia: "AU",
+};
+
+function shortCountry(country: string | null | undefined): string {
+  const c = (country || "").trim();
+  if (!c) return "";
+  if (/^[A-Z]{2,3}$/.test(c)) return c; // already a code
+  return COUNTRY_SHORT[c.toLowerCase()] || c;
+}
+
+// Destination format: "City, ST CC" (e.g. "Bentonville, AR US"). When no
+// city is present, falls back to country-only ("Canada"). Used per Fix 3 to
+// surface destination granularity below country level.
 function formatLaneEndpoint(
   city: string | null | undefined,
   state: string | null | undefined,
   country: string | null | undefined,
 ): string {
-  const cs = [city, state].filter((v): v is string => Boolean(v && v.trim())).join(", ");
-  const cc = (country || "").trim();
-  if (cs && cc) return `${cs} ${cc}`;
-  if (cs) return cs;
-  if (cc) return cc;
-  return "—";
+  const ci = (city || "").trim();
+  const st = (state || "").trim();
+  const cc = shortCountry(country);
+  // No city: country-only fallback (e.g. "Canada" or "US").
+  if (!ci) return cc || "—";
+  // City + state + country (compact code): "Bentonville, AR US"
+  if (st && cc) return `${ci}, ${st} ${cc}`;
+  if (st) return `${ci}, ${st}`;
+  if (cc) return `${ci} ${cc}`;
+  return ci;
+}
+
+// Origin format: country-only by design (Fix 3 spec) — the underlying
+// source data leaves origin city/state null for most rows. Returns the
+// country name when long-form (e.g. "Vietnam"), the code as-is otherwise.
+function formatLaneOrigin(country: string | null | undefined): string {
+  const c = (country || "").trim();
+  if (!c) return "—";
+  return c;
 }
 
 // Brand-coherent distinct carrier slots (top-3 carriers per lane). NOT a
 // rainbow — three shades that work together across all lanes.
 const CARRIER_COLORS = ["#3B82F6", "#6366F1", "#60A5FA"]; // blue / indigo / sky-blue
 
+// Heuristic carrier-name -> mode classifier. The lit_lane_carrier_mix RPC
+// returns carriers without a mode column (the underlying BOL feed is
+// ocean-dominant). When the user filters by a non-ocean mode, we keep rows
+// whose carrier name looks like that mode, and gracefully fall back to a
+// "no data" message when nothing matches. Fix 5.
+function carrierLooksLikeMode(
+  carrier: string | null | undefined,
+  mode: "truck" | "rail" | "air" | "broker",
+): boolean {
+  const c = (carrier || "").toLowerCase();
+  if (!c) return false;
+  if (mode === "truck") {
+    return /(trucking|trucks?|logistics|express|freightliner|werner|knight|swift|schneider)/i.test(
+      c,
+    );
+  }
+  if (mode === "rail") {
+    return /(rail|bnsf|union pacific|csx|norfolk|kansas city southern|intermodal)/i.test(
+      c,
+    );
+  }
+  if (mode === "air") {
+    return /(air|airlines?|cargo|aviation|fedex|ups air|dhl aviation)/i.test(c);
+  }
+  if (mode === "broker") {
+    return /(broker|brokerage|customs|forwarder|forwarding|chb)/i.test(c);
+  }
+  return false;
+}
+
 export default function LaneMixStackedBar({
   companyName,
   laneTeuTotals,
 }: LaneMixStackedBarProps) {
+  const { activeMode } = useSupplyChainFilter();
+  const isDomestic = activeMode === "domestic";
+
   const { data: mix, isLoading: mixLoading } = useLaneCarrierMix(companyName);
   const { data: yoy } = useLaneYoyTrend(companyName);
+  // Domestic mode pulls a different RPC (port-of-entry -> destination city)
+  // so the lane chart still renders rows when the user filters to Domestic.
+  const { data: domesticRows, isLoading: domesticLoading } =
+    useDomesticInlandLeg(isDomestic ? companyName : null);
 
   // YoY lookup by formatted lane label (matches the lane row's lane string).
   const yoyByLane = React.useMemo(() => {
     const m = new Map<string, number | null>();
     for (const r of yoy || []) {
-      const origin = formatLaneEndpoint(r.origin_city, r.origin_state, r.origin_country);
-      const dest = formatLaneEndpoint(r.destination_city, r.destination_state, r.destination_country);
+      const origin = formatLaneOrigin(r.origin_country);
+      const dest = formatLaneEndpoint(
+        r.destination_city,
+        r.destination_state,
+        r.destination_country,
+      );
       m.set(`${origin} → ${dest}`, r.yoy_pct == null ? null : Number(r.yoy_pct));
     }
     return m;
@@ -63,7 +170,53 @@ export default function LaneMixStackedBar({
 
   // Build per-lane rows: { lane, c1Name, c1, c2Name, c2, c3Name, c3, total, teu, yoy }
   const rows = React.useMemo(() => {
+    // Fix 5 — Domestic branch: source from useDomesticInlandLeg (port -> city)
+    // so the Lane Mix card still renders rows when the user filters to Domestic.
+    // Single bar segment per row (the "carrier" axis has no equivalent for
+    // inland legs — we render est_mode as the segment label).
+    if (isDomestic) {
+      if (!domesticRows) return [];
+      return domesticRows
+        .map((d) => {
+          const origin = d.entry_port ? `Port of ${d.entry_port}` : "Entry port";
+          const destCity = (d.destination_city || "").trim();
+          const destState = (d.destination_state || "").trim();
+          const dest =
+            destCity && destState
+              ? `${destCity}, ${destState}`
+              : destCity || destState || "—";
+          const lane = `${origin} → ${dest}`;
+          const count = Number(d.shipment_count) || 0;
+          return {
+            lane,
+            shortLane: lane.length > 38 ? lane.slice(0, 37) + "…" : lane,
+            c1: count,
+            c1Name: d.est_mode || "Domestic",
+            c2: 0,
+            c2Name: null as string | null,
+            c3: 0,
+            c3Name: null as string | null,
+            total: count,
+            teu: 0,
+            yoy: null as number | null,
+          };
+        })
+        .filter((r) => r.total > 0)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 8);
+    }
+
     if (!mix) return [];
+
+    // Fix 5 — Non-ocean mode filters: keep rows whose carrier name looks
+    // like the requested mode. The underlying BOL feed is ocean-dominant,
+    // so this is best-effort. When the filter yields nothing we render the
+    // "No {mode} data" fallback below (via the `rows.length === 0` branch).
+    const modeFilter: "truck" | "rail" | "air" | "broker" | null =
+      activeMode === "truck" || activeMode === "rail" || activeMode === "air" || activeMode === "broker"
+        ? activeMode
+        : null;
+
     const grouped = new Map<
       string,
       {
@@ -72,8 +225,15 @@ export default function LaneMixStackedBar({
       }
     >();
     for (const row of mix) {
-      const origin = formatLaneEndpoint(row.origin_city, row.origin_state, row.origin_country);
-      const dest = formatLaneEndpoint(row.destination_city, row.destination_state, row.destination_country);
+      if (modeFilter && !carrierLooksLikeMode(row.carrier, modeFilter)) {
+        continue;
+      }
+      const origin = formatLaneOrigin(row.origin_country);
+      const dest = formatLaneEndpoint(
+        row.destination_city,
+        row.destination_state,
+        row.destination_country,
+      );
       const key = `${origin} → ${dest}`;
       if (!grouped.has(key)) grouped.set(key, { lane: key, carriers: [] });
       grouped.get(key)!.carriers.push({
@@ -104,9 +264,10 @@ export default function LaneMixStackedBar({
       })
       .sort((a, b) => b.total - a.total)
       .slice(0, 8);
-  }, [mix, laneTeuTotals, yoyByLane]);
+  }, [mix, laneTeuTotals, yoyByLane, isDomestic, domesticRows, activeMode]);
 
-  if (mixLoading) {
+  const isLoading = isDomestic ? domesticLoading : mixLoading;
+  if (isLoading) {
     return (
       <LitSectionCard title="Lane mix" sub="Top lanes · top 3 carriers each">
         <SkeletonChart />
@@ -116,7 +277,7 @@ export default function LaneMixStackedBar({
   if (rows.length === 0) {
     return (
       <LitSectionCard title="Lane mix" sub="Top lanes · top 3 carriers each">
-        <Empty />
+        <Empty mode={activeMode} />
       </LitSectionCard>
     );
   }
@@ -327,12 +488,14 @@ function SkeletonChart() {
   );
 }
 
-function Empty() {
+function Empty({ mode }: { mode: string | null }) {
+  const text =
+    mode && mode !== "ocean"
+      ? `No ${mode} data for this company.`
+      : "No lane × carrier mix yet — refresh intel to populate.";
   return (
     <div className="px-6 py-8 text-center">
-      <p className="font-body text-[11.5px] text-slate-500">
-        No lane × carrier mix yet — refresh intel to populate.
-      </p>
+      <p className="font-body text-[11.5px] text-slate-500">{text}</p>
     </div>
   );
 }

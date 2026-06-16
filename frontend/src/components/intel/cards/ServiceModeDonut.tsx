@@ -88,9 +88,13 @@ const renderActiveSlice = (props: any) => {
 export default function ServiceModeDonut({
   counts,
   loading = false,
+  embedded = false,
 }: {
   counts: ServiceModeDonutInput;
   loading?: boolean;
+  /** When true, render only the donut + legend (no LitSectionCard wrapper).
+   *  Used to embed the donut inside another card (e.g. Cadence & Modal Mix). */
+  embedded?: boolean;
 }) {
   const { activeMode, setActiveMode } = useSupplyChainFilter();
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -123,7 +127,9 @@ export default function ServiceModeDonut({
   const activeIdx = hoverIdx ?? (externalActiveIdx >= 0 ? externalActiveIdx : null);
 
   if (loading) {
-    return (
+    return embedded ? (
+      <SkeletonDonut />
+    ) : (
       <LitSectionCard title="Service mode distribution" sub="Shipments by leg type">
         <SkeletonDonut />
       </LitSectionCard>
@@ -131,19 +137,17 @@ export default function ServiceModeDonut({
   }
 
   if (total === 0) {
-    return (
+    return embedded ? (
+      <EmptyDonut />
+    ) : (
       <LitSectionCard title="Service mode distribution" sub="Shipments by leg type">
         <EmptyDonut />
       </LitSectionCard>
     );
   }
 
-  return (
-    <LitSectionCard
-      title="Service mode distribution"
-      sub="Click a slice to filter the tab"
-    >
-      <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6">
+  const body = (
+    <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6">
         <div className="relative" style={{ width: 220, height: 220 }}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
@@ -221,6 +225,16 @@ export default function ServiceModeDonut({
           })}
         </div>
       </div>
+  );
+
+  if (embedded) return body;
+
+  return (
+    <LitSectionCard
+      title="Service mode distribution"
+      sub="Click a slice to filter the tab"
+    >
+      {body}
     </LitSectionCard>
   );
 }
