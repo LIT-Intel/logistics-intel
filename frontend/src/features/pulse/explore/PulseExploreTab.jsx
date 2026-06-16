@@ -24,6 +24,7 @@ import ExploreAccountTable from './ExploreAccountTable';
 import SelectionActionBar from './SelectionActionBar';
 import BulkRefreshModal from './BulkRefreshModal';
 import SaveAsViewModal from './SaveAsViewModal';
+import BulkSaveToListModal from './BulkSaveToListModal';
 import { downloadCsv } from './exportCsv';
 import PulseQuickCard from '@/features/pulse/PulseQuickCard';
 
@@ -37,6 +38,7 @@ export default function PulseExploreTab() {
   const [legendOpen, setLegendOpen] = useState(true);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
+  const [saveListOpen, setSaveListOpen] = useState(false);
   const { data, isLoading, error } = useExploreAccounts(state.filters, null);
   const rows = data?.rows ?? [];
   useExploreInsights(rows);
@@ -141,7 +143,7 @@ export default function PulseExploreTab() {
               totalCount={rows.length}
               onClear={() => setSelection([])}
               onExport={onExport}
-              onSaveToList={() => toast('Save to list — coming in next polish pass')}
+              onSaveToList={() => setSaveListOpen(true)}
               onSaveAsView={() => setViewOpen(true)}
               onBulkRefresh={() => setBulkOpen(true)}
               onAddToCampaign={() => toast('Add to campaign — coming in next polish pass')}
@@ -167,6 +169,11 @@ export default function PulseExploreTab() {
         state={state}
         mapCenter={[39.5, -98.35]}
         mapZoom={4}
+      />
+      <BulkSaveToListModal
+        open={saveListOpen}
+        onClose={() => setSaveListOpen(false)}
+        companyIds={state.selection ?? []}
       />
     </div>
   );
