@@ -54,8 +54,17 @@ serve(async (req) => {
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
     const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
-    const inviteBaseUrl = Deno.env.get("INVITE_BASE_URL");
-    const inviteFromEmail = Deno.env.get("INVITE_FROM_EMAIL");
+    // Fallback chain mirrors send-affiliate-invite. Default targets the APP
+    // domain (not marketing) — invite links land on /accept-invite which
+    // only exists on app.logisticintel.com.
+    const inviteBaseUrl =
+      Deno.env.get("APP_BASE_URL") ||
+      Deno.env.get("INVITE_BASE_URL") ||
+      Deno.env.get("APP_URL") ||
+      "https://app.logisticintel.com";
+    const inviteFromEmail =
+      Deno.env.get("INVITE_FROM_EMAIL") ||
+      Deno.env.get("RESEND_FROM_EMAIL");
 
     if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
       return json({ error: "Missing Supabase environment variables" }, 500);
@@ -65,12 +74,8 @@ serve(async (req) => {
       return json({ error: "Missing RESEND_API_KEY" }, 500);
     }
 
-    if (!inviteBaseUrl) {
-      return json({ error: "Missing INVITE_BASE_URL" }, 500);
-    }
-
     if (!inviteFromEmail) {
-      return json({ error: "Missing INVITE_FROM_EMAIL" }, 500);
+      return json({ error: "Missing INVITE_FROM_EMAIL or RESEND_FROM_EMAIL" }, 500);
     }
 
     const authHeader = req.headers.get("Authorization");

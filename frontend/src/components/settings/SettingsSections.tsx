@@ -1114,7 +1114,9 @@ export function SecuritySection(props: {
         <SCard title="Two-factor authentication" subtitle="Add a second step at sign-in. Recommended.">
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <SBadge tone="slate" dot>Not configured</SBadge>
-            <button style={{ ...sBtnGhost, fontSize: 12, padding: "6px 11px" }}>Set up 2FA</button>
+            <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", padding: "4px 8px", fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: "#64748b" }}>
+              Coming soon
+            </span>
           </div>
         </SCard>
       </div>

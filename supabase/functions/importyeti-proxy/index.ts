@@ -17,6 +17,23 @@ const SNAPSHOT_TABLE = "lit_importyeti_company_snapshot";
 const INDEX_TABLE = "lit_company_index";
 const SNAPSHOT_TTL_DAYS = 30;
 
+// Per-tier daily refresh caps for the Pulse Explorer "Refresh from
+// ImportYeti" action. Distinct from the company_profile_view quota
+// (which gates the Command Center profile fetch). See plan §11
+// open item — values may be tuned post-rollout based on telemetry.
+const PULSE_REFRESH_DAILY_CAP: Record<string, number> = {
+  free_trial: 5,
+  starter: 25,
+  growth: 50,
+  scale: 200,
+  enterprise: 1000,
+};
+
+// 24-hour TTL for Pulse Explorer cache gate. Faster than the
+// 30-day SNAPSHOT_TTL_DAYS used by the Command Center because the
+// Explorer use case is "did this account's freshness chip move?".
+const PULSE_REFRESH_CACHE_TTL_HOURS = 24;
+
 type KeySource =
   | "IYApiKey"
   | "IY_DMA_API_KEY"
@@ -461,6 +478,141 @@ async function getCachedSnapshot(supabase: any, companySlug: string) {
     data: result.data,
     ageDays,
   };
+}
+
+async function loadPlanTier(
+  supabase: any,
+  userId: string,
+): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from("subscriptions")
+      .select("plan_tier")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const tier = (data as any)?.plan_tier;
+    return typeof tier === "string" && tier ? tier : "free_trial";
+  } catch {
+    return "free_trial";
+  }
+}
+
+async function getPulseCachedSnapshotIfFresh(
+  supabase: any,
+  companySlug: string,
+): Promise<SnapshotRecord | null> {
+  const { data } = await safeMaybeSingleSnapshot(supabase, companySlug);
+  if (!data?.updated_at) return null;
+  const ageHours =
+    (Date.now() - new Date(data.updated_at).getTime()) / (1000 * 60 * 60);
+  return ageHours < PULSE_REFRESH_CACHE_TTL_HOURS ? data : null;
+}
+
+async function checkAndIncrementPulseQuota(
+  supabase: any,
+  userId: string,
+  planTier: string,
+): Promise<{ ok: true } | { ok: false; cap: number; used: number }> {
+  const cap = PULSE_REFRESH_DAILY_CAP[planTier] ?? PULSE_REFRESH_DAILY_CAP.free_trial;
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
+  const { data: row } = await supabase
+    .from("lit_user_importyeti_quota")
+    .select("calls_count")
+    .eq("user_id", userId)
+    .eq("day", today)
+    .maybeSingle();
+  const used = (row as any)?.calls_count ?? 0;
+  if (used >= cap) return { ok: false, cap, used };
+  // Atomic-ish upsert: increment by 1. Service role bypasses RLS.
+  await supabase
+    .from("lit_user_importyeti_quota")
+    .upsert(
+      { user_id: userId, day: today, calls_count: used + 1 },
+      { onConflict: "user_id,day" },
+    );
+  return { ok: true };
+}
+
+async function handlePulseRefreshAction(
+  supabase: any,
+  companyId: string,
+  userId: string,
+  requestId: string,
+): Promise<Response> {
+  console.log("⚡ PULSE REFRESH:", { requestId, companyId });
+
+  const env = buildEnvConfig();
+  if (!env.isValid) {
+    return jsonResponse(
+      { ok: false, error: "ImportYeti API key not configured", code: "IY_API_KEY_MISSING" },
+      500,
+    );
+  }
+
+  const slugInput = await resolveCompanyKeyToSlug(supabase, companyId);
+  const normalizedCompanyKey = normalizeCompanyKey(slugInput);
+
+  // 1. Cache-hit gate (24h).
+  const cached = await getPulseCachedSnapshotIfFresh(supabase, normalizedCompanyKey);
+  if (cached) {
+    console.log("✅ Pulse refresh — cache hit", { requestId, companyId: normalizedCompanyKey });
+    return jsonResponse({
+      ok: true,
+      source: "cache",
+      from_cache: true,
+      company_id: normalizedCompanyKey,
+      last_refreshed_at: cached.updated_at,
+      snapshot: cached.parsed_summary,
+    });
+  }
+
+  // 2. Per-user daily quota (Pulse Explorer specific).
+  const planTier = await loadPlanTier(supabase, userId);
+  const quota = await checkAndIncrementPulseQuota(supabase, userId, planTier);
+  if (!quota.ok) {
+    console.log("⛔ Pulse refresh — quota exceeded", { requestId, userId, planTier, cap: quota.cap });
+    return jsonResponse(
+      {
+        ok: false,
+        error: "quota_exceeded",
+        code: "PULSE_REFRESH_QUOTA_EXCEEDED",
+        cap: quota.cap,
+        used: quota.used,
+        plan_tier: planTier,
+      },
+      429,
+    );
+  }
+
+  // 3. Upstream fetch + snapshot persist.
+  try {
+    const fetchResult = await fetchAndUpsertSnapshot(
+      supabase,
+      normalizedCompanyKey,
+      { IMPORTYETI_API_KEY: env.apiKey, IMPORTYETI_API_BASE: env.dmaBaseUrl },
+    );
+    if (fetchResult.httpStatus === 404 || !fetchResult.parsedSummary) {
+      return jsonResponse(
+        { ok: false, error: "Company not found upstream", code: "COMPANY_NOT_FOUND" },
+        404,
+      );
+    }
+    console.log("✅ Pulse refresh — fresh upstream", { requestId, companyId: normalizedCompanyKey });
+    return jsonResponse({
+      ok: true,
+      source: "fresh",
+      from_cache: false,
+      company_id: normalizedCompanyKey,
+      last_refreshed_at: new Date().toISOString(),
+      snapshot: fetchResult.parsedSummary,
+    });
+  } catch (error: any) {
+    console.error("❌ Pulse refresh failed", { requestId, error: error?.message || error });
+    return jsonResponse(
+      { ok: false, error: error?.message || "Pulse refresh failed", code: "PULSE_REFRESH_FAILED" },
+      500,
+    );
+  }
 }
 
 async function fetchCompanyBolsUpstream(
@@ -1539,6 +1691,10 @@ Deno.serve(async (req: Request) => {
         { ok: false, error: "company_id is required", code: "MISSING_COMPANY_ID" },
         400,
       );
+    }
+
+    if (resolvedAction === "pulse_refresh") {
+      return await handlePulseRefreshAction(supabase, requestedCompanyId, userId, requestId);
     }
 
     if (resolvedAction === "companyBols") {
