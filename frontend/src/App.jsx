@@ -62,7 +62,7 @@ const SectorLandingPage = lazy(() => import("@/pages/landing/SectorLandingPage")
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
-  const { user, loading, isSuperAdmin } = useAuth();
+  const { user, loading, isSuperAdmin, orgId } = useAuth();
   const location = useLocation();
   if (DEMO_MODE) return children;
   if (loading) return null;
@@ -76,7 +76,14 @@ function RequireAuth({ children }) {
     meta.onboarding_completed === true ||
     (meta.onboarding_completed !== false && accountAgeHours >= 2);
 
-  if (!isSuperAdmin && !onboardingDone && location.pathname !== "/onboarding") {
+  // Workspace membership IS onboarding. Invited users who joined via
+  // /accept-invite have an active org_members row; they should bypass the
+  // new-org wizard regardless of the onboarding_completed metadata race.
+  // This also covers the brief window where updateUser() hasn't propagated
+  // to AuthProvider yet after a successful invite acceptance.
+  const hasWorkspace = Boolean(orgId);
+
+  if (!isSuperAdmin && !onboardingDone && !hasWorkspace && location.pathname !== "/onboarding") {
     return <Navigate to="/onboarding" replace />;
   }
   return children;

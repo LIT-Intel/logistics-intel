@@ -189,6 +189,14 @@ export default function AcceptInvitePage() {
           await supabase.auth.updateUser({ data: { onboarding_completed: true } });
         }
 
+        // Force a session refresh so AuthProvider picks up:
+        //   - the updated onboarding_completed=true metadata
+        //   - the freshly-inserted org_members row → orgId in AuthProvider
+        // Without this, the navigate below races AuthProvider's onAuthStateChange
+        // and RequireAuth on /app/dashboard may read stale state and bounce
+        // the user back to /onboarding.
+        await supabase.auth.refreshSession();
+
         setView({ kind: "loading", message: "Invite accepted. Redirecting..." });
         window.setTimeout(() => {
           if (!isCancelled) {
