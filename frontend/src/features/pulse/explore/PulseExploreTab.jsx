@@ -1,16 +1,10 @@
 // PulseExploreTab — V6-styled Pulse Explorer page.
-// Layout:
-//   - ExploreHeader (top): dark navy bar with title + search + mode toggle, KPI strip below
-//   - FilterChipRow: V6-style cyan-tinted active filter pills
-//   - ExploreSidebar (left, 48px): filter/bookmark/layers/analytics/etc icon strip
-//   - Center: map (top half) + virtualized account table (bottom half)
-//   - IndustryLegendOverlay: floating card on map showing industry counts
-//   - ExploreMapTools: floating bottom-left map tool buttons (select/draw/lasso)
-//   - SelectionActionBar: appears above table when selection > 0
-//   - Right rail: PulseQuickCard when a bubble is clicked
+// Behavior: LAZY by default — empty state shown until the user submits a
+// search OR picks a filter chip. Avoids the 78K-row default-load cost.
 
 import { useState, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
+import { Compass, Sparkles } from 'lucide-react';
 import { useExploreState } from './useExploreState';
 import { useExploreAccounts } from './useExploreAccounts';
 import { useExploreInsights } from './useExploreInsights';
@@ -26,7 +20,15 @@ import BulkRefreshModal from './BulkRefreshModal';
 import SaveAsViewModal from './SaveAsViewModal';
 import BulkSaveToListModal from './BulkSaveToListModal';
 import { downloadCsv } from './exportCsv';
+import { parseExploreQuery, parsedToFilters, hasAnyFilter } from '@/api/pulse-explore-parse';
 import PulseQuickCard from '@/features/pulse/PulseQuickCard';
+
+const PROMPTS = [
+  'Vulnerable incumbents in the Southeast',
+  'High-velocity manufacturers in California above 5000 TEU',
+  'Consolidation candidates with stale data',
+  'Food and beverage importers in Texas',
+];
 
 export default function PulseExploreTab() {
   const { state, setFilters, setColor, setSize, setSelection } = useExploreState();
@@ -39,7 +41,11 @@ export default function PulseExploreTab() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [saveListOpen, setSaveListOpen] = useState(false);
-  const { data, isLoading, error } = useExploreAccounts(state.filters, null);
+  const [parsing, setParsing] = useState(false);
+
+  // Only fetch once the user has actually filtered or searched.
+  const fetchEnabled = hasAnyFilter(state.filters);
+  const { data, isLoading, error } = useExploreAccounts(state.filters, null, { enabled: fetchEnabled });
   const rows = data?.rows ?? [];
   useExploreInsights(rows);
 
@@ -48,8 +54,6 @@ export default function PulseExploreTab() {
     let totalAnnualSales = 0;
     let totalTeu = 0;
     for (const r of rows) {
-      // V6 stores Estimated Annual Revenue as raw value (likely millions);
-      // sum without unit multiplication. KPI displays the running total.
       const rev = typeof r.revenue === 'string' ? parseFloat(r.revenue) : (r.revenue ?? 0);
       if (Number.isFinite(rev)) totalAnnualSales += rev;
       const teu = typeof r.teu === 'number' ? r.teu : (r.teu ? Number(r.teu) : 0);
@@ -67,8 +71,30 @@ export default function PulseExploreTab() {
   const handleIndustryClick = useCallback((industry) => {
     const cur = new Set(state.filters?.industry ?? []);
     if (cur.has(industry)) cur.delete(industry); else cur.add(industry);
-    setFilters({ ...state.filters, industry: Array.from(cur) });
+    setFilters({ ...(state.filters ?? {}), industry: Array.from(cur) });
   }, [state.filters, setFilters]);
+
+  const onSubmitSearch = useCallback(async () => {
+    const q = query.trim();
+    if (!q) return;
+    setParsing(true);
+    try {
+      const { parsed } = await parseExploreQuery(q);
+      const filters = parsedToFilters(parsed);
+      if (hasAnyFilter(filters)) {
+        setFilters(filters);
+        if (parsed?.confidence != null) {
+          toast.success(`Search parsed (${Math.round(parsed.confidence * 100)}% confidence)`);
+        }
+      } else {
+        toast(`Couldn't extract filters from "${q}" — try wording like "vulnerable incumbents in the southeast"`);
+      }
+    } catch (err) {
+      toast.error(err?.message ?? 'Search failed');
+    } finally {
+      setParsing(false);
+    }
+  }, [query, setFilters]);
 
   const activeIndustry = state.filters?.industry?.[0];
   const selectedRows = useMemo(
@@ -92,7 +118,7 @@ export default function PulseExploreTab() {
       <ExploreHeader
         query={query}
         onQuery={setQuery}
-        onSubmit={() => { /* NL parse wires in Phase 3B follow-up */ }}
+        onSubmit={onSubmitSearch}
         totals={headerTotals}
         mapMode={mapMode}
         onMapMode={setMapMode}
@@ -104,9 +130,14 @@ export default function PulseExploreTab() {
           if (t === 'bookmark') setViewOpen(true);
         }} />
         <div className="flex-1 min-w-0 min-h-0 relative flex flex-col">
-          {isLoading && (
+          {parsing && (
+            <div className="absolute inset-0 grid place-items-center bg-white/60 text-slate-500 text-sm z-20">
+              Parsing search…
+            </div>
+          )}
+          {fetchEnabled && isLoading && !parsing && (
             <div className="absolute inset-0 grid place-items-center bg-white/60 text-slate-500 text-sm z-10">
-              Loading…
+              Loading accounts…
             </div>
           )}
           {error && (
@@ -121,8 +152,9 @@ export default function PulseExploreTab() {
               sizeMode={state.size}
               selection={state.selection}
               onBubbleClick={setActiveRow}
+              mapMode={mapMode}
             />
-            {legendOpen && (
+            {fetchEnabled && legendOpen && (
               <IndustryLegendOverlay
                 rows={rows}
                 activeIndustry={activeIndustry}
@@ -137,6 +169,31 @@ export default function PulseExploreTab() {
                 if (t === 'legend') setLegendOpen((v) => !v);
               }}
             />
+            {!fetchEnabled && !parsing && (
+              <div className="absolute inset-0 z-20 grid place-items-center pointer-events-none">
+                <div className="bg-white/95 backdrop-blur rounded-xl shadow-xl border border-slate-200 px-5 py-4 max-w-md text-center pointer-events-auto">
+                  <div className="inline-flex items-center gap-2 text-cyan-700 mb-1">
+                    <Sparkles size={18} />
+                    <span className="font-semibold">Search to begin</span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Type a query above (or pick a filter chip) and we'll plot up to 78K accounts on the map.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-1.5 justify-center">
+                    {PROMPTS.map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => { setQuery(p); /* trigger after state flush */ setTimeout(onSubmitSearch, 0); }}
+                        className="text-[11px] rounded-full bg-cyan-50 hover:bg-cyan-100 ring-1 ring-cyan-200 text-cyan-800 px-2 py-1"
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div className="h-1/2 flex flex-col">
             <SelectionActionBar
@@ -149,12 +206,18 @@ export default function PulseExploreTab() {
               onBulkRefresh={() => setBulkOpen(true)}
               onAddToCampaign={() => toast('Add to campaign — coming in next polish pass')}
             />
-            <ExploreAccountTable
-              rows={rows}
-              selection={state.selection}
-              onToggle={toggleSelection}
-              onRowClick={setActiveRow}
-            />
+            {fetchEnabled ? (
+              <ExploreAccountTable
+                rows={rows}
+                selection={state.selection}
+                onToggle={toggleSelection}
+                onRowClick={setActiveRow}
+              />
+            ) : (
+              <div className="flex-1 grid place-items-center text-slate-400 text-sm">
+                <div className="flex items-center gap-2"><Compass size={16} /> Results appear here after you search</div>
+              </div>
+            )}
           </div>
         </div>
         {activeRow && (

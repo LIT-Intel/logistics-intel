@@ -22,28 +22,40 @@ import { industryColor, workflowColor, opportunityColor } from './bubblePalettes
 const STADIA_KEY = import.meta.env.VITE_STADIA_API_KEY ?? '';
 const STADIA_STYLE = 'alidade_smooth'; // 'alidade_smooth_dark' for dark
 
-function stadiaTileUrl(z = '{z}', x = '{x}', y = '{y}') {
-  const suffix = STADIA_KEY ? `?api_key=${STADIA_KEY}` : '';
-  return `https://tiles.stadiamaps.com/tiles/${STADIA_STYLE}/${z}/${x}/${y}{r}.png${suffix}`;
-}
-
-// Minimal style spec: just one raster tile source. MapLibre handles
-// projection, zoom, panning natively.
-const STADIA_STYLE_SPEC = {
-  version: 8,
-  sources: {
-    'stadia-raster': {
+// Use Stadia tiles when an API key is configured; fall back to
+// OpenStreetMap's free public tile servers so the map never renders blank.
+// MapLibre raster URL template uses {z}/{x}/{y} only — no Leaflet-style {r}.
+function makeTileSource() {
+  if (STADIA_KEY) {
+    return {
       type: 'raster',
-      tiles: [stadiaTileUrl()],
+      tiles: [
+        `https://tiles.stadiamaps.com/tiles/${STADIA_STYLE}/{z}/{x}/{y}.png?api_key=${STADIA_KEY}`,
+      ],
       tileSize: 256,
       attribution:
         '&copy; <a href="https://stadiamaps.com/" target="_blank">Stadia Maps</a> ' +
         '&copy; <a href="https://openmaptiles.org/" target="_blank">OpenMapTiles</a> ' +
         '&copy; <a href="https://www.openstreetmap.org/about" target="_blank">OpenStreetMap</a>',
-    },
-  },
+    };
+  }
+  return {
+    type: 'raster',
+    tiles: [
+      'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    ],
+    tileSize: 256,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  };
+}
+
+const MAP_STYLE_SPEC = {
+  version: 8,
+  sources: { 'base-raster': makeTileSource() },
   layers: [
-    { id: 'stadia-raster-layer', type: 'raster', source: 'stadia-raster', minzoom: 0, maxzoom: 20 },
+    { id: 'base-raster-layer', type: 'raster', source: 'base-raster', minzoom: 0, maxzoom: 20 },
   ],
 };
 
@@ -116,7 +128,7 @@ export default function ExploreMapMaplibre({
     if (!containerRef.current || mapRef.current) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: STADIA_STYLE_SPEC,
+      style: MAP_STYLE_SPEC,
       center: US_CENTER,
       zoom: DEFAULT_ZOOM,
       attributionControl: { compact: true },
