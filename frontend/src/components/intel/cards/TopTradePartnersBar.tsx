@@ -2,6 +2,13 @@
 // aggregates), rendered as a horizontal bar chart with country flag emoji
 // on hover. Click a row to surface the supplier in the parent (drives a
 // navigation hand-off; consumer wires the callback).
+//
+// This tile is the canonical entry point for "do we have IY enrichment for
+// this buyer at all" — when no synced suppliers exist for a company but
+// the company HAS unified shipments (i.e. it's a real importer we know
+// about), platform admins see a clickable "Sync from ImportYeti" affordance
+// so a single sync hydrates suppliers + (downstream of the same pull) MX
+// customs and US export tables. Regular users see nothing on empty.
 
 import React from "react";
 import {
@@ -13,8 +20,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useQueryClient } from "@tanstack/react-query";
 import LitSectionCard from "@/components/ui/LitSectionCard";
-import { usePqSupplierAggregates } from "@/api/intel";
+import AdminRunSyncButton from "@/components/intel/AdminRunSyncButton";
+import {
+  useCompanyDataRelevance,
+  usePqSupplierAggregates,
+} from "@/api/intel";
 import { useEntitlements } from "@/hooks/useEntitlements";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 
@@ -36,8 +48,11 @@ export default function TopTradePartnersBar({
   onPartnerSelect,
 }: TopTradePartnersBarProps) {
   const { data, isLoading } = usePqSupplierAggregates(companyName);
+  const { data: relevance } = useCompanyDataRelevance(companyName);
   const { isPlatformAdmin } = useEntitlements();
   const { isMobile } = useBreakpoint();
+  const queryClient = useQueryClient();
+
   // Supplier name truncate — 18 chars on <sm so even on a 360px-wide phone
   // the bar still gets ~60% of the row; 32 on ≥sm. Full name in the tooltip.
   const truncLen = isMobile ? 18 : 32;
@@ -68,12 +83,48 @@ export default function TopTradePartnersBar({
   }
 
   if (rows.length === 0) {
-    // Hide-on-empty for regular users; admins still see an actionable
-    // "run sync" affordance so they can trigger enrichment.
+    // Empty branch. Three sub-cases:
+    //   1. Regular user → hide entirely.
+    //   2. Admin + company has unified shipments (real importer we know
+    //      about, just not synced yet) → show the sync affordance. After
+    //      a successful sync, invalidating the supplier-aggregates query
+    //      rehydrates the chart in-place.
+    //   3. Admin + company is unknown to our warehouse → hide entirely
+    //      (a sync wouldn't return anything useful).
     if (!isPlatformAdmin) return null;
+    if (!relevance?.hasUnifiedShipments) return null;
     return (
-      <LitSectionCard title="Top trade partners" sub="By shipment count">
-        <AdminEmpty />
+      <LitSectionCard
+        title="Top trade partners"
+        sub="No supplier aggregates yet — admin can sync"
+      >
+        <div className="flex flex-col items-center justify-center gap-2 px-6 py-6 text-center">
+          <p className="font-body text-[11.5px] text-slate-500">
+            We have {relevance.unifiedShipmentCount.toLocaleString()} shipments for{" "}
+            <span className="font-semibold text-slate-700">{companyName}</span>{" "}
+            but no PowerQuery supplier enrichment yet.
+          </p>
+          <AdminRunSyncButton
+            source="us-import-suppliers"
+            companyName={companyName}
+            onSyncComplete={() => {
+              queryClient.invalidateQueries({
+                queryKey: ["intel", "pq-supplier-aggregates", companyName],
+              });
+              queryClient.invalidateQueries({
+                queryKey: ["intel", "company-data-relevance", companyName],
+              });
+              // Also bust the sibling cards' caches so they hydrate from the
+              // same pull (PQ suppliers feed flows MX / US-export too).
+              queryClient.invalidateQueries({
+                queryKey: ["intel", "mx-import-activity", companyName],
+              });
+              queryClient.invalidateQueries({
+                queryKey: ["intel", "us-export-activity", companyName],
+              });
+            }}
+          />
+        </div>
       </LitSectionCard>
     );
   }
@@ -173,19 +224,6 @@ function SkeletonBars({ rows }: { rows: number }) {
           />
         </div>
       ))}
-    </div>
-  );
-}
-
-function AdminEmpty() {
-  return (
-    <div className="flex flex-col items-center justify-center gap-1.5 px-6 py-6 text-center">
-      <p className="font-body text-[11.5px] text-slate-500">
-        No supplier aggregates yet
-      </p>
-      <span className="font-display inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-[2px] text-[9.5px] font-semibold uppercase tracking-wide text-amber-700">
-        Admin · run sync
-      </span>
     </div>
   );
 }
