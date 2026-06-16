@@ -223,10 +223,9 @@ export default function SettingsPage() {
         })
       );
 
-      // org_members has no status/email/full_name columns — only select real schema columns
       const { data: membersData, error: membersError } = await supabase
         .from("org_members")
-        .select("id, org_id, user_id, role, joined_at")
+        .select("id, org_id, user_id, role, joined_at, status, email, full_name")
         .eq("org_id", currentOrgId)
         .order("joined_at", { ascending: false });
       if (membersError) console.warn("[SettingsPage] org_members load warning:", membersError.message);

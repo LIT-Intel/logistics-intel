@@ -171,16 +171,20 @@ Deno.serve(async (req: Request) => {
       .eq('company_id', companyRecord.id)
       .maybeSingle();
 
+    // Resolve org once for the whole request — needed for the usage gate,
+    // for lit_saved_companies.org_id (added 2026-06-16 for multi-tenant),
+    // and for the activity event log. Picks the user's oldest active org.
+    const { data: orgRow } = await supabase
+      .from('org_members')
+      .select('org_id')
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .order('joined_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const orgId = orgRow?.org_id ?? null;
+
     if (!existingSave) {
-      // Resolve org and gate.
-      const { data: orgRow } = await supabase
-        .from('org_members')
-        .select('org_id')
-        .eq('user_id', user.id)
-        .order('joined_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      const orgId = orgRow?.org_id ?? null;
       const { data: gateData, error: gateError } = await supabase.rpc('check_usage_limit', {
         p_org_id: orgId,
         p_user_id: user.id,
@@ -205,6 +209,7 @@ Deno.serve(async (req: Request) => {
     const upsertPayload: Record<string, unknown> = {
       user_id: user.id,
       company_id: companyRecord.id,
+      org_id: orgId,
       last_activity_at: now,
       last_viewed_at: now,
     };
@@ -221,13 +226,12 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (saveError) throw saveError;
-    // saved_company is total-mode; consume_usage is a no-op for that
-    // feature (the new lit_saved_companies row IS the consumption).
 
     await supabase
       .from('lit_activity_events')
       .insert({
         user_id: user.id,
+        org_id: orgId,
         event_type: 'company_saved',
         company_id: companyRecord.id,
         metadata: {
