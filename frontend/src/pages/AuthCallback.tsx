@@ -52,6 +52,20 @@ export default function AuthCallback() {
         const user = userData.user;
         const meta = user.user_metadata || {};
 
+        // Invite-flow short-circuit: when nextParam routes to /accept-invite,
+        // skip the onboarding gate entirely. Invited users join an existing
+        // workspace — they should never see the new-org onboarding wizard.
+        // Mark onboarding complete so RequireAuth doesn't bounce them later.
+        const isInviteFlow = (nextParam || '').startsWith('/accept-invite');
+
+        if (isInviteFlow) {
+          if (meta.onboarding_completed !== true) {
+            await auth.auth.updateUser({ data: { onboarding_completed: true } });
+          }
+          navigate(nextParam!, { replace: true });
+          return;
+        }
+
         // Primary: flag written at registration via signUp options.data
         // Secondary: account < 30 min old = first confirmation click
         const createdAt = new Date(user.created_at || 0);

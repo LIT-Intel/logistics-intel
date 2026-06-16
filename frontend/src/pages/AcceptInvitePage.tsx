@@ -134,6 +134,13 @@ export default function AcceptInvitePage() {
           .select("id")
           .maybeSingle();
 
+        // Accepting an invite IS the onboarding for this user — they joined
+        // an existing workspace, no wizard needed. Mark complete so RequireAuth
+        // doesn't bounce them to /onboarding on the next navigation.
+        if (user.user_metadata?.onboarding_completed !== true) {
+          await supabase.auth.updateUser({ data: { onboarding_completed: true } });
+        }
+
         setMessage("Invite accepted. Redirecting...");
         window.setTimeout(() => {
           if (!isCancelled) {
