@@ -12,11 +12,12 @@ import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Globe, MapPin, Sparkles } from 'lucide-react';
 import GlobeCanvas from '@/components/GlobeCanvas';
 import { COUNTRY_COORDS, flagFromCode } from '@/lib/laneGlobe';
+export { COUNTRY_COORDS };
 
 // US state centroids — enough precision to make a lane's destination
 // land on the right region of the country. Sourced from public
 // geographic centers; not navigation-grade but visually correct.
-const US_STATE_CENTROIDS = {
+export const US_STATE_CENTROIDS = {
   AL: [-86.79, 32.81], AK: [-152.40, 64.20], AZ: [-111.43, 34.17],
   AR: [-92.43, 34.97], CA: [-119.62, 37.18], CO: [-105.55, 38.99],
   CT: [-72.74, 41.62], DE: [-75.51, 38.99], FL: [-81.60, 27.77],
@@ -38,7 +39,7 @@ const US_STATE_CENTROIDS = {
 
 // US metros (port cities) — when user says "import to Atlanta" we
 // want the lane to land on Atlanta itself, not the GA state centroid.
-const US_METRO_COORDS = {
+export const US_METRO_COORDS = {
   LAX: [-118.41, 33.94], LGB: [-118.16, 33.77], NYC: [-74.01, 40.71],
   ATL: [-84.43, 33.65], SAV: [-81.10, 32.08], HOU: [-95.28, 29.99],
   SEA: [-122.31, 47.45], MIA: [-80.29, 25.79], CHI: [-87.91, 41.97],
