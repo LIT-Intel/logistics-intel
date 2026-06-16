@@ -1,14 +1,16 @@
 // PulseExploreTab — V6-styled Pulse Explorer page.
 // Layout:
 //   - ExploreHeader (top): dark navy bar with title + search + mode toggle, KPI strip below
-//   - ExploreSidebar (left, 48px): filter/bookmark/layers/analytics/etc icon strip
 //   - FilterChipRow: V6-style cyan-tinted active filter pills
+//   - ExploreSidebar (left, 48px): filter/bookmark/layers/analytics/etc icon strip
 //   - Center: map (top half) + virtualized account table (bottom half)
 //   - IndustryLegendOverlay: floating card on map showing industry counts
 //   - ExploreMapTools: floating bottom-left map tool buttons (select/draw/lasso)
+//   - SelectionActionBar: appears above table when selection > 0
 //   - Right rail: PulseQuickCard when a bubble is clicked
 
 import { useState, useCallback, useMemo } from 'react';
+import { toast } from 'sonner';
 import { useExploreState } from './useExploreState';
 import { useExploreAccounts } from './useExploreAccounts';
 import { useExploreInsights } from './useExploreInsights';
@@ -19,6 +21,10 @@ import IndustryLegendOverlay from './IndustryLegendOverlay';
 import ExploreMapTools from './ExploreMapTools';
 import ExploreMap from './ExploreMap';
 import ExploreAccountTable from './ExploreAccountTable';
+import SelectionActionBar from './SelectionActionBar';
+import BulkRefreshModal from './BulkRefreshModal';
+import SaveAsViewModal from './SaveAsViewModal';
+import { downloadCsv } from './exportCsv';
 import PulseQuickCard from '@/features/pulse/PulseQuickCard';
 
 export default function PulseExploreTab() {
@@ -29,19 +35,20 @@ export default function PulseExploreTab() {
   const [mapTool, setMapTool] = useState('select');
   const [mapMode, setMapMode] = useState('bubbles');
   const [legendOpen, setLegendOpen] = useState(true);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
   const { data, isLoading, error } = useExploreAccounts(state.filters, null);
   const rows = data?.rows ?? [];
-  const insights = useExploreInsights(rows);
+  useExploreInsights(rows);
 
-  // KPI totals (sum across current filtered view).
   const headerTotals = useMemo(() => {
     if (!rows.length) return { total: 0, totalAnnualSales: 0, totalGpPotential: 0 };
     let totalAnnualSales = 0;
     let totalGpPotential = 0;
     for (const r of rows) {
-      // V6 ingest writes `revenue` as text — parse to number where possible.
       const rev = typeof r.revenue === 'string' ? parseFloat(r.revenue) : (r.revenue ?? 0);
-      if (Number.isFinite(rev)) totalAnnualSales += rev * 1_000_000_000; // V6 revenue is in billions (e.g. "385.6" = $385.6B)
+      // V6 ingest stores revenue as billions (e.g. "385.6" = $385.6B).
+      if (Number.isFinite(rev)) totalAnnualSales += rev * 1_000_000_000;
       const gp = r.gp_potential ?? 0;
       if (Number.isFinite(gp)) totalGpPotential += gp;
     }
@@ -61,20 +68,38 @@ export default function PulseExploreTab() {
   }, [state.filters, setFilters]);
 
   const activeIndustry = state.filters?.industry?.[0];
+  const selectedRows = useMemo(
+    () => rows.filter((r) => new Set(state.selection ?? []).has(r.id)),
+    [rows, state.selection],
+  );
+
+  const onExport = useCallback(() => {
+    const subset = selectedRows.length > 0 ? selectedRows : rows;
+    if (!subset.length) {
+      toast.error('Nothing to export');
+      return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    downloadCsv(subset, `pulse-explorer-${today}.csv`);
+    toast.success(`Exported ${subset.length} accounts`);
+  }, [selectedRows, rows]);
 
   return (
     <div className="flex flex-col h-full bg-slate-50">
       <ExploreHeader
         query={query}
         onQuery={setQuery}
-        onSubmit={() => { /* NL parse wires in Phase 3B */ }}
+        onSubmit={() => { /* NL parse wires in Phase 3B follow-up */ }}
         totals={headerTotals}
         mapMode={mapMode}
         onMapMode={setMapMode}
       />
       <FilterChipRow filters={state.filters} onChange={setFilters} />
       <div className="flex flex-1 min-h-0">
-        <ExploreSidebar active={sidebarTool} onSelect={setSidebarTool} />
+        <ExploreSidebar active={sidebarTool} onSelect={(t) => {
+          setSidebarTool(t);
+          if (t === 'bookmark') setViewOpen(true);
+        }} />
         <div className="flex-1 min-w-0 min-h-0 relative flex flex-col">
           {isLoading && (
             <div className="absolute inset-0 grid place-items-center bg-white/60 text-slate-500 text-sm z-10">
@@ -102,12 +127,25 @@ export default function PulseExploreTab() {
                 onClose={() => setLegendOpen(false)}
               />
             )}
-            <ExploreMapTools active={mapTool} onSelect={(t) => {
-              setMapTool(t);
-              if (t === 'legend') setLegendOpen((v) => !v);
-            }} />
+            <ExploreMapTools
+              active={mapTool}
+              onSelect={(t) => {
+                setMapTool(t);
+                if (t === 'legend') setLegendOpen((v) => !v);
+              }}
+            />
           </div>
           <div className="h-1/2 flex flex-col">
+            <SelectionActionBar
+              selectionCount={(state.selection ?? []).length}
+              totalCount={rows.length}
+              onClear={() => setSelection([])}
+              onExport={onExport}
+              onSaveToList={() => toast('Save to list — coming in next polish pass')}
+              onSaveAsView={() => setViewOpen(true)}
+              onBulkRefresh={() => setBulkOpen(true)}
+              onAddToCampaign={() => toast('Add to campaign — coming in next polish pass')}
+            />
             <ExploreAccountTable
               rows={rows}
               selection={state.selection}
@@ -118,13 +156,18 @@ export default function PulseExploreTab() {
         </div>
         {activeRow && (
           <div className="w-[420px] shrink-0 border-l border-slate-200 bg-white overflow-auto">
-            <PulseQuickCard
-              row={activeRow}
-              onClose={() => setActiveRow(null)}
-            />
+            <PulseQuickCard row={activeRow} onClose={() => setActiveRow(null)} />
           </div>
         )}
       </div>
+      <BulkRefreshModal open={bulkOpen} onClose={() => setBulkOpen(false)} rows={selectedRows} />
+      <SaveAsViewModal
+        open={viewOpen}
+        onClose={() => setViewOpen(false)}
+        state={state}
+        mapCenter={[39.5, -98.35]}
+        mapZoom={4}
+      />
     </div>
   );
 }
