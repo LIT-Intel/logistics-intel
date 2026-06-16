@@ -119,6 +119,14 @@ export interface DomesticInlandLegRow {
   est_mode: "Truck" | "Intermodal" | "Rail" | string;
 }
 
+export interface CompanyDataRelevance {
+  hasUnifiedShipments: boolean;
+  hasMxImports: boolean;
+  hasUsExports: boolean;
+  hasPqSuppliers: boolean;
+  unifiedShipmentCount: number;
+}
+
 export interface UsExportRow {
   bol_number: string;
   shipment_date: string | null;
@@ -465,6 +473,67 @@ export function usePqCreditsSummary(): UseQueryResult<PqCreditsSummaryRow | null
         if (isMissingSourceError(err)) {
           warnOnce("lit_get_pq_credits_summary", err);
           return null;
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+    },
+  });
+}
+
+/**
+ * Per-company data-source relevance lookup. Returns four booleans that
+ * each Premium Intel card uses to decide whether to render at all (vs.
+ * showing an empty "no data" tile / clutter for irrelevant companies).
+ *
+ * Backs the smart-visibility logic introduced 2026-06-16: e.g. a US
+ * importer with no MX customs activity now hides the MX Transborder
+ * card entirely; admins still get a sync button only on the Top Trade
+ * Partners card (the one source-of-truth for "do we have IY enrichment
+ * for this buyer at all").
+ *
+ * RPC: lit_company_data_relevance(p_company_name) — see migration
+ * supabase/migrations/20260616_lit_company_data_relevance.sql.
+ */
+export function useCompanyDataRelevance(
+  companyName: string | null | undefined,
+): UseQueryResult<CompanyDataRelevance, Error> {
+  return useQuery<CompanyDataRelevance, Error>({
+    queryKey: ["intel", "company-data-relevance", companyName ?? ""],
+    enabled: Boolean(companyName && companyName.trim()),
+    staleTime: FIVE_MIN,
+    gcTime: THIRTY_MIN,
+    queryFn: async () => {
+      const empty: CompanyDataRelevance = {
+        hasUnifiedShipments: false,
+        hasMxImports: false,
+        hasUsExports: false,
+        hasPqSuppliers: false,
+        unifiedShipmentCount: 0,
+      };
+      try {
+        const { data, error } = await supabase.rpc("lit_company_data_relevance", {
+          p_company_name: companyName,
+        });
+        if (error) {
+          if (isMissingSourceError(error)) {
+            warnOnce("lit_company_data_relevance", error);
+            return empty;
+          }
+          throw error;
+        }
+        const row = Array.isArray(data) ? data[0] : data;
+        if (!row) return empty;
+        return {
+          hasUnifiedShipments: Boolean(row.has_unified_shipments),
+          hasMxImports: Boolean(row.has_mx_imports),
+          hasUsExports: Boolean(row.has_us_exports),
+          hasPqSuppliers: Boolean(row.has_pq_suppliers),
+          unifiedShipmentCount: Number(row.unified_shipment_count) || 0,
+        };
+      } catch (err) {
+        if (isMissingSourceError(err)) {
+          warnOnce("lit_company_data_relevance", err);
+          return empty;
         }
         throw err instanceof Error ? err : new Error(String(err));
       }

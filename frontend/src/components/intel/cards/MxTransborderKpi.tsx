@@ -2,13 +2,19 @@
 // MX customs declarations + declared value + per-mode counts (truck / rail / air).
 // Migrated from PremiumIntelPanel's MxTransborderCard into a tile that lives in
 // the Supply Chain → Summary view.
+//
+// Visibility (smart-render, 2026-06-16):
+//   - Hidden entirely when there is no MX customs data for the company. This
+//     applies to BOTH regular users AND platform admins — irrelevant cards
+//     (e.g. a US-only importer) shouldn't add clutter to anyone's view.
+//   - The card appears once MX data exists. Admins reach that state via the
+//     "Sync from ImportYeti" affordance on Top Trade Partners (one entry
+//     point, one credit burn, multiple cards rehydrate from the same pull).
 
 import React from "react";
-import { TransborderTruckIcon } from "@/components/icons/ServiceModeIcons";
 import ServiceModeChip from "@/components/intel/ServiceModeChip";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import { useMxImportActivity } from "@/api/intel";
-import { useEntitlements } from "@/hooks/useEntitlements";
 
 interface MxTransborderKpiProps {
   companyName: string;
@@ -18,7 +24,6 @@ const tabularStyle: React.CSSProperties = { fontVariantNumeric: "tabular-nums" }
 
 export default function MxTransborderKpi({ companyName }: MxTransborderKpiProps) {
   const { data, isLoading } = useMxImportActivity(companyName);
-  const { isPlatformAdmin } = useEntitlements();
 
   const stats = React.useMemo(() => {
     const rows = data || [];
@@ -35,20 +40,11 @@ export default function MxTransborderKpi({ companyName }: MxTransborderKpiProps)
     return { total: rows.length, totalValue, modeBreakdown };
   }, [data]);
 
-  // Hide-on-empty: regular users see no clutter for companies without MX
-  // customs data. Platform admins still see an actionable "run sync"
-  // affordance so they can trigger enrichment.
-  if (!isLoading && stats.total === 0) {
-    if (!isPlatformAdmin) return null;
-    return (
-      <LitSectionCard
-        title="MX transborder"
-        sub="Mexican customs declarations · truck / rail / air"
-      >
-        <AdminEmpty />
-      </LitSectionCard>
-    );
-  }
+  // Smart-render: hide entirely on empty (no MX data === irrelevant company).
+  // Admins do NOT see an empty placeholder here — sync entry point lives on
+  // Top Trade Partners, which is the canonical "do we have IY data for this
+  // company" tile.
+  if (!isLoading && stats.total === 0) return null;
 
   return (
     <LitSectionCard
@@ -121,22 +117,6 @@ function Skeleton() {
     <div className="space-y-2 py-1">
       <div className="h-6 w-24 rounded bg-slate-100" />
       <div className="h-4 w-40 rounded bg-slate-100" />
-    </div>
-  );
-}
-
-function AdminEmpty() {
-  return (
-    <div className="flex flex-col items-center justify-center gap-1.5 py-3 text-center">
-      <div className="text-slate-300">
-        <TransborderTruckIcon size={20} />
-      </div>
-      <p className="font-body text-[11px] text-slate-500">
-        No MX declarations yet
-      </p>
-      <span className="font-display inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-[2px] text-[9.5px] font-semibold uppercase tracking-wide text-amber-700">
-        Admin · run sync
-      </span>
     </div>
   );
 }
