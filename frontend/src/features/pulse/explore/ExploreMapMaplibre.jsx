@@ -20,17 +20,15 @@ import { lookupCoords } from './coordLookup';
 import { industryColor, workflowColor, opportunityColor } from './bubblePalettes';
 
 const STADIA_KEY = import.meta.env.VITE_STADIA_API_KEY ?? '';
-const STADIA_STYLE = 'alidade_smooth'; // 'alidade_smooth_dark' for dark
 
 // Use Stadia tiles when an API key is configured; fall back to
 // OpenStreetMap's free public tile servers so the map never renders blank.
-// MapLibre raster URL template uses {z}/{x}/{y} only — no Leaflet-style {r}.
-function makeTileSource() {
+function makeTileSource(styleId) {
   if (STADIA_KEY) {
     return {
       type: 'raster',
       tiles: [
-        `https://tiles.stadiamaps.com/tiles/${STADIA_STYLE}/{z}/{x}/{y}.png?api_key=${STADIA_KEY}`,
+        `https://tiles.stadiamaps.com/tiles/${styleId}/{z}/{x}/{y}.png?api_key=${STADIA_KEY}`,
       ],
       tileSize: 256,
       attribution:
@@ -51,13 +49,15 @@ function makeTileSource() {
   };
 }
 
-const MAP_STYLE_SPEC = {
-  version: 8,
-  sources: { 'base-raster': makeTileSource() },
-  layers: [
-    { id: 'base-raster-layer', type: 'raster', source: 'base-raster', minzoom: 0, maxzoom: 20 },
-  ],
-};
+function makeStyleSpec(styleId) {
+  return {
+    version: 8,
+    sources: { 'base-raster': makeTileSource(styleId) },
+    layers: [
+      { id: 'base-raster-layer', type: 'raster', source: 'base-raster', minzoom: 0, maxzoom: 20 },
+    ],
+  };
+}
 
 const US_CENTER = [-98.35, 39.5]; // [lng, lat] for MapLibre
 const DEFAULT_ZOOM = 3.7;
@@ -118,6 +118,7 @@ export default function ExploreMapMaplibre({
   onBboxChange,
   lassoActive = false,
   onLassoSelect,
+  mapStyle = 'alidade_smooth',
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -131,12 +132,18 @@ export default function ExploreMapMaplibre({
   // Expose bbox to parent on every move.
   useEffect(() => { onBboxChange?.(bbox); }, [bbox, onBboxChange]);
 
+  // React to mapStyle prop changes by swapping the entire style.
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+    mapRef.current.setStyle(makeStyleSpec(mapStyle));
+  }, [mapStyle, ready]);
+
   // 1. Initialize the map once.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE_SPEC,
+      style: makeStyleSpec(mapStyle),
       center: US_CENTER,
       zoom: DEFAULT_ZOOM,
       attributionControl: { compact: true },

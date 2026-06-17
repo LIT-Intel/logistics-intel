@@ -1,16 +1,15 @@
-// V6-style left icon strip. ~50px wide, dark navy background, white/cyan
-// icons. Tools: filter, bookmark, layers, analytics, insights, library.
-// Matches the DSV Sales Explorer V6 reference.
+// V6-style left icon strip. Each tool below opens a slide-out panel
+// from PulseExploreTab.
 
-import { Filter, Bookmark } from 'lucide-react';
+import { Filter, Bookmark, Layers, BarChart3, Sparkles, Library } from 'lucide-react';
 
-// Sidebar surfaces ONLY tools with a real action wired up. Analytics /
-// Insights / Library / Layers were decorative placeholders that confused
-// users (they did nothing on click); removed until they ship real
-// functionality.
 const TOOLS = [
   { id: 'filter', icon: Filter, label: 'Filters' },
-  { id: 'bookmark', icon: Bookmark, label: 'Saved views' },
+  { id: 'bookmark', icon: Bookmark, label: 'Save current view' },
+  { id: 'layers', icon: Layers, label: 'Map layers' },
+  { id: 'analytics', icon: BarChart3, label: 'Analytics' },
+  { id: 'insights', icon: Sparkles, label: 'Insights' },
+  { id: 'library', icon: Library, label: 'Saved views & lists' },
 ];
 
 export default function ExploreSidebar({ active, onSelect }) {

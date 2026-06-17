@@ -210,23 +210,28 @@ async function fetchLive(
   f: Filters,
 ): Promise<Row[]> {
   const states = expandStates(f.geo);
-  let q = admin
-    .from("lit_companies")
-    .select(
-      "id, name, domain, website, city, state, country_code, industry, " +
-        "revenue, source_company_key, updated_at",
-    );
-  if (f.industry?.length) q = q.in("industry", f.industry);
-  if (states.length) q = q.in("state", states);
-  // lit_companies stores country_code (ISO-2 'US'/'CA'); map any explicit
-  // country filters to codes via the existing canonicalizer.
-  q = q.limit(MAX_ROWS);
-  const { data, error } = await q;
-  if (error) {
-    console.error("[pulse-explore] live query failed", error);
-    return [];
+  // Pull the live KPIs from lit_companies (shipments_12m / teu_12m /
+  // est_spend_12m / fcl + lcl / top_route_12m) so saved companies
+  // contribute REAL values to the Explorer KPI strip + account table,
+  // not nulls. Paginated for parity with the directory query.
+  const select = "id, name, domain, website, city, state, country_code, " +
+    "industry, revenue, source_company_key, updated_at, " +
+    "shipments_12m, teu_12m, fcl_shipments_12m, lcl_shipments_12m, " +
+    "est_spend_12m, top_route_12m, recent_route, " +
+    "most_recent_shipment_date";
+  const out: Row[] = [];
+  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
+    let q = admin.from("lit_companies").select(select);
+    if (f.industry?.length) q = q.in("industry", f.industry);
+    if (states.length) q = q.in("state", states);
+    q = q.range(from, from + PAGE_SIZE - 1);
+    const { data, error } = await q;
+    if (error) { console.error("[pulse-explore] live page failed", { from, error }); break; }
+    if (!data || data.length === 0) break;
+    for (const r of data) out.push(normalizeLiveRow(r as any));
+    if (data.length < PAGE_SIZE) break;
   }
-  return (data ?? []).map((r: any) => normalizeLiveRow(r));
+  return out;
 }
 
 function normalizeLiveRow(r: any): Row {
@@ -246,11 +251,14 @@ function normalizeLiveRow(r: any): Row {
     vertical: null,
     employee_count: null,
     revenue: r.revenue ?? null,
-    teu: null,
-    shipments: null,
-    lcl: null,
-    value_usd: null,
-    top_dimensions: null,
+    // Real KPIs from lit_companies — populated by the IY refresh path.
+    teu: r.teu_12m ?? null,
+    shipments: r.shipments_12m ?? null,
+    lcl: r.lcl_shipments_12m ?? null,
+    value_usd: r.est_spend_12m ?? null,
+    top_dimensions: r.top_route_12m
+      ? [{ lane: r.top_route_12m, teu: null, percent: null }]
+      : null,
     gp_potential: null,
     opportunity_consolidation_score: 0,
     opportunity_vulnerable_score: 0,

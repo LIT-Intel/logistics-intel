@@ -74,6 +74,7 @@ import PulseMap from '@/features/pulse/PulseMap';
 import PulseTabs from '@/features/pulse/explore/PulseTabs';
 import PulseExploreTab from '@/features/pulse/explore/PulseExploreTab';
 import { UpgradeRequiredInline } from '@/components/common/UpgradeRequired';
+import { useEntitlements } from '@/hooks/useEntitlements';
 
 const PLACEHOLDER_EXAMPLES = [
   'Find marketing directors at SaaS companies in California',
@@ -873,8 +874,15 @@ export default function Pulse() {
 
   const resultCount = results.length;
 
-  // Phase 4 will plumb this from useEntitlements() — see plan Task 34.
-  const exploreEnabled = true;
+  const { entitlements, isPlatformAdmin } = useEntitlements();
+
+  // Phase 4: Pulse Explorer is behind the pulse_explorer_v1 entitlement
+  // flag. Platform admins and any user with the feature enabled (via
+  // lit_feature_flags default OR lit_feature_flag_overrides) see the
+  // Explore tab. Everyone else stays on Search.
+  const exploreEnabled = Boolean(
+    entitlements?.features?.pulse_explorer_v1 || isPlatformAdmin
+  );
 
   return (
     <PulseTabs exploreEnabled={exploreEnabled}>

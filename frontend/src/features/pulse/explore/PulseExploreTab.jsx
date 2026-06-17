@@ -24,6 +24,11 @@ import { downloadCsv } from './exportCsv';
 import { parseExploreQuery, parsedToFilters, hasAnyFilter } from '@/api/pulse-explore-parse';
 import { lookupCoords } from './coordLookup';
 import ExploreQuickCard from './ExploreQuickCard';
+import AnalyticsPanel from './AnalyticsPanel';
+import InsightsPanel from './InsightsPanel';
+import LibraryPanel from './LibraryPanel';
+import LayersPanel from './LayersPanel';
+import { X as XIcon } from 'lucide-react';
 
 const PROMPTS = [
   'Vulnerable incumbents in the Southeast',
@@ -47,11 +52,34 @@ export default function PulseExploreTab() {
   const [resultsOpen, setResultsOpen] = useState(false); // bottom drawer collapsed by default
   const [mapBbox, setMapBbox] = useState(null); // [w,s,e,n] from MapLibre
   const [lassoActive, setLassoActive] = useState(false);
+  const [toolPanel, setToolPanel] = useState(null); // 'analytics' | 'insights' | 'library' | 'layers' | null
+  const [mapStyle, setMapStyle] = useState('alidade_smooth');
 
   const fetchEnabled = hasAnyFilter(state.filters);
   const { data, isLoading, error } = useExploreAccounts(state.filters, null, { enabled: fetchEnabled });
   const rows = data?.rows ?? [];
-  useExploreInsights(rows);
+  const insights = useExploreInsights(rows);
+
+  // Sidebar tool dispatch — opens the corresponding panel or fires an action.
+  const onSidebarSelect = useCallback((t) => {
+    setSidebarTool(t);
+    if (t === 'bookmark') { setViewOpen(true); return; }
+    if (t === 'filter') {
+      // Filter is implicit — chips already render at the top. Close any panel.
+      setToolPanel(null); return;
+    }
+    setToolPanel((cur) => cur === t ? null : t);
+  }, []);
+
+  // Loads a saved map view (filters + map state).
+  const onLoadSelection = useCallback((sel) => {
+    if (!sel) return;
+    setFilters(sel.filters ?? {});
+    if (sel.map_state?.color_mode) setColor(sel.map_state.color_mode);
+    if (sel.map_state?.size_mode) setSize(sel.map_state.size_mode);
+    toast.success(`Loaded view "${sel.name}"`);
+    setToolPanel(null);
+  }, [setFilters, setColor, setSize]);
 
   // Auto-open the results drawer once data arrives (but never close
   // automatically — let the user collapse it manually).
@@ -195,14 +223,28 @@ export default function PulseExploreTab() {
       <FilterChipRow filters={state.filters} onChange={setFilters} />
       <div className="flex flex-1 min-h-0">
         <div className="hidden sm:block">
-          <ExploreSidebar
-            active={sidebarTool}
-            onSelect={(t) => {
-              setSidebarTool(t);
-              if (t === 'bookmark') setViewOpen(true);
-            }}
-          />
+          <ExploreSidebar active={toolPanel ?? sidebarTool} onSelect={onSidebarSelect} />
         </div>
+
+        {/* Tool panel — slides in from the sidebar */}
+        {toolPanel && (
+          <div className="hidden md:flex flex-col w-[320px] shrink-0 border-r border-slate-200 bg-white">
+            <div className="flex items-center justify-end px-2 py-1 border-b border-slate-100">
+              <button
+                type="button"
+                onClick={() => setToolPanel(null)}
+                aria-label="Close panel"
+                className="p-1 rounded hover:bg-slate-100 text-slate-500"
+              >
+                <XIcon size={14} />
+              </button>
+            </div>
+            {toolPanel === 'analytics' && <AnalyticsPanel rows={rows} insights={insights} />}
+            {toolPanel === 'insights' && <InsightsPanel rows={rows} insights={insights} />}
+            {toolPanel === 'library' && <LibraryPanel onLoadSelection={onLoadSelection} />}
+            {toolPanel === 'layers' && <LayersPanel mapStyle={mapStyle} onStyleChange={setMapStyle} />}
+          </div>
+        )}
         <div className="flex-1 min-w-0 min-h-0 relative flex flex-col">
           {parsing && (
             <div className="absolute inset-x-0 top-0 z-30 bg-cyan-50 text-cyan-800 text-xs py-1.5 text-center border-b border-cyan-200">
@@ -232,6 +274,7 @@ export default function PulseExploreTab() {
               onBboxChange={setMapBbox}
               lassoActive={lassoActive}
               onLassoSelect={onLassoSelect}
+              mapStyle={mapStyle}
             />
             {/* Right-side floating selection buttons — labels hide on xs */}
             {fetchEnabled && (
