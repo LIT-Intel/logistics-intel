@@ -62,28 +62,29 @@ const SectorLandingPage = lazy(() => import("@/pages/landing/SectorLandingPage")
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
-  const { user, loading, isSuperAdmin, orgId } = useAuth();
+  const { user, loading, isSuperAdmin } = useAuth();
   const location = useLocation();
   if (DEMO_MODE) return children;
   if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
 
   const meta = user?.user_metadata || {};
-  // Primary: explicit flag written at signup / after onboarding
-  // Secondary: account < 2 h old without an explicit true = treat as new signup
+  // Primary: explicit flag written at signup / after onboarding.
+  // Secondary: account < 2 h old without an explicit true = treat as new signup.
+  //
+  // NOTE: do NOT bypass the gate based on org_members membership. Every
+  // regular signup auto-gets an org_members row via the
+  // `on_new_user_org_bootstrap` DB trigger BEFORE going through the 6-step
+  // wizard — the wizard customizes that auto-created workspace. Invited
+  // users already have onboarding_completed=true written server-side by
+  // accept-workspace-invite / signup-with-invite, so the metadata gate
+  // routes them straight to the dashboard without needing a bypass here.
   const accountAgeHours = (Date.now() - new Date(user?.created_at || 0).getTime()) / 3_600_000;
   const onboardingDone =
     meta.onboarding_completed === true ||
     (meta.onboarding_completed !== false && accountAgeHours >= 2);
 
-  // Workspace membership IS onboarding. Invited users who joined via
-  // /accept-invite have an active org_members row; they should bypass the
-  // new-org wizard regardless of the onboarding_completed metadata race.
-  // This also covers the brief window where updateUser() hasn't propagated
-  // to AuthProvider yet after a successful invite acceptance.
-  const hasWorkspace = Boolean(orgId);
-
-  if (!isSuperAdmin && !onboardingDone && !hasWorkspace && location.pathname !== "/onboarding") {
+  if (!isSuperAdmin && !onboardingDone && location.pathname !== "/onboarding") {
     return <Navigate to="/onboarding" replace />;
   }
   return children;

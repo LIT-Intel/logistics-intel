@@ -66,33 +66,19 @@ export default function AuthCallback() {
           return;
         }
 
-        // Bulletproof: if the user already has a workspace membership, they're
-        // done with onboarding regardless of metadata. Joining a workspace IS
-        // onboarding. Handles the case where email confirmation arrived AFTER
-        // the user already accepted an invite (server-side metadata write may
-        // not have propagated to this JWT yet).
-        let hasWorkspaceMembership = false;
-        try {
-          const { data: memberships } = await auth
-            .from('org_members')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('status', 'active')
-            .limit(1);
-          hasWorkspaceMembership = Array.isArray(memberships) && memberships.length > 0;
-        } catch {
-          // If the query fails (RLS or network), fall through to metadata check.
-          hasWorkspaceMembership = false;
-        }
-
-        if (hasWorkspaceMembership) {
-          // Mark onboarding complete and route straight to the dashboard.
-          if (meta.onboarding_completed !== true) {
-            await auth.auth.updateUser({ data: { onboarding_completed: true } });
-          }
-          navigate(nextParam && !nextParam.includes('/onboarding') ? nextParam : '/app/dashboard', { replace: true });
-          return;
-        }
+        // NOTE: do NOT short-circuit on "user has org_members row" here.
+        // Every regular signup auto-gets an org_members row via the
+        // `on_new_user_org_bootstrap` DB trigger BEFORE going through the
+        // 6-step onboarding wizard. The wizard customizes the auto-created
+        // workspace (name, industry, plan, team). Skipping the gate based
+        // on membership breaks regular signup.
+        //
+        // Invite flows already write onboarding_completed=true server-side
+        // (accept-workspace-invite via admin.auth.admin.updateUserById;
+        // signup-with-invite via createUser's user_metadata). That value
+        // is present in the JWT minted by email-confirmation verifyOtp,
+        // so the metadata gate below correctly routes invitees to the
+        // dashboard while regular signups go to /onboarding.
 
         // Primary: flag written at registration via signUp options.data
         // Secondary: account < 30 min old = first confirmation click
