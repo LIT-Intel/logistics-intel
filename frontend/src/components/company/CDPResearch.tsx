@@ -173,6 +173,7 @@ type CDPResearchProps = {
   onRefresh: () => void;
   onShareHtml: () => void;
   onExportPdf: () => void;
+  onExportExecutivePdf?: () => void;
   shareLoading?: boolean;
   exportLoading?: boolean;
   navigate?: (path: string) => void;
@@ -313,6 +314,7 @@ function BriefHeader({
   onRefresh: () => void;
   onShareHtml: () => void;
   onExportPdf: () => void;
+  onExportExecutivePdf?: () => void;
   onShareEmail: () => void;
   onExpand: () => void;
   expanded?: boolean;
@@ -413,6 +415,15 @@ function BriefHeader({
           onClick={onExportPdf}
           disabled={exportLoading || !hasReport}
         />
+        {onExportExecutivePdf && (
+          <BriefActionButton
+            icon={exportLoading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Sparkles className="h-2.5 w-2.5" />}
+            label="Executive PDF"
+            onClick={onExportExecutivePdf}
+            disabled={exportLoading || !hasReport}
+            highlight
+          />
+        )}
         {!expanded && (
           <BriefActionButton
             icon={<Maximize2 className="h-2.5 w-2.5" />}
@@ -1961,11 +1972,13 @@ function BriefActionButton({
   label,
   onClick,
   disabled,
+  highlight,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  highlight?: boolean;
 }) {
   return (
     <button
@@ -1974,9 +1987,9 @@ function BriefActionButton({
       disabled={disabled}
       className="font-display inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
       style={{
-        background: "rgba(255,255,255,0.08)",
-        borderColor: "rgba(255,255,255,0.15)",
-        color: "#F8FAFC",
+        background: highlight ? "#00E0FF" : "rgba(255,255,255,0.08)",
+        borderColor: highlight ? "#00E0FF" : "rgba(255,255,255,0.15)",
+        color: highlight ? "#020617" : "#F8FAFC",
       }}
     >
       {icon}
