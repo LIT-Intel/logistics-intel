@@ -24,6 +24,7 @@ export type FeatureKey =
   | "company_page"
   | "campaign_builder"
   | "pulse"
+  | "pulse_explorer_v1"
   | "rfp_studio"
   | "lead_prospecting"
   | "enrichment"
