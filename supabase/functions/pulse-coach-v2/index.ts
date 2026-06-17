@@ -659,7 +659,50 @@ serve(async (req) => {
         status: 400, headers: { ...corsHeaders(), "Content-Type": "application/json" },
       });
     }
+
+    // Server-side usage gate — every coach answer hits OpenAI, so trial
+    // users could spam it and burn budget. check_usage_limit consults
+    // plans.pulse_ai_limit per the caller's plan; platform admins bypass.
+    // free_trial=5/mo, starter=0/mo, growth=100/mo, scale=500/mo,
+    // enterprise=unlimited. Returns LIMIT_EXCEEDED on overflow.
+    const { data: orgRow } = await supa
+      .from("org_members")
+      .select("org_id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .order("joined_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const orgId = orgRow?.org_id ?? null;
+
+    const { data: gate, error: gateErr } = await supa.rpc("check_usage_limit", {
+      p_org_id: orgId,
+      p_user_id: userId,
+      p_feature_key: "pulse_ai",
+      p_quantity: 1,
+    });
+    if (gateErr) {
+      console.warn("[pulse-coach-v2] usage gate failed", gateErr.message);
+    } else if (gate && (gate as any).ok === false) {
+      return new Response(JSON.stringify(gate), {
+        status: 403,
+        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      });
+    }
+
     const result = await answerQuestion(ctx, question);
+
+    // Record consumption so the counter increments toward the cap.
+    // Best-effort — if the ledger insert fails we don't fail the request.
+    await supa.from("lit_usage_ledger").insert({
+      org_id: orgId,
+      user_id: userId,
+      feature_key: "pulse_ai",
+      action_key: "coach_answer_question",
+      quantity: 1,
+      metadata: { question_chars: question.length },
+    });
+
     return new Response(JSON.stringify({
       ok: true, mode, question,
       ...result,

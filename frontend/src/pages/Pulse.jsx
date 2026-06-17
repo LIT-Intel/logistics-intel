@@ -876,18 +876,15 @@ export default function Pulse() {
 
   const { entitlements, isPlatformAdmin, isChecking } = useEntitlements();
 
-  // Phase 4: Pulse Explorer is behind the pulse_explorer_v1 entitlement
-  // flag. Platform admins and any user with the feature enabled (via
-  // lit_feature_flags default OR lit_feature_flag_overrides) see the
-  // Explore tab. Everyone else stays on Search.
-  //
-  // While entitlements are still loading (~2-3s on cold mount), treat
-  // exploreEnabled as TRUE so users who hit /app/pulse land on Explorer
-  // immediately instead of seeing Search flash. Once the entitlement
-  // query resolves, the real answer takes over.
-  const exploreEnabled = isChecking
-    ? true
-    : Boolean(entitlements?.features?.pulse_explorer_v1 || isPlatformAdmin);
+  // Phase 4: Pulse Explorer is gated on plan_entitlements.pulse_explorer_v1
+  // (free_trial=false, all paid tiers=true). Platform admins always see
+  // the tab. While entitlements are still resolving on cold mount,
+  // exploreEnabled is FALSE — we'd rather show a brief Search-tab flash
+  // than leak the Explorer to trial users who shouldn't see it. Once
+  // the snapshot lands, the real entitlement decides.
+  const exploreEnabled = Boolean(
+    entitlements?.features?.pulse_explorer_v1 || isPlatformAdmin
+  );
 
   return (
     <PulseTabs exploreEnabled={exploreEnabled}>
