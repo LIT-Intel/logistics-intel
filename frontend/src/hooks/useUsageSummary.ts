@@ -14,6 +14,10 @@ const FEATURE_TO_LIMIT_KEY: Record<string, keyof typeof PLAN_LIMITS["free_trial"
   saved_company: "command_center_saves_per_month",
   pulse_ai_report: "pulse_runs_per_month",
   pulse_brief: "pulse_runs_per_month",
+  // Pulse Explorer search uses its own monthly cap (public.plans.pulse_search_limit),
+  // tracked separately from pulse_brief/pulse_ai. Edge fn `pulse-search` writes
+  // `pulse_search` to lit_usage_ledger via consume_usage on each successful run.
+  pulse_search: "pulse_search_per_month",
   contact_enrichment: "enrichment_credits_per_month",
 };
 
@@ -39,6 +43,7 @@ const TRACKED_FEATURES: Array<{ key: string; label: string }> = [
   { key: "company_search", label: "Searches" },
   { key: "company_profile_view", label: "Company refreshes" },
   { key: "saved_company", label: "Saved companies" },
+  { key: "pulse_search", label: "Pulse searches" },
   { key: "pulse_ai_report", label: "Pulse AI runs" },
   { key: "contact_enrichment", label: "Contact enrichments" },
 ];

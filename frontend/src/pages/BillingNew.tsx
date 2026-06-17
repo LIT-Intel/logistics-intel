@@ -27,6 +27,7 @@ import {
   type PlanCode,
 } from '@/lib/planLimits';
 import { useEntitlements, FEATURE_LABELS, type FeatureKey } from '@/lib/usage';
+import { useUsageSummary } from '@/hooks/useUsageSummary';
 import { usePartnerStatus } from '@/lib/affiliate';
 import { CheckCircle2, AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
 
@@ -312,6 +313,18 @@ export default function Billing() {
   // ── Real entitlements (single source of truth) ─────────────────────
   const { entitlements } = useEntitlements();
 
+  // Pulse Explorer search is tracked separately in lit_usage_ledger
+  // (feature_key='pulse_search', written by the pulse-search edge fn).
+  // get_entitlements RPC doesn't yet roll up pulse_search, so read it
+  // from useUsageSummary (calendar-month ledger aggregate) and append a
+  // Pulse meter below the get-entitlements rows. Same plan-config caps
+  // (plans.pulse_search_limit ⇄ planLimits.pulse_search_per_month).
+  const pulseUsage = useUsageSummary();
+  const pulseSearchRow = useMemo(
+    () => pulseUsage.rows.find((r) => r.featureKey === 'pulse_search') || null,
+    [pulseUsage.rows],
+  );
+
   // ── Real partner role for AffiliateTieIn ───────────────────────────
   const partner = usePartnerStatus(user?.id || null);
 
@@ -484,15 +497,27 @@ export default function Billing() {
       'pulse_brief',
       'export_pdf',
     ];
-    return keys
+    const base = keys
       .filter((k) => k in entitlements.limits || k in entitlements.used)
-      .map((k) => ({
+      .map<UsageMeter>((k) => ({
         key: k,
         label: capitalize(FEATURE_LABELS[k]?.plural || k),
         used: entitlements.used[k] ?? 0,
         limit: entitlements.limits[k] ?? null,
       }));
-  }, [entitlements]);
+    // Append Pulse search (sourced from lit_usage_ledger via
+    // useUsageSummary). Only show once the ledger read has resolved so
+    // we don't briefly render 0/limit before real numbers arrive.
+    if (pulseSearchRow && !pulseUsage.loading) {
+      base.push({
+        key: 'pulse_search',
+        label: capitalize(FEATURE_LABELS.pulse_search.plural),
+        used: pulseSearchRow.used,
+        limit: pulseSearchRow.limit,
+      });
+    }
+    return base;
+  }, [entitlements, pulseSearchRow, pulseUsage.loading]);
 
   // Usage warnings for BillingAlerts (≥80% of any limited counter)
   const usageWarnings = useMemo(() => {
