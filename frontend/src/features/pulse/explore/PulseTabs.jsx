@@ -22,11 +22,21 @@ function Tab({ active, onClick, icon, children }) {
 
 export default function PulseTabs({ children, exploreEnabled }) {
   const [sp, setSp] = useSearchParams();
-  const tab = sp.get('tab') === 'explore' && exploreEnabled ? 'explore' : 'search';
+  // Explore is the primary view when the user has access. Search is
+  // reachable via ?tab=search. Old links with ?tab=explore still work.
+  const requested = sp.get('tab');
+  const tab = exploreEnabled
+    ? (requested === 'search' ? 'search' : 'explore')
+    : 'search';
   const setTab = (t) => {
     setSp((prev) => {
       const next = new URLSearchParams(prev);
-      if (t === 'search') next.delete('tab'); else next.set('tab', t);
+      // Default (explore) is bare URL; non-default goes in the query.
+      if (exploreEnabled) {
+        if (t === 'explore') next.delete('tab'); else next.set('tab', t);
+      } else {
+        if (t === 'search') next.delete('tab'); else next.set('tab', t);
+      }
       return next;
     }, { replace: true });
   };
@@ -34,10 +44,10 @@ export default function PulseTabs({ children, exploreEnabled }) {
     <div className="flex flex-col h-full">
       <div className="border-b border-slate-200 bg-white px-4 pt-3">
         <div className="flex gap-1">
-          <Tab active={tab === 'search'} onClick={() => setTab('search')} icon={<Search size={14} />}>Search</Tab>
           {exploreEnabled && (
             <Tab active={tab === 'explore'} onClick={() => setTab('explore')} icon={<Compass size={14} />}>Explore</Tab>
           )}
+          <Tab active={tab === 'search'} onClick={() => setTab('search')} icon={<Search size={14} />}>Search</Tab>
         </div>
       </div>
       <div className="flex-1 min-h-0">

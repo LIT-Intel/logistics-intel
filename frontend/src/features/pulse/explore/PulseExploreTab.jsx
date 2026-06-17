@@ -16,6 +16,8 @@ import IndustryLegendOverlay from './IndustryLegendOverlay';
 import ExploreMapTools from './ExploreMapTools';
 import ExploreMap from './ExploreMapMaplibre';
 import ExploreAccountTable from './ExploreAccountTable';
+import ExploreAccountCards from './ExploreAccountCards';
+import { Filter, Bookmark, Layers as LayersIcon, BarChart3, Sparkles as SparklesIcon, Library as LibraryIcon } from 'lucide-react';
 import SelectionActionBar from './SelectionActionBar';
 import BulkRefreshModal from './BulkRefreshModal';
 import SaveAsViewModal from './SaveAsViewModal';
@@ -221,29 +223,80 @@ export default function PulseExploreTab() {
         onMapMode={setMapMode}
       />
       <FilterChipRow filters={state.filters} onChange={setFilters} />
+
+      {/* Mobile-only horizontal tool bar — the desktop vertical sidebar
+          is `hidden sm:block`, leaving mobile users without access to
+          filters/analytics/insights/layers. This bar covers that gap. */}
+      <MobileToolBar
+        active={toolPanel ?? sidebarTool}
+        onSelect={onSidebarSelect}
+      />
+
       <div className="flex flex-1 min-h-0">
         <div className="hidden sm:block">
           <ExploreSidebar active={toolPanel ?? sidebarTool} onSelect={onSidebarSelect} />
         </div>
 
-        {/* Tool panel — slides in from the sidebar */}
+        {/* Tool panel — desktop renders as a 320px side rail; mobile
+            renders as an 85vh bottom sheet with scrim. Both share the
+            same content (renderToolPanel). */}
         {toolPanel && (
-          <div className="hidden md:flex flex-col w-[320px] shrink-0 border-r border-slate-200 bg-white">
-            <div className="flex items-center justify-end px-2 py-1 border-b border-slate-100">
+          <>
+            <div className="hidden md:flex flex-col w-[320px] shrink-0 border-r border-slate-200 bg-white">
+              <div className="flex items-center justify-end px-2 py-1 border-b border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setToolPanel(null)}
+                  aria-label="Close panel"
+                  className="p-1 rounded hover:bg-slate-100 text-slate-500"
+                >
+                  <XIcon size={14} />
+                </button>
+              </div>
+              {renderToolPanel({
+                toolPanel,
+                rows,
+                insights,
+                filters: state.filters,
+                onLoadSelection,
+                mapStyle,
+                setMapStyle,
+              })}
+            </div>
+
+            {/* Mobile bottom sheet */}
+            <div className="md:hidden fixed inset-0 z-50 flex items-end">
               <button
                 type="button"
-                onClick={() => setToolPanel(null)}
                 aria-label="Close panel"
-                className="p-1 rounded hover:bg-slate-100 text-slate-500"
-              >
-                <XIcon size={14} />
-              </button>
+                onClick={() => setToolPanel(null)}
+                className="absolute inset-0 bg-slate-950/40"
+              />
+              <div className="relative w-full bg-white rounded-t-2xl shadow-2xl flex flex-col" style={{ height: '85vh' }}>
+                <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
+                  <div className="w-9 h-1 rounded-full bg-slate-200 mx-auto absolute left-0 right-0 top-1.5" />
+                  <span className="text-xs font-semibold text-slate-700 capitalize ml-1">{toolPanel}</span>
+                  <button
+                    type="button"
+                    onClick={() => setToolPanel(null)}
+                    aria-label="Close panel"
+                    className="p-1.5 rounded hover:bg-slate-100 text-slate-500"
+                  >
+                    <XIcon size={16} />
+                  </button>
+                </div>
+                {renderToolPanel({
+                  toolPanel,
+                  rows,
+                  insights,
+                  filters: state.filters,
+                  onLoadSelection,
+                  mapStyle,
+                  setMapStyle,
+                })}
+              </div>
             </div>
-            {toolPanel === 'analytics' && <AnalyticsPanel rows={rows} insights={insights} />}
-            {toolPanel === 'insights' && <InsightsPanel rows={rows} insights={insights} />}
-            {toolPanel === 'library' && <LibraryPanel onLoadSelection={onLoadSelection} />}
-            {toolPanel === 'layers' && <LayersPanel mapStyle={mapStyle} onStyleChange={setMapStyle} />}
-          </div>
+          </>
         )}
         <div className="flex-1 min-w-0 min-h-0 relative flex flex-col">
           {parsing && (
@@ -383,12 +436,24 @@ export default function PulseExploreTab() {
                   onAddToCampaign={() => toast('Add to campaign — coming in next polish pass')}
                 />
                 {fetchEnabled ? (
-                  <ExploreAccountTable
-                    rows={rows}
-                    selection={state.selection}
-                    onToggle={toggleSelection}
-                    onRowClick={setActiveRow}
-                  />
+                  <>
+                    <div className="hidden md:flex flex-col flex-1 min-h-0">
+                      <ExploreAccountTable
+                        rows={rows}
+                        selection={state.selection}
+                        onToggle={toggleSelection}
+                        onRowClick={setActiveRow}
+                      />
+                    </div>
+                    <div className="md:hidden flex flex-col flex-1 min-h-0">
+                      <ExploreAccountCards
+                        rows={rows}
+                        selection={state.selection}
+                        onToggle={toggleSelection}
+                        onRowClick={setActiveRow}
+                      />
+                    </div>
+                  </>
                 ) : (
                   <div className="flex-1 grid place-items-center text-slate-400 text-sm">
                     <div className="flex items-center gap-2"><Compass size={16} /> Results appear here after you search</div>
@@ -433,6 +498,51 @@ export default function PulseExploreTab() {
         onClose={() => setSaveListOpen(false)}
         companyIds={state.selection ?? []}
       />
+    </div>
+  );
+}
+
+// Shared panel-content renderer so the desktop side rail and the mobile
+// bottom sheet stay in lockstep.
+function renderToolPanel({ toolPanel, rows, insights, filters, onLoadSelection, mapStyle, setMapStyle }) {
+  if (toolPanel === 'analytics') return <AnalyticsPanel rows={rows} insights={insights} />;
+  if (toolPanel === 'insights') return <InsightsPanel rows={rows} insights={insights} filters={filters} />;
+  if (toolPanel === 'library') return <LibraryPanel onLoadSelection={onLoadSelection} />;
+  if (toolPanel === 'layers') return <LayersPanel mapStyle={mapStyle} onStyleChange={setMapStyle} />;
+  return null;
+}
+
+const MOBILE_TOOLS = [
+  { id: 'filter', icon: Filter, label: 'Filters' },
+  { id: 'analytics', icon: BarChart3, label: 'Analytics' },
+  { id: 'insights', icon: SparklesIcon, label: 'Coach' },
+  { id: 'library', icon: LibraryIcon, label: 'Library' },
+  { id: 'layers', icon: LayersIcon, label: 'Layers' },
+  { id: 'bookmark', icon: Bookmark, label: 'Save view' },
+];
+
+function MobileToolBar({ active, onSelect }) {
+  return (
+    <div className="sm:hidden flex items-center gap-1 overflow-x-auto bg-[#0F1828] border-b border-slate-800/60 px-2 py-1.5 scrollbar-hide">
+      {MOBILE_TOOLS.map((t) => {
+        const Icon = t.icon;
+        const isActive = active === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onSelect?.(t.id)}
+            className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium ${
+              isActive
+                ? 'bg-cyan-500/20 text-cyan-300'
+                : 'text-slate-300 hover:bg-slate-800/50'
+            }`}
+          >
+            <Icon size={13} />
+            {t.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -2,12 +2,16 @@
 // toggles. Style switches are emitted up via onStyleChange; the map
 // component re-binds the style.
 
-import { Sun, Moon, Mountain, Layers } from 'lucide-react';
+import { Sun, Moon, Satellite, Layers } from 'lucide-react';
 
+// All three style IDs map directly to Stadia tile paths:
+// https://tiles.stadiamaps.com/tiles/<id>/{z}/{x}/{y}.png
+// "outdoors" was removed — it doesn't exist on Stadia, so the panel
+// looked broken when selected. Satellite is the natural third option.
 const STYLES = [
   { id: 'alidade_smooth', label: 'Light', icon: Sun, desc: 'Default — clean labels, easy to read' },
   { id: 'alidade_smooth_dark', label: 'Dark', icon: Moon, desc: 'Dark mode for low-light review' },
-  { id: 'outdoors', label: 'Outdoors', icon: Mountain, desc: 'Terrain detail — useful for trade-lane geography' },
+  { id: 'alidade_satellite', label: 'Satellite', icon: Satellite, desc: 'Aerial imagery — port + terminal context' },
 ];
 
 export default function LayersPanel({ mapStyle, onStyleChange }) {

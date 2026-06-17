@@ -132,10 +132,18 @@ export default function ExploreMapMaplibre({
   // Expose bbox to parent on every move.
   useEffect(() => { onBboxChange?.(bbox); }, [bbox, onBboxChange]);
 
+  // Bump on every map.setStyle() so the heatmap / marker effects below
+  // know to re-attach their sources & layers (setStyle wipes everything).
+  const [styleEpoch, setStyleEpoch] = useState(0);
+
   // React to mapStyle prop changes by swapping the entire style.
   useEffect(() => {
     if (!ready || !mapRef.current) return;
-    mapRef.current.setStyle(makeStyleSpec(mapStyle));
+    const map = mapRef.current;
+    map.setStyle(makeStyleSpec(mapStyle));
+    const onLoad = () => setStyleEpoch((e) => e + 1);
+    map.once('styledata', onLoad);
+    return () => { map.off('styledata', onLoad); };
   }, [mapStyle, ready]);
 
   // 1. Initialize the map once.
@@ -247,7 +255,7 @@ export default function ExploreMapMaplibre({
       if (m.getLayer(HEAT_LAYER)) m.removeLayer(HEAT_LAYER);
       if (m.getSource(HEAT_SOURCE)) m.removeSource(HEAT_SOURCE);
     };
-  }, [ready, mapMode, points, sizeMode]);
+  }, [ready, mapMode, points, sizeMode, styleEpoch]);
 
   // 4. Bubble/cluster markers.
   useEffect(() => {
@@ -278,7 +286,7 @@ export default function ExploreMapMaplibre({
         .addTo(map);
       markersRef.current.push(marker);
     }
-  }, [ready, cluster, bbox, zoom, colorMode, sizeMode, maxValue, selSet, onBubbleClick, mapMode]);
+  }, [ready, cluster, bbox, zoom, colorMode, sizeMode, maxValue, selSet, onBubbleClick, mapMode, styleEpoch]);
 
   // 5. Lasso rectangle drag — v1 uses a screen-space rectangle for
   // simplicity. While lassoActive, the map's drag pan is disabled and
