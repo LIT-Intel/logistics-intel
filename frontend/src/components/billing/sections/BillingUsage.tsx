@@ -2,7 +2,7 @@
 // useEntitlements() snapshot (backed by get-entitlements). Unknown
 // categories render the design's empty state — never fabricated.
 
-import { Search, Bookmark, Mail, FileSearch, FileBarChart2, Sparkles, Zap, BookOpen } from 'lucide-react';
+import { Search, Bookmark, Mail, FileSearch, FileBarChart2, Sparkles, Zap, BookOpen, Radar } from 'lucide-react';
 import type { FeatureKey } from '@/lib/usage';
 
 export interface UsageMeter {
@@ -19,6 +19,7 @@ const DEFAULT_ICON: Record<string, React.ComponentType<{ className?: string }>> 
   campaign_send: Mail,
   company_profile_view: FileSearch,
   pulse_brief: FileBarChart2,
+  pulse_search: Radar,
   contact_enrichment: Sparkles,
   export_pdf: BookOpen,
   ai_brief: Zap,
