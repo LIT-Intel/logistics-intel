@@ -129,19 +129,18 @@ const nextConfig = {
     // redirect to the canonical URL. Fetched at build time.
     const sanityAliasRedirects = await fetchSanityAliasRedirects();
 
-    // Pascal-case marketing URLs Google indexed before the canonical
-    // lowercase routes were set. 308 (permanent + method-preserving) so
-    // GSC retires the old URLs and consolidates link equity onto the
-    // lowercase canonicals. /About, /Solutions, /Resources have live
-    // lowercase counterparts; /Platform, /Search, /Billing do not —
-    // route those to the homepage (sensible parent) since they were
-    // never real marketing pages in the first place.
+    // Note (2026-06-17): the prior PascalCase block also tried to redirect
+    // /About → /about, /Solutions → /solutions, /Resources → /resources.
+    // Vercel matches the `source` case-insensitively (path-to-regexp's
+    // default), so /solutions matched /Solutions, redirected to /solutions,
+    // re-matched, and infinite-308-looped. /about, /solutions, /resources,
+    // and /solutions/* were all unreachable in production for as long as
+    // those rules existed. Vercel already normalizes path casing on hits,
+    // so those PascalCase rules bought nothing for GSC and broke production.
+    //
+    // The /Platform, /Search, /Billing rules were kept because they target
+    // distinct destinations and don't collide with their own sources.
     const pascalCaseRedirects = [
-      { source: "/About", destination: "/about", permanent: true },
-      { source: "/About/:path*", destination: "/about/:path*", permanent: true },
-      { source: "/Solutions", destination: "/solutions", permanent: true },
-      { source: "/Solutions/:path*", destination: "/solutions/:path*", permanent: true },
-      { source: "/Resources", destination: "/resources", permanent: true },
       { source: "/Platform", destination: "/", permanent: true },
       { source: "/Search", destination: "/", permanent: true },
       { source: "/Billing", destination: "/", permanent: true },

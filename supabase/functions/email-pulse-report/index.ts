@@ -84,6 +84,41 @@ serve(async (req) => {
   const { data: { user }, error: authError } = await userClient.auth.getUser();
   if (authError || !user) return json({ error: "unauthorized" }, 401);
 
+  // Server-side gate via the existing `export_pdf` feature key, which
+  // maps to plans.exports_per_month: free=0 / starter=10 / growth=50 /
+  // scale=100 / enterprise=unlimited. Without this, any authenticated
+  // trial user could spam Resend through LIT's account.
+  const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (supabaseServiceRoleKey) {
+    const admin = createClient(supabaseUrl, supabaseServiceRoleKey);
+    const { data: orgRow } = await admin
+      .from("org_members")
+      .select("org_id")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .order("joined_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const orgId = (orgRow as any)?.org_id ?? null;
+    const { data: gate, error: gateErr } = await admin.rpc("check_usage_limit", {
+      p_org_id: orgId,
+      p_user_id: user.id,
+      p_feature_key: "export_pdf",
+      p_quantity: 1,
+    });
+    if (!gateErr && gate && (gate as any).ok === false) {
+      return json(gate as Record<string, unknown>, 403);
+    }
+    // Record consumption upfront so concurrent sends can't race past the cap.
+    await admin.from("lit_usage_ledger").insert({
+      org_id: orgId,
+      user_id: user.id,
+      feature_key: "export_pdf",
+      action_key: "pulse_report_email",
+      quantity: 1,
+    });
+  }
+
   let body: Record<string, unknown>;
   try {
     body = await req.json();
