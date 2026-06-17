@@ -130,6 +130,7 @@ function buildDirectoryQueryBase(admin: any, f: Filters) {
         "latitude, longitude, " +
         "industry, vertical, employee_count, revenue, teu, shipments, lcl, value_usd, " +
         "top_dimensions, top_forwarders, gp_potential, " +
+        "consignee_email_1, consignee_phone_1, " +
         "opportunity_consolidation_score, opportunity_vulnerable_score, " +
         "opportunity_velocity_score, opportunity_composite_score, " +
         "last_opportunity_recompute_at",
@@ -211,6 +212,12 @@ function normalizeDirectoryRow(r: any): Row {
     top_dimensions: r.top_dimensions ?? null,
     top_forwarders: r.top_forwarders ?? null,
     gp_potential: r.gp_potential ?? null,
+    // DCS seed contact data — surfaces in the QuickCard. Live-only
+    // rows don't have these (lit_companies has no consignee_*),
+    // so the mergeAndDedup pass preserves whatever the directory
+    // brought in.
+    consignee_email_1: r.consignee_email_1 ?? null,
+    consignee_phone_1: r.consignee_phone_1 ?? null,
     opportunity_consolidation_score: Number(r.opportunity_consolidation_score ?? 0),
     opportunity_vulnerable_score: Number(r.opportunity_vulnerable_score ?? 0),
     opportunity_velocity_score: Number(r.opportunity_velocity_score ?? 0),
@@ -323,6 +330,10 @@ function mergeAndDedup(directory: Row[], live: Row[]): Row[] {
       top_dimensions: existing.top_dimensions ?? dRow.top_dimensions,
       gp_potential: existing.gp_potential ?? dRow.gp_potential,
       employee_count: existing.employee_count ?? dRow.employee_count,
+      // Directory contact wins (lit_companies doesn't carry these),
+      // so saved-then-matched-back-to-directory rows surface contacts.
+      consignee_email_1: existing.consignee_email_1 ?? (dRow as any).consignee_email_1 ?? null,
+      consignee_phone_1: existing.consignee_phone_1 ?? (dRow as any).consignee_phone_1 ?? null,
       opportunity_consolidation_score:
         existing.opportunity_consolidation_score || dRow.opportunity_consolidation_score,
       opportunity_vulnerable_score:

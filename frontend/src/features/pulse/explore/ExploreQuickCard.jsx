@@ -10,8 +10,9 @@
 //   2. Freshness chip  (Live · 2h ago | Saved · 14d ago | Directory)
 //   3. Opportunity     (top 2 chips: type · score)
 //   4. KPI strip       (TEU · Shipments · Revenue · Employees)
-//   5. Top dimensions  (top 2 lanes + top forwarder, chip-style)
-//   6. Actions         (Open in Command Center · Save to list · Refresh)
+//   5. Top Origin → Destination  (top 2 lanes + top forwarder, chip-style)
+//   6. Contact (from DCS seed: consignee_email_1 + consignee_phone_1)
+//   7. Actions         (Open in Command Center · Save to list · Refresh)
 
 import { useNavigate } from 'react-router-dom';
 import {
@@ -221,10 +222,37 @@ export default function ExploreQuickCard({ row, onClose, onSaveToList }) {
           </div>
         </section>
 
-        {/* Top dimensions */}
+        {/* Contact details — pulled from DCS consignee_email_1 / phone fields
+             when the directory row has them. Hidden when both are blank so
+             we don't show a dead "Contact" section. */}
+        {(row.consignee_email_1 || row.consignee_phone_1) && (
+          <section className="border-b border-slate-100 px-4 py-3">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">Contact</div>
+            <div className="space-y-1 text-[12px]">
+              {row.consignee_email_1 && (
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-slate-400 shrink-0">@</span>
+                  <a href={`mailto:${row.consignee_email_1}`} className="text-cyan-700 hover:underline truncate">
+                    {row.consignee_email_1}
+                  </a>
+                </div>
+              )}
+              {row.consignee_phone_1 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-400 shrink-0">☎</span>
+                  <a href={`tel:${row.consignee_phone_1}`} className="text-slate-700 hover:underline">
+                    {row.consignee_phone_1}
+                  </a>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Top Origin → Destination */}
         {(lanes.length > 0 || topForwarder) && (
           <section className="border-b border-slate-100 px-4 py-3">
-            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">Top dimensions</div>
+            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">Top Origin → Destination</div>
             <div className="flex flex-wrap gap-1">
               {lanes.map((l, i) => <LaneChip key={`l${i}`} lane={l} />)}
               {topForwarder && <ForwarderChip name={topForwarder.name} />}
