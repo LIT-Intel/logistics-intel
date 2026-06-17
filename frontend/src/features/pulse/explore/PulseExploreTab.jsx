@@ -23,7 +23,7 @@ import BulkRefreshModal from './BulkRefreshModal';
 import SaveAsViewModal from './SaveAsViewModal';
 import BulkSaveToListModal from './BulkSaveToListModal';
 import { downloadCsv } from './exportCsv';
-import { parseExploreQuery, parsedToFilters, hasAnyFilter } from '@/api/pulse-explore-parse';
+import { parseExploreQuery, parsedToFilters, hasAnyFilter, looksLikeCompanyName } from '@/api/pulse-explore-parse';
 import { lookupCoords } from './coordLookup';
 import ExploreQuickCard from './ExploreQuickCard';
 import AnalyticsPanel from './AnalyticsPanel';
@@ -139,6 +139,11 @@ export default function PulseExploreTab() {
             ? `Search parsed (${Math.round(conf * 100)}% confidence)`
             : 'Search parsed'
         );
+      } else if (looksLikeCompanyName(text)) {
+        // LLM didn't pick anything but the query looks like a brand —
+        // treat as a literal company-name lookup.
+        setFilters({ name: text });
+        toast.success(`Searching companies matching "${text}"`);
       } else {
         toast(`Couldn't extract filters from "${text}" — try wording like "vulnerable incumbents in the southeast"`);
       }

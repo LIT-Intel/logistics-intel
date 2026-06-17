@@ -12,6 +12,9 @@ function chipLabel(category, value) {
 
 function flattenFilters(filters) {
   const chips = [];
+  if (filters.name?.trim()) {
+    chips.push({ category: 'name', categoryLabel: 'Company', value: filters.name, label: filters.name });
+  }
   if (filters.industry?.length) {
     for (const v of filters.industry) chips.push({ category: 'industry', categoryLabel: 'Industry', value: v, label: v });
   }
@@ -38,7 +41,9 @@ function flattenFilters(filters) {
 
 function removeChip(filters, chip) {
   const next = { ...filters, geo: { ...(filters.geo || {}) } };
-  if (chip.category === 'industry') {
+  if (chip.category === 'name') {
+    delete next.name;
+  } else if (chip.category === 'industry') {
     next.industry = (next.industry ?? []).filter((v) => v !== chip.value);
   } else if (chip.category === 'geo.region') {
     delete next.geo.region;

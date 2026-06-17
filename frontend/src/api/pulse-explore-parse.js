@@ -19,11 +19,35 @@ export async function parseExploreQuery(query) {
   return await r.json();
 }
 
+// Last-resort: when the LLM parse extracted nothing useful AND the query
+// looks like a company brand (short, mostly letters/spaces, not a known
+// filter phrase), treat the raw text as a company-name search. Lets
+// "Walmart" / "Q Cells" / "Tesla" work even when the LLM is cold or down.
+const NAME_KILL_PHRASES = [
+  'incumbent','vulnerable','consolidat','high-velocity','high velocity',
+  'defend','grow','book','stale','live data','top mover','importer','exporter',
+  'shipper','forwarder','teu','spend','revenue','manufacturer','retailer',
+  'food and beverage','automotive','electronics','industry','vertical','metro',
+  'state','country','region','coast','southeast','northeast','midwest','southwest',
+];
+export function looksLikeCompanyName(query) {
+  const q = String(query ?? '').trim();
+  if (!q || q.length > 80) return false;
+  const lower = q.toLowerCase();
+  if (NAME_KILL_PHRASES.some((p) => lower.includes(p))) return false;
+  // Mostly letters / spaces / common brand punctuation, not a phrase
+  // with prepositions / commas.
+  if (/[,;]| in | from | with | above | below | under /.test(` ${lower} `)) return false;
+  return /^[A-Za-z][A-Za-z0-9 .,&'\-_/]{1,79}$/.test(q);
+}
+
+
 // Map the edge fn's parsed payload to the Filters shape that pulse-explore
 // accepts. Keeps the contract narrow even if the edge fn returns extras.
 export function parsedToFilters(parsed) {
   if (!parsed) return {};
   const out = {};
+  if (parsed.name?.trim()) out.name = parsed.name.trim();
   if (parsed.industry?.length) out.industry = parsed.industry;
   const geo = {};
   if (parsed.geo?.region) geo.region = parsed.geo.region;
@@ -44,6 +68,7 @@ export function parsedToFilters(parsed) {
 
 export function hasAnyFilter(filters) {
   if (!filters || Object.keys(filters).length === 0) return false;
+  if (filters.name?.trim()) return true;
   if (filters.industry?.length) return true;
   if (filters.geo && (filters.geo.region || filters.geo.states?.length || filters.geo.countries?.length)) return true;
   if (filters.size && Object.values(filters.size).some((v) => v != null)) return true;

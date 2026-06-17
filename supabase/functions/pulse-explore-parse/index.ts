@@ -26,6 +26,11 @@ const DATASET_KEYS = ["directory_only","live_only","all"] as const;
 
 type ExplorerFilters = {
   query: string;
+  // Free-text company-name substring. Populated when the user appears
+  // to be looking up a specific brand (e.g. "Walmart", "Tesla", "Q
+  // Cells US"). Maps to lit_company_directory.company_name ILIKE
+  // and lit_companies.name ILIKE on the backend.
+  name: string;
   industry: string[];
   geo: {
     region: typeof REGION_KEYS[number] | null;
@@ -53,6 +58,7 @@ Output ONLY valid JSON — no prose, no markdown fences — matching this schema
 
 {
   "query": string,
+  "name": string,
   "industry": string[],
   "geo": {
     "region": "southeast" | "west_coast" | "northeast" | "midwest" | "southwest" | "mountain" | null,
@@ -73,6 +79,13 @@ Output ONLY valid JSON — no prose, no markdown fences — matching this schema
   "dataset_filter": "directory_only" | "live_only" | "all",
   "confidence": number
 }
+
+NAME — populate with a company brand/name when the query looks like a
+specific company lookup ("Walmart", "Tesla", "Q Cells US", "Apple Inc",
+"Maersk", "the Coca-Cola Company"). Strip filler words ("show me",
+"find", "search for", "lookup", "the", "Inc", "LLC", "Corp") but keep
+proper-noun structure. If the query is clearly NOT a brand lookup
+(e.g. "vulnerable incumbents in texas"), leave "name" as "".
 
 REGIONS — map to one of the keys above when the user mentions:
 - "southeast" / "south east US" → "southeast"
@@ -125,17 +138,23 @@ CONFIDENCE — 0.0 to 1.0 estimate of parse quality.
 
 EXAMPLES:
 
+"Walmart" →
+{"query":"Walmart","name":"Walmart","industry":[],"geo":{"region":null,"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.95}
+
+"show me Q Cells" →
+{"query":"show me Q Cells","name":"Q Cells","industry":[],"geo":{"region":null,"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
+
 "vulnerable incumbents in the southeast" →
-{"query":"vulnerable incumbents in the southeast","industry":[],"geo":{"region":"southeast","states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["vulnerable"],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.95}
+{"query":"vulnerable incumbents in the southeast","name":"","industry":[],"geo":{"region":"southeast","states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["vulnerable"],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.95}
 
 "high-velocity manufacturers in california above 5000 TEU" →
-{"query":"high-velocity manufacturers in california above 5000 TEU","industry":["Manufacturing"],"geo":{"region":null,"states":["CA"],"countries":[]},"size":{"teu_min":5000,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["velocity"],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.92}
+{"query":"high-velocity manufacturers in california above 5000 TEU","name":"","industry":["Manufacturing"],"geo":{"region":null,"states":["CA"],"countries":[]},"size":{"teu_min":5000,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["velocity"],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.92}
 
 "consolidation candidates with stale data, defend & grow my book" →
-{"query":"consolidation candidates with stale data, defend & grow my book","industry":[],"geo":{"region":null,"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["consolidation","defend"],"freshness_state":["stale"],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
+{"query":"consolidation candidates with stale data, defend & grow my book","name":"","industry":[],"geo":{"region":null,"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["consolidation","defend"],"freshness_state":["stale"],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
 
 "food and beverage importers in texas with live data" →
-{"query":"food and beverage importers in texas with live data","industry":["Food Manufacturing"],"geo":{"region":null,"states":["TX"],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":["live"],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
+{"query":"food and beverage importers in texas with live data","name":"","industry":["Food Manufacturing"],"geo":{"region":null,"states":["TX"],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":["live"],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
 
 If query is gibberish or empty → return defaults with confidence < 0.3.
 `;
@@ -143,6 +162,7 @@ If query is gibberish or empty → return defaults with confidence < 0.3.
 function defaults(query: string): ExplorerFilters {
   return {
     query,
+    name: "",
     industry: [],
     geo: { region: null, states: [], countries: [] },
     size: { teu_min: null, teu_max: null, shipments_min: null, shipments_max: null, spend_min: null, spend_max: null },
@@ -158,6 +178,7 @@ function sanitize(raw: any, query: string): ExplorerFilters {
   const out = defaults(query);
   if (!raw || typeof raw !== "object") return out;
   out.query = typeof raw.query === "string" ? raw.query : query;
+  if (typeof raw.name === "string") out.name = raw.name.trim().slice(0, 200);
   if (Array.isArray(raw.industry)) out.industry = raw.industry.filter((s: any) => typeof s === "string" && s);
   if (raw.geo && typeof raw.geo === "object") {
     const r = raw.geo.region;

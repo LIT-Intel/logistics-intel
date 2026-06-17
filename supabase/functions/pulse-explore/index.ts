@@ -46,6 +46,10 @@ type Geo = {
 };
 
 type Filters = {
+  // Free-text company-name substring. Matched ILIKE against
+  // lit_company_directory.company_name and lit_companies.name. Useful
+  // when the user types a specific brand into the search bar.
+  name?: string;
   industry?: string[];
   geo?: Geo;
   size?: {
@@ -118,6 +122,7 @@ function buildDirectoryQueryBase(admin: any, f: Filters) {
         "opportunity_velocity_score, opportunity_composite_score, " +
         "last_opportunity_recompute_at",
     );
+  if (f.name?.trim()) q = q.ilike("company_name", `%${f.name.trim()}%`);
   if (f.industry?.length) q = q.in("industry", f.industry);
   if (states.length) q = q.in("state", statesToFullNames(states));
   if (f.geo?.countries?.length) q = q.in("country", f.geo.countries);
@@ -222,6 +227,7 @@ async function fetchLive(
   const out: Row[] = [];
   for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
     let q = admin.from("lit_companies").select(select);
+    if (f.name?.trim()) q = q.ilike("name", `%${f.name.trim()}%`);
     if (f.industry?.length) q = q.in("industry", f.industry);
     if (states.length) q = q.in("state", states);
     q = q.range(from, from + PAGE_SIZE - 1);
