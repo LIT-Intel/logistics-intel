@@ -182,6 +182,27 @@ serve(async (req) => {
     }
   }
 
+  // Mark onboarding complete on the user's auth metadata. Joining a workspace
+  // IS the onboarding for invited users — they should never see the new-org
+  // wizard. Server-side write so the next session JWT (including via
+  // verifyOtp after email confirmation) carries the correct flag.
+  try {
+    const { data: currentUser } = await admin.auth.admin.getUserById(user.id);
+    const currentMeta = currentUser?.user?.user_metadata ?? {};
+    if (currentMeta.onboarding_completed !== true) {
+      await admin.auth.admin.updateUserById(user.id, {
+        user_metadata: {
+          ...currentMeta,
+          onboarding_completed: true,
+        },
+      });
+    }
+  } catch (metaErr) {
+    // Don't fail the invite-accept if metadata update fails — log + continue.
+    // The client-side update + RequireAuth orgId fallback will still handle it.
+    console.error("[accept-workspace-invite] metadata update failed", metaErr);
+  }
+
   // 5) Mark invite accepted. Try used_at first; fall back to plain
   //    status update if column doesn't exist on this env.
   const acceptedAt = new Date().toISOString();
