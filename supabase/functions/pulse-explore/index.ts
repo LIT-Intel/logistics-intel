@@ -543,6 +543,37 @@ Deno.serve(async (req: Request) => {
   try { body = (await req.json()) as Body; } catch { /* keep defaults */ }
   const filters: Filters = body.filters ?? {};
 
+  // Per-search usage gate via the existing `pulse_search` feature key
+  // (plans.pulse_search_limit: free_trial=5 / starter=0 / growth=100 /
+  // scale=500 / enterprise=null). Trial users get 5 Explorer searches
+  // so they feel the product; Coach + PDF are locked separately.
+  // Platform admins bypass automatically inside check_usage_limit.
+  const { data: orgRow } = await admin
+    .from("org_members")
+    .select("org_id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("joined_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const orgId = (orgRow as any)?.org_id ?? null;
+  const { data: gate, error: gateErr } = await admin.rpc("check_usage_limit", {
+    p_org_id: orgId,
+    p_user_id: userId,
+    p_feature_key: "pulse_search",
+    p_quantity: 1,
+  });
+  if (!gateErr && gate && (gate as any).ok === false) {
+    return jsonResponse(gate as Record<string, unknown>, 403);
+  }
+  await admin.from("lit_usage_ledger").insert({
+    org_id: orgId,
+    user_id: userId,
+    feature_key: "pulse_search",
+    action_key: "explore_search",
+    quantity: 1,
+  });
+
   const dataset = filters.dataset_filter ?? "all";
 
   const [directoryRows, liveRows] = await Promise.all([

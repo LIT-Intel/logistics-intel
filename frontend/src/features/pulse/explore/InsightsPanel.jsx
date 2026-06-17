@@ -82,12 +82,14 @@ function buildContextBlurb({ rows, insights, filters }) {
   ].filter(Boolean).join(' ');
 }
 
-function ReportActions({ entry, rows, filters, summary }) {
+function ReportActions({ entry, rows, filters, summary, requirePdf }) {
   const [emailOpen, setEmailOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [email, setEmail] = useState('');
 
   function onDownload() {
+    // Trial-preview gating: trial users get the upgrade modal instead.
+    if (requirePdf && !requirePdf()) return;
     try {
       generatePulseReportPdf({
         title: 'LIT Pulse Explorer Report',
@@ -105,6 +107,7 @@ function ReportActions({ entry, rows, filters, summary }) {
 
   async function onSendEmail(e) {
     e?.preventDefault?.();
+    if (requirePdf && !requirePdf()) return;
     if (!email.trim()) {
       toast.error('Enter a recipient email');
       return;
@@ -202,7 +205,7 @@ const SUGGESTIONS = [
   'Draft an outreach angle for the top 5 highest-scoring accounts',
 ];
 
-export default function InsightsPanel({ rows, insights, filters }) {
+export default function InsightsPanel({ rows, insights, filters, requireCoach, requirePdf }) {
   const [thread, setThread] = useState([]); // [{question, answer, loading}]
   const [input, setInput] = useState('');
   const scrollRef = useRef(null);
@@ -224,6 +227,9 @@ export default function InsightsPanel({ rows, insights, filters }) {
   async function ask(text) {
     const question = (text ?? '').trim();
     if (!question) return;
+    // Trial-preview gating — surface upgrade modal before hitting the
+    // server. Server-side `pulse_ai` gate is the real boundary.
+    if (requireCoach && !requireCoach()) return;
     if (!rows.length) {
       toast.error('Run a search first — the coach needs data to ground its answer.');
       return;
@@ -299,7 +305,7 @@ export default function InsightsPanel({ rows, insights, filters }) {
               ) : (
                 <>
                   {renderMarkdown(entry.answer)}
-                  <ReportActions entry={entry} rows={rows} filters={filters} summary={summary} />
+                  <ReportActions entry={entry} rows={rows} filters={filters} summary={summary} requirePdf={requirePdf} />
                 </>
               )}
             </div>

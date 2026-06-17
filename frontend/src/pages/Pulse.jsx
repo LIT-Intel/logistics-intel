@@ -874,14 +874,14 @@ export default function Pulse() {
 
   const resultCount = results.length;
 
-  const { entitlements, isPlatformAdmin, isChecking } = useEntitlements();
+  const { entitlements, isPlatformAdmin } = useEntitlements();
 
-  // Phase 4: Pulse Explorer is gated on plan_entitlements.pulse_explorer_v1
-  // (free_trial=false, all paid tiers=true). Platform admins always see
-  // the tab. While entitlements are still resolving on cold mount,
-  // exploreEnabled is FALSE — we'd rather show a brief Search-tab flash
-  // than leak the Explorer to trial users who shouldn't see it. Once
-  // the snapshot lands, the real entitlement decides.
+  // Trial-preview gating: trial users SEE the Explorer (so they feel the
+  // product) but get a 5-search cap (server-side via pulse_search) and
+  // locked Coach / PDF actions (server-side via pulse_ai / export_pdf,
+  // client-side upgrade modal). Real gating lives in
+  // plan_entitlements.pulse_explorer_v1 — enabled for free_trial + all
+  // paid tiers. Platform admins always see.
   const exploreEnabled = Boolean(
     entitlements?.features?.pulse_explorer_v1 || isPlatformAdmin
   );

@@ -16,6 +16,9 @@ import IndustryLegendOverlay from './IndustryLegendOverlay';
 import ExploreMapTools from './ExploreMapTools';
 import ExploreMap from './ExploreMapMaplibre';
 import ExploreAccountTable from './ExploreAccountTable';
+import { useEntitlements } from '@/hooks/useEntitlements';
+import { useUpgradeModal } from '@/components/billing/UpgradeModal';
+import { PulseExploreLimitError } from '@/api/pulse-explore';
 import ExploreAccountCards from './ExploreAccountCards';
 import { Filter, Bookmark, Layers as LayersIcon, BarChart3, Sparkles as SparklesIcon, Library as LibraryIcon } from 'lucide-react';
 import SelectionActionBar from './SelectionActionBar';
@@ -41,6 +44,8 @@ const PROMPTS = [
 
 export default function PulseExploreTab() {
   const { state, setFilters, setColor, setSize, setSelection } = useExploreState();
+  const { entitlements, isPlatformAdmin } = useEntitlements();
+  const upgradeModal = useUpgradeModal();
   const [query, setQuery] = useState('');
   const [activeRow, setActiveRow] = useState(null);
   const [sidebarTool, setSidebarTool] = useState('filter');
@@ -62,6 +67,48 @@ export default function PulseExploreTab() {
   const { data, isLoading, error } = useExploreAccounts(state.filters, null, { enabled: fetchEnabled });
   const rows = data?.rows ?? [];
   const insights = useExploreInsights(rows);
+
+  // Trial-preview gating. When pulse-explore returns 403 LIMIT_EXCEEDED
+  // (trial user hit the 5-search cap), surface the canonical upgrade
+  // modal instead of the generic error banner.
+  useEffect(() => {
+    if (error instanceof PulseExploreLimitError && error.limit) {
+      upgradeModal.show(error.limit);
+    }
+  }, [error, upgradeModal]);
+
+  // Per-feature client-side gates. Server-side gating is the security
+  // boundary; these gates give a friendly upgrade prompt before the
+  // user clicks instead of a 403 after.
+  const planCode = entitlements?.plan ?? 'free_trial';
+  const pdfAllowed = isPlatformAdmin
+    || entitlements?.limits?.export_pdf === null
+    || (entitlements?.limits?.export_pdf ?? 0) > 0;
+  const coachAllowed = isPlatformAdmin
+    || entitlements?.limits?.pulse_ai === null
+    || (entitlements?.limits?.pulse_ai ?? 0) > 0;
+
+  const requireCoach = useCallback(() => {
+    if (coachAllowed) return true;
+    upgradeModal.show({
+      ok: false, code: 'LIMIT_EXCEEDED', feature: 'pulse_ai',
+      used: 0, limit: 0, plan: planCode,
+      reset_at: null, upgrade_url: '/app/billing',
+      message: 'Pulse Coach is included on paid plans.',
+    });
+    return false;
+  }, [coachAllowed, upgradeModal, planCode]);
+
+  const requirePdf = useCallback(() => {
+    if (pdfAllowed) return true;
+    upgradeModal.show({
+      ok: false, code: 'LIMIT_EXCEEDED', feature: 'export_pdf',
+      used: 0, limit: 0, plan: planCode,
+      reset_at: null, upgrade_url: '/app/billing',
+      message: 'PDF reports are included on paid plans.',
+    });
+    return false;
+  }, [pdfAllowed, upgradeModal, planCode]);
 
   // Sidebar tool dispatch — opens the corresponding panel or fires an action.
   const onSidebarSelect = useCallback((t) => {
@@ -272,6 +319,8 @@ export default function PulseExploreTab() {
                 onLoadSelection,
                 mapStyle,
                 setMapStyle,
+                requireCoach,
+                requirePdf,
               })}
             </div>
 
@@ -516,9 +565,9 @@ export default function PulseExploreTab() {
 
 // Shared panel-content renderer so the desktop side rail and the mobile
 // bottom sheet stay in lockstep.
-function renderToolPanel({ toolPanel, rows, insights, filters, onLoadSelection, mapStyle, setMapStyle }) {
+function renderToolPanel({ toolPanel, rows, insights, filters, onLoadSelection, mapStyle, setMapStyle, requireCoach, requirePdf }) {
   if (toolPanel === 'analytics') return <AnalyticsPanel rows={rows} insights={insights} />;
-  if (toolPanel === 'insights') return <InsightsPanel rows={rows} insights={insights} filters={filters} />;
+  if (toolPanel === 'insights') return <InsightsPanel rows={rows} insights={insights} filters={filters} requireCoach={requireCoach} requirePdf={requirePdf} />;
   if (toolPanel === 'library') return <LibraryPanel onLoadSelection={onLoadSelection} />;
   if (toolPanel === 'layers') return <LayersPanel mapStyle={mapStyle} onStyleChange={setMapStyle} />;
   return null;
