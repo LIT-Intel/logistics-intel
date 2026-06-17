@@ -122,7 +122,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       connected_mailboxes: 0,
       pulse_runs_per_month: 5,
       pulse_ai_per_month: 5,
-      pulse_search_per_month: 0,
+      pulse_search_per_month: 10,
       saved_pulse_lists: 1,
     },
   },
