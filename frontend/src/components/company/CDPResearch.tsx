@@ -301,6 +301,7 @@ function BriefHeader({
   onRefresh,
   onShareHtml,
   onExportPdf,
+  onExportExecutivePdf,
   onShareEmail,
   onExpand,
   expanded,
