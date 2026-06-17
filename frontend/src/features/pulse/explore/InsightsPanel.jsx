@@ -53,8 +53,29 @@ function renderMarkdown(md) {
   return <span dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-// Build the context blurb prepended to every user question. Capped at
-// ~600 chars so the coach prompt stays focused.
+// Aggregate a per-key count from row entries, return top-N as a
+// readable string like "Maersk (42) · Hapag-Lloyd (18) · MSC (9)".
+function topN(rows, getter, n = 5) {
+  const counts = new Map();
+  for (const r of rows) {
+    const items = getter(r);
+    if (!items) continue;
+    const arr = Array.isArray(items) ? items : [items];
+    for (const it of arr) {
+      const key = typeof it === 'string' ? it : (it?.name ?? it?.lane ?? it?.code ?? null);
+      if (!key) continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
+    .map(([k, c]) => `${k} (${c})`).join(' · ');
+}
+
+// Build the context blurb prepended to every user question. Includes
+// every dimension we have in-hand so the coach can answer about
+// forwarders, brokers, ports, ZIP codes, HS codes, top carriers, top
+// lanes, freshness mix — not just the headline KPIs. Expanded to ~1500
+// chars max so the LLM has real grounding for any data question.
 function buildContextBlurb({ rows, insights, filters }) {
   const total = rows.length;
   if (!total) return '';
@@ -62,23 +83,58 @@ function buildContextBlurb({ rows, insights, filters }) {
     const v = Number(r.revenue); return Number.isFinite(v) ? a + v : a;
   }, 0);
   const totalTeu = insights?.totalTeu ?? 0;
+  const totalShipments = rows.reduce((a, r) => a + (Number(r.shipments) || 0), 0);
+
+  // Active filter readout
   const filterParts = [];
-  if (filters?.industry?.length) filterParts.push(`industry=${filters.industry.slice(0, 3).join(',')}`);
-  if (filters?.country?.length) filterParts.push(`country=${filters.country.slice(0, 3).join(',')}`);
-  if (filters?.region) filterParts.push(`region=${filters.region}`);
-  if (filters?.state?.length) filterParts.push(`state=${filters.state.slice(0, 3).join(',')}`);
-  if (filters?.opportunity_type?.length) filterParts.push(`opp=${filters.opportunity_type.join(',')}`);
-  if (filters?.teu_min || filters?.teu_max) filterParts.push(`teu=${filters.teu_min ?? 0}-${filters.teu_max ?? '∞'}`);
-  const top = rows.slice(0, 5).map((r) => r.company_name).filter(Boolean).join(', ');
+  if (filters?.name) filterParts.push(`name~"${filters.name}"`);
+  if (filters?.industry?.length) filterParts.push(`industry=${filters.industry.slice(0, 5).join(',')}`);
+  if (filters?.country?.length) filterParts.push(`country=${filters.country.slice(0, 5).join(',')}`);
+  if (filters?.geo?.regions?.length) filterParts.push(`regions=${filters.geo.regions.join(',')}`);
+  if (filters?.geo?.states?.length) filterParts.push(`states=${filters.geo.states.slice(0, 8).join(',')}`);
+  if (filters?.opportunity_types?.length) filterParts.push(`opp=${filters.opportunity_types.join(',')}`);
+  if (filters?.size?.teu_min || filters?.size?.teu_max) filterParts.push(`teu=${filters.size.teu_min ?? 0}-${filters.size.teu_max ?? '∞'}`);
+  if (filters?.freshness_state?.length) filterParts.push(`freshness=${filters.freshness_state.join(',')}`);
+
+  // Aggregations across every dimension we surface in row data
+  const topForwarders = topN(rows, (r) => r.top_forwarders, 5);
+  const topLanes = topN(rows, (r) => r.top_dimensions, 5);
+  const topCarriers = topN(rows, (r) => r.top_carrier || r.top_carriers, 5);
+  const topPortsLoad = topN(rows, (r) => r.top_port_of_loading || r.top_ports_of_loading, 5);
+  const topPortsDisch = topN(rows, (r) => r.top_port_of_discharge || r.top_ports_of_discharge, 5);
+  const topBrokers = topN(rows, (r) => r.top_customs_broker || r.top_customs_brokers, 5);
+  const topHs = topN(rows, (r) => r.top_hs_codes || r.top_hs, 5);
+  const topMetros = topN(rows, (r) => r.metro || r.city, 5);
+  const topZips = topN(rows, (r) => r.zip || r.postal_code, 5);
+  const topVerticals = topN(rows, (r) => r.vertical, 5);
+
+  const freshness = { live: 0, saved: 0, directory: 0 };
+  for (const r of rows) {
+    const chip = r?.freshness?.chip ?? 'directory';
+    if (freshness[chip] != null) freshness[chip]++;
+  }
+
+  const top = rows.slice(0, 8).map((r) => r.company_name).filter(Boolean).join(', ');
+
   return [
-    `Context: user is exploring ${total.toLocaleString()} accounts on the LIT Pulse Explorer map.`,
-    `Combined annual revenue ${fmtMoneyM(totalRev)}; combined 12-month TEU ${fmtNum(totalTeu)}.`,
-    insights?.topIndustries?.[0] ? `Top industry: ${insights.topIndustries[0].label} (${Math.round(insights.topIndustries[0].pct * 100)}% of view).` : null,
-    insights?.topMetros?.[0] ? `Heaviest metro: ${insights.topMetros[0].label}.` : null,
+    `Context: ${total.toLocaleString()} accounts on the LIT Pulse Explorer map.`,
+    `Totals: revenue ${fmtMoneyM(totalRev)} · 12m TEU ${fmtNum(totalTeu)} · 12m shipments ${fmtNum(totalShipments)}.`,
+    insights?.topIndustries?.[0] ? `Top industry: ${insights.topIndustries[0].label} (${Math.round(insights.topIndustries[0].pct * 100)}%).` : null,
     insights?.topCountries?.[0] ? `${Math.round(insights.topCountries[0].pct * 100)}% from ${insights.topCountries[0].label}.` : null,
+    topVerticals ? `Top verticals: ${topVerticals}.` : null,
+    topMetros ? `Top metros: ${topMetros}.` : null,
+    topZips ? `Top ZIPs: ${topZips}.` : null,
+    topLanes ? `Top lanes (origin→destination): ${topLanes}.` : null,
+    topPortsLoad ? `Top ports of loading: ${topPortsLoad}.` : null,
+    topPortsDisch ? `Top ports of discharge: ${topPortsDisch}.` : null,
+    topCarriers ? `Top carriers: ${topCarriers}.` : null,
+    topForwarders ? `Top forwarders: ${topForwarders}.` : null,
+    topBrokers ? `Top customs brokers: ${topBrokers}.` : null,
+    topHs ? `Top HS codes: ${topHs}.` : null,
+    `Data freshness mix: live=${freshness.live} · saved=${freshness.saved} · directory=${freshness.directory}.`,
     filterParts.length ? `Active filters: ${filterParts.join(' · ')}.` : null,
-    top ? `Sample accounts in view: ${top}.` : null,
-    'Answer in plain prose grounded in this data; cite specific numbers when relevant.',
+    top ? `Sample accounts: ${top}.` : null,
+    'Answer in plain prose grounded in this data. If the user asks about a dimension you do not see above, say so honestly rather than fabricate. Cite specific numbers when relevant.',
   ].filter(Boolean).join(' ');
 }
 

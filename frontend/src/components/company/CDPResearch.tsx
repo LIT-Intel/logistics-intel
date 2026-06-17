@@ -418,15 +418,6 @@ function BriefHeader({
           onClick={onExportPdf}
           disabled={exportLoading || !hasReport}
         />
-        {onExportExecutivePdf && (
-          <BriefActionButton
-            icon={exportLoading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Sparkles className="h-2.5 w-2.5" />}
-            label="Executive PDF"
-            onClick={onExportExecutivePdf}
-            disabled={exportLoading || !hasReport}
-            highlight
-          />
-        )}
         {!expanded && (
           <BriefActionButton
             icon={<Maximize2 className="h-2.5 w-2.5" />}

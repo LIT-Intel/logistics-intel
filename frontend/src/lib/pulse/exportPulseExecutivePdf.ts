@@ -183,28 +183,16 @@ function drawCoverPage(
   doc.setTextColor(...LIT_CYAN_NEON);
   doc.text("Pre-call account intelligence", MARGIN + 50, 58);
 
-  // Generated stamp, top-right
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(...LIT_SLATE_400);
-  doc.text(
-    generatedAt.toLocaleString("en-US", {
-      year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-    }),
-    PAGE_W - MARGIN, 44,
-    { align: "right" },
-  );
-  const freshness = ov.key_metrics_snapshot?.freshness_label;
-  if (freshness) {
-    doc.setTextColor(...LIT_CYAN_NEON);
-    doc.text(freshness, PAGE_W - MARGIN, 58, { align: "right" });
-  }
+  // Generated stamp — moved BELOW the company name on the left, so it
+  // doesn't collide with the opportunity grade circle on the right.
+  // Old layout had the date + freshness chip at top-right where the
+  // circle now sits, causing both to overlap (visible in user feedback).
 
-  // Company name (large, white)
+  // Company name (large, white) — left side, full width minus circle pad
   doc.setFont("helvetica", "bold");
   doc.setFontSize(36);
   doc.setTextColor(255, 255, 255);
-  const companyLines = doc.splitTextToSize(args.companyName, CONTENT_W - 110);
+  const companyLines = doc.splitTextToSize(args.companyName, CONTENT_W - 130);
   doc.text(companyLines[0] ?? args.companyName, MARGIN, 130);
 
   // Sub-meta line: domain · industry · HQ
@@ -216,10 +204,24 @@ function drawCoverPage(
     doc.text(subBits, MARGIN, 154);
   }
 
-  // Opportunity grade circle, right side
+  // Date + freshness chip — small, below sub-meta line, left side.
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...LIT_SLATE_400);
+  const dateLine = generatedAt.toLocaleString("en-US", {
+    year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+  doc.text(dateLine, MARGIN, 178);
+  const freshness = ov.key_metrics_snapshot?.freshness_label;
+  if (freshness) {
+    doc.setTextColor(...LIT_CYAN_NEON);
+    doc.text(`  ·  ${freshness}`, MARGIN + doc.getTextWidth(dateLine), 178);
+  }
+
+  // Opportunity grade circle, right side — clear of left text now.
   const grade = ov.opportunity_grade_letter ?? "—";
   const score = ov.opportunity_score_0_to_100;
-  drawGradeCircle(doc, PAGE_W - MARGIN - 60, 92, 50, grade, score);
+  drawGradeCircle(doc, PAGE_W - MARGIN - 50, 110, 48, grade, score);
 
   // Below the hero: the 3-bullet TLDR card on a light background
   doc.setFillColor(248, 250, 252);
@@ -311,20 +313,36 @@ function drawAtAGlancePage(doc: jsPDF, args: ExportArgs, ov: ExecutiveOverview):
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(...LIT_SLATE_600);
-  doc.text("The 6 numbers that frame this call.", MARGIN, y + 16);
+  doc.text("The numbers that frame this call.", MARGIN, y + 16);
   y += 50;
 
   const km = ov.key_metrics_snapshot ?? {};
-  const tiles: Array<{ label: string; value: string }> = [
-    { label: "SHIPMENTS · 12M", value: km.shipments_12m ?? "—" },
-    { label: "TEU · 12M", value: km.teu_12m ?? "—" },
-    { label: "TOP LANE", value: km.top_lane ?? "—" },
-    { label: "TOP CARRIER", value: km.top_carrier ?? "—" },
-    { label: "RECENT ACTIVITY", value: km.recent_activity_summary ?? "—" },
-    { label: "DATA FRESHNESS", value: km.freshness_label ?? "—" },
+  // Build the full set, then filter out the "N/A" / unknown ones so
+  // companies with no shipment data (B2B retailers etc.) get a clean
+  // page of populated tiles instead of a wall of N/A.
+  const isBlank = (v: string | undefined) =>
+    !v || /^(n\/a|na|—|-)$/i.test(v.trim());
+  const allTiles: Array<{ label: string; value: string }> = [
+    { label: "SHIPMENTS · 12M", value: km.shipments_12m ?? "" },
+    { label: "TEU · 12M", value: km.teu_12m ?? "" },
+    { label: "TOP LANE", value: km.top_lane ?? "" },
+    { label: "TOP CARRIER", value: km.top_carrier ?? "" },
+    { label: "RECENT ACTIVITY", value: stripMarkdown(km.recent_activity_summary ?? "") },
+    { label: "DATA FRESHNESS", value: km.freshness_label ?? "" },
   ];
+  const tiles = allTiles.filter((t) => !isBlank(t.value));
+  if (tiles.length === 0) {
+    // Nothing populated — fall back to a single big placeholder card
+    // rather than 6 empty navy boxes.
+    drawPlaceholder(
+      doc,
+      "Shipment data not yet available for this company. Refresh the brief once live KPIs are populated.",
+      y,
+    );
+    return;
+  }
 
-  // 3 cols x 2 rows
+  // 3 cols, rows as needed. Adapt to count.
   const colW = (CONTENT_W - 20) / 3;
   const rowH = 90;
   for (let i = 0; i < tiles.length; i++) {
@@ -349,12 +367,14 @@ function drawAtAGlancePage(doc: jsPDF, args: ExportArgs, ov: ExecutiveOverview):
     doc.setTextColor(255, 255, 255);
     const wrapped = doc.splitTextToSize(tiles[i].value, colW - 28);
     let vy = ty + 44;
-    for (const line of wrapped.slice(0, 2)) {
+    for (const line of wrapped.slice(0, 3)) {
       doc.text(line, tx + 14, vy);
       vy += 18;
     }
   }
-  y += rowH * 2 + 30;
+  // Advance y based on the actual number of rows rendered, not hard-coded 2.
+  const renderedRows = Math.ceil(tiles.length / 3);
+  y += rowH * renderedRows + (renderedRows - 1) * 12 + 30;
 
   // Opportunity gauge — visual bar instead of arc (more readable on print)
   const score = ov.opportunity_score_0_to_100;
@@ -749,11 +769,32 @@ function drawSection(doc: jsPDF, label: string, color: [number, number, number],
   return y + 22;
 }
 
+// Strip markdown citation syntax that the LLM emits inline
+// (e.g. "([gapinc.com](https://gapinc.com/...?utm_source=openai))" →
+// removed entirely from prose). Sources still render on the dedicated
+// Sources page, so removing the inline noise just makes the prose
+// readable. Also strips bold/italic asterisks and bare markdown links.
+function stripMarkdown(text: string): string {
+  return text
+    // Parenthesized citation: ([label](url))
+    .replace(/\(\[[^\]]+\]\([^)]+\)\)/g, "")
+    // Bare markdown link: [label](url) → label
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    // Bold / italic
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    // Collapse double-spaces and trim
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+\./g, ".")
+    .trim();
+}
+
 function drawParagraph(doc: jsPDF, text: string, y: number): number {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   doc.setTextColor(...LIT_SLATE_900);
-  const lines = doc.splitTextToSize(text, CONTENT_W);
+  const clean = stripMarkdown(text);
+  const lines = doc.splitTextToSize(clean, CONTENT_W);
   for (const line of lines) {
     if (y > PAGE_H - 80) { doc.addPage(); y = 100; }
     doc.text(line, MARGIN, y);
@@ -776,7 +817,7 @@ function drawChipList(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10.5);
     doc.setTextColor(...LIT_SLATE_900);
-    const wrapped = doc.splitTextToSize(item, CONTENT_W - 16);
+    const wrapped = doc.splitTextToSize(stripMarkdown(item), CONTENT_W - 16);
     for (let i = 0; i < wrapped.length; i++) {
       doc.text(wrapped[i], MARGIN + 14, y);
       y += 13;

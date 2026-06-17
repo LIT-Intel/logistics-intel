@@ -435,11 +435,12 @@ export default function PulseExploreTab() {
               }}
             />
 
-            {/* Empty-state CTA card — pinned bottom-center, doesn't cover
-                the map labels. Clicking a prompt chip kicks off a real
-                search via doSearch(text). */}
+            {/* Empty-state CTA card — pinned bottom-center on desktop only.
+                Hidden on mobile (<sm) because the popup covered most of the
+                viewport and made the map unusable. Mobile users get a tiny
+                hint chip via the empty-state in the toolbar instead. */}
             {!fetchEnabled && !parsing && (
-              <div className="absolute left-1/2 bottom-6 -translate-x-1/2 z-20 max-w-md pointer-events-none">
+              <div className="hidden sm:block absolute left-1/2 bottom-6 -translate-x-1/2 z-20 max-w-md pointer-events-none">
                 <div className="bg-white/95 backdrop-blur rounded-xl shadow-xl border border-slate-200 px-5 py-4 text-center pointer-events-auto">
                   <div className="inline-flex items-center gap-2 text-cyan-700 mb-1">
                     <Sparkles size={18} />
@@ -460,6 +461,18 @@ export default function PulseExploreTab() {
                       </button>
                     ))}
                   </div>
+                </div>
+              </div>
+            )}
+            {/* Mobile-only empty-state hint — small, sits above the bottom
+                results drawer header so it doesn't compete with the map. */}
+            {!fetchEnabled && !parsing && (
+              <div className="sm:hidden absolute inset-x-3 bottom-3 z-20 pointer-events-none">
+                <div className="bg-white/95 backdrop-blur rounded-lg border border-slate-200 px-3 py-2 text-[12px] text-center text-slate-600 pointer-events-auto">
+                  <span className="text-cyan-700 font-semibold inline-flex items-center gap-1">
+                    <Sparkles size={13} /> Search to begin
+                  </span>
+                  <span className="ml-1">— type a query in the bar above.</span>
                 </div>
               </div>
             )}

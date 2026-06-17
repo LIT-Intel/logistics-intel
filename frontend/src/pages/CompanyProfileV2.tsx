@@ -1891,14 +1891,22 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         activeProfile?.company_name ||
         activeProfile?.name ||
         "Company";
-      exportPulseBriefPdf({
+      // 2026-06-17: switched to the executive PDF generator. Single
+      // PDF surface across the app — exec-grade brand, infographic
+      // KPIs, talking points, objections, sources. The old
+      // exportPulseBriefPdf (sales-rep grade) is still on disk but no
+      // longer wired up here.
+      exportPulseExecutivePdf({
         companyName: companyDisplayName,
+        domain: bundle?.identity?.display?.domain ?? activeProfile?.domain ?? null,
+        industry: bundle?.identity?.display?.industry ?? activeProfile?.industry ?? null,
+        hq: bundle?.identity?.display?.hq_city ?? activeProfile?.city ?? null,
         brief: pulseBrief as any,
         generatedAt: pulseBrief?.generatedAt
           ? new Date(pulseBrief.generatedAt)
           : new Date(),
       });
-      showShareToast("PDF download started.", "success");
+      showShareToast("Executive brief downloaded.", "success");
     } catch (err: any) {
       showShareToast(err?.message || "PDF export error.", "error");
     } finally {
