@@ -52,6 +52,16 @@
   --ink-50: #ecf1fa;
 }
 
+/* Cross-cutting section utilities. Used by the Pulse Explorer V2 page
+   and any future handoff that ports section-based JSX so content files
+   don't have to know the exact spacing scale. */
+.section { padding: 100px 0; position: relative; }
+.section-title {
+  text-align: center;
+  max-width: 780px;
+  margin: 0 auto 56px;
+}
+
 html {
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
