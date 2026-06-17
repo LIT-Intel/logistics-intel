@@ -50,7 +50,10 @@ export function parsedToFilters(parsed) {
   if (parsed.name?.trim()) out.name = parsed.name.trim();
   if (parsed.industry?.length) out.industry = parsed.industry;
   const geo = {};
-  if (parsed.geo?.region) geo.region = parsed.geo.region;
+  // New shape: regions[]. Legacy single `region` still accepted as a
+  // fallback if the edge fn ever returns the old shape.
+  if (parsed.geo?.regions?.length) geo.regions = parsed.geo.regions;
+  else if (parsed.geo?.region) geo.regions = [parsed.geo.region];
   if (parsed.geo?.states?.length) geo.states = parsed.geo.states;
   if (parsed.geo?.countries?.length) geo.countries = parsed.geo.countries;
   if (Object.keys(geo).length) out.geo = geo;
@@ -70,7 +73,7 @@ export function hasAnyFilter(filters) {
   if (!filters || Object.keys(filters).length === 0) return false;
   if (filters.name?.trim()) return true;
   if (filters.industry?.length) return true;
-  if (filters.geo && (filters.geo.region || filters.geo.states?.length || filters.geo.countries?.length)) return true;
+  if (filters.geo && (filters.geo.regions?.length || filters.geo.region || filters.geo.states?.length || filters.geo.countries?.length)) return true;
   if (filters.size && Object.values(filters.size).some((v) => v != null)) return true;
   if (filters.opportunity_types?.length) return true;
   if (filters.freshness_state?.length) return true;

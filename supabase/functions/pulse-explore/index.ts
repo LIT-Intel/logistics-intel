@@ -35,11 +35,20 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const MAX_ROWS = 100_000;
+// Capped at 5k for the v1 UI — the map can't usefully render more
+// than that, and dropping from 100k → 5k cuts cold-search latency
+// from 30s+ down to ~5s (5 pages × 2 sources, sequential .range()).
+// When the underlying dataset has more rows than the cap, we still
+// return the top 5000 by opportunity_composite_score.
+const MAX_ROWS = 5_000;
 const PAGE_SIZE = 1000;
 
 type Geo = {
   region?: string;
+  // Multiple regions are supported via `regions: string[]`. The
+  // singular `region` field is kept as a legacy back-compat path —
+  // expandStates() unions them. Use regions[] going forward.
+  regions?: string[];
   states?: string[];
   metros?: string[];
   countries?: string[];
@@ -104,9 +113,12 @@ function jsonResponse(payload: unknown, status = 200): Response {
 
 function expandStates(geo: Geo | undefined): string[] {
   if (!geo) return [];
-  const fromRegion = geo.region ? expandRegion(geo.region) : [];
+  const regionKeys = (geo.regions && geo.regions.length > 0)
+    ? geo.regions
+    : (geo.region ? [geo.region] : []);
+  const fromRegions = regionKeys.flatMap((k) => expandRegion(k));
   const fromExplicit = geo.states ?? [];
-  return Array.from(new Set([...fromRegion, ...fromExplicit].map((s) => s.toUpperCase())));
+  return Array.from(new Set([...fromRegions, ...fromExplicit].map((s) => s.toUpperCase())));
 }
 
 function buildDirectoryQueryBase(admin: any, f: Filters) {

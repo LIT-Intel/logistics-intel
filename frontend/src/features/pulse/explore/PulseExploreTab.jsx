@@ -56,6 +56,7 @@ export default function PulseExploreTab() {
   const [lassoActive, setLassoActive] = useState(false);
   const [toolPanel, setToolPanel] = useState(null); // 'analytics' | 'insights' | 'library' | 'layers' | null
   const [mapStyle, setMapStyle] = useState('alidade_smooth');
+  const mapRef = useRef(null);
 
   const fetchEnabled = hasAnyFilter(state.filters);
   const { data, isLoading, error } = useExploreAccounts(state.filters, null, { enabled: fetchEnabled });
@@ -159,9 +160,14 @@ export default function PulseExploreTab() {
   const onSubmitSearch = useCallback(() => doSearch(query), [doSearch, query]);
 
   const onSelectAllInView = useCallback(() => {
+    // Read the LIVE viewport from the map ref — relying on the cached
+    // `mapBbox` state was racy: clicking the button before the bbox
+    // effect re-fires would silently match nothing. The ref-based
+    // getter falls back to the cached state if the ref isn't ready.
+    const liveBbox = mapRef.current?.getCurrentBbox?.() ?? mapBbox;
     // eslint-disable-next-line no-console
-    console.log('[pulse-explore] select-in-view click', { mapBbox, rows: rows.length });
-    if (!mapBbox) {
+    console.log('[pulse-explore] select-in-view click', { liveBbox, rows: rows.length });
+    if (!liveBbox) {
       toast('Map not ready yet — pan or zoom once, then try again');
       return;
     }
@@ -169,7 +175,7 @@ export default function PulseExploreTab() {
       toast('No accounts loaded yet');
       return;
     }
-    const [w, s, e, n] = mapBbox;
+    const [w, s, e, n] = liveBbox;
     const ids = [];
     for (const r of rows) {
       const c = lookupCoords({ latitude: r.latitude, longitude: r.longitude, city: r.city, state: r.state, country: r.country });
@@ -323,6 +329,7 @@ export default function PulseExploreTab() {
             }`}
           >
             <ExploreMap
+              ref={mapRef}
               rows={rows}
               colorMode={state.color}
               sizeMode={state.size}

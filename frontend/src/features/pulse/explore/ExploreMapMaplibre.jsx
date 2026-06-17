@@ -12,7 +12,7 @@
 // Clustering uses supercluster (already a dep). Heat uses MapLibre's
 // native `heatmap` paint type (built-in, no extra dep).
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import Supercluster from 'supercluster';
@@ -113,13 +113,13 @@ function makeClusterEl(count) {
   return el;
 }
 
-export default function ExploreMapMaplibre({
+const ExploreMapMaplibre = forwardRef(function ExploreMapMaplibre({
   rows, colorMode, sizeMode, selection, onBubbleClick, mapMode = 'bubbles',
   onBboxChange,
   lassoActive = false,
   onLassoSelect,
   mapStyle = 'alidade_smooth',
-}) {
+}, ref) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
@@ -131,6 +131,19 @@ export default function ExploreMapMaplibre({
 
   // Expose bbox to parent on every move.
   useEffect(() => { onBboxChange?.(bbox); }, [bbox, onBboxChange]);
+
+  // Imperative API so the parent can read the LIVE viewport at click
+  // time, regardless of whether React state has caught up — the v1
+  // "select in view" handler was reading stale state and silently
+  // matching nothing.
+  useImperativeHandle(ref, () => ({
+    getCurrentBbox() {
+      const m = mapRef.current;
+      if (!m) return null;
+      const b = m.getBounds();
+      return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    },
+  }), []);
 
   // Bump on every map.setStyle() so the heatmap / marker effects below
   // know to re-attach their sources & layers (setStyle wipes everything).
@@ -281,12 +294,27 @@ export default function ExploreMapMaplibre({
         el = makeBubbleEl(row, colorMode, sizeMode, maxValue, selSet.has(row.id));
         el.addEventListener('click', (e) => { e.stopPropagation(); onBubbleClick?.(row); });
       }
+      // While lasso is active, markers MUST NOT capture the
+      // mousedown — otherwise MapLibre's map.on('mousedown') listener
+      // (which drives the lasso rectangle) never fires when the user
+      // starts the drag on top of a bubble. Setting pointerEvents
+      // 'none' here covers freshly-created markers; the separate
+      // effect below updates existing markers when lassoActive toggles.
+      if (lassoActive) el.style.pointerEvents = 'none';
       const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
         .setLngLat([lng, lat])
         .addTo(map);
       markersRef.current.push(marker);
     }
-  }, [ready, cluster, bbox, zoom, colorMode, sizeMode, maxValue, selSet, onBubbleClick, mapMode, styleEpoch]);
+  }, [ready, cluster, bbox, zoom, colorMode, sizeMode, maxValue, selSet, onBubbleClick, mapMode, styleEpoch, lassoActive]);
+
+  // Toggle pointerEvents on all existing markers when lasso flips.
+  useEffect(() => {
+    for (const m of markersRef.current) {
+      const el = m.getElement();
+      el.style.pointerEvents = lassoActive ? 'none' : '';
+    }
+  }, [lassoActive]);
 
   // 5. Lasso rectangle drag — v1 uses a screen-space rectangle for
   // simplicity. While lassoActive, the map's drag pan is disabled and
@@ -386,4 +414,6 @@ export default function ExploreMapMaplibre({
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
   );
-}
+});
+
+export default ExploreMapMaplibre;

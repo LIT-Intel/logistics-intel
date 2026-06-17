@@ -33,7 +33,10 @@ type ExplorerFilters = {
   name: string;
   industry: string[];
   geo: {
-    region: typeof REGION_KEYS[number] | null;
+    // Multi-region: "west coast and southeast" → ["west_coast","southeast"].
+    // Kept as an array so combined-region searches work; the backend
+    // expands every entry to its US-state list and unions the results.
+    regions: typeof REGION_KEYS[number][];
     states: string[];
     countries: string[];
   };
@@ -61,7 +64,7 @@ Output ONLY valid JSON — no prose, no markdown fences — matching this schema
   "name": string,
   "industry": string[],
   "geo": {
-    "region": "southeast" | "west_coast" | "northeast" | "midwest" | "southwest" | "mountain" | null,
+    "regions": ("southeast" | "west_coast" | "northeast" | "midwest" | "southwest" | "mountain")[],
     "states": string[],
     "countries": string[]
   },
@@ -87,7 +90,10 @@ specific company lookup ("Walmart", "Tesla", "Q Cells US", "Apple Inc",
 proper-noun structure. If the query is clearly NOT a brand lookup
 (e.g. "vulnerable incumbents in texas"), leave "name" as "".
 
-REGIONS — map to one of the keys above when the user mentions:
+REGIONS — populate `geo.regions` with ONE OR MORE region keys. Combine
+when the user mentions multiple ("west coast and southeast" →
+["west_coast","southeast"]). Use empty array `[]` when no region is
+mentioned. Mapping:
 - "southeast" / "south east US" → "southeast"
 - "west coast" / "pacific" → "west_coast"
 - "northeast" / "new england" → "northeast"
@@ -139,22 +145,25 @@ CONFIDENCE — 0.0 to 1.0 estimate of parse quality.
 EXAMPLES:
 
 "Walmart" →
-{"query":"Walmart","name":"Walmart","industry":[],"geo":{"region":null,"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.95}
+{"query":"Walmart","name":"Walmart","industry":[],"geo":{"regions":[],"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.95}
 
 "show me Q Cells" →
-{"query":"show me Q Cells","name":"Q Cells","industry":[],"geo":{"region":null,"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
+{"query":"show me Q Cells","name":"Q Cells","industry":[],"geo":{"regions":[],"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
 
 "vulnerable incumbents in the southeast" →
-{"query":"vulnerable incumbents in the southeast","name":"","industry":[],"geo":{"region":"southeast","states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["vulnerable"],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.95}
+{"query":"vulnerable incumbents in the southeast","name":"","industry":[],"geo":{"regions":["southeast"],"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["vulnerable"],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.95}
 
 "high-velocity manufacturers in california above 5000 TEU" →
-{"query":"high-velocity manufacturers in california above 5000 TEU","name":"","industry":["Manufacturing"],"geo":{"region":null,"states":["CA"],"countries":[]},"size":{"teu_min":5000,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["velocity"],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.92}
+{"query":"high-velocity manufacturers in california above 5000 TEU","name":"","industry":["Manufacturing"],"geo":{"regions":[],"states":["CA"],"countries":[]},"size":{"teu_min":5000,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["velocity"],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.92}
 
 "consolidation candidates with stale data, defend & grow my book" →
-{"query":"consolidation candidates with stale data, defend & grow my book","name":"","industry":[],"geo":{"region":null,"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["consolidation","defend"],"freshness_state":["stale"],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
+{"query":"consolidation candidates with stale data, defend & grow my book","name":"","industry":[],"geo":{"regions":[],"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["consolidation","defend"],"freshness_state":["stale"],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
+
+"automotive companies in the west coast and southeast" →
+{"query":"automotive companies in the west coast and southeast","name":"","industry":["Manufacturing"],"geo":{"regions":["west_coast","southeast"],"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.92}
 
 "food and beverage importers in texas with live data" →
-{"query":"food and beverage importers in texas with live data","name":"","industry":["Food Manufacturing"],"geo":{"region":null,"states":["TX"],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":["live"],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
+{"query":"food and beverage importers in texas with live data","name":"","industry":["Food Manufacturing"],"geo":{"regions":[],"states":["TX"],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":["live"],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
 
 If query is gibberish or empty → return defaults with confidence < 0.3.
 `;
@@ -164,7 +173,7 @@ function defaults(query: string): ExplorerFilters {
     query,
     name: "",
     industry: [],
-    geo: { region: null, states: [], countries: [] },
+    geo: { regions: [], states: [], countries: [] },
     size: { teu_min: null, teu_max: null, shipments_min: null, shipments_max: null, spend_min: null, spend_max: null },
     opportunity_types: [],
     freshness_state: [],
@@ -181,8 +190,13 @@ function sanitize(raw: any, query: string): ExplorerFilters {
   if (typeof raw.name === "string") out.name = raw.name.trim().slice(0, 200);
   if (Array.isArray(raw.industry)) out.industry = raw.industry.filter((s: any) => typeof s === "string" && s);
   if (raw.geo && typeof raw.geo === "object") {
-    const r = raw.geo.region;
-    out.geo.region = REGION_KEYS.includes(r) ? r : null;
+    // Accept both new-shape (regions: string[]) and legacy single
+    // `region` field so older clients don't break.
+    if (Array.isArray(raw.geo.regions)) {
+      out.geo.regions = raw.geo.regions.filter((v: any) => REGION_KEYS.includes(v));
+    } else if (typeof raw.geo.region === "string" && REGION_KEYS.includes(raw.geo.region)) {
+      out.geo.regions = [raw.geo.region];
+    }
     if (Array.isArray(raw.geo.states)) out.geo.states = raw.geo.states.map((s: any) => String(s).toUpperCase()).filter(Boolean);
     if (Array.isArray(raw.geo.countries)) out.geo.countries = raw.geo.countries.filter((s: any) => typeof s === "string" && s);
   }

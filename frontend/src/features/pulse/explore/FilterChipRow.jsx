@@ -18,10 +18,14 @@ function flattenFilters(filters) {
   if (filters.industry?.length) {
     for (const v of filters.industry) chips.push({ category: 'industry', categoryLabel: 'Industry', value: v, label: v });
   }
-  if (filters.geo?.region) {
+  if (filters.geo?.regions?.length) {
+    for (const v of filters.geo.regions) {
+      chips.push({ category: 'geo.regions', categoryLabel: 'Region', value: v, label: chipLabel('geo.region', v) });
+    }
+  } else if (filters.geo?.region) {
     chips.push({ category: 'geo.region', categoryLabel: 'Region', value: filters.geo.region, label: chipLabel('geo.region', filters.geo.region) });
   }
-  if (filters.geo?.states?.length && !filters.geo?.region) {
+  if (filters.geo?.states?.length && !(filters.geo?.regions?.length || filters.geo?.region)) {
     chips.push({ category: 'geo.states', categoryLabel: 'States', value: filters.geo.states.join(','), label: `${filters.geo.states.length} states` });
   }
   if (filters.geo?.countries?.length) {
@@ -45,6 +49,9 @@ function removeChip(filters, chip) {
     delete next.name;
   } else if (chip.category === 'industry') {
     next.industry = (next.industry ?? []).filter((v) => v !== chip.value);
+  } else if (chip.category === 'geo.regions') {
+    next.geo.regions = (next.geo.regions ?? []).filter((v) => v !== chip.value);
+    if (!next.geo.regions.length) delete next.geo.regions;
   } else if (chip.category === 'geo.region') {
     delete next.geo.region;
     delete next.geo.states;
