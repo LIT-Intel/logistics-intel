@@ -67,6 +67,7 @@ import CDPContacts from "@/components/company/CDPContacts";
 import EditCompanyModal from "@/components/company/EditCompanyModal";
 import CDPResearch from "@/components/company/CDPResearch";
 import { exportPulseBriefPdf } from "@/lib/pulse/exportPulseBriefPdf";
+import { exportPulseExecutivePdf } from "@/lib/pulse/exportPulseExecutivePdf";
 import CDPActivity from "@/components/company/CDPActivity";
 import CDPRateBenchmark from "@/components/company/CDPRateBenchmark";
 import CDPRevenueOpportunity from "@/components/company/CDPRevenueOpportunity";
@@ -1905,6 +1906,45 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     }
   }
 
+  /**
+   * Executive Pre-Call Brief — premium PDF for sharing with execs ahead
+   * of a discovery call. Uses the same pulseBrief snapshot but renders a
+   * navy-branded multi-page brief: cover w/ opportunity grade, at-a-
+   * glance KPI tiles, why-now, pre-call talking points, likely objections
+   * + responses, best-contact card, lane intel, source list. If the
+   * cached brief doesn't carry an executive_overview yet, falls back
+   * gracefully with placeholder pages so the user knows to refresh.
+   */
+  async function handleExportExecutivePdfClick() {
+    setExportLoading(true);
+    try {
+      if (!pulseBrief) {
+        showShareToast("Generate the Pulse brief first.", "warning");
+        return;
+      }
+      const companyDisplayName =
+        bundle?.identity?.display?.name ||
+        activeProfile?.company_name ||
+        activeProfile?.name ||
+        "Company";
+      exportPulseExecutivePdf({
+        companyName: companyDisplayName,
+        domain: bundle?.identity?.display?.domain ?? activeProfile?.domain ?? null,
+        industry: bundle?.identity?.display?.industry ?? activeProfile?.industry ?? null,
+        hq: bundle?.identity?.display?.hq_city ?? activeProfile?.city ?? null,
+        brief: pulseBrief as any,
+        generatedAt: pulseBrief?.generatedAt
+          ? new Date(pulseBrief.generatedAt)
+          : new Date(),
+      });
+      showShareToast("Executive brief downloaded.", "success");
+    } catch (err: any) {
+      showShareToast(err?.message || "Executive brief export error.", "error");
+    } finally {
+      setExportLoading(false);
+    }
+  }
+
   async function handleSaveCompany() {
     if (!bundle?.identity || savingStar) return;
     setSavingStar(true);
@@ -2241,6 +2281,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
               onRefresh={handlePulseRefresh}
               onShareHtml={handleShareHtmlClick}
               onExportPdf={handleExportPdfClick}
+              onExportExecutivePdf={handleExportExecutivePdfClick}
               shareLoading={shareLoading}
               exportLoading={exportLoading}
               navigate={navigate}

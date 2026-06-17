@@ -150,6 +150,7 @@ function buildReportSchema() {
       "confidence_score",
       "data_sources_used",
       "missing_data",
+      "executive_overview",
     ],
     properties: {
       company_summary: { type: "string" },
@@ -271,6 +272,91 @@ function buildReportSchema() {
       missing_data: {
         type: "array",
         items: { type: "string" },
+      },
+      // Executive Pre-Call Brief overview — feeds the downloadable PDF
+      // shared with execs. Distinct from the rest of the report (which
+      // is sales-rep-grade); this block is the 30-second "what do I
+      // need to know before I walk into the call" essence.
+      executive_overview: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "tldr",
+          "opportunity_grade_letter",
+          "opportunity_score_0_to_100",
+          "key_metrics_snapshot",
+          "pre_call_talking_points",
+          "likely_objections",
+          "best_contact_and_approach",
+        ],
+        properties: {
+          tldr: {
+            type: "array",
+            items: { type: "string" },
+            minItems: 3,
+            maxItems: 3,
+          },
+          opportunity_grade_letter: {
+            type: "string",
+            enum: ["A", "B", "C", "D"],
+          },
+          opportunity_score_0_to_100: {
+            type: "number",
+            minimum: 0,
+            maximum: 100,
+          },
+          key_metrics_snapshot: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "shipments_12m",
+              "teu_12m",
+              "top_lane",
+              "top_carrier",
+              "recent_activity_summary",
+              "freshness_label",
+            ],
+            properties: {
+              shipments_12m: { type: "string" },
+              teu_12m: { type: "string" },
+              top_lane: { type: "string" },
+              top_carrier: { type: "string" },
+              recent_activity_summary: { type: "string" },
+              freshness_label: { type: "string" },
+            },
+          },
+          pre_call_talking_points: {
+            type: "array",
+            items: { type: "string" },
+            minItems: 5,
+            maxItems: 5,
+          },
+          likely_objections: {
+            type: "array",
+            minItems: 3,
+            maxItems: 3,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["objection", "response"],
+              properties: {
+                objection: { type: "string" },
+                response: { type: "string" },
+              },
+            },
+          },
+          best_contact_and_approach: {
+            type: "object",
+            additionalProperties: false,
+            required: ["contact_name", "contact_title", "channel", "opening_line"],
+            properties: {
+              contact_name: { type: "string" },
+              contact_title: { type: "string" },
+              channel: { type: "string" },
+              opening_line: { type: "string" },
+            },
+          },
+        },
       },
     },
   };
@@ -840,6 +926,17 @@ Freight market intelligence rules:
 - When the total_market_spend_usd is materially larger than the snapshot's est_spend_12m, you may flag it as a buying signal: it usually means the buyer is consolidating or under-disclosing, both of which are useful angles.
 - Keep tone like a senior account manager talking to another rep — confident, specific, never salesy.
 - Never round below the nearest $10K when the value is over $1M; never invent a number that isn't in lane_matches.
+
+Executive Overview rules (the executive_overview block):
+- This block feeds a PDF executives read in 60 seconds before a discovery call. Be ruthlessly terse and exec-grade.
+- tldr: exactly 3 bullets, each ≤ 15 words. Each bullet must be one actionable insight (not a generic statement).
+- opportunity_grade_letter: A (high-velocity AND high-priority signal), B (strong on one dimension), C (worth a call but not urgent), D (low fit / inactive).
+- opportunity_score_0_to_100: integer score, internally consistent with the letter grade.
+- key_metrics_snapshot: short human-readable strings (e.g. "7,862 / yr", "18.9K", "Turkey → United States", "Hapag-Lloyd", "Last shipment 23 days ago", "Saved · 14d ago").
+- pre_call_talking_points: 5 ranked openers a rep can read off in the first 90 seconds. Lead with the most pointed; each ≤ 20 words.
+- likely_objections: 3 real objections an exec at this company would raise, paired with a crisp 1-sentence response. Avoid generic "we already have a forwarder" — ground each in something specific.
+- best_contact_and_approach: the single best opener — who to call (or LinkedIn), their title, the channel, and the literal first sentence of the message.
+- Every executive_overview claim must be grounded in either LIT verified data, a web_sources citation, or a defensible logistics inference. If you can't, mark missing_data and write less rather than fabricate.
 `;
 }
 
