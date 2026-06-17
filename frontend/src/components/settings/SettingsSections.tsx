@@ -547,24 +547,42 @@ export function WorkspaceSection(props: {
   // particular do split/slice/map/join/uppercase that the JIT can't fold.
   const memberRows = useMemo(
     () =>
-      members.map((m: any) => ({
-        m,
-        key: m.id || m.user_id,
-        displayName: m.full_name || m.email || "User",
-        secondary: m.email || m.user_id,
-        initials: (m.full_name || m.email || "U")
-          .split(/\s+/)
-          .slice(0, 2)
-          .map((n: string) => n[0])
-          .join("")
-          .toUpperCase()
-          .slice(0, 2),
-        status: m.status || "Active",
-        statusTone: (m.status === "active" || !m.status ? "green" : "slate") as
-          | "green"
-          | "slate",
-        isOwner: m.role === "owner",
-      })),
+      members.map((m: any) => {
+        // Fallback chain for display fields. org_members.email and full_name
+        // are populated by the accept-workspace-invite edge fn + a DB trigger
+        // (org_members_fill_display_columns_trg) that pulls from auth.users
+        // on insert. If both are still NULL — e.g. legacy rows whose auth
+        // user was deleted, or a future inserter that bypasses the trigger —
+        // we render a friendly "Member" label + a short UUID prefix instead
+        // of dumping a raw 36-char UUID into the row. Never show the bare
+        // user_id as the primary identifier.
+        const trimmedName = typeof m.full_name === "string" ? m.full_name.trim() : "";
+        const emailLocalPart = typeof m.email === "string" && m.email.includes("@")
+          ? m.email.split("@")[0]
+          : "";
+        const uuidPrefix = typeof m.user_id === "string" ? m.user_id.slice(0, 8) : "";
+        const displayName = trimmedName || emailLocalPart || "Member";
+        const secondary = m.email || (uuidPrefix ? `User ${uuidPrefix}` : "Pending profile");
+        const initialsSeed = trimmedName || emailLocalPart || "M";
+        return {
+          m,
+          key: m.id || m.user_id,
+          displayName,
+          secondary,
+          initials: initialsSeed
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((n: string) => n[0])
+            .join("")
+            .toUpperCase()
+            .slice(0, 2) || "M",
+          status: m.status || "Active",
+          statusTone: (m.status === "active" || !m.status ? "green" : "slate") as
+            | "green"
+            | "slate",
+          isOwner: m.role === "owner",
+        };
+      }),
     [members],
   );
 
