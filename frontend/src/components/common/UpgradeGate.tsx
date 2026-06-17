@@ -13,6 +13,204 @@ const PLAN_LABELS: Record<PlanCode, string> = {
   enterprise: "Enterprise",
 };
 
+/** Shared visual card used by both <UpgradeGate> (plan-level feature gating)
+ *  and <UpgradeLimitGate> (usage-limit gating). Single canonical brand
+ *  surface for every "you need to upgrade" prompt in the app. */
+interface UpgradeCardProps {
+  featureName: string;
+  description?: string;
+  requiredPlan: PlanCode;
+  currentPlan?: string | null;
+  /** Optional "X of Y" usage stat shown above the description.
+   *  Only rendered by the limit-gate variant. */
+  used?: number;
+  limit?: number;
+  /** Customize the secondary CTA. Defaults to "Go back" (history -1). */
+  secondaryCtaLabel?: string;
+  onSecondaryClick?: () => void;
+}
+
+function UpgradeCard({
+  featureName,
+  description,
+  requiredPlan,
+  currentPlan,
+  used,
+  limit,
+  secondaryCtaLabel,
+  onSecondaryClick,
+}: UpgradeCardProps) {
+  const navigate = useNavigate();
+  const normalizedCurrent = normalizePlan(currentPlan);
+  const currentIdx = PLAN_ORDER.indexOf(normalizedCurrent);
+  const requiredIdx = PLAN_ORDER.indexOf(requiredPlan);
+  const nextPlan = PLAN_ORDER[Math.max(requiredIdx, currentIdx + 1)] ?? "growth";
+  const nextPlanLabel = PLAN_LABELS[nextPlan];
+
+  const showUsage = typeof used === "number" && typeof limit === "number";
+
+  return (
+    <div
+      className="relative w-full max-w-md overflow-hidden rounded-2xl border border-white/10 shadow-[0_24px_60px_rgba(2,6,23,0.55)]"
+      style={{
+        position: "sticky",
+        top: "10vh",
+        background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
+        boxShadow:
+          "inset 0 -1px 0 rgba(0,240,255,0.18), 0 24px 60px rgba(2,6,23,0.55)",
+      }}
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-16 -right-16 h-56 w-56 rounded-full opacity-50"
+        style={{
+          background:
+            "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)",
+        }}
+      />
+
+      <div className="relative px-6 py-6">
+        <div className="flex items-start gap-3">
+          <div
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border"
+            style={{
+              background: "rgba(0,240,255,0.10)",
+              borderColor: "rgba(255,255,255,0.10)",
+            }}
+          >
+            <Sparkles className="h-5 w-5" style={{ color: "#00F0FF" }} />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div
+              className="font-display flex flex-wrap items-center gap-2 text-[12.5px] font-bold tracking-wide text-white"
+            >
+              Pulse Coach
+              <span
+                className="inline-flex items-center gap-1 rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.06em]"
+                style={{
+                  color: "#00F0FF",
+                  borderColor: "rgba(0,240,255,0.35)",
+                  background: "rgba(0,240,255,0.08)",
+                  fontFamily: "ui-monospace,monospace",
+                }}
+              >
+                <Lock className="h-2.5 w-2.5" />
+                {PLAN_LABELS[requiredPlan]} feature
+              </span>
+            </div>
+
+            <h2
+              className="font-display mt-2 text-[18px] font-bold leading-tight text-white"
+              style={{ letterSpacing: "-0.01em" }}
+            >
+              {featureName}
+            </h2>
+
+            {showUsage ? (
+              <div
+                className="font-mono mt-2 inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-semibold"
+                style={{
+                  color: "#00F0FF",
+                  borderColor: "rgba(0,240,255,0.30)",
+                  background: "rgba(0,240,255,0.06)",
+                }}
+              >
+                {used} of {limit} used this period
+              </div>
+            ) : null}
+
+            <p
+              className="font-body mt-2 text-[12.5px] leading-relaxed text-slate-300"
+            >
+              {description ||
+                `${featureName} unlocks on the ${PLAN_LABELS[requiredPlan]} plan and above. You can preview the page behind this card — upgrade to unlock the workflow.`}
+            </p>
+
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => navigate("/app/billing")}
+                className="font-display inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-4 text-[12px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.35)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.45)]"
+                style={{
+                  background:
+                    "linear-gradient(180deg,#0F172A 0%,#0B1220 100%)",
+                }}
+              >
+                Upgrade to {nextPlanLabel}
+                <ArrowRight
+                  className="h-3 w-3"
+                  style={{ color: "#00F0FF" }}
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={onSecondaryClick ?? (() => navigate(-1))}
+                className="font-display inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-4 text-[12px] font-semibold text-slate-200 transition hover:bg-white/10"
+              >
+                {secondaryCtaLabel ?? "Go back"}
+              </button>
+            </div>
+
+            <p
+              className="font-body mt-4 text-[10.5px] text-slate-400"
+            >
+              Current plan:{" "}
+              <span
+                className="font-mono"
+                style={{ color: "#00F0FF" }}
+              >
+                {PLAN_LABELS[normalizedCurrent]}
+              </span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The overlay treatment — children rendered behind a non-interactive
+ *  scrim, premium upgrade card stickied on top. Shared between plan-gate
+ *  and limit-gate so there is exactly one "locked surface" look in the app. */
+interface OverlayProps extends UpgradeCardProps {
+  children?: React.ReactNode;
+}
+
+function LockedOverlay({ children, ...cardProps }: OverlayProps) {
+  return (
+    <div className="relative min-h-[60vh]">
+      {/* Underlying feature page — fully readable. Pointer-events
+          disabled so accidental clicks don't fire underneath the modal,
+          but no blur / no dim — users see exactly what they're paying
+          to unlock. */}
+      <div aria-hidden className="pointer-events-none select-none">
+        {children}
+      </div>
+
+      {/* Overlay scoped to the PAGE CONTENT AREA only (absolute inset-0
+          inside the gate's `relative` container). Sidebar + header stay
+          fully interactive — users can navigate away to Dashboard /
+          Settings / Billing without dismissing anything. The modal card
+          uses sticky positioning so it stays visible at the same screen
+          spot as the user scrolls the locked page behind it. */}
+      <div className="absolute inset-0 z-40 flex items-start justify-center px-4 pt-8 pb-16 sm:pt-12">
+        {/* Subtle tint so the modal reads as floating on top, but light
+            enough that the underlying page stays clearly visible. No
+            backdrop-filter blur — explicit ask was for the page to
+            remain readable. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{ background: "rgba(15,23,42,0.18)" }}
+        />
+        <UpgradeCard {...cardProps} />
+      </div>
+    </div>
+  );
+}
+
 interface UpgradeGateProps {
   /** Feature name shown in the headline */
   featureName: string;
@@ -49,149 +247,76 @@ export function UpgradeGate({
   hasAccess = false,
   children,
 }: UpgradeGateProps) {
-  const navigate = useNavigate();
-
   if (hasAccess) return <>{children}</>;
+  return (
+    <LockedOverlay
+      featureName={featureName}
+      description={description}
+      requiredPlan={requiredPlan}
+      currentPlan={currentPlan}
+    >
+      {children}
+    </LockedOverlay>
+  );
+}
 
-  const normalizedCurrent = normalizePlan(currentPlan);
-  const currentIdx = PLAN_ORDER.indexOf(normalizedCurrent);
-  const requiredIdx = PLAN_ORDER.indexOf(requiredPlan);
-  const nextPlan = PLAN_ORDER[Math.max(requiredIdx, currentIdx + 1)] ?? "growth";
-  const nextPlanLabel = PLAN_LABELS[nextPlan];
+interface UpgradeLimitGateProps {
+  /** Whether the user has hit their usage limit for this feature. */
+  isOverLimit: boolean;
+  /** Optional usage stat — rendered as "X of Y used this period". */
+  used?: number;
+  limit?: number;
+  /** Feature name shown in the headline (e.g. "Pulse searches"). */
+  featureName: string;
+  /** Optional override description for the card body. */
+  description?: string;
+  /** Plan the user should upgrade to. Defaults to "growth". */
+  requiredPlan?: PlanCode;
+  /** Current user plan (raw, will be normalized). */
+  currentPlan?: string | null;
+  /** The page that should be locked behind the overlay. */
+  children?: React.ReactNode;
+}
+
+/**
+ * Usage-limit-gated wrapper. Same visual treatment as <UpgradeGate>,
+ * but driven by an external boolean (`isOverLimit`) rather than a plan
+ * check — so it can lock the page when the user has burned through their
+ * monthly quota even though their plan technically allows the feature.
+ *
+ * Used by Pulse when pulse-search returns LIMIT_EXCEEDED: the user can
+ * still SEE the results they were just looking at, but they can't run
+ * any more searches until they upgrade. Same surface as plan gating so
+ * the locked-state look is consistent across the app.
+ */
+export function UpgradeLimitGate({
+  isOverLimit,
+  used,
+  limit,
+  featureName,
+  description,
+  requiredPlan = "growth",
+  currentPlan,
+  children,
+}: UpgradeLimitGateProps) {
+  if (!isOverLimit) return <>{children}</>;
+
+  const fallbackDescription =
+    typeof used === "number" && typeof limit === "number"
+      ? `You've used all ${limit} ${featureName.toLowerCase()} included in your current plan this period. Upgrade to keep going.`
+      : `You've reached your limit on ${featureName.toLowerCase()} for this period. Upgrade to keep going.`;
 
   return (
-    <div className="relative min-h-[60vh]">
-      {/* Underlying feature page — fully readable. Pointer-events
-          disabled so accidental clicks don't fire underneath the modal,
-          but no blur / no dim — users see exactly what they're paying
-          to unlock. */}
-      <div aria-hidden className="pointer-events-none select-none">
-        {children}
-      </div>
-
-      {/* Overlay scoped to the PAGE CONTENT AREA only (absolute inset-0
-          inside the gate's `relative` container). Sidebar + header stay
-          fully interactive — users can navigate away to Dashboard /
-          Settings / Billing without dismissing anything. The modal card
-          uses sticky positioning so it stays visible at the same screen
-          spot as the user scrolls the locked page behind it. */}
-      <div className="absolute inset-0 z-40 flex items-start justify-center px-4 pt-8 pb-16 sm:pt-12">
-        {/* Subtle tint so the modal reads as floating on top, but light
-            enough that the underlying page stays clearly visible. No
-            backdrop-filter blur — explicit ask was for the page to
-            remain readable. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{ background: "rgba(15,23,42,0.18)" }}
-        />
-        <div
-          className="relative w-full max-w-md overflow-hidden rounded-2xl border border-white/10 shadow-[0_24px_60px_rgba(2,6,23,0.55)]"
-          style={{
-            position: "sticky",
-            top: "10vh",
-            background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-            boxShadow:
-              "inset 0 -1px 0 rgba(0,240,255,0.18), 0 24px 60px rgba(2,6,23,0.55)",
-          }}
-        >
-          <span
-            aria-hidden
-            className="pointer-events-none absolute -top-16 -right-16 h-56 w-56 rounded-full opacity-50"
-            style={{
-              background:
-                "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)",
-            }}
-          />
-
-          <div className="relative px-6 py-6">
-            <div className="flex items-start gap-3">
-              <div
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border"
-                style={{
-                  background: "rgba(0,240,255,0.10)",
-                  borderColor: "rgba(255,255,255,0.10)",
-                }}
-              >
-                <Sparkles className="h-5 w-5" style={{ color: "#00F0FF" }} />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div
-                  className="font-display flex flex-wrap items-center gap-2 text-[12.5px] font-bold tracking-wide text-white"
-                >
-                  Pulse Coach
-                  <span
-                    className="inline-flex items-center gap-1 rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.06em]"
-                    style={{
-                      color: "#00F0FF",
-                      borderColor: "rgba(0,240,255,0.35)",
-                      background: "rgba(0,240,255,0.08)",
-                      fontFamily: "ui-monospace,monospace",
-                    }}
-                  >
-                    <Lock className="h-2.5 w-2.5" />
-                    {PLAN_LABELS[requiredPlan]} feature
-                  </span>
-                </div>
-
-                <h2
-                  className="font-display mt-2 text-[18px] font-bold leading-tight text-white"
-                  style={{ letterSpacing: "-0.01em" }}
-                >
-                  {featureName}
-                </h2>
-
-                <p
-                  className="font-body mt-2 text-[12.5px] leading-relaxed text-slate-300"
-                >
-                  {description ||
-                    `${featureName} unlocks on the ${PLAN_LABELS[requiredPlan]} plan and above. You can preview the page behind this card — upgrade to unlock the workflow.`}
-                </p>
-
-                <div className="mt-5 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => navigate("/app/billing")}
-                    className="font-display inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-4 text-[12px] font-semibold text-white shadow-[0_4px_14px_rgba(15,23,42,0.35)] transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.45)]"
-                    style={{
-                      background:
-                        "linear-gradient(180deg,#0F172A 0%,#0B1220 100%)",
-                    }}
-                  >
-                    Upgrade to {nextPlanLabel}
-                    <ArrowRight
-                      className="h-3 w-3"
-                      style={{ color: "#00F0FF" }}
-                    />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => navigate(-1)}
-                    className="font-display inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-4 text-[12px] font-semibold text-slate-200 transition hover:bg-white/10"
-                  >
-                    Go back
-                  </button>
-                </div>
-
-                <p
-                  className="font-body mt-4 text-[10.5px] text-slate-400"
-                >
-                  Current plan:{" "}
-                  <span
-                    className="font-mono"
-                    style={{ color: "#00F0FF" }}
-                  >
-                    {PLAN_LABELS[normalizedCurrent]}
-                  </span>
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <LockedOverlay
+      featureName={featureName}
+      description={description ?? fallbackDescription}
+      requiredPlan={requiredPlan}
+      currentPlan={currentPlan}
+      used={used}
+      limit={limit}
+    >
+      {children}
+    </LockedOverlay>
   );
 }
 

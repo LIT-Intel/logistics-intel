@@ -73,7 +73,7 @@ import QueryInterpretation from '@/features/pulse/QueryInterpretation';
 import PulseMap from '@/features/pulse/PulseMap';
 import PulseTabs from '@/features/pulse/explore/PulseTabs';
 import PulseExploreTab from '@/features/pulse/explore/PulseExploreTab';
-import { UpgradeRequiredInline } from '@/components/common/UpgradeRequired';
+import { UpgradeLimitGate } from '@/components/common/UpgradeGate';
 import { useEntitlements } from '@/hooks/useEntitlements';
 
 const PLACEHOLDER_EXAMPLES = [
@@ -874,7 +874,7 @@ export default function Pulse() {
 
   const resultCount = results.length;
 
-  const { entitlements, isPlatformAdmin } = useEntitlements();
+  const { entitlements, isPlatformAdmin, plan: currentPlan } = useEntitlements();
 
   // Trial-preview gating: trial users SEE the Explorer (so they feel the
   // product) but get a 5-search cap (server-side via pulse_search) and
@@ -889,6 +889,19 @@ export default function Pulse() {
   return (
     <PulseTabs exploreEnabled={exploreEnabled}>
       {({ tab }) => tab === 'explore' ? <PulseExploreTab /> : (
+    <UpgradeLimitGate
+      isOverLimit={Boolean(searchLimit) && !isPlatformAdmin}
+      used={searchLimit?.used}
+      limit={searchLimit?.limit}
+      featureName="Pulse searches"
+      description={
+        searchLimit
+          ? `You've used all ${searchLimit.limit} Pulse searches included in your ${searchLimit.plan === 'free_trial' ? 'free trial' : `${searchLimit.plan} plan`}${searchLimit.reset_at ? ' this period' : ''}. Upgrade to keep researching companies.`
+          : undefined
+      }
+      currentPlan={currentPlan}
+      requiredPlan="growth"
+    >
     <div className="relative -mx-[10px] -my-4 flex min-h-[calc(100vh-120px)] flex-col overflow-x-hidden bg-[#F8FAFC]">
       {/* Refined ambient backdrop — single soft blue/violet glow.
           Sized smaller than v1, anchored to the top so it frames the
@@ -1075,12 +1088,9 @@ export default function Pulse() {
         {/* Empty / explore */}
         {!isSearching && !searchPerformed ? <ExploreState onPick={runSearch} /> : null}
 
-        {/* Plan-limit hit (free_trial = 10 Pulse searches / month) */}
-        {searchPerformed && !isSearching && searchLimit ? (
-          <div className="mt-4">
-            <UpgradeRequiredInline limit={searchLimit} />
-          </div>
-        ) : null}
+        {/* Plan-limit hit (free_trial = 10 Pulse searches / month) is now
+            rendered as a full-page overlay via <UpgradeLimitGate> wrapping
+            the entire body — same visual treatment as plan-level gating. */}
 
         {/* Errors */}
         {searchPerformed && !isSearching && !searchLimit && errorMessage && !isSetupError && !isPermissionError ? (
@@ -1248,6 +1258,7 @@ export default function Pulse() {
         onSaved={() => setLibraryRefreshKey((k) => k + 1)}
       />
     </div>
+    </UpgradeLimitGate>
       )}
     </PulseTabs>
   );
