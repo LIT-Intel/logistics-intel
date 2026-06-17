@@ -192,6 +192,7 @@ export default function CDPResearch({
   onRefresh,
   onShareHtml,
   onExportPdf,
+  onExportExecutivePdf,
   shareLoading,
   exportLoading,
   navigate,
@@ -216,6 +217,7 @@ export default function CDPResearch({
         onRefresh={onRefresh}
         onShareHtml={onShareHtml}
         onExportPdf={onExportPdf}
+        onExportExecutivePdf={onExportExecutivePdf}
         onShareEmail={onShareEmail}
         onExpand={() => setExpanded(true)}
         expanded={expanded}
