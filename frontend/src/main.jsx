@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthProvider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { UpgradeModalProvider } from "./components/billing/UpgradeModal";
 import App from "./App";
 import { initSentry } from "./lib/sentry";
 import "./index.css";
@@ -31,7 +32,9 @@ createRoot(document.getElementById("root")).render(
       <BrowserRouter>
         <AuthProvider>
           <QueryClientProvider client={queryClient}>
-            <App />
+            <UpgradeModalProvider>
+              <App />
+            </UpgradeModalProvider>
           </QueryClientProvider>
         </AuthProvider>
       </BrowserRouter>
