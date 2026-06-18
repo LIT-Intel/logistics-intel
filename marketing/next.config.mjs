@@ -130,18 +130,23 @@ const nextConfig = {
     const sanityAliasRedirects = await fetchSanityAliasRedirects();
 
     // Pascal-case marketing URLs Google indexed before the canonical
-    // lowercase routes were set. 308 (permanent + method-preserving) so
-    // GSC retires the old URLs and consolidates link equity onto the
-    // lowercase canonicals. /About, /Solutions, /Resources have live
-    // lowercase counterparts; /Platform, /Search, /Billing do not —
-    // route those to the homepage (sensible parent) since they were
-    // never real marketing pages in the first place.
+    // lowercase routes were set.
+    //
+    // 2026-06-18 hotfix — REMOVED the /About /Solutions /Resources rules
+    // (plus their /:path* variants). Vercel/path-to-regexp matches the
+    // `source` case-insensitively, so /solutions hit /Solutions, redirected
+    // to /solutions, re-matched, and infinite-308-looped. /about, /solutions,
+    // /resources, and /solutions/* were all unreachable in production for
+    // ~13 days (since efa7193e on 2026-06-04 shipped them, until this
+    // commit on 2026-06-18). Vercel already normalizes path casing on
+    // direct hits to lowercase routes, so the original PascalCase rules
+    // bought nothing for GSC and took down core marketing surfaces.
+    //
+    // Only the rules that target distinct destinations (and therefore
+    // can't self-loop) are kept. If we ever need Pascal-to-lowercase
+    // redirects with case-sensitive matching, do it via middleware.ts
+    // (next.config redirects can't express case-sensitive matchers).
     const pascalCaseRedirects = [
-      { source: "/About", destination: "/about", permanent: true },
-      { source: "/About/:path*", destination: "/about/:path*", permanent: true },
-      { source: "/Solutions", destination: "/solutions", permanent: true },
-      { source: "/Solutions/:path*", destination: "/solutions/:path*", permanent: true },
-      { source: "/Resources", destination: "/resources", permanent: true },
       { source: "/Platform", destination: "/", permanent: true },
       { source: "/Search", destination: "/", permanent: true },
       { source: "/Billing", destination: "/", permanent: true },
