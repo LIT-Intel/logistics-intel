@@ -274,27 +274,39 @@ function buildReportSchema() {
         items: { type: "string" },
       },
       // Executive Pre-Call Brief overview — feeds the downloadable PDF
-      // shared with execs. Distinct from the rest of the report (which
-      // is sales-rep-grade); this block is the 30-second "what do I
-      // need to know before I walk into the call" essence.
+      // shared with execs. Studio White redesign 2026-06-18: structured
+      // logistics intelligence, no sales scripts. Every field maps to a
+      // single corporate-blueprint block in the PDF.
       executive_overview: {
         type: "object",
         additionalProperties: false,
         required: [
-          "tldr",
+          "corporate_metadata",
           "opportunity_grade_letter",
           "opportunity_score_0_to_100",
-          "key_metrics_snapshot",
-          "pre_call_talking_points",
-          "likely_objections",
-          "best_contact_and_approach",
+          "data_freshness_label",
+          "executive_macro_briefing",
+          "logistics_volumetrics",
+          "trade_lane_velocity",
+          "friction_points",
+          "supply_chain_leadership",
         ],
         properties: {
-          tldr: {
-            type: "array",
-            items: { type: "string" },
-            minItems: 3,
-            maxItems: 3,
+          corporate_metadata: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "parent_company",
+              "naics_sector",
+              "headquarters_location",
+              "primary_port_gateway",
+            ],
+            properties: {
+              parent_company: { type: "string" },
+              naics_sector: { type: "string" },
+              headquarters_location: { type: "string" },
+              primary_port_gateway: { type: "string" },
+            },
           },
           opportunity_grade_letter: {
             type: "string",
@@ -305,55 +317,75 @@ function buildReportSchema() {
             minimum: 0,
             maximum: 100,
           },
-          key_metrics_snapshot: {
+          data_freshness_label: { type: "string" },
+          executive_macro_briefing: { type: "string" },
+          logistics_volumetrics: {
             type: "object",
             additionalProperties: false,
             required: [
-              "shipments_12m",
-              "teu_12m",
-              "top_lane",
-              "top_carrier",
-              "recent_activity_summary",
-              "freshness_label",
+              "annual_teu_estimate",
+              "importer_tier",
+              "active_freight_lanes_count",
+              "primary_carriers",
             ],
             properties: {
-              shipments_12m: { type: "string" },
-              teu_12m: { type: "string" },
-              top_lane: { type: "string" },
-              top_carrier: { type: "string" },
-              recent_activity_summary: { type: "string" },
-              freshness_label: { type: "string" },
+              annual_teu_estimate: { type: "string" },
+              importer_tier: { type: "string" },
+              active_freight_lanes_count: { type: "number" },
+              primary_carriers: {
+                type: "array",
+                items: { type: "string" },
+                minItems: 1,
+                maxItems: 6,
+              },
             },
           },
-          pre_call_talking_points: {
-            type: "array",
-            items: { type: "string" },
-            minItems: 5,
-            maxItems: 5,
-          },
-          likely_objections: {
+          trade_lane_velocity: {
             type: "array",
             minItems: 3,
             maxItems: 3,
             items: {
               type: "object",
               additionalProperties: false,
-              required: ["objection", "response"],
+              required: ["route", "volume_share_pct", "transit_days", "velocity_status"],
               properties: {
-                objection: { type: "string" },
-                response: { type: "string" },
+                route: { type: "string" },
+                volume_share_pct: { type: "number", minimum: 0, maximum: 100 },
+                transit_days: { type: "number", minimum: 0 },
+                velocity_status: {
+                  type: "string",
+                  enum: ["High Volume / Stable", "Transit Congestion Warning", "Growing", "Stable", "Declining", "Moderate"],
+                },
               },
             },
           },
-          best_contact_and_approach: {
-            type: "object",
-            additionalProperties: false,
-            required: ["contact_name", "contact_title", "channel", "opening_line"],
-            properties: {
-              contact_name: { type: "string" },
-              contact_title: { type: "string" },
-              channel: { type: "string" },
-              opening_line: { type: "string" },
+          friction_points: {
+            type: "array",
+            minItems: 2,
+            maxItems: 4,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["stressor", "value_hypothesis"],
+              properties: {
+                stressor: { type: "string" },
+                value_hypothesis: { type: "string" },
+              },
+            },
+          },
+          supply_chain_leadership: {
+            type: "array",
+            minItems: 2,
+            maxItems: 2,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["name", "title", "strategic_mandate"],
+              properties: {
+                name: { type: "string" },
+                title: { type: "string" },
+                strategic_mandate: { type: "string" },
+              },
             },
           },
         },
@@ -927,16 +959,52 @@ Freight market intelligence rules:
 - Keep tone like a senior account manager talking to another rep — confident, specific, never salesy.
 - Never round below the nearest $10K when the value is over $1M; never invent a number that isn't in lane_matches.
 
-Executive Overview rules (the executive_overview block):
-- This block feeds a PDF executives read in 60 seconds before a discovery call. Be ruthlessly terse and exec-grade.
-- tldr: exactly 3 bullets, each ≤ 15 words. Each bullet must be one actionable insight (not a generic statement).
-- opportunity_grade_letter: A (high-velocity AND high-priority signal), B (strong on one dimension), C (worth a call but not urgent), D (low fit / inactive).
-- opportunity_score_0_to_100: integer score, internally consistent with the letter grade.
-- key_metrics_snapshot: short human-readable strings (e.g. "7,862 / yr", "18.9K", "Turkey → United States", "Hapag-Lloyd", "Last shipment 23 days ago", "Saved · 14d ago").
-- pre_call_talking_points: 5 ranked openers a rep can read off in the first 90 seconds. Lead with the most pointed; each ≤ 20 words.
-- likely_objections: 3 real objections an exec at this company would raise, paired with a crisp 1-sentence response. Avoid generic "we already have a forwarder" — ground each in something specific.
-- best_contact_and_approach: the single best opener — who to call (or LinkedIn), their title, the channel, and the literal first sentence of the message.
-- Every executive_overview claim must be grounded in either LIT verified data, a web_sources citation, or a defensible logistics inference. If you can't, mark missing_data and write less rather than fabricate.
+Executive Overview rules (the executive_overview block) — STUDIO WHITE corporate blueprint:
+
+This block feeds a downloadable executive PDF that is read in 60 seconds before a discovery call. The aesthetic is "Studio White" premium light-mode — ultra-professional, objective, clinical, data-driven. Every output must read like a McKinsey supply-chain memo, NOT like sales prospecting copy.
+
+ABSOLUTE EXCLUSION RULES:
+- NO sales scripts. NO talking points to read off. NO opening lines. NO outreach copy. NO email templates. NO hook lines. NO "Dear Mr/Ms ..." sentences. The PDF MUST NOT contain anything an SDR would paste into a sequence.
+- NO marketing / creative / PR / brand / communications contacts. Only logistics + supply-chain decision-makers with operational P&L ownership.
+- NO non-logistics commentary unless it ties directly to operational margin (e.g. stock pressure → factory-to-shelf velocity is fine; brand collaboration as fashion news is not).
+- NO placeholder filler. When a real value is unknown, return the string "[Enrichment in Progress]" so the PDF renders the pending badge instead of fake data.
+
+corporate_metadata:
+- parent_company: the legal parent if different from the brand name (e.g. "Gap Inc.", "Inditex", "Berkshire Hathaway"). If same as brand, repeat the brand name.
+- naics_sector: NAICS sector / 2-4 digit classification phrased like "Retail — General Merchandise" or "Manufacturing — Motor Vehicles".
+- headquarters_location: corporate HQ "City, State/Country".
+- primary_port_gateway: the single dominant US port-of-entry complex this account flows through (e.g. "Los Angeles / Long Beach", "New York / Newark", "Savannah").
+
+opportunity_grade_letter / opportunity_score_0_to_100: as before. Score is the numeric the PDF renders next to the grade.
+
+data_freshness_label: short pill text, e.g. "Real-Time Customs Manifest Match", "Refreshed 14d ago", "Stale (>180d)".
+
+executive_macro_briefing: a SINGLE dense paragraph (3-5 sentences, 60-120 words) bridging public financial standing — stock pressures, market cap shifts, restructuring, leadership changes — with the internal SUPPLY-CHAIN operational impacts. Frame everything through a logistics lens: how does this affect factory-to-shelf velocity, container volume capacity, transportation margin compression, sourcing diversification, port allocation? Do not narrate marketing campaigns as marketing news; narrate them as freight demand signals.
+
+logistics_volumetrics:
+- annual_teu_estimate: short human-readable string like "~85,000+", "12-18K", "Sub-1K (low-volume importer)". Include rough magnitude only.
+- importer_tier: enterprise tier label, one of: "Tier-1 Macro Importer" (>50K TEU/yr), "Tier-2 Strategic Importer" (10-50K), "Tier-3 Mid-Market Importer" (1-10K), "Tier-4 Specialty / Project Importer" (<1K). Pick based on annual_teu_estimate.
+- active_freight_lanes_count: integer count of currently active origin-destination corridors (BOL-derived).
+- primary_carriers: 1-6 ocean carrier / alliance names ordered by manifest share (e.g. ["ONE", "Cosco", "Maersk", "MSC"]).
+
+trade_lane_velocity: EXACTLY 3 entries — the top three lanes by volume share for this account.
+- route: "Port of origin (CC) → Port of discharge (CC)" format using city + country code, e.g. "Yantian (CN) → Long Beach (US)".
+- volume_share_pct: integer percent of this account's total volume on that lane.
+- transit_days: estimated ocean transit days.
+- velocity_status: one of the enum values. "High Volume / Stable" for primary lanes. "Transit Congestion Warning" if known port congestion or detention risk. "Growing" / "Stable" / "Declining" for trend. "Moderate" as a neutral fallback.
+
+friction_points: 2-4 entries mapping a SPECIFIC, technical supply-chain stressor to a LIT-platform value hypothesis.
+- stressor: a logistics bottleneck. EXAMPLES: "High demurrage and detention risk at Los Angeles / Long Beach terminals due to holiday inventory staging", "Volatile transpacific ocean spot rates impacting product-to-market margins on value-space apparel (<$55 price point)", "Carrier concentration risk — top 2 carriers represent >70% of TEU; no failover lane", "Upstream supplier delays from Yantian-region power rationing extending lead times by 9-14 days". Do NOT use generic phrases like "supply chain disruptions".
+- value_hypothesis: how a SPECIFIC LIT platform feature mitigates THAT stressor. Cite the feature by name where possible: predictive container milestone tracking, FBX-anchored rate benchmarking, lane allocation auditing, secondary-port routing optimisation, carrier diversification scoring, demurrage exposure forecasting. Example: "LIT's predictive container tracking can optimise cargo flow by identifying and routing critical shipments to less congested secondary ports (e.g. Seattle, Vancouver)."
+
+supply_chain_leadership: EXACTLY 2 contacts. Both MUST have direct P&L or operational ownership of the logistics / supply-chain network. Acceptable titles include Chief Supply Chain Officer, Chief Operating Officer, EVP / SVP / VP of Global Logistics, VP of Inventory Management, VP of Transportation, VP of Distribution, VP of Procurement (if logistics-flavored). REJECT marketing, creative, PR, brand, communications, sales, HR, finance (unless explicitly P&L-over-logistics).
+- name: Full name as it appears on LinkedIn or in public filings.
+- title: exact corporate title.
+- strategic_mandate: ONE sentence summarising their operational domain — what part of the network they own (e.g. "Global Sourcing, Logistics Network, Transformation.", "Online Global Inventory Management, E-commerce Logistics.").
+
+GROUNDING: every claim must be backed by LIT verified data, web_sources citation, or a defensible logistics inference. If you cannot ground a field, write "[Enrichment in Progress]" verbatim so the PDF renders the pending badge.
+
+CITATION FORMAT: do not include markdown citation syntax like ([source.com](url)) or [text](url) anywhere in executive_overview field values. The PDF renderer strips it but the strings should not contain it to begin with — the web_sources block carries the citation evidence separately.
 `;
 }
 
