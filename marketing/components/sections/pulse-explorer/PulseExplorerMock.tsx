@@ -12,7 +12,7 @@ import {
   Lasso,
 } from "lucide-react";
 import { PulseMapCanvas, type MapMode } from "./PulseMapCanvas";
-import { OPP } from "./data";
+import { INDUSTRY, PRESENT_INDUSTRIES } from "./data";
 
 const STATS: Array<[string, string]> = [
   ["78,412", "SHIPPER ACCOUNTS"],
@@ -349,7 +349,12 @@ export function PulseExplorerMock({
                 );
               })}
             </div>
-            {/* Opportunity legend */}
+            {/* Industry legend — bottom-left. Renders only industries
+                actually present in PULSE_CITIES so the chip row stays
+                tight. Opportunity scoring lives in the dedicated
+                OpportunityScoring section below the hero, not on the
+                map itself, so the map's job is just "which industry
+                is dominant where". */}
             <div
               style={{
                 position: "absolute",
@@ -358,12 +363,14 @@ export function PulseExplorerMock({
                 display: "flex",
                 gap: 6,
                 flexWrap: "wrap",
-                maxWidth: 360,
+                maxWidth: 420,
                 zIndex: 600,
                 pointerEvents: "none",
               }}
             >
-              {Object.values(OPP).map((o) => (
+              {PRESENT_INDUSTRIES.map((key) => {
+                const o = INDUSTRY[key];
+                return (
                 <span
                   key={o.label}
                   style={{
@@ -391,7 +398,8 @@ export function PulseExplorerMock({
                   />
                   {o.label}
                 </span>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

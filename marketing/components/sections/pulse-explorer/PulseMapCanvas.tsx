@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type * as LeafletNS from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { PULSE_CITIES, MAX_N } from "./data";
+import { PULSE_CITIES, MAX_N, INDUSTRY } from "./data";
 
 export type MapMode = "bubble" | "heat";
 
@@ -68,13 +68,19 @@ export function PulseMapCanvas({
       PULSE_CITIES.forEach((c) => {
         const r = Math.round(16 + Math.sqrt(c.n / MAX_N) * 28);
         const fs = Math.max(12, Math.round(r * 0.62));
+        const ind = INDUSTRY[c.industry] ?? INDUSTRY.other;
+        // Derive a translucent shadow from the industry color so the
+        // bubble pops without painting a hard outline; otherwise dark
+        // industries (energy/automotive) would look heavier than
+        // light ones at the same TEU.
+        const shadow = hexToRgba(ind.color, 0.42);
         const icon = L.divIcon({
           className: "pulse-bubble",
           html:
             `<div style="width:${r * 2}px;height:${r * 2}px;border-radius:50%;` +
-            "background:radial-gradient(circle at 50% 36%, #38c9e2, #0b8eaa);" +
+            `background:radial-gradient(circle at 50% 36%, ${ind.light}, ${ind.color});` +
             "border:2px solid rgba(255,255,255,0.92);" +
-            "box-shadow:0 3px 10px rgba(8,120,150,0.45);" +
+            `box-shadow:0 3px 10px ${shadow};` +
             "display:flex;align-items:center;justify-content:center;" +
             "color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;" +
             `font-size:${fs}px;line-height:1;">${c.n}</div>`,
@@ -154,4 +160,15 @@ export function PulseMapCanvas({
       aria-label="Live map of 78K+ shipper accounts across the US"
     />
   );
+}
+
+/** Build "rgba(r,g,b,a)" from a #rrggbb hex. Falls back to a neutral
+ *  shadow if the input is malformed. */
+function hexToRgba(hex: string, a: number): string {
+  const h = hex.replace("#", "");
+  if (h.length !== 6) return `rgba(15,23,42,${a})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${a})`;
 }
