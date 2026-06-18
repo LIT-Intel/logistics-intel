@@ -31,6 +31,28 @@ const SECTION_GAP = 18;
 const PAGE_BOTTOM = PDF_PAGE.height - PDF_PAGE.marginBottom;
 const CONTENT_WIDTH = PDF_PAGE.width - PDF_PAGE.marginX * 2;
 
+/**
+ * Strip LLM-emitted markdown so it doesn't render as literal punctuation
+ * in the PDF. Mirrors the implementation in exportPulseExecutivePdf.ts —
+ * keep both in sync until they're consolidated into a shared utility.
+ *
+ * Handles:
+ *   - `([label](url))` parenthesized inline citations
+ *   - `[label](url)` bare markdown links
+ *   - `**bold**` / `*italic*` emphasis markers
+ *   - leading/trailing whitespace collapse
+ */
+function stripMarkdown(text: string): string {
+  if (!text) return "";
+  return String(text)
+    .replace(/\(\[([^\]]+)\]\([^)]+\)\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 interface ExportArgs {
   companyName: string;
   brief: PulseBriefShape;
@@ -239,7 +261,10 @@ function drawProseSection(
 
   // splitTextToSize handles natural word-wrap to the given width. Then
   // we draw line by line so we can page-break mid-paragraph cleanly.
-  const lines = doc.splitTextToSize(text, CONTENT_WIDTH);
+  // stripMarkdown removes LLM citations like `([source.com](url))` and
+  // `**bold**` / `*italic*` markers that would otherwise render as
+  // literal punctuation in the PDF prose.
+  const lines = doc.splitTextToSize(stripMarkdown(text), CONTENT_WIDTH);
   for (const line of lines) {
     y = ensureRoom(doc, y, PROSE_LINE_HEIGHT);
     doc.text(line, PDF_PAGE.marginX, y);
@@ -269,7 +294,7 @@ function drawBulletSection(
   const textWidth = CONTENT_WIDTH - bulletIndent;
 
   for (const item of items) {
-    const wrapped = doc.splitTextToSize(item, textWidth);
+    const wrapped = doc.splitTextToSize(stripMarkdown(item), textWidth);
     if (!wrapped.length) continue;
     y = ensureRoom(doc, y, PROSE_LINE_HEIGHT);
 
