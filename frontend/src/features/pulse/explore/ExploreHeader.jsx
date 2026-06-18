@@ -73,7 +73,7 @@ export default function ExploreHeader({
         <div className="flex items-center gap-2 font-display shrink-0">
           <Sparkles className="text-cyan-400" size={18} />
           <span className="font-semibold text-sm tracking-tight whitespace-nowrap">Pulse Explorer</span>
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-500/20 text-cyan-300 uppercase tracking-wider">V1</span>
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-500/20 text-cyan-300 uppercase tracking-wider">V2</span>
         </div>
         <form
           onSubmit={(e) => { e.preventDefault(); onSubmit?.(); }}
