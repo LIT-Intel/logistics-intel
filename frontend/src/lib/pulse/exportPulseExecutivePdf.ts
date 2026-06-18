@@ -250,7 +250,7 @@ function drawCoverPage(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11.5);
     doc.setTextColor(...LIT_SLATE_900);
-    const wrapped = doc.splitTextToSize(tldr[i] ?? "—", CONTENT_W - 40);
+    const wrapped = doc.splitTextToSize(stripMarkdown(tldr[i] ?? "—"), CONTENT_W - 40);
     let cy = y + 14;
     for (const line of wrapped) {
       doc.text(line, MARGIN + 40, cy);
@@ -365,7 +365,7 @@ function drawAtAGlancePage(doc: jsPDF, args: ExportArgs, ov: ExecutiveOverview):
     doc.setFont("helvetica", "bold");
     doc.setFontSize(15);
     doc.setTextColor(255, 255, 255);
-    const wrapped = doc.splitTextToSize(tiles[i].value, colW - 28);
+    const wrapped = doc.splitTextToSize(stripMarkdown(tiles[i].value), colW - 28);
     let vy = ty + 44;
     for (const line of wrapped.slice(0, 3)) {
       doc.text(line, tx + 14, vy);
@@ -476,7 +476,7 @@ function drawTalkingPointsPage(doc: jsPDF, ov: ExecutiveOverview): void {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(12);
     doc.setTextColor(...LIT_SLATE_900);
-    const wrapped = doc.splitTextToSize(items[i], CONTENT_W - 50);
+    const wrapped = doc.splitTextToSize(stripMarkdown(items[i]), CONTENT_W - 50);
     let ly = y + 14;
     for (const line of wrapped) {
       doc.text(line, MARGIN + 44, ly);
@@ -515,7 +515,7 @@ function drawObjectionsPage(doc: jsPDF, ov: ExecutiveOverview): void {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
     doc.setTextColor(...LIT_SLATE_900);
-    const obj = doc.splitTextToSize(it.objection, CONTENT_W - 28);
+    const obj = doc.splitTextToSize(stripMarkdown(it.objection), CONTENT_W - 28);
     let oy = y + 34;
     for (const line of obj) {
       doc.text(line, MARGIN + 14, oy);
@@ -534,7 +534,7 @@ function drawObjectionsPage(doc: jsPDF, ov: ExecutiveOverview): void {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
     doc.setTextColor(255, 255, 255);
-    const resp = doc.splitTextToSize(it.response, CONTENT_W - 28);
+    const resp = doc.splitTextToSize(stripMarkdown(it.response), CONTENT_W - 28);
     let ry2 = ry + 34;
     for (const line of resp) {
       doc.text(line, MARGIN + 14, ry2);
@@ -614,7 +614,7 @@ function drawBestContactPage(doc: jsPDF, ov: ExecutiveOverview): void {
   doc.setDrawColor(...LIT_CYAN_NEON);
   doc.setLineWidth(0.6);
   // Light quote-block
-  const line = c.opening_line ?? "—";
+  const line = stripMarkdown(c.opening_line ?? "—");
   const wrapped = doc.splitTextToSize(line, CONTENT_W - 28);
   const blockH = Math.max(70, wrapped.length * 16 + 28);
   doc.roundedRect(MARGIN, y, CONTENT_W, blockH, 8, 8, "FD");
@@ -652,7 +652,7 @@ function drawLaneIntelPage(doc: jsPDF, report: BriefReport): void {
     doc.setFillColor(...LIT_CYAN_50);
     doc.setDrawColor(...LIT_CYAN_NEON);
     doc.setLineWidth(0.4);
-    const wrapped = doc.splitTextToSize(lanes[i], CONTENT_W - 50);
+    const wrapped = doc.splitTextToSize(stripMarkdown(lanes[i]), CONTENT_W - 50);
     const cardH = wrapped.length * 14 + 24;
     doc.roundedRect(MARGIN, y, CONTENT_W, cardH, 6, 6, "FD");
     // Number circle
