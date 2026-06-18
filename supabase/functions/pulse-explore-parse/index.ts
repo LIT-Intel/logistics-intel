@@ -39,6 +39,15 @@ type ExplorerFilters = {
     regions: typeof REGION_KEYS[number][];
     states: string[];
     countries: string[];
+    // Added 2026-06-18 — see docs/superpowers/specs/2026-06-18-
+    // pulse-search-dimensions-design.md. All new geo fields are
+    // optional / empty-array-default so old clients don't break.
+    cities: string[];
+    zips: string[];
+    counties: string[];
+    metros: string[];
+    ports_loading: string[];
+    ports_discharge: string[];
   };
   size: {
     teu_min: number | null;
@@ -49,9 +58,93 @@ type ExplorerFilters = {
     spend_max: number | null;
   };
   opportunity_types: typeof OPPORTUNITY_KEYS[number][];
+  // Opportunity score range. Numeric thresholds: 0-100 scale. Letter
+  // grades are remapped: A=90, B=75, C=60, D=40.
+  opportunity_score_min: number | null;
+  opportunity_score_max: number | null;
   freshness_state: typeof FRESHNESS_KEYS[number][];
   workflow_state: string[];
   dataset_filter: typeof DATASET_KEYS[number];
+  // Lane / origin → destination. country code OR UN/LOCODE port codes.
+  trade_lane: {
+    origin: string | null;
+    destination: string | null;
+  };
+  // Mode + container detail
+  mode: ("ocean" | "air" | "rail" | "truck" | "intermodal")[];
+  container: {
+    full_load: boolean | null;
+    refrigerated: boolean;
+    hazmat: boolean;
+    types: string[];
+  };
+  // HS codes + plain-English commodity names
+  commodity: {
+    hs_codes: string[];
+    names: string[];
+  };
+  // Time window
+  time: {
+    window:
+      | "last_30d"
+      | "last_60d"
+      | "last_90d"
+      | "last_180d"
+      | "last_365d"
+      | "ytd"
+      | "qtd"
+      | "mtd"
+      | null;
+    range_start: string | null;
+    range_end: string | null;
+  };
+  // Carriers + counterparties
+  carriers: {
+    ocean: string[];
+    forwarder: string[];
+    customs_broker: string[];
+    nvocc: string[];
+  };
+  counterparties: {
+    suppliers: string[];
+  };
+  // Commercial signals (revenue / employees / public-listing)
+  commercial: {
+    revenue_min: number | null;
+    revenue_max: number | null;
+    employees_min: number | null;
+    employees_max: number | null;
+    public_only: boolean;
+  };
+  // Persona / contact shape
+  persona: {
+    titles: string[];
+    seniority: ("c_suite" | "vp" | "director" | "manager" | "ic")[];
+    functions: (
+      | "procurement"
+      | "ops"
+      | "supply_chain"
+      | "finance"
+      | "logistics"
+      | "executive"
+    )[];
+  };
+  contact: {
+    email_required: boolean;
+    phone_required: boolean;
+    dcs_only: boolean;
+  };
+  // Org-scoped CRM filters (resolved downstream against user_id/org_id)
+  crm: {
+    in_pipeline: boolean;
+    recently_contacted_days: number | null;
+    tags: string[];
+    owner_email: string | null;
+  };
+  // Similarity lookup ("like X")
+  similarity: {
+    like_company: string | null;
+  };
   confidence: number;
 };
 
@@ -66,7 +159,13 @@ Output ONLY valid JSON — no prose, no markdown fences — matching this schema
   "geo": {
     "regions": ("southeast" | "west_coast" | "northeast" | "midwest" | "southwest" | "mountain")[],
     "states": string[],
-    "countries": string[]
+    "countries": string[],
+    "cities": string[],
+    "zips": string[],
+    "counties": string[],
+    "metros": string[],
+    "ports_loading": string[],
+    "ports_discharge": string[]
   },
   "size": {
     "teu_min": number | null,
@@ -77,9 +176,56 @@ Output ONLY valid JSON — no prose, no markdown fences — matching this schema
     "spend_max": number | null
   },
   "opportunity_types": ("consolidation" | "vulnerable" | "velocity" | "defend")[],
+  "opportunity_score_min": number | null,
+  "opportunity_score_max": number | null,
   "freshness_state": ("live" | "saved" | "directory" | "stale")[],
   "workflow_state": string[],
   "dataset_filter": "directory_only" | "live_only" | "all",
+  "trade_lane": { "origin": string | null, "destination": string | null },
+  "mode": ("ocean" | "air" | "rail" | "truck" | "intermodal")[],
+  "container": {
+    "full_load": boolean | null,
+    "refrigerated": boolean,
+    "hazmat": boolean,
+    "types": string[]
+  },
+  "commodity": { "hs_codes": string[], "names": string[] },
+  "time": {
+    "window": "last_30d" | "last_60d" | "last_90d" | "last_180d" | "last_365d" | "ytd" | "qtd" | "mtd" | null,
+    "range_start": string | null,
+    "range_end": string | null
+  },
+  "carriers": {
+    "ocean": string[],
+    "forwarder": string[],
+    "customs_broker": string[],
+    "nvocc": string[]
+  },
+  "counterparties": { "suppliers": string[] },
+  "commercial": {
+    "revenue_min": number | null,
+    "revenue_max": number | null,
+    "employees_min": number | null,
+    "employees_max": number | null,
+    "public_only": boolean
+  },
+  "persona": {
+    "titles": string[],
+    "seniority": ("c_suite" | "vp" | "director" | "manager" | "ic")[],
+    "functions": ("procurement" | "ops" | "supply_chain" | "finance" | "logistics" | "executive")[]
+  },
+  "contact": {
+    "email_required": boolean,
+    "phone_required": boolean,
+    "dcs_only": boolean
+  },
+  "crm": {
+    "in_pipeline": boolean,
+    "recently_contacted_days": number | null,
+    "tags": string[],
+    "owner_email": string | null
+  },
+  "similarity": { "like_company": string | null },
   "confidence": number
 }
 
@@ -166,6 +312,87 @@ EXAMPLES:
 {"query":"food and beverage importers in texas with live data","name":"","industry":["Food Manufacturing"],"geo":{"regions":[],"states":["TX"],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":["live"],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
 
 If query is gibberish or empty → return defaults with confidence < 0.3.
+
+──────────────────────────────────────────────────────────────────────
+Extended dimensions (added 2026-06-18 — see
+docs/superpowers/specs/2026-06-18-pulse-search-dimensions-design.md):
+
+CITY — populate geo.cities with a flat string array of city names when
+mentioned ("Houston shippers" → ["Houston"]). Disambiguate using state
+hints when present ("Houston, TX" → ["Houston, TX"]). When the user
+writes a metro nickname ("LA basin", "DFW", "NY tri-state"), expand
+to constituent cities AND populate geo.metros with the MSA code.
+
+ZIP — populate geo.zips with 5-digit strings ("77002") OR 3-digit
+prefixes ("770xx" → "770"). Multiple ZIPs comma-separated → array.
+
+COUNTY — populate geo.counties with "<County name>, <state>" when state
+is known.
+
+PORT — populate geo.ports_loading / geo.ports_discharge as UN/LOCODE
+arrays. Common nicknames: "LAX" → "USLAX", "Long Beach" → "USLGB",
+"Savannah" → "USSAV", "Houston port" → "USHOU", "Shanghai" → "CNSHA",
+"Ho Chi Minh" → "VNSGN", "Yantian" → "CNYTN".
+
+LANE — populate trade_lane.origin and trade_lane.destination as
+2-letter country codes OR UN/LOCODE port codes. "China to LA" →
+{origin:"CN",destination:"USLAX"}. "Vietnam to Savannah" →
+{origin:"VN",destination:"USSAV"}.
+
+MODE — populate mode with one or more of: "ocean", "air", "rail",
+"truck", "intermodal". "FCL"/"LCL" → container.full_load (true/false).
+"reefer"/"cold chain" → container.refrigerated=true. "hazmat"/"DG" →
+container.hazmat=true. "40HC", "20GP", "20RF" → container.types[].
+
+HS CODE — populate commodity.hs_codes as numeric strings; preserve
+prefix length the user supplied ("HS 8703" → ["8703"]; "Chapter 87"
+→ ["87"]). Commodity names → commodity.names[].
+
+TIME — populate time.window with one of {"last_30d","last_60d",
+"last_90d","last_180d","last_365d","ytd","qtd","mtd"} OR
+time.range_start / time.range_end as ISO dates when the user gives
+explicit bounds. "Q3 2025" → range_start "2025-07-01",
+range_end "2025-09-30". "this year" → "ytd".
+
+CARRIER — populate carriers.ocean[], carriers.forwarder[],
+carriers.customs_broker[], carriers.nvocc[] when named. Carrier vs
+forwarder dictionary: MSC/Maersk/CMA-CGM/COSCO/Hapag-Lloyd/ONE/Evergreen
+/HMM/ZIM/Yang Ming/OOCL → ocean. Flexport/Expeditors/CH Robinson/DSV
+/DHL Global Forwarding/Kuehne+Nagel/DB Schenker/Geodis → forwarder.
+
+SUPPLIER — populate counterparties.suppliers[] when the user says
+"supplier of X", "vendor for X", "X's suppliers".
+
+COMMERCIAL — populate commercial.revenue_min/max (USD),
+commercial.employees_min/max (count), commercial.public_only (bool)
+when revenue / employee size / public-listing language appears.
+"Fortune 500" → revenue_min ~5_000_000_000.
+
+PERSONA — populate persona.titles[] (verbatim string), persona.seniority[]
+(one of c_suite/vp/director/manager/ic) and persona.functions[]
+(procurement/ops/supply_chain/finance/logistics/executive). "VP of
+Logistics" → titles:["VP of Logistics"], seniority:["vp"],
+functions:["logistics"].
+
+CONTACT_VERIFICATION — populate contact.email_required,
+contact.phone_required, contact.dcs_only when the user asks for
+verified-only contacts.
+
+CRM — populate crm.in_pipeline, crm.recently_contacted_days,
+crm.tags[] when the user references their own workflow. "Sarah's
+book" → crm.owner_email only when fully qualified; otherwise leave
+blank.
+
+SIMILARITY — populate similarity.like_company when the user says
+"like X" / "similar to X" / "competitors of X". This becomes an
+embedding lookup downstream.
+
+OPPORTUNITY_SCORE — populate opportunity_score_min/max when a numeric
+or letter-grade threshold is given. "score above 80" → score_min:80.
+"B or better" → score_min:75. "A only" → score_min:90.
+
+Missing dimensions → empty array / null / false as appropriate. Do
+NOT invent values; leave fields at default when no signal.
 `;
 
 function defaults(query: string): ExplorerFilters {
@@ -173,12 +400,42 @@ function defaults(query: string): ExplorerFilters {
     query,
     name: "",
     industry: [],
-    geo: { regions: [], states: [], countries: [] },
+    geo: {
+      regions: [],
+      states: [],
+      countries: [],
+      cities: [],
+      zips: [],
+      counties: [],
+      metros: [],
+      ports_loading: [],
+      ports_discharge: [],
+    },
     size: { teu_min: null, teu_max: null, shipments_min: null, shipments_max: null, spend_min: null, spend_max: null },
     opportunity_types: [],
+    opportunity_score_min: null,
+    opportunity_score_max: null,
     freshness_state: [],
     workflow_state: [],
     dataset_filter: "all",
+    trade_lane: { origin: null, destination: null },
+    mode: [],
+    container: { full_load: null, refrigerated: false, hazmat: false, types: [] },
+    commodity: { hs_codes: [], names: [] },
+    time: { window: null, range_start: null, range_end: null },
+    carriers: { ocean: [], forwarder: [], customs_broker: [], nvocc: [] },
+    counterparties: { suppliers: [] },
+    commercial: {
+      revenue_min: null,
+      revenue_max: null,
+      employees_min: null,
+      employees_max: null,
+      public_only: false,
+    },
+    persona: { titles: [], seniority: [], functions: [] },
+    contact: { email_required: false, phone_required: false, dcs_only: false },
+    crm: { in_pipeline: false, recently_contacted_days: null, tags: [], owner_email: null },
+    similarity: { like_company: null },
     confidence: 0,
   };
 }
@@ -199,6 +456,11 @@ function sanitize(raw: any, query: string): ExplorerFilters {
     }
     if (Array.isArray(raw.geo.states)) out.geo.states = raw.geo.states.map((s: any) => String(s).toUpperCase()).filter(Boolean);
     if (Array.isArray(raw.geo.countries)) out.geo.countries = raw.geo.countries.filter((s: any) => typeof s === "string" && s);
+    // New geo fields (2026-06-18). Lenient: any string array passes.
+    for (const k of ["cities", "zips", "counties", "metros", "ports_loading", "ports_discharge"] as const) {
+      const v = raw.geo[k];
+      if (Array.isArray(v)) (out.geo as any)[k] = v.filter((s: any) => typeof s === "string" && s);
+    }
   }
   if (raw.size && typeof raw.size === "object") {
     for (const k of ["teu_min","teu_max","shipments_min","shipments_max","spend_min","spend_max"] as const) {
@@ -209,6 +471,8 @@ function sanitize(raw: any, query: string): ExplorerFilters {
   if (Array.isArray(raw.opportunity_types)) {
     out.opportunity_types = raw.opportunity_types.filter((v: any) => OPPORTUNITY_KEYS.includes(v));
   }
+  if (typeof raw.opportunity_score_min === "number") out.opportunity_score_min = clampScore(raw.opportunity_score_min);
+  if (typeof raw.opportunity_score_max === "number") out.opportunity_score_max = clampScore(raw.opportunity_score_max);
   if (Array.isArray(raw.freshness_state)) {
     out.freshness_state = raw.freshness_state.filter((v: any) => FRESHNESS_KEYS.includes(v));
   }
@@ -216,8 +480,79 @@ function sanitize(raw: any, query: string): ExplorerFilters {
     out.workflow_state = raw.workflow_state.filter((s: any) => typeof s === "string" && s);
   }
   if (DATASET_KEYS.includes(raw.dataset_filter)) out.dataset_filter = raw.dataset_filter;
+  // ─── New dimensions (2026-06-18) ──────────────────────────────────
+  if (raw.trade_lane && typeof raw.trade_lane === "object") {
+    if (typeof raw.trade_lane.origin === "string") out.trade_lane.origin = raw.trade_lane.origin.trim().slice(0, 16) || null;
+    if (typeof raw.trade_lane.destination === "string") out.trade_lane.destination = raw.trade_lane.destination.trim().slice(0, 16) || null;
+  }
+  const MODE_KEYS = ["ocean", "air", "rail", "truck", "intermodal"] as const;
+  if (Array.isArray(raw.mode)) out.mode = raw.mode.filter((v: any) => MODE_KEYS.includes(v));
+  if (raw.container && typeof raw.container === "object") {
+    if (typeof raw.container.full_load === "boolean") out.container.full_load = raw.container.full_load;
+    if (raw.container.refrigerated === true) out.container.refrigerated = true;
+    if (raw.container.hazmat === true) out.container.hazmat = true;
+    if (Array.isArray(raw.container.types)) out.container.types = raw.container.types.filter((s: any) => typeof s === "string" && s);
+  }
+  if (raw.commodity && typeof raw.commodity === "object") {
+    if (Array.isArray(raw.commodity.hs_codes)) out.commodity.hs_codes = raw.commodity.hs_codes.map((s: any) => String(s).replace(/\D/g, "")).filter(Boolean);
+    if (Array.isArray(raw.commodity.names)) out.commodity.names = raw.commodity.names.filter((s: any) => typeof s === "string" && s);
+  }
+  if (raw.time && typeof raw.time === "object") {
+    const TIME_WINDOWS = ["last_30d","last_60d","last_90d","last_180d","last_365d","ytd","qtd","mtd"] as const;
+    if (TIME_WINDOWS.includes(raw.time.window)) out.time.window = raw.time.window;
+    if (typeof raw.time.range_start === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.time.range_start)) out.time.range_start = raw.time.range_start;
+    if (typeof raw.time.range_end === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.time.range_end)) out.time.range_end = raw.time.range_end;
+  }
+  if (raw.carriers && typeof raw.carriers === "object") {
+    for (const k of ["ocean", "forwarder", "customs_broker", "nvocc"] as const) {
+      const v = raw.carriers[k];
+      if (Array.isArray(v)) (out.carriers as any)[k] = v.filter((s: any) => typeof s === "string" && s).slice(0, 50);
+    }
+  }
+  if (raw.counterparties && Array.isArray(raw.counterparties.suppliers)) {
+    out.counterparties.suppliers = raw.counterparties.suppliers.filter((s: any) => typeof s === "string" && s).slice(0, 50);
+  }
+  if (raw.commercial && typeof raw.commercial === "object") {
+    for (const k of ["revenue_min", "revenue_max", "employees_min", "employees_max"] as const) {
+      const v = raw.commercial[k];
+      if (typeof v === "number" && Number.isFinite(v) && v >= 0) (out.commercial as any)[k] = v;
+    }
+    if (raw.commercial.public_only === true) out.commercial.public_only = true;
+  }
+  if (raw.persona && typeof raw.persona === "object") {
+    const SENIORITY = ["c_suite", "vp", "director", "manager", "ic"] as const;
+    const FUNCTIONS = ["procurement", "ops", "supply_chain", "finance", "logistics", "executive"] as const;
+    if (Array.isArray(raw.persona.titles)) out.persona.titles = raw.persona.titles.filter((s: any) => typeof s === "string" && s).slice(0, 20);
+    if (Array.isArray(raw.persona.seniority)) out.persona.seniority = raw.persona.seniority.filter((v: any) => SENIORITY.includes(v));
+    if (Array.isArray(raw.persona.functions)) out.persona.functions = raw.persona.functions.filter((v: any) => FUNCTIONS.includes(v));
+  }
+  if (raw.contact && typeof raw.contact === "object") {
+    if (raw.contact.email_required === true) out.contact.email_required = true;
+    if (raw.contact.phone_required === true) out.contact.phone_required = true;
+    if (raw.contact.dcs_only === true) out.contact.dcs_only = true;
+  }
+  if (raw.crm && typeof raw.crm === "object") {
+    if (raw.crm.in_pipeline === true) out.crm.in_pipeline = true;
+    if (typeof raw.crm.recently_contacted_days === "number" && raw.crm.recently_contacted_days >= 0) {
+      out.crm.recently_contacted_days = Math.floor(raw.crm.recently_contacted_days);
+    }
+    if (Array.isArray(raw.crm.tags)) out.crm.tags = raw.crm.tags.filter((s: any) => typeof s === "string" && s).slice(0, 50);
+    if (typeof raw.crm.owner_email === "string" && /@/.test(raw.crm.owner_email)) {
+      out.crm.owner_email = raw.crm.owner_email.trim().slice(0, 200);
+    }
+  }
+  if (raw.similarity && typeof raw.similarity.like_company === "string") {
+    out.similarity.like_company = raw.similarity.like_company.trim().slice(0, 200) || null;
+  }
   if (typeof raw.confidence === "number") out.confidence = Math.max(0, Math.min(1, raw.confidence));
   return out;
+}
+
+/** Clamp opportunity score to [0, 100]. Letter grades resolve to
+ *  numeric ranges upstream in the prompt. */
+function clampScore(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
 }
 
 async function parseWithGemini(query: string): Promise<{ parsed: ExplorerFilters; model: string } | null> {
