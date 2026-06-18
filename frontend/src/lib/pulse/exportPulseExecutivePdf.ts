@@ -132,9 +132,12 @@ interface ExecutiveOverview {
   friction_points?: FrictionPoint[];
   supply_chain_leadership?: LeadershipContact[];
 
-  // Legacy fields — read with permissive fallback so a cached
-  // pre-redesign brief still renders a partial Studio White PDF
-  // instead of crashing. Never rendered as sales copy.
+  // Pre-2026-06-18 legacy fields, kept so the backwards-compat layer
+  // below can synthesise new-shape blocks from cached briefs that still
+  // carry the old schema (tldr / pre_call_talking_points / etc).
+  // Without this layer, every pre-redesign cached brief renders as an
+  // all-Enrichment-in-Progress skeleton until the user manually
+  // refreshes it.
   key_metrics_snapshot?: {
     shipments_12m?: string;
     teu_12m?: string;
@@ -143,11 +146,25 @@ interface ExecutiveOverview {
     recent_activity_summary?: string;
     freshness_label?: string;
   };
+  tldr?: string[];
 }
 
 interface BriefReport {
   company_summary?: string;
   why_now?: string;
+  sales_angle?: string;
+  lane_insights?: string[];
+  carrier_opportunities?: string[];
+  risk_flags?: string[];
+  forwarder_displacement_opportunities?: string[];
+  buying_signals?: string[];
+  supplier_insights?: string[];
+  recommended_contacts?: Array<{
+    name?: string;
+    title?: string;
+    reason?: string;
+    confidence?: number;
+  }>;
   executive_overview?: ExecutiveOverview;
 }
 
@@ -186,6 +203,136 @@ function isLogisticsLeadershipTitle(title: unknown): boolean {
     if (t.includes(bad)) return false;
   }
   return true;
+}
+
+// ─── Backwards-compat: synthesise new-shape blocks from old-shape ────────
+// Cached briefs from before the 2026-06-18 schema redesign still have
+// the legacy executive_overview { tldr, pre_call_talking_points, ... }
+// shape PLUS top-level fields (lane_insights, carrier_opportunities,
+// risk_flags, recommended_contacts). Without this layer, the new PDF
+// reads only the new field names and renders every section as an
+// [Enrichment in Progress] pill — which is what the user reported as
+// "looks even worst than before." This layer maps the legacy data
+// into the new shape so the PDF renders REAL data during the cache
+// transition. New-shape briefs short-circuit on line 1.
+function buildExecutiveOverviewWithFallback(
+  args: ExportArgs,
+  report: BriefReport | undefined,
+): ExecutiveOverview {
+  const newShape = report?.executive_overview ?? {};
+
+  // New-shape brief — return as-is. Detected by presence of any
+  // Studio White block that the old schema does not emit.
+  const isNewShape = !!(
+    newShape.corporate_metadata ||
+    newShape.executive_macro_briefing ||
+    newShape.logistics_volumetrics ||
+    newShape.trade_lane_velocity ||
+    newShape.friction_points ||
+    newShape.supply_chain_leadership
+  );
+  if (isNewShape) return newShape;
+
+  // Old-shape brief — synthesise the new blocks from legacy fields.
+  // Every block is independently null-checked; if there's no signal
+  // in the cached brief, the corresponding section still renders a
+  // pending pill (not fabricated data).
+  const synth: ExecutiveOverview = {
+    opportunity_grade_letter: newShape.opportunity_grade_letter,
+    opportunity_score_0_to_100: newShape.opportunity_score_0_to_100,
+    data_freshness_label:
+      stripMarkdown(newShape.key_metrics_snapshot?.freshness_label) || undefined,
+  };
+
+  // corporate_metadata: derived from the export args + the company's
+  // public industry tag. The args carry the canonical company name.
+  synth.corporate_metadata = {
+    parent_company: stripMarkdown(args.companyName) || undefined,
+    naics_sector: stripMarkdown(args.industry) || undefined,
+    headquarters_location: stripMarkdown(args.hq) || undefined,
+    primary_port_gateway: undefined,
+  };
+
+  // executive_macro_briefing: join company_summary + why_now into one
+  // dense paragraph. These are the legacy prose fields and reading
+  // them through stripMarkdown keeps the strict no-markdown rule.
+  const summary = stripMarkdown(report?.company_summary);
+  const whyNow = stripMarkdown(report?.why_now);
+  const briefingParts = [summary, whyNow].filter(Boolean);
+  if (briefingParts.length) {
+    synth.executive_macro_briefing = briefingParts.join(" ").slice(0, 800);
+  }
+
+  // logistics_volumetrics: read from old key_metrics_snapshot when
+  // present, else from carrier_opportunities (length of array ≈
+  // active corridors) and lane_insights.
+  const snap = newShape.key_metrics_snapshot;
+  const laneInsights = Array.isArray(report?.lane_insights) ? report!.lane_insights : [];
+  const carrierOps = Array.isArray(report?.carrier_opportunities) ? report!.carrier_opportunities : [];
+  if (snap || laneInsights.length || carrierOps.length) {
+    synth.logistics_volumetrics = {
+      annual_teu_estimate: stripMarkdown(snap?.teu_12m) || undefined,
+      importer_tier: undefined,
+      active_freight_lanes_count: laneInsights.length || undefined,
+      primary_carriers: carrierOps
+        .slice(0, 4)
+        .map((c) => stripMarkdown(c).split(/[—:|]/)[0].trim())
+        .filter(Boolean),
+    };
+  }
+
+  // trade_lane_velocity: map lane_insights into the 3-row table.
+  // Velocity status defaults to Moderate because the legacy schema
+  // didn't carry an explicit velocity flag.
+  if (laneInsights.length) {
+    synth.trade_lane_velocity = laneInsights.slice(0, 3).map((insight) => {
+      const cleaned = stripMarkdown(insight);
+      return {
+        route: cleaned.split(/[—:.]/)[0].trim().slice(0, 60) || cleaned.slice(0, 60),
+        volume_share_pct: undefined,
+        transit_days: undefined,
+        velocity_status: "Moderate",
+      };
+    });
+  }
+
+  // friction_points: pair risk_flags (stressors) with carrier_
+  // opportunities and forwarder_displacement_opportunities (LIT
+  // value hypotheses). Cap at 4 to match the new schema.
+  const stressors = Array.isArray(report?.risk_flags) ? report!.risk_flags : [];
+  const hypotheses = [
+    ...(Array.isArray(report?.carrier_opportunities) ? report!.carrier_opportunities : []),
+    ...(Array.isArray(report?.forwarder_displacement_opportunities)
+      ? report!.forwarder_displacement_opportunities
+      : []),
+  ];
+  if (stressors.length || hypotheses.length) {
+    const rows = Math.max(2, Math.min(4, Math.max(stressors.length, hypotheses.length)));
+    const friction: FrictionPoint[] = [];
+    for (let i = 0; i < rows; i++) {
+      friction.push({
+        stressor: stripMarkdown(stressors[i]) || undefined,
+        value_hypothesis: stripMarkdown(hypotheses[i]) || undefined,
+      });
+    }
+    synth.friction_points = friction;
+  }
+
+  // supply_chain_leadership: filter recommended_contacts through the
+  // same logistics-title gate the new renderer uses, take top 2.
+  const contacts = Array.isArray(report?.recommended_contacts) ? report!.recommended_contacts : [];
+  const logisticsContacts = contacts
+    .filter((c) => isLogisticsLeadershipTitle(c.title))
+    .slice(0, 2);
+  if (logisticsContacts.length) {
+    synth.supply_chain_leadership = logisticsContacts.map((c) => ({
+      name: stripMarkdown(c.name) || undefined,
+      title: stripMarkdown(c.title) || undefined,
+      strategic_mandate: stripMarkdown(c.reason) || undefined,
+    }));
+  }
+
+  return synth;
 }
 
 // ─── Pulse mark — branded waveform on dark tile ──────────────────────────
@@ -522,6 +669,7 @@ function drawVolumetricsGrid(doc: jsPDF, ov: ExecutiveOverview, startY: number):
     const x = MARGIN + i * cellW + 4;
     const w = cellW - 8;
     const c = cells[i];
+    const isPending = c.primary === PENDING_TEXT;
     doc.setDrawColor(...INK_200);
     doc.setFillColor(...WHITE);
     doc.setLineWidth(0.6);
@@ -530,14 +678,26 @@ function drawVolumetricsGrid(doc: jsPDF, ov: ExecutiveOverview, startY: number):
     doc.setFontSize(7);
     doc.setTextColor(...INK_500);
     doc.text(c.label, x + 10, y + 16);
-    // Primary value — large.
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(c.primary === PENDING_TEXT ? 10 : 18);
-    doc.setTextColor(c.primary === PENDING_TEXT ? PENDING_FG[0] : INK_900[0], c.primary === PENDING_TEXT ? PENDING_FG[1] : INK_900[1], c.primary === PENDING_TEXT ? PENDING_FG[2] : INK_900[2]);
-    const primaryLines = doc.splitTextToSize(c.primary, w - 20);
-    doc.text(primaryLines[0] ?? "—", x + 10, y + 40);
-    // Sub-line.
-    if (c.subline) {
+
+    if (isPending) {
+      // Render the pending state as the consistent yellow pill used
+      // elsewhere — never as raw text at a different font size. This
+      // is the same component drawPendingPill renders for empty
+      // sections, so the card feels visually intentional, not broken.
+      drawPendingPill(doc, x + 10, y + 30);
+    } else {
+      // Primary metric value — large dark numerals.
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.setTextColor(...INK_900);
+      const primaryLines = doc.splitTextToSize(c.primary, w - 20);
+      doc.text(primaryLines[0] ?? "—", x + 10, y + 40);
+    }
+
+    // Sub-line. Skip the auto "Tier classification pending" string
+    // when the primary itself is already a pending pill — would
+    // double up on the empty-state message in a single card.
+    if (c.subline && !(isPending && c.subline.toLowerCase().includes("pending"))) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.setTextColor(...INK_500);
@@ -564,6 +724,14 @@ function drawTradeLanesTable(doc: jsPDF, ov: ExecutiveOverview, startY: number):
       { content: "Velocity Status", styles: { halign: "center" } },
     ],
   ];
+  // Hold the status strings in a side array so the velocity column can
+  // render as a pill in didDrawCell WITHOUT autoTable also drawing the
+  // raw text in the cell. Painting white-over-text leaves background
+  // tint mismatches on alternating rows and a hairline of bleed-through
+  // at the cell edge — the bug the user reported as "looks even worst."
+  const velocityStatuses: string[] = lanes.slice(0, 3).map(
+    (row) => stripMarkdown(row.velocity_status) || "Moderate",
+  );
   const body: RowInput[] = lanes.slice(0, 3).map((row, i) => [
     {
       content: stripMarkdown(row.route) || `Lane ${i + 1}`,
@@ -577,10 +745,9 @@ function drawTradeLanesTable(doc: jsPDF, ov: ExecutiveOverview, startY: number):
       content: Number.isFinite(row.transit_days) ? `${row.transit_days} days` : "—",
       styles: { halign: "right" },
     },
-    {
-      content: stripMarkdown(row.velocity_status) || "Moderate",
-      styles: { halign: "center" },
-    },
+    // Empty content — autoTable draws nothing, didDrawCell paints the
+    // pill in a cleanly empty cell.
+    { content: "", styles: { halign: "center" } },
   ]);
 
   autoTable(doc, {
@@ -612,24 +779,30 @@ function drawTradeLanesTable(doc: jsPDF, ov: ExecutiveOverview, startY: number):
       fillColor: INK_50,
     },
     didDrawCell: (data) => {
-      // Status column — render the value as a pill instead of plain text.
+      // Velocity status column — autoTable drew an empty cell because
+      // body[r][3].content === "". Paint the pill directly into the
+      // empty cell, looked up from the parallel velocityStatuses array
+      // by row index. No more white-rect overpaint hack.
       if (data.section === "body" && data.column.index === 3) {
-        const status = String(data.cell.raw && (data.cell.raw as any).content || "Moderate");
+        const status = velocityStatuses[data.row.index] || "Moderate";
         const colors = pillColorsForStatus(status);
-        // Clear the underlying text by painting a white rect.
-        doc.setFillColor(...WHITE);
-        doc.rect(data.cell.x + 1, data.cell.y + 1, data.cell.width - 2, data.cell.height - 2, "F");
-        const cx = data.cell.x + data.cell.width / 2;
-        const cy = data.cell.y + data.cell.height / 2 - 6;
         doc.setFont("helvetica", "bold");
         doc.setFontSize(8);
         const tw = doc.getTextWidth(status);
-        const pw = tw + 16;
+        const pw = Math.min(tw + 16, data.cell.width - 4);
         const ph = 14;
+        const cx = data.cell.x + data.cell.width / 2;
+        const cy = data.cell.y + (data.cell.height - ph) / 2;
         doc.setFillColor(...colors.bg);
         doc.roundedRect(cx - pw / 2, cy, pw, ph, ph / 2, ph / 2, "F");
         doc.setTextColor(...colors.fg);
-        doc.text(status, cx - tw / 2, cy + ph - 4);
+        // Truncate text to fit if the pill width was clamped by cell.
+        let label = status;
+        while (doc.getTextWidth(label) > pw - 12 && label.length > 4) {
+          label = `${label.slice(0, -2)}…`;
+        }
+        const lw = doc.getTextWidth(label);
+        doc.text(label, cx - lw / 2, cy + ph - 4);
       }
     },
   });
@@ -752,7 +925,11 @@ export function exportPulseExecutivePdf(args: ExportArgs): void {
   doc.setFillColor(...WHITE);
   doc.rect(0, 0, PAGE_W, PAGE_H, "F");
 
-  const ov: ExecutiveOverview = args.brief?.report?.executive_overview ?? {};
+  // Route every render through the backwards-compat layer so cached
+  // briefs from before the 2026-06-18 schema redesign still produce
+  // a populated PDF rather than an all-pending-pill skeleton. Briefs
+  // generated against the new schema short-circuit and return as-is.
+  const ov: ExecutiveOverview = buildExecutiveOverviewWithFallback(args, args.brief?.report ?? undefined);
   const freshnessLabel = stripMarkdown(ov.data_freshness_label) || "REAL-TIME CUSTOMS MANIFEST";
 
   // Block 1: title + opportunity index + corporate metadata sub-header.

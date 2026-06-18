@@ -1,3 +1,13 @@
+// Force redeploy 2026-06-18T23:35Z — Studio White schema (PRs #115/116)
+// merged at d8e5202c but the supabase-auto-deploy workflow didn't pick
+// up the change in production (live fn updated_at was still
+// 2026-06-17 16:32 UTC, hours before the merge). Touching the file
+// from this branch re-triggers the path filter on the deploy
+// workflow so the new executive_overview schema actually lands in
+// production. Without this, every brief regeneration still produces
+// the legacy tldr / pre_call_talking_points / objections shape, which
+// the new PDF generator cannot read — rendering every section as an
+// [Enrichment in Progress] pill.
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { createLogger } from "../_shared/logger.ts";
