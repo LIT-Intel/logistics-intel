@@ -52,6 +52,19 @@ type Geo = {
   states?: string[];
   metros?: string[];
   countries?: string[];
+  // Added 2026-06-18 — see docs/superpowers/specs/2026-06-18-pulse-
+  // search-dimensions-design.md. cities is filterable on both tables
+  // (lit_company_directory.city + lit_companies.city). The other
+  // new geo fields are accepted at the API boundary but NOT filtered
+  // server-side until schema migrations land:
+  //   - zips        → need lit_company_directory.zip column
+  //   - counties    → need lit_company_directory.county column
+  //   - ports_loading / ports_discharge → need BOL aggregate join
+  cities?: string[];
+  zips?: string[];
+  counties?: string[];
+  ports_loading?: string[];
+  ports_discharge?: string[];
 };
 
 type Filters = {
@@ -69,10 +82,40 @@ type Filters = {
     spend_min?: number;
     spend_max?: number;
   };
+  // Commercial signals (revenue / employees / public-listing). Added
+  // 2026-06-18 with the 108-dimension parser. revenue + employees are
+  // backed by real columns; public_only is accepted but not yet
+  // filtered server-side (would need a lit_companies.is_public column).
+  commercial?: {
+    revenue_min?: number;
+    revenue_max?: number;
+    employees_min?: number;
+    employees_max?: number;
+    public_only?: boolean;
+  };
   opportunity_types?: ("consolidation" | "vulnerable" | "velocity" | "defend")[];
+  // Numeric opportunity-score threshold. Maps to
+  // lit_company_directory.opportunity_composite_score.
+  opportunity_score_min?: number | null;
+  opportunity_score_max?: number | null;
   freshness_state?: ("live" | "saved" | "directory" | "stale")[];
   workflow_state?: string[];
   dataset_filter?: "directory_only" | "live_only" | "all";
+  // The following dimensions are accepted at the API boundary so the
+  // parser can populate them without crashing the type checker, but
+  // are NOT filtered server-side until the underlying data is wired
+  // up. Tracked in the spec doc above.
+  trade_lane?: { origin?: string | null; destination?: string | null };
+  mode?: string[];
+  container?: Record<string, unknown>;
+  commodity?: { hs_codes?: string[]; names?: string[] };
+  time?: Record<string, unknown>;
+  carriers?: { ocean?: string[]; forwarder?: string[]; customs_broker?: string[]; nvocc?: string[] };
+  counterparties?: { suppliers?: string[] };
+  persona?: Record<string, unknown>;
+  contact?: Record<string, unknown>;
+  crm?: Record<string, unknown>;
+  similarity?: { like_company?: string | null };
 };
 
 type Body = {
@@ -139,12 +182,31 @@ function buildDirectoryQueryBase(admin: any, f: Filters) {
   if (f.industry?.length) q = q.in("industry", f.industry);
   if (states.length) q = q.in("state", statesToFullNames(states));
   if (f.geo?.countries?.length) q = q.in("country", f.geo.countries);
+  // City filter — case-insensitive across "Houston" / "houston" / "HOUSTON"
+  // so the parser can pass user-typed casing through unchanged.
+  if (f.geo?.cities?.length) {
+    const orClause = f.geo.cities
+      .map((c) => c.trim())
+      .filter(Boolean)
+      .map((c) => `city.ilike.${c}`)
+      .join(",");
+    if (orClause) q = q.or(orClause);
+  }
   if (f.size?.teu_min != null) q = q.gte("teu", f.size.teu_min);
   if (f.size?.teu_max != null) q = q.lte("teu", f.size.teu_max);
   if (f.size?.shipments_min != null) q = q.gte("shipments", f.size.shipments_min);
   if (f.size?.shipments_max != null) q = q.lte("shipments", f.size.shipments_max);
   if (f.size?.spend_min != null) q = q.gte("value_usd", f.size.spend_min);
   if (f.size?.spend_max != null) q = q.lte("value_usd", f.size.spend_max);
+  // Commercial filters added 2026-06-18 — directory has revenue + employee_count.
+  if (f.commercial?.revenue_min != null) q = q.gte("revenue", f.commercial.revenue_min);
+  if (f.commercial?.revenue_max != null) q = q.lte("revenue", f.commercial.revenue_max);
+  if (f.commercial?.employees_min != null) q = q.gte("employee_count", f.commercial.employees_min);
+  if (f.commercial?.employees_max != null) q = q.lte("employee_count", f.commercial.employees_max);
+  // Opportunity-score range — only meaningful on the directory because
+  // lit_companies doesn't compute the composite score.
+  if (f.opportunity_score_min != null) q = q.gte("opportunity_composite_score", f.opportunity_score_min);
+  if (f.opportunity_score_max != null) q = q.lte("opportunity_composite_score", f.opportunity_score_max);
   return q;
 }
 
@@ -249,6 +311,19 @@ async function fetchLive(
     if (f.name?.trim()) q = q.ilike("name", `%${f.name.trim()}%`);
     if (f.industry?.length) q = q.in("industry", f.industry);
     if (states.length) q = q.in("state", states);
+    // City + revenue filters added 2026-06-18 — lit_companies has both;
+    // it does NOT have employee_count, so that filter applies to
+    // directory rows only.
+    if (f.geo?.cities?.length) {
+      const orClause = f.geo.cities
+        .map((c) => c.trim())
+        .filter(Boolean)
+        .map((c) => `city.ilike.${c}`)
+        .join(",");
+      if (orClause) q = q.or(orClause);
+    }
+    if (f.commercial?.revenue_min != null) q = q.gte("revenue", f.commercial.revenue_min);
+    if (f.commercial?.revenue_max != null) q = q.lte("revenue", f.commercial.revenue_max);
     q = q.range(from, from + PAGE_SIZE - 1);
     const { data, error } = await q;
     if (error) { console.error("[pulse-explore] live page failed", { from, error }); break; }
