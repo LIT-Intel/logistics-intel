@@ -49,6 +49,13 @@ const INK_200: [number, number, number] = [226, 232, 240];
 const INK_100: [number, number, number] = [241, 245, 249];
 const INK_50:  [number, number, number] = [248, 250, 252];
 
+// Brand anchors — used as accents over the Studio White surface so the
+// PDF still reads as LIT without going dark-mode. Tuned per the sample
+// image: cyan glow on the pulse mark + section eyebrow rules, navy
+// strip at the bottom of every page.
+const LIT_NAVY: [number, number, number] = [2, 6, 23];      // #020617
+const LIT_CYAN: [number, number, number] = [0, 224, 255];   // #00E0FF
+
 const STATUS_OK_BG:        [number, number, number] = [220, 252, 231];
 const STATUS_OK_FG:        [number, number, number] = [21, 128, 61];
 const STATUS_WARN_BG:      [number, number, number] = [254, 243, 199];
@@ -181,12 +188,15 @@ function isLogisticsLeadershipTitle(title: unknown): boolean {
   return true;
 }
 
-// ─── Pulse mark — light-mode version ──────────────────────────────────────
+// ─── Pulse mark — branded waveform on dark tile ──────────────────────────
+// Matches the live in-app Pulse icon: navy rounded-square tile with a
+// neon-cyan waveform + endpoint dot. The cyan against the white page
+// surface is the single most distinctive brand cue the PDF carries.
 function drawPulseLogo(doc: jsPDF, x: number, y: number, size: number): void {
   const s = size / 64;
-  doc.setFillColor(...INK_900);
+  doc.setFillColor(...LIT_NAVY);
   doc.roundedRect(x, y, size, size, size * 0.22, size * 0.22, "F");
-  doc.setDrawColor(255, 255, 255);
+  doc.setDrawColor(...LIT_CYAN);
   doc.setLineWidth(s * 4.4);
   doc.setLineCap("round");
   doc.setLineJoin("round");
@@ -196,7 +206,7 @@ function drawPulseLogo(doc: jsPDF, x: number, y: number, size: number): void {
   for (let i = 1; i < pts.length; i++) {
     doc.line(x + pts[i - 1][0] * s, y + pts[i - 1][1] * s, x + pts[i][0] * s, y + pts[i][1] * s);
   }
-  doc.setFillColor(255, 255, 255);
+  doc.setFillColor(...LIT_CYAN);
   doc.circle(x + 56 * s, y + 32 * s, 3 * s, "F");
 }
 
@@ -238,14 +248,14 @@ function drawPendingPill(doc: jsPDF, x: number, y: number): { w: number; h: numb
   return drawPill(doc, x, y, PENDING_TEXT, PENDING_BG, PENDING_FG);
 }
 
-// ─── Section header (uppercase tracked label with light divider) ─────────
+// ─── Section header (uppercase tracked label with brand cyan accent) ─────
 function drawSectionHeader(doc: jsPDF, label: string, y: number, opts: { icon?: string } = {}): number {
   const iconBoxSize = 16;
   let x = MARGIN;
   if (opts.icon) {
-    doc.setFillColor(...INK_900);
+    doc.setFillColor(...LIT_NAVY);
     doc.roundedRect(x, y - iconBoxSize + 4, iconBoxSize, iconBoxSize, 3, 3, "F");
-    doc.setTextColor(255, 255, 255);
+    doc.setTextColor(...LIT_CYAN);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
     const iconW = doc.getTextWidth(opts.icon);
@@ -255,12 +265,20 @@ function drawSectionHeader(doc: jsPDF, label: string, y: number, opts: { icon?: 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(...INK_900);
-  // Letter-spaced uppercase — approximate by inserting hair spaces.
-  doc.text(label.toUpperCase(), x, y);
-  // Hairline divider under the label.
+  const labelText = label.toUpperCase();
+  doc.text(labelText, x, y);
+  // Brand-cyan accent rule directly under the label text — short, just
+  // far enough past the label to read as an underline. Reinforces LIT
+  // identity without painting a full-page horizontal stripe.
+  const labelW = doc.getTextWidth(labelText);
+  doc.setDrawColor(...LIT_CYAN);
+  doc.setLineWidth(1.4);
+  doc.line(x, y + 3, x + labelW + 12, y + 3);
+  // Hairline gray divider continues to the right margin so the section
+  // still reads as a structural row, with brand emphasis on the label.
   doc.setDrawColor(...INK_200);
-  doc.setLineWidth(0.5);
-  doc.line(MARGIN, y + 6, PAGE_W - MARGIN, y + 6);
+  doc.setLineWidth(0.4);
+  doc.line(x + labelW + 16, y + 3, PAGE_W - MARGIN, y + 3);
   return y + 22;
 }
 
@@ -308,17 +326,27 @@ function drawHeaderFreshnessBadge(doc: jsPDF, label: string): void {
 }
 
 function drawFooter(doc: jsPDF, pageNum: number, pageCount: number): void {
-  const y = PAGE_H - FOOTER_H;
-  doc.setDrawColor(...INK_200);
-  doc.setLineWidth(0.5);
-  doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+  // Branded navy strip at the bottom edge — anchors LIT identity on
+  // every page and matches the corporate-blueprint sample. Confidential
+  // text + page indicator render in white inside the strip.
+  const barH = 16;
+  const barY = PAGE_H - barH;
+  doc.setFillColor(...LIT_NAVY);
+  doc.rect(0, barY, PAGE_W, barH, "F");
+  // Thin cyan rule just above the navy bar — same brand cue used under
+  // section headers. Doubles as visual punctuation between body + bar.
+  doc.setDrawColor(...LIT_CYAN);
+  doc.setLineWidth(0.8);
+  doc.line(0, barY - 0.4, PAGE_W, barY - 0.4);
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.5);
-  doc.setTextColor(...INK_500);
-  doc.text("CONFIDENTIAL // FOR INTERNAL STRATEGIC USE", MARGIN, y + 14);
+  doc.setTextColor(255, 255, 255);
+  doc.text("CONFIDENTIAL // FOR INTERNAL STRATEGIC USE", MARGIN, barY + 11);
   const right = `Page ${pageNum} of ${pageCount}`;
   const rw = doc.getTextWidth(right);
-  doc.text(right, PAGE_W - MARGIN - rw, y + 14);
+  doc.setTextColor(...LIT_CYAN);
+  doc.text(right, PAGE_W - MARGIN - rw, barY + 11);
 }
 
 function stampPageChrome(doc: jsPDF, freshnessLabel: string): void {
