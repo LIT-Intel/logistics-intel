@@ -161,6 +161,13 @@ const nextConfig = {
       { source: "/affiliate-program", destination: "/partners", permanent: true },
       // Old in-app affiliate apply URL — drive to the public landing.
       { source: "/partners/apply", destination: "/partners#apply", permanent: false },
+      // SEO de-duplication: /features/company-intelligence had the same
+      // topic targeting as the canonical /company-intelligence page (the
+      // Pulse Explorer V2 rebuild). Google was seeing two pages compete
+      // for the same keywords. The /features one is also being removed
+      // from FEATURE_PAGES in app/features/_data.ts so it stops appearing
+      // in the sitemap. The redirect catches any inbound link/cache hits.
+      { source: "/features/company-intelligence", destination: "/company-intelligence", permanent: true },
       ...pascalCaseRedirects,
       ...sanityAliasRedirects,
     ];
