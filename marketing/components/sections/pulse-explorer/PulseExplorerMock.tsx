@@ -97,6 +97,7 @@ export function PulseExplorerMock({
             padding: "12px 16px",
             background: "#040c1c",
             borderBottom: "1px solid #0f2038",
+            flexWrap: "wrap",
           }}
         >
           <div className="flex items-center gap-2 shrink-0">
@@ -127,19 +128,19 @@ export function PulseExplorerMock({
             </span>
           </div>
           <div
+            className="hidden flex-1 items-center sm:flex"
             style={{
-              flex: 1,
-              display: "flex",
-              alignItems: "center",
               gap: 8,
               background: "#0a1730",
               border: "1px solid #16294a",
               borderRadius: 9,
               padding: "8px 12px",
+              minWidth: 0,
             }}
           >
             <Search size={13} color="#64748b" />
             <span
+              className="truncate"
               style={{
                 fontFamily: "var(--font-body)",
                 fontSize: 12.5,

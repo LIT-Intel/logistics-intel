@@ -34,16 +34,11 @@ export function CoachSection() {
         }}
       />
       <div
-        className="mx-auto px-8"
+        className="mx-auto px-4 sm:px-8"
         style={{ maxWidth: 1240, position: "relative" }}
       >
         <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1.05fr) minmax(0, 1fr)",
-            gap: 56,
-            alignItems: "center",
-          }}
+          className="grid grid-cols-1 items-center gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-14"
         >
           {/* Coach panel */}
           <div

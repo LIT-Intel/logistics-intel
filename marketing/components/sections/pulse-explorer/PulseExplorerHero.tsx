@@ -116,8 +116,10 @@ export function PulseExplorerHero() {
           </div>
           {/* QuickCard — kept INSIDE the frame bounds (right:18, bottom:24)
               per handoff Jun-17 fix; never use negative offsets while the
-              .lit-page wrapper has overflow: clip. */}
+              .lit-page wrapper has overflow: clip. Hidden on mobile —
+              would otherwise cover most of the map at <640px viewports. */}
           <div
+            className="hidden sm:block"
             style={{
               position: "absolute",
               right: 18,

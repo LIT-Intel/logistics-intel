@@ -5,14 +5,14 @@ import { APP_SIGNUP_URL } from "@/lib/app-urls";
 export function PulseFinalCta() {
   return (
     <section className="section">
-      <div className="mx-auto px-8" style={{ maxWidth: 1240 }}>
+      <div className="mx-auto px-4 sm:px-8" style={{ maxWidth: 1240 }}>
         <div
+          className="px-6 py-12 sm:px-12 sm:py-16 md:px-16 md:py-[72px]"
           style={{
             position: "relative",
             borderRadius: 24,
             overflow: "hidden",
             background: "linear-gradient(135deg,#020617,#0b1f3a)",
-            padding: "72px 48px",
             textAlign: "center",
           }}
         >
