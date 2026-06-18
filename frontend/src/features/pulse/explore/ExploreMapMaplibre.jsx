@@ -98,16 +98,57 @@ function makeBubbleEl(row, mode, sizeMode, maxValue, isSelected) {
   return el;
 }
 
-function makeClusterEl(count) {
+// Hex → "r,g,b" for the rgba() wrappers. Falls back to cyan-500
+// (#06B6D4) if the input is malformed so a bad palette entry can't
+// crash the renderer.
+function hexToRgbTriplet(hex) {
+  const h = (hex || '').replace('#', '');
+  if (h.length !== 6) return '6,182,212';
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  if ([r, g, b].some((v) => Number.isNaN(v))) return '6,182,212';
+  return `${r},${g},${b}`;
+}
+
+// Pick the highest-count key from a {key: count} map. Used to surface
+// the dominant industry / workflow per cluster.
+function pickDominant(counts) {
+  let bestKey = null;
+  let bestCount = -1;
+  for (const [k, v] of Object.entries(counts || {})) {
+    if (v > bestCount) { bestKey = k; bestCount = v; }
+  }
+  return bestKey;
+}
+
+// Resolve a cluster's bubble color from its aggregated properties +
+// the current colorMode. Mirrors colorFor() for individual bubbles so
+// a cluster and the points underneath it read as the same palette.
+function clusterColor(clusterProps, mode) {
+  if (mode === 'opportunity') {
+    const sum = clusterProps.oppScoreSum ?? 0;
+    const n = clusterProps.oppScoreCount ?? 0;
+    const avg = n > 0 ? sum / n : 0;
+    return opportunityColor(avg);
+  }
+  if (mode === 'workflow') {
+    return workflowColor(pickDominant(clusterProps.workflowCounts) ?? 'unsaved');
+  }
+  return industryColor(pickDominant(clusterProps.industryCounts) ?? 'Other');
+}
+
+function makeClusterEl(count, color = '#06B6D4') {
   const size = 28 + Math.min(28, Math.log10(count) * 12);
+  const rgb = hexToRgbTriplet(color);
   const el = document.createElement('div');
   el.className = 'pulse-cluster';
   el.style.cssText = `
     width:${size}px;height:${size}px;border-radius:50%;
-    background:rgba(6,182,212,0.85);color:#fff;
+    background:rgba(${rgb},0.85);color:#fff;
     display:flex;align-items:center;justify-content:center;
     font-weight:600;font-size:12px;cursor:pointer;
-    box-shadow:0 0 0 4px rgba(6,182,212,0.2);
+    box-shadow:0 0 0 4px rgba(${rgb},0.2);
   `;
   el.textContent = String(count);
   return el;
@@ -208,8 +249,41 @@ const ExploreMapMaplibre = forwardRef(function ExploreMapMaplibre({
   // - "clusters" (Region): wider radius, always-on aggregation (maxZoom 20)
   const clusterRadius = mapMode === 'clusters' ? 90 : 60;
   const clusterMaxZoom = mapMode === 'clusters' ? 20 : 8;
+  // Supercluster map/reduce aggregates so each cluster carries the
+  // industry mix, workflow mix, and opportunity-score sum of the
+  // points underneath. Used by clusterColor() at render time so the
+  // cluster's color reflects the underlying data instead of a single
+  // hardcoded cyan. Aggregation runs once per cluster regardless of
+  // colorMode — the consumer picks the right slice.
   const cluster = useMemo(() => {
-    const s = new Supercluster({ radius: clusterRadius, maxZoom: clusterMaxZoom });
+    const s = new Supercluster({
+      radius: clusterRadius,
+      maxZoom: clusterMaxZoom,
+      map: (props) => {
+        const row = props.row ?? {};
+        const ind = row.industry || 'Other';
+        const wf = row._workflow_state || 'unsaved';
+        const op = Number.isFinite(row.opportunity_composite_score)
+          ? row.opportunity_composite_score
+          : null;
+        return {
+          industryCounts: { [ind]: 1 },
+          workflowCounts: { [wf]: 1 },
+          oppScoreSum: op ?? 0,
+          oppScoreCount: op != null ? 1 : 0,
+        };
+      },
+      reduce: (acc, props) => {
+        for (const [k, v] of Object.entries(props.industryCounts || {})) {
+          acc.industryCounts[k] = (acc.industryCounts[k] || 0) + v;
+        }
+        for (const [k, v] of Object.entries(props.workflowCounts || {})) {
+          acc.workflowCounts[k] = (acc.workflowCounts[k] || 0) + v;
+        }
+        acc.oppScoreSum += props.oppScoreSum || 0;
+        acc.oppScoreCount += props.oppScoreCount || 0;
+      },
+    });
     s.load(points);
     return s;
   }, [points, clusterRadius, clusterMaxZoom]);
@@ -284,7 +358,8 @@ const ExploreMapMaplibre = forwardRef(function ExploreMapMaplibre({
       const [lng, lat] = it.geometry.coordinates;
       let el;
       if (it.properties.cluster) {
-        el = makeClusterEl(it.properties.point_count);
+        const color = clusterColor(it.properties, colorMode);
+        el = makeClusterEl(it.properties.point_count, color);
         el.addEventListener('click', () => {
           const expansionZoom = cluster.getClusterExpansionZoom(it.properties.cluster_id);
           map.flyTo({ center: [lng, lat], zoom: expansionZoom + 0.1 });
