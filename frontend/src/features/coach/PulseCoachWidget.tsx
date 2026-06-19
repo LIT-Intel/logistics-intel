@@ -23,6 +23,7 @@ import {
   type PulseCoachResult,
   type WorkspaceLane,
 } from "@/lib/api";
+import type { CoachCompanyHit } from "@/api/pulse";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useLocation } from "react-router-dom";
@@ -844,7 +845,11 @@ function CoachComposer() {
   const { pathname } = useLocation();
   const [q, setQ] = useState("");
   const [asking, setAsking] = useState(false);
-  const [answer, setAnswer] = useState<{ md: string; cta: { label: string; url: string } | null } | null>(null);
+  const [answer, setAnswer] = useState<{
+    md: string;
+    cta: { label: string; url: string } | null;
+    companies?: CoachCompanyHit[];
+  } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   // Resolve page-aware prompts. We always look at the full tutorial
@@ -867,7 +872,7 @@ function CoachComposer() {
         setErr(resp.error || resp.answer_md || "Coach couldn't answer that.");
         return;
       }
-      setAnswer({ md: resp.answer_md, cta: resp.cta });
+      setAnswer({ md: resp.answer_md, cta: resp.cta, companies: resp.companies });
     } catch (err: any) {
       setErr(err?.message || "Coach failed");
     } finally {
@@ -903,6 +908,40 @@ function CoachComposer() {
           <div className="font-body text-[12px] leading-relaxed text-slate-200" style={{ whiteSpace: "pre-wrap" }}>
             {answer.md}
           </div>
+          {/* Inline search results — the Coach detected a data query
+              (geography / industry / lane / etc.) and ran it through
+              the Pulse search pipeline. Each row navigates straight
+              to the company profile. Hidden for meta / help answers. */}
+          {answer.companies && answer.companies.length > 0 ? (
+            <ul className="mt-2 flex flex-col gap-1.5">
+              {answer.companies.slice(0, 8).map((c) => {
+                const loc = [c.city, c.state, c.country].filter(Boolean).join(", ");
+                const target = c.id ? `/app/company/${c.id}` : "/app/prospecting";
+                return (
+                  <li key={c.id || c.name}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigate(target);
+                        setAnswer(null);
+                        setQ("");
+                      }}
+                      className="w-full rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-left transition hover:border-cyan-400/40 hover:bg-cyan-400/[0.06]"
+                    >
+                      <div className="font-display text-[11.5px] font-semibold text-slate-100">
+                        {c.name}
+                      </div>
+                      {(loc || c.industry) ? (
+                        <div className="font-body text-[10.5px] text-slate-400">
+                          {[loc, c.industry].filter(Boolean).join(" · ")}
+                        </div>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
           {answer.cta ? (
             <button
               type="button"
