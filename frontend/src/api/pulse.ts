@@ -96,6 +96,22 @@ export type PulseCoachV2Result = {
   error?: string;
 };
 
+/**
+ * One company result inline-rendered in a Coach chat reply.
+ * Populated when pulse-coach-v2 routes the question through the
+ * pulse-explore-parse → pulse-explore pipeline (data query branch).
+ * Empty / undefined for meta / account / help questions.
+ */
+export type CoachCompanyHit = {
+  id: string;
+  name: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  industry?: string;
+  opportunity_score?: number;
+};
+
 export type PulseCoachAnswer = {
   ok: boolean;
   classification?: string;
@@ -103,6 +119,15 @@ export type PulseCoachAnswer = {
   cta: { label: string; url: string } | null;
   matched_articles?: { slug: string; title: string }[];
   context_snapshot?: CoachContextSnapshot | null;
+  /**
+   * Inline search results — present when the Coach detected the question
+   * as a data query (geography / industry / lane / mode / etc.) and ran
+   * it through the Pulse search pipeline. The chat surface renders these
+   * as a clickable list below the markdown answer.
+   */
+  companies?: CoachCompanyHit[];
+  /** The structured filter object the server matched against. */
+  filters_applied?: Record<string, unknown>;
   error?: string;
 };
 
@@ -153,6 +178,8 @@ export async function askPulseCoach(question: string): Promise<PulseCoachAnswer>
     cta: data?.cta || null,
     matched_articles: data?.matched_articles || [],
     context_snapshot: data?.context_snapshot || null,
+    companies: Array.isArray(data?.companies) ? data.companies : undefined,
+    filters_applied: data?.filters_applied || undefined,
   };
 }
 

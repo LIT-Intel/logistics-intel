@@ -291,8 +291,13 @@ YOU CAN SEE:
 - integrations: mailbox_connected (boolean; do not name the provider)
 - recent_activity.recent_searches
 
+DATA QUERIES (companies / lanes / shipments) ARE HANDLED UPSTREAM:
+- Before you see the question, the server runs it through the Pulse search parser.
+- If the question was a data query (geography, industry, lane, mode, carrier, commodity, etc), the server has ALREADY answered with a result list — you will not see those questions.
+- The questions you DO see are about the user's account, plan, usage, campaigns, inbox, product help, or general "how do I" workflow — answer those from the context block + LIT KNOWLEDGE block below.
+- Do NOT redirect users to Pulse search for data questions; the upstream pipeline already handles that path.
+
 YOU CANNOT SEE:
-- Raw shipment records — redirect to Pulse search or a company profile
 - Stripe internals beyond subscription — redirect to /settings/billing
 - Other users' private data
 - The product roadmap or unreleased features
@@ -506,12 +511,298 @@ function rankAndCapCards(cards: CoachCard[]): CoachCard[] {
     .slice(0, 5);
 }
 
-async function answerQuestion(ctx: ContextBlock, question: string): Promise<{
+// ──────────────────────────────────────────────────────────────────────────
+// Inline search pipeline — wired 2026-06-19 per CEO Option A.
+//
+// Background: Before this commit, the Coach had no concept of a "data
+// query." Every question — including "show me companies in georgia" —
+// flowed through a free-form LLM whose system prompt explicitly said
+// "YOU CANNOT SEE raw shipment records — redirect to Pulse search."
+// Result: every data-shaped question returned the redirect string the
+// user reported as "still not fixed" on day 5.
+//
+// The 108-dimension parser shipped in PR #112 (pulse-explore-parse)
+// already understands geographic / industry / lane / mode / carrier
+// queries. It was wired to the Pulse Search bar only — never to the
+// Coach. This pipeline closes that gap:
+//
+//   1. tryParseDataQuery() — call pulse-explore-parse on the user's
+//      question. If the parser returns a non-trivial filter object
+//      (any data dimension populated), treat the question as a
+//      data query.
+//   2. runExplorerSearch() — call pulse-explore with the parsed
+//      filters. Returns up to 8 matching companies.
+//   3. buildDataAnswer() — synthesise a markdown answer that includes
+//      the top 5 companies inline + a CTA to view the full result
+//      set in the Pulse Explorer.
+//
+// Meta questions (account / plan / usage / campaigns / help) still
+// flow through the existing OpenAI path unchanged.
+// ──────────────────────────────────────────────────────────────────────────
+
+type ParsedExplorerFilters = {
+  query?: string;
+  name?: string;
+  industry?: string[];
+  geo?: {
+    regions?: string[];
+    states?: string[];
+    countries?: string[];
+    cities?: string[];
+    zips?: string[];
+    counties?: string[];
+    metros?: string[];
+    ports_loading?: string[];
+    ports_discharge?: string[];
+  };
+  trade_lane?: { origin?: string | null; destination?: string | null };
+  mode?: string[];
+  container?: {
+    full_load?: boolean | null;
+    refrigerated?: boolean;
+    hazmat?: boolean;
+    types?: string[];
+  };
+  commodity?: { hs_codes?: string[]; names?: string[] };
+  opportunity_types?: string[];
+  opportunity_score_min?: number | null;
+  opportunity_score_max?: number | null;
+  size?: {
+    teu_min?: number | null;
+    teu_max?: number | null;
+    shipments_min?: number | null;
+    shipments_max?: number | null;
+    spend_min?: number | null;
+    spend_max?: number | null;
+  };
+};
+
+type CoachCompanyHit = {
+  id: string;
+  name: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  industry?: string;
+  opportunity_score?: number;
+};
+
+function hasDataDimensions(p: ParsedExplorerFilters | null): boolean {
+  if (!p) return false;
+  if (p.name && p.name.trim().length >= 2) return true;
+  if (Array.isArray(p.industry) && p.industry.length > 0) return true;
+  const g = p.geo ?? {};
+  if ((g.regions?.length ?? 0) > 0) return true;
+  if ((g.states?.length ?? 0) > 0) return true;
+  if ((g.countries?.length ?? 0) > 0) return true;
+  if ((g.cities?.length ?? 0) > 0) return true;
+  if ((g.metros?.length ?? 0) > 0) return true;
+  if ((g.zips?.length ?? 0) > 0) return true;
+  if ((g.counties?.length ?? 0) > 0) return true;
+  if ((g.ports_loading?.length ?? 0) > 0) return true;
+  if ((g.ports_discharge?.length ?? 0) > 0) return true;
+  if (p.trade_lane?.origin || p.trade_lane?.destination) return true;
+  if (Array.isArray(p.mode) && p.mode.length > 0) return true;
+  if ((p.commodity?.hs_codes?.length ?? 0) > 0) return true;
+  if ((p.commodity?.names?.length ?? 0) > 0) return true;
+  if (Array.isArray(p.opportunity_types) && p.opportunity_types.length > 0) return true;
+  return false;
+}
+
+async function tryParseDataQuery(
+  question: string,
+  authToken: string,
+): Promise<ParsedExplorerFilters | null> {
+  try {
+    const url = `${SUPABASE_URL}/functions/v1/pulse-explore-parse`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${authToken}`,
+        "apikey": SERVICE_ROLE_KEY,
+      },
+      body: JSON.stringify({ query: question }),
+    });
+    if (!resp.ok) {
+      log.warn("parser_non_ok", { status: resp.status });
+      return null;
+    }
+    const data = await resp.json();
+    return (data?.parsed ?? null) as ParsedExplorerFilters | null;
+  } catch (err) {
+    log.warn("parser_call_failed", { err: String(err) });
+    return null;
+  }
+}
+
+async function runExplorerSearch(
+  parsed: ParsedExplorerFilters,
+  authToken: string,
+): Promise<{ companies: CoachCompanyHit[]; total: number }> {
+  try {
+    const url = `${SUPABASE_URL}/functions/v1/pulse-explore`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${authToken}`,
+        "apikey": SERVICE_ROLE_KEY,
+      },
+      body: JSON.stringify({
+        filters: {
+          name: parsed.name,
+          industry: parsed.industry,
+          geo: parsed.geo,
+          size: parsed.size,
+          opportunity_types: parsed.opportunity_types,
+          opportunity_score_min: parsed.opportunity_score_min,
+          opportunity_score_max: parsed.opportunity_score_max,
+          trade_lane: parsed.trade_lane,
+          mode: parsed.mode,
+          container: parsed.container,
+          commodity: parsed.commodity,
+        },
+        page: 1,
+        page_size: 12,
+      }),
+    });
+    if (!resp.ok) {
+      log.warn("search_non_ok", { status: resp.status });
+      return { companies: [], total: 0 };
+    }
+    const data = await resp.json();
+    const rows = Array.isArray(data?.companies)
+      ? data.companies
+      : Array.isArray(data?.results)
+        ? data.results
+        : Array.isArray(data?.data)
+          ? data.data
+          : [];
+    const hits: CoachCompanyHit[] = rows.slice(0, 8).map((r: any) => ({
+      id: String(r.id ?? r.company_id ?? r.uid ?? ""),
+      name: String(r.name ?? r.company_name ?? r.display_name ?? "Unnamed account"),
+      city: r.city ?? r.headquarters_city ?? undefined,
+      state: r.state ?? r.headquarters_state ?? undefined,
+      country: r.country ?? r.country_code ?? undefined,
+      industry: r.industry ?? r.industry_label ?? undefined,
+      opportunity_score: typeof r.opportunity_composite_score === "number"
+        ? r.opportunity_composite_score
+        : typeof r.opportunity_score === "number"
+          ? r.opportunity_score
+          : undefined,
+    }));
+    const total = typeof data?.total === "number"
+      ? data.total
+      : typeof data?.count === "number"
+        ? data.count
+        : hits.length;
+    return { companies: hits, total };
+  } catch (err) {
+    log.warn("search_call_failed", { err: String(err) });
+    return { companies: [], total: 0 };
+  }
+}
+
+function describeFilters(p: ParsedExplorerFilters): string {
+  const parts: string[] = [];
+  if (p.name) parts.push(`"${p.name}"`);
+  if (p.industry?.length) parts.push(p.industry.slice(0, 2).join(" / "));
+  const g = p.geo ?? {};
+  const place =
+    g.cities?.[0] ||
+    g.metros?.[0] ||
+    g.states?.[0] ||
+    g.countries?.[0] ||
+    (g.regions?.[0] ? g.regions[0].replace(/_/g, " ") : null);
+  if (place) parts.push(`in ${place}`);
+  if (p.trade_lane?.origin || p.trade_lane?.destination) {
+    parts.push(`${p.trade_lane.origin ?? "any"} → ${p.trade_lane.destination ?? "any"}`);
+  }
+  if (p.mode?.length) parts.push(`${p.mode[0]} freight`);
+  if (p.commodity?.names?.length) parts.push(p.commodity.names[0]);
+  return parts.length ? parts.join(" · ") : "your filters";
+}
+
+function buildExplorerCtaUrl(question: string): string {
+  return `/app/prospecting?q=${encodeURIComponent(question)}`;
+}
+
+function buildDataAnswer(
+  question: string,
+  parsed: ParsedExplorerFilters,
+  results: { companies: CoachCompanyHit[]; total: number },
+): {
   classification: string;
   answer_md: string;
   cta: { label: string; url: string } | null;
   matched_articles?: { slug: string; title: string }[];
+  companies?: CoachCompanyHit[];
+  filters_applied?: ParsedExplorerFilters;
+} {
+  const { companies, total } = results;
+  const filterLabel = describeFilters(parsed);
+
+  if (!companies.length) {
+    return {
+      classification: "data_business_question",
+      answer_md:
+        `I searched for **${filterLabel}** and didn't find any matching accounts in your dataset. ` +
+        `Try broadening the filter — for example, expand the geography or remove the industry constraint.`,
+      cta: { label: "Open Pulse Explorer", url: buildExplorerCtaUrl(question) },
+      companies: [],
+      filters_applied: parsed,
+    };
+  }
+
+  const top = companies.slice(0, 5);
+  const lines = top.map((c, i) => {
+    const loc = [c.city, c.state, c.country].filter(Boolean).join(", ");
+    const tag = c.industry ? ` _(${c.industry})_` : "";
+    return `${i + 1}. **${c.name}**${loc ? ` — ${loc}` : ""}${tag}`;
+  });
+
+  const more = total > top.length ? `\n\n_+${total - top.length} more — open the Pulse Explorer to view all._` : "";
+  const answer_md =
+    `Found **${total.toLocaleString()}** accounts matching **${filterLabel}**. Top matches:\n\n` +
+    lines.join("\n") +
+    more;
+
+  return {
+    classification: "data_business_question",
+    answer_md,
+    cta: { label: "View all in Pulse Explorer", url: buildExplorerCtaUrl(question) },
+    companies,
+    filters_applied: parsed,
+  };
+}
+
+async function answerQuestion(
+  ctx: ContextBlock,
+  question: string,
+  authToken: string,
+): Promise<{
+  classification: string;
+  answer_md: string;
+  cta: { label: string; url: string } | null;
+  matched_articles?: { slug: string; title: string }[];
+  companies?: CoachCompanyHit[];
+  filters_applied?: ParsedExplorerFilters;
 }> {
+  // STEP 1 — Inline search pipeline. Run the parser first so we can
+  // detect data-shaped queries ("companies in georgia", "pharma
+  // importers", "Yantian → Long Beach") and answer them directly
+  // instead of routing the user to a different surface. Meta /
+  // account / billing / help queries return empty filter objects
+  // and fall through to the existing LLM path below.
+  if (authToken) {
+    const parsed = await tryParseDataQuery(question, authToken);
+    if (parsed && hasDataDimensions(parsed)) {
+      const results = await runExplorerSearch(parsed, authToken);
+      return buildDataAnswer(question, parsed, results);
+    }
+  }
+
   const q = question.toLowerCase();
   const matched = (ctx.help_articles || [])
     .map((a) => {
@@ -690,7 +981,7 @@ serve(async (req) => {
       });
     }
 
-    const result = await answerQuestion(ctx, question);
+    const result = await answerQuestion(ctx, question, token);
 
     // Record consumption so the counter increments toward the cap.
     // Best-effort — if the ledger insert fails we don't fail the request.
