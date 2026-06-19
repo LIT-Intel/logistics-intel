@@ -23,7 +23,7 @@ import {
   type PulseCoachResult,
   type WorkspaceLane,
 } from "@/lib/api";
-import type { CoachCompanyHit } from "@/api/pulse";
+import type { CoachCompanyHit, CoachUnsupportedFilter } from "@/api/pulse";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useLocation } from "react-router-dom";
@@ -849,6 +849,7 @@ function CoachComposer() {
     md: string;
     cta: { label: string; url: string } | null;
     companies?: CoachCompanyHit[];
+    unsupportedFilters?: CoachUnsupportedFilter[];
   } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -872,7 +873,12 @@ function CoachComposer() {
         setErr(resp.error || resp.answer_md || "Coach couldn't answer that.");
         return;
       }
-      setAnswer({ md: resp.answer_md, cta: resp.cta, companies: resp.companies });
+      setAnswer({
+        md: resp.answer_md,
+        cta: resp.cta,
+        companies: resp.companies,
+        unsupportedFilters: resp.unsupported_filters,
+      });
     } catch (err: any) {
       setErr(err?.message || "Coach failed");
     } finally {
@@ -908,6 +914,27 @@ function CoachComposer() {
           <div className="font-body text-[12px] leading-relaxed text-slate-200" style={{ whiteSpace: "pre-wrap" }}>
             {answer.md}
           </div>
+          {/* Phantom-dimension pillbar — parser extracted these but the
+              search backend can't yet apply them. Show what we under-
+              stood + "coming soon" rather than silently drop the
+              dimension. Honest UX over phantom understanding. */}
+          {answer.unsupportedFilters && answer.unsupportedFilters.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {answer.unsupportedFilters.map((u) => (
+                <span
+                  key={u.key}
+                  title={`${u.label} — coming soon. We understood "${u.value}" but the filter ships next.`}
+                  className="font-display inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/[0.08] px-2 py-0.5 text-[10px] font-semibold text-amber-200"
+                >
+                  <span className="opacity-70">{u.label.replace(/ filter$/, "")}:</span>
+                  <span>{u.value}</span>
+                  <span className="ml-1 rounded-sm bg-amber-300/15 px-1 py-px text-[9px] uppercase tracking-wide text-amber-100">
+                    soon
+                  </span>
+                </span>
+              ))}
+            </div>
+          ) : null}
           {/* Inline search results — the Coach detected a data query
               (geography / industry / lane / etc.) and ran it through
               the Pulse search pipeline. Each row navigates straight

@@ -9,6 +9,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { parseDeterministic, type DeterministicExtraction } from "../_shared/nl_deterministic_parser.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -635,16 +636,114 @@ Deno.serve(async (req: Request) => {
   const query = (body.query ?? "").trim();
   if (!query) return jsonResponse({ ok: true, parsed: defaults(""), model: "noop", confidence: 0 });
 
-  const gemini = await parseWithGemini(query);
-  if (gemini && gemini.parsed.confidence >= 0.4) {
-    return jsonResponse({ ok: true, parsed: gemini.parsed, model: gemini.model });
+  // ── Step 1: deterministic extraction ──────────────────────────────
+  // States, regions, "City, State" pairs, ZIPs, countries, HS codes,
+  // dollar amounts, percentages, TEU thresholds, growth/decline
+  // keywords, trade-lane phrasing, ports, modes, time windows, and
+  // CRM saved/unsaved flags. Runs as pure regex + dictionaries — no
+  // network call, no LLM cost, fully consistent.
+  const det = parseDeterministic(query);
+
+  // ── Step 2: LLM extraction for the fuzzy 20% ──────────────────────
+  // Industry synonyms ("car parts" → Automotive), brand-name detection
+  // ("Walmart"), product/commodity normalisation, opportunity_types,
+  // similarity ("like Tesla"). Gemini first, OpenAI fallback. The
+  // deterministic confidence determines whether we even bother — if
+  // the regex layer captured 5+ dimensions, the LLM is unlikely to
+  // add meaningful signal and we save the call.
+  const skipLLM = det.confidence >= 0.75;
+
+  let llmParsed: ExplorerFilters | null = null;
+  let llmModel: string = "deterministic_only";
+  if (!skipLLM) {
+    const gemini = await parseWithGemini(query);
+    if (gemini && gemini.parsed.confidence >= 0.4) {
+      llmParsed = gemini.parsed;
+      llmModel = gemini.model;
+    } else {
+      const openai = await parseWithOpenAI(query);
+      if (openai) {
+        llmParsed = openai.parsed;
+        llmModel = openai.model;
+      } else if (gemini) {
+        llmParsed = gemini.parsed;
+        llmModel = gemini.model;
+      }
+    }
   }
-  const openai = await parseWithOpenAI(query);
-  if (openai) {
-    return jsonResponse({ ok: true, parsed: openai.parsed, model: openai.model });
-  }
-  if (gemini) {
-    return jsonResponse({ ok: true, parsed: gemini.parsed, model: gemini.model });
-  }
-  return jsonResponse({ ok: true, parsed: defaults(query), model: "fallback" });
+
+  // ── Step 3: merge deterministic + LLM ─────────────────────────────
+  // Deterministic always wins on dimensions it extracted. The LLM
+  // fills the gaps. This is the architectural fix for the parser
+  // dropping "Decatur" from "Decatur, Georgia" — the regex pass
+  // captures the City, State pair before the LLM sees the query.
+  const merged = mergeDeterministicAndLLM(query, det, llmParsed);
+
+  return jsonResponse({
+    ok: true,
+    parsed: merged,
+    model: skipLLM ? "deterministic" : `deterministic+${llmModel}`,
+    confidence: merged.confidence,
+    extraction_log: det.extractionsBySource,
+  });
 });
+
+/**
+ * Merge the deterministic and LLM parses. Deterministic wins on every
+ * dimension where it captured a value; LLM fills the rest. The final
+ * confidence is the max of (deterministic + LLM contribution).
+ */
+function mergeDeterministicAndLLM(
+  query: string,
+  det: DeterministicExtraction & { confidence: number },
+  llm: ExplorerFilters | null,
+): ExplorerFilters {
+  const base = llm ?? defaults(query);
+
+  // Geography — det wins on every populated field
+  if (det.states.length) base.geo.states = det.states;
+  if (det.regions.length) base.geo.regions = det.regions as any;
+  if (det.cities.length) base.geo.cities = det.cities;
+  if (det.zips.length) base.geo.zips = det.zips;
+  if (det.countries.length) base.geo.countries = det.countries;
+  if (det.ports_loading.length) base.geo.ports_loading = det.ports_loading;
+  if (det.ports_discharge.length) base.geo.ports_discharge = det.ports_discharge;
+
+  // Size + commercial
+  if (det.teu_min != null) base.size.teu_min = det.teu_min;
+  if (det.teu_max != null) base.size.teu_max = det.teu_max;
+  if (det.shipments_min != null) base.size.shipments_min = det.shipments_min;
+  if (det.shipments_max != null) base.size.shipments_max = det.shipments_max;
+  if (det.spend_min != null) base.size.spend_min = det.spend_min;
+  if (det.spend_max != null) base.size.spend_max = det.spend_max;
+  if (det.revenue_min != null) base.commercial.revenue_min = det.revenue_min;
+  if (det.revenue_max != null) base.commercial.revenue_max = det.revenue_max;
+  if (det.employees_min != null) base.commercial.employees_min = det.employees_min;
+  if (det.employees_max != null) base.commercial.employees_max = det.employees_max;
+
+  // Opportunity score
+  if (det.opportunityMin != null) base.opportunity_score_min = det.opportunityMin;
+  if (det.opportunityMax != null) base.opportunity_score_max = det.opportunityMax;
+
+  // Commodity
+  if (det.hs_codes.length) base.commodity.hs_codes = det.hs_codes;
+
+  // Trade lane
+  if (det.tradeLaneOrigin) base.trade_lane.origin = det.tradeLaneOrigin;
+  if (det.tradeLaneDestination) base.trade_lane.destination = det.tradeLaneDestination;
+
+  // Mode
+  if (det.modes.length) base.mode = det.modes;
+
+  // Time window
+  if (det.timeWindow) base.time.window = det.timeWindow;
+
+  // CRM saved/unsaved
+  if (det.savedOnly) base.crm.in_pipeline = true;
+
+  // Confidence — combine: deterministic up to 0.95, LLM up to 0.9.
+  // Take the max as the reported confidence.
+  base.confidence = Math.max(det.confidence, base.confidence ?? 0);
+
+  return base;
+}

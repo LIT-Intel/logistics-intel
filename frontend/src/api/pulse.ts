@@ -112,6 +112,19 @@ export type CoachCompanyHit = {
   opportunity_score?: number;
 };
 
+/**
+ * A single filter the parser extracted but the search backend
+ * cannot yet apply (data isn't in the schema or aggregate view is
+ * missing). The Coach surfaces these as "coming soon" pills so the
+ * user can SEE that we understood their intent — eliminating the
+ * phantom-understanding bug where filters silently drop.
+ */
+export type CoachUnsupportedFilter = {
+  key: string;     // e.g. "hs_codes", "trade_lane", "growth"
+  label: string;   // human label e.g. "HS code filter"
+  value: string;   // what the user actually said, e.g. "9403" or "fast growing"
+};
+
 export type PulseCoachAnswer = {
   ok: boolean;
   classification?: string;
@@ -128,6 +141,13 @@ export type PulseCoachAnswer = {
   companies?: CoachCompanyHit[];
   /** The structured filter object the server matched against. */
   filters_applied?: Record<string, unknown>;
+  /**
+   * Parser-extracted dimensions the backend can't yet filter on.
+   * Rendered as a small "coming soon" pillbar so the user can SEE
+   * the parser understood them. Empty when all extracted dimensions
+   * were applied to the SQL query.
+   */
+  unsupported_filters?: CoachUnsupportedFilter[];
   error?: string;
 };
 
@@ -180,6 +200,7 @@ export async function askPulseCoach(question: string): Promise<PulseCoachAnswer>
     context_snapshot: data?.context_snapshot || null,
     companies: Array.isArray(data?.companies) ? data.companies : undefined,
     filters_applied: data?.filters_applied || undefined,
+    unsupported_filters: Array.isArray(data?.unsupported_filters) ? data.unsupported_filters : undefined,
   };
 }
 

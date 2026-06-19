@@ -704,17 +704,76 @@ async function runExplorerSearch(
   }
 }
 
+// ─── Phantom-dimension reporting ──────────────────────────────────────
+// Backend dimensions that the parser may extract but the search backend
+// does NOT yet filter on (per PR #112 commit + CEO-review 2026-06-19).
+// Surfacing these to the UI as "coming soon" pills is more honest than
+// silently dropping them — eliminates the phantom-understanding bug
+// where a user thinks their filter applied when it didn't.
+const PHANTOM_DIMENSIONS = {
+  hs_codes: "HS code filter",
+  trade_lane: "Trade lane filter (origin → destination)",
+  mode: "Freight mode filter (ocean / air / rail / truck)",
+  zips: "ZIP code filter",
+  counties: "County filter",
+  ports_loading: "Origin port filter",
+  ports_discharge: "Destination port filter",
+  growth: "Growth / trend filter (growing / declining / new)",
+} as const;
+
+type UnsupportedFilter = { key: string; label: string; value: string };
+
+function detectUnsupportedFilters(p: ParsedExplorerFilters): UnsupportedFilter[] {
+  const out: UnsupportedFilter[] = [];
+  if ((p.commodity?.hs_codes?.length ?? 0) > 0) {
+    out.push({ key: "hs_codes", label: PHANTOM_DIMENSIONS.hs_codes, value: p.commodity!.hs_codes!.join(", ") });
+  }
+  if (p.trade_lane?.origin || p.trade_lane?.destination) {
+    out.push({ key: "trade_lane", label: PHANTOM_DIMENSIONS.trade_lane, value: `${p.trade_lane.origin ?? "any"} → ${p.trade_lane.destination ?? "any"}` });
+  }
+  if ((p.mode?.length ?? 0) > 0) {
+    out.push({ key: "mode", label: PHANTOM_DIMENSIONS.mode, value: p.mode!.join(", ") });
+  }
+  if ((p.geo?.zips?.length ?? 0) > 0) {
+    out.push({ key: "zips", label: PHANTOM_DIMENSIONS.zips, value: p.geo!.zips!.join(", ") });
+  }
+  if ((p.geo?.counties?.length ?? 0) > 0) {
+    out.push({ key: "counties", label: PHANTOM_DIMENSIONS.counties, value: p.geo!.counties!.join(", ") });
+  }
+  if ((p.geo?.ports_loading?.length ?? 0) > 0) {
+    out.push({ key: "ports_loading", label: PHANTOM_DIMENSIONS.ports_loading, value: p.geo!.ports_loading!.join(", ") });
+  }
+  if ((p.geo?.ports_discharge?.length ?? 0) > 0) {
+    out.push({ key: "ports_discharge", label: PHANTOM_DIMENSIONS.ports_discharge, value: p.geo!.ports_discharge!.join(", ") });
+  }
+  return out;
+}
+
+function composePlace(g: NonNullable<ParsedExplorerFilters["geo"]>): string | null {
+  const city = g.cities?.[0];
+  const metro = g.metros?.[0];
+  const state = g.states?.[0];
+  const country = g.countries?.[0];
+  const region = g.regions?.[0];
+
+  // City + state (most specific) — produces "Decatur, GA" instead of
+  // the old behaviour which truncated to "GA" and looked confusing.
+  if (city && state) return `${city}, ${state}`;
+  if (metro && state) return `${metro} metro, ${state}`;
+  if (city) return city;
+  if (metro) return `${metro} metro`;
+  if (state) return state;
+  if (country) return country;
+  if (region) return region.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return null;
+}
+
 function describeFilters(p: ParsedExplorerFilters): string {
   const parts: string[] = [];
   if (p.name) parts.push(`"${p.name}"`);
   if (p.industry?.length) parts.push(p.industry.slice(0, 2).join(" / "));
   const g = p.geo ?? {};
-  const place =
-    g.cities?.[0] ||
-    g.metros?.[0] ||
-    g.states?.[0] ||
-    g.countries?.[0] ||
-    (g.regions?.[0] ? g.regions[0].replace(/_/g, " ") : null);
+  const place = composePlace(g);
   if (place) parts.push(`in ${place}`);
   if (p.trade_lane?.origin || p.trade_lane?.destination) {
     parts.push(`${p.trade_lane.origin ?? "any"} → ${p.trade_lane.destination ?? "any"}`);
@@ -728,6 +787,39 @@ function buildExplorerCtaUrl(question: string): string {
   return `/app/prospecting?q=${encodeURIComponent(question)}`;
 }
 
+/**
+ * Generate up to 3 actionable empty-state suggestions tailored to
+ * what the parser actually extracted. Replaces the prior generic
+ * "broaden the geography or remove the industry constraint" which
+ * the user flagged on day 5 as a dead-end message.
+ */
+function buildEmptyStateSuggestions(p: ParsedExplorerFilters): string[] {
+  const suggestions: string[] = [];
+  const g = p.geo ?? {};
+
+  if (g.cities?.length && g.states?.length) {
+    suggestions.push(`Search all of **${g.states[0]}** instead of just ${g.cities[0]}`);
+    if (!g.regions?.length) {
+      suggestions.push(`Try the Southeast / region search instead of a single state`);
+    }
+  } else if (g.states?.length && !g.regions?.length) {
+    suggestions.push(`Expand from **${g.states[0]}** to the broader region`);
+  } else if (g.zips?.length) {
+    suggestions.push(`Widen the radius from 50 miles to 100 miles around **${g.zips[0]}**`);
+  }
+  if (p.industry?.length) {
+    suggestions.push(`Remove the industry constraint (**${p.industry[0]}**) and keep the geography`);
+  }
+  if (p.commodity?.hs_codes?.length) {
+    suggestions.push(`HS code filtering ships soon — try a broader product term`);
+  }
+  if (p.trade_lane?.origin || p.trade_lane?.destination) {
+    suggestions.push(`Trade-lane filtering ships soon — try just the destination country / port`);
+  }
+  suggestions.push(`Open Pulse Explorer with this query and tune filters manually`);
+  return suggestions.slice(0, 3);
+}
+
 function buildDataAnswer(
   question: string,
   parsed: ParsedExplorerFilters,
@@ -739,19 +831,23 @@ function buildDataAnswer(
   matched_articles?: { slug: string; title: string }[];
   companies?: CoachCompanyHit[];
   filters_applied?: ParsedExplorerFilters;
+  unsupported_filters?: UnsupportedFilter[];
 } {
   const { companies, total } = results;
   const filterLabel = describeFilters(parsed);
+  const unsupported = detectUnsupportedFilters(parsed);
 
   if (!companies.length) {
+    const suggestions = buildEmptyStateSuggestions(parsed);
+    const suggestionLines = suggestions.map((s, i) => `${i + 1}. ${s}`).join("\n");
     return {
       classification: "data_business_question",
       answer_md:
-        `I searched for **${filterLabel}** and didn't find any matching accounts in your dataset. ` +
-        `Try broadening the filter — for example, expand the geography or remove the industry constraint.`,
+        `I searched for **${filterLabel}** but no accounts matched. Try:\n\n${suggestionLines}`,
       cta: { label: "Open Pulse Explorer", url: buildExplorerCtaUrl(question) },
       companies: [],
       filters_applied: parsed,
+      unsupported_filters: unsupported,
     };
   }
 
@@ -774,6 +870,7 @@ function buildDataAnswer(
     cta: { label: "View all in Pulse Explorer", url: buildExplorerCtaUrl(question) },
     companies,
     filters_applied: parsed,
+    unsupported_filters: unsupported,
   };
 }
 
@@ -788,6 +885,7 @@ async function answerQuestion(
   matched_articles?: { slug: string; title: string }[];
   companies?: CoachCompanyHit[];
   filters_applied?: ParsedExplorerFilters;
+  unsupported_filters?: UnsupportedFilter[];
 }> {
   // STEP 1 — Inline search pipeline. Run the parser first so we can
   // detect data-shaped queries ("companies in georgia", "pharma
