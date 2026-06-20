@@ -242,13 +242,54 @@ export function normalizeIyShipperHit(hit: IyShipperHit): UnifiedExplorerRow {
 }
 
 /**
+ * Optional per-row metadata overlay (industry / vertical / revenue /
+ * opp score) keyed by source_company_key. Populated by
+ * fetchSearchMetadataOverlay() in api.ts; the normaliser merges
+ * each row by key.
+ */
+export type CompanyMetadataOverlay = Record<string, {
+  industry?: string | null;
+  vertical?: string | null;
+  revenue?: number | string | null;
+  opportunity_composite_score?: number | null;
+}>;
+
+/** Parse "$50M" / "$1.2B" / 50000000 / "50000000" into a number, else null. */
+function parseRevenueValue(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const s = String(v).trim().replace(/[\s$,]/g, '');
+  if (!s) return null;
+  const m = s.match(/^([0-9]*\.?[0-9]+)\s*([kmbKMB])?$/);
+  if (m) {
+    const num = parseFloat(m[1]);
+    if (!Number.isFinite(num)) return null;
+    const unit = (m[2] ?? '').toLowerCase();
+    if (unit === 'k') return num * 1_000;
+    if (unit === 'm') return num * 1_000_000;
+    if (unit === 'b') return num * 1_000_000_000;
+    return num;
+  }
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * Batch normaliser. Splits the result into (mapped + approximate) vs
  * unmapped so callers can drive separate UI states cleanly:
  * - `rows` is everything the table should render
  * - `mapPoints` is the subset the map should plot
  * - `analytics` is a precomputed metrics block for the header bar
+ *
+ * Optional `metadata` overlay: merged onto each row by
+ * source_company_key so the table can show the same column set as
+ * Pulse Explorer (industry / vertical / annual sales / opp score).
+ * Pass {} when no overlay is available; missing fields render as "—".
  */
-export function normalizeCompanySearchResults(hits: IyShipperHit[]): {
+export function normalizeCompanySearchResults(
+  hits: IyShipperHit[],
+  metadata: CompanyMetadataOverlay = {},
+): {
   rows: UnifiedExplorerRow[];
   mapPoints: UnifiedExplorerRow[];
   unmappedCount: number;
@@ -259,7 +300,19 @@ export function normalizeCompanySearchResults(hits: IyShipperHit[]): {
     mostRecentShipment: string | null;
   };
 } {
-  const rows = hits.map(normalizeIyShipperHit);
+  const rows = hits.map((h) => {
+    const base = normalizeIyShipperHit(h);
+    const meta = (base.source_company_key && metadata[base.source_company_key]) ?? null;
+    if (!meta) return base;
+    return {
+      ...base,
+      industry: meta.industry ?? base.industry,
+      vertical: meta.vertical ?? base.vertical,
+      revenue: parseRevenueValue(meta.revenue) ?? base.revenue,
+      opportunity_composite_score:
+        meta.opportunity_composite_score ?? base.opportunity_composite_score,
+    };
+  });
   const mapPoints = rows.filter((r) => r.latitude != null && r.longitude != null);
   const unmappedCount = rows.length - mapPoints.length;
 

@@ -4087,6 +4087,64 @@ export async function fetchSearchKpiOverlay(
   return map;
 }
 
+/**
+ * Metadata overlay for Company Search results.
+ *
+ * Day-5 PRD pivot Polish 3: enriches IyShipperHit rows with the same
+ * column set Pulse Explorer shows (industry / vertical / revenue /
+ * opportunity score). Reads lit_companies + lit_company_directory
+ * by source_company_key for the result set the user just searched
+ * and returns a key->metadata map so the normaliser merges cheap.
+ *
+ * Non-blocking: when a table read errors (e.g. RLS hiccup, missing
+ * column, missing table) it falls through silently and the search
+ * still renders, just without the extra columns. Never throws.
+ */
+export async function fetchSearchMetadataOverlay(
+  companyKeys: string[],
+): Promise<Record<string, {
+  industry?: string | null;
+  vertical?: string | null;
+  revenue?: number | string | null;
+  opportunity_composite_score?: number | null;
+}>> {
+  if (!companyKeys.length) return {};
+  const out: Record<string, any> = {};
+  try {
+    const { data } = await supabase
+      .from('lit_companies')
+      .select('source_company_key, industry, revenue')
+      .in('source_company_key', companyKeys);
+    for (const r of data ?? []) {
+      if (r?.source_company_key) {
+        out[r.source_company_key] = {
+          industry: r.industry ?? null,
+          revenue: r.revenue ?? null,
+        };
+      }
+    }
+  } catch { /* fall through */ }
+  try {
+    const { data } = await supabase
+      .from('lit_company_directory')
+      .select('source_company_key, vertical, opportunity_composite_score')
+      .in('source_company_key', companyKeys);
+    for (const r of data ?? []) {
+      if (r?.source_company_key) {
+        out[r.source_company_key] = {
+          ...(out[r.source_company_key] ?? {}),
+          vertical: r.vertical ?? null,
+          opportunity_composite_score:
+            typeof r.opportunity_composite_score === 'number'
+              ? r.opportunity_composite_score
+              : null,
+        };
+      }
+    }
+  } catch { /* directory table optional */ }
+  return out;
+}
+
 // Secondary KPI enrichment for Command Center rows — reads from lit_company_search_kpis
 export async function enrichCompaniesFromKpis(
   companyIds: string[],

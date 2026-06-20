@@ -43,6 +43,7 @@ import {
   searchShippers,
   saveCompanyToCommandCenter,
   getIyCompanyProfile,
+  fetchSearchMetadataOverlay,
 } from '@/lib/api';
 import { CompanyAvatar } from '@/components/CompanyAvatar';
 import ExploreMap from '@/features/pulse/explore/ExploreMapMaplibre';
@@ -176,7 +177,13 @@ export default function CompanySearchTab() {
       if (!resp?.ok || !Array.isArray(resp.results)) {
         throw new Error(resp?.message || 'Company search failed.');
       }
-      const norm = normalizeCompanySearchResults(resp.results);
+      // Enrich with industry / vertical / revenue / opp score so the
+      // results table can show the same column set as Pulse Explorer.
+      // Non-blocking — if the overlay errors the search still renders
+      // (those columns just show — instead of values).
+      const keys = resp.results.map((h) => h.key).filter(Boolean);
+      const metadata = await fetchSearchMetadataOverlay(keys).catch(() => ({}));
+      const norm = normalizeCompanySearchResults(resp.results, metadata);
       setResults(norm.rows);
       setMapPoints(norm.mapPoints);
       setUnmappedCount(norm.unmappedCount);
@@ -562,79 +569,223 @@ function ViewToggleBtn({ active, onClick, icon, label }) {
   );
 }
 
+// Column widths shared between the header row and every data row so
+// values line up vertically (the previous flex layout had each row's
+// columns size to its own content, producing the staggered look the
+// user flagged). Matches the Pulse Explorer's results-table column
+// set: Account | Industry | Vertical | Origin → Destination | TEU 12M
+// | Annual Sales | Opp Score | Actions.
+//
+// On phones we collapse to a denser layout: Account stays full-width
+// and the right-hand metric block scrolls horizontally if it overflows.
+const LIST_GRID_COLS =
+  'minmax(200px,2.4fr) minmax(120px,1.3fr) minmax(110px,1.2fr) minmax(150px,1.5fr) 80px 100px 70px 130px';
+
 function ListView({ rows, onRowClick, onSave, onOpen }) {
   return (
-    <div className="divide-y divide-slate-100">
-      {rows.map((row) => (
-        <ListRow
-          key={row.id}
-          row={row}
-          onClick={() => onRowClick(row)}
-          onSave={(e) => onSave(row, e)}
-          onOpen={(e) => onOpen(row, e)}
-        />
-      ))}
+    <div>
+      {/* Header row — sticks to the top of the scroll area so column
+          labels stay visible while the user scrolls a long result set. */}
+      <div
+        className="sticky top-0 z-10 hidden border-b border-slate-200 bg-slate-50/95 px-3 py-1.5 backdrop-blur sm:grid sm:px-4"
+        style={{ gridTemplateColumns: LIST_GRID_COLS, columnGap: '0.75rem' }}
+      >
+        <HeaderCell>Account</HeaderCell>
+        <HeaderCell>Industry</HeaderCell>
+        <HeaderCell>Vertical</HeaderCell>
+        <HeaderCell>Origin → Destination</HeaderCell>
+        <HeaderCell align="right">TEU 12M</HeaderCell>
+        <HeaderCell align="right">Annual Sales</HeaderCell>
+        <HeaderCell align="right">Opp Score</HeaderCell>
+        <HeaderCell align="right">Actions</HeaderCell>
+      </div>
+
+      <div className="divide-y divide-slate-100">
+        {rows.map((row) => (
+          <ListRow
+            key={row.id}
+            row={row}
+            onClick={() => onRowClick(row)}
+            onSave={(e) => onSave(row, e)}
+            onOpen={(e) => onOpen(row, e)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HeaderCell({ children, align = 'left' }) {
+  return (
+    <div
+      className={`font-mono text-[9.5px] uppercase tracking-wider text-slate-500 ${
+        align === 'right' ? 'text-right' : 'text-left'
+      }`}
+    >
+      {children}
     </div>
   );
 }
 
 function ListRow({ row, onClick, onSave, onOpen }) {
   const loc = compactLocation(row.city, row.state, row.country);
+  const annualSales = row.revenue != null && Number.isFinite(row.revenue)
+    ? formatMoney(row.revenue)
+    : '—';
+  const oppScore = row.opportunity_composite_score != null
+    ? Math.round(row.opportunity_composite_score).toString()
+    : '—';
+
   return (
-    <button
-      type="button"
+    <div
+      role="row"
       onClick={onClick}
-      className="group flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-cyan-50/50 sm:px-4"
+      className="group cursor-pointer text-left transition hover:bg-cyan-50/50"
     >
-      <CompanyAvatar name={row.company_name} domain={row.domain} size={28} className="shrink-0" />
-      <div className="min-w-0 flex-1">
-        <div className="font-display flex items-center gap-1.5 truncate text-[13px] font-semibold text-slate-900">
-          {loc.flag ? <span className="text-[14px] leading-none" aria-hidden>{loc.flag}</span> : null}
-          <span className="truncate">{row.company_name}</span>
-          {row.mapStatus === 'approximate' ? (
-            <span className="ml-1 shrink-0 rounded-sm bg-amber-100 px-1 text-[8.5px] uppercase text-amber-700">approx</span>
-          ) : null}
-          {row.mapStatus === 'unmapped' ? (
-            <span className="ml-1 shrink-0 rounded-sm bg-slate-100 px-1 text-[8.5px] uppercase text-slate-500">no map</span>
-          ) : null}
+      {/* Desktop / tablet — the aligned grid. */}
+      <div
+        className="hidden items-center px-3 py-2 sm:grid sm:px-4"
+        style={{ gridTemplateColumns: LIST_GRID_COLS, columnGap: '0.75rem' }}
+      >
+        {/* Account = avatar + name + location */}
+        <div className="flex min-w-0 items-center gap-2.5">
+          <CompanyAvatar name={row.company_name} domain={row.domain} size={28} className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="font-display flex items-center gap-1.5 truncate text-[13px] font-semibold text-slate-900">
+              {loc.flag ? <span className="text-[14px] leading-none" aria-hidden>{loc.flag}</span> : null}
+              <span className="truncate">{row.company_name}</span>
+            </div>
+            <div className="font-body mt-0.5 flex items-center gap-1 truncate text-[10.5px] text-slate-500">
+              <span className="truncate">{loc.text || '—'}</span>
+              {row.mapStatus === 'approximate' ? (
+                <span className="shrink-0 rounded-sm bg-amber-100 px-1 text-[8.5px] uppercase text-amber-700">approx</span>
+              ) : null}
+              {row.mapStatus === 'unmapped' ? (
+                <span className="shrink-0 rounded-sm bg-slate-100 px-1 text-[8.5px] uppercase text-slate-500">no map</span>
+              ) : null}
+            </div>
+          </div>
         </div>
-        <div className="font-body mt-0.5 truncate text-[11px] text-slate-500">
-          {loc.text || '—'}
+
+        <Cell text={row.industry} />
+        <Cell text={row.vertical} />
+        <Cell text={row.top_lane ?? row.top_origin_country} muted />
+        <NumberCell value={row.teu != null ? formatCompact(row.teu) : '—'} />
+        <NumberCell value={annualSales} />
+        <ScoreCell value={oppScore} />
+
+        <div className="flex shrink-0 items-center justify-end gap-1">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onSave(e); }}
+            className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-700 transition hover:border-cyan-400 hover:text-cyan-700"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOpen(e); }}
+            className="font-display rounded-md bg-slate-900 px-2 py-1 text-[10.5px] font-semibold text-white transition hover:bg-slate-700"
+          >
+            Open
+          </button>
         </div>
       </div>
-      {/* Compact metric trio — hidden on the narrowest viewport */}
-      <div className="hidden shrink-0 items-center gap-3 sm:flex">
-        <ListMiniStat label="SHIPMENTS" value={row.shipments != null ? formatCompact(row.shipments) : '—'} />
-        <ListMiniStat label="TEU 12M" value={row.teu != null ? formatCompact(row.teu) : '—'} />
-        <ListMiniStat label="LAST" value={row.last_shipment ? formatDate(row.last_shipment) : '—'} />
+
+      {/* Mobile — denser two-row card. */}
+      <div className="flex flex-col gap-1.5 px-3 py-2 sm:hidden">
+        <div className="flex items-start gap-2">
+          <CompanyAvatar name={row.company_name} domain={row.domain} size={28} className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="font-display flex items-center gap-1.5 truncate text-[13px] font-semibold text-slate-900">
+              {loc.flag ? <span className="text-[14px] leading-none" aria-hidden>{loc.flag}</span> : null}
+              <span className="truncate">{row.company_name}</span>
+            </div>
+            <div className="font-body mt-0.5 truncate text-[10.5px] text-slate-500">{loc.text || '—'}</div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onSave(e); }}
+              className="font-display rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[10.5px] font-semibold text-slate-700"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onOpen(e); }}
+              className="font-display rounded-md bg-slate-900 px-2 py-1.5 text-[10.5px] font-semibold text-white"
+            >
+              Open
+            </button>
+          </div>
+        </div>
+        <div className="ml-9 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10.5px]">
+          <MobileStat label="Industry" value={row.industry ?? '—'} />
+          <MobileStat label="Vertical" value={row.vertical ?? '—'} />
+          <MobileStat label="TEU 12M" value={row.teu != null ? formatCompact(row.teu) : '—'} />
+          <MobileStat label="Annual Sales" value={annualSales} />
+          <MobileStat label="Opp Score" value={oppScore} />
+        </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          onClick={onSave}
-          className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-700 transition hover:border-cyan-400 hover:text-cyan-700"
-        >
-          Save
-        </button>
-        <button
-          type="button"
-          onClick={onOpen}
-          className="font-display rounded-md bg-slate-900 px-2 py-1 text-[10.5px] font-semibold text-white transition hover:bg-slate-700"
-        >
-          Open
-        </button>
-      </div>
-    </button>
+    </div>
   );
 }
 
-function ListMiniStat({ label, value }) {
+function Cell({ text, muted = false }) {
+  const value = text && String(text).trim() ? String(text).trim() : '—';
+  const isEmpty = value === '—';
   return (
-    <div className="flex flex-col items-end">
-      <span className="font-mono text-[8.5px] uppercase tracking-wider text-slate-400">{label}</span>
-      <span className="font-display text-[11.5px] font-semibold text-slate-900 tabular-nums">{value}</span>
+    <div className={`font-body truncate text-[12px] ${isEmpty || muted ? 'text-slate-400' : 'text-slate-700'}`}>
+      {value}
     </div>
   );
+}
+
+function NumberCell({ value }) {
+  return (
+    <div className="font-display truncate text-right text-[12px] font-semibold text-slate-900 tabular-nums">
+      {value}
+    </div>
+  );
+}
+
+function ScoreCell({ value }) {
+  if (value === '—') {
+    return <div className="text-right text-[12px] text-slate-400">—</div>;
+  }
+  const n = Number(value);
+  const colorClass = Number.isFinite(n)
+    ? n >= 80 ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+      : n >= 60 ? 'text-blue-700 bg-blue-50 border-blue-200'
+      : n >= 40 ? 'text-amber-700 bg-amber-50 border-amber-200'
+      : 'text-rose-700 bg-rose-50 border-rose-200'
+    : 'text-slate-700 bg-slate-50 border-slate-200';
+  return (
+    <div className="flex justify-end">
+      <span className={`font-display tabular-nums rounded-md border px-1.5 py-0.5 text-[11.5px] font-semibold ${colorClass}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function MobileStat({ label, value }) {
+  return (
+    <div className="flex min-w-0 items-baseline gap-1">
+      <span className="font-mono shrink-0 text-[8.5px] uppercase tracking-wider text-slate-400">{label}</span>
+      <span className="font-display truncate text-[11px] font-semibold text-slate-800">{value}</span>
+    </div>
+  );
+}
+
+// Money formatter — $1.2M / $46.99M / $1.5B for any positive number.
+function formatMoney(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return '—';
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2).replace(/\.0+$/, '')}B`;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2).replace(/\.0+$/, '')}M`;
+  if (n >= 1_000) return `$${Math.round(n / 1_000)}K`;
+  return `$${n.toLocaleString()}`;
 }
 
 function CardsView({ rows, onRowClick, onSave, onOpen }) {
