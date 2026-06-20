@@ -32,6 +32,7 @@
 //   • Shared InsightsPanel (Coach) that knows which mode is active.
 
 import PulseExploreTab from '@/features/pulse/explore/PulseExploreTab';
+import CompanySearchTab from './CompanySearchTab';
 import { ExplorerProvider, useExplorer } from './ExplorerContext';
 import ExplorerTabs from './ExplorerTabs';
 
@@ -59,40 +60,12 @@ function ExplorerShellInner({ hideTabs }) {
   const { mode } = useExplorer();
   return (
     <div className="flex h-full flex-col bg-slate-50">
-      {!hideTabs ? (
-        // The "company" tab is intentionally marked disabled in PR 1 —
-        // when the user sees this tab bar (only possible if a caller
-        // sets hideTabs=false), clicking Company Search shows "Soon"
-        // rather than navigating to a broken stub.
-        <ExplorerTabs disabled={['company']} />
-      ) : null}
+      {/* PR 2: both tabs live. hideTabs is retained for /app/prospecting
+          which still mounts the shell without exposing the tab bar
+          during the transition window. */}
+      {!hideTabs ? <ExplorerTabs /> : null}
       <div className="flex-1 min-h-0">
-        {mode === 'pulse' ? (
-          // PulseExploreTab is the existing V2 Pulse Explorer with map,
-          // sidebar tools, filter chips, results drawer, and Coach.
-          // PR 1 hands rendering off to it unchanged.
-          <PulseExploreTab />
-        ) : (
-          // PR 2 replaces this with <CompanySearchTab />. The placeholder
-          // exists so the disabled-tab path is well-defined.
-          <CompanySearchTabPlaceholder />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CompanySearchTabPlaceholder() {
-  return (
-    <div className="flex h-full items-center justify-center bg-slate-50">
-      <div className="max-w-md rounded-xl border border-slate-200 bg-white px-6 py-5 text-center shadow-sm">
-        <div className="font-display text-[15px] font-semibold text-slate-900">
-          Company Search lands next
-        </div>
-        <p className="font-body mt-1 text-[12.5px] text-slate-500">
-          We're wiring up the unified Intelligence Explorer in two passes — this
-          tab opens once the second pass ships.
-        </p>
+        {mode === 'pulse' ? <PulseExploreTab /> : <CompanySearchTab />}
       </div>
     </div>
   );

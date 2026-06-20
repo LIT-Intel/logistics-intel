@@ -56,7 +56,13 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
       title: "Menu",
       items: [
         { label: "Dashboard", href: "/app/dashboard", icon: LayoutDashboard },
-        { label: "Search", href: "/app/search", icon: Search },
+        // Day-5 PRD pivot: "Search" and "Pulse" collapsed into a
+        // single "Intelligence Explorer" entry. Default view is
+        // Company Search; users can switch to Pulse via the tab bar
+        // inside the page or deep-link to /app/search?tab=pulse.
+        // The Pulse tab still respects the per-feature plan gate
+        // inside PulseExploreTab.
+        { label: "Intelligence Explorer", href: "/app/search", icon: Search },
         {
           label: "Command Center",
           href: "/app/command-center",
@@ -81,12 +87,6 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
           href: "/app/campaigns",
           icon: Megaphone,
           locked: !canUseCampaigns,
-        },
-        {
-          label: "Pulse",
-          href: "/app/prospecting",
-          icon: PulseIcon,
-          locked: !canUsePulse && !canUseLeadProspecting,
         },
       ],
     },

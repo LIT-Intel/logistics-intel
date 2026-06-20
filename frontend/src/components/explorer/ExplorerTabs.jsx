@@ -5,6 +5,8 @@
 // with `hideTabs` so users see zero change). PR 2 makes both tabs
 // visible at /app/search.
 
+import { useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search as SearchIcon, Compass } from 'lucide-react';
 import { useExplorer } from './ExplorerContext';
 
@@ -26,6 +28,30 @@ const TABS = [
 
 export default function ExplorerTabs({ disabled }) {
   const { mode, setMode } = useExplorer();
+  const [sp, setSp] = useSearchParams();
+
+  // URL ↔ mode sync. ?tab=pulse opens the Pulse Explorer tab; no param
+  // (or ?tab=company) opens Company Search. Tab clicks update the URL
+  // so refresh + share-link preserve state. Bidirectional so an
+  // external link like /app/search?tab=pulse opens the right tab.
+  useEffect(() => {
+    const requested = sp.get('tab');
+    if (requested === 'pulse' && mode !== 'pulse') setMode('pulse');
+    else if (requested === 'company' && mode !== 'company') setMode('company');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sp]);
+
+  const handleSetMode = (next) => {
+    if (disabled?.includes?.(next)) return;
+    setMode(next);
+    setSp((prev) => {
+      const url = new URLSearchParams(prev);
+      // Company is the default on /app/search — keep URL clean for it.
+      if (next === 'company') url.delete('tab'); else url.set('tab', next);
+      return url;
+    }, { replace: true });
+  };
+
   return (
     <div
       className="flex items-center gap-1 border-b border-slate-200 bg-white px-4 pt-2"
@@ -44,7 +70,7 @@ export default function ExplorerTabs({ disabled }) {
             aria-selected={active}
             aria-disabled={tabDisabled || undefined}
             disabled={tabDisabled}
-            onClick={() => !tabDisabled && setMode(t.id)}
+            onClick={() => handleSetMode(t.id)}
             title={tabDisabled ? `${t.label} — wiring up next` : t.description}
             className={[
               'inline-flex items-center gap-1.5 px-3 py-2 text-[13px] border-b-2 transition',
