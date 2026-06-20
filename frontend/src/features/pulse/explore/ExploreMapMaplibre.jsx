@@ -160,6 +160,17 @@ const ExploreMapMaplibre = forwardRef(function ExploreMapMaplibre({
   lassoActive = false,
   onLassoSelect,
   mapStyle = 'alidade_smooth',
+  // Optional hover callbacks — wired by the Intelligence Explorer's
+  // Company Search tab to render a floating preview card on bubble
+  // hover. Pulse Explorer doesn't pass these, so PulseExploreTab's
+  // existing behaviour is unchanged.
+  onBubbleHover,
+  onBubbleLeave,
+  // When true, after every points change the map re-fits its bounds
+  // to span all points + a small padding. Used by Company Search so
+  // a result set of 10 companies spread across CT/CO/KY zooms in to
+  // show separate bubbles instead of one cluster at country-center.
+  fitBoundsToPoints = false,
 }, ref) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -225,6 +236,43 @@ const ExploreMapMaplibre = forwardRef(function ExploreMapMaplibre({
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
   }, []);
+
+  // Fit bounds to the current point set (opt-in via fitBoundsToPoints).
+  // Used by Company Search so a 10-row result spread across CT/CO/KY
+  // zooms in until every bubble is individually visible, instead of
+  // bundling them into a single cluster at country-level zoom.
+  useEffect(() => {
+    if (!fitBoundsToPoints || !ready || !mapRef.current) return;
+    const validPoints = (rows ?? [])
+      .map((r) => {
+        const c = lookupCoords({
+          latitude: r.latitude, longitude: r.longitude,
+          city: r.city, state: r.state, country: r.country,
+        });
+        return c ? [c.lng, c.lat] : null;
+      })
+      .filter(Boolean);
+    if (validPoints.length === 0) return;
+    if (validPoints.length === 1) {
+      // A single point — center on it with a comfortable zoom rather
+      // than fitBounds, which would zoom in too aggressively.
+      mapRef.current.flyTo({ center: validPoints[0], zoom: 8, duration: 800 });
+      return;
+    }
+    let west = validPoints[0][0], east = validPoints[0][0];
+    let south = validPoints[0][1], north = validPoints[0][1];
+    for (const [lng, lat] of validPoints) {
+      if (lng < west) west = lng;
+      if (lng > east) east = lng;
+      if (lat < south) south = lat;
+      if (lat > north) north = lat;
+    }
+    mapRef.current.fitBounds([[west, south], [east, north]], {
+      padding: { top: 60, bottom: 60, left: 60, right: 60 },
+      maxZoom: 9,
+      duration: 800,
+    });
+  }, [fitBoundsToPoints, ready, rows]);
 
   // 2. Cluster + bubble rendering.
   const points = useMemo(() => {
@@ -368,6 +416,29 @@ const ExploreMapMaplibre = forwardRef(function ExploreMapMaplibre({
         const row = it.properties.row;
         el = makeBubbleEl(row, colorMode, sizeMode, maxValue, selSet.has(row.id));
         el.addEventListener('click', (e) => { e.stopPropagation(); onBubbleClick?.(row); });
+        // Hover-preview hooks (opt-in). The screen-coords payload lets
+        // the parent position a floating card next to the bubble
+        // without a re-query. Throttled to RAF so panning the cursor
+        // across many bubbles doesn't spam React renders.
+        if (onBubbleHover || onBubbleLeave) {
+          let raf = 0;
+          el.addEventListener('mouseenter', (e) => {
+            if (raf) cancelAnimationFrame(raf);
+            const target = e.currentTarget;
+            raf = requestAnimationFrame(() => {
+              const rect = target.getBoundingClientRect();
+              onBubbleHover?.(row, {
+                x: rect.left + rect.width / 2,
+                y: rect.top,
+                bubbleRect: rect,
+              });
+            });
+          });
+          el.addEventListener('mouseleave', () => {
+            if (raf) cancelAnimationFrame(raf);
+            onBubbleLeave?.(row);
+          });
+        }
       }
       // While lasso is active, markers MUST NOT capture the
       // mousedown — otherwise MapLibre's map.on('mousedown') listener
@@ -381,7 +452,7 @@ const ExploreMapMaplibre = forwardRef(function ExploreMapMaplibre({
         .addTo(map);
       markersRef.current.push(marker);
     }
-  }, [ready, cluster, bbox, zoom, colorMode, sizeMode, maxValue, selSet, onBubbleClick, mapMode, styleEpoch, lassoActive]);
+  }, [ready, cluster, bbox, zoom, colorMode, sizeMode, maxValue, selSet, onBubbleClick, onBubbleHover, onBubbleLeave, mapMode, styleEpoch, lassoActive]);
 
   // Toggle pointerEvents on all existing markers when lasso flips.
   useEffect(() => {

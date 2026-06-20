@@ -3,22 +3,39 @@
 // Day-5 PRD pivot: this is the "name lookup" mode of the unified
 // Explorer (Walmart / Tesla / Nike). Calls the EXISTING searchShippers()
 // edge-function backbone (api.ts:2991) — we do not rebuild the backend.
-// We do upgrade the rendering:
 //
-//   • Same Pulse-style chrome (dark navy header + white body + cyan accents)
-//   • Card grid for results (works well for the typical <=50-result lookup)
-//   • Map plot for results that resolve to a city or state centroid
-//   • Unmappable results stay in the grid below the map (PRD §6 rule)
-//   • Quick Card (right rail) shows full company detail on row click
-//   • Save to Command Center via the canonical saveCompanyToCommandCenter
-//
-// What it does NOT change:
-//   - Does NOT route through pulse-explore-parse (PRD non-negotiable #4)
-//   - Does NOT rename IyShipperHit (PRD non-negotiable #3)
-//   - Does NOT replace src/lib/api.ts (PRD non-negotiable #2)
+// Polish pass (2026-06-20, user feedback after PR 2 deploy):
+//   • Map is now ALWAYS visible — no "Search a company to begin"
+//     empty card that hides the world view. Same initial impression
+//     as the Pulse Explorer.
+//   • After a search, the map fits its bounds to span every result
+//     point — fixes the bug where 10 companies across CT/CO/KY all
+//     bundled into one cluster at country-center zoom.
+//   • Bubbles support hover-preview: hovering a marker shows a small
+//     floating card with company name, location (with country flag),
+//     shipment volume, and an Open button. Click for full nav.
+//   • Results panel slides up from the bottom and is COLLAPSIBLE.
+//     Collapse via the chevron in its header; re-open via the
+//     pill button that appears bottom-right when collapsed.
+//   • View toggle inside the panel: LIST (default — compact rows)
+//     vs CARDS (grid). Card rendering preserved from prior PR.
+//   • Country flag in every row / card.
+//   • Mobile-first: the panel auto-collapses on small screens so the
+//     map stays the primary surface; user opens it via the same pill.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Search as SearchIcon, MapPin, Sparkles, X } from 'lucide-react';
+import {
+  ArrowRight,
+  Search as SearchIcon,
+  MapPin,
+  Sparkles,
+  X,
+  ChevronDown,
+  ChevronUp,
+  LayoutGrid,
+  List as ListIcon,
+  ExternalLink,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { useSearchParams } from 'react-router-dom';
 
@@ -30,28 +47,63 @@ import {
 import { CompanyAvatar } from '@/components/CompanyAvatar';
 import ExploreMap from '@/features/pulse/explore/ExploreMapMaplibre';
 import { normalizeCompanySearchResults } from '@/lib/explorer/normalizeCompanySearch';
+import { countryFlag, compactLocation } from '@/lib/explorer/countryFlags';
 import { useExplorer } from './ExplorerContext';
 
 const PAGE_SIZE = 50;
 const PLACEHOLDER = 'Search by company name, importer, shipper, or supplier';
-
 const EXAMPLE_QUERIES = ['Walmart', 'Tesla', 'Nike', 'Home Depot', 'Target'];
+
+// localStorage keys so view-mode + panel state persist across visits.
+const LS_VIEW_KEY = 'lit.explorer.companySearch.view';
+const LS_PANEL_KEY = 'lit.explorer.companySearch.panelOpen';
 
 export default function CompanySearchTab() {
   const { setSelectedCompany } = useExplorer();
   const [sp, setSp] = useSearchParams();
 
-  // Hydrate query from ?q= so deep-links from the Coach, marketing
-  // surfaces, or saved-view URLs land in the search bar pre-filled.
+  // Search input + results
   const [query, setQuery] = useState(() => (sp.get('q') ?? '').trim());
   const [submitted, setSubmitted] = useState(query);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState('');
-  const [results, setResults] = useState([]);   // UnifiedExplorerRow[]
-  const [mapPoints, setMapPoints] = useState([]); // UnifiedExplorerRow[]
+  const [results, setResults] = useState([]);
+  const [mapPoints, setMapPoints] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [unmappedCount, setUnmappedCount] = useState(0);
   const inputRef = useRef(null);
+
+  // Bottom panel — collapsible. Default OPEN on desktop, CLOSED on
+  // mobile so the map gets full screen until the user wants the list.
+  const initialPanelOpen = useMemo(() => {
+    if (typeof window === 'undefined') return true;
+    const cached = window.localStorage?.getItem(LS_PANEL_KEY);
+    if (cached === 'open') return true;
+    if (cached === 'closed') return false;
+    // First-visit default — open on screens wider than 768px.
+    return window.matchMedia?.('(min-width: 768px)')?.matches ?? true;
+  }, []);
+  const [panelOpen, setPanelOpen] = useState(initialPanelOpen);
+
+  // List vs Cards view inside the panel. Default LIST per user spec.
+  const initialView = useMemo(() => {
+    if (typeof window === 'undefined') return 'list';
+    const cached = window.localStorage?.getItem(LS_VIEW_KEY);
+    return cached === 'cards' ? 'cards' : 'list';
+  }, []);
+  const [view, setView] = useState(initialView);
+
+  // Hover-preview state — set by ExploreMap onBubbleHover.
+  const [hoverRow, setHoverRow] = useState(null);
+  const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
+
+  // Persist panel + view choices.
+  useEffect(() => {
+    try { window.localStorage?.setItem(LS_PANEL_KEY, panelOpen ? 'open' : 'closed'); } catch { /* ignore */ }
+  }, [panelOpen]);
+  useEffect(() => {
+    try { window.localStorage?.setItem(LS_VIEW_KEY, view); } catch { /* ignore */ }
+  }, [view]);
 
   // Run on mount when ?q= is present so the page lands "already
   // searched" instead of empty.
@@ -70,7 +122,7 @@ export default function CompanySearchTab() {
     setSearching(true);
     setError('');
     setSubmitted(q);
-    // Sync ?q= so refreshing the page restores the same search.
+    setHoverRow(null);
     setSp((prev) => {
       const next = new URLSearchParams(prev);
       next.set('q', q);
@@ -80,8 +132,6 @@ export default function CompanySearchTab() {
     try {
       const resp = await searchShippers({ q, page: 1, pageSize: PAGE_SIZE });
       if (!resp?.ok || !Array.isArray(resp.results)) {
-        // searchShippers throws a structured error on LIMIT_EXCEEDED
-        // (with .code === 'LIMIT_EXCEEDED'). Surface the message.
         throw new Error(resp?.message || 'Company search failed.');
       }
       const norm = normalizeCompanySearchResults(resp.results);
@@ -89,6 +139,10 @@ export default function CompanySearchTab() {
       setMapPoints(norm.mapPoints);
       setUnmappedCount(norm.unmappedCount);
       setAnalytics(norm.analytics);
+      // Auto-open the panel after a result set lands — users explicitly
+      // searched, they want to see the list. If they collapse it again
+      // the choice sticks via localStorage.
+      if (norm.rows.length > 0) setPanelOpen(true);
       if (norm.rows.length === 0) {
         setError(`No companies found matching "${q}". Try a different spelling or a parent brand.`);
       }
@@ -112,32 +166,10 @@ export default function CompanySearchTab() {
     runSearch();
   }, [runSearch]);
 
-  const onRowClick = useCallback((row) => {
-    // PR 2 ships the card-click path navigating directly to the full
-    // company profile. The shared-shell QuickCard rail is a planned
-    // polish-pass follow-up (alongside the mode-aware "Refresh latest
-    // data" button the user reminded us about). Until then, the Open
-    // button on each card and the row-click handler converge on the
-    // same destination — the existing Company Profile page.
-    setSelectedCompany({
-      id: row.id,
-      sourceCompanyKey: row.source_company_key,
-      companyId: row.company_id,
-      name: row.company_name,
-      source: row.source,
-      city: row.city,
-      state: row.state,
-      countryCode: row.country,
-      raw: row.raw,
-    });
-    void onOpenDetails(row);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setSelectedCompany]);
-
   const onSave = useCallback(async (row, e) => {
     e?.stopPropagation?.();
     try {
-      const shipper = row.raw; // IyShipperHit
+      const shipper = row.raw;
       await saveCompanyToCommandCenter({
         shipper,
         profile: null,
@@ -152,21 +184,38 @@ export default function CompanySearchTab() {
 
   const onOpenDetails = useCallback(async (row, e) => {
     e?.stopPropagation?.();
-    // For PR 2 — navigate to the existing company profile page. The
-    // QuickCard's "Open full profile" button does the same thing.
     try {
-      // Pre-warm the profile cache so the destination page renders
-      // populated immediately. Errors here are non-fatal (the dest
-      // page will fetch on its own).
       await getIyCompanyProfile({ companyKey: row.source_company_key });
-    } catch {/* non-fatal */}
+    } catch { /* non-fatal */ }
     const slug = encodeURIComponent(row.source_company_key || row.id);
     window.location.href = `/app/companies/${slug}`;
   }, []);
 
-  // Memoise the map row shape (ExploreMap expects { id, company_name,
-  // industry, revenue, teu, latitude, longitude }). Our normalised
-  // rows already match that shape — pass through unchanged.
+  const onRowClick = useCallback((row) => {
+    setSelectedCompany({
+      id: row.id,
+      sourceCompanyKey: row.source_company_key,
+      companyId: row.company_id,
+      name: row.company_name,
+      source: row.source,
+      city: row.city,
+      state: row.state,
+      countryCode: row.country,
+      raw: row.raw,
+    });
+    void onOpenDetails(row);
+  }, [setSelectedCompany, onOpenDetails]);
+
+  // Bubble hover — opens the floating preview card. The Map calls this
+  // with screen coords so we don't have to query the map again.
+  const onBubbleHover = useCallback((row, pos) => {
+    setHoverRow(row);
+    if (pos) setHoverPos({ x: pos.x, y: pos.y });
+  }, []);
+  const onBubbleLeave = useCallback(() => {
+    setHoverRow(null);
+  }, []);
+
   const mapRows = useMemo(() => mapPoints, [mapPoints]);
 
   const hasSearched = Boolean(submitted) && !searching;
@@ -174,8 +223,7 @@ export default function CompanySearchTab() {
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
-      {/* ── Header: dark navy band with title + search bar ───────── */}
-      {/* Mobile-first padding: px-3 py-3 on phones, px-5 py-4 on >= sm. */}
+      {/* ── Header ────────────────────────────────────────────────── */}
       <div className="border-b border-slate-200 bg-gradient-to-r from-[#0F1828] to-[#1E293B] px-3 py-3 text-white sm:px-5 sm:py-4">
         <div className="flex items-center gap-2 text-[11.5px] text-cyan-200/80 sm:text-[12px]">
           <SearchIcon size={12} />
@@ -201,9 +249,6 @@ export default function CompanySearchTab() {
             className="font-body min-w-0 flex-1 border-0 bg-transparent py-1 text-[14px] text-white outline-none placeholder:text-slate-400"
             disabled={searching}
             maxLength={200}
-            // 16px font-size on focus dodges iOS Safari's auto-zoom on
-            // form fields below 16px. We render 14px visually but the
-            // input's effective size is unchanged thanks to the wrapper.
             style={{ fontSize: '16px' }}
             enterKeyHint="search"
           />
@@ -228,10 +273,7 @@ export default function CompanySearchTab() {
           </button>
         </form>
 
-        {/* ── Analytics ribbon ───────────────────────────────────── */}
-        {/* Mobile: tighter gap-x, smaller text so 4 metrics still fit on
-            two lines max. Hides the longest metric label on the
-            narrowest screens; shows again from xs and up. */}
+        {/* Analytics ribbon */}
         {analytics ? (
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-cyan-100/90 sm:mt-3 sm:gap-x-5 sm:text-[11.5px]">
             <Metric label="Matching" longLabel="Matching companies" value={analytics.matchingCompanies.toLocaleString()} />
@@ -249,7 +291,7 @@ export default function CompanySearchTab() {
           </div>
         ) : null}
 
-        {/* ── Filter chips row (Company Search-specific) ─────────── */}
+        {/* Filter chips */}
         {submitted ? (
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5 sm:mt-3">
             <Chip label="Query" value={submitted} />
@@ -261,71 +303,119 @@ export default function CompanySearchTab() {
         ) : null}
       </div>
 
-      {/* ── Body: map (top) + results grid (bottom) ──────────────── */}
-      <div className="flex flex-1 min-h-0 flex-col">
-        {/* Map — half-height when results are present, full when idle.
-            Mobile: 38% so the cards below are still scannable without
-            scrolling. Desktop: 42% to leave room for 2-3 card rows
-            visible without scroll. The min-h ensures the map is never
-            so short it loses orientation. */}
+      {/* ── Body: map always visible; collapsible results overlay ── */}
+      <div className="relative flex flex-1 min-h-0 flex-col">
+        {/* Map fills available space. When the panel is open it
+            occupies the top portion; when collapsed the map gets the
+            whole area. The map is ALWAYS mounted so the user sees the
+            world from the moment the page lands. */}
         <div
-          className={`relative border-b border-slate-200 transition-[height] ${
-            hasResults ? 'h-[38%] min-h-[200px] sm:h-[42%]' : 'flex-1 min-h-[260px]'
+          className={`relative transition-[height] duration-200 ${
+            panelOpen && hasResults ? 'h-[55%] min-h-[260px] sm:h-[58%]' : 'flex-1 min-h-[280px]'
           }`}
         >
-          {mapRows.length > 0 ? (
-            <ExploreMap
-              rows={mapRows}
-              colorMode="industry"
-              sizeMode="teu"
-              selection={[]}
-              onBubbleClick={onRowClick}
-              mapMode="bubbles"
-              mapStyle="alidade_smooth"
-            />
-          ) : (
-            <EmptyMapState
-              hasSearched={hasSearched}
-              hasResults={hasResults}
-              examples={EXAMPLE_QUERIES}
-              onPick={(q) => { setQuery(q); runSearch(q); }}
-            />
-          )}
+          <ExploreMap
+            rows={mapRows}
+            colorMode="industry"
+            sizeMode="teu"
+            selection={[]}
+            onBubbleClick={onRowClick}
+            onBubbleHover={onBubbleHover}
+            onBubbleLeave={onBubbleLeave}
+            fitBoundsToPoints={hasResults}
+            mapMode="bubbles"
+            mapStyle="alidade_smooth"
+          />
+
+          {/* Idle overlay — small floating hint card. The map renders
+              underneath so the world is visible from second one. */}
+          {!hasSearched && !searching ? (
+            <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex justify-center sm:inset-x-auto sm:left-1/2 sm:bottom-6 sm:-translate-x-1/2">
+              <div className="pointer-events-auto w-full max-w-md rounded-xl border border-slate-200 bg-white/95 px-4 py-3 text-center shadow-lg backdrop-blur sm:px-6 sm:py-4">
+                <div className="font-display inline-flex items-center gap-2 text-[13.5px] font-semibold text-slate-900 sm:text-[14px]">
+                  <SearchIcon size={14} className="text-cyan-600" />
+                  Search a company to begin
+                </div>
+                <p className="font-body mt-1 text-[11.5px] text-slate-500 sm:text-[12px]">
+                  Type a brand or shipper name above. We&apos;ll plot every mappable match.
+                </p>
+                <div className="mt-2.5 flex flex-wrap justify-center gap-1.5">
+                  {EXAMPLE_QUERIES.map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      onClick={() => { setQuery(q); runSearch(q); }}
+                      className="font-display rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold text-cyan-800 hover:bg-cyan-100"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Bubble hover preview — floats next to the bubble. Uses
+              fixed positioning since onBubbleHover gives us viewport
+              coords. Pointer-events: none on the wrapper means the
+              card itself doesn't steal hover, but inner buttons do. */}
+          {hoverRow ? (
+            <BubblePopover row={hoverRow} pos={hoverPos} onOpen={(e) => onOpenDetails(hoverRow, e)} />
+          ) : null}
+
+          {/* Collapsed-state pill — appears in the lower-right when
+              the panel is closed AND we have results. Click to expand. */}
+          {!panelOpen && hasResults ? (
+            <button
+              type="button"
+              onClick={() => setPanelOpen(true)}
+              className="font-display absolute bottom-4 right-4 z-10 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-700 shadow-lg hover:bg-slate-50"
+            >
+              <ChevronUp size={14} />
+              Show {results.length} result{results.length === 1 ? '' : 's'}
+            </button>
+          ) : null}
         </div>
 
-        {/* Results grid */}
+        {/* Results panel — slides up from bottom. Header always present,
+            body only rendered when open. */}
         {hasResults ? (
-          <div className="flex flex-1 min-h-0 flex-col overflow-y-auto p-3 sm:p-4">
-            {unmappedCount > 0 ? (
-              <div className="mb-2.5 inline-flex w-fit items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] text-amber-800 sm:mb-3 sm:text-[11.5px]">
-                <MapPin size={12} className="shrink-0" />
-                <span>
-                  <strong>{unmappedCount}</strong>
-                  {' '}of <strong>{results.length}</strong> results don&apos;t carry a city or state.
-                </span>
-              </div>
-            ) : null}
-
-            {/* Grid breakpoints: 1 col on phone (<640), 2 on tablet
-                (sm-lg), 3 on desktop (xl+). Gap is tighter on mobile to
-                fit more cards visible above the fold. */}
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
-              {results.map((row) => (
-                <ResultCard
-                  key={row.id}
-                  row={row}
-                  onClick={() => onRowClick(row)}
-                  onSave={(e) => onSave(row, e)}
-                  onOpen={(e) => onOpenDetails(row, e)}
+          <div className={`flex flex-col border-t border-slate-200 bg-white transition-[height] duration-200 ${panelOpen ? 'h-[45%] min-h-[260px] sm:h-[42%]' : 'h-0'}`}>
+            {panelOpen ? (
+              <>
+                <PanelHeader
+                  total={results.length}
+                  unmapped={unmappedCount}
+                  view={view}
+                  onViewChange={setView}
+                  onCollapse={() => setPanelOpen(false)}
                 />
-              ))}
-            </div>
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  {view === 'list' ? (
+                    <ListView
+                      rows={results}
+                      onRowClick={onRowClick}
+                      onSave={onSave}
+                      onOpen={onOpenDetails}
+                    />
+                  ) : (
+                    <CardsView
+                      rows={results}
+                      onRowClick={onRowClick}
+                      onSave={onSave}
+                      onOpen={onOpenDetails}
+                    />
+                  )}
+                </div>
+              </>
+            ) : null}
           </div>
         ) : null}
 
-        {/* Error / empty state */}
+        {/* Error / empty-state banner — sits outside the panel, always
+            visible above whatever's open. */}
         {error && !searching ? (
-          <div className="border-t border-slate-200 bg-white px-5 py-4">
+          <div className="border-t border-slate-200 bg-white px-4 py-3">
             <div className="font-body inline-flex items-center gap-2 text-[12.5px] text-slate-600">
               <Sparkles size={12} className="text-slate-400" />
               {error}
@@ -360,8 +450,159 @@ function Chip({ label, value }) {
   );
 }
 
+function PanelHeader({ total, unmapped, view, onViewChange, onCollapse }) {
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 sm:px-4">
+      <div className="flex items-center gap-2 text-[12px] font-medium text-slate-700">
+        <ListIcon size={14} className="text-slate-500" />
+        <span className="font-display">Results</span>
+        <span className="font-body text-slate-500">
+          · {total.toLocaleString()} account{total === 1 ? '' : 's'}
+          {unmapped > 0 ? ` · ${unmapped} unmapped` : ''}
+        </span>
+      </div>
+      <div className="flex items-center gap-1">
+        {/* View toggle: list <-> cards */}
+        <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5">
+          <ViewToggleBtn
+            active={view === 'list'}
+            onClick={() => onViewChange('list')}
+            icon={<ListIcon size={12} />}
+            label="List"
+          />
+          <ViewToggleBtn
+            active={view === 'cards'}
+            onClick={() => onViewChange('cards')}
+            icon={<LayoutGrid size={12} />}
+            label="Cards"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onCollapse}
+          aria-label="Collapse results"
+          className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
+        >
+          <ChevronDown size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ViewToggleBtn({ active, onClick, icon, label }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`font-display inline-flex items-center gap-1 rounded px-2 py-1 text-[10.5px] font-semibold transition ${
+        active
+          ? 'bg-slate-900 text-white'
+          : 'text-slate-500 hover:text-slate-900'
+      }`}
+    >
+      {icon}
+      <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
+}
+
+function ListView({ rows, onRowClick, onSave, onOpen }) {
+  return (
+    <div className="divide-y divide-slate-100">
+      {rows.map((row) => (
+        <ListRow
+          key={row.id}
+          row={row}
+          onClick={() => onRowClick(row)}
+          onSave={(e) => onSave(row, e)}
+          onOpen={(e) => onOpen(row, e)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ListRow({ row, onClick, onSave, onOpen }) {
+  const loc = compactLocation(row.city, row.state, row.country);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-cyan-50/50 sm:px-4"
+    >
+      <CompanyAvatar name={row.company_name} domain={row.domain} size={28} className="shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="font-display flex items-center gap-1.5 truncate text-[13px] font-semibold text-slate-900">
+          {loc.flag ? <span className="text-[14px] leading-none" aria-hidden>{loc.flag}</span> : null}
+          <span className="truncate">{row.company_name}</span>
+          {row.mapStatus === 'approximate' ? (
+            <span className="ml-1 shrink-0 rounded-sm bg-amber-100 px-1 text-[8.5px] uppercase text-amber-700">approx</span>
+          ) : null}
+          {row.mapStatus === 'unmapped' ? (
+            <span className="ml-1 shrink-0 rounded-sm bg-slate-100 px-1 text-[8.5px] uppercase text-slate-500">no map</span>
+          ) : null}
+        </div>
+        <div className="font-body mt-0.5 truncate text-[11px] text-slate-500">
+          {loc.text || '—'}
+        </div>
+      </div>
+      {/* Compact metric trio — hidden on the narrowest viewport */}
+      <div className="hidden shrink-0 items-center gap-3 sm:flex">
+        <ListMiniStat label="SHIPMENTS" value={row.shipments != null ? formatCompact(row.shipments) : '—'} />
+        <ListMiniStat label="TEU 12M" value={row.teu != null ? formatCompact(row.teu) : '—'} />
+        <ListMiniStat label="LAST" value={row.last_shipment ? formatDate(row.last_shipment) : '—'} />
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={onSave}
+          className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-700 transition hover:border-cyan-400 hover:text-cyan-700"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="font-display rounded-md bg-slate-900 px-2 py-1 text-[10.5px] font-semibold text-white transition hover:bg-slate-700"
+        >
+          Open
+        </button>
+      </div>
+    </button>
+  );
+}
+
+function ListMiniStat({ label, value }) {
+  return (
+    <div className="flex flex-col items-end">
+      <span className="font-mono text-[8.5px] uppercase tracking-wider text-slate-400">{label}</span>
+      <span className="font-display text-[11.5px] font-semibold text-slate-900 tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+function CardsView({ rows, onRowClick, onSave, onOpen }) {
+  return (
+    <div className="p-3 sm:p-4">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
+        {rows.map((row) => (
+          <ResultCard
+            key={row.id}
+            row={row}
+            onClick={() => onRowClick(row)}
+            onSave={(e) => onSave(row, e)}
+            onOpen={(e) => onOpen(row, e)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ResultCard({ row, onClick, onSave, onOpen }) {
-  const location = [row.city, row.state, row.country].filter(Boolean).join(', ');
+  const loc = compactLocation(row.city, row.state, row.country);
   return (
     <button
       type="button"
@@ -369,18 +610,16 @@ function ResultCard({ row, onClick, onSave, onOpen }) {
       className="group flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-2.5 text-left shadow-sm transition hover:-translate-y-px hover:border-cyan-400/40 hover:shadow-md sm:p-3"
     >
       <div className="flex items-start gap-2 sm:gap-2.5">
-        <CompanyAvatar
-          name={row.company_name}
-          domain={row.domain}
-          size={32}
-          className="shrink-0 sm:!h-9 sm:!w-9"
-        />
+        <CompanyAvatar name={row.company_name} domain={row.domain} size={32} className="shrink-0 sm:!h-9 sm:!w-9" />
         <div className="min-w-0 flex-1">
-          <div className="font-display truncate text-[13px] font-semibold text-slate-900 sm:text-[13.5px]">{row.company_name}</div>
-          {location ? (
+          <div className="font-display flex items-center gap-1.5 truncate text-[13px] font-semibold text-slate-900 sm:text-[13.5px]">
+            {loc.flag ? <span className="text-[14px] leading-none" aria-hidden>{loc.flag}</span> : null}
+            <span className="truncate">{row.company_name}</span>
+          </div>
+          {loc.text ? (
             <div className="font-body mt-px flex items-center gap-1 truncate text-[10.5px] text-slate-500 sm:text-[11px]">
               <MapPin size={10} className="shrink-0" />
-              <span className="truncate">{location}</span>
+              <span className="truncate">{loc.text}</span>
               {row.mapStatus === 'approximate' ? (
                 <span className="ml-1 shrink-0 rounded-sm bg-amber-100 px-1 text-[9px] uppercase text-amber-700">approx</span>
               ) : null}
@@ -403,8 +642,6 @@ function ResultCard({ row, onClick, onSave, onOpen }) {
           {row.source_label}
         </span>
         <div className="flex shrink-0 items-center gap-1">
-          {/* Touch targets: at least 28px tall on mobile to dodge the
-              accidental-tap problem with sub-16px controls. */}
           <button
             type="button"
             onClick={onSave}
@@ -425,18 +662,6 @@ function ResultCard({ row, onClick, onSave, onOpen }) {
   );
 }
 
-// Shorten 153,401 → "153K", 2,107,000 → "2.1M". Used by the card
-// MiniStats so a high-volume number doesn't blow the column width
-// on phones.
-function formatCompact(n) {
-  if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
-  if (abs >= 10_000) return `${Math.round(n / 1_000)}K`;
-  if (abs >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
-  return n.toLocaleString();
-}
-
 function MiniStat({ label, value }) {
   return (
     <div className="flex min-w-0 flex-col">
@@ -446,37 +671,56 @@ function MiniStat({ label, value }) {
   );
 }
 
-function EmptyMapState({ hasSearched, hasResults, examples, onPick }) {
+// Floating preview card next to the bubble. Positioned using viewport
+// coords from onBubbleHover. We center horizontally on the bubble and
+// place above it (so the bubble itself stays uncovered).
+function BubblePopover({ row, pos, onOpen }) {
+  const loc = compactLocation(row.city, row.state, row.country);
   return (
-    <div className="absolute inset-0 grid place-items-center bg-[#F8FAFC] px-3 sm:px-4">
-      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white px-4 py-4 text-center shadow-sm sm:px-6 sm:py-5">
-        <div className="font-display inline-flex items-center gap-2 text-[13.5px] font-semibold text-slate-900 sm:text-[14px]">
-          <SearchIcon size={14} className="text-cyan-600" />
-          {hasSearched ? 'No mappable results' : 'Search a company to begin'}
-        </div>
-        <p className="font-body mt-1.5 text-[11.5px] text-slate-500 sm:text-[12px]">
-          {hasSearched
-            ? 'Results without a city or state appear in the grid below.'
-            : 'Type a brand or shipper name above. We\'ll plot every mappable match on the map.'}
-        </p>
-        {!hasSearched && examples.length ? (
-          <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-            {examples.map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => onPick(q)}
-                className="font-display rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold text-cyan-800 hover:bg-cyan-100"
-              >
-                {q}
-              </button>
-            ))}
+    <div
+      // pointer-events-none on wrapper so the popover doesn't steal
+      // hover; the inner clickable area re-enables them.
+      className="pointer-events-none fixed z-30 -translate-x-1/2 -translate-y-full"
+      style={{ left: pos.x, top: pos.y - 8 }}
+      role="tooltip"
+    >
+      <div className="pointer-events-auto w-[260px] rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-xl">
+        <div className="flex items-start gap-2">
+          <CompanyAvatar name={row.company_name} domain={row.domain} size={32} className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="font-display flex items-center gap-1.5 truncate text-[12.5px] font-semibold text-slate-900">
+              {loc.flag ? <span className="text-[13px] leading-none" aria-hidden>{loc.flag}</span> : null}
+              <span className="truncate">{row.company_name}</span>
+            </div>
+            {loc.text ? (
+              <div className="font-body mt-0.5 truncate text-[10.5px] text-slate-500">{loc.text}</div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
+
+        <div className="mt-2 grid grid-cols-3 gap-1 rounded-md bg-slate-50 px-2 py-1.5">
+          <MiniStat label="Shipments" value={row.shipments != null ? formatCompact(row.shipments) : '—'} />
+          <MiniStat label="TEU" value={row.teu != null ? formatCompact(row.teu) : '—'} />
+          <MiniStat label="Last" value={row.last_shipment ? formatDate(row.last_shipment) : '—'} />
+        </div>
+
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onOpen}
+          className="font-display mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-700"
+        >
+          <ExternalLink size={11} />
+          Open profile
+        </button>
       </div>
+      {/* Small caret pointing down to the bubble. */}
+      <div className="mx-auto h-0 w-0 border-x-[6px] border-t-[6px] border-x-transparent border-t-white" style={{ marginTop: -1 }} />
     </div>
   );
 }
+
+// ── Format helpers ───────────────────────────────────────────────
 
 function formatDate(iso) {
   if (!iso) return '—';
@@ -485,4 +729,13 @@ function formatDate(iso) {
   } catch {
     return iso.slice(0, 10);
   }
+}
+
+function formatCompact(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (abs >= 10_000) return `${Math.round(n / 1_000)}K`;
+  if (abs >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  return n.toLocaleString();
 }

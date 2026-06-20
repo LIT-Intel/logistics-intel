@@ -62,8 +62,12 @@ export function lookupCentroid(
     const hit = COORDS.states[stateKey];
     return { lng: hit[0], lat: hit[1], mapStatus: 'approximate' };
   }
-  // Country centroid → approximate
-  if (countryKey && COORDS.countries[countryKey]) {
+  // Country centroid → approximate. INTENTIONALLY skip US here — a US
+  // row with no usable state would otherwise pile every such company
+  // onto the geographic centroid of the country (~Oklahoma), creating
+  // a phantom cluster the user reported on 2026-06-20. Better to mark
+  // those rows unmapped and surface them in the results table instead.
+  if (countryKey && countryKey !== 'US' && COORDS.countries[countryKey]) {
     const hit = COORDS.countries[countryKey];
     return { lng: hit[0], lat: hit[1], mapStatus: 'approximate' };
   }
