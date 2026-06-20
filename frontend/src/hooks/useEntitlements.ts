@@ -13,7 +13,8 @@ import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/auth/AuthProvider';
 import { fetchEntitlementsSnapshot } from '@/api/entitlements';
-import type { FeatureKey, UsageLimitKey } from '@/lib/planLimits';
+import { normalizePlan } from '@/lib/planLimits';
+import type { FeatureKey, PlanCode, UsageLimitKey } from '@/lib/planLimits';
 
 export interface EntitlementCheckResult {
   allowed: boolean;
@@ -27,7 +28,7 @@ export interface EntitlementCheckResult {
 const ENTITLEMENTS_QUERY_KEY = ['entitlements'] as const;
 
 export function useEntitlements() {
-  const { user, plan, orgRole } = useAuth();
+  const { user, plan: authPlan, orgRole } = useAuth();
   const queryClient = useQueryClient();
 
   const isAdmin = ['owner', 'admin'].includes(orgRole || '');
@@ -44,6 +45,14 @@ export function useEntitlements() {
   });
 
   const isPlatformAdmin = Boolean(entitlements?.is_platform_admin);
+
+  // Prefer the server-resolved snapshot for plan code: the snapshot is the
+  // single source of truth for the user's effective plan (which, for invited
+  // workspace members, is inherited from their org — not from any column on
+  // their own profile). Fall back to useAuth().plan only during the brief
+  // window before the entitlements query resolves. normalizePlan defends
+  // against any unexpected plan string by coercing to "free_trial".
+  const plan: PlanCode = normalizePlan(entitlements?.plan ?? authPlan ?? null);
 
   const canAccessFeature = useCallback(
     async (feature: FeatureKey): Promise<EntitlementCheckResult> => {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/auth/AuthProvider";
+import { useEntitlements } from "@/hooks/useEntitlements";
 import { PLAN_LIMITS, normalizePlan, type PlanCode } from "@/lib/planLimits";
 
 /**
@@ -56,9 +57,19 @@ const TRACKED_FEATURES: Array<{ key: string; label: string }> = [
  * if the precise period_start/period_end can shift by a few days.
  */
 export function useUsageSummary(): UsageSummary {
-  const { user, plan } = useAuth();
-  const planCode = normalizePlan(plan ?? "free_trial");
+  const { user, plan: authPlan } = useAuth();
+  // Source plan + limits from the server-resolved entitlements snapshot
+  // (canonical for invited workspace members whose plan is inherited from
+  // their org). Fall back to useAuth().plan during the initial fetch window
+  // so the chip can still render something before the snapshot lands.
+  const { plan: entPlan, entitlements } = useEntitlements();
+  const planCode = normalizePlan(entPlan ?? authPlan ?? "free_trial");
   const planConfig = PLAN_LIMITS[planCode];
+  // Prefer server-resolved per-feature limits when the snapshot carries
+  // them — those reflect any plan-level customization that has been written
+  // server-side (e.g. a custom enterprise limit). The static catalog
+  // remains the fallback for any limit key the snapshot omits.
+  const serverLimits = entitlements?.limits ?? null;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +125,15 @@ export function useUsageSummary(): UsageSummary {
   const rows: UsageRow[] = TRACKED_FEATURES.map(({ key, label }) => {
     const used = usedByFeature[key] || 0;
     const limitKey = FEATURE_TO_LIMIT_KEY[key];
-    const limit = limitKey ? planConfig.limits[limitKey] : null;
+    const staticLimit = limitKey ? planConfig.limits[limitKey] ?? null : null;
+    // Snapshot uses `undefined` for "key omitted" and `null` for "unlimited".
+    // Only treat an explicit-present entry as authoritative; otherwise fall
+    // through to the static catalog so we don't downgrade a real cap to null.
+    const serverLimit =
+      limitKey && serverLimits && Object.prototype.hasOwnProperty.call(serverLimits, limitKey)
+        ? serverLimits[limitKey] ?? null
+        : undefined;
+    const limit = serverLimit !== undefined ? serverLimit : staticLimit;
     const pctUsed =
       limit != null && limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : null;
     return { featureKey: key, label, used, limit, pctUsed };

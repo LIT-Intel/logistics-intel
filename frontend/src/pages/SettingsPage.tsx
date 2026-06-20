@@ -42,8 +42,12 @@ function requireNoError(
 }
 
 export default function SettingsPage() {
-  const { user, plan, isSuperAdmin } = useAuth();
+  const { user, plan: authPlan, isSuperAdmin } = useAuth();
   const entitlements = useEntitlements();
+  // Prefer the server-resolved snapshot plan over the per-user auth plan so
+  // invited workspace members see the org's inherited plan (not free_trial).
+  // Falls back to useAuth().plan during the initial entitlements fetch.
+  const plan = entitlements.plan ?? authPlan;
   const mountedRef = useRef(true);
 
   const [profile, setProfile] = useState<JsonMap>({});

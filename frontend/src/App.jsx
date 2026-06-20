@@ -9,6 +9,7 @@ import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import { useAuth } from "@/auth/AuthProvider";
 import AcceptInvitePage from "@/pages/AcceptInvitePage";
 import { UpgradeGate } from "@/components/common/UpgradeGate";
+import { useEntitlements } from "@/hooks/useEntitlements";
 import { canAccessFeature, normalizePlan } from "@/lib/planLimits";
 
 const Landing = lazy(() => import("@/pages/LandingPage"));
@@ -110,11 +111,19 @@ function RequireSuperAdmin({ children }) {
 
 function RequirePlan({ feature, featureName, description, requiredPlan = "growth", children }) {
   const { user, loading, plan: userPlan } = useAuth();
+  // Prefer the server-resolved entitlements snapshot so invited workspace
+  // members inherit their org's plan instead of falling through to free_trial
+  // and being blocked behind the UpgradeGate on plan-included features.
+  const { plan: entPlan, entitlements } = useEntitlements();
   if (DEMO_MODE) return children;
   if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
-  const plan = normalizePlan(userPlan);
-  const hasAccess = canAccessFeature(plan, feature);
+  const plan = normalizePlan(entPlan ?? userPlan);
+  // When the entitlements snapshot has loaded and explicitly grants the
+  // feature, honor that (covers cases where an admin has customized the
+  // org's feature flags beyond the static catalog defaults).
+  const hasAccess =
+    Boolean(entitlements?.features?.[feature]) || canAccessFeature(plan, feature);
   // Always render the underlying page through UpgradeGate — when the
   // user lacks access the gate blurs the page behind the Pulse Coach
   // upgrade card so they see the feature they're being asked to pay
