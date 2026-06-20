@@ -61,6 +61,14 @@ export interface UnifiedExplorerRow {
   top_lane?: string | null;
   opportunity_composite_score?: number | null;
 
+  /**
+   * True when lit_saved_companies has a row for this source_company_key
+   * scoped to the caller's org. Drives the "Open profile for full
+   * details" inline helper — unsaved rows get the prompt, saved rows
+   * skip it. Populated by fetchSearchMetadataOverlay; defaults false.
+   */
+  is_saved?: boolean;
+
   /** Which side of the merge this row came from. */
   source: 'importyeti' | 'pulse' | 'crm' | 'local';
 

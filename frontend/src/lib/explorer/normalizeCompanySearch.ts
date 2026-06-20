@@ -252,7 +252,27 @@ export type CompanyMetadataOverlay = Record<string, {
   vertical?: string | null;
   revenue?: number | string | null;
   opportunity_composite_score?: number | null;
+  is_saved?: boolean;
 }>;
+
+/**
+ * Build a stable dedup key from (name, domain). Strips legal suffixes
+ * ("Inc", "LLC", "Corp", "S.A.", etc), case-folds, collapses
+ * whitespace, and joins with the domain so "The Home Depot" + null
+ * and "Home Depot Inc" + "homedepot.com" both fall under the same
+ * bucket. Used by normalizeCompanySearchResults to drop the
+ * cross-source duplicates the user flagged in Polish 4.
+ */
+function dedupKey(name: string, domain: string | null | undefined): string {
+  const stripped = String(name ?? '')
+    .toLowerCase()
+    .replace(/\b(inc|incorporated|corp|corporation|ltd|llc|llp|plc|sa|sas|gmbh|ag|bv|nv|co|company|holdings|group|the)\b\.?/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, '-');
+  const dom = String(domain ?? '').trim().toLowerCase().replace(/^www\./, '');
+  return `${stripped}|${dom}`;
+}
 
 /** Parse "$50M" / "$1.2B" / 50000000 / "50000000" into a number, else null. */
 function parseRevenueValue(v: unknown): number | null {
@@ -300,7 +320,7 @@ export function normalizeCompanySearchResults(
     mostRecentShipment: string | null;
   };
 } {
-  const rows = hits.map((h) => {
+  const merged = hits.map((h) => {
     const base = normalizeIyShipperHit(h);
     const meta = (base.source_company_key && metadata[base.source_company_key]) ?? null;
     if (!meta) return base;
@@ -311,8 +331,19 @@ export function normalizeCompanySearchResults(
       revenue: parseRevenueValue(meta.revenue) ?? base.revenue,
       opportunity_composite_score:
         meta.opportunity_composite_score ?? base.opportunity_composite_score,
+      is_saved: Boolean(meta.is_saved),
     };
   });
+  // Cross-source dedup pass (Polish 4): when the upstream returns
+  // "The Home Depot" and "Home Depot Inc" with the same domain, drop
+  // the duplicate. Keeps the FIRST occurrence — searchShippers ranks
+  // by confidence so the kept row is the highest-quality match.
+  const seen = new Map<string, UnifiedExplorerRow>();
+  for (const r of merged) {
+    const k = dedupKey(r.company_name, r.domain);
+    if (!seen.has(k)) seen.set(k, r);
+  }
+  const rows = Array.from(seen.values());
   const mapPoints = rows.filter((r) => r.latitude != null && r.longitude != null);
   const unmappedCount = rows.length - mapPoints.length;
 

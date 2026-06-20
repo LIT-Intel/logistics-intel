@@ -4107,41 +4107,81 @@ export async function fetchSearchMetadataOverlay(
   vertical?: string | null;
   revenue?: number | string | null;
   opportunity_composite_score?: number | null;
+  is_saved?: boolean;
 }>> {
   if (!companyKeys.length) return {};
+
+  // Key-shape mismatch fix (Polish 4): ImportYeti returns keys like
+  // "company/the-home-depot" while save-company writes slug-only
+  // ("the-home-depot") to lit_companies.source_company_key. The
+  // overlay's previous `.in(source_company_key, companyKeys)` matched
+  // zero rows because of the prefix. We now query BOTH variants
+  // ("company/<slug>" and "<slug>") and map every result back to the
+  // INPUT key the caller passed, so industry/vertical/revenue/opp_score
+  // populate regardless of which storage shape the row uses.
+  const variants = new Set<string>();
+  const variantToOriginal: Record<string, string> = {};
+  for (const k of companyKeys) {
+    if (!k) continue;
+    const slug = normalizeCompanyIdToSlug(k);
+    const prefixed = `company/${slug}`;
+    variants.add(k);
+    variants.add(slug);
+    variants.add(prefixed);
+    variantToOriginal[k] = k;
+    variantToOriginal[slug] = k;
+    variantToOriginal[prefixed] = k;
+  }
+  const lookupKeys = Array.from(variants).filter(Boolean);
+
   const out: Record<string, any> = {};
+  const mapEntry = (rowKey: string | null | undefined, patch: Record<string, unknown>) => {
+    if (!rowKey) return;
+    const original = variantToOriginal[rowKey] ?? rowKey;
+    out[original] = { ...(out[original] ?? {}), ...patch };
+  };
+
   try {
     const { data } = await supabase
       .from('lit_companies')
       .select('source_company_key, industry, revenue')
-      .in('source_company_key', companyKeys);
+      .in('source_company_key', lookupKeys);
     for (const r of data ?? []) {
-      if (r?.source_company_key) {
-        out[r.source_company_key] = {
-          industry: r.industry ?? null,
-          revenue: r.revenue ?? null,
-        };
-      }
+      mapEntry(r?.source_company_key, {
+        industry: r?.industry ?? null,
+        revenue: r?.revenue ?? null,
+      });
     }
   } catch { /* fall through */ }
   try {
     const { data } = await supabase
       .from('lit_company_directory')
       .select('source_company_key, vertical, opportunity_composite_score')
-      .in('source_company_key', companyKeys);
+      .in('source_company_key', lookupKeys);
     for (const r of data ?? []) {
-      if (r?.source_company_key) {
-        out[r.source_company_key] = {
-          ...(out[r.source_company_key] ?? {}),
-          vertical: r.vertical ?? null,
-          opportunity_composite_score:
-            typeof r.opportunity_composite_score === 'number'
-              ? r.opportunity_composite_score
-              : null,
-        };
-      }
+      mapEntry(r?.source_company_key, {
+        vertical: r?.vertical ?? null,
+        opportunity_composite_score:
+          typeof r?.opportunity_composite_score === 'number'
+            ? r.opportunity_composite_score
+            : null,
+      });
     }
   } catch { /* directory table optional */ }
+  // is_saved flag — drives the "Open profile for full details" inline
+  // helper on rows whose enrichment is empty. A saved company that
+  // still has no industry/revenue means we genuinely don't have that
+  // metadata; an unsaved company is just waiting for the first profile
+  // open to backfill via getIyCompanyProfile.
+  try {
+    const { data } = await supabase
+      .from('lit_saved_companies')
+      .select('source_company_key')
+      .in('source_company_key', lookupKeys);
+    for (const r of data ?? []) {
+      mapEntry(r?.source_company_key, { is_saved: true });
+    }
+  } catch { /* saved-companies lookup optional */ }
   return out;
 }
 

@@ -635,6 +635,15 @@ function ListRow({ row, onClick, onSave, onOpen }) {
   const oppScore = row.opportunity_composite_score != null
     ? Math.round(row.opportunity_composite_score).toString()
     : '—';
+  // Polish 4: when every enrichment column is empty we show an inline
+  // "Full details on profile" hint so the user knows the data exists
+  // on the deeper Company Profile page — common case for rows the user
+  // has never opened. Saved companies that still lack data don't get
+  // the hint (their data genuinely isn't there).
+  const enrichmentMissing =
+    !row.industry && !row.vertical && row.revenue == null &&
+    row.teu == null && row.opportunity_composite_score == null;
+  const showProfileHint = enrichmentMissing && !row.is_saved;
 
   return (
     <div
@@ -657,6 +666,9 @@ function ListRow({ row, onClick, onSave, onOpen }) {
             </div>
             <div className="font-body mt-0.5 flex items-center gap-1 truncate text-[10.5px] text-slate-500">
               <span className="truncate">{loc.text || '—'}</span>
+              {row.is_saved ? (
+                <span className="shrink-0 rounded-sm bg-emerald-100 px-1 text-[8.5px] uppercase text-emerald-700">saved</span>
+              ) : null}
               {row.mapStatus === 'approximate' ? (
                 <span className="shrink-0 rounded-sm bg-amber-100 px-1 text-[8.5px] uppercase text-amber-700">approx</span>
               ) : null}
@@ -664,6 +676,16 @@ function ListRow({ row, onClick, onSave, onOpen }) {
                 <span className="shrink-0 rounded-sm bg-slate-100 px-1 text-[8.5px] uppercase text-slate-500">no map</span>
               ) : null}
             </div>
+            {showProfileHint ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpen(e); }}
+                className="font-body mt-0.5 inline-flex items-center gap-0.5 text-[10px] text-cyan-700 hover:text-cyan-900"
+              >
+                Open profile for full details
+                <ExternalLink size={9} />
+              </button>
+            ) : null}
           </div>
         </div>
 
