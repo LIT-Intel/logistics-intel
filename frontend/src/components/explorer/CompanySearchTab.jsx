@@ -93,9 +93,51 @@ export default function CompanySearchTab() {
   }, []);
   const [view, setView] = useState(initialView);
 
-  // Hover-preview state — set by ExploreMap onBubbleHover.
+  // Hover-preview state — set by ExploreMap onBubbleHover. A grace
+  // timer bridges the gap between leaving the bubble and entering the
+  // popover card so the user can actually mouse onto the card to click
+  // "Open profile" without it disappearing under them. Pattern:
+  //   bubble mouseenter  → clear timer, show card
+  //   bubble mouseleave  → start 180ms timer
+  //   card   mouseenter  → clear timer (card sticks)
+  //   card   mouseleave  → start 120ms timer
+  //   timer fires        → setHoverRow(null)
+  // The X button + Escape key also force-close the card so the user
+  // is never trapped if a marker re-render orphans the mouseleave.
   const [hoverRow, setHoverRow] = useState(null);
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
+  const hoverHideTimerRef = useRef(null);
+  const clearHoverTimer = useCallback(() => {
+    if (hoverHideTimerRef.current) {
+      clearTimeout(hoverHideTimerRef.current);
+      hoverHideTimerRef.current = null;
+    }
+  }, []);
+  const scheduleHide = useCallback((delay = 180) => {
+    clearHoverTimer();
+    hoverHideTimerRef.current = setTimeout(() => {
+      setHoverRow(null);
+      hoverHideTimerRef.current = null;
+    }, delay);
+  }, [clearHoverTimer]);
+  const dismissHover = useCallback(() => {
+    clearHoverTimer();
+    setHoverRow(null);
+  }, [clearHoverTimer]);
+
+  // Escape key always dismisses the popover. Belt + suspenders for the
+  // rare case where a MapLibre marker re-render orphans the mouseleave
+  // listener (mostly fitBounds-driven re-renders on single-result
+  // searches like "Walmart").
+  useEffect(() => {
+    if (!hoverRow) return;
+    const onKey = (e) => { if (e.key === 'Escape') dismissHover(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hoverRow, dismissHover]);
+
+  // Clear any pending timer on unmount so we don't setState after unmount.
+  useEffect(() => () => clearHoverTimer(), [clearHoverTimer]);
 
   // Persist panel + view choices.
   useEffect(() => {
@@ -209,12 +251,15 @@ export default function CompanySearchTab() {
   // Bubble hover — opens the floating preview card. The Map calls this
   // with screen coords so we don't have to query the map again.
   const onBubbleHover = useCallback((row, pos) => {
+    clearHoverTimer();
     setHoverRow(row);
     if (pos) setHoverPos({ x: pos.x, y: pos.y });
-  }, []);
+  }, [clearHoverTimer]);
   const onBubbleLeave = useCallback(() => {
-    setHoverRow(null);
-  }, []);
+    // Don't hide immediately — give the cursor 180ms to land on the
+    // popover card. The card's own onMouseEnter cancels this timer.
+    scheduleHide(180);
+  }, [scheduleHide]);
 
   const mapRows = useMemo(() => mapPoints, [mapPoints]);
 
@@ -291,11 +336,13 @@ export default function CompanySearchTab() {
           </div>
         ) : null}
 
-        {/* Filter chips */}
+        {/* Filter chips. NOTE: deliberately no vendor names in the UI
+            (per product direction — users should never see "ImportYeti"
+            or any other data-provider name). Query + Mapped is enough
+            context; the row table also no longer prints provenance. */}
         {submitted ? (
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5 sm:mt-3">
             <Chip label="Query" value={submitted} />
-            <Chip label="Source" value="ImportYeti" />
             {analytics?.mappedLocations > 0
               ? <Chip label="Mapped" value={`${analytics.mappedLocations}`} />
               : null}
@@ -355,12 +402,19 @@ export default function CompanySearchTab() {
             </div>
           ) : null}
 
-          {/* Bubble hover preview — floats next to the bubble. Uses
-              fixed positioning since onBubbleHover gives us viewport
-              coords. Pointer-events: none on the wrapper means the
-              card itself doesn't steal hover, but inner buttons do. */}
+          {/* Bubble hover preview — floats next to the bubble. The
+              hover-bridge timer (clearHoverTimer / scheduleHide) keeps
+              the card alive while the cursor is over it; moving away
+              starts a 120ms close timer; X button + Escape force-close. */}
           {hoverRow ? (
-            <BubblePopover row={hoverRow} pos={hoverPos} onOpen={(e) => onOpenDetails(hoverRow, e)} />
+            <BubblePopover
+              row={hoverRow}
+              pos={hoverPos}
+              onOpen={(e) => { dismissHover(); onOpenDetails(hoverRow, e); }}
+              onClose={dismissHover}
+              onCardEnter={clearHoverTimer}
+              onCardLeave={() => scheduleHide(120)}
+            />
           ) : null}
 
           {/* Collapsed-state pill — appears in the lower-right when
@@ -637,10 +691,9 @@ function ResultCard({ row, onClick, onSave, onOpen }) {
         <MiniStat label="Last" value={row.last_shipment ? formatDate(row.last_shipment) : '—'} />
       </div>
 
-      <div className="flex items-center justify-between gap-1.5 pt-0.5 sm:pt-1">
-        <span className="font-mono truncate text-[9.5px] uppercase tracking-wider text-slate-400">
-          {row.source_label}
-        </span>
+      <div className="flex items-center justify-end gap-1.5 pt-0.5 sm:pt-1">
+        {/* Source provenance row removed per product direction — we
+            never name our upstream data providers in the UI. */}
         <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
@@ -673,19 +726,35 @@ function MiniStat({ label, value }) {
 
 // Floating preview card next to the bubble. Positioned using viewport
 // coords from onBubbleHover. We center horizontally on the bubble and
-// place above it (so the bubble itself stays uncovered).
-function BubblePopover({ row, pos, onOpen }) {
+// place above it. The wrapper itself accepts pointer events so the
+// onMouseEnter/Leave handlers (driven by the hover-bridge timer in the
+// parent) keep the card alive while the user moves onto it. The X
+// button is a force-close belt to dismiss the popover even when a
+// MapLibre marker re-render orphans the original mouseleave listener.
+function BubblePopover({ row, pos, onOpen, onClose, onCardEnter, onCardLeave }) {
   const loc = compactLocation(row.city, row.state, row.country);
   return (
     <div
-      // pointer-events-none on wrapper so the popover doesn't steal
-      // hover; the inner clickable area re-enables them.
-      className="pointer-events-none fixed z-30 -translate-x-1/2 -translate-y-full"
+      className="fixed z-30 -translate-x-1/2 -translate-y-full"
       style={{ left: pos.x, top: pos.y - 8 }}
       role="tooltip"
+      onMouseEnter={onCardEnter}
+      onMouseLeave={onCardLeave}
     >
-      <div className="pointer-events-auto w-[260px] rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-xl">
-        <div className="flex items-start gap-2">
+      <div className="relative w-[260px] rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-xl">
+        {/* Explicit close — covers the case where a marker re-render
+            (e.g. fitBounds after a single-result search) destroys the
+            original DOM element so its mouseleave never fires. */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onClose?.(); }}
+          aria-label="Close preview"
+          className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+        >
+          <X size={11} />
+        </button>
+
+        <div className="flex items-start gap-2 pr-5">
           <CompanyAvatar name={row.company_name} domain={row.domain} size={32} className="shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="font-display flex items-center gap-1.5 truncate text-[12.5px] font-semibold text-slate-900">

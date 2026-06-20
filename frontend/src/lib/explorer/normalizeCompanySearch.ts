@@ -29,6 +29,105 @@ interface CoordsFile {
 
 const COORDS = coords as unknown as CoordsFile;
 
+// Reverse lookup: full state name → 2-letter USPS code. Used so a
+// state field like "Oregon" still resolves to its centroid.
+const STATE_NAME_TO_CODE: Record<string, string> = {
+  alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA',
+  colorado: 'CO', connecticut: 'CT', delaware: 'DE', florida: 'FL', georgia: 'GA',
+  hawaii: 'HI', idaho: 'ID', illinois: 'IL', indiana: 'IN', iowa: 'IA',
+  kansas: 'KS', kentucky: 'KY', louisiana: 'LA', maine: 'ME', maryland: 'MD',
+  massachusetts: 'MA', michigan: 'MI', minnesota: 'MN', mississippi: 'MS',
+  missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV',
+  'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM',
+  'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', ohio: 'OH',
+  oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI',
+  'south carolina': 'SC', 'south dakota': 'SD', tennessee: 'TN', texas: 'TX',
+  utah: 'UT', vermont: 'VT', virginia: 'VA', washington: 'WA',
+  'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY',
+  'district of columbia': 'DC', 'd.c.': 'DC', dc: 'DC',
+};
+
+const VALID_STATE_CODES = new Set(Object.keys(COORDS.states));
+
+/**
+ * Extract a 2-letter USPS state code from any messy text. Handles
+ *   - "OR", "Or", "or" → "OR"
+ *   - "Or 97005" → "OR"
+ *   - "Oregon" → "OR"
+ *   - "Beaverton, OR, 97005" → "OR"
+ *   - "OR, USA" → "OR"
+ * Returns null when nothing recognisable matches.
+ */
+function extractStateCode(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const raw = String(text).trim();
+  if (!raw) return null;
+
+  // 1. Direct 2-char match (case insensitive).
+  const upper = raw.toUpperCase();
+  if (upper.length === 2 && VALID_STATE_CODES.has(upper)) return upper;
+
+  // 2. Full state name match (case insensitive).
+  const lower = raw.toLowerCase();
+  if (STATE_NAME_TO_CODE[lower]) return STATE_NAME_TO_CODE[lower];
+
+  // 3. First word — handles "Or 97005" / "OR USA" / "or, 12345".
+  const firstWord = upper.split(/[\s,]/).filter(Boolean)[0];
+  if (firstWord && firstWord.length === 2 && VALID_STATE_CODES.has(firstWord)) {
+    return firstWord;
+  }
+
+  // 4. Any whole-word USPS code anywhere in the string.
+  const tokens = upper.split(/[\s,]+/).filter(Boolean);
+  for (const t of tokens) {
+    if (t.length === 2 && VALID_STATE_CODES.has(t)) return t;
+  }
+
+  // 5. Multi-word state name inside the text — "Beaverton New York 10001".
+  for (const [name, code] of Object.entries(STATE_NAME_TO_CODE)) {
+    if (lower.includes(name)) return code;
+  }
+
+  return null;
+}
+
+/**
+ * Best-effort city extraction. ImportYeti sometimes returns the FULL
+ * address in `city`, like "1 Bowerman Dr, Beaverton, Or 97005, Us".
+ * Strategy: split on commas, take the longest comma-separated chunk
+ * that looks like a place name (alpha + space only). Falls back to the
+ * first non-empty chunk.
+ */
+function extractCityName(text: string | null | undefined): string {
+  if (!text) return '';
+  const raw = String(text).trim();
+  if (!raw) return '';
+  if (!raw.includes(',')) return raw.toLowerCase();
+  const parts = raw.split(',').map((p) => p.trim()).filter(Boolean);
+  // Prefer the last alphabetic-only chunk before the state — e.g. for
+  // "1 Bowerman Dr, Beaverton, Or 97005, Us" we want "Beaverton".
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    if (/^[a-zA-Z][a-zA-Z\s\-']{2,}$/.test(p)) return p.toLowerCase();
+  }
+  return parts[0].toLowerCase();
+}
+
+/**
+ * Robust US detection — handles "US", "us", "Us", "USA", "U.S.A",
+ * "United States", and the messy zip+country suffixes ImportYeti
+ * sometimes returns.
+ */
+export function isUnitedStates(country: string | null | undefined): boolean {
+  if (!country) return false;
+  const t = String(country).trim().toLowerCase().replace(/\./g, '');
+  if (!t) return false;
+  if (t === 'us' || t === 'usa' || t === 'united states' || t === 'united states of america') return true;
+  // Suffix from messy concatenations like "Or 97005, Us"
+  if (/\b(us|usa)\b/.test(t)) return true;
+  return false;
+}
+
 /**
  * Look up a centroid for a (city, state, country) triple. Each piece
  * is optional. Returns null if no usable centroid is found.
@@ -38,18 +137,24 @@ export function lookupCentroid(
   state: string | null | undefined,
   country: string | null | undefined,
 ): { lat: number; lng: number; mapStatus: MapStatus } | null {
-  const cityKey = (city ?? '').trim().toLowerCase();
-  const stateKey = (state ?? '').trim().toUpperCase();
-  const countryKey = (country ?? '').trim().toUpperCase();
+  // Robust extraction up-front. ImportYeti returns messy fields like
+  // city="1 Bowerman Dr, Beaverton, Or 97005, Us" / state="Or 97005"
+  // / country="Us"; older clean fields like state="OR" also work.
+  const cityKey = extractCityName(city);
+  const stateCode =
+    extractStateCode(state) ??
+    extractStateCode(city) ??         // sometimes state lives inside the city blob
+    null;
+  const isUS = isUnitedStates(country) || stateCode != null;
+  const countryUpper = (country ?? '').trim().toUpperCase();
 
-  // City + state (best signal)
-  if (cityKey && stateKey) {
-    const hit = COORDS.cities[`${cityKey}:${stateKey.toLowerCase()}`];
+  // City + state (best signal) — city dict keys are "city:st".
+  if (cityKey && stateCode) {
+    const hit = COORDS.cities[`${cityKey}:${stateCode.toLowerCase()}`];
     if (hit) return { lng: hit[0], lat: hit[1], mapStatus: 'mapped' };
   }
-  // City alone (lower confidence — there are many "Springfield"s)
+  // City alone (lower confidence — there are many "Springfield"s).
   if (cityKey) {
-    // Scan keys prefixed by `${cityKey}:` and pick the first match.
     for (const k of Object.keys(COORDS.cities)) {
       if (k.startsWith(`${cityKey}:`)) {
         const hit = COORDS.cities[k];
@@ -57,18 +162,28 @@ export function lookupCentroid(
       }
     }
   }
-  // State centroid → approximate
-  if (stateKey && COORDS.states[stateKey]) {
-    const hit = COORDS.states[stateKey];
+  // State centroid → approximate.
+  if (stateCode && COORDS.states[stateCode]) {
+    const hit = COORDS.states[stateCode];
     return { lng: hit[0], lat: hit[1], mapStatus: 'approximate' };
   }
-  // Country centroid → approximate. INTENTIONALLY skip US here — a US
-  // row with no usable state would otherwise pile every such company
-  // onto the geographic centroid of the country (~Oklahoma), creating
-  // a phantom cluster the user reported on 2026-06-20. Better to mark
-  // those rows unmapped and surface them in the results table instead.
-  if (countryKey && countryKey !== 'US' && COORDS.countries[countryKey]) {
-    const hit = COORDS.countries[countryKey];
+  // Non-US country centroid → approximate. The previous fix banned
+  // US country fallback to avoid the "Oklahoma cluster" bug, but
+  // that left genuine US rows totally unmapped (e.g. Nike with
+  // unparseable state). Now that extractStateCode handles "Or",
+  // "Oregon", "Or 97005", etc, the vast majority of US rows
+  // resolve at state level. The handful that still don't fall
+  // through to the US country centroid below.
+  if (!isUS && countryUpper && COORDS.countries[countryUpper]) {
+    const hit = COORDS.countries[countryUpper];
+    return { lng: hit[0], lat: hit[1], mapStatus: 'approximate' };
+  }
+  // US final fallback. Rows that look US-y but had no parseable state
+  // get the country centroid as a last resort so they still appear on
+  // the map. fitBoundsToPoints will zoom in to show them alongside the
+  // properly-resolved rows.
+  if (isUS && COORDS.countries['US']) {
+    const hit = COORDS.countries['US'];
     return { lng: hit[0], lat: hit[1], mapStatus: 'approximate' };
   }
   return null;
@@ -81,6 +196,18 @@ export function normalizeIyShipperHit(hit: IyShipperHit): UnifiedExplorerRow {
   const lookup = lookupCentroid(hit.city, hit.state, hit.countryCode);
   const stableId = hit.key || hit.companyId || hit.domain || hit.name;
 
+  // Clean up the visible location strings so the list / cards don't
+  // surface "1 Bowerman Dr, Beaverton, Or 97005, Us" as the city.
+  // We trust extractCityName + extractStateCode here since lookupCentroid
+  // already used them — the row gets the *parsed* values, not the raw
+  // upstream blob.
+  const parsedCity = extractCityName(hit.city);
+  const parsedState = extractStateCode(hit.state) ?? extractStateCode(hit.city);
+  const cityDisplay = parsedCity
+    ? parsedCity.replace(/\b\w/g, (c) => c.toUpperCase())  // Title Case
+    : null;
+  const stableCountry = isUnitedStates(hit.countryCode) || parsedState ? 'US' : (hit.countryCode ?? null);
+
   return {
     id: String(stableId),
     company_name: hit.name || hit.title || 'Unnamed account',
@@ -88,9 +215,9 @@ export function normalizeIyShipperHit(hit: IyShipperHit): UnifiedExplorerRow {
     source_company_key: hit.key ?? null,
     company_id: hit.companyId ?? null,
 
-    city: hit.city ?? null,
-    state: hit.state ?? null,
-    country: hit.countryCode ?? null,
+    city: cityDisplay,
+    state: parsedState ?? null,
+    country: stableCountry,
     latitude: lookup?.lat ?? null,
     longitude: lookup?.lng ?? null,
 
