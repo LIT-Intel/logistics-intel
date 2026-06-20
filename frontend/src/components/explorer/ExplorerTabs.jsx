@@ -54,7 +54,7 @@ export default function ExplorerTabs({ disabled }) {
 
   return (
     <div
-      className="flex items-center gap-1 border-b border-slate-200 bg-white px-4 pt-2"
+      className="flex items-center gap-0.5 border-b border-slate-200 bg-white px-2 pt-2 sm:gap-1 sm:px-4"
       role="tablist"
       aria-label="Intelligence Explorer mode"
     >
@@ -73,7 +73,11 @@ export default function ExplorerTabs({ disabled }) {
             onClick={() => handleSetMode(t.id)}
             title={tabDisabled ? `${t.label} — wiring up next` : t.description}
             className={[
-              'inline-flex items-center gap-1.5 px-3 py-2 text-[13px] border-b-2 transition',
+              // Larger touch target on mobile (py-2.5) so the tab is
+              // easy to hit one-handed. Text shrinks slightly on
+              // small screens so both tabs fit side-by-side without
+              // overflow even on a 360px viewport.
+              'inline-flex items-center gap-1 px-2.5 py-2.5 text-[12.5px] border-b-2 transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-[13px]',
               active
                 ? 'border-cyan-500 text-slate-900 font-semibold'
                 : tabDisabled
@@ -82,7 +86,7 @@ export default function ExplorerTabs({ disabled }) {
             ].join(' ')}
           >
             <Icon size={14} className={active ? 'text-cyan-600' : ''} />
-            {t.label}
+            <span className="whitespace-nowrap">{t.label}</span>
             {tabDisabled ? (
               <span className="ml-1 rounded-sm bg-slate-100 px-1 py-px text-[9px] uppercase tracking-wide text-slate-400">
                 soon

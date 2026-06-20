@@ -20,8 +20,14 @@ export default function IntelligenceExplorer() {
   // Make the page take the full available height under AppLayout so
   // ExplorerShell's vertical sections (header → analytics → map →
   // results) lay out without overflow.
+  //
+  // Mobile note: AppHeader has a different height on small screens
+  // (extra hamburger + thinner padding) so we don't hard-code a vh
+  // calc. Instead we stretch via min-h-0 + flex-1 inside AppLayout's
+  // <main>, and use dvh on supporting browsers to dodge the iOS
+  // address-bar bounce that makes 100vh trim the bottom row.
   return (
-    <div className="-mx-[10px] -my-4 h-[calc(100vh-72px)] overflow-hidden">
+    <div className="-mx-[10px] -my-4 flex h-[100dvh] max-h-[calc(100vh-3.5rem)] min-h-[480px] flex-1 flex-col overflow-hidden md:max-h-[calc(100vh-4.5rem)]">
       <ExplorerShell defaultMode="company" />
     </div>
   );
