@@ -73,6 +73,12 @@ import QueryInterpretation from '@/features/pulse/QueryInterpretation';
 import PulseMap from '@/features/pulse/PulseMap';
 import PulseTabs from '@/features/pulse/explore/PulseTabs';
 import PulseExploreTab from '@/features/pulse/explore/PulseExploreTab';
+// PR 1 of the Day-5 Intelligence Explorer pivot: wrap PulseExploreTab in
+// the new ExplorerShell so future PR 2 work (Company Search tab + map
+// adapter + sidebar collapse) drops in without touching this page. Today
+// the shell is mounted with `hideTabs` so the surface is visually identical
+// to before — no user-facing change from this commit.
+import ExplorerShell from '@/components/explorer/ExplorerShell';
 import { UpgradeLimitGate } from '@/components/common/UpgradeGate';
 import { useEntitlements } from '@/hooks/useEntitlements';
 
@@ -888,7 +894,13 @@ export default function Pulse() {
 
   return (
     <PulseTabs exploreEnabled={exploreEnabled}>
-      {({ tab }) => tab === 'explore' ? <PulseExploreTab /> : (
+      {({ tab }) => tab === 'explore' ? (
+        // ExplorerShell renders PulseExploreTab today. hideTabs=true means
+        // the Intelligence Explorer's own tab bar stays off until PR 2
+        // lights up the Company Search tab. defaultMode="pulse" matches
+        // the route this is mounted from (/app/prospecting?tab=explore).
+        <ExplorerShell defaultMode="pulse" hideTabs={true} />
+      ) : (
     <UpgradeLimitGate
       isOverLimit={Boolean(searchLimit) && !isPlatformAdmin}
       used={searchLimit?.used}
