@@ -13,13 +13,25 @@ const router = Router();
 // ImportYeti base + helpers
 // -----------------------------------------------------------------------------
 
+// Generic ImportYeti base (version root)
 const IY_BASE =
   process.env.IY_DMA_BASE_URL || "https://data.importyeti.com/v1.0";
+
+// Dedicated base for company search.
+// Per previous wiring, IY_DMA_SEARCH_URL should be the full
+// https://data.importyeti.com/v1.0/company/search endpoint.
+// If it's not set, we fall back to `${IY_BASE}/company/search`.
+const IY_SEARCH_BASE =
+  process.env.IY_DMA_SEARCH_URL || `${IY_BASE}/company/search`;
+
 const IY_KEY =
   process.env.IY_DMA_API_KEY || process.env.IY_API_KEY || "";
 
 /**
- * Basic GET wrapper around ImportYeti v1.0
+ * Basic GET wrapper around ImportYeti v1.0.
+ *
+ * - If `path` is an absolute URL (starts with "http"), we use it as-is.
+ * - Otherwise, we treat `path` as a relative path under IY_BASE.
  */
 async function iyGet<T>(path: string): Promise<T> {
   if (!IY_KEY) {
@@ -28,7 +40,7 @@ async function iyGet<T>(path: string): Promise<T> {
     throw err;
   }
 
-  const url = `${IY_BASE}${path}`;
+  const url = path.startsWith("http") ? path : `${IY_BASE}${path}`;
 
   const resp = await fetch(url, {
     method: "GET",
@@ -70,8 +82,12 @@ async function iyGet<T>(path: string): Promise<T> {
 
 /**
  * Simple ImportYeti company search helper.
- * We keep this conservative: GET /company/search?q=...
- * and slice results locally for pagination.
+ *
+ * Correct endpoint per DMA:
+ *   GET https://data.importyeti.com/v1.0/company/search
+ *   ?name={q}
+ *   &page_size={pageSize}
+ *   &offset={offset}
  */
 async function iySearch(
   q: string,
@@ -96,20 +112,30 @@ async function iySearch(
     };
   }
 
-  const searchPath = (() => {
-    const basePath = "/company/search";
+  // Compute offset based on page + pageSize
+  const offset = page > 1 ? (page - 1) * pageSize : 0;
+
+  // Build the full search URL using IY_SEARCH_BASE.
+  // IY_SEARCH_BASE is either the full /company/search URL from env,
+  // or `${IY_BASE}/company/search` as a sane fallback.
+  const searchUrl = (() => {
     const qs = new URLSearchParams();
-    qs.set("q", trimmed);
-    return `${basePath}?${qs.toString()}`;
+    qs.set("name", trimmed);
+    qs.set("page_size", String(pageSize));
+    qs.set("offset", String(offset));
+    return `${IY_SEARCH_BASE}?${qs.toString()}`;
   })();
 
-  const resp = await iyGet<{ data?: any[] }>(searchPath);
-  const allRows = Array.isArray(resp.data) ? resp.data : [];
+  // Expect shape: { data: [...], meta?: { total?: number, ... } }
+  const resp = await iyGet<{ data?: any[]; meta?: { total?: number } }>(
+    searchUrl,
+  );
 
-  const start = (page - 1) * pageSize;
-  const end = start + pageSize;
-  const rawRows = allRows.slice(start, end);
-  const total = allRows.length;
+  const rawRows = Array.isArray(resp.data) ? resp.data : [];
+  const total =
+    resp.meta && typeof resp.meta.total === "number"
+      ? resp.meta.total
+      : rawRows.length;
 
   const normalizedRows = rawRows.map((row: any, index: number) => {
     const fallbackTitle =

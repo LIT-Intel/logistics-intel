@@ -1,5 +1,7 @@
 // services/search-unified/src/index.ts
 
+// services/search-unified/src/index.ts
+
 import express, {
   type NextFunction,
   type Request,
@@ -99,10 +101,15 @@ app.use(
       error.message ||
       (status >= 500 ? "Internal server error" : "Request failed");
 
-    if (status >= 500) {
-      // eslint-disable-next-line no-console
-      console.error("search-unified error:", err);
-    }
+    // TEMP: Log ALL errors (including 4xx) so we can see the JSON/body issue.
+    // This is for debugging the ImportYeti /public/iy/searchShippers endpoint.
+    // eslint-disable-next-line no-console
+    console.error("search-unified error:", {
+      status,
+      errorCode,
+      message,
+      err,
+    });
 
     res.status(status).json({
       ok: false,
