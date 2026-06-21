@@ -24,6 +24,10 @@
 // Infinity for the full list (F1 Suppliers sub-tab needs this).
 
 import { getBolSupplier, getBolDate } from "@/lib/bols/helpers";
+import {
+  parseSuppliersTable,
+  looksLikeSuppliersTable,
+} from "./suppliersTable";
 
 // Locked legacy shape — required by aggregate.test.ts snapshot. Country is
 // the ISO-2 code as a string (or "" when unknown). Shipments / share use
@@ -41,15 +45,28 @@ export type SupplierRow = {
   country_code?: string | null;
   shipment_count?: number | null;
   last_shipment_date?: string | null;
-  // T5 (eng-review) — trustworthy recency signal derived ONLY from the
-  // backend-supplied last_shipment_date. "active" = shipped within the
-  // last 365 days, "dormant" = older. This is the ONLY trend dimension we
-  // can stand behind today: ImportYeti's suppliers_table carries per-supplier
-  // shipments + dates but NOT per-supplier TEU/ports/monthly buckets, so
-  // growing/declining/new volume-trend is deliberately NOT emitted (would be
-  // fabricated). Attached only when last_shipment_date is present so legacy
-  // toEqual snapshots stay green.
+  // Recency signal derived from last_shipment_date. "active" = shipped within
+  // the last 365 days, "dormant" = older. Attached only when a date exists.
   recency?: "active" | "dormant" | null;
+
+  // ── Rich fields (parsed from the full ImportYeti suppliers_table) ───────
+  // All optional + only populated when the rich source is present, so the
+  // name-only / BOL-derived paths and the locked legacy snapshots are
+  // unaffected. Every value is real upstream data — never fabricated.
+  address?: string | null;            // supplier_address (free-text street)
+  total_shipments?: number | null;    // total_shipments_supplier (all-time)
+  teu_12m?: number | null;            // summed from supplier_time_series (12m)
+  total_teu?: number | null;          // total_teus (all-time)
+  first_shipment_date?: string | null; // first_shipment (ISO)
+  business_length?: string | null;    // tenure, e.g. "3y 5m 20d"
+  // Volume trend from per-supplier monthly history. Distinct from `recency`:
+  // recency = how long since last shipment; trend = direction of volume.
+  trend?: "new" | "growing" | "stable" | "declining" | "dormant" | null;
+  hs_chapters?: Array<{ chapter: string; name?: string | null; shipments?: number | null }>;
+  // Other importers this supplier ships to (ImportYeti top_companies). This
+  // is the real cross-receiver network, present in the payload today.
+  other_buyers?: Array<{ name: string; shipments?: number | null }>;
+  iy_key?: string | null;             // ImportYeti supplier slug (deep-link)
 };
 
 export type AggregateOptions = {
@@ -80,6 +97,27 @@ export function aggregateSuppliers(
   // 100% instead of ~4%). When no trustworthy company total is available we
   // fall back to the list/BOL total (legacy behavior, keeps snapshots stable).
   const companyTotal = resolveCompanyTotal(profile);
+
+  // Richest source first: the full ImportYeti suppliers_table carries real
+  // per-supplier address, TEU, share %, HS chapters, monthly history (trend)
+  // and other-buyers. It can land in several places depending on which profile
+  // loader/normalizer ran, so probe each. looksLikeSuppliersTable() rejects
+  // name-only string lists, so falling through is safe.
+  const tableCandidates = [
+    profile?.suppliers_table,
+    profile?.suppliersTable,
+    profile?.suppliers_sample,
+    profile?.top_suppliers,
+    profile?.topSuppliers,
+    profile?.raw?.data?.suppliers_table,
+    profile?.raw?.suppliers_table,
+    profile?.raw_payload?.data?.suppliers_table,
+  ];
+  const table = tableCandidates.find((t) => looksLikeSuppliersTable(t));
+  if (table) {
+    const rich = parseSuppliersTable(table, { companyTotal, now });
+    if (rich.length > 0) return takeTop(rich, limit);
+  }
 
   const structured =
     profile?.serviceProviderMix?.suppliers ||
@@ -112,7 +150,9 @@ export function aggregateSuppliers(
     const hasCounts = list.some(
       (e: any) =>
         typeof e !== "string" &&
-        (Number(e?.shipments) > 0 || Number(e?.count) > 0),
+        (Number(e?.shipments) > 0 ||
+          Number(e?.count) > 0 ||
+          Number(e?.shipment_count) > 0),
     );
     if (hasCounts) {
       return takeTop(
@@ -166,7 +206,9 @@ function rowsFromCountedList(
   const totalShip = list.reduce(
     (s: number, e: any) =>
       s +
-      (typeof e === "string" ? 0 : Number(e?.shipments || e?.count) || 0),
+      (typeof e === "string"
+        ? 0
+        : Number(e?.shipments || e?.count || e?.shipment_count) || 0),
     0,
   );
   const denom = companyTotal && companyTotal > 0 ? companyTotal : totalShip;
@@ -175,7 +217,9 @@ function rowsFromCountedList(
       const isString = typeof e === "string";
       const name = isString ? e : String(e?.name || e?.label || "");
       if (!name) return null;
-      const ship = isString ? 0 : Number(e?.shipments || e?.count) || 0;
+      const ship = isString
+        ? 0
+        : Number(e?.shipments || e?.count || e?.shipment_count) || 0;
       const country = isString
         ? ""
         : String(e?.countryCode || e?.country_code || e?.country || "");

@@ -1268,25 +1268,35 @@ function SupplierRowFull({
           <span className="font-mono text-[10px] text-slate-500">
             {supplier.country || "Unknown country"}
           </span>
-          {/* T5: recency badge — shown ONLY when a real last-shipment date
-              produced an active/dormant signal. Never rendered on guessed
-              data; this is recency, not volume-trend. */}
-          {supplier.recency && (
-            <span
-              className={`font-mono rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide ${
-                supplier.recency === "active"
-                  ? "bg-emerald-50 text-emerald-600"
-                  : "bg-slate-100 text-slate-400"
-              }`}
-              title={
-                supplier.recency === "active"
-                  ? "Shipped within the last 12 months"
-                  : "No shipment in over 12 months"
-              }
-            >
-              {supplier.recency}
+          {supplier.teu_12m != null && supplier.teu_12m > 0 && (
+            <span className="font-mono text-[10px] text-slate-400">
+              · {Math.round(supplier.teu_12m).toLocaleString()} TEU
             </span>
           )}
+          {/* Trend/recency badge — real data only (trend from the supplier's
+              monthly history, recency from its last-shipment date). Never
+              rendered on guessed data. */}
+          {(() => {
+            const t = supplier.trend ?? supplier.recency;
+            if (!t) return null;
+            const tone =
+              t === "growing"
+                ? "bg-emerald-50 text-emerald-600"
+                : t === "declining"
+                  ? "bg-rose-50 text-rose-500"
+                  : t === "new"
+                    ? "bg-blue-50 text-blue-600"
+                    : t === "dormant"
+                      ? "bg-slate-100 text-slate-400"
+                      : "bg-slate-100 text-slate-500";
+            return (
+              <span
+                className={`font-mono rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide ${tone}`}
+              >
+                {t === "active" ? "active" : t}
+              </span>
+            );
+          })()}
         </div>
       </div>
       <div className="text-right">
@@ -1492,6 +1502,82 @@ function SupplierDrawer({
                 </div>
               </div>
             )}
+
+            {/* Rich detail parsed from the full ImportYeti suppliers_table.
+                Each block renders only when the real field is present. */}
+            {supplier.address && (
+              <div>
+                <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                  Supplier address
+                </div>
+                <div className="font-body mt-1 text-[11.5px] leading-snug text-slate-700">
+                  {supplier.address}
+                </div>
+              </div>
+            )}
+
+            {(supplier.teu_12m != null || supplier.total_teu != null) && (
+              <div>
+                <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                  TEU
+                </div>
+                <div className="font-mono mt-1 text-[12px] text-slate-700">
+                  {supplier.teu_12m != null
+                    ? `${Math.round(supplier.teu_12m).toLocaleString()} (12m)`
+                    : "—"}
+                  {supplier.total_teu != null && (
+                    <span className="text-slate-400">
+                      {" "}
+                      · {Math.round(supplier.total_teu).toLocaleString()} all-time
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {(supplier.first_shipment_date ||
+              supplier.last_shipment_date ||
+              supplier.business_length) && (
+              <div>
+                <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                  Relationship
+                </div>
+                <div className="font-mono mt-1 text-[12px] text-slate-700">
+                  {(supplier.first_shipment_date || "—") +
+                    " → " +
+                    (supplier.last_shipment_date || "—")}
+                  {supplier.business_length && (
+                    <span className="text-slate-400"> · {supplier.business_length}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {Array.isArray(supplier.other_buyers) &&
+              supplier.other_buyers.length > 0 && (
+                <div>
+                  <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                    Other importers this supplier ships to
+                  </div>
+                  <div className="mt-1.5 flex flex-col gap-1">
+                    {supplier.other_buyers.map((b, i) => (
+                      <div
+                        key={`${b.name}-${i}`}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <span className="font-body truncate text-[11.5px] text-slate-700">
+                          {b.name}
+                        </span>
+                        {b.shipments != null && (
+                          <span className="font-mono shrink-0 text-[10.5px] text-slate-400">
+                            {b.shipments.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
             {supplierBols.length === 0 && (
               <p className="font-body text-[11px] text-slate-500">

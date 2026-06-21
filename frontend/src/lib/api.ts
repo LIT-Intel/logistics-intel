@@ -412,6 +412,8 @@ export interface IyCompanyProfile {
   top_routes?: Array<Record<string, any>>;
   most_recent_route?: Record<string, any> | null;
   suppliers_sample?: string[];
+  /** Full ImportYeti suppliers_table (rich per-supplier objects). */
+  suppliers_table?: any[];
   fcl_shipments_all_time?: number | null;
   lcl_shipments_all_time?: number | null;
   fcl_shipments_perc?: number | null;
@@ -2734,6 +2736,16 @@ function normalizeCompanyProfile(
     top_routes: profileData.top_routes,
     most_recent_route: profileData.most_recent_route,
     suppliers_sample: profileData.suppliers_sample,
+    // Full ImportYeti suppliers_table (rich per-supplier detail: address, TEU,
+    // share %, HS chapters, monthly history, other buyers). Preserved verbatim
+    // so the Suppliers tab can surface real detail instead of name-only rows.
+    suppliers_table:
+      (Array.isArray(profileData.suppliers_table) && profileData.suppliers_table) ||
+      (Array.isArray(profileData?.raw_payload?.data?.suppliers_table) &&
+        profileData.raw_payload.data.suppliers_table) ||
+      (Array.isArray(profileData?.raw?.data?.suppliers_table) &&
+        profileData.raw.data.suppliers_table) ||
+      undefined,
     fcl_shipments_all_time: coerceNumber(profileData.fcl_shipments_all_time),
     lcl_shipments_all_time: coerceNumber(profileData.lcl_shipments_all_time),
     fcl_shipments_perc: coerceNumber(profileData.fcl_shipments_perc),
