@@ -41,6 +41,7 @@ import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
 import {
   aggregateSuppliers,
   supplierNameToSlug,
+  supplierInsight,
   type SupplierRow as SupplierAggregateRow,
 } from "@/lib/suppliers/aggregate";
 import {
@@ -194,15 +195,7 @@ function CDPSupplyChainBody({
   // the granular per-route list.
   const canonicalLanes = allLanes;
 
-  const recentBols = useMemo(() => {
-    const items =
-      profile?.recentBols ||
-      profile?.recent_bols ||
-      profile?.bols ||
-      profile?.shipments ||
-      [];
-    return Array.isArray(items) ? items : [];
-  }, [profile]);
+  const recentBols = useMemo(() => deriveRecentBols(profile), [profile]);
 
   const carriers = useMemo(() => deriveCarriers(profile, recentBols), [profile, recentBols]);
   const forwarders = useMemo(() => deriveForwarders(profile, recentBols), [profile, recentBols]);
@@ -1108,7 +1101,26 @@ function LanesView({
 
 /* ── Suppliers view (F1 — Wk1) ──────────────────────────────────────── */
 
-function SuppliersView({
+/**
+ * Resolve the recent-BOL array off a company profile, tolerant of the
+ * several shapes upstream uses. Exported so a standalone Suppliers tab
+ * (CompanyProfileV2) derives BOLs identically to the Supply Chain tab —
+ * one source of truth, no drift. (T4)
+ */
+export function deriveRecentBols(profile: any): any[] {
+  const items =
+    profile?.recentBols ||
+    profile?.recent_bols ||
+    profile?.bols ||
+    profile?.shipments ||
+    [];
+  return Array.isArray(items) ? items : [];
+}
+
+// Exported (T4) so it can mount as a dedicated top-level "Suppliers" tab in
+// CompanyProfileV2 — suppliers are trade intelligence, not a Supply-Chain
+// sub-tab buried two levels down. Same component, two mount points.
+export function SuppliersView({
   profile,
   recentBols,
   companyName,
@@ -1252,8 +1264,29 @@ function SupplierRowFull({
         <div className="font-display truncate text-[12px] font-semibold text-slate-900">
           {supplier.name}
         </div>
-        <div className="font-mono mt-0.5 text-[10px] text-slate-500">
-          {supplier.country || "Unknown country"}
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <span className="font-mono text-[10px] text-slate-500">
+            {supplier.country || "Unknown country"}
+          </span>
+          {/* T5: recency badge — shown ONLY when a real last-shipment date
+              produced an active/dormant signal. Never rendered on guessed
+              data; this is recency, not volume-trend. */}
+          {supplier.recency && (
+            <span
+              className={`font-mono rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide ${
+                supplier.recency === "active"
+                  ? "bg-emerald-50 text-emerald-600"
+                  : "bg-slate-100 text-slate-400"
+              }`}
+              title={
+                supplier.recency === "active"
+                  ? "Shipped within the last 12 months"
+                  : "No shipment in over 12 months"
+              }
+            >
+              {supplier.recency}
+            </span>
+          )}
         </div>
       </div>
       <div className="text-right">
@@ -1407,10 +1440,34 @@ function SupplierDrawer({
               </div>
               {supplier.share >= 0 && (
                 <div className="font-mono mt-1 text-[10.5px] text-slate-500">
-                  {supplier.share}% of this receiver's supplier volume
+                  {supplier.share}% of this receiver's last-12-month shipments
                 </div>
               )}
             </div>
+
+            {/* T6: derived opportunity note — clearly labeled approx so it
+                reads as a prompt, never a verified fact. Only renders when
+                the trustworthy fields surface something notable. */}
+            {(() => {
+              const insight = supplierInsight(supplier);
+              if (!insight) return null;
+              return (
+                <div
+                  className={`rounded-md border px-3 py-2 ${
+                    insight.tone === "opportunity"
+                      ? "border-emerald-100 bg-emerald-50/60"
+                      : "border-amber-100 bg-amber-50/60"
+                  }`}
+                >
+                  <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                    Derived insight · approx
+                  </div>
+                  <p className="font-body mt-1 text-[11.5px] leading-snug text-slate-700">
+                    {insight.text}
+                  </p>
+                </div>
+              );
+            })()}
 
             {dateRange && (
               <div>

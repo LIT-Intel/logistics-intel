@@ -10,6 +10,12 @@ import {
 } from "@/types/importyeti-raw";
 import { normalizeIYCompany, normalizeIYShipment } from "@/lib/normalize";
 import { supabase } from "@/lib/supabase";
+import {
+  summarizeOverlayCoverage,
+  type OverlayCoverage,
+} from "@/lib/explorer/overlayCoverage";
+
+export { summarizeOverlayCoverage, type OverlayCoverage };
 
 // Supabase Edge Functions configuration
 const SUPABASE_URL = typeof import.meta !== "undefined"
@@ -4182,6 +4188,21 @@ export async function fetchSearchMetadataOverlay(
       mapEntry(r?.source_company_key, { is_saved: true });
     }
   } catch { /* saved-companies lookup optional */ }
+
+  // T2: emit the coverage diagnostic (dev only — never noisy in production).
+  try {
+    if ((import.meta as any)?.env?.DEV) {
+      const cov = summarizeOverlayCoverage(companyKeys, out);
+      // eslint-disable-next-line no-console
+      console.info(
+        `[overlay-coverage] ${cov.coveragePct}% matched (${cov.matched}/${cov.total}); ` +
+          `missing=${cov.missing}; fields industry=${cov.fields.industry} ` +
+          `vertical=${cov.fields.vertical} revenue=${cov.fields.revenue} ` +
+          `opp=${cov.fields.opportunity_composite_score}`,
+      );
+    }
+  } catch { /* diagnostic must never break search */ }
+
   return out;
 }
 

@@ -190,6 +190,21 @@ export function lookupCentroid(
 }
 
 /**
+ * Clean an upstream route string for the Origin → Destination cell.
+ * Trims, collapses inner whitespace, and normalises any arrow variant to
+ * " → ". Returns null when the value is missing or empty so the cell shows
+ * "—" rather than a blank or fabricated lane. (T1)
+ */
+export function cleanLane(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const cleaned = value
+    .replace(/\s*(?:→|->|=>|\bto\b)\s*/i, ' → ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+/**
  * Normalise a single IyShipperHit into a UnifiedExplorerRow.
  */
 export function normalizeIyShipperHit(hit: IyShipperHit): UnifiedExplorerRow {
@@ -230,7 +245,12 @@ export function normalizeIyShipperHit(hit: IyShipperHit): UnifiedExplorerRow {
       : (typeof hit.totalShipments === 'number' ? hit.totalShipments : null),
     last_shipment: hit.mostRecentShipment ?? hit.lastShipmentDate ?? null,
     top_origin_country: null,
-    top_lane: null,
+    // T1 (eng-review): the raw IyShipperHit already carries a route string
+    // (primaryRouteSummary / primaryRoute). Map it into top_lane so the
+    // existing Origin → Destination cell populates — same lane field the
+    // shared row model uses, no separate rendering path. Returns null (cell
+    // shows "—") when the upstream route is missing; never fabricated.
+    top_lane: cleanLane(hit.primaryRouteSummary ?? hit.primaryRoute),
     opportunity_composite_score: null,
 
     source: 'importyeti',

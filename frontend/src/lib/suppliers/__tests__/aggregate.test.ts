@@ -6,7 +6,12 @@
 // Run: npm test --workspace frontend src/lib/suppliers
 
 import { describe, it, expect } from "vitest";
-import { aggregateSuppliers, supplierNameToSlug, type SupplierRow } from "../aggregate";
+import {
+  aggregateSuppliers,
+  supplierInsight,
+  supplierNameToSlug,
+  type SupplierRow,
+} from "../aggregate";
 
 describe("aggregateSuppliers", () => {
   describe("structured serviceProviderMix.suppliers (has counts)", () => {
@@ -202,6 +207,109 @@ describe("aggregateSuppliers", () => {
       expect(all[199].name).toBe("Supplier-199");
       expect(all[199].shipments).toBe(1);
     });
+  });
+
+  // T5 (eng-review): share % must be a fraction of the company's TRUE 12-month
+  // total, never of the (sample/top-N) supplier list total. Named for the
+  // documented understatement case (api.ts:2288, Superior Essex) where deriving
+  // metrics off a thin slice produced wrong numbers.
+  describe("share % uses true company total (Superior Essex regression)", () => {
+    it("divides by the company's shipments_last_12m, not the list total", () => {
+      const profile = {
+        shipments_last_12m: 1000,
+        serviceProviderMix: {
+          suppliers: [
+            { providerName: "Superior Essex", shipments: 44, countryCode: "US" },
+            { providerName: "Other Co", shipments: 6, countryCode: "CN" },
+          ],
+        },
+      };
+      const out = aggregateSuppliers(profile, []);
+      // Off the list total (50) this would be 88% / 12%. Off the true total
+      // (1000) it is the correct 4% / 1%.
+      expect(out.find((r) => r.name === "Superior Essex")?.share).toBe(4);
+      expect(out.find((r) => r.name === "Other Co")?.share).toBe(1);
+    });
+
+    it("falls back to the list total when no company total is available", () => {
+      const profile = {
+        serviceProviderMix: {
+          suppliers: [
+            { providerName: "A", shipments: 75, countryCode: "CN" },
+            { providerName: "B", shipments: 25, countryCode: "VN" },
+          ],
+        },
+      };
+      const out = aggregateSuppliers(profile, []);
+      expect(out.find((r) => r.name === "A")?.share).toBe(75);
+      expect(out.find((r) => r.name === "B")?.share).toBe(25);
+    });
+
+    it("clamps share to 100 and never exceeds it", () => {
+      const profile = {
+        // Pathological: a supplier reporting more shipments than the company
+        // total (data skew). Share must clamp, not show 137%.
+        shipments_last_12m: 10,
+        serviceProviderMix: {
+          suppliers: [{ providerName: "Skewed", shipments: 137, countryCode: "CN" }],
+        },
+      };
+      const out = aggregateSuppliers(profile, []);
+      expect(out[0].share).toBe(100);
+    });
+  });
+
+  describe("recency badge (trustworthy, date-derived only)", () => {
+    const NOW = Date.parse("2026-06-21T00:00:00Z");
+
+    it("marks active within 365 days and dormant beyond", () => {
+      const profile = {
+        serviceProviderMix: {
+          suppliers: [
+            { providerName: "Recent", shipments: 10, countryCode: "CN", last_shipment_date: "2026-05-01" },
+            { providerName: "Stale", shipments: 10, countryCode: "VN", last_shipment_date: "2024-01-01" },
+          ],
+        },
+      };
+      const out = aggregateSuppliers(profile, [], { now: NOW });
+      expect(out.find((r) => r.name === "Recent")?.recency).toBe("active");
+      expect(out.find((r) => r.name === "Stale")?.recency).toBe("dormant");
+    });
+
+    it("omits recency entirely when there is no last_shipment_date", () => {
+      const profile = {
+        serviceProviderMix: {
+          suppliers: [{ providerName: "NoDate", shipments: 10, countryCode: "CN" }],
+        },
+      };
+      const out = aggregateSuppliers(profile, [], { now: NOW });
+      expect(out[0]).not.toHaveProperty("recency");
+    });
+  });
+});
+
+describe("supplierInsight (T6 — derived, never fabricated)", () => {
+  const base: SupplierRow = { name: "X", country: "CN", shipments: 10, share: 5 };
+
+  it("flags a dormant relationship as a watch note", () => {
+    const out = supplierInsight({ ...base, recency: "dormant" });
+    expect(out?.tone).toBe("watch");
+    expect(out?.text).toMatch(/12 months/i);
+  });
+
+  it("flags a concentrated relationship (share >= 25) as an opportunity", () => {
+    const out = supplierInsight({ ...base, share: 40 });
+    expect(out?.tone).toBe("opportunity");
+    expect(out?.text).toContain("40%");
+  });
+
+  it("returns null when nothing notable (low share, active/unknown recency)", () => {
+    expect(supplierInsight({ ...base, share: 5 })).toBeNull();
+    expect(supplierInsight({ ...base, share: 5, recency: "active" })).toBeNull();
+  });
+
+  it("returns null for a missing row", () => {
+    expect(supplierInsight(null as any)).toBeNull();
   });
 });
 
