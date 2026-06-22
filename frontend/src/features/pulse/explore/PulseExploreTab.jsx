@@ -390,6 +390,30 @@ export default function PulseExploreTab() {
               onLassoSelect={onLassoSelect}
               mapStyle={mapStyle}
             />
+            {/* Loading overlay — covers the map while accounts load so the
+                user knows the query is running (can take 10–15s). */}
+            {isLoading ? (
+              <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-slate-900/10 backdrop-blur-[1px]">
+                <div className="pointer-events-auto flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 px-7 py-6 text-center shadow-xl backdrop-blur">
+                  <div className="relative flex h-12 w-12 items-center justify-center">
+                    <span className="absolute inset-0 animate-spin rounded-full border-[3px] border-cyan-100 border-t-cyan-500" />
+                    <Sparkles size={18} className="animate-pulse text-cyan-600" />
+                  </div>
+                  <div className="font-display text-[14px] font-bold text-slate-900">
+                    Cooking up your query…
+                  </div>
+                  <p className="font-body max-w-[240px] text-[11.5px] leading-snug text-slate-500">
+                    Parsing your question and pulling matching accounts. This can
+                    take 10–15 seconds.
+                  </p>
+                  <div className="flex gap-1">
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-500 [animation-delay:-0.3s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-500 [animation-delay:-0.15s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-500" />
+                  </div>
+                </div>
+              </div>
+            ) : null}
             {/* Right-side floating selection buttons — labels hide on xs */}
             {fetchEnabled && (
               <div className="absolute right-2 top-2 sm:right-3 sm:top-3 z-20 flex flex-col gap-1.5">
