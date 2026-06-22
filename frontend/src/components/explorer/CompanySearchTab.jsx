@@ -182,7 +182,13 @@ export default function CompanySearchTab() {
       // Non-blocking — if the overlay errors the search still renders
       // (those columns just show — instead of values).
       const keys = resp.results.map((h) => h.key).filter(Boolean);
-      const metadata = await fetchSearchMetadataOverlay(keys).catch(() => ({}));
+      // Pass names too so the overlay can bridge V6 firmographics by canonical
+      // company name (those rows have no source_company_key to match on).
+      const nameByKey = {};
+      for (const h of resp.results) {
+        if (h.key) nameByKey[h.key] = h.title || h.name || null;
+      }
+      const metadata = await fetchSearchMetadataOverlay(keys, nameByKey).catch(() => ({}));
       const norm = normalizeCompanySearchResults(resp.results, metadata);
       setResults(norm.rows);
       setMapPoints(norm.mapPoints);
@@ -417,6 +423,32 @@ export default function CompanySearchTab() {
                       {q}
                     </button>
                   ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Loading overlay — covers the map while a search runs (10–15s)
+              so the user knows to wait. Animated spinner + bouncing dots +
+              a friendly "cooking" message. */}
+          {searching ? (
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-slate-900/10 backdrop-blur-[1px]">
+              <div className="pointer-events-auto flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 px-7 py-6 text-center shadow-xl backdrop-blur">
+                <div className="relative flex h-12 w-12 items-center justify-center">
+                  <span className="absolute inset-0 animate-spin rounded-full border-[3px] border-cyan-100 border-t-cyan-500" />
+                  <Sparkles size={18} className="animate-pulse text-cyan-600" />
+                </div>
+                <div className="font-display text-[14px] font-bold text-slate-900">
+                  Cooking up your query…
+                </div>
+                <p className="font-body max-w-[240px] text-[11.5px] leading-snug text-slate-500">
+                  Pulling live shipment intelligence and plotting your matches.
+                  This can take 10–15 seconds.
+                </p>
+                <div className="flex gap-1">
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-500 [animation-delay:-0.3s]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-500 [animation-delay:-0.15s]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-500" />
                 </div>
               </div>
             </div>

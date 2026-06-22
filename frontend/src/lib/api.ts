@@ -4157,6 +4157,7 @@ export async function fetchSearchKpiOverlay(
  */
 export async function fetchSearchMetadataOverlay(
   companyKeys: string[],
+  nameByKey?: Record<string, string | null | undefined>,
 ): Promise<Record<string, {
   industry?: string | null;
   vertical?: string | null;
@@ -4237,6 +4238,69 @@ export async function fetchSearchMetadataOverlay(
       mapEntry(r?.source_company_key, { is_saved: true });
     }
   } catch { /* saved-companies lookup optional */ }
+
+  // A2 bridge: the V6 vendor firmographics live in lit_company_directory keyed
+  // by canonical_name with a NULL source_company_key, so the lookups above miss
+  // them. Match by canonical company name to surface industry / vertical /
+  // revenue / opp for the ~53k V6-covered companies. Only fills fields the
+  // source_company_key match left empty, and prefers the firmographic-bearing
+  // row when a canonical name has several (v6 over a bare panjiva row).
+  try {
+    if (nameByKey) {
+      const SUFFIX_RE = /\s+(inc\.?|llc\.?|ltd\.?|corp\.?|co\.?|limited|sas|gmbh)$/i;
+      const canonicalize = (name?: string | null) =>
+        String(name ?? '')
+          .toLowerCase()
+          .replace(SUFFIX_RE, '')
+          .replace(/[.,'"!?()]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const canonToKeys = new Map<string, string[]>();
+      for (const original of companyKeys) {
+        const canon = canonicalize(nameByKey[original]);
+        if (!canon) continue;
+        const arr = canonToKeys.get(canon) ?? [];
+        arr.push(original);
+        canonToKeys.set(canon, arr);
+      }
+      const canonNames = Array.from(canonToKeys.keys());
+      if (canonNames.length) {
+        const { data } = await supabase
+          .from('lit_company_directory')
+          .select('canonical_name, industry, vertical, revenue, opportunity_composite_score')
+          .in('canonical_name', canonNames);
+        const best = new Map<string, any>();
+        for (const r of data ?? []) {
+          const c = String(r?.canonical_name ?? '').trim();
+          if (!c) continue;
+          const score =
+            (r?.industry ? 1 : 0) +
+            (r?.vertical ? 1 : 0) +
+            (r?.revenue != null && r?.revenue !== '' ? 1 : 0);
+          const prev = best.get(c);
+          if (!prev || score > prev.__score) best.set(c, { ...r, __score: score });
+        }
+        for (const [canon, keys] of canonToKeys) {
+          const r = best.get(canon);
+          if (!r) continue;
+          for (const original of keys) {
+            const cur = out[original] ?? {};
+            out[original] = {
+              ...cur,
+              industry: cur.industry ?? r.industry ?? null,
+              vertical: cur.vertical ?? r.vertical ?? null,
+              revenue: cur.revenue ?? r.revenue ?? null,
+              opportunity_composite_score:
+                cur.opportunity_composite_score ??
+                (typeof r.opportunity_composite_score === 'number'
+                  ? r.opportunity_composite_score
+                  : null),
+            };
+          }
+        }
+      }
+    }
+  } catch { /* name bridge optional — never break search */ }
 
   // T2: emit the coverage diagnostic (dev only — never noisy in production).
   try {
