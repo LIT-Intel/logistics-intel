@@ -48,7 +48,7 @@ export default function LitKpiStrip({
   // Responsive grid: stays readable down to ~360px. auto-fit collapses cells
   // onto multiple rows on narrow viewports.
   const gridStyle: React.CSSProperties = {
-    gridTemplateColumns: `repeat(auto-fit, minmax(140px, 1fr))`,
+    gridTemplateColumns: `repeat(auto-fit, minmax(150px, 1fr))`,
   };
   return (
     <div
@@ -67,7 +67,9 @@ export default function LitKpiStrip({
         const trendColor = TREND_COLOR[dir];
         const isLast = i === cells.length - 1;
         const wrapperClass = cn(
-          "px-4 py-2.5 border-b border-slate-100",
+          // min-w-0 + overflow-hidden so a long value/trend can never bleed into
+          // the neighbouring cell (the KPI-overlap bug on 13"/tablet screens).
+          "px-4 py-2.5 border-b border-slate-100 min-w-0 overflow-hidden",
           // remove right border on last cell of every row by relying on auto-fit;
           // simpler to keep right border on all but last index too — visually fine
           !isLast && "border-r border-slate-100",
@@ -77,14 +79,14 @@ export default function LitKpiStrip({
             <div className="font-display truncate text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-400">
               {cell.label}
             </div>
-            <div className="mt-0.5 flex items-baseline gap-1.5">
-              <span className="font-mono whitespace-nowrap text-base font-bold tracking-tight text-slate-900">
+            <div className="mt-0.5 flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+              <span className="font-mono min-w-0 max-w-full truncate text-base font-bold tracking-tight text-slate-900">
                 {cell.value}
               </span>
               {cell.trend != null && cell.trend !== "" && (
                 <span
                   className={cn(
-                    "font-display whitespace-nowrap text-[10px] font-semibold",
+                    "font-display min-w-0 truncate text-[10px] font-semibold",
                     trendColor,
                   )}
                 >

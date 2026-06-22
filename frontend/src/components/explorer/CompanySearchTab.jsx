@@ -378,7 +378,7 @@ export default function CompanySearchTab() {
             world from the moment the page lands. */}
         <div
           className={`relative transition-[height] duration-200 ${
-            panelOpen && hasResults ? 'h-[55%] min-h-[260px] sm:h-[58%]' : 'flex-1 min-h-[280px]'
+            panelOpen && hasResults ? 'h-[55%] min-h-[160px] sm:h-[58%]' : 'flex-1 min-h-[200px]'
           }`}
         >
           <ExploreMap
@@ -454,7 +454,7 @@ export default function CompanySearchTab() {
         {/* Results panel — slides up from bottom. Header always present,
             body only rendered when open. */}
         {hasResults ? (
-          <div className={`flex flex-col border-t border-slate-200 bg-white transition-[height] duration-200 ${panelOpen ? 'h-[45%] min-h-[260px] sm:h-[42%]' : 'h-0'}`}>
+          <div className={`flex flex-col min-h-0 border-t border-slate-200 bg-white transition-[height] duration-200 ${panelOpen ? 'h-[45%] min-h-[140px] sm:h-[42%]' : 'h-0'}`}>
             {panelOpen ? (
               <>
                 <PanelHeader
@@ -600,7 +600,7 @@ function ListView({ rows, onRowClick, onSave, onOpen }) {
       {/* Header row — sticks to the top of the scroll area so column
           labels stay visible while the user scrolls a long result set. */}
       <div
-        className="sticky top-0 z-10 hidden border-b border-slate-200 bg-slate-50/95 px-3 py-1.5 backdrop-blur sm:grid sm:px-4"
+        className="sticky top-0 z-10 hidden border-b border-slate-200 bg-slate-50/95 px-3 py-1.5 backdrop-blur lg:grid lg:px-4"
         style={{ gridTemplateColumns: LIST_GRID_COLS, columnGap: '0.75rem' }}
       >
         <HeaderCell>Account</HeaderCell>
@@ -666,7 +666,7 @@ function ListRow({ row, onClick, onSave, onOpen }) {
     >
       {/* Desktop / tablet — the aligned grid. */}
       <div
-        className="hidden items-center px-3 py-2 sm:grid sm:px-4"
+        className="hidden items-center px-3 py-2 lg:grid lg:px-4"
         style={{ gridTemplateColumns: LIST_GRID_COLS, columnGap: '0.75rem' }}
       >
         {/* Account = avatar + name + location */}
@@ -728,7 +728,7 @@ function ListRow({ row, onClick, onSave, onOpen }) {
       </div>
 
       {/* Mobile — denser two-row card. */}
-      <div className="flex flex-col gap-1.5 px-3 py-2 sm:hidden">
+      <div className="flex flex-col gap-1.5 px-3 py-2 lg:hidden">
         <div className="flex items-start gap-2">
           <CompanyAvatar name={row.company_name} domain={row.domain} size={28} className="shrink-0" />
           <div className="min-w-0 flex-1">
