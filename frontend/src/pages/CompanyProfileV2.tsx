@@ -35,6 +35,7 @@ import {
   Sparkles,
   Users,
   Workflow,
+  Factory,
   Activity,
   Inbox,
   Wrench,
@@ -62,7 +63,10 @@ import CDPHeader from "@/components/company/CDPHeader";
 import CompanySignalsStrip from "@/components/company/CompanySignalsStrip";
 import CDPDetailsPanel from "@/components/company/CDPDetailsPanel";
 import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
-import CDPSupplyChain from "@/components/company/CDPSupplyChain";
+import CDPSupplyChain, {
+  SuppliersView,
+  deriveRecentBols,
+} from "@/components/company/CDPSupplyChain";
 import CDPContacts from "@/components/company/CDPContacts";
 import EditCompanyModal from "@/components/company/EditCompanyModal";
 import CDPResearch from "@/components/company/CDPResearch";
@@ -290,6 +294,10 @@ function buildShellCompany(companyId: string | null, stored: any): any {
 // they're high-signal but low-frequency on a typical demo path.
 const VISIBLE_TABS = [
   { id: "supply", label: "Supply Chain", Icon: Workflow },
+  // T4: dedicated top-level Suppliers tab. Suppliers are trade intelligence
+  // (evidence behind freight opportunities), so they sit beside Supply Chain
+  // — not buried under Contacts (sales execution) or a Supply-Chain sub-tab.
+  { id: "suppliers", label: "Suppliers", Icon: Factory },
   { id: "live", label: "Pulse LIVE", Icon: Radio },
   { id: "contacts", label: "Contacts", Icon: Users },
   { id: "activity", label: "Activity", Icon: Activity },
@@ -2135,9 +2143,31 @@ function ProfilePanel({ rawId }: { rawId: string }) {
               />
             )
           )}
+          {tab === "suppliers" && (
+            <SuppliersView
+              profile={activeProfile as any}
+              recentBols={deriveRecentBols(activeProfile)}
+              companyName={companyName}
+            />
+          )}
           {tab === "live" && (
             <PulseLIVETab
-              sourceCompanyKey={bundle?.identity?.key || activeProfile?.identity?.key || null}
+              // Broadened key derivation (regression fix): the old single
+              // `bundle.identity.key` went null whenever the bundle hadn't
+              // resolved, leaving Pulse LIVE empty even though BOLs exist.
+              // Mirror the Rate-Benchmark fallback chain so any available key
+              // (source_company_key / slug / route id) resolves the shipments.
+              sourceCompanyKey={
+                (bundle?.identity as any)?.source_company_key ??
+                (bundle?.identity as any)?.sourceCompanyKey ??
+                bundle?.identity?.key ??
+                (activeProfile as any)?.identity?.key ??
+                (activeProfile as any)?.source_company_key ??
+                (activeProfile as any)?.sourceCompanyKey ??
+                (activeProfile as any)?.key ??
+                companyId ??
+                null
+              }
               companyName={companyName}
             />
           )}
@@ -2393,7 +2423,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             snapshotUpdatedAt={snapshotUpdatedAt}
             contacts={savedContacts}
             onOpenContactsTab={() => setTab("contacts")}
-            onOpenSuppliersTab={() => setTab("supply")}
+            onOpenSuppliersTab={() => setTab("suppliers")}
             crmStage={
               bundle?.identity?.sources?.saved?.present === true
                 ? (bundle?.identity?.sources?.saved?.stage ?? null)

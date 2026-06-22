@@ -41,6 +41,7 @@ import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
 import {
   aggregateSuppliers,
   supplierNameToSlug,
+  supplierInsight,
   type SupplierRow as SupplierAggregateRow,
 } from "@/lib/suppliers/aggregate";
 import {
@@ -194,15 +195,7 @@ function CDPSupplyChainBody({
   // the granular per-route list.
   const canonicalLanes = allLanes;
 
-  const recentBols = useMemo(() => {
-    const items =
-      profile?.recentBols ||
-      profile?.recent_bols ||
-      profile?.bols ||
-      profile?.shipments ||
-      [];
-    return Array.isArray(items) ? items : [];
-  }, [profile]);
+  const recentBols = useMemo(() => deriveRecentBols(profile), [profile]);
 
   const carriers = useMemo(() => deriveCarriers(profile, recentBols), [profile, recentBols]);
   const forwarders = useMemo(() => deriveForwarders(profile, recentBols), [profile, recentBols]);
@@ -1108,7 +1101,26 @@ function LanesView({
 
 /* ── Suppliers view (F1 — Wk1) ──────────────────────────────────────── */
 
-function SuppliersView({
+/**
+ * Resolve the recent-BOL array off a company profile, tolerant of the
+ * several shapes upstream uses. Exported so a standalone Suppliers tab
+ * (CompanyProfileV2) derives BOLs identically to the Supply Chain tab —
+ * one source of truth, no drift. (T4)
+ */
+export function deriveRecentBols(profile: any): any[] {
+  const items =
+    profile?.recentBols ||
+    profile?.recent_bols ||
+    profile?.bols ||
+    profile?.shipments ||
+    [];
+  return Array.isArray(items) ? items : [];
+}
+
+// Exported (T4) so it can mount as a dedicated top-level "Suppliers" tab in
+// CompanyProfileV2 — suppliers are trade intelligence, not a Supply-Chain
+// sub-tab buried two levels down. Same component, two mount points.
+export function SuppliersView({
   profile,
   recentBols,
   companyName,
@@ -1252,8 +1264,39 @@ function SupplierRowFull({
         <div className="font-display truncate text-[12px] font-semibold text-slate-900">
           {supplier.name}
         </div>
-        <div className="font-mono mt-0.5 text-[10px] text-slate-500">
-          {supplier.country || "Unknown country"}
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <span className="font-mono text-[10px] text-slate-500">
+            {supplier.country || "Unknown country"}
+          </span>
+          {supplier.teu_12m != null && supplier.teu_12m > 0 && (
+            <span className="font-mono text-[10px] text-slate-400">
+              · {Math.round(supplier.teu_12m).toLocaleString()} TEU
+            </span>
+          )}
+          {/* Trend/recency badge — real data only (trend from the supplier's
+              monthly history, recency from its last-shipment date). Never
+              rendered on guessed data. */}
+          {(() => {
+            const t = supplier.trend ?? supplier.recency;
+            if (!t) return null;
+            const tone =
+              t === "growing"
+                ? "bg-emerald-50 text-emerald-600"
+                : t === "declining"
+                  ? "bg-rose-50 text-rose-500"
+                  : t === "new"
+                    ? "bg-blue-50 text-blue-600"
+                    : t === "dormant"
+                      ? "bg-slate-100 text-slate-400"
+                      : "bg-slate-100 text-slate-500";
+            return (
+              <span
+                className={`font-mono rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide ${tone}`}
+              >
+                {t === "active" ? "active" : t}
+              </span>
+            );
+          })()}
         </div>
       </div>
       <div className="text-right">
@@ -1407,10 +1450,34 @@ function SupplierDrawer({
               </div>
               {supplier.share >= 0 && (
                 <div className="font-mono mt-1 text-[10.5px] text-slate-500">
-                  {supplier.share}% of this receiver's supplier volume
+                  {supplier.share}% of this receiver's last-12-month shipments
                 </div>
               )}
             </div>
+
+            {/* T6: derived opportunity note — clearly labeled approx so it
+                reads as a prompt, never a verified fact. Only renders when
+                the trustworthy fields surface something notable. */}
+            {(() => {
+              const insight = supplierInsight(supplier);
+              if (!insight) return null;
+              return (
+                <div
+                  className={`rounded-md border px-3 py-2 ${
+                    insight.tone === "opportunity"
+                      ? "border-emerald-100 bg-emerald-50/60"
+                      : "border-amber-100 bg-amber-50/60"
+                  }`}
+                >
+                  <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                    Derived insight · approx
+                  </div>
+                  <p className="font-body mt-1 text-[11.5px] leading-snug text-slate-700">
+                    {insight.text}
+                  </p>
+                </div>
+              );
+            })()}
 
             {dateRange && (
               <div>
@@ -1435,6 +1502,82 @@ function SupplierDrawer({
                 </div>
               </div>
             )}
+
+            {/* Rich detail parsed from the full ImportYeti suppliers_table.
+                Each block renders only when the real field is present. */}
+            {supplier.address && (
+              <div>
+                <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                  Supplier address
+                </div>
+                <div className="font-body mt-1 text-[11.5px] leading-snug text-slate-700">
+                  {supplier.address}
+                </div>
+              </div>
+            )}
+
+            {(supplier.teu_12m != null || supplier.total_teu != null) && (
+              <div>
+                <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                  TEU
+                </div>
+                <div className="font-mono mt-1 text-[12px] text-slate-700">
+                  {supplier.teu_12m != null
+                    ? `${Math.round(supplier.teu_12m).toLocaleString()} (12m)`
+                    : "—"}
+                  {supplier.total_teu != null && (
+                    <span className="text-slate-400">
+                      {" "}
+                      · {Math.round(supplier.total_teu).toLocaleString()} all-time
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {(supplier.first_shipment_date ||
+              supplier.last_shipment_date ||
+              supplier.business_length) && (
+              <div>
+                <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                  Relationship
+                </div>
+                <div className="font-mono mt-1 text-[12px] text-slate-700">
+                  {(supplier.first_shipment_date || "—") +
+                    " → " +
+                    (supplier.last_shipment_date || "—")}
+                  {supplier.business_length && (
+                    <span className="text-slate-400"> · {supplier.business_length}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {Array.isArray(supplier.other_buyers) &&
+              supplier.other_buyers.length > 0 && (
+                <div>
+                  <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                    Other importers this supplier ships to
+                  </div>
+                  <div className="mt-1.5 flex flex-col gap-1">
+                    {supplier.other_buyers.map((b, i) => (
+                      <div
+                        key={`${b.name}-${i}`}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <span className="font-body truncate text-[11.5px] text-slate-700">
+                          {b.name}
+                        </span>
+                        {b.shipments != null && (
+                          <span className="font-mono shrink-0 text-[10.5px] text-slate-400">
+                            {b.shipments.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
             {supplierBols.length === 0 && (
               <p className="font-body text-[11px] text-slate-500">
@@ -2901,18 +3044,35 @@ function TopSuppliersCard({ suppliers }: { suppliers: SupplierRow[] }) {
 }
 
 function laneEndpointLabel(meta: any, fallback?: string): string {
-  // "Shanghai, CN" when label has city info, just "CN" otherwise.
-  // The canonicalizer's `label` is usually the city/region; the
-  // `countryName` is the full country. When they're identical (rare),
-  // we fall back to the ISO code alone.
-  const label = String(meta?.label || "").trim();
+  // Compact "City, CC" — never the full country name. meta.label sometimes
+  // already embeds the country, e.g. "Atlanta, United States of America",
+  // which (with the code appended) produced the overflowing
+  // "Atlanta, United States of America, US". Strip any segment that is the
+  // country name / its ISO code / "USA" so only the city remains, then append
+  // the 2-letter code once.
+  const rawLabel = String(meta?.label || "").trim();
   const country = String(meta?.countryName || "").trim();
   const code = String(meta?.countryCode || "").toUpperCase().trim();
-  if (label && country && label.toLowerCase() !== country.toLowerCase()) {
-    return code ? `${label}, ${code}` : `${label}, ${country}`;
-  }
+  const lcCountry = country.toLowerCase();
+  const isCountryish = (s: string) => {
+    const lc = s.toLowerCase();
+    return (
+      lc === lcCountry ||
+      (code && s.toUpperCase() === code) ||
+      lc === "usa" ||
+      lc === "united states" ||
+      lc === "united states of america"
+    );
+  };
+  const cityParts = rawLabel
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((s) => !isCountryish(s));
+  const city = cityParts.length ? cityParts[0] : null;
+  if (city) return code ? `${city}, ${code}` : `${city}, ${country}`;
   if (code) return code;
-  return label || country || fallback || "—";
+  return rawLabel || country || fallback || "—";
 }
 
 function LaneRowInner({

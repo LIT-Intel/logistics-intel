@@ -10,6 +10,12 @@ import {
 } from "@/types/importyeti-raw";
 import { normalizeIYCompany, normalizeIYShipment } from "@/lib/normalize";
 import { supabase } from "@/lib/supabase";
+import {
+  summarizeOverlayCoverage,
+  type OverlayCoverage,
+} from "@/lib/explorer/overlayCoverage";
+
+export { summarizeOverlayCoverage, type OverlayCoverage };
 
 // Supabase Edge Functions configuration
 const SUPABASE_URL = typeof import.meta !== "undefined"
@@ -406,6 +412,8 @@ export interface IyCompanyProfile {
   top_routes?: Array<Record<string, any>>;
   most_recent_route?: Record<string, any> | null;
   suppliers_sample?: string[];
+  /** Full ImportYeti suppliers_table (rich per-supplier objects). */
+  suppliers_table?: any[];
   fcl_shipments_all_time?: number | null;
   lcl_shipments_all_time?: number | null;
   fcl_shipments_perc?: number | null;
@@ -2728,6 +2736,16 @@ function normalizeCompanyProfile(
     top_routes: profileData.top_routes,
     most_recent_route: profileData.most_recent_route,
     suppliers_sample: profileData.suppliers_sample,
+    // Full ImportYeti suppliers_table (rich per-supplier detail: address, TEU,
+    // share %, HS chapters, monthly history, other buyers). Preserved verbatim
+    // so the Suppliers tab can surface real detail instead of name-only rows.
+    suppliers_table:
+      (Array.isArray(profileData.suppliers_table) && profileData.suppliers_table) ||
+      (Array.isArray(profileData?.raw_payload?.data?.suppliers_table) &&
+        profileData.raw_payload.data.suppliers_table) ||
+      (Array.isArray(profileData?.raw?.data?.suppliers_table) &&
+        profileData.raw.data.suppliers_table) ||
+      undefined,
     fcl_shipments_all_time: coerceNumber(profileData.fcl_shipments_all_time),
     lcl_shipments_all_time: coerceNumber(profileData.lcl_shipments_all_time),
     fcl_shipments_perc: coerceNumber(profileData.fcl_shipments_perc),
@@ -3090,16 +3108,38 @@ export async function searchShippers(
       ])
     );
 
+    // A3: stamp a real Origin → Destination onto each hit from the snapshot's
+    // route_kpis.topRouteLast12m. Cheap index-backed batch query on the same
+    // slugs; companies without a snapshot stay null and render "—" (no fake).
+    let laneMap = new Map<string, string | null>();
+    try {
+      const { data: laneRows } = await supabase
+        .from("lit_importyeti_company_snapshot")
+        .select("company_id, parsed_summary")
+        .in("company_id", companyIds);
+      laneMap = new Map(
+        (Array.isArray(laneRows) ? laneRows : []).map((r: any) => [
+          normalizeCompanyIdToSlug(r.company_id),
+          r?.parsed_summary?.route_kpis?.topRouteLast12m ?? null,
+        ])
+      );
+    } catch (laneErr) {
+      console.warn("lane overlay failed (non-fatal):", laneErr);
+    }
+
     const mergedResults = base.results.map((hit: any) => {
       const slug = normalizeCompanyIdToSlug(
         hit.companyId || hit.companyKey || hit.key || ""
       );
       const kpiRow = kpiMap.get(slug);
+      const primaryRouteSummary =
+        laneMap.get(slug) ?? hit.primaryRouteSummary ?? null;
 
-      if (!kpiRow) return hit;
+      if (!kpiRow) return { ...hit, primaryRouteSummary };
 
       return {
         ...hit,
+        primaryRouteSummary,
         totalShipments:
           coerceNumber(kpiRow.total_shipments) ?? hit.totalShipments,
         shipmentsLast12m:
@@ -3606,8 +3646,23 @@ export async function getSavedCompanyShellOnly(
           ? snapshotRow.updated_at
           : null;
 
-      const cachedSnapshot =
+      const baseSnapshot =
         snapshotRow.parsed_summary ?? snapshotRow.raw_payload ?? null;
+      // parsed_summary keeps only a reduced top_suppliers list; the FULL
+      // suppliers_table (rich per-supplier address / TEU / HS / monthly
+      // history / other-buyers) lives in raw_payload. Graft it onto the
+      // snapshot so the Suppliers tab renders complete detail instead of
+      // name-only rows.
+      const richSuppliersTable =
+        (snapshotRow as any)?.raw_payload?.data?.suppliers_table ??
+        (snapshotRow as any)?.raw_payload?.suppliers_table ??
+        null;
+      const cachedSnapshot =
+        baseSnapshot &&
+        Array.isArray(richSuppliersTable) &&
+        !(baseSnapshot as any).suppliers_table
+          ? { ...(baseSnapshot as any), suppliers_table: richSuppliersTable }
+          : baseSnapshot;
       if (cachedSnapshot && typeof cachedSnapshot === "object") {
         try {
           parsedProfile = normalizeIyCompanyProfile(
@@ -4085,6 +4140,119 @@ export async function fetchSearchKpiOverlay(
     if (row.company_id) map[row.company_id] = row;
   }
   return map;
+}
+
+/**
+ * Metadata overlay for Company Search results.
+ *
+ * Day-5 PRD pivot Polish 3: enriches IyShipperHit rows with the same
+ * column set Pulse Explorer shows (industry / vertical / revenue /
+ * opportunity score). Reads lit_companies + lit_company_directory
+ * by source_company_key for the result set the user just searched
+ * and returns a key->metadata map so the normaliser merges cheap.
+ *
+ * Non-blocking: when a table read errors (e.g. RLS hiccup, missing
+ * column, missing table) it falls through silently and the search
+ * still renders, just without the extra columns. Never throws.
+ */
+export async function fetchSearchMetadataOverlay(
+  companyKeys: string[],
+): Promise<Record<string, {
+  industry?: string | null;
+  vertical?: string | null;
+  revenue?: number | string | null;
+  opportunity_composite_score?: number | null;
+  is_saved?: boolean;
+}>> {
+  if (!companyKeys.length) return {};
+
+  // Key-shape mismatch fix (Polish 4): ImportYeti returns keys like
+  // "company/the-home-depot" while save-company writes slug-only
+  // ("the-home-depot") to lit_companies.source_company_key. The
+  // overlay's previous `.in(source_company_key, companyKeys)` matched
+  // zero rows because of the prefix. We now query BOTH variants
+  // ("company/<slug>" and "<slug>") and map every result back to the
+  // INPUT key the caller passed, so industry/vertical/revenue/opp_score
+  // populate regardless of which storage shape the row uses.
+  const variants = new Set<string>();
+  const variantToOriginal: Record<string, string> = {};
+  for (const k of companyKeys) {
+    if (!k) continue;
+    const slug = normalizeCompanyIdToSlug(k);
+    const prefixed = `company/${slug}`;
+    variants.add(k);
+    variants.add(slug);
+    variants.add(prefixed);
+    variantToOriginal[k] = k;
+    variantToOriginal[slug] = k;
+    variantToOriginal[prefixed] = k;
+  }
+  const lookupKeys = Array.from(variants).filter(Boolean);
+
+  const out: Record<string, any> = {};
+  const mapEntry = (rowKey: string | null | undefined, patch: Record<string, unknown>) => {
+    if (!rowKey) return;
+    const original = variantToOriginal[rowKey] ?? rowKey;
+    out[original] = { ...(out[original] ?? {}), ...patch };
+  };
+
+  try {
+    const { data } = await supabase
+      .from('lit_companies')
+      .select('source_company_key, industry, revenue')
+      .in('source_company_key', lookupKeys);
+    for (const r of data ?? []) {
+      mapEntry(r?.source_company_key, {
+        industry: r?.industry ?? null,
+        revenue: r?.revenue ?? null,
+      });
+    }
+  } catch { /* fall through */ }
+  try {
+    const { data } = await supabase
+      .from('lit_company_directory')
+      .select('source_company_key, vertical, opportunity_composite_score')
+      .in('source_company_key', lookupKeys);
+    for (const r of data ?? []) {
+      mapEntry(r?.source_company_key, {
+        vertical: r?.vertical ?? null,
+        opportunity_composite_score:
+          typeof r?.opportunity_composite_score === 'number'
+            ? r.opportunity_composite_score
+            : null,
+      });
+    }
+  } catch { /* directory table optional */ }
+  // is_saved flag — drives the "Open profile for full details" inline
+  // helper on rows whose enrichment is empty. A saved company that
+  // still has no industry/revenue means we genuinely don't have that
+  // metadata; an unsaved company is just waiting for the first profile
+  // open to backfill via getIyCompanyProfile.
+  try {
+    const { data } = await supabase
+      .from('lit_saved_companies')
+      .select('source_company_key')
+      .in('source_company_key', lookupKeys);
+    for (const r of data ?? []) {
+      mapEntry(r?.source_company_key, { is_saved: true });
+    }
+  } catch { /* saved-companies lookup optional */ }
+
+  // T2: emit the coverage diagnostic (dev only — never noisy in production).
+  try {
+    if ((import.meta as any)?.env?.DEV) {
+      const cov = summarizeOverlayCoverage(companyKeys, out);
+      // eslint-disable-next-line no-console
+      console.info(
+        `[overlay-coverage] ${cov.coveragePct}% matched (${cov.matched}/${cov.total}); ` +
+          `missing=${cov.missing}; fields industry=${cov.fields.industry} ` +
+          `vertical=${cov.fields.vertical} revenue=${cov.fields.revenue} ` +
+          `opp=${cov.fields.opportunity_composite_score}`,
+      );
+    }
+  } catch { /* diagnostic must never break search */ }
+
+  return out;
 }
 
 // Secondary KPI enrichment for Command Center rows — reads from lit_company_search_kpis

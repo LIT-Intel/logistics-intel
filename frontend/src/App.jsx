@@ -16,6 +16,10 @@ const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const LITDashboard = lazy(() => import("./components/dashboard/LITDashboard.jsx"));
 const ContactsPage = lazy(() => import("@/pages/Contacts"));
 const Search = lazy(() => import("@/pages/Search"));
+// Day-5 PRD pivot — unified Intelligence Explorer page wraps the new
+// ExplorerShell with both Company Search + Pulse Explorer tabs. Mounted
+// at /app/search (which used to mount Search.tsx directly).
+const IntelligenceExplorer = lazy(() => import("@/pages/IntelligenceExplorer"));
 const SearchTrends = lazy(() => import("@/pages/search/Trends"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
 const Companies = lazy(() => import("@/pages/companies/index"));
@@ -254,12 +258,33 @@ export default function App() {
           }
         />
 
+        {/* Day-5 PRD pivot: /app/search now hosts the unified
+            Intelligence Explorer with two tabs (Company Search +
+            Pulse Explorer). The legacy Search.tsx page is no longer
+            mounted directly — its behaviour is preserved inside the
+            Company Search tab via the same searchShippers /
+            saveCompanyToCommandCenter / getIyCompanyProfile calls.
+            Trial users still reach Company Search; the Pulse tab
+            additionally checks the pulse plan gate inside the shell. */}
         <Route
           path="/app/search"
           element={
             <RequireAuth>
               <LITPage>
-                <Search />
+                <IntelligenceExplorer />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+
+        {/* Legacy alias — preserves any bookmarks / inbound links to
+            the old Search page. Same component mount as /app/search. */}
+        <Route
+          path="/app/intelligence-explorer"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <IntelligenceExplorer />
               </LITPage>
             </RequireAuth>
           }
@@ -614,26 +639,14 @@ export default function App() {
           }
         />
 
+        {/* /app/prospecting now redirects to the unified Explorer's
+            Pulse tab. Existing bookmarks + Coach deep-links keep working.
+            Plan gating moves into ExplorerShell when the Pulse tab opens
+            (handled inside PulseExploreTab via useEntitlements + the
+            same RequirePlan upgrade modal). */}
         <Route
           path="/app/prospecting"
-          element={
-            // Trial users CAN reach Pulse — they get 10 searches during
-            // the 14-day trial (enforced server-side via check_usage_limit
-            // on the pulse-search edge fn, sourced from plans.pulse_search_limit).
-            // After 10 uses OR 14 days expire, the per-search gate returns
-            // 403 LIMIT_EXCEEDED and the page shows an upgrade card.
-            // requiredPlan stays "growth" for the upgrade messaging copy.
-            <RequirePlan
-              feature="search"
-              featureName="Pulse — Lead Prospecting"
-              description="Discover and monitor shippers based on freight signals, import activity, and AI-driven scoring. Trial users get 10 searches; Growth and above include 100/month."
-              requiredPlan="growth"
-            >
-              <LITPage>
-                <Pulse />
-              </LITPage>
-            </RequirePlan>
-          }
+          element={<Navigate to="/app/search?tab=pulse" replace />}
         />
 
         <Route

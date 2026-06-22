@@ -99,6 +99,39 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, error: "company_id is required" }, 400);
   }
 
+  // Resolve to the canonical lit_companies UUID. Callers (Company Profile
+  // opened from search) may pass a source_company_key slug like
+  // "company/apollo-tires-us" or "apollo-tires-us" instead of the UUID. Every
+  // *_company_id column here is UUID, so a slug crashed reads with "invalid
+  // input syntax for type uuid". When the id isn't a UUID, map it via
+  // source_company_key and use the UUID for every query below.
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  let targetId = companyId;
+  if (!UUID_RE.test(companyId)) {
+    const slug = companyId.startsWith("company/")
+      ? companyId.slice("company/".length)
+      : companyId;
+    const variants = Array.from(new Set([companyId, slug, `company/${slug}`]));
+    const { data: resolved, error: resolveErr } = await admin
+      .from("lit_companies")
+      .select("id")
+      .in("source_company_key", variants)
+      .limit(1)
+      .maybeSingle();
+    if (resolveErr) {
+      log.error("resolve_company_failed", {
+        err: resolveErr.message,
+        company_id: companyId,
+      });
+      return json({ ok: false, error: "Failed to resolve company" }, 500);
+    }
+    if (!resolved?.id) {
+      return json({ ok: false, error: "Company not found" }, 404);
+    }
+    targetId = resolved.id as string;
+  }
+
   // ── Authorize: caller must be tied to this company via saved-company
   //   ownership OR be a platform admin. We never trust the frontend.
   const [platformAdminRow, mySave, orgMember] = await Promise.all([
@@ -106,7 +139,7 @@ Deno.serve(async (req: Request) => {
     admin.from("lit_saved_companies")
       .select("id")
       .eq("user_id", user.id)
-      .eq("company_id", companyId)
+      .eq("company_id", targetId)
       .maybeSingle(),
     admin.from("org_members")
       .select("org_id, role")
@@ -130,7 +163,7 @@ Deno.serve(async (req: Request) => {
       const { data: peerSave } = await admin
         .from("lit_saved_companies")
         .select("id")
-        .eq("company_id", companyId)
+        .eq("company_id", targetId)
         .in("user_id", peerIds)
         .limit(1)
         .maybeSingle();
@@ -214,10 +247,10 @@ Deno.serve(async (req: Request) => {
   const { data: before, error: beforeErr } = await admin
     .from("lit_companies")
     .select("id, name, domain, website, industry, headcount")
-    .eq("id", companyId)
+    .eq("id", targetId)
     .maybeSingle();
   if (beforeErr) {
-    log.error("read_before_failed", { err: beforeErr.message, company_id: companyId });
+    log.error("read_before_failed", { err: beforeErr.message, company_id: targetId });
     return json({ ok: false, error: "Failed to read company" }, 500);
   }
   if (!before) {
@@ -229,7 +262,7 @@ Deno.serve(async (req: Request) => {
   const { data: after, error: updateErr } = await admin
     .from("lit_companies")
     .update(update)
-    .eq("id", companyId)
+    .eq("id", targetId)
     .select("*")
     .single();
   if (updateErr) {
@@ -250,7 +283,7 @@ Deno.serve(async (req: Request) => {
     await admin.from("lit_activity_events").insert({
       user_id: user.id,
       event_type: "company_updated",
-      company_id: companyId,
+      company_id: targetId,
       metadata: {
         description: `Updated ${before.name ?? "company"} profile`,
         company_name: after.name ?? before.name ?? null,
