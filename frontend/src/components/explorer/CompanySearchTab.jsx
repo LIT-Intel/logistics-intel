@@ -236,6 +236,19 @@ export default function CompanySearchTab() {
     try {
       await getIyCompanyProfile({ companyKey: row.source_company_key });
     } catch { /* non-fatal */ }
+    // Auto-save on open — core behavior from the legacy Search page that the
+    // Explorer rewrite (daf839c) dropped. Opening a company adds it to Command
+    // Center so it shows up under Saved Companies. Skip if already saved (the
+    // is_saved overlay flag) to avoid burning a save credit, and never block
+    // navigation on it (cap-reached / network errors are non-fatal here).
+    if (!row.is_saved) {
+      saveCompanyToCommandCenter({
+        shipper: row.raw,
+        profile: null,
+        stage: 'prospect',
+        source: 'importyeti',
+      }).catch(() => { /* non-fatal: explicit Save button still available */ });
+    }
     const slug = encodeURIComponent(row.source_company_key || row.id);
     window.location.href = `/app/companies/${slug}`;
   }, []);

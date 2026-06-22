@@ -2152,7 +2152,22 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           )}
           {tab === "live" && (
             <PulseLIVETab
-              sourceCompanyKey={bundle?.identity?.key || activeProfile?.identity?.key || null}
+              // Broadened key derivation (regression fix): the old single
+              // `bundle.identity.key` went null whenever the bundle hadn't
+              // resolved, leaving Pulse LIVE empty even though BOLs exist.
+              // Mirror the Rate-Benchmark fallback chain so any available key
+              // (source_company_key / slug / route id) resolves the shipments.
+              sourceCompanyKey={
+                (bundle?.identity as any)?.source_company_key ??
+                (bundle?.identity as any)?.sourceCompanyKey ??
+                bundle?.identity?.key ??
+                (activeProfile as any)?.identity?.key ??
+                (activeProfile as any)?.source_company_key ??
+                (activeProfile as any)?.sourceCompanyKey ??
+                (activeProfile as any)?.key ??
+                companyId ??
+                null
+              }
               companyName={companyName}
             />
           )}
