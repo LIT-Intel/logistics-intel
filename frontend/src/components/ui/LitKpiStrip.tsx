@@ -45,15 +45,16 @@ export default function LitKpiStrip({
   topBorder = true,
   className,
 }: LitKpiStripProps) {
-  // Responsive grid: stays readable down to ~360px. auto-fit collapses cells
-  // onto multiple rows on narrow viewports.
-  const gridStyle: React.CSSProperties = {
-    gridTemplateColumns: `repeat(auto-fit, minmax(150px, 1fr))`,
-  };
+  // Single row on every non-mobile screen: N equal columns that shrink to fit
+  // (minmax(0,1fr) lets cells get narrow + truncate instead of wrapping to a
+  // 2nd row). Mobile (<sm) falls back to a 2-column wrap for readability.
+  const gridStyle = {
+    "--kpi-cols": `repeat(${cells.length}, minmax(0, 1fr))`,
+  } as React.CSSProperties;
   return (
     <div
       className={cn(
-        "grid",
+        "grid grid-cols-2 sm:grid-cols-[var(--kpi-cols)]",
         surface && "bg-[#FAFBFC]",
         topBorder && "border-t border-slate-100",
         className,

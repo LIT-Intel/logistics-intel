@@ -3044,18 +3044,35 @@ function TopSuppliersCard({ suppliers }: { suppliers: SupplierRow[] }) {
 }
 
 function laneEndpointLabel(meta: any, fallback?: string): string {
-  // "Shanghai, CN" when label has city info, just "CN" otherwise.
-  // The canonicalizer's `label` is usually the city/region; the
-  // `countryName` is the full country. When they're identical (rare),
-  // we fall back to the ISO code alone.
-  const label = String(meta?.label || "").trim();
+  // Compact "City, CC" — never the full country name. meta.label sometimes
+  // already embeds the country, e.g. "Atlanta, United States of America",
+  // which (with the code appended) produced the overflowing
+  // "Atlanta, United States of America, US". Strip any segment that is the
+  // country name / its ISO code / "USA" so only the city remains, then append
+  // the 2-letter code once.
+  const rawLabel = String(meta?.label || "").trim();
   const country = String(meta?.countryName || "").trim();
   const code = String(meta?.countryCode || "").toUpperCase().trim();
-  if (label && country && label.toLowerCase() !== country.toLowerCase()) {
-    return code ? `${label}, ${code}` : `${label}, ${country}`;
-  }
+  const lcCountry = country.toLowerCase();
+  const isCountryish = (s: string) => {
+    const lc = s.toLowerCase();
+    return (
+      lc === lcCountry ||
+      (code && s.toUpperCase() === code) ||
+      lc === "usa" ||
+      lc === "united states" ||
+      lc === "united states of america"
+    );
+  };
+  const cityParts = rawLabel
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((s) => !isCountryish(s));
+  const city = cityParts.length ? cityParts[0] : null;
+  if (city) return code ? `${city}, ${code}` : `${city}, ${country}`;
   if (code) return code;
-  return label || country || fallback || "—";
+  return rawLabel || country || fallback || "—";
 }
 
 function LaneRowInner({
