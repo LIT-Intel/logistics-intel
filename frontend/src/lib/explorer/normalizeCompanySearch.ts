@@ -195,12 +195,26 @@ export function lookupCentroid(
  * " → ". Returns null when the value is missing or empty so the cell shows
  * "—" rather than a blank or fabricated lane. (T1)
  */
+const LANE_COUNTRY_SHORT: Array<[RegExp, string]> = [
+  [/united states of america/gi, 'USA'],
+  [/\bunited states\b/gi, 'USA'],
+  [/people'?s republic of china/gi, 'China'],
+  [/korea,?\s*republic of/gi, 'South Korea'],
+  [/republic of korea/gi, 'South Korea'],
+  [/viet\s*nam/gi, 'Vietnam'],
+  [/russian federation/gi, 'Russia'],
+  [/united kingdom/gi, 'UK'],
+];
+
 export function cleanLane(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
-  const cleaned = value
+  let cleaned = value
     .replace(/\s*(?:→|->|=>|\bto\b)\s*/i, ' → ')
     .replace(/\s+/g, ' ')
     .trim();
+  // Shorten the common full country names so the lane fits the column without
+  // overflow (e.g. "Atlanta, United States of America" -> "Atlanta, USA").
+  for (const [re, short] of LANE_COUNTRY_SHORT) cleaned = cleaned.replace(re, short);
   return cleaned.length > 0 ? cleaned : null;
 }
 

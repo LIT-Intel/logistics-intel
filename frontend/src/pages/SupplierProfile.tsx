@@ -11,6 +11,7 @@ import {
   getBolOrigin,
   getBolSupplier,
 } from "@/lib/bols/helpers";
+import type { SupplierRow } from "@/lib/suppliers/aggregate";
 
 /**
  * Supplier Profile — `/app/suppliers/:slug`
@@ -33,12 +34,9 @@ import {
  */
 
 type LocationState = {
-  supplier?: {
-    name: string;
-    country?: string;
-    shipments?: number;
-    share?: number;
-  };
+  // Full rich supplier row from the receiver's Suppliers tab. Carries the real
+  // cross-importer network (other_buyers), HS chapters, address, TEU, etc.
+  supplier?: SupplierRow;
   supplierBols?: any[];
   originReceiver?: {
     id?: string;
@@ -76,14 +74,23 @@ export default function SupplierProfile() {
       <SupplierHeader supplier={supplier} bols={bols} />
 
       <div className="mt-4 grid gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <ReceiversTable bols={bols} highlightReceiverId={originReceiver?.id} />
+        <ReceiversTable
+          supplier={supplier}
+          bols={bols}
+          highlightReceiverId={originReceiver?.id}
+        />
         <div className="flex flex-col gap-3.5">
           <TopDestinations bols={bols} />
-          <TopHsCodes bols={bols} />
+          <TopHsCodes supplier={supplier} bols={bols} />
         </div>
       </div>
 
-      <FollowupNotice />
+      {/* The v1 handoff note only applies when we DON'T have the real
+          cross-importer network. When other_buyers is present it IS the
+          full-database network, so the caveat is no longer true. */}
+      {!(Array.isArray(supplier.other_buyers) && supplier.other_buyers.length > 0) && (
+        <FollowupNotice />
+      )}
     </div>
   );
 }
@@ -97,7 +104,8 @@ function SupplierHeader({
   supplier: NonNullable<LocationState["supplier"]>;
   bols: any[];
 }) {
-  const totalShipments = bols.length || supplier.shipments || 0;
+  const totalShipments =
+    supplier.total_shipments || bols.length || supplier.shipments || 0;
 
   const uniqueReceivers = useMemo(() => {
     const set = new Set<string>();
@@ -151,6 +159,23 @@ function SupplierHeader({
               Activity {dateRange.from} – {dateRange.to}
             </p>
           )}
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            {supplier.address && (
+              <span className="font-body truncate text-[11px] text-slate-500">
+                {supplier.address}
+              </span>
+            )}
+            {supplier.iy_key && (
+              <a
+                href={`https://www.importyeti.com${supplier.iy_key}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-display shrink-0 text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+              >
+                View on ImportYeti ↗
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
@@ -208,13 +233,32 @@ function KpiCell({
 /* ── Receivers table ────────────────────────────────────────────────── */
 
 function ReceiversTable({
+  supplier,
   bols,
   highlightReceiverId,
 }: {
+  supplier: NonNullable<LocationState["supplier"]>;
   bols: any[];
   highlightReceiverId?: string;
 }) {
-  const rows = useMemo(() => {
+  // Real cross-importer network: other_buyers = ImportYeti top_companies for
+  // this supplier. No company id/country on these (they're names + counts).
+  const networkRows = useMemo(
+    () =>
+      (Array.isArray(supplier.other_buyers) ? supplier.other_buyers : [])
+        .filter((b) => b && b.name)
+        .map((b) => ({
+          name: String(b.name).trim(),
+          id: null as string | null,
+          country: "" as string,
+          shipments: Number(b.shipments) || 0,
+        }))
+        .sort((a, b) => b.shipments - a.shipments),
+    [supplier],
+  );
+
+  // Fallback: consignees seen in the loaded BOL set (origin receiver only).
+  const bolRows = useMemo(() => {
     const map = new Map<
       string,
       { name: string; id: string | null; country: string; shipments: number }
@@ -237,7 +281,6 @@ function ReceiversTable({
           shipments: 0,
         };
       cur.shipments += 1;
-      // Refresh id if a later BOL surfaced one we didn't have.
       if (!cur.id && (bol?.consigneeId || bol?.consignee_id || bol?.company_id)) {
         cur.id = bol?.consigneeId || bol?.consignee_id || bol?.company_id || null;
       }
@@ -246,13 +289,18 @@ function ReceiversTable({
     return Array.from(map.values()).sort((a, b) => b.shipments - a.shipments);
   }, [bols]);
 
+  const usingNetwork = networkRows.length > 0;
+  const rows = usingNetwork ? networkRows : bolRows;
+
   return (
     <LitSectionCard
-      title="Receivers"
+      title="Other importers"
       sub={
         rows.length === 0
-          ? "No receivers in current data"
-          : `${rows.length} unique receivers from the loaded shipment set`
+          ? "No importer data available"
+          : usingNetwork
+            ? `${rows.length} importers this supplier ships to · ImportYeti`
+            : `${rows.length} receivers from the loaded shipment set`
       }
       padded={false}
     >
@@ -371,8 +419,24 @@ function TopDestinations({ bols }: { bols: any[] }) {
 
 /* ── Top HS codes ────────────────────────────────────────────────────── */
 
-function TopHsCodes({ bols }: { bols: any[] }) {
+function TopHsCodes({
+  supplier,
+  bols,
+}: {
+  supplier: NonNullable<LocationState["supplier"]>;
+  bols: any[];
+}) {
   const rows = useMemo(() => {
+    // Prefer the real per-supplier HS chapters from ImportYeti when present.
+    if (Array.isArray(supplier.hs_chapters) && supplier.hs_chapters.length > 0) {
+      return supplier.hs_chapters
+        .filter((c) => c && c.chapter)
+        .map((c) => ({
+          chapter: String(c.chapter),
+          count: Number(c.shipments) || 0,
+        }))
+        .slice(0, 5);
+    }
     const map = new Map<string, number>();
     for (const bol of bols) {
       const hs = getBolHs(bol);
@@ -385,7 +449,7 @@ function TopHsCodes({ bols }: { bols: any[] }) {
       .map(([chapter, count]) => ({ chapter, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
-  }, [bols]);
+  }, [supplier, bols]);
 
   if (rows.length === 0) return null;
 

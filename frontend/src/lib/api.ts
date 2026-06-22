@@ -3108,16 +3108,38 @@ export async function searchShippers(
       ])
     );
 
+    // A3: stamp a real Origin → Destination onto each hit from the snapshot's
+    // route_kpis.topRouteLast12m. Cheap index-backed batch query on the same
+    // slugs; companies without a snapshot stay null and render "—" (no fake).
+    let laneMap = new Map<string, string | null>();
+    try {
+      const { data: laneRows } = await supabase
+        .from("lit_importyeti_company_snapshot")
+        .select("company_id, parsed_summary")
+        .in("company_id", companyIds);
+      laneMap = new Map(
+        (Array.isArray(laneRows) ? laneRows : []).map((r: any) => [
+          normalizeCompanyIdToSlug(r.company_id),
+          r?.parsed_summary?.route_kpis?.topRouteLast12m ?? null,
+        ])
+      );
+    } catch (laneErr) {
+      console.warn("lane overlay failed (non-fatal):", laneErr);
+    }
+
     const mergedResults = base.results.map((hit: any) => {
       const slug = normalizeCompanyIdToSlug(
         hit.companyId || hit.companyKey || hit.key || ""
       );
       const kpiRow = kpiMap.get(slug);
+      const primaryRouteSummary =
+        laneMap.get(slug) ?? hit.primaryRouteSummary ?? null;
 
-      if (!kpiRow) return hit;
+      if (!kpiRow) return { ...hit, primaryRouteSummary };
 
       return {
         ...hit,
+        primaryRouteSummary,
         totalShipments:
           coerceNumber(kpiRow.total_shipments) ?? hit.totalShipments,
         shipmentsLast12m:

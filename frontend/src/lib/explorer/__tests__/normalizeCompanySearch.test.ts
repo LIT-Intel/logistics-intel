@@ -10,7 +10,16 @@ import {
 
 describe("cleanLane", () => {
   it("passes through a well-formed arrow lane", () => {
-    expect(cleanLane("Vietnam → United States")).toBe("Vietnam → United States");
+    expect(cleanLane("Shanghai → Long Beach")).toBe("Shanghai → Long Beach");
+  });
+
+  it("shortens long country names to keep the lane compact", () => {
+    expect(cleanLane("India → Atlanta, United States of America")).toBe(
+      "India → Atlanta, USA",
+    );
+    expect(cleanLane("San Pedro Sula → Beaverton, United States")).toBe(
+      "San Pedro Sula → Beaverton, USA",
+    );
   });
 
   it("normalises 'to' and ASCII arrows to ' → '", () => {
