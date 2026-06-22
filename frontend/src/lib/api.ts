@@ -3624,8 +3624,23 @@ export async function getSavedCompanyShellOnly(
           ? snapshotRow.updated_at
           : null;
 
-      const cachedSnapshot =
+      const baseSnapshot =
         snapshotRow.parsed_summary ?? snapshotRow.raw_payload ?? null;
+      // parsed_summary keeps only a reduced top_suppliers list; the FULL
+      // suppliers_table (rich per-supplier address / TEU / HS / monthly
+      // history / other-buyers) lives in raw_payload. Graft it onto the
+      // snapshot so the Suppliers tab renders complete detail instead of
+      // name-only rows.
+      const richSuppliersTable =
+        (snapshotRow as any)?.raw_payload?.data?.suppliers_table ??
+        (snapshotRow as any)?.raw_payload?.suppliers_table ??
+        null;
+      const cachedSnapshot =
+        baseSnapshot &&
+        Array.isArray(richSuppliersTable) &&
+        !(baseSnapshot as any).suppliers_table
+          ? { ...(baseSnapshot as any), suppliers_table: richSuppliersTable }
+          : baseSnapshot;
       if (cachedSnapshot && typeof cachedSnapshot === "object") {
         try {
           parsedProfile = normalizeIyCompanyProfile(
