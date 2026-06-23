@@ -1,3 +1,5 @@
+// redeploy 2026-06-23: force a fresh cold start so warm instances reload the
+// rotated OPENAI_API_KEY secret (old key was revoked) — fixes openai_error.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { createLogger } from "../_shared/logger.ts";
