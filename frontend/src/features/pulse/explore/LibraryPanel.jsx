@@ -2,6 +2,7 @@
 // Quick-load any saved view back into the current Explore state.
 
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Library, Loader2, MapPin, FolderOpen, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { listMapSelections } from '@/api/pulse-map-selections';
@@ -21,6 +22,7 @@ function fmtRel(ts) {
 }
 
 export default function LibraryPanel({ onLoadSelection }) {
+  const navigate = useNavigate();
   const [selections, setSelections] = useState([]);
   const [lists, setLists] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -32,10 +34,13 @@ export default function LibraryPanel({ onLoadSelection }) {
     try {
       const [sel, ls] = await Promise.all([
         listMapSelections().catch(() => ({ selections: [] })),
-        listPulseLists().catch(() => []),
+        listPulseLists().catch(() => ({ rows: [] })),
       ]);
       setSelections(sel?.selections ?? []);
-      setLists(Array.isArray(ls) ? ls : []);
+      // listPulseLists returns { ok, rows } — NOT a bare array. Reading it as
+      // an array left the panel permanently empty ("doesn't recognize the
+      // saved list") even when lists existed.
+      setLists(Array.isArray(ls?.rows) ? ls.rows : Array.isArray(ls) ? ls : []);
     } catch (e) {
       setError(e?.message ?? 'Failed to load');
     } finally {
@@ -114,15 +119,24 @@ export default function LibraryPanel({ onLoadSelection }) {
               </div>
             ) : (
               <ul className="space-y-1.5">
-                {lists.map((l) => (
-                  <li key={l.id} className="flex items-center gap-2 rounded border border-slate-100 px-2 py-1.5">
-                    <FolderOpen size={12} className="text-cyan-600 shrink-0" />
-                    <span className="text-sm text-slate-800 truncate flex-1">{l.name}</span>
-                    {l.member_count != null && (
-                      <span className="text-[10px] text-slate-500 tabular-nums shrink-0">{l.member_count}</span>
-                    )}
-                  </li>
-                ))}
+                {lists.map((l) => {
+                  const count = l.company_count ?? l.member_count;
+                  return (
+                    <li key={l.id}>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/app/lists/${l.id}`)}
+                        className="flex w-full items-center gap-2 rounded border border-slate-100 px-2 py-1.5 text-left hover:border-cyan-300 hover:bg-cyan-50/30"
+                      >
+                        <FolderOpen size={12} className="text-cyan-600 shrink-0" />
+                        <span className="text-sm text-slate-800 truncate flex-1">{l.name}</span>
+                        {count != null && (
+                          <span className="text-[10px] text-slate-500 tabular-nums shrink-0">{count}</span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>

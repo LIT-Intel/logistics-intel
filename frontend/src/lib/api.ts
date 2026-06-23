@@ -4743,10 +4743,21 @@ async function resolveCompanyUuid(company_id_or_slug: string): Promise<{ id: str
       .in("source_company_key", candidates)
       .limit(1);
     const company = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-    if (!company?.id) {
-      throw new Error(`Company not found for slug: ${company_id_or_slug}`);
+    if (company?.id) return company;
+    // Fallback: the Profile route slug is the slugified NAME, but ~21% of
+    // lit_companies rows store an opaque provider id (e.g. a 24-char hex
+    // ObjectID) as source_company_key, so the key lookup misses. Resolve those
+    // by matching the company name (slug dashes -> spaces).
+    const nameGuess = bare.replace(/-/g, " ").trim();
+    if (nameGuess) {
+      const { data: byName } = await supabase
+        .from("lit_companies")
+        .select("id, name, website, domain")
+        .ilike("name", nameGuess)
+        .limit(1);
+      if (Array.isArray(byName) && byName[0]?.id) return byName[0];
     }
-    return company;
+    throw new Error(`Company not found for slug: ${company_id_or_slug}`);
   }
   const { data: company } = await supabase
     .from("lit_companies")
@@ -4819,7 +4830,17 @@ export async function saveContact(
 }
 
 export async function listContacts(company_id_or_slug: string, dept?: string) {
-  const company = await resolveCompanyUuid(company_id_or_slug);
+  let company: Awaited<ReturnType<typeof resolveCompanyUuid>>;
+  try {
+    company = await resolveCompanyUuid(company_id_or_slug);
+  } catch {
+    // Unmatched slug (company not yet in lit_companies, or an opaque
+    // provider-id key the route slug can't match) — show an EMPTY contact
+    // list instead of a red error banner on the Contacts tab. The tab mounts
+    // and calls this automatically, so a throw here surfaced as an on-open
+    // error for ~21% of companies whose stored key isn't a name slug.
+    return { contacts: [] };
+  }
   let q = supabase
     .from("lit_contacts")
     .select("*")
