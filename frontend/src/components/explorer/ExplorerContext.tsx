@@ -19,7 +19,8 @@
 // through every layer would force most components to know about both
 // modes. The context lets each tab read what it needs without coupling.
 
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 export type ExplorerMode = 'company' | 'pulse';
 
@@ -63,12 +64,26 @@ export function ExplorerProvider({
   defaultMode: ExplorerMode;
   children: ReactNode;
 }) {
-  const [mode, setMode] = useState<ExplorerMode>(defaultMode);
+  // The active tab is driven by the ?tab= URL param so in-app navigation can
+  // switch tabs WITHOUT a full reload. Previously mode was local state seeded
+  // once from defaultMode, so e.g. the Explorer QuickCard's "Search for live
+  // data" (navigate to ?tab=company&q=…) never switched tabs — the user had to
+  // hard-reload. ?tab= also makes the tab choice survive refresh + be linkable.
+  const [sp, setSp] = useSearchParams();
+  const tabParam = sp.get('tab');
+  const mode: ExplorerMode = tabParam === 'company' || tabParam === 'pulse' ? tabParam : defaultMode;
+  const setMode = useCallback((m: ExplorerMode) => {
+    setSp((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', m);
+      return next;
+    }, { replace: true });
+  }, [setSp]);
   const [selectedCompany, setSelectedCompany] = useState<SelectedCompany | null>(null);
 
   const value = useMemo<ExplorerCtx>(
     () => ({ mode, setMode, selectedCompany, setSelectedCompany }),
-    [mode, selectedCompany],
+    [mode, setMode, selectedCompany],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

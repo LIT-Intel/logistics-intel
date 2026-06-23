@@ -47,9 +47,20 @@ export function useExploreState() {
   const setColor = useCallback((color) => update({ color }), [update]);
   const setSize = useCallback((size) => update({ size }), [update]);
   const setSelection = useCallback((selection) => update({ selection }), [update]);
+  // Apply several fields in ONE atomic URL write — used by "load saved view",
+  // which must set filters + color + size together. Doing them as three
+  // separate setters was timing-fragile (the saved view loaded inconsistently).
+  const setView = useCallback(({ filters, color, size, selection }) => {
+    const patch = {};
+    if (filters !== undefined) patch.filters = filters;
+    if (color !== undefined) patch.color = color;
+    if (size !== undefined) patch.size = size;
+    if (selection !== undefined) patch.selection = selection;
+    update(patch);
+  }, [update]);
   const clearAll = useCallback(() => {
     setSp((prev) => { const n = new URLSearchParams(prev); n.delete('explore'); return n; }, { replace: true });
   }, [setSp]);
 
-  return { state, setFilters, setColor, setSize, setSelection, clearAll };
+  return { state, setFilters, setColor, setSize, setSelection, setView, clearAll };
 }

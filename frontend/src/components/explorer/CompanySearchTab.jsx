@@ -153,22 +153,29 @@ export default function CompanySearchTab() {
     try { window.localStorage?.setItem(LS_VIEW_KEY, view); } catch { /* ignore */ }
   }, [view]);
 
-  // Run on mount when ?q= is present so the page lands "already
-  // searched" instead of empty.
-  const autoRanRef = useRef(false);
+  // Auto-run whenever the URL ?q= differs from what we last handled — covers
+  // initial mount (a ?q= deep link) AND in-app navigation to a NEW company
+  // without a hard reload (e.g. the Explorer "Search for live data" button,
+  // which navigates to ?tab=company&q=…). `query` is local state seeded once on
+  // mount, so we watch the live URL param directly.
+  const urlQ = (sp.get('q') ?? '').trim();
+  const handledQRef = useRef('');
   useEffect(() => {
-    if (autoRanRef.current) return;
-    if (!query) return;
-    autoRanRef.current = true;
-    runSearch(query);
+    if (!urlQ || handledQRef.current === urlQ) return;
+    handledQRef.current = urlQ;
+    setQuery(urlQ);
+    runSearch(urlQ);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [urlQ]);
 
   // `forceRefresh` skips the free Supabase cache and forces a fresh live pull
   // (which consumes a search credit). Default path is cache-first / credit-free.
   const runSearch = useCallback(async (rawQ, opts) => {
     const q = (rawQ ?? query).trim();
     if (!q) return;
+    // Mark this q handled so the ?q= effect (which fires when runSearch writes
+    // the param below) doesn't kick off a duplicate search.
+    handledQRef.current = q;
     const forceRefresh = opts?.forceRefresh === true;
     setSearching(true);
     setError('');

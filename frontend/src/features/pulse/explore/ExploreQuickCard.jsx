@@ -299,7 +299,7 @@ export default function ExploreQuickCard({ row, onClose, onSaveToList }) {
           <>
             <button
               type="button"
-              onClick={() => navigate(`/app/search?q=${encodeURIComponent(row.company_name)}`)}
+              onClick={() => navigate(`/app/search?tab=company&q=${encodeURIComponent(row.company_name)}`)}
               className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 text-white text-xs font-medium px-3 py-2 hover:bg-slate-700"
               title="Run a fresh search to pull live shipment data, then this company will be openable in Command Center"
             >
