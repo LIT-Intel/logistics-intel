@@ -37,7 +37,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 
 import {
   searchShippers,
@@ -61,6 +61,7 @@ const LS_PANEL_KEY = 'lit.explorer.companySearch.panelOpen';
 
 export default function CompanySearchTab() {
   const { setSelectedCompany } = useExplorer();
+  const navigate = useNavigate();
   const [sp, setSp] = useSearchParams();
 
   // Search input + results
@@ -237,16 +238,15 @@ export default function CompanySearchTab() {
     }
   }, []);
 
-  const onOpenDetails = useCallback(async (row, e) => {
+  const onOpenDetails = useCallback((row, e) => {
     e?.stopPropagation?.();
-    try {
-      await getIyCompanyProfile({ companyKey: row.source_company_key });
-    } catch { /* non-fatal */ }
+    // Pre-warm the profile snapshot in the BACKGROUND. Never await it — it's a
+    // 10-15s importyeti-proxy call, and awaiting it before navigating made the
+    // click do nothing for many seconds (users hard-refreshed to recover).
+    getIyCompanyProfile({ companyKey: row.source_company_key }).catch(() => {});
     // Auto-save on open — core behavior from the legacy Search page that the
-    // Explorer rewrite (daf839c) dropped. Opening a company adds it to Command
-    // Center so it shows up under Saved Companies. Skip if already saved (the
-    // is_saved overlay flag) to avoid burning a save credit, and never block
-    // navigation on it (cap-reached / network errors are non-fatal here).
+    // Explorer rewrite (daf839c) dropped. Skip if already saved; never block
+    // navigation (cap-reached / network errors are non-fatal here).
     if (!row.is_saved) {
       saveCompanyToCommandCenter({
         shipper: row.raw,
@@ -256,8 +256,10 @@ export default function CompanySearchTab() {
       }).catch(() => { /* non-fatal: explicit Save button still available */ });
     }
     const slug = encodeURIComponent(row.source_company_key || row.id);
-    window.location.href = `/app/companies/${slug}`;
-  }, []);
+    // SPA navigation — instant, keeps the React app mounted. The previous
+    // window.location.href did a full document reload, which read as a hang.
+    navigate(`/app/companies/${slug}`);
+  }, [navigate]);
 
   const onRowClick = useCallback((row) => {
     setSelectedCompany({
