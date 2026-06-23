@@ -31,10 +31,17 @@ export function useExploreState() {
   const update = useCallback((patch) => {
     setSp((prev) => {
       const next = new URLSearchParams(prev);
-      next.set('explore', encode({ ...state, ...patch }));
+      // Re-decode from the LATEST params, NOT the memoized `state` closure, so
+      // several update() calls fired in the same tick COMPOSE instead of
+      // clobbering each other. onLoadSelection does setFilters() then setColor()
+      // then setSize(); with the stale closure, setColor/setSize rebuilt the
+      // state from the pre-update snapshot and wiped the just-applied filters —
+      // so loading a saved view (which carries color+size modes) never applied
+      // its filter and "nothing loaded".
+      next.set('explore', encode({ ...decode(prev), ...patch }));
       return next;
     }, { replace: true });
-  }, [setSp, state]);
+  }, [setSp]);
 
   const setFilters = useCallback((filters) => update({ filters }), [update]);
   const setColor = useCallback((color) => update({ color }), [update]);
