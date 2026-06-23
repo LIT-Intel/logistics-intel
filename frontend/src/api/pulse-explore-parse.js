@@ -42,6 +42,69 @@ export function looksLikeCompanyName(query) {
 }
 
 
+// ─────────────────────────────────────────────────────────────────────────
+// Deterministic, LLM-FREE filter extraction.
+//
+// Resilience fallback: when the edge LLM parse returns nothing useful — or is
+// unreachable, or its provider API keys are misconfigured — the Explorer can
+// STILL run a real search for the most common query shape ("<x> in <place>").
+// pulse-explore queries Postgres directly (no LLM), so geography filters alone
+// produce real results. Region keys mirror the server's region_presets.ts so
+// the edge fn expands them identically.
+// ─────────────────────────────────────────────────────────────────────────
+const REGION_PHRASES = [
+  [/\b(south[\s-]?east(ern)?|se us)\b/, 'southeast'],
+  [/\b(west[\s-]?coast|pacific( coast)?)\b/, 'west_coast'],
+  [/\b(north[\s-]?east(ern)?|new england)\b/, 'northeast'],
+  [/\b(mid[\s-]?west(ern)?|great lakes)\b/, 'midwest'],
+  [/\b(south[\s-]?west(ern)?)\b/, 'southwest'],
+  [/\b(mountain( west)?|rock(y|ies)|rocky mountain)\b/, 'mountain'],
+];
+
+const STATE_NAME_TO_CODE = {
+  alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA',
+  colorado: 'CO', connecticut: 'CT', delaware: 'DE', 'district of columbia': 'DC',
+  florida: 'FL', georgia: 'GA', hawaii: 'HI', idaho: 'ID', illinois: 'IL',
+  indiana: 'IN', iowa: 'IA', kansas: 'KS', kentucky: 'KY', louisiana: 'LA',
+  maine: 'ME', maryland: 'MD', massachusetts: 'MA', michigan: 'MI', minnesota: 'MN',
+  mississippi: 'MS', missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV',
+  'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY',
+  'north carolina': 'NC', 'north dakota': 'ND', ohio: 'OH', oklahoma: 'OK',
+  oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
+  'south dakota': 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT',
+  virginia: 'VA', washington: 'WA', 'west virginia': 'WV', wisconsin: 'WI',
+  wyoming: 'WY', 'puerto rico': 'PR',
+};
+const STATE_CODES = new Set(Object.values(STATE_NAME_TO_CODE));
+
+export function localExtractFilters(query) {
+  const q = String(query ?? '').trim();
+  if (!q) return {};
+  const lower = ` ${q.toLowerCase()} `;
+  const geo = {};
+
+  const regions = [];
+  for (const [re, key] of REGION_PHRASES) {
+    if (re.test(lower) && !regions.includes(key)) regions.push(key);
+  }
+  if (regions.length) geo.regions = regions;
+
+  const states = [];
+  // Full state names (multi-word handled, e.g. "new york").
+  for (const [name, code] of Object.entries(STATE_NAME_TO_CODE)) {
+    const re = new RegExp(`\\b${name.replace(/ /g, '\\s+')}\\b`, 'i');
+    if (re.test(lower) && !states.includes(code)) states.push(code);
+  }
+  // 2-letter codes — only match UPPERCASE in the original string so common
+  // words ("or", "in", "me", "hi") don't get mistaken for state codes.
+  for (const code of STATE_CODES) {
+    if (new RegExp(`\\b${code}\\b`).test(q) && !states.includes(code)) states.push(code);
+  }
+  if (states.length) geo.states = states;
+
+  return Object.keys(geo).length ? { geo } : {};
+}
+
 // Map the edge fn's parsed payload to the Filters shape that pulse-explore
 // accepts. Keeps the contract narrow even if the edge fn returns extras.
 export function parsedToFilters(parsed) {
