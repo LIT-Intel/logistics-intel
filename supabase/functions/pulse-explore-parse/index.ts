@@ -231,6 +231,13 @@ Output ONLY valid JSON — no prose, no markdown fences — matching this schema
   "confidence": number
 }
 
+GUIDING PRINCIPLE — be generous, not strict. ALWAYS extract at least one
+concrete filter whenever the query contains ANY signal: a place (state, region,
+country, city), an industry, a size/revenue/employee number, a sales angle, or a
+company name. Combine multiple signals from one sentence. Only return all-empty
+filters when the query is genuinely unparseable gibberish ("asdf qwer"). A
+half-understood query with one real filter is far better than nothing.
+
 NAME — populate with a company brand/name when the query looks like a
 specific company lookup ("Walmart", "Tesla", "Q Cells US", "Apple Inc",
 "Maersk", "the Coca-Cola Company"). Strip filler words ("show me",
@@ -251,18 +258,57 @@ mentioned. Mapping:
 
 STATES — populate geo.states as 2-letter USPS codes (CA, TX, etc) when explicitly mentioned.
 
-INDUSTRY — extract any industry/vertical from V6 taxonomy:
-- "manufacturing", "manufacturer", "factory" → ["Manufacturing"]
-- "retail", "retailer" → ["Retail"]
-- "auto" / "automotive" → ["Manufacturing"] (vertical: Automotive)
-- "food and beverage" / "food" → ["Food Manufacturing"]
-- "electronics" → ["Electronics Manufacturing"]
-- "healthcare" / "medical" → ["Healthcare Services"]
-- "tech" / "software" → ["Software", "Technology"]
-- "wholesale" → ["Wholesale"]
-- "construction" → ["Construction"]
-- "energy" / "oil & gas" → ["Energy"]
-- "transportation" / "logistics" / "freight" → ["Transportation", "Logistics"]
+INDUSTRY — CRITICAL: industry is matched EXACTLY against the database, so values
+MUST be copied verbatim (exact spelling + case) from this CANONICAL list. These
+are the only strings that exist in the data — any other string returns ZERO rows.
+Pick one OR MORE canonical values that best cover the user's words:
+[ "Manufacturing", "Retail", "Business Services", "Construction",
+  "Transportation", "Consumer Services", "Hospitality",
+  "Energy, Utilities & Waste", "Software", "Agriculture", "Media & Internet",
+  "Education", "Minerals & Mining", "Telecommunications", "Finance",
+  "Trading Companies and Distributors", "Hospitals & Physicians Clinics",
+  "Real Estate", "Machinery", "Food Products", "Chemicals",
+  "Healthcare Services", "Food and Staples Retailing", "Specialty Retail",
+  "Distributors", "Construction and Engineering", "Metals and Mining",
+  "Insurance", "Textiles, Apparel and Luxury Goods", "Auto Components",
+  "Electrical Equipment", "Air Freight and Logistics", "Containers and Packaging" ]
+
+Common user term → canonical value(s):
+- "manufacturing" / "manufacturer" / "factory" / "industrial" → ["Manufacturing"]
+- "retail" / "retailer" / "store" → ["Retail","Specialty Retail"]
+- "automotive" / "auto parts" / "car parts" → ["Auto Components","Manufacturing"]
+- "food" / "food & beverage" / "grocery" / "beverage" → ["Food Products","Food and Staples Retailing"]
+- "electronics" / "electrical" → ["Electrical Equipment","Manufacturing"]
+- "chemical" / "chemicals" / "plastics" → ["Chemicals"]
+- "apparel" / "clothing" / "textile" / "fashion" / "footwear" → ["Textiles, Apparel and Luxury Goods"]
+- "energy" / "oil & gas" / "utilities" / "power" → ["Energy, Utilities & Waste"]
+- "tech" / "software" / "saas" / "technology" → ["Software"]
+- "healthcare" / "medical" / "hospital" / "pharma" → ["Healthcare Services","Hospitals & Physicians Clinics"]
+- "wholesale" / "distributor" / "distribution" / "trading" → ["Trading Companies and Distributors","Distributors"]
+- "construction" / "engineering" / "building materials" → ["Construction","Construction and Engineering"]
+- "mining" / "minerals" / "metals" / "steel" → ["Minerals & Mining","Metals and Mining"]
+- "logistics" / "freight forwarder" / "3pl" / "shipping line" → ["Air Freight and Logistics","Transportation"]
+- "agriculture" / "farming" / "produce" → ["Agriculture"]
+- "machinery" / "equipment" / "industrial machinery" → ["Machinery","Electrical Equipment"]
+- "packaging" / "containers" → ["Containers and Packaging"]
+- "telecom" / "telecommunications" → ["Telecommunications"]
+- "furniture" / "home goods" / "appliances" → ["Manufacturing"]
+If the user's industry doesn't map cleanly to a canonical value, leave industry
+[] rather than inventing a non-canonical string (a wrong guess returns nothing).
+
+COUNTRIES — geo.countries as full country names as stored ("United States",
+"China", "Vietnam", "Germany", "Mexico", "India", "Canada"). This filters the
+COMPANY's own location, NOT shipment origin. Most rows are US importers, so only
+set countries when the user names the company's country ("German manufacturers",
+"companies based in Mexico"). Do NOT map "imports from China" to countries —
+that's a shipment origin (trade_lane), not the company's country.
+
+CITIES — geo.cities for explicit city mentions ("in Houston", "Los Angeles
+importers" → ["Los Angeles"]). Plain city name, no state suffix.
+
+COMMERCIAL — set commercial.revenue_min/max (USD) and employees_min/max when
+mentioned ("over $50M revenue" → revenue_min 50000000; "500+ employees" →
+employees_min 500; "small companies under 50 staff" → employees_max 50).
 
 OPPORTUNITY_TYPES — set when the user explicitly asks for one of these sales angles:
 - "consolidation" / "multi-forwarder" / "spread across forwarders" → ["consolidation"]
@@ -308,7 +354,25 @@ EXAMPLES:
 {"query":"consolidation candidates with stale data, defend & grow my book","name":"","industry":[],"geo":{"regions":[],"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["consolidation","defend"],"freshness_state":["stale"],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
 
 "automotive companies in the west coast and southeast" →
-{"query":"automotive companies in the west coast and southeast","name":"","industry":["Manufacturing"],"geo":{"regions":["west_coast","southeast"],"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.92}
+{"query":"automotive companies in the west coast and southeast","name":"","industry":["Auto Components","Manufacturing"],"geo":{"regions":["west_coast","southeast"],"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.92}
+
+"food and beverage importers in texas" →
+{"query":"food and beverage importers in texas","name":"","industry":["Food Products","Food and Staples Retailing"],"geo":{"regions":[],"states":["TX"],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
+
+"energy companies over $100M revenue" →
+{"query":"energy companies over $100M revenue","name":"","industry":["Energy, Utilities & Waste"],"geo":{"regions":[],"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"commercial":{"revenue_min":100000000,"revenue_max":null,"employees_min":null,"employees_max":null,"public_only":false},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.88}
+
+"apparel importers in los angeles" →
+{"query":"apparel importers in los angeles","name":"","industry":["Textiles, Apparel and Luxury Goods"],"geo":{"regions":[],"states":[],"countries":[],"cities":["Los Angeles"]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
+
+"wholesale distributors in the midwest" →
+{"query":"wholesale distributors in the midwest","name":"","industry":["Trading Companies and Distributors","Distributors"],"geo":{"regions":["midwest"],"states":[],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.88}
+
+"large electronics manufacturers above 2000 TEU" →
+{"query":"large electronics manufacturers above 2000 TEU","name":"","industry":["Electrical Equipment","Manufacturing"],"geo":{"regions":[],"states":[],"countries":[]},"size":{"teu_min":2000,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":["velocity"],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.85}
+
+"German machinery companies" →
+{"query":"German machinery companies","name":"","industry":["Machinery","Electrical Equipment"],"geo":{"regions":[],"states":[],"countries":["Germany"]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":[],"workflow_state":[],"dataset_filter":"all","confidence":0.85}
 
 "food and beverage importers in texas with live data" →
 {"query":"food and beverage importers in texas with live data","name":"","industry":["Food Manufacturing"],"geo":{"regions":[],"states":["TX"],"countries":[]},"size":{"teu_min":null,"teu_max":null,"shipments_min":null,"shipments_max":null,"spend_min":null,"spend_max":null},"opportunity_types":[],"freshness_state":["live"],"workflow_state":[],"dataset_filter":"all","confidence":0.9}
