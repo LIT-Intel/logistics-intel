@@ -16,6 +16,7 @@ import IndustryLegendOverlay from './IndustryLegendOverlay';
 import ExploreMapTools from './ExploreMapTools';
 import ExploreMap from './ExploreMapMaplibre';
 import ExploreAccountTable from './ExploreAccountTable';
+import ResultsFilterBar, { applyResultsFilter } from './ResultsFilterBar';
 import { useEntitlements } from '@/hooks/useEntitlements';
 import { useUpgradeModal } from '@/components/billing/UpgradeModal';
 import { PulseExploreLimitError } from '@/api/pulse-explore';
@@ -73,6 +74,10 @@ export default function PulseExploreTab() {
   const fetchEnabled = hasAnyFilter(state.filters);
   const { data, isLoading, error } = useExploreAccounts(state.filters, null, { enabled: fetchEnabled });
   const rows = data?.rows ?? [];
+  // Client-side refinement of the fetched result set (location / industry /
+  // size / status). displayRows is what the table + cards actually render.
+  const [resultsFilter, setResultsFilter] = useState({});
+  const displayRows = useMemo(() => applyResultsFilter(rows, resultsFilter), [rows, resultsFilter]);
   const insights = useExploreInsights(rows);
 
   // Trial-preview gating. When pulse-explore returns 403 LIMIT_EXCEEDED
@@ -543,7 +548,11 @@ export default function PulseExploreTab() {
                 Results
                 {fetchEnabled && (
                   <span className="text-slate-500 font-normal">
-                    {isLoading ? '· loading…' : `· ${rows.length.toLocaleString()} accounts`}
+                    {isLoading
+                      ? '· loading…'
+                      : displayRows.length === rows.length
+                        ? `· ${rows.length.toLocaleString()} accounts`
+                        : `· ${displayRows.length.toLocaleString()} of ${rows.length.toLocaleString()}`}
                   </span>
                 )}
               </button>
@@ -583,9 +592,17 @@ export default function PulseExploreTab() {
                 />
                 {fetchEnabled ? (
                   <>
+                    {rows.length > 0 && (
+                      <ResultsFilterBar
+                        rows={rows}
+                        filter={resultsFilter}
+                        setFilter={setResultsFilter}
+                        shownCount={displayRows.length}
+                      />
+                    )}
                     <div className="hidden md:flex flex-col flex-1 min-h-0">
                       <ExploreAccountTable
-                        rows={rows}
+                        rows={displayRows}
                         selection={state.selection}
                         onToggle={toggleSelection}
                         onRowClick={setActiveRow}
@@ -593,7 +610,7 @@ export default function PulseExploreTab() {
                     </div>
                     <div className="md:hidden flex flex-col flex-1 min-h-0">
                       <ExploreAccountCards
-                        rows={rows}
+                        rows={displayRows}
                         selection={state.selection}
                         onToggle={toggleSelection}
                         onRowClick={setActiveRow}
