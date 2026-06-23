@@ -184,6 +184,51 @@ export async function askPulseCoach(question: string): Promise<PulseCoachAnswer>
 }
 
 /**
+ * Explorer Coach — reason over the on-screen result set.
+ *
+ * Unlike askPulseCoach(question) (which concatenated a prose context
+ * blurb into the question string and let the server re-parse / re-search
+ * it — the path that returned the canned "didn't find any matching
+ * accounts" reply), this sends STRUCTURED input the server reasons over
+ * directly: the question, the active filters, precomputed aggregates over
+ * ALL rows, and a capped, opportunity-sorted sample of rows. Zero
+ * ImportYeti credits — the directory read was already paid for when the
+ * Explorer ran the search.
+ */
+export async function reasonOverExplore(input: {
+  question: string;
+  filters: Record<string, unknown>;
+  totals: Record<string, unknown>;
+  sampleRows: Record<string, unknown>[];
+}): Promise<PulseCoachAnswer> {
+  const { data, error } = await supabase.functions.invoke("pulse-coach-v2", {
+    body: {
+      mode: "explore_reason",
+      question: input.question,
+      filters: input.filters,
+      totals: input.totals,
+      sample_rows: input.sampleRows,
+    },
+  });
+  if (error) {
+    return {
+      ok: false,
+      answer_md:
+        "I hit a snag — try again in a moment, or check the help center.",
+      cta: null,
+      error: String(error.message || "coach_explore_reason_failed"),
+    };
+  }
+  return {
+    ok: Boolean(data?.ok),
+    classification: data?.classification,
+    answer_md: String(data?.answer_md || ""),
+    cta: data?.cta || null,
+    context_snapshot: data?.context_snapshot || null,
+  };
+}
+
+/**
  * Fetch proactive nudges + workspace lanes from the legacy `pulse-coach`
  * function. The v1 surface aggregates origin→dest trade lanes that v2 does
  * NOT return — don't migrate this caller to v2.

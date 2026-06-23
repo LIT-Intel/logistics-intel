@@ -640,7 +640,7 @@ async function tryParseDataQuery(
 async function runExplorerSearch(
   parsed: ParsedExplorerFilters,
   authToken: string,
-): Promise<{ companies: CoachCompanyHit[]; total: number }> {
+): Promise<{ companies: CoachCompanyHit[]; total: number; rows: any[] }> {
   try {
     const url = `${SUPABASE_URL}/functions/v1/pulse-explore`;
     const resp = await fetch(url, {
@@ -670,19 +670,23 @@ async function runExplorerSearch(
     });
     if (!resp.ok) {
       log.warn("search_non_ok", { status: resp.status });
-      return { companies: [], total: 0 };
+      return { companies: [], total: 0, rows: [] };
     }
     const data = await resp.json();
-    const rows = Array.isArray(data?.companies)
-      ? data.companies
-      : Array.isArray(data?.results)
-        ? data.results
-        : Array.isArray(data?.data)
-          ? data.data
+    // pulse-explore returns { ok, rows, totals:{ total, returned, ... },
+    // truncated }. The previous read keyed on companies/results/data and
+    // ALWAYS got [] — that was BUG A. Read data.rows + data.totals.total.
+    const rows = Array.isArray(data?.rows)
+      ? data.rows
+      // Defensive fallbacks kept for any future response-shape change.
+      : Array.isArray(data?.companies)
+        ? data.companies
+        : Array.isArray(data?.results)
+          ? data.results
           : [];
     const hits: CoachCompanyHit[] = rows.slice(0, 8).map((r: any) => ({
       id: String(r.id ?? r.company_id ?? r.uid ?? ""),
-      name: String(r.name ?? r.company_name ?? r.display_name ?? "Unnamed account"),
+      name: String(r.company_name ?? r.name ?? r.display_name ?? "Unnamed account"),
       city: r.city ?? r.headquarters_city ?? undefined,
       state: r.state ?? r.headquarters_state ?? undefined,
       country: r.country ?? r.country_code ?? undefined,
@@ -693,15 +697,17 @@ async function runExplorerSearch(
           ? r.opportunity_score
           : undefined,
     }));
-    const total = typeof data?.total === "number"
-      ? data.total
-      : typeof data?.count === "number"
-        ? data.count
-        : hits.length;
-    return { companies: hits, total };
+    const total = typeof data?.totals?.total === "number"
+      ? data.totals.total
+      : typeof data?.total === "number"
+        ? data.total
+        : typeof data?.count === "number"
+          ? data.count
+          : hits.length;
+    return { companies: hits, total, rows };
   } catch (err) {
     log.warn("search_call_failed", { err: String(err) });
-    return { companies: [], total: 0 };
+    return { companies: [], total: 0, rows: [] };
   }
 }
 
@@ -913,6 +919,282 @@ async function answerQuestion(
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Explorer Coach — mode "explore_reason" (added 2026-06-23).
+//
+// The Pulse Explorer already holds the full result set in the browser (up
+// to 5,000 rows). Rather than re-parse the user's prose question and
+// re-run a search (the old answer_question path, which contaminated the
+// parser with the on-screen "Active filters: … country=United States"
+// blurb and always returned the canned "didn't find any matching
+// accounts" string), this mode reasons DIRECTLY over structured input the
+// frontend computes from those rows:
+//
+//   { question, filters, totals (aggregates over ALL rows), sample_rows }
+//
+// Zero ImportYeti credits: the frontend already paid for the directory
+// read when it ran the Explorer search. This mode only adds one OpenAI
+// call. It does NOT call pulse-explore or pulse-explore-parse on the
+// happy path.
+//
+// COUNT intents ("give me 2 companies", "top 50") are resolved in JS by
+// the frontend (it sorts by opportunity_composite_score and slices N into
+// sample_rows). The LLM just narrates the provided set.
+//
+// HONESTY: month-over-month trend / forwarder-switch-history questions are
+// NOT answerable from the directory (single 12-month TEU aggregate + a
+// current top_forwarders snapshot; no per-month history, no historical
+// forwarder column). We detect those intents server-side and instruct the
+// model to say what IS knowable rather than fabricate a trend.
+// ──────────────────────────────────────────────────────────────────────────
+
+const EXPLORE_REASON_SYSTEM = `You are Pulse Coach, a freight-sales analyst embedded in Logistic Intel's (LIT) Pulse Explorer. The user is looking at a filtered map of import/export accounts. You are given a STRUCTURED SNAPSHOT of exactly what is on their screen: the active filters, aggregate stats computed over ALL matching accounts, and a representative sample of rows. Reason like a sharp sales analyst over THIS data.
+
+RULES:
+- Ground every claim in the snapshot. Never invent companies, numbers, lanes, or forwarders that are not present.
+- Answer the user's actual question first, in 1-2 sentences, then support it with specifics (named accounts, TEU, lanes, forwarders, states) drawn from the snapshot.
+- When the user asks for a count ("give me 2", "top 50", "show 1000"), the sample_rows have ALREADY been sorted by opportunity score and sliced to the requested N — list/work with exactly what you were given. If sample_count < requested_count, say how many are actually available.
+- Write in markdown. Use a short numbered or bulleted list when naming accounts. Lead with the answer, no preamble.
+- Freight-operator tone. Second person. Never say "as an AI". Never name third-party data vendors (Apollo, Lusha, Panjiva, ImportYeti, Resend) — say "our shipment-data sources".
+- TEU = twenty-foot equivalent unit. Treat "12m TEU" as a trailing-12-month aggregate.
+
+WHAT YOU CANNOT KNOW (be honest, do NOT fabricate):
+- Month-over-month or quarter-over-quarter trends ("declining volume", "growing", "volume trend over time"). The snapshot has ONE trailing-12-month TEU figure per account, not a time series. If asked for a trend, say plainly: you can show current 12-month TEU and the current top forwarders, but you do NOT have month-over-month history for these accounts, then answer with what IS knowable (e.g. rank by current TEU, flag low-diversification accounts).
+- Forwarder-switching history ("who recently switched forwarders", "lost their forwarder"). The snapshot has only a CURRENT top-forwarders snapshot per account — no historical forwarder record. Say so, then offer the adjacent insight you CAN give (e.g. accounts concentrated on a single forwarder = consolidation/displacement targets right now).
+- Per-shipment detail, contact names, or anything not present in the snapshot. If it's not in the snapshot, say you don't have it on this view.
+
+If the snapshot has zero accounts, say the current map is empty and suggest broadening the filters.`;
+
+type ExploreAggregates = Record<string, unknown>;
+
+// Heuristic: does the question reference a place / lane the active filters
+// clearly don't cover? If so, the on-screen rows can't answer it and we
+// fall back to a real (credit-free) directory search. Conservative on
+// purpose — we'd rather reason over the on-screen set than chase a search.
+function looksOffMap(question: string, filters: any): boolean {
+  const q = question.toLowerCase();
+  // Explicit lane phrasing ("X to Y", "from X to Y") almost always means a
+  // specific lane the current map isn't filtered on.
+  const hasLane = /\bfrom\s+[a-z]/.test(q) && /\bto\s+[a-z]/.test(q);
+  // "find N companies …" with a count > 200 implies they want a broader
+  // pull than the (typically narrower) on-screen view.
+  const bigFind = /\b(find|show|give|pull|get)\b/.test(q) && /\b([2-9]\d{2,}|\d{4,})\b/.test(q);
+  // If there are essentially no active filters, the on-screen set IS the
+  // whole directory sample — no point re-searching.
+  const hasActiveFilters = !!(
+    filters?.name ||
+    filters?.industry?.length ||
+    filters?.country?.length ||
+    filters?.geo?.regions?.length ||
+    filters?.geo?.states?.length ||
+    filters?.geo?.countries?.length ||
+    filters?.opportunity_types?.length ||
+    filters?.size?.teu_min || filters?.size?.teu_max
+  );
+  return (hasLane || bigFind) && hasActiveFilters;
+}
+
+// Cap a row array to a representative sample for the LLM: top-N by
+// opportunity_composite_score. Keeps the payload bounded regardless of how
+// many rows the search returned.
+function capSampleRows(rows: any[], n = 60): any[] {
+  return [...rows]
+    .sort((a, b) => (Number(b?.opportunity_composite_score) || 0) - (Number(a?.opportunity_composite_score) || 0))
+    .slice(0, n)
+    .map(trimRowForLlm);
+}
+
+function trimRowForLlm(r: any): any {
+  return {
+    company_name: r?.company_name ?? r?.name ?? null,
+    city: r?.city ?? null,
+    state: r?.state ?? null,
+    country: r?.country ?? null,
+    industry: r?.industry ?? null,
+    vertical: r?.vertical ?? null,
+    teu: r?.teu ?? null,
+    shipments: r?.shipments ?? null,
+    revenue: r?.revenue ?? null,
+    opportunity_composite_score: r?.opportunity_composite_score ?? null,
+    top_lanes: Array.isArray(r?.top_dimensions)
+      ? r.top_dimensions.slice(0, 3).map((d: any) => d?.lane).filter(Boolean)
+      : undefined,
+    top_forwarders: Array.isArray(r?.top_forwarders)
+      ? r.top_forwarders.slice(0, 3).map((f: any) => f?.name).filter(Boolean)
+      : undefined,
+  };
+}
+
+// Compute aggregates server-side over a full row set (off-map path) so the
+// model gets the same shape the frontend sends on the happy path.
+function computeServerAggregates(rows: any[], total: number): ExploreAggregates {
+  const tallyTop = (getKey: (r: any) => any) => {
+    const m = new Map<string, number>();
+    for (const r of rows) {
+      const items = getKey(r);
+      if (!items) continue;
+      const arr = Array.isArray(items) ? items : [items];
+      for (const it of arr) {
+        const k = typeof it === "string" ? it : (it?.name ?? it?.lane ?? null);
+        if (!k) continue;
+        m.set(k, (m.get(k) ?? 0) + 1);
+      }
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+      .map(([label, count]) => ({ label, count }));
+  };
+  let sumTeu = 0, teuAbove500 = 0, teuCount = 0;
+  for (const r of rows) {
+    const t = Number(r?.teu);
+    if (Number.isFinite(t)) { sumTeu += t; teuCount++; if (t >= 500) teuAbove500++; }
+  }
+  return {
+    account_count: total ?? rows.length,
+    returned: rows.length,
+    sum_teu_12m: sumTeu,
+    avg_teu_12m: teuCount ? Math.round(sumTeu / teuCount) : 0,
+    accounts_with_teu_ge_500: teuAbove500,
+    top_industries: tallyTop((r) => r?.industry),
+    top_states: tallyTop((r) => r?.state),
+    top_lanes: tallyTop((r) => r?.top_dimensions),
+    top_forwarders: tallyTop((r) => r?.top_forwarders),
+  };
+}
+
+async function reasonOverExploreSnapshot(args: {
+  question: string;
+  filters: any;
+  totals: ExploreAggregates;
+  sampleRows: any[];
+}): Promise<{
+  classification: string;
+  answer_md: string;
+  cta: { label: string; url: string } | null;
+}> {
+  const { question, filters, totals, sampleRows } = args;
+
+  // Detect not-answerable intents so we can nudge the model toward honesty
+  // even if it would otherwise try to invent a trend.
+  const q = question.toLowerCase();
+  const wantsTrend = /\b(trend|declin|decreas|increas|growing|grew|month[\s-]?over[\s-]?month|mom|quarter[\s-]?over[\s-]?quarter|qoq|year[\s-]?over[\s-]?year|yoy|over time|trajectory|momentum|rising|falling|drop(ped|ping)?)\b/.test(q);
+  const wantsSwitch = /\b(switch|switched|switching|churn|left their|lost their|changed (forwarder|carrier)|moved (forwarder|carrier|away))\b/.test(q);
+  const limitations: string[] = [];
+  if (wantsTrend) limitations.push("This question asks about a trend over time, but the snapshot has only a single trailing-12-month TEU figure per account — no month-over-month history. Be explicit about that, then answer with what IS knowable from current 12-month figures.");
+  if (wantsSwitch) limitations.push("This question asks about forwarder/carrier switching history, but the snapshot has only a CURRENT top-forwarders view — no historical record of switches. Be explicit, then pivot to the adjacent current-state insight (e.g. single-forwarder concentration = displacement target).");
+
+  const accountCount = Number((totals as any)?.account_count ?? 0);
+  if (!sampleRows.length && accountCount === 0) {
+    return {
+      classification: "data_business_question",
+      answer_md:
+        "Your current map is empty — there are no accounts matching the active filters. Broaden the geography, drop an industry constraint, or lower the TEU floor, then ask me again and I'll reason over the results.",
+      cta: null,
+    };
+  }
+
+  if (!OPENAI_API_KEY) {
+    // Graceful degradation: deterministic summary so the panel still answers.
+    const top = sampleRows.slice(0, 5).map((r: any, i: number) => {
+      const loc = [r.city, r.state, r.country].filter(Boolean).join(", ");
+      const teu = r.teu != null ? ` · ${Number(r.teu).toLocaleString()} TEU` : "";
+      return `${i + 1}. **${r.company_name ?? r.name ?? "Account"}**${loc ? ` — ${loc}` : ""}${teu}`;
+    }).join("\n");
+    return {
+      classification: "data_business_question",
+      answer_md:
+        `Across **${accountCount.toLocaleString()}** accounts on your map, here are the top by opportunity score:\n\n${top}` +
+        (limitations.length ? `\n\n_Note: I can't compute trends or switching history from this view — only current 12-month figures._` : ""),
+      cta: null,
+    };
+  }
+
+  const userPayload = {
+    question,
+    active_filters: filters ?? {},
+    aggregates_over_all_accounts: totals ?? {},
+    sample_rows: sampleRows,
+    answer_constraints: limitations,
+  };
+
+  const messages = [
+    { role: "system", content: EXPLORE_REASON_SYSTEM },
+    {
+      role: "user",
+      content:
+        `Here is the structured snapshot of the user's current Pulse Explorer view.\n\n` +
+        `<snapshot>\n${JSON.stringify(userPayload, null, 2)}\n</snapshot>\n\n` +
+        `Answer the question in the snapshot ("question" field). Return JSON only:\n` +
+        `{\n  "classification": "data_business_question",\n  "answer_md": "markdown analyst answer grounded in the snapshot",\n  "cta": null\n}`,
+    },
+  ];
+
+  try {
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: COACH_MODEL,
+        messages,
+        temperature: 0.3,
+        response_format: { type: "json_object" },
+        max_tokens: 1200,
+      }),
+    });
+    const data = await resp.json();
+    const text = data?.choices?.[0]?.message?.content || "";
+    const parsed = JSON.parse(text);
+    return {
+      classification: String(parsed.classification || "data_business_question"),
+      answer_md: String(parsed.answer_md || "I couldn't generate an analysis for this view — try rephrasing."),
+      cta: parsed.cta && parsed.cta.url ? { label: String(parsed.cta.label || "Open"), url: String(parsed.cta.url) } : null,
+    };
+  } catch (err) {
+    log.warn("explore_reason_llm_failed", { err: String(err) });
+    return {
+      classification: "data_business_question",
+      answer_md: "I hit a snag analyzing this view. Try rephrasing your question, or narrow the filters and ask again.",
+      cta: null,
+    };
+  }
+}
+
+// Resolve the caller's primary org for usage gating.
+async function resolveOrgId(supa: any, userId: string): Promise<string | null> {
+  const { data: orgRow } = await supa
+    .from("org_members")
+    .select("org_id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("joined_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return orgRow?.org_id ?? null;
+}
+
+// Shared pulse_ai usage gate — every coach answer hits OpenAI, so trial
+// users could spam it. check_usage_limit consults plans.pulse_ai_limit per
+// the caller's plan; platform admins bypass. Returns a 403 Response when
+// over the limit, or null when allowed.
+async function gatePulseAi(supa: any, orgId: string | null, userId: string): Promise<Response | null> {
+  const { data: gate, error: gateErr } = await supa.rpc("check_usage_limit", {
+    p_org_id: orgId,
+    p_user_id: userId,
+    p_feature_key: "pulse_ai",
+    p_quantity: 1,
+  });
+  if (gateErr) {
+    console.warn("[pulse-coach-v2] usage gate failed", gateErr.message);
+    return null;
+  }
+  if (gate && (gate as any).ok === false) {
+    return new Response(JSON.stringify(gate), {
+      status: 403,
+      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+    });
+  }
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
   if (req.method !== "POST") {
@@ -944,6 +1226,72 @@ serve(async (req) => {
   const supa = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const ctx = await loadContext(supa, userId);
 
+  // ── Explorer Coach: reason over the on-screen result set ──────────────
+  // The frontend sends structured input { question, filters, totals
+  // (aggregates), sample_rows }. We reason over it directly — no re-parse,
+  // no re-search, zero ImportYeti credits. Only Postgres reads (usage gate)
+  // + one OpenAI call.
+  if (mode === "explore_reason") {
+    const question = String(body?.question || "").trim();
+    if (!question) {
+      return new Response(JSON.stringify({ ok: false, error: "question_required" }), {
+        status: 400, headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      });
+    }
+
+    const filters = body?.filters ?? {};
+    const totals = body?.totals ?? {};
+    const sampleRows = Array.isArray(body?.sample_rows) ? body.sample_rows : [];
+
+    const orgId = await resolveOrgId(supa, userId);
+    const gateResp = await gatePulseAi(supa, orgId, userId);
+    if (gateResp) return gateResp;
+
+    // Optional off-map path (acceptance criterion 7): when the question
+    // clearly targets accounts NOT on the current map (e.g. an explicit
+    // lane or a specific geography that the active filters don't cover),
+    // run the REAL grounded parser + pulse-explore, reading data.rows
+    // CORRECTLY (post BUG-A fix), and reason over THAT set instead. This
+    // is the same credit-free directory read the Explorer already does.
+    let effectiveTotals = totals;
+    let effectiveRows = sampleRows;
+    let offMap = false;
+    if (looksOffMap(question, filters)) {
+      const parsed = await tryParseDataQuery(question, token);
+      if (parsed && hasDataDimensions(parsed)) {
+        const search = await runExplorerSearch(parsed, token);
+        if (Array.isArray(search.rows) && search.rows.length > 0) {
+          offMap = true;
+          effectiveRows = capSampleRows(search.rows);
+          effectiveTotals = computeServerAggregates(search.rows, search.total);
+        }
+      }
+    }
+
+    const result = await reasonOverExploreSnapshot({
+      question,
+      filters: offMap ? { note: "server-grounded search (off-map query)" } : filters,
+      totals: effectiveTotals,
+      sampleRows: effectiveRows,
+    });
+
+    await supa.from("lit_usage_ledger").insert({
+      org_id: orgId,
+      user_id: userId,
+      feature_key: "pulse_ai",
+      action_key: "coach_explore_reason",
+      quantity: 1,
+      metadata: { question_chars: question.length, sample_rows: effectiveRows.length, off_map: offMap },
+    });
+
+    return new Response(JSON.stringify({
+      ok: true, mode, question,
+      ...result,
+      off_map: offMap,
+      context_snapshot: summarizeContext(ctx),
+    }), { headers: { ...corsHeaders(), "Content-Type": "application/json" } });
+  }
+
   if (mode === "answer_question") {
     const question = String(body?.question || "").trim();
     if (!question) {
@@ -957,30 +1305,9 @@ serve(async (req) => {
     // plans.pulse_ai_limit per the caller's plan; platform admins bypass.
     // free_trial=5/mo, starter=0/mo, growth=100/mo, scale=500/mo,
     // enterprise=unlimited. Returns LIMIT_EXCEEDED on overflow.
-    const { data: orgRow } = await supa
-      .from("org_members")
-      .select("org_id")
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .order("joined_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    const orgId = orgRow?.org_id ?? null;
-
-    const { data: gate, error: gateErr } = await supa.rpc("check_usage_limit", {
-      p_org_id: orgId,
-      p_user_id: userId,
-      p_feature_key: "pulse_ai",
-      p_quantity: 1,
-    });
-    if (gateErr) {
-      console.warn("[pulse-coach-v2] usage gate failed", gateErr.message);
-    } else if (gate && (gate as any).ok === false) {
-      return new Response(JSON.stringify(gate), {
-        status: 403,
-        headers: { ...corsHeaders(), "Content-Type": "application/json" },
-      });
-    }
+    const orgId = await resolveOrgId(supa, userId);
+    const gateResp = await gatePulseAi(supa, orgId, userId);
+    if (gateResp) return gateResp;
 
     const result = await answerQuestion(ctx, question, token);
 
