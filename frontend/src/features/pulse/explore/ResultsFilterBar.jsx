@@ -14,6 +14,8 @@ export function applyResultsFilter(rows, f) {
   const q = (f.q || '').trim().toLowerCase();
   const teuMin = f.teuMin ? Number(f.teuMin) : null;
   const oppMin = f.oppMin ? Number(f.oppMin) : null;
+  const lane = (f.lane || '').trim().toLowerCase();
+  const fwd = (f.forwarder || '').trim().toLowerCase();
   return rows.filter((r) => {
     if (q && !(r.company_name || '').toLowerCase().includes(q)) return false;
     if (f.state && r.state !== f.state) return false;
@@ -21,6 +23,18 @@ export function applyResultsFilter(rows, f) {
     if (teuMin != null && !(Number(r.teu) >= teuMin)) return false;
     if (oppMin != null && !(Number(r.opportunity_composite_score) >= oppMin)) return false;
     if (f.fresh && (r.freshness?.chip ?? 'directory') !== f.fresh) return false;
+    // Trade lane / route — match the company's top_dimensions lane strings
+    // ("Origin - Destination", e.g. "Shanghai - Los Angeles, California").
+    // Substring match works for any port or city named in the lane.
+    if (lane) {
+      const dims = Array.isArray(r.top_dimensions) ? r.top_dimensions : [];
+      if (!dims.some((d) => String(d?.lane ?? '').toLowerCase().includes(lane))) return false;
+    }
+    // Forwarder — match the company's top_forwarders names.
+    if (fwd) {
+      const tf = Array.isArray(r.top_forwarders) ? r.top_forwarders : [];
+      if (!tf.some((x) => String(x?.name ?? x ?? '').toLowerCase().includes(fwd))) return false;
+    }
     return true;
   });
 }
@@ -93,6 +107,24 @@ export default function ResultsFilterBar({ rows, filter, setFilter, shownCount }
         type="number" min="0" max="100" value={f.oppMin ?? ''}
         onChange={(e) => set({ oppMin: e.target.value })}
         placeholder="Min Opp" className={numCls} title="Minimum opportunity score"
+      />
+
+      <input
+        type="text"
+        value={f.lane ?? ''}
+        onChange={(e) => set({ lane: e.target.value })}
+        placeholder="Lane / port…"
+        title="Trade lane — match any origin/destination port or city in the company's routes (e.g. Shanghai, Los Angeles)"
+        className="h-7 w-[120px] rounded border border-slate-200 bg-white px-2 text-xs text-slate-700 placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none"
+      />
+
+      <input
+        type="text"
+        value={f.forwarder ?? ''}
+        onChange={(e) => set({ forwarder: e.target.value })}
+        placeholder="Forwarder…"
+        title="Match a freight forwarder in the company's top forwarders"
+        className="h-7 w-[110px] rounded border border-slate-200 bg-white px-2 text-xs text-slate-700 placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none"
       />
 
       <select value={f.fresh ?? ''} onChange={(e) => set({ fresh: e.target.value })} className={selCls} title="Status">
