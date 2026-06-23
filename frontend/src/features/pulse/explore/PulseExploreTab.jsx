@@ -390,9 +390,10 @@ export default function PulseExploreTab() {
               onLassoSelect={onLassoSelect}
               mapStyle={mapStyle}
             />
-            {/* Loading overlay — covers the map while accounts load so the
-                user knows the query is running (can take 10–15s). */}
-            {isLoading ? (
+            {/* Loading overlay — covers the map while the query is PARSED
+                (NL -> filters, ~10-15s) AND while accounts load, so the user
+                gets immediate feedback the moment they hit search. */}
+            {(parsing || isLoading) ? (
               <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-slate-900/10 backdrop-blur-[1px]">
                 <div className="pointer-events-auto flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 px-7 py-6 text-center shadow-xl backdrop-blur">
                   <div className="relative flex h-12 w-12 items-center justify-center">

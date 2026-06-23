@@ -1,4 +1,5 @@
 // pulse-coach-v2 — unified account assistant.
+// redeploy 2026-06-23: reload rotated OPENAI_API_KEY secret into warm instances.
 //
 // Two modes:
 //   1. proactive_sweep   — scans user/account state, returns up to 5 ranked cards

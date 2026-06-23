@@ -37,6 +37,33 @@ function makeTileSource(styleId) {
         '&copy; <a href="https://www.openstreetmap.org/about" target="_blank">OpenStreetMap</a>',
     };
   }
+  // No Stadia key (VITE_STADIA_API_KEY unset in this env) — fall back to free
+  // tile providers that STILL differentiate the three layers. Previously every
+  // style returned the same OSM tiles, so Light/Dark/Satellite did nothing.
+  if (styleId === 'alidade_smooth_dark') {
+    return {
+      type: 'raster',
+      tiles: [
+        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+      ],
+      tileSize: 256,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    };
+  }
+  if (styleId === 'alidade_satellite') {
+    return {
+      type: 'raster',
+      // Esri World Imagery uses {z}/{y}/{x} order.
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics',
+    };
+  }
   return {
     type: 'raster',
     tiles: [

@@ -3,10 +3,10 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Library, Loader2, MapPin, FolderOpen, RefreshCw } from 'lucide-react';
+import { Library, Loader2, MapPin, FolderOpen, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { listMapSelections } from '@/api/pulse-map-selections';
-import { listPulseLists } from '@/features/pulse/pulseListsApi';
+import { listPulseLists, deletePulseList } from '@/features/pulse/pulseListsApi';
 
 function fmtRel(ts) {
   if (!ts) return '';
@@ -49,6 +49,21 @@ export default function LibraryPanel({ onLoadSelection }) {
   };
 
   useEffect(() => { load(); }, []);
+
+  const [deletingId, setDeletingId] = useState(null);
+  const handleDeleteList = async (l) => {
+    if (!window.confirm(`Delete the list "${l.name}"? This can't be undone.`)) return;
+    setDeletingId(l.id);
+    try {
+      await deletePulseList(l.id);
+      setLists((prev) => prev.filter((x) => x.id !== l.id));
+      toast.success(`Deleted "${l.name}"`);
+    } catch (e) {
+      toast.error(e?.message || 'Failed to delete list');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
@@ -121,18 +136,32 @@ export default function LibraryPanel({ onLoadSelection }) {
               <ul className="space-y-1.5">
                 {lists.map((l) => {
                   const count = l.company_count ?? l.member_count;
+                  const isDeleting = deletingId === l.id;
                   return (
-                    <li key={l.id}>
+                    <li
+                      key={l.id}
+                      className="flex items-center gap-1 rounded border border-slate-100 hover:border-cyan-300 hover:bg-cyan-50/30"
+                    >
                       <button
                         type="button"
                         onClick={() => navigate(`/app/lists/${l.id}`)}
-                        className="flex w-full items-center gap-2 rounded border border-slate-100 px-2 py-1.5 text-left hover:border-cyan-300 hover:bg-cyan-50/30"
+                        className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
                       >
                         <FolderOpen size={12} className="text-cyan-600 shrink-0" />
                         <span className="text-sm text-slate-800 truncate flex-1">{l.name}</span>
                         {count != null && (
                           <span className="text-[10px] text-slate-500 tabular-nums shrink-0">{count}</span>
                         )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteList(l); }}
+                        disabled={isDeleting}
+                        aria-label={`Delete list ${l.name}`}
+                        title="Delete list"
+                        className="shrink-0 px-2 py-1.5 text-slate-300 hover:text-red-600 disabled:opacity-50"
+                      >
+                        {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
                       </button>
                     </li>
                   );

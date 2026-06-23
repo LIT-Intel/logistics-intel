@@ -1,4 +1,5 @@
 // pulse-coach-classify — LLM-backed Pulse prompt classifier.
+// redeploy 2026-06-23: reload rotated OPENAI_API_KEY secret into warm instances.
 //
 // Augments the client-side heuristic parser with a stronger structured
 // extraction pass: pulls origins / destinations / industries / roles /
