@@ -44,7 +44,7 @@ const PROMPTS = [
 ];
 
 export default function PulseExploreTab() {
-  const { state, setFilters, setColor, setSize, setSelection } = useExploreState();
+  const { state, setFilters, setColor, setSize, setSelection, setView } = useExploreState();
   const { entitlements, isPlatformAdmin } = useEntitlements();
   const upgradeModal = useUpgradeModal();
   const [query, setQuery] = useState('');
@@ -136,12 +136,17 @@ export default function PulseExploreTab() {
   // Loads a saved map view (filters + map state).
   const onLoadSelection = useCallback((sel) => {
     if (!sel) return;
-    setFilters(sel.filters ?? {});
-    if (sel.map_state?.color_mode) setColor(sel.map_state.color_mode);
-    if (sel.map_state?.size_mode) setSize(sel.map_state.size_mode);
+    // ONE atomic state write (filters + color + size) so the saved view loads
+    // reliably every time, not just the first.
+    setView({
+      filters: sel.filters ?? {},
+      color: sel.map_state?.color_mode,
+      size: sel.map_state?.size_mode,
+    });
+    setResultsOpen(true); // surface the loaded results so it's visibly "loaded"
     toast.success(`Loaded view "${sel.name}"`);
     setToolPanel(null);
-  }, [setFilters, setColor, setSize]);
+  }, [setView]);
 
   // Auto-open the results drawer once data arrives (but never close
   // automatically — let the user collapse it manually).
