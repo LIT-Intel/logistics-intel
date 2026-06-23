@@ -19,7 +19,7 @@
 
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { Sparkles, Send, FileDown, Mail, Loader2 } from 'lucide-react';
-import { askPulseCoach } from '@/api/pulse';
+import { reasonOverExplore } from '@/api/pulse';
 import { generatePulseReportPdf } from './pulseReportPdf';
 import { emailPulseReport } from '@/api/pulse-report-email';
 import { toast } from 'sonner';
@@ -53,9 +53,10 @@ function renderMarkdown(md) {
   return <span dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-// Aggregate a per-key count from row entries, return top-N as a
-// readable string like "Maersk (42) · Hapag-Lloyd (18) · MSC (9)".
-function topN(rows, getter, n = 5) {
+// Aggregate a per-key count from row entries, return top-N as a structured
+// [{ label, count }] list. Used to feed the Coach precomputed aggregates
+// over ALL rows (not a prose blurb).
+function topN(rows, getter, n = 8) {
   const counts = new Map();
   for (const r of rows) {
     const items = getter(r);
@@ -68,45 +69,75 @@ function topN(rows, getter, n = 5) {
     }
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
-    .map(([k, c]) => `${k} (${c})`).join(' · ');
+    .map(([label, count]) => ({ label, count }));
 }
 
-// Build the context blurb prepended to every user question. Includes
-// every dimension we have in-hand so the coach can answer about
-// forwarders, brokers, ports, ZIP codes, HS codes, top carriers, top
-// lanes, freshness mix — not just the headline KPIs. Expanded to ~1500
-// chars max so the LLM has real grounding for any data question.
-function buildContextBlurb({ rows, insights, filters }) {
+// Parse a COUNT intent out of the question ("give me 2 companies", "top
+// 50", "show 1000"). Returns the requested N, or null. Done in JS so the
+// model never has to "count" — we slice the rows to N and let it narrate.
+function parseCountIntent(question) {
+  const q = String(question || '').toLowerCase();
+  // "top N", "show N", "give me N", "list N", "first N", "N companies/accounts"
+  const m =
+    q.match(/\b(?:top|show|give\s+me|list|first|pull|find|get)\s+(\d{1,5})\b/) ||
+    q.match(/\b(\d{1,5})\s+(?:companies|accounts|shippers|importers|exporters|firms|prospects|leads)\b/);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  if (!Number.isFinite(n) || n < 1) return null;
+  return Math.min(n, 5000);
+}
+
+// Trim a row down to the fields the Coach reasons over, so the payload
+// stays bounded even for large samples.
+function trimRow(r) {
+  return {
+    company_name: r?.company_name ?? null,
+    city: r?.city ?? null,
+    state: r?.state ?? null,
+    country: r?.country ?? null,
+    industry: r?.industry ?? null,
+    vertical: r?.vertical ?? null,
+    teu: r?.teu ?? null,
+    shipments: r?.shipments ?? null,
+    revenue: r?.revenue ?? null,
+    opportunity_composite_score: r?.opportunity_composite_score ?? null,
+    top_lanes: Array.isArray(r?.top_dimensions)
+      ? r.top_dimensions.slice(0, 3).map((d) => d?.lane).filter(Boolean)
+      : undefined,
+    top_forwarders: Array.isArray(r?.top_forwarders)
+      ? r.top_forwarders.slice(0, 3).map((f) => f?.name).filter(Boolean)
+      : undefined,
+  };
+}
+
+// Build the STRUCTURED snapshot the Coach reasons over: aggregates across
+// ALL rows + a capped, opportunity-sorted sample. Replaces the old prose
+// "context blurb" that was concatenated into the question string and
+// contaminated the server-side parser (the "country=United States" bug).
+function buildExploreSnapshot({ rows, insights, filters, question }) {
   const total = rows.length;
-  if (!total) return '';
-  const totalRev = rows.reduce((a, r) => {
-    const v = Number(r.revenue); return Number.isFinite(v) ? a + v : a;
+
+  // Sort once by opportunity score so both the sample and any COUNT slice
+  // are deterministic and meaningful.
+  const sorted = [...rows].sort(
+    (a, b) => (Number(b?.opportunity_composite_score) || 0) - (Number(a?.opportunity_composite_score) || 0),
+  );
+
+  // COUNT intent: slice exactly N; otherwise a representative top-60 sample.
+  const requested = parseCountIntent(question);
+  const sampleN = requested != null ? requested : 60;
+  const sampleRows = sorted.slice(0, sampleN).map(trimRow);
+
+  const sumTeu = rows.reduce((a, r) => {
+    const v = Number(r?.teu); return Number.isFinite(v) ? a + v : a;
   }, 0);
-  const totalTeu = insights?.totalTeu ?? 0;
-  const totalShipments = rows.reduce((a, r) => a + (Number(r.shipments) || 0), 0);
-
-  // Active filter readout
-  const filterParts = [];
-  if (filters?.name) filterParts.push(`name~"${filters.name}"`);
-  if (filters?.industry?.length) filterParts.push(`industry=${filters.industry.slice(0, 5).join(',')}`);
-  if (filters?.country?.length) filterParts.push(`country=${filters.country.slice(0, 5).join(',')}`);
-  if (filters?.geo?.regions?.length) filterParts.push(`regions=${filters.geo.regions.join(',')}`);
-  if (filters?.geo?.states?.length) filterParts.push(`states=${filters.geo.states.slice(0, 8).join(',')}`);
-  if (filters?.opportunity_types?.length) filterParts.push(`opp=${filters.opportunity_types.join(',')}`);
-  if (filters?.size?.teu_min || filters?.size?.teu_max) filterParts.push(`teu=${filters.size.teu_min ?? 0}-${filters.size.teu_max ?? '∞'}`);
-  if (filters?.freshness_state?.length) filterParts.push(`freshness=${filters.freshness_state.join(',')}`);
-
-  // Aggregations across every dimension we surface in row data
-  const topForwarders = topN(rows, (r) => r.top_forwarders, 5);
-  const topLanes = topN(rows, (r) => r.top_dimensions, 5);
-  const topCarriers = topN(rows, (r) => r.top_carrier || r.top_carriers, 5);
-  const topPortsLoad = topN(rows, (r) => r.top_port_of_loading || r.top_ports_of_loading, 5);
-  const topPortsDisch = topN(rows, (r) => r.top_port_of_discharge || r.top_ports_of_discharge, 5);
-  const topBrokers = topN(rows, (r) => r.top_customs_broker || r.top_customs_brokers, 5);
-  const topHs = topN(rows, (r) => r.top_hs_codes || r.top_hs, 5);
-  const topMetros = topN(rows, (r) => r.metro || r.city, 5);
-  const topZips = topN(rows, (r) => r.zip || r.postal_code, 5);
-  const topVerticals = topN(rows, (r) => r.vertical, 5);
+  const sumRev = rows.reduce((a, r) => {
+    const v = Number(r?.revenue); return Number.isFinite(v) ? a + v : a;
+  }, 0);
+  const sumShipments = rows.reduce((a, r) => a + (Number(r?.shipments) || 0), 0);
+  const teuVals = rows.map((r) => Number(r?.teu)).filter(Number.isFinite);
+  const avgTeu = teuVals.length ? Math.round(sumTeu / teuVals.length) : 0;
+  const teuGe500 = teuVals.filter((t) => t >= 500).length;
 
   const freshness = { live: 0, saved: 0, directory: 0 };
   for (const r of rows) {
@@ -114,28 +145,30 @@ function buildContextBlurb({ rows, insights, filters }) {
     if (freshness[chip] != null) freshness[chip]++;
   }
 
-  const top = rows.slice(0, 8).map((r) => r.company_name).filter(Boolean).join(', ');
+  const totals = {
+    account_count: total,
+    requested_count: requested,
+    sample_count: sampleRows.length,
+    sum_teu_12m: sumTeu,
+    avg_teu_12m: avgTeu,
+    sum_revenue: sumRev,
+    sum_shipments_12m: sumShipments,
+    accounts_with_teu_ge_500: teuGe500,
+    top_industries: insights?.topIndustries?.length
+      ? insights.topIndustries.slice(0, 8).map((x) => ({ label: x.label, pct: x.pct }))
+      : topN(rows, (r) => r.industry),
+    top_verticals: topN(rows, (r) => r.vertical),
+    top_states: topN(rows, (r) => r.state),
+    top_countries: insights?.topCountries?.length
+      ? insights.topCountries.slice(0, 8).map((x) => ({ label: x.label, pct: x.pct }))
+      : topN(rows, (r) => r.country),
+    top_metros: topN(rows, (r) => r.city),
+    top_lanes: topN(rows, (r) => r.top_dimensions),
+    top_forwarders: topN(rows, (r) => r.top_forwarders),
+    freshness_mix: freshness,
+  };
 
-  return [
-    `Context: ${total.toLocaleString()} accounts on the LIT Pulse Explorer map.`,
-    `Totals: revenue ${fmtMoneyM(totalRev)} · 12m TEU ${fmtNum(totalTeu)} · 12m shipments ${fmtNum(totalShipments)}.`,
-    insights?.topIndustries?.[0] ? `Top industry: ${insights.topIndustries[0].label} (${Math.round(insights.topIndustries[0].pct * 100)}%).` : null,
-    insights?.topCountries?.[0] ? `${Math.round(insights.topCountries[0].pct * 100)}% from ${insights.topCountries[0].label}.` : null,
-    topVerticals ? `Top verticals: ${topVerticals}.` : null,
-    topMetros ? `Top metros: ${topMetros}.` : null,
-    topZips ? `Top ZIPs: ${topZips}.` : null,
-    topLanes ? `Top lanes (origin→destination): ${topLanes}.` : null,
-    topPortsLoad ? `Top ports of loading: ${topPortsLoad}.` : null,
-    topPortsDisch ? `Top ports of discharge: ${topPortsDisch}.` : null,
-    topCarriers ? `Top carriers: ${topCarriers}.` : null,
-    topForwarders ? `Top forwarders: ${topForwarders}.` : null,
-    topBrokers ? `Top customs brokers: ${topBrokers}.` : null,
-    topHs ? `Top HS codes: ${topHs}.` : null,
-    `Data freshness mix: live=${freshness.live} · saved=${freshness.saved} · directory=${freshness.directory}.`,
-    filterParts.length ? `Active filters: ${filterParts.join(' · ')}.` : null,
-    top ? `Sample accounts: ${top}.` : null,
-    'Answer in plain prose grounded in this data. If the user asks about a dimension you do not see above, say so honestly rather than fabricate. Cite specific numbers when relevant.',
-  ].filter(Boolean).join(' ');
+  return { totals, sampleRows };
 }
 
 function ReportActions({ entry, rows, filters, summary, requirePdf }) {
@@ -292,10 +325,17 @@ export default function InsightsPanel({ rows, insights, filters, requireCoach, r
     }
     setInput('');
     setThread((prev) => [...prev, { question, answer: '', loading: true }]);
-    const context = buildContextBlurb({ rows, insights, filters });
-    const fullQuestion = `${context}\n\nUser question: ${question}`;
+    // Build a STRUCTURED snapshot (aggregates over all rows + a capped,
+    // opportunity-sorted sample). No prose blurb concatenated into the
+    // question — that's what contaminated the server parser before.
+    const { totals, sampleRows } = buildExploreSnapshot({ rows, insights, filters, question });
     try {
-      const resp = await askPulseCoach(fullQuestion);
+      const resp = await reasonOverExplore({
+        question,
+        filters: filters ?? {},
+        totals,
+        sampleRows,
+      });
       const answer = resp?.answer_md || 'No answer returned.';
       setThread((prev) => prev.map((t, i) => i === prev.length - 1 ? { question, answer, loading: false } : t));
     } catch (err) {
