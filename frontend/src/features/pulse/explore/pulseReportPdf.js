@@ -76,16 +76,28 @@ function stripMarkdown(md) {
     .replace(/\[(.+?)\]\(.+?\)/g, '$1');
 }
 
-function filterSummary(filters) {
-  if (!filters) return 'No active filters';
+// Reads the REAL Explorer filter shape ({ name, industry[], geo:{states,
+// regions, countries, cities}, size:{teu_min,...}, opportunity_types[],
+// freshness_state[] }). The old version read a flat shape that never existed,
+// so geo-filtered reports printed "No active filters". segmentLabel is the
+// extra coach-requested slice (e.g. "TEU >= 200").
+function filterSummary(filters, segmentLabel) {
+  const f = filters || {};
   const parts = [];
-  if (filters.industry?.length) parts.push(`Industry: ${filters.industry.slice(0, 4).join(', ')}`);
-  if (filters.country?.length) parts.push(`Country: ${filters.country.slice(0, 4).join(', ')}`);
-  if (filters.region) parts.push(`Region: ${filters.region}`);
-  if (filters.state?.length) parts.push(`State: ${filters.state.slice(0, 4).join(', ')}`);
-  if (filters.opportunity_type?.length) parts.push(`Opportunity: ${filters.opportunity_type.join(', ')}`);
-  if (filters.teu_min != null || filters.teu_max != null) parts.push(`TEU: ${filters.teu_min ?? 0}–${filters.teu_max ?? '∞'}`);
-  if (filters.freshness?.length) parts.push(`Freshness: ${filters.freshness.join(', ')}`);
+  if (f.name) parts.push(`Name: ${f.name}`);
+  if (f.industry?.length) parts.push(`Industry: ${f.industry.slice(0, 4).join(', ')}`);
+  const g = f.geo || {};
+  if (g.states?.length) parts.push(`State: ${g.states.slice(0, 6).join(', ')}`);
+  if (g.regions?.length) parts.push(`Region: ${g.regions.join(', ')}`);
+  if (g.region) parts.push(`Region: ${g.region}`);
+  if (g.countries?.length) parts.push(`Country: ${g.countries.slice(0, 4).join(', ')}`);
+  if (g.cities?.length) parts.push(`City: ${g.cities.slice(0, 4).join(', ')}`);
+  const sz = f.size || {};
+  if (sz.teu_min != null || sz.teu_max != null) parts.push(`TEU: ${sz.teu_min ?? 0}–${sz.teu_max ?? '∞'}`);
+  if (sz.shipments_min != null || sz.shipments_max != null) parts.push(`Shipments: ${sz.shipments_min ?? 0}–${sz.shipments_max ?? '∞'}`);
+  if (f.opportunity_types?.length) parts.push(`Opportunity: ${f.opportunity_types.join(', ')}`);
+  if (f.freshness_state?.length) parts.push(`Freshness: ${f.freshness_state.join(', ')}`);
+  if (segmentLabel) parts.push(segmentLabel);
   return parts.length ? parts.join('  •  ') : 'No active filters';
 }
 
@@ -96,6 +108,7 @@ export function generatePulseReportPdf({
   rows = [],
   filters,
   summary,
+  segmentLabel,
   returnBlob = false,
 }) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -138,7 +151,7 @@ export function generatePulseReportPdf({
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(...LIT_SLATE_600);
-  const filtersLines = doc.splitTextToSize(filterSummary(filters), pageW - margin * 2);
+  const filtersLines = doc.splitTextToSize(filterSummary(filters, segmentLabel), pageW - margin * 2);
   doc.text(filtersLines, margin, y + 13);
   y += 13 + filtersLines.length * 12 + 14;
 

@@ -468,6 +468,27 @@ function normalizeIndexRow(r: any): Row {
   } as Row;
 }
 
+// True only when EVERY active filter is one lit_company_index can satisfy
+// (name, country, city, total_teu, total_shipments). The index has no state /
+// region / industry / vertical / revenue / employees / opportunity columns, so
+// the presence of any of those filters means index rows can't be confirmed to
+// match -> exclude the index entirely rather than leak non-matching companies.
+function indexCanSatisfy(f: Filters): boolean {
+  if (f.geo?.states?.length) return false;
+  if (f.geo?.regions?.length) return false;
+  if (f.geo?.region) return false;
+  if (f.geo?.metros?.length) return false;
+  if (f.industry?.length) return false;
+  if (
+    f.commercial &&
+    (f.commercial.revenue_min != null || f.commercial.revenue_max != null ||
+      f.commercial.employees_min != null || f.commercial.employees_max != null)
+  ) return false;
+  if (f.opportunity_score_min != null || f.opportunity_score_max != null) return false;
+  if (f.opportunity_types?.length) return false;
+  return true;
+}
+
 async function fetchIndex(admin: any, f: Filters): Promise<Row[]> {
   // Caller decides whether to invoke this at all (skipped for
   // dataset_filter === "directory_only"). Here we only build the query.
@@ -917,7 +938,14 @@ Deno.serve(async (req: Request) => {
   // The index cache (lit_company_index) is IY-search-sourced, so it counts as
   // "live-ish" provenance. Surface it on "all" and "live_only", skip it on
   // "directory_only" (which means curated-corpus-only).
-  const includeIndex = dataset !== "directory_only";
+  //
+  // CRUCIAL: lit_company_index has only name/country/city/total_teu/
+  // total_shipments — NO state, region, industry, vertical, revenue, employees
+  // or opportunity scores. So if the search filters on any of those, index rows
+  // can't be confirmed to match and would POLLUTE the result (e.g. a non-Texas
+  // IY company leaking into "companies in texas"). Include the index ONLY when
+  // every active filter is one the index can actually satisfy.
+  const includeIndex = dataset !== "directory_only" && indexCanSatisfy(filters);
 
   const [directoryRows, liveRows, indexRows] = await Promise.all([
     dataset === "live_only" ? Promise.resolve([] as Row[]) : fetchDirectory(admin, filters),

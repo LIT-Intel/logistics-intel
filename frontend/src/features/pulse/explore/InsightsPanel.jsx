@@ -87,6 +87,53 @@ function parseCountIntent(question) {
   return Math.min(n, 5000);
 }
 
+// Parse a "segment" request out of the coach question so a generated report can
+// be scoped to JUST what was asked ("…with 200 TEU or more", "100+ shipments",
+// "importing from China") instead of dumping the whole result set. Operates on
+// fields already present on each row (teu / shipments / top_dimensions lanes).
+function num(s) { return Number(String(s).replace(/,/g, '')); }
+export function parseReportSegment(question) {
+  const q = ` ${String(question || '').toLowerCase()} `;
+  const seg = { teuMin: null, teuMax: null, shipMin: null, shipMax: null, lane: null };
+  const labels = [];
+  const threshold = (unit) => {
+    const min = q.match(new RegExp(`(?:over|above|at least|minimum|min|more than|greater than|>=?\\s*)\\s*(\\d[\\d,]*)\\s*${unit}`))
+      || q.match(new RegExp(`(\\d[\\d,]*)\\s*\\+?\\s*${unit}\\s*(?:or more|or above|or higher|and (?:up|above|over|more)|plus)`))
+      || q.match(new RegExp(`(\\d[\\d,]*)\\s*\\+\\s*${unit}`));
+    const max = q.match(new RegExp(`(?:under|below|less than|fewer than|at most|max(?:imum)?|<=?\\s*)\\s*(\\d[\\d,]*)\\s*${unit}`));
+    return { min: min ? num(min[1]) : null, max: max ? num(max[1]) : null };
+  };
+  const teu = threshold('teu\\b');
+  seg.teuMin = teu.min; seg.teuMax = teu.max;
+  const ship = threshold('(?:shipments?|bols?)\\b');
+  seg.shipMin = ship.min; seg.shipMax = ship.max;
+  const lm = q.match(/\b(?:import(?:ing|s|ed)?\s+from|sourcing\s+from|from|via|through|out of)\s+([a-z][a-z .'-]{1,28}?)(?:\s+(?:to|and|with|that|who|which|importing|exporting|by|,|\.)|\s*$)/);
+  if (lm && lm[1].trim().length > 1) seg.lane = lm[1].trim();
+  if (seg.teuMin != null) labels.push(`TEU ≥ ${seg.teuMin.toLocaleString()}`);
+  if (seg.teuMax != null) labels.push(`TEU ≤ ${seg.teuMax.toLocaleString()}`);
+  if (seg.shipMin != null) labels.push(`Shipments ≥ ${seg.shipMin.toLocaleString()}`);
+  if (seg.shipMax != null) labels.push(`Shipments ≤ ${seg.shipMax.toLocaleString()}`);
+  if (seg.lane) labels.push(`Lane ~ "${seg.lane}"`);
+  return { seg, label: labels.join('  •  '), active: labels.length > 0 };
+}
+
+export function applyReportSegment(rows, seg) {
+  if (!seg) return rows;
+  return rows.filter((r) => {
+    const teu = Number(r.teu) || 0;
+    const ship = Number(r.shipments) || 0;
+    if (seg.teuMin != null && !(teu >= seg.teuMin)) return false;
+    if (seg.teuMax != null && !(teu <= seg.teuMax)) return false;
+    if (seg.shipMin != null && !(ship >= seg.shipMin)) return false;
+    if (seg.shipMax != null && !(ship <= seg.shipMax)) return false;
+    if (seg.lane) {
+      const dims = Array.isArray(r.top_dimensions) ? r.top_dimensions : [];
+      if (!dims.some((d) => String(d?.lane ?? '').toLowerCase().includes(seg.lane))) return false;
+    }
+    return true;
+  });
+}
+
 // Trim a row down to the fields the Coach reasons over, so the payload
 // stays bounded even for large samples.
 function trimRow(r) {
@@ -176,6 +223,22 @@ function ReportActions({ entry, rows, filters, summary, requirePdf }) {
   const [sending, setSending] = useState(false);
   const [email, setEmail] = useState('');
 
+  // Scope the report to what the question actually asked: a TEU/shipments/lane
+  // segment and/or a count ("top N"), instead of dumping the full result set.
+  const { reportRows, segmentLabel } = useMemo(() => {
+    const { seg, label, active } = parseReportSegment(entry.question);
+    let out = active ? applyReportSegment(rows, seg) : rows;
+    const labels = label ? [label] : [];
+    const n = parseCountIntent(entry.question);
+    if (n != null) {
+      out = [...out]
+        .sort((a, b) => (Number(b.opportunity_composite_score) || 0) - (Number(a.opportunity_composite_score) || 0))
+        .slice(0, n);
+      labels.push(`Top ${n.toLocaleString()}`);
+    }
+    return { reportRows: out, segmentLabel: labels.join('  •  ') || undefined };
+  }, [entry.question, rows]);
+
   function onDownload() {
     // Trial-preview gating: trial users get the upgrade modal instead.
     if (requirePdf && !requirePdf()) return;
@@ -184,11 +247,16 @@ function ReportActions({ entry, rows, filters, summary, requirePdf }) {
         title: 'LIT Pulse Explorer Report',
         question: entry.question,
         answerMd: entry.answer,
-        rows,
+        rows: reportRows,
         filters,
         summary,
+        segmentLabel,
       });
-      toast.success('Report PDF downloaded');
+      toast.success(
+        segmentLabel
+          ? `Report PDF downloaded (${reportRows.length.toLocaleString()} accounts)`
+          : 'Report PDF downloaded'
+      );
     } catch (err) {
       toast.error(err?.message ?? 'PDF export failed');
     }
@@ -207,9 +275,10 @@ function ReportActions({ entry, rows, filters, summary, requirePdf }) {
         title: 'LIT Pulse Explorer Report',
         question: entry.question,
         answerMd: entry.answer,
-        rows,
+        rows: reportRows,
         filters,
         summary,
+        segmentLabel,
         returnBlob: true,
       });
       const base64 = await blobToBase64(pdfBlob);
