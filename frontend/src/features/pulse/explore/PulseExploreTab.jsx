@@ -5,7 +5,7 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
-import { Compass, Sparkles, ChevronDown, ChevronUp, Table2, Lasso, BoxSelect } from 'lucide-react';
+import { Compass, Sparkles, ChevronDown, ChevronUp, Table2, Lasso, BoxSelect, Maximize2, Minimize2 } from 'lucide-react';
 import { useExploreState } from './useExploreState';
 import { useExploreAccounts } from './useExploreAccounts';
 import { useExploreInsights } from './useExploreInsights';
@@ -57,6 +57,13 @@ export default function PulseExploreTab() {
   const [saveListOpen, setSaveListOpen] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(false); // bottom drawer collapsed by default
+  const [resultsMaximized, setResultsMaximized] = useState(false); // near-fullscreen results
+  // Toggling open always drops out of maximized so the user gets a predictable
+  // 40% drawer first, then can maximize from there.
+  const toggleResultsOpen = useCallback(() => {
+    setResultsOpen((v) => !v);
+    setResultsMaximized(false);
+  }, []);
   const [mapBbox, setMapBbox] = useState(null); // [w,s,e,n] from MapLibre
   const [lassoActive, setLassoActive] = useState(false);
   const [toolPanel, setToolPanel] = useState(null); // 'analytics' | 'insights' | 'library' | 'layers' | null
@@ -394,7 +401,7 @@ export default function PulseExploreTab() {
               results drawer is open. */}
           <div
             className={`relative border-b border-slate-200 transition-[height] duration-200 ${
-              resultsOpen ? 'h-3/5' : 'flex-1'
+              resultsMaximized ? 'h-[12%]' : resultsOpen ? 'h-3/5' : 'flex-1'
             }`}
           >
             <ExploreMap
@@ -525,13 +532,13 @@ export default function PulseExploreTab() {
 
           {/* Results drawer — header bar always visible (so user knows
               they can pop it open); body only renders when expanded. */}
-          <div className="flex flex-col" style={{ height: resultsOpen ? '40%' : 'auto' }}>
-            <button
-              type="button"
-              onClick={() => setResultsOpen((v) => !v)}
-              className="flex items-center justify-between gap-2 border-y border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700"
-            >
-              <span className="inline-flex items-center gap-1.5">
+          <div className="flex flex-col" style={{ height: resultsMaximized ? '88%' : resultsOpen ? '40%' : 'auto' }}>
+            <div className="flex items-center justify-between gap-2 border-y border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700">
+              <button
+                type="button"
+                onClick={toggleResultsOpen}
+                className="inline-flex items-center gap-1.5 hover:text-slate-900"
+              >
                 <Table2 size={13} className="text-slate-500" />
                 Results
                 {fetchEnabled && (
@@ -539,9 +546,29 @@ export default function PulseExploreTab() {
                     {isLoading ? '· loading…' : `· ${rows.length.toLocaleString()} accounts`}
                   </span>
                 )}
-              </span>
-              {resultsOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-            </button>
+              </button>
+              <div className="flex items-center gap-0.5">
+                {resultsOpen && (
+                  <button
+                    type="button"
+                    onClick={() => setResultsMaximized((v) => !v)}
+                    aria-label={resultsMaximized ? 'Restore results size' : 'Maximize results'}
+                    title={resultsMaximized ? 'Restore' : 'Maximize'}
+                    className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                  >
+                    {resultsMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={toggleResultsOpen}
+                  aria-label={resultsOpen ? 'Collapse results' : 'Expand results'}
+                  className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                >
+                  {resultsOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                </button>
+              </div>
+            </div>
             {resultsOpen && (
               <>
                 <SelectionActionBar
