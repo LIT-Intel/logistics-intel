@@ -238,9 +238,9 @@ specific company lookup ("Walmart", "Tesla", "Q Cells US", "Apple Inc",
 proper-noun structure. If the query is clearly NOT a brand lookup
 (e.g. "vulnerable incumbents in texas"), leave "name" as "".
 
-REGIONS — populate `geo.regions` with ONE OR MORE region keys. Combine
+REGIONS — populate \`geo.regions\` with ONE OR MORE region keys. Combine
 when the user mentions multiple ("west coast and southeast" →
-["west_coast","southeast"]). Use empty array `[]` when no region is
+["west_coast","southeast"]). Use empty array \`[]\` when no region is
 mentioned. Mapping:
 - "southeast" / "south east US" → "southeast"
 - "west coast" / "pacific" → "west_coast"
