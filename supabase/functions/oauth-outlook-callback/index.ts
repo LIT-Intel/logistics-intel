@@ -26,6 +26,13 @@ const log = createLogger("oauth-outlook-callback");
 const OUTLOOK_SCOPES = [
   "https://graph.microsoft.com/Mail.Send",
   "https://graph.microsoft.com/User.Read",
+  // Mail.Read MUST be in the token-exchange scope set: the access token
+  // returned here is used immediately below to POST the Graph change-
+  // subscription on me/mailFolders('Inbox')/messages (reply detection),
+  // which requires Mail.Read. Without it the subscription POST 403s and
+  // reply detection never arms. Must stay in lockstep with the consent
+  // scopes requested in email-oauth-start / oauth-outlook-start.
+  "https://graph.microsoft.com/Mail.Read",
   "offline_access",
 ];
 

@@ -3006,8 +3006,128 @@ export async function getIyCompanyProfile({
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Cache-first Company Search
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Every live ImportYeti Company-Search call bills a `company_search` credit.
+// But the proxy already writes up to 25 hits of every search into
+// lit_company_index (free), and lit_company_search_results holds richer KPIs
+// for previously-viewed companies. So a repeat search for a name we've seen
+// before can be served entirely from Supabase — ZERO IY credits.
+//
+// Strategy: searchShippers() FIRST queries the cache by name (ILIKE). If we
+// get a usable match, we return it WITHOUT touching the proxy. We only fall
+// through to the paid live call on a cache MISS or an explicit
+// `forceRefresh: true` ("Refresh from ImportYeti" affordance in the UI).
+
+// Build an IyShipperHit from a lit_company_index row (+ optional KPI overlay
+// from lit_company_search_results), matching the shape the proxy returns so
+// downstream normalization (normalizeCompanySearchResults / overlay) is
+// unchanged.
+function cacheRowToHit(idx: any, kpi: any | null): IyShipperHit {
+  const slug = normalizeCompanyIdToSlug(idx.company_id || idx.company_name || "");
+  const name = kpi?.company_name || idx.company_name || slug;
+  const website = kpi?.website ?? idx.website ?? null;
+  const countryCode = kpi?.country_code ?? idx.country ?? null;
+  return {
+    key: `company/${slug}`,
+    companyId: slug,
+    companyKey: slug,
+    name,
+    title: name,
+    domain: website ? String(website).replace(/^https?:\/\//i, "") : null,
+    website: website ? `https://${String(website).replace(/^https?:\/\//i, "")}` : null,
+    address: kpi?.city ?? idx.city ?? null,
+    city: kpi?.city ?? idx.city ?? null,
+    state: null,
+    country: countryCode === "US" ? "United States" : countryCode === "CA" ? "Canada" : (countryCode ?? null),
+    countryCode: countryCode ?? null,
+    totalShipments: coerceNumber(kpi?.total_shipments) ?? coerceNumber(idx.total_shipments) ?? 0,
+    shipmentsLast12m: coerceNumber(kpi?.latest_year_shipments) ?? coerceNumber(idx.latest_year_shipments) ?? null,
+    teusLast12m: coerceNumber(kpi?.latest_year_teu) ?? coerceNumber(idx.latest_year_teu) ?? coerceNumber(idx.total_teu) ?? null,
+    mostRecentShipment: kpi?.last_shipment_date ?? idx.last_shipment_date ?? null,
+    lastShipmentDate: kpi?.last_shipment_date ?? idx.last_shipment_date ?? null,
+    latestYearShipments: coerceNumber(kpi?.latest_year_shipments) ?? coerceNumber(idx.latest_year_shipments) ?? null,
+    latestYearTeu: coerceNumber(kpi?.latest_year_teu) ?? coerceNumber(idx.latest_year_teu) ?? null,
+    currentYearShipments: coerceNumber(kpi?.latest_year_shipments) ?? coerceNumber(idx.latest_year_shipments) ?? null,
+    currentYearTeu: coerceNumber(kpi?.latest_year_teu) ?? coerceNumber(idx.latest_year_teu) ?? null,
+    topContainerLength: kpi?.top_container_length ?? idx.top_container_length ?? null,
+    fclShipments12m: coerceNumber(kpi?.fcl_shipments) ?? coerceNumber(idx.fcl_shipments) ?? null,
+    lclShipments12m: coerceNumber(kpi?.lcl_shipments) ?? coerceNumber(idx.lcl_shipments) ?? null,
+    topSuppliers: [],
+  };
+}
+
+// Query the Supabase cache for a name. Returns null on miss so the caller
+// falls through to the paid live call. Never throws — a cache error is a miss.
+async function searchShippersFromCache(
+  q: string,
+  page: number,
+  pageSize: number,
+): Promise<IySearchResponse | null> {
+  try {
+    const like = `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+    const from = (page - 1) * pageSize;
+    const { data: idxRows, error: idxErr } = await supabase
+      .from("lit_company_index")
+      .select(
+        "company_id, company_name, country, city, last_shipment_date, total_shipments, total_teu, " +
+        "latest_year, latest_year_shipments, latest_year_teu, top_container_length, " +
+        "fcl_shipments, lcl_shipments, website, country_code",
+      )
+      .or(`company_name.ilike.${like},company_id.ilike.${like}`)
+      .order("total_shipments", { ascending: false, nullsFirst: false })
+      .range(from, from + pageSize - 1);
+
+    if (idxErr || !Array.isArray(idxRows) || idxRows.length === 0) return null;
+
+    // Overlay richer KPIs from lit_company_search_results by slug.
+    const slugs = Array.from(
+      new Set(idxRows.map((r: any) => normalizeCompanyIdToSlug(r.company_id || r.company_name || "")).filter(Boolean)),
+    );
+    let kpiMap = new Map<string, any>();
+    if (slugs.length > 0) {
+      const { data: kpiRows } = await supabase
+        .from("lit_company_search_results")
+        .select("*")
+        .in("company_id", slugs);
+      kpiMap = new Map(
+        (Array.isArray(kpiRows) ? kpiRows : []).map((r: any) => [
+          normalizeCompanyIdToSlug(r.company_id),
+          r,
+        ]),
+      );
+    }
+
+    const results = idxRows.map((r: any) =>
+      cacheRowToHit(r, kpiMap.get(normalizeCompanyIdToSlug(r.company_id || r.company_name || "")) ?? null),
+    );
+
+    // Total = count of matches in the cache (best-effort; head count).
+    let total = results.length;
+    try {
+      const { count } = await supabase
+        .from("lit_company_index")
+        .select("company_id", { count: "exact", head: true })
+        .or(`company_name.ilike.${like},company_id.ilike.${like}`);
+      if (typeof count === "number") total = count;
+    } catch { /* keep page-length total */ }
+
+    return {
+      ok: true,
+      results,
+      total,
+      meta: { q, page, pageSize },
+    };
+  } catch (err) {
+    console.warn("[searchShippers] cache lookup failed (will try live):", err);
+    return null;
+  }
+}
+
 export async function searchShippers(
-  params: { q: string; page?: number; pageSize?: number },
+  params: { q: string; page?: number; pageSize?: number; forceRefresh?: boolean },
   signal?: AbortSignal,
 ): Promise<IySearchResponse> {
   const q = typeof params.q === "string" ? params.q.trim() : "";
@@ -3022,6 +3142,7 @@ export async function searchShippers(
       Number.isFinite(Number(params.pageSize)) ? Number(params.pageSize) : 25,
     ),
   );
+  const forceRefresh = params.forceRefresh === true;
 
   if (!q) {
     return {
@@ -3034,6 +3155,16 @@ export async function searchShippers(
 
   if (isDevMode()) {
     return devSearchShippers({ q, page, pageSize });
+  }
+
+  // Cache-first: serve previously-searched companies from Supabase with ZERO
+  // ImportYeti credits. Only a cache miss OR an explicit refresh hits the
+  // paid live endpoint below.
+  if (!forceRefresh) {
+    const cached = await searchShippersFromCache(q, page, pageSize);
+    if (cached && cached.results.length > 0) {
+      return { ...cached, meta: { ...cached.meta, q, page, pageSize, cache: true } as any };
+    }
   }
 
   const headers = await getAuthHeaders();

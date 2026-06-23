@@ -35,6 +35,7 @@ import {
   LayoutGrid,
   List as ListIcon,
   ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -73,6 +74,9 @@ export default function CompanySearchTab() {
   const [mapPoints, setMapPoints] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [unmappedCount, setUnmappedCount] = useState(0);
+  // True when the last result set was served from the free Supabase cache
+  // (no live ImportYeti credit spent). Drives the "Refresh data" affordance.
+  const [servedFromCache, setServedFromCache] = useState(false);
   const inputRef = useRef(null);
 
   // Bottom panel — collapsible. Default OPEN on desktop, CLOSED on
@@ -160,9 +164,12 @@ export default function CompanySearchTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const runSearch = useCallback(async (rawQ) => {
+  // `forceRefresh` skips the free Supabase cache and forces a fresh live pull
+  // (which consumes a search credit). Default path is cache-first / credit-free.
+  const runSearch = useCallback(async (rawQ, opts) => {
     const q = (rawQ ?? query).trim();
     if (!q) return;
+    const forceRefresh = opts?.forceRefresh === true;
     setSearching(true);
     setError('');
     setSubmitted(q);
@@ -174,7 +181,8 @@ export default function CompanySearchTab() {
     }, { replace: true });
 
     try {
-      const resp = await searchShippers({ q, page: 1, pageSize: PAGE_SIZE });
+      const resp = await searchShippers({ q, page: 1, pageSize: PAGE_SIZE, forceRefresh });
+      setServedFromCache(resp?.meta?.cache === true);
       if (!resp?.ok || !Array.isArray(resp.results)) {
         throw new Error(resp?.message || 'Company search failed.');
       }
@@ -212,6 +220,7 @@ export default function CompanySearchTab() {
       setMapPoints([]);
       setUnmappedCount(0);
       setAnalytics(null);
+      setServedFromCache(false);
     } finally {
       setSearching(false);
     }
@@ -374,6 +383,27 @@ export default function CompanySearchTab() {
             {analytics?.mappedLocations > 0
               ? <Chip label="Mapped" value={`${analytics.mappedLocations}`} />
               : null}
+            {/* Refresh affordance — forces a fresh live data pull. The default
+                search path is served from our cache (no credit); this button
+                lets the user explicitly re-fetch the latest. Shown once a
+                search has run; highlighted subtly when the current results
+                came from cache so the user knows fresher data is available. */}
+            {hasSearched ? (
+              <button
+                type="button"
+                onClick={() => runSearch(submitted, { forceRefresh: true })}
+                disabled={searching}
+                title="Pull the latest data for this search"
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1 transition disabled:opacity-50 ${
+                  servedFromCache
+                    ? 'bg-amber-400/[0.14] text-amber-100 ring-amber-300/40 hover:bg-amber-400/25'
+                    : 'bg-white/[0.06] text-cyan-100 ring-white/15 hover:bg-white/10'
+                }`}
+              >
+                <RefreshCw size={11} className={searching ? 'animate-spin' : ''} />
+                Refresh data
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>

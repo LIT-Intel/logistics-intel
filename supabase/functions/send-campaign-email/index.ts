@@ -191,6 +191,12 @@ async function rewriteLinks(
 const OUTLOOK_SCOPES = [
   "https://graph.microsoft.com/Mail.Send",
   "https://graph.microsoft.com/User.Read",
+  // Mail.Read kept in lockstep with the connect-time consent scopes
+  // (email-oauth-start / oauth-outlook-callback). On the MS refresh-token
+  // grant the requested scope narrows the issued token, so omitting
+  // Mail.Read here would mint send-only tokens — harmless for the send
+  // path but a footgun if this token were ever reused for reply detection.
+  "https://graph.microsoft.com/Mail.Read",
   "offline_access",
 ];
 
@@ -1154,6 +1160,14 @@ serve(async (req) => {
         subject,
         provider: sender.provider,
         message_id: sendRes.ok ? sendRes.messageId : null,
+        // provider_event_id is the canonical column reply-receiver correlates
+        // inbound In-Reply-To / References against (see _shared/reply-correlate.ts
+        // + the uq_lit_outreach_history_provider_event index on
+        // (provider, provider_event_id)). It MUST carry the same RFC 5322
+        // Message-ID we stamp on the outbound mail, otherwise every reply
+        // misses and reply-detection silently never fires. message_id (above)
+        // is kept for the engagement-backfill joins.
+        provider_event_id: sendRes.ok ? sendRes.messageId : null,
         occurred_at: new Date().toISOString(),
         failed_at: sendRes.ok ? null : new Date().toISOString(),
         error_message: sendRes.ok ? null : sendRes.error?.slice(0, 500),
