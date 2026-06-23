@@ -560,7 +560,10 @@ function clampScore(n: number): number {
 async function parseWithGemini(query: string): Promise<{ parsed: ExplorerFilters; model: string } | null> {
   if (!GEMINI_API_KEY) return null;
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`;
+    // gemini-2.0-flash-exp was a preview model and is now RETIRED -> every call
+    // 404'd, so the parser silently fell through to empty filters and Pulse
+    // Explorer NL search returned nothing. Use the current GA model.
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -574,7 +577,7 @@ async function parseWithGemini(query: string): Promise<{ parsed: ExplorerFilters
     const text = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
     const raw = JSON.parse(cleaned);
-    return { parsed: sanitize(raw, query), model: "gemini-2.0-flash-exp" };
+    return { parsed: sanitize(raw, query), model: "gemini-2.0-flash" };
   } catch (err) {
     console.warn("[pulse-explore-parse] gemini failed", String(err));
     return null;
