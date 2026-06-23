@@ -134,7 +134,7 @@ type Row = Record<string, unknown> & {
   country: string | null;
   industry: string | null;
   vertical: string | null;
-  data_sources: ("directory" | "live")[];
+  data_sources: ("directory" | "live" | "index")[];
   opportunity_consolidation_score: number;
   opportunity_vulnerable_score: number;
   opportunity_velocity_score: number;
@@ -252,6 +252,20 @@ function statesToFullNames(codes: string[]): string[] {
   return codes.map((c) => STATE_CODE_TO_NAME[c.toUpperCase()] ?? c);
 }
 
+// Normalize a single state value (code OR full name OR null) to the
+// directory's full-name form. Two-letter codes map via STATE_CODE_TO_NAME;
+// anything else (already-full names like 'California', non-US regions like
+// 'British Columbia', or null) passes through unchanged. Used to align
+// lit_companies (codes/null) with lit_company_directory (full names) before
+// dedup so the same real company doesn't split into two rows.
+function normalizeStateToFullName(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  if (s.length === 2) return STATE_CODE_TO_NAME[s.toUpperCase()] ?? s;
+  return s;
+}
+
 function normalizeDirectoryRow(r: any): Row {
   return {
     id: r.id,
@@ -339,13 +353,19 @@ function normalizeLiveRow(r: any): Row {
   const country = r.country_code === "US" ? "United States"
     : r.country_code === "CA" ? "Canada"
     : r.country_code ?? null;
+  // Normalize state to the directory's full-name form ('TX' → 'Texas') BEFORE
+  // dedup so a live row and a directory row for the same real company collapse
+  // instead of rendering twice. lit_companies stores codes (or null); the
+  // directory stores full names. Pass through anything we don't recognize
+  // (already a full name, a non-US region, etc.).
+  const state = normalizeStateToFullName(r.state);
   return {
     id: r.id,
     company_name: r.name ?? "",
     canonical_name: canonical,
     domain: r.domain ?? null,
     city: r.city ?? null,
-    state: r.state ?? null,
+    state,
     country,
     industry: r.industry ?? null,
     vertical: null,
@@ -373,52 +393,290 @@ function normalizeLiveRow(r: any): Row {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Third source: lit_company_index (free IY search cache)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// lit_company_index caches every ImportYeti Company-Search hit (written
+// 25/search by importyeti-proxy, ZERO extra IY credits). Surfacing it here is
+// what makes "no company missed": anything a user has ever searched in Company
+// Search becomes discoverable in the Explorer.
+//
+// The table is firmographically SPARSE: it has company_id (slug),
+// company_name, country (as an ISO-ish code like 'US'), a free-text `city`
+// blob (often a full address), shipment/TEU counts, and FCL/LCL splits. It has
+// NO state, industry, vertical, domain, revenue, or opportunity columns. So:
+//   * We apply ONLY the filters the columns can satisfy (name + country +
+//     shipments/teu size). Filters the table can't satisfy (state, industry,
+//     revenue, employees, opportunity score, cities) are SKIPPED for this
+//     source rather than dropping the row — the directory/live sources still
+//     enforce those, and an index row that survives is a lowest-priority,
+//     "basic entry" fallback.
+//   * It is inserted LAST in mergeAndDedup, so directory/live always win on
+//     every shared field (richer firmographics never get overwritten).
+
+// Map the index's country code to the directory's full-name form so merged
+// rows read consistently. Mirrors normalizeLiveRow's country handling.
+function indexCountryToName(code: string | null | undefined): string | null {
+  if (!code) return null;
+  const c = String(code).trim().toUpperCase();
+  if (c === "US" || c === "USA") return "United States";
+  if (c === "CA" || c === "CAN") return "Canada";
+  return String(code).trim() || null;
+}
+
+function normalizeIndexRow(r: any): Row {
+  const name = r.company_name ?? "";
+  return {
+    id: `idx:${r.company_id}`,
+    company_name: name,
+    // Prefer the migration's generated column; derive it if the column isn't
+    // present yet (pre-migration) so the function never depends on the DDL.
+    canonical_name: r.canonical_name ?? canonicalizeName(name),
+    domain: null,
+    // The index `city` is a free-text address blob; keep it as-is for display
+    // but it is NOT used for the city filter (which only the structured
+    // directory/live columns can satisfy reliably).
+    city: r.city ?? null,
+    state: null,
+    country: indexCountryToName(r.country),
+    latitude: null,
+    longitude: null,
+    industry: null,
+    vertical: null,
+    employee_count: null,
+    revenue: null,
+    teu: r.total_teu != null ? Number(r.total_teu) : (r.latest_year_teu != null ? Number(r.latest_year_teu) : null),
+    shipments: r.total_shipments != null ? Number(r.total_shipments) : null,
+    lcl: r.lcl_shipments != null ? Number(r.lcl_shipments) : null,
+    value_usd: null,
+    top_dimensions: null,
+    top_forwarders: null,
+    gp_potential: null,
+    consignee_email_1: null,
+    consignee_phone_1: null,
+    opportunity_consolidation_score: 0,
+    opportunity_vulnerable_score: 0,
+    opportunity_velocity_score: 0,
+    opportunity_defend_score: 0,
+    opportunity_composite_score: 0,
+    data_sources: ["index"] as any,
+    // source_company_key lets freshness + defend joins work for index rows
+    // exactly like live rows (both key off the IY slug).
+    source_company_key: r.company_id ?? null,
+    last_refreshed_at: r.updated_at ?? null,
+    freshness: { chip: "directory", age_hours: null, last_refreshed_at: r.updated_at ?? null },
+  } as Row;
+}
+
+async function fetchIndex(admin: any, f: Filters): Promise<Row[]> {
+  // Caller decides whether to invoke this at all (skipped for
+  // dataset_filter === "directory_only"). Here we only build the query.
+  const indexColumns =
+    "company_id, company_name, country, city, total_shipments, total_teu, " +
+    "latest_year_teu, lcl_shipments, updated_at, canonical_name";
+  // Country filter: the index stores codes, so translate the requested
+  // full-name countries back to the codes the column holds (best-effort).
+  const countryCodes = (f.geo?.countries ?? [])
+    .map((c) => {
+      const v = c.trim().toLowerCase();
+      if (v === "united states" || v === "usa" || v === "us") return "US";
+      if (v === "canada" || v === "ca") return "CA";
+      return c.trim();
+    })
+    .filter(Boolean);
+
+  const out: Row[] = [];
+  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
+    let q = admin.from("lit_company_index").select(indexColumns);
+    if (f.name?.trim()) q = q.ilike("company_name", `%${f.name.trim()}%`);
+    if (countryCodes.length) q = q.in("country", countryCodes);
+    // Size filters the index CAN satisfy (totals, not 12m — close enough for a
+    // fallback entry; richer sources override on merge).
+    if (f.size?.shipments_min != null) q = q.gte("total_shipments", f.size.shipments_min);
+    if (f.size?.shipments_max != null) q = q.lte("total_shipments", f.size.shipments_max);
+    if (f.size?.teu_min != null) q = q.gte("total_teu", f.size.teu_min);
+    if (f.size?.teu_max != null) q = q.lte("total_teu", f.size.teu_max);
+    q = q.range(from, from + PAGE_SIZE - 1);
+    const { data, error } = await q;
+    if (error) {
+      // Most likely cause pre-migration: canonical_name column missing. Retry
+      // once without it so the Explorer keeps working before the DDL lands.
+      if (/canonical_name/i.test(error.message ?? "")) {
+        const fallback = await fetchIndexWithoutCanonical(admin, f, countryCodes, from);
+        out.push(...fallback);
+        break;
+      }
+      console.error("[pulse-explore] index page failed", { from, error });
+      break;
+    }
+    if (!data || data.length === 0) break;
+    for (const r of data) out.push(normalizeIndexRow(r as any));
+    if (data.length < PAGE_SIZE) break;
+  }
+  return out;
+}
+
+// Pre-migration safety net: same query minus the generated column.
+async function fetchIndexWithoutCanonical(
+  admin: any,
+  f: Filters,
+  countryCodes: string[],
+  startFrom: number,
+): Promise<Row[]> {
+  const cols =
+    "company_id, company_name, country, city, total_shipments, total_teu, " +
+    "latest_year_teu, lcl_shipments, updated_at";
+  const out: Row[] = [];
+  for (let from = startFrom; from < MAX_ROWS; from += PAGE_SIZE) {
+    let q = admin.from("lit_company_index").select(cols);
+    if (f.name?.trim()) q = q.ilike("company_name", `%${f.name.trim()}%`);
+    if (countryCodes.length) q = q.in("country", countryCodes);
+    if (f.size?.shipments_min != null) q = q.gte("total_shipments", f.size.shipments_min);
+    if (f.size?.shipments_max != null) q = q.lte("total_shipments", f.size.shipments_max);
+    if (f.size?.teu_min != null) q = q.gte("total_teu", f.size.teu_min);
+    if (f.size?.teu_max != null) q = q.lte("total_teu", f.size.teu_max);
+    q = q.range(from, from + PAGE_SIZE - 1);
+    const { data, error } = await q;
+    if (error) { console.error("[pulse-explore] index fallback page failed", { from, error }); break; }
+    if (!data || data.length === 0) break;
+    for (const r of data) out.push(normalizeIndexRow(r as any));
+    if (data.length < PAGE_SIZE) break;
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Dedup (directory + live → unified)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Dedup key: domain first (the only truly reliable identity field), else
+// canonical-name ONLY.
+//
+// Geo is deliberately NOT part of the key. lit_companies stores state as a
+// code or null while lit_company_directory stores the full name, and the same
+// real company frequently has a populated state on one source and a null/
+// mismatched state on the other. Including state (or country) in the key split
+// ~138 real companies into duplicate rows. Canonical-name-only collapses them.
+//
+// Country/state survive on the merged row (see mergeAndDedup, where the
+// non-null value wins) so they remain a *soft* attribute, just not a key.
 function dedupKey(r: Row): string {
   if (r.domain) return `d:${r.domain.toLowerCase()}`;
   const cn = r.canonical_name || canonicalizeName(r.company_name);
-  return `n:${cn}|${(r.country ?? "").toLowerCase()}|${(r.state ?? "").toLowerCase()}`;
+  const st = normalizeStateToFullName(r.state);
+  // Geo-qualify the key WHEN a state is known, so two genuinely DISTINCT
+  // companies that share a name but sit in different states stay separate.
+  // (Pure name-only over-merged ~1,063 real directory companies.) Rows with a
+  // null/blank state — common on lit_companies (live) — use a name-only key and
+  // are reconciled into their single matching geo group in mergeAndDedup.
+  return st ? `n:${cn}|${st.toLowerCase()}` : `n:${cn}`;
 }
 
-function mergeAndDedup(directory: Row[], live: Row[]): Row[] {
+// Union the data_sources tags of two rows that collapsed onto one key, in a
+// stable order, without duplicates.
+function unionSources(a: any[], b: any[]): ("directory" | "live" | "index")[] {
+  const set = new Set<string>([...(a ?? []), ...(b ?? [])]);
+  return (["directory", "live", "index"] as const).filter((s) => set.has(s));
+}
+
+// Merge two rows that collapsed onto one dedup key. `winner` keeps identity
+// (its non-null fields take precedence); `filler` only backfills gaps via ??
+// coalesce. So directory/live firmographics are NEVER overwritten by a sparse
+// index row, and a directory's full-name geo can backfill a live row's null
+// state. data_sources is the union of both.
+function mergeRows(winner: Row, filler: Row): Row {
+  return {
+    ...filler,
+    ...winner,
+    // Coalesce: gap in the winner is filled by the filler rather than nulled.
+    domain: winner.domain ?? filler.domain,
+    city: winner.city ?? filler.city,
+    state: winner.state ?? filler.state,
+    country: winner.country ?? filler.country,
+    industry: winner.industry ?? filler.industry,
+    latitude: (winner as any).latitude ?? (filler as any).latitude,
+    longitude: (winner as any).longitude ?? (filler as any).longitude,
+    vertical: winner.vertical ?? filler.vertical,
+    teu: winner.teu ?? filler.teu,
+    shipments: winner.shipments ?? filler.shipments,
+    lcl: winner.lcl ?? filler.lcl,
+    value_usd: winner.value_usd ?? filler.value_usd,
+    top_dimensions: winner.top_dimensions ?? filler.top_dimensions,
+    top_forwarders: (winner as any).top_forwarders ?? (filler as any).top_forwarders,
+    gp_potential: winner.gp_potential ?? filler.gp_potential,
+    employee_count: winner.employee_count ?? filler.employee_count,
+    revenue: (winner as any).revenue ?? (filler as any).revenue,
+    consignee_email_1: (winner as any).consignee_email_1 ?? (filler as any).consignee_email_1 ?? null,
+    consignee_phone_1: (winner as any).consignee_phone_1 ?? (filler as any).consignee_phone_1 ?? null,
+    // Keep whichever row carries the IY slug (live or index).
+    source_company_key: (winner as any).source_company_key ?? (filler as any).source_company_key ?? null,
+    opportunity_consolidation_score:
+      winner.opportunity_consolidation_score || filler.opportunity_consolidation_score,
+    opportunity_vulnerable_score:
+      winner.opportunity_vulnerable_score || filler.opportunity_vulnerable_score,
+    opportunity_velocity_score:
+      winner.opportunity_velocity_score || filler.opportunity_velocity_score,
+    opportunity_composite_score:
+      winner.opportunity_composite_score || filler.opportunity_composite_score,
+    data_sources: unionSources(winner.data_sources as any, filler.data_sources as any),
+  };
+}
+
+function mergeAndDedup(directory: Row[], live: Row[], index: Row[] = []): Row[] {
   const out = new Map<string, Row>();
-  // Insert live first so directory merges INTO live rows (live wins on shared fields).
-  for (const r of live) out.set(dedupKey(r), r);
+  // Priority for identity (lowest → highest): index < directory < live.
+  // Directory's V6/BOL firmographics still backfill live gaps via coalesce.
+
+  // 1. Seed with index cache rows (lowest priority "basic entries").
+  for (const r of index) {
+    const k = dedupKey(r);
+    const existing = out.get(k);
+    out.set(k, existing ? mergeRows(existing, r) : r);
+  }
+  // 2. Live wins over index.
+  for (const r of live) {
+    const k = dedupKey(r);
+    const existing = out.get(k);
+    // existing here can only be an index row → live wins identity.
+    out.set(k, existing ? mergeRows(r, existing) : r);
+  }
+  // 3. Directory. If a live row already holds the key, live keeps identity and
+  //    directory backfills (live = winner). Otherwise directory is the richest
+  //    source present (index-only or new) → directory wins identity.
   for (const dRow of directory) {
     const k = dedupKey(dRow);
     const existing = out.get(k);
-    if (!existing) {
-      out.set(k, dRow);
-      continue;
+    if (!existing) { out.set(k, dRow); continue; }
+    const existingIsLive = (existing.data_sources as any[])?.includes("live");
+    out.set(k, existingIsLive ? mergeRows(existing, dRow) : mergeRows(dRow, existing));
+  }
+
+  // Reconcile null-state rows into a same-name geo group when UNAMBIGUOUS.
+  // A live company with a null state keys as `n:cn`; the SAME real company in
+  // the directory keys as `n:cn|texas`. If exactly ONE geo-qualified group
+  // shares the canonical name, fold them together (live keeps identity). If
+  // several do — genuinely distinct same-name companies in different states —
+  // leave the null-state row standalone rather than guess which it belongs to.
+  const geoKeysByCanon = new Map<string, string[]>();
+  for (const k of out.keys()) {
+    const m = /^n:(.+)\|[^|]*$/.exec(k);
+    if (m) {
+      const arr = geoKeysByCanon.get(m[1]) ?? [];
+      arr.push(k);
+      geoKeysByCanon.set(m[1], arr);
     }
-    // Merge: live row wins on shared identity fields; directory fills the
-    // V6/BOL-derived fields that lit_companies doesn't store.
-    out.set(k, {
-      ...existing,
-      vertical: existing.vertical ?? dRow.vertical,
-      teu: existing.teu ?? dRow.teu,
-      shipments: existing.shipments ?? dRow.shipments,
-      lcl: existing.lcl ?? dRow.lcl,
-      value_usd: existing.value_usd ?? dRow.value_usd,
-      top_dimensions: existing.top_dimensions ?? dRow.top_dimensions,
-      gp_potential: existing.gp_potential ?? dRow.gp_potential,
-      employee_count: existing.employee_count ?? dRow.employee_count,
-      // Directory contact wins (lit_companies doesn't carry these),
-      // so saved-then-matched-back-to-directory rows surface contacts.
-      consignee_email_1: existing.consignee_email_1 ?? (dRow as any).consignee_email_1 ?? null,
-      consignee_phone_1: existing.consignee_phone_1 ?? (dRow as any).consignee_phone_1 ?? null,
-      opportunity_consolidation_score:
-        existing.opportunity_consolidation_score || dRow.opportunity_consolidation_score,
-      opportunity_vulnerable_score:
-        existing.opportunity_vulnerable_score || dRow.opportunity_vulnerable_score,
-      opportunity_velocity_score:
-        existing.opportunity_velocity_score || dRow.opportunity_velocity_score,
-      opportunity_composite_score:
-        existing.opportunity_composite_score || dRow.opportunity_composite_score,
-      data_sources: ["directory", "live"],
-    });
+  }
+  for (const [k, row] of [...out]) {
+    if (!k.startsWith("n:") || k.includes("|")) continue; // name-only keys only
+    const cn = k.slice(2);
+    const geoKeys = geoKeysByCanon.get(cn);
+    if (geoKeys && geoKeys.length === 1) {
+      const gk = geoKeys[0];
+      const geoRow = out.get(gk)!;
+      const nullStateIsLive = (row.data_sources as any[])?.includes("live");
+      out.set(gk, nullStateIsLive ? mergeRows(row, geoRow) : mergeRows(geoRow, row));
+      out.delete(k);
+    }
   }
   return Array.from(out.values());
 }
@@ -565,9 +823,14 @@ function postFilter(rows: Row[], f: Filters): Row[] {
     });
   }
   if (f.dataset_filter === "directory_only") {
-    out = out.filter((r) => !r.data_sources.includes("live"));
+    // Curated corpus only: drop anything carrying IY-sourced provenance
+    // (live OR index cache).
+    out = out.filter((r) =>
+      !r.data_sources.includes("live") && !r.data_sources.includes("index"));
   } else if (f.dataset_filter === "live_only") {
-    out = out.filter((r) => r.data_sources.includes("live"));
+    // IY-sourced surfaces: saved/live companies AND the free search cache.
+    out = out.filter((r) =>
+      r.data_sources.includes("live") || r.data_sources.includes("index"));
   }
   return out;
 }
@@ -651,12 +914,18 @@ Deno.serve(async (req: Request) => {
 
   const dataset = filters.dataset_filter ?? "all";
 
-  const [directoryRows, liveRows] = await Promise.all([
+  // The index cache (lit_company_index) is IY-search-sourced, so it counts as
+  // "live-ish" provenance. Surface it on "all" and "live_only", skip it on
+  // "directory_only" (which means curated-corpus-only).
+  const includeIndex = dataset !== "directory_only";
+
+  const [directoryRows, liveRows, indexRows] = await Promise.all([
     dataset === "live_only" ? Promise.resolve([] as Row[]) : fetchDirectory(admin, filters),
     dataset === "directory_only" ? Promise.resolve([] as Row[]) : fetchLive(admin, filters),
+    includeIndex ? fetchIndex(admin, filters) : Promise.resolve([] as Row[]),
   ]);
 
-  let rows = mergeAndDedup(directoryRows, liveRows);
+  let rows = mergeAndDedup(directoryRows, liveRows, indexRows);
   rows = await attachFreshness(admin, rows);
   rows = await attachDefendScore(admin, userId, rows);
   rows = postFilter(rows, filters);
@@ -676,6 +945,7 @@ Deno.serve(async (req: Request) => {
       returned: sorted.length,
       directory: directoryRows.length,
       live: liveRows.length,
+      index: indexRows.length,
       sources: tally(sorted),
     },
     truncated,
