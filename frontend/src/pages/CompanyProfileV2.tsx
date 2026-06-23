@@ -656,7 +656,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   const [searchParams] = useSearchParams();
   const initialTab: TabId = (() => {
     const t = String(searchParams?.get("tab") || "").toLowerCase();
-    return (["supply", "rates", "contacts", "research", "activity", "inbox"] as const).includes(
+    return (["supply", "suppliers", "live", "rates", "contacts", "research", "activity", "inbox"] as const).includes(
       t as TabId,
     )
       ? (t as TabId)
@@ -666,7 +666,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   useEffect(() => {
     const t = String(searchParams?.get("tab") || "").toLowerCase();
     if (
-      (["supply", "rates", "contacts", "research", "activity", "inbox"] as const).includes(
+      (["supply", "suppliers", "live", "rates", "contacts", "research", "activity", "inbox"] as const).includes(
         t as TabId,
       )
     ) {
