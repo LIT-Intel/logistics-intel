@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Library, Loader2, MapPin, FolderOpen, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { listMapSelections } from '@/api/pulse-map-selections';
+import { listMapSelections, deleteMapSelection } from '@/api/pulse-map-selections';
 import { listPulseLists, deletePulseList } from '@/features/pulse/pulseListsApi';
 
 function fmtRel(ts) {
@@ -49,6 +49,21 @@ export default function LibraryPanel({ onLoadSelection }) {
   };
 
   useEffect(() => { load(); }, []);
+
+  const [deletingSelId, setDeletingSelId] = useState(null);
+  const handleDeleteSelection = async (s) => {
+    if (!window.confirm(`Delete the saved map view "${s.name}"? This can't be undone.`)) return;
+    setDeletingSelId(s.id);
+    try {
+      await deleteMapSelection(s.id);
+      setSelections((prev) => prev.filter((x) => x.id !== s.id));
+      toast.success(`Deleted "${s.name}"`);
+    } catch (e) {
+      toast.error(e?.message || 'Failed to delete map view');
+    } finally {
+      setDeletingSelId(null);
+    }
+  };
 
   const [deletingId, setDeletingId] = useState(null);
   const handleDeleteList = async (l) => {
@@ -105,21 +120,34 @@ export default function LibraryPanel({ onLoadSelection }) {
               </div>
             ) : (
               <ul className="space-y-2">
-                {selections.map((s) => (
-                  <li key={s.id} className="flex items-center justify-between gap-2 rounded border border-slate-100 px-2 py-1.5 hover:border-cyan-300 hover:bg-cyan-50/30">
-                    <button
-                      type="button"
-                      onClick={() => onLoadSelection?.(s)}
-                      className="flex-1 text-left min-w-0"
-                    >
-                      <div className="text-sm font-medium text-slate-900 truncate inline-flex items-center gap-1">
-                        <MapPin size={11} className="text-cyan-600 shrink-0" />
-                        {s.name}
-                      </div>
-                      <div className="text-[10px] text-slate-500">{fmtRel(s.updated_at)}</div>
-                    </button>
-                  </li>
-                ))}
+                {selections.map((s) => {
+                  const isDeletingSel = deletingSelId === s.id;
+                  return (
+                    <li key={s.id} className="flex items-center gap-1 rounded border border-slate-100 hover:border-cyan-300 hover:bg-cyan-50/30">
+                      <button
+                        type="button"
+                        onClick={() => onLoadSelection?.(s)}
+                        className="flex-1 text-left min-w-0 px-2 py-1.5"
+                      >
+                        <div className="text-sm font-medium text-slate-900 truncate inline-flex items-center gap-1">
+                          <MapPin size={11} className="text-cyan-600 shrink-0" />
+                          {s.name}
+                        </div>
+                        <div className="text-[10px] text-slate-500">{fmtRel(s.updated_at)}</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteSelection(s); }}
+                        disabled={isDeletingSel}
+                        aria-label={`Delete map view ${s.name}`}
+                        title="Delete map view"
+                        className="shrink-0 px-2 py-1.5 text-slate-300 hover:text-red-600 disabled:opacity-50"
+                      >
+                        {isDeletingSel ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>

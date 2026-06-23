@@ -24,3 +24,15 @@ export async function listMapSelections() {
   if (!r.ok) throw new Error(`list selections ${r.status}`);
   return await r.json();
 }
+
+// Delete a saved map view. The lit_pulse_map_selections table has an
+// owner-scoped RLS delete policy ("for delete to authenticated"), so a direct
+// PostgREST delete is safe — a user can only remove their own rows.
+export async function deleteMapSelection(id) {
+  const { error } = await supabase
+    .from('lit_pulse_map_selections')
+    .delete()
+    .eq('id', id);
+  if (error) throw new Error(error.message || `delete selection failed`);
+  return { ok: true };
+}
