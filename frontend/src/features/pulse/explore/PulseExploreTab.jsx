@@ -26,7 +26,7 @@ import BulkRefreshModal from './BulkRefreshModal';
 import SaveAsViewModal from './SaveAsViewModal';
 import BulkSaveToListModal from './BulkSaveToListModal';
 import { downloadCsv } from './exportCsv';
-import { parseExploreQuery, parsedToFilters, hasAnyFilter, looksLikeCompanyName } from '@/api/pulse-explore-parse';
+import { parseExploreQuery, parsedToFilters, hasAnyFilter, looksLikeCompanyName, localExtractFilters } from '@/api/pulse-explore-parse';
 import { lookupCoords } from './coordLookup';
 import ExploreQuickCard from './ExploreQuickCard';
 import AnalyticsPanel from './AnalyticsPanel';
@@ -170,6 +170,15 @@ export default function PulseExploreTab() {
   // Parameterized so prompt-chip clicks pass the query DIRECTLY — the
   // previous setQuery + setTimeout pattern captured a stale query via
   // closure and parsed an empty string.
+  // Resolve a query into filters WITHOUT the LLM. Order: deterministic
+  // geography parse → company-name guess. Returns null if nothing matched.
+  const resolveLocalFilters = useCallback((text) => {
+    const local = localExtractFilters(text);
+    if (hasAnyFilter(local)) return { filters: local, msg: 'Searching by location' };
+    if (looksLikeCompanyName(text)) return { filters: { name: text }, msg: `Searching companies matching "${text}"` };
+    return null;
+  }, []);
+
   const doSearch = useCallback(async (q) => {
     const text = (q ?? '').trim();
     if (!text) return;
@@ -187,22 +196,33 @@ export default function PulseExploreTab() {
             ? `Search parsed (${Math.round(conf * 100)}% confidence)`
             : 'Search parsed'
         );
-      } else if (looksLikeCompanyName(text)) {
-        // LLM didn't pick anything but the query looks like a brand —
-        // treat as a literal company-name lookup.
-        setFilters({ name: text });
-        toast.success(`Searching companies matching "${text}"`);
+        return;
+      }
+      // LLM extracted nothing (commonly: its provider keys are down). Fall
+      // back to the deterministic local parser so the search still runs.
+      const local = resolveLocalFilters(text);
+      if (local) {
+        setFilters(local.filters);
+        toast.success(local.msg);
       } else {
-        toast(`Couldn't extract filters from "${text}" — try wording like "vulnerable incumbents in the southeast"`);
+        toast(`Couldn't extract filters from "${text}" — try a place ("Texas", "the southeast") or a company name`);
       }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[pulse-explore-parse] failed', err);
-      toast.error(err?.message ?? 'Search failed');
+      // Edge fn unreachable — still try the local parser so the Explorer
+      // works even when pulse-explore-parse is completely down.
+      const local = resolveLocalFilters(text);
+      if (local) {
+        setFilters(local.filters);
+        toast.success(local.msg);
+      } else {
+        toast.error('Search is temporarily degraded — try a place or company name (e.g. "Texas" or "Walmart")');
+      }
     } finally {
       setParsing(false);
     }
-  }, [setFilters]);
+  }, [setFilters, resolveLocalFilters]);
 
   const onSubmitSearch = useCallback(() => doSearch(query), [doSearch, query]);
 
