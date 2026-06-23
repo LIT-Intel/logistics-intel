@@ -1,4 +1,6 @@
 // pulse-explore-parse — NL query → Pulse Explorer filter object.
+// redeploy 2026-06-23: reload rotated OPENAI_API_KEY secret into warm instances
+// (Gemini is primary, OpenAI is the fallback — keep the fallback working).
 //
 // Purpose-built for the Explorer's filter taxonomy (industry, geo region,
 // opportunity types, freshness, workflow, dataset, size ranges). Distinct
