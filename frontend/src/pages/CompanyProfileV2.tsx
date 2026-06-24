@@ -52,6 +52,7 @@ import { PulseLIVETab } from "@/features/pulse/PulseLIVETab";
 import {
   getSavedCompanyDetail,
   getSavedCompanyShellOnly,
+  getIyCompanyProfile,
   buildYearScopedProfile,
   saveCompanyToCommandCenter,
 } from "@/lib/api";
@@ -749,6 +750,32 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         );
       }
       if (cancelled) return;
+
+      // Cache miss self-heal. Opening a company straight from a search result
+      // used to show an EMPTY profile until a hard refresh: the snapshot is
+      // written by a background pre-warm (getIyCompanyProfile, ~10-15s) that
+      // hasn't landed when this cache-only read runs. Instead of giving up,
+      // fetch the profile ourselves (cache-driven / forceRefresh:false = FREE,
+      // no extra credit), then re-read the snapshot. Only for slug keys —
+      // a bare-UUID deep-link with no snapshot is handled by the synthetic
+      // fallback below, not a live fetch.
+      if (!cached.profile && !cached.routeKpis) {
+        const bareKey = String(routeOrStoredId || "").replace(/^company\//i, "");
+        if (bareKey && !UUID_RE.test(bareKey)) {
+          try {
+            await getIyCompanyProfile({ companyKey: bareKey });
+            if (cancelled) return;
+            cached = await getSavedCompanyShellOnly(companyId);
+          } catch (liveErr) {
+            if (cancelled) return;
+            console.warn(
+              "[CompanyProfileV2] cache-miss live profile fetch failed",
+              liveErr,
+            );
+          }
+          if (cancelled) return;
+        }
+      }
 
       const haveCached = Boolean(cached.profile || cached.routeKpis);
       if (haveCached) {
