@@ -71,8 +71,13 @@ export default function PulseExploreTab() {
   const [mapStyle, setMapStyle] = useState('alidade_smooth');
   const mapRef = useRef(null);
 
+  const [loadLimit, setLoadLimit] = useState(null); // "load more" cap; null = default 5k
   const fetchEnabled = hasAnyFilter(state.filters);
-  const { data, isLoading, error } = useExploreAccounts(state.filters, null, { enabled: fetchEnabled });
+  const { data, isLoading, error } = useExploreAccounts(state.filters, null, { enabled: fetchEnabled, limit: loadLimit });
+  // Reset the "load more" cap whenever the search filters change — a new search
+  // always starts from the default 5k page.
+  const filterSig = JSON.stringify(state.filters);
+  useEffect(() => { setLoadLimit(null); }, [filterSig]);
   // The drawer's EFFECTIVE open state is gated on an active search. resultsOpen
   // can remain true after a search is cleared (we deliberately never auto-close
   // it while results exist), so without this gate the empty state renders an
@@ -597,6 +602,17 @@ export default function PulseExploreTab() {
                 )}
               </button>
               <div className="flex items-center gap-0.5">
+                {drawerOpen && rows.length < totalMatched && rows.length < 50000 && (
+                  <button
+                    type="button"
+                    onClick={() => setLoadLimit((prev) => (prev ?? 5000) + 5000)}
+                    disabled={isLoading}
+                    title={`Load 5,000 more (showing ${rows.length.toLocaleString()} of ${totalMatched.toLocaleString()})`}
+                    className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
+                  >
+                    {isLoading ? 'Loading…' : 'Load 5k more'}
+                  </button>
+                )}
                 {drawerOpen && (
                   <button
                     type="button"

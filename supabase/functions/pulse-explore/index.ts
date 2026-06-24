@@ -41,7 +41,17 @@ const corsHeaders = {
 // When the underlying dataset has more rows than the cap, we still
 // return the top 5000 by opportunity_composite_score.
 const MAX_ROWS = 5_000;
+const MAX_LOAD = 50_000; // hard ceiling for "load more" (50 pages ~= worst case)
 const PAGE_SIZE = 1000;
+
+// Clamp a client-requested load limit to [MAX_ROWS, MAX_LOAD], rounded up to a
+// whole PAGE_SIZE. Garbage / missing -> the MAX_ROWS default.
+function clampLoad(limit: unknown): number {
+  const n = Number(limit);
+  if (!Number.isFinite(n) || n <= MAX_ROWS) return MAX_ROWS;
+  const rounded = Math.ceil(n / PAGE_SIZE) * PAGE_SIZE;
+  return Math.min(MAX_LOAD, Math.max(MAX_ROWS, rounded));
+}
 
 type Geo = {
   region?: string;
@@ -122,6 +132,10 @@ type Body = {
   filters?: Filters;
   // viewport reserved for v1.5 — accepted in payload but ignored server-side.
   viewport?: unknown;
+  // Optional "load more" cap. Defaults to MAX_ROWS; clamped server-side to
+  // [MAX_ROWS, MAX_LOAD] in PAGE_SIZE steps. Lets the user pull the next 5k
+  // for the rare broad search that exceeds the default load.
+  limit?: number | null;
 };
 
 type Row = Record<string, unknown> & {
@@ -228,13 +242,13 @@ async function countDirectory(admin: any, f: Filters): Promise<number | null> {
   return typeof count === "number" ? count : null;
 }
 
-async function fetchDirectory(admin: any, f: Filters): Promise<Row[]> {
+async function fetchDirectory(admin: any, f: Filters, maxRows: number = MAX_ROWS): Promise<Row[]> {
   // Paginate via .range() because Supabase's PostgREST gateway caps single
   // .limit() responses at the project default (typically 1000 rows). To
-  // return up to MAX_ROWS we walk PAGE_SIZE chunks until the chunk comes
-  // back short.
+  // return up to maxRows we walk PAGE_SIZE chunks until the chunk comes
+  // back short. maxRows grows when the user clicks "load more".
   const out: Row[] = [];
-  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
+  for (let from = 0; from < maxRows; from += PAGE_SIZE) {
     const q = buildDirectoryQueryBase(admin, f).range(from, from + PAGE_SIZE - 1);
     const { data, error } = await q;
     if (error) {
@@ -965,8 +979,9 @@ Deno.serve(async (req: Request) => {
   // every active filter is one the index can actually satisfy.
   const includeIndex = dataset !== "directory_only" && indexCanSatisfy(filters);
 
+  const effectiveMax = clampLoad(body.limit);
   const [directoryRows, liveRows, indexRows, directoryTotal] = await Promise.all([
-    dataset === "live_only" ? Promise.resolve([] as Row[]) : fetchDirectory(admin, filters),
+    dataset === "live_only" ? Promise.resolve([] as Row[]) : fetchDirectory(admin, filters, effectiveMax),
     dataset === "directory_only" ? Promise.resolve([] as Row[]) : fetchLive(admin, filters),
     includeIndex ? fetchIndex(admin, filters) : Promise.resolve([] as Row[]),
     // True universe count (cheap head-count, runs in parallel). Lets the UI show
@@ -979,11 +994,11 @@ Deno.serve(async (req: Request) => {
   rows = await attachDefendScore(admin, userId, rows);
   rows = postFilter(rows, filters);
 
-  const truncated = rows.length > MAX_ROWS;
+  const truncated = rows.length > effectiveMax;
   const sorted = truncated
     ? [...rows]
         .sort((a, b) => b.opportunity_composite_score - a.opportunity_composite_score)
-        .slice(0, MAX_ROWS)
+        .slice(0, effectiveMax)
     : rows;
 
   return jsonResponse({
