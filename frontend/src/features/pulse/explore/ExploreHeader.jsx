@@ -68,8 +68,10 @@ export default function ExploreHeader({
 
   return (
     <header className="bg-[#0F1828] text-slate-100 border-b border-slate-800/60 shadow-sm">
-      {/* Top bar — wraps on small screens so the search input has room */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-2 sm:py-2.5">
+      {/* Top bar — wraps on small screens so the search input has room.
+          Compacts vertically on short viewports (e.g. 150% display scaling)
+          so the results table fits without scrolling. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-2 sm:py-2.5 [@media(max-height:760px)]:py-1">
         <div className="flex items-center gap-2 font-display shrink-0">
           <Sparkles className="text-cyan-400" size={18} />
           <span className="font-semibold text-sm tracking-tight whitespace-nowrap">Pulse Explorer</span>
@@ -93,8 +95,9 @@ export default function ExploreHeader({
         </div>
       </div>
 
-      {/* KPI strip — wraps on mobile, lets values keep their size */}
-      <div className="flex flex-wrap items-baseline gap-x-5 sm:gap-x-8 gap-y-1 px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-950/30 border-t border-slate-800/40">
+      {/* KPI strip — wraps on mobile, lets values keep their size. Compacts
+          (tighter padding + smaller numerals) on short viewports. */}
+      <div className="flex flex-wrap items-baseline gap-x-5 sm:gap-x-8 gap-y-1 px-3 sm:px-4 py-2 sm:py-2.5 [@media(max-height:760px)]:py-1 bg-slate-950/30 border-t border-slate-800/40">
         <Kpi label="accounts" value={fmtNum(totalAccounts)} />
         <Kpi label="annual sales" value={fmtCurrencyMillions(totalSales)} />
         <Kpi label="TEU 12m" value={fmtNum(totalTeu)} />
@@ -106,7 +109,7 @@ export default function ExploreHeader({
 function Kpi({ label, value }) {
   return (
     <div className="flex items-baseline gap-1.5">
-      <span className="text-lg sm:text-xl font-semibold tabular-nums text-slate-100">{value}</span>
+      <span className="text-lg sm:text-xl [@media(max-height:760px)]:text-sm font-semibold tabular-nums text-slate-100">{value}</span>
       <span className="text-[11px] text-slate-400 uppercase tracking-wide whitespace-nowrap">{label}</span>
     </div>
   );
