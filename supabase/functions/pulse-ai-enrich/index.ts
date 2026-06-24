@@ -133,6 +133,286 @@ function getNested(obj: any, paths: string[]): any {
   return null;
 }
 
+const ENRICHMENT_PENDING = "[Enrichment in Progress]";
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const n = Number(value.replace(/[^0-9.\-]/g, ""));
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+/**
+ * Pretty-print a route label using ONLY the real route string from the
+ * snapshot. ImportYeti stores routes as "Origin → Destination" with full
+ * country / city names (e.g. "Germany → United States of America"). We do
+ * NOT translate to port codes (that would be a fabricated inference); we
+ * surface the real string, lightly cleaned ("United States of America" →
+ * "United States"). If the route can't be parsed we return it verbatim.
+ */
+function cleanRouteLabel(route: string): string {
+  const cleaned = String(route || "")
+    .replace(/United States of America/gi, "United States")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned;
+}
+
+/**
+ * Derive the real US destination from the top lane (for the corporate
+ * "primary port gateway" field). We only do this when the destination
+ * clearly names a US location; otherwise we return the pending sentinel.
+ * NEVER invents a port (e.g. "New York / Newark") that isn't in the data.
+ */
+function deriveUsGatewayFromRoute(route: string): string | null {
+  const parts = String(route || "").split("→");
+  if (parts.length < 2) return null;
+  let dest = parts[parts.length - 1].trim();
+  dest = dest.replace(/United States of America/gi, "United States").trim();
+  if (!dest) return null;
+  // Only treat as a gateway hint when the destination references the US.
+  if (!/United States|,\s*US\b|\bUSA\b/i.test(dest)) return null;
+  // If it's a specific US city ("Atlanta, United States"), surface the city.
+  const cityMatch = dest.match(/^([^,]+),\s*United States/i);
+  if (cityMatch && cityMatch[1] && !/^United States$/i.test(cityMatch[1].trim())) {
+    return `${cityMatch[1].trim()} (US destination of record)`;
+  }
+  // Generic "United States" destination — we know it's US-bound but not the
+  // port. Surface that honestly rather than inventing LA/LB or NY/NJ.
+  return "United States (port-of-entry not disclosed in manifest)";
+}
+
+/**
+ * Bucket a real annual-TEU number into a human-readable magnitude string.
+ * Uses the REAL number — never pads up to "5,000+". Low-volume importers
+ * are labelled honestly as sub-100 / sub-1K.
+ */
+function bucketAnnualTeu(teu: number | null): string {
+  if (teu == null) return ENRICHMENT_PENDING;
+  const t = Math.round(teu);
+  if (t <= 0) return ENRICHMENT_PENDING;
+  if (t < 100) return `~${t} TEU/yr (low-volume importer)`;
+  if (t < 1000) return `~${t} TEU/yr (sub-1K importer)`;
+  if (t < 10000) {
+    const k = Math.round(t / 1000);
+    return `~${k}K TEU/yr`;
+  }
+  const k = Math.round(t / 1000);
+  return `~${k}K+ TEU/yr`;
+}
+
+/**
+ * Pick the importer-tier label strictly from the REAL annual TEU. Matches
+ * the tier definitions in the prompt. Returns the pending sentinel when
+ * TEU is unknown rather than guessing a tier.
+ */
+function importerTierFromTeu(teu: number | null): string {
+  if (teu == null) return ENRICHMENT_PENDING;
+  if (teu > 50000) return "Tier-1 Macro Importer";
+  if (teu >= 10000) return "Tier-2 Strategic Importer";
+  if (teu >= 1000) return "Tier-3 Mid-Market Importer";
+  return "Tier-4 Specialty / Project Importer";
+}
+
+/**
+ * Extract real carrier names from the snapshot IF they exist. ImportYeti
+ * snapshots for most accounts do NOT carry ocean-carrier / SCAC data
+ * (the BOL rows expose shipper / consignee / notify-party, not the line),
+ * so this almost always returns []. We NEVER fall back to inventing
+ * Maersk / MSC / CMA CGM — the caller substitutes the pending sentinel.
+ */
+function extractRealCarriers(parsedSummary: JsonRecord): string[] {
+  const candidates = [
+    parsedSummary?.carrier_mix,
+    parsedSummary?.carrierMix,
+    parsedSummary?.top_carriers,
+    parsedSummary?.topCarriers,
+    parsedSummary?.carriers,
+    parsedSummary?.scac,
+    parsedSummary?.scac_mix,
+  ];
+  const names: string[] = [];
+  for (const c of candidates) {
+    if (!c) continue;
+    if (Array.isArray(c)) {
+      for (const item of c) {
+        if (typeof item === "string" && item.trim()) names.push(item.trim());
+        else if (item && typeof item === "object") {
+          const n = item.name ?? item.carrier ?? item.scac ?? item.label;
+          if (typeof n === "string" && n.trim()) names.push(n.trim());
+        }
+      }
+    } else if (typeof c === "string" && c.trim()) {
+      names.push(c.trim());
+    }
+  }
+  // De-dupe, cap at 6.
+  return Array.from(new Set(names)).slice(0, 6);
+}
+
+/**
+ * The GUARANTEE: compute the structured/numeric trade facts straight from
+ * the REAL snapshot parsed_summary, so they can OVERWRITE whatever the LLM
+ * produced. The model authors NARRATIVE; this code authors the NUMBERS.
+ *
+ * Returns the values to splice into executive_overview. When a real value
+ * is absent we use the pending sentinel or omit — never fabricate.
+ */
+function buildGroundedTradeFacts(
+  parsedSummary: JsonRecord | null,
+  fallbackAddress?: string | null,
+) {
+  const ps = parsedSummary && typeof parsedSummary === "object"
+    ? parsedSummary
+    : {};
+
+  const routeKpis = ps.route_kpis ?? ps.routeKpis ?? {};
+
+  // Real lanes, preferring the 12m KPI rollup, then top_routes.
+  const rawLanes = safeArray<JsonRecord>(
+    (routeKpis as JsonRecord)?.topRoutesLast12m ??
+      (routeKpis as JsonRecord)?.top_routes_last_12m ??
+      ps.top_routes ??
+      ps.topRoutes ??
+      [],
+  );
+
+  // Sort by real TEU desc so "top 3" really are the largest lanes, then
+  // take up to 3 — do NOT pad to 3 when fewer real lanes exist.
+  const sortedLanes = rawLanes
+    .map((lane) => ({
+      route: cleanRouteLabel(String(lane?.route ?? "")),
+      teu: toFiniteNumber(lane?.teu) ?? 0,
+      shipments: toFiniteNumber(lane?.shipments) ?? 0,
+    }))
+    .filter((lane) => lane.route)
+    .sort((a, b) => b.teu - a.teu);
+
+  const totalLaneTeu = sortedLanes.reduce((sum, l) => sum + (l.teu || 0), 0);
+
+  const topLanes = sortedLanes.slice(0, 3);
+
+  const tradeLaneVelocity = topLanes.map((lane) => {
+    const sharePct = totalLaneTeu > 0
+      ? Math.round((lane.teu / totalLaneTeu) * 100)
+      : 0;
+    return {
+      route: lane.route,
+      volume_share_pct: sharePct,
+      // transit_days is not in the snapshot — 0 signals "not disclosed" to
+      // the PDF renderer rather than inventing a transit time.
+      transit_days: 0,
+      velocity_status: "Stable",
+    };
+  });
+
+  // Real annual TEU — prefer the 12m KPI, then the snapshot total_teu.
+  const annualTeu =
+    toFiniteNumber((routeKpis as JsonRecord)?.teuLast12m) ??
+    toFiniteNumber(ps.total_teu) ??
+    null;
+
+  const carriers = extractRealCarriers(ps);
+
+  // Active lane count from the real lane list.
+  const activeLaneCount = sortedLanes.length;
+
+  // Real HQ — prefer the snapshot address, then the caller's fallback
+  // (company.address). Keep the raw string but tidy casing artifacts like
+  // "Ga 30340, Us".
+  const rawAddress = (typeof ps.address === "string" && ps.address.trim())
+    ? ps.address.trim()
+    : (typeof fallbackAddress === "string" && fallbackAddress.trim())
+    ? fallbackAddress.trim()
+    : "";
+  const headquarters = rawAddress || ENRICHMENT_PENDING;
+
+  // Primary port gateway — derive from the top real lane's US destination.
+  let primaryPortGateway = ENRICHMENT_PENDING;
+  for (const lane of topLanes) {
+    const gw = deriveUsGatewayFromRoute(lane.route);
+    if (gw) {
+      primaryPortGateway = gw;
+      break;
+    }
+  }
+
+  return {
+    tradeLaneVelocity,
+    annualTeuEstimate: bucketAnnualTeu(annualTeu),
+    importerTier: importerTierFromTeu(annualTeu),
+    activeLaneCount,
+    primaryCarriers: carriers.length ? carriers : [ENRICHMENT_PENDING],
+    headquarters,
+    primaryPortGateway,
+  };
+}
+
+/**
+ * Apply the grounded trade facts on top of the LLM-authored report,
+ * OVERWRITING the numeric / structured trade fields in executive_overview.
+ * Narrative fields (executive_macro_briefing, friction_points,
+ * supply_chain_leadership, grade, score) are left to the model. Returns a
+ * new report object; never throws.
+ */
+function applyGroundedTradeFacts(
+  report: JsonRecord,
+  parsedSummary: JsonRecord | null,
+  fallbackAddress?: string | null,
+): JsonRecord {
+  try {
+    const facts = buildGroundedTradeFacts(parsedSummary, fallbackAddress);
+
+    const eo: JsonRecord =
+      report.executive_overview && typeof report.executive_overview === "object"
+        ? { ...report.executive_overview }
+        : {};
+
+    // corporate_metadata — overwrite HQ + port gateway only; keep the
+    // model's parent_company / naics_sector narrative.
+    const cm: JsonRecord =
+      eo.corporate_metadata && typeof eo.corporate_metadata === "object"
+        ? { ...eo.corporate_metadata }
+        : {};
+    cm.headquarters_location = facts.headquarters;
+    cm.primary_port_gateway = facts.primaryPortGateway;
+    if (typeof cm.parent_company !== "string" || !cm.parent_company.trim()) {
+      cm.parent_company = ENRICHMENT_PENDING;
+    }
+    if (typeof cm.naics_sector !== "string" || !cm.naics_sector.trim()) {
+      cm.naics_sector = ENRICHMENT_PENDING;
+    }
+    eo.corporate_metadata = cm;
+
+    // logistics_volumetrics — overwrite every numeric field from real data.
+    const lv: JsonRecord =
+      eo.logistics_volumetrics && typeof eo.logistics_volumetrics === "object"
+        ? { ...eo.logistics_volumetrics }
+        : {};
+    lv.annual_teu_estimate = facts.annualTeuEstimate;
+    lv.importer_tier = facts.importerTier;
+    lv.active_freight_lanes_count = facts.activeLaneCount;
+    lv.primary_carriers = facts.primaryCarriers;
+    eo.logistics_volumetrics = lv;
+
+    // trade_lane_velocity — fully replace with the real lanes (up to 3, not
+    // padded). ALWAYS override, even with an empty array: the model must
+    // never be able to smuggle in invented lanes when the snapshot has none.
+    // An empty table is honest; fabricated lanes are not. The schema is
+    // relaxed to minItems:0 so [] validates.
+    eo.trade_lane_velocity = facts.tradeLaneVelocity;
+
+    report.executive_overview = eo;
+  } catch (error) {
+    log.error("grounded_override_failed", {
+      err: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return report;
+}
+
 function buildReportSchema() {
   return {
     type: "object",
@@ -351,8 +631,12 @@ function buildReportSchema() {
             },
           },
           trade_lane_velocity: {
+            // Relaxed from "exactly 3" to "0-3". The post-LLM grounded
+            // override replaces this with the REAL top lanes (up to 3, not
+            // padded). Forcing exactly 3 previously pushed the model to
+            // fabricate lanes when fewer real lanes existed.
             type: "array",
-            minItems: 3,
+            minItems: 0,
             maxItems: 3,
             items: {
               type: "object",
@@ -856,6 +1140,29 @@ async function loadCompanyContext(
       id: snapshot?.id ?? null,
       fetched_at: snapshot?.fetched_at ?? snapshot?.created_at ?? null,
       expires_at: snapshot?.expires_at ?? null,
+      // Headline trade facts surfaced explicitly so the model's NARRATIVE
+      // is grounded in the same real numbers the post-LLM override uses for
+      // the structured fields. These are the authoritative trade figures —
+      // the model must not browse for or invent TEU / HQ / lanes.
+      headline_trade_facts: compactObject({
+        headquarters_address:
+          (typeof parsedSummary?.address === "string" && parsedSummary.address) ||
+          company?.address ||
+          null,
+        total_teu_12m:
+          getNested(parsedSummary, ["route_kpis.teuLast12m"]) ??
+          parsedSummary?.total_teu ??
+          null,
+        total_teu_all_time: parsedSummary?.total_teu ?? null,
+        shipments_last_12m:
+          parsedSummary?.shipments_last_12m ??
+          getNested(parsedSummary, ["route_kpis.shipmentsLast12m"]) ??
+          null,
+        top_route_last_12m:
+          getNested(parsedSummary, ["route_kpis.topRouteLast12m"]) ?? null,
+        fcl_count: parsedSummary?.fcl_count ?? null,
+        lcl_count: parsedSummary?.lcl_count ?? null,
+      }),
       normalized_json: compactObject({
         routeKpis:
           normalizedJson?.routeKpis ??
@@ -951,6 +1258,14 @@ Hard rules:
 - Never fabricate emails, phone numbers, job titles, company revenue, employee count, shipment volume, carriers, forwarders, suppliers, or contacts.
 - Keep LIT trade data separate from external web signals.
 - Use web search only for recent company news, announcements, expansions, layoffs, M&A, recalls, product launches, leadership changes, regulatory/tariff signals, and other relevant public context.
+
+TRADE-DATA GROUNDING (NON-NEGOTIABLE — the most common failure mode):
+- ALL trade figures — trade lanes / routes, TEU / volume, ocean carriers, headquarters location, and port-of-entry gateway — MUST come ONLY from the provided LIT trade data (snapshot.headline_trade_facts, snapshot.normalized_json.routeKpis, snapshot.normalized_json.topRoutes, company.address).
+- Do NOT browse the web for, and do NOT infer or estimate, any of those numbers. web_search is ONLY for company news / expansion / leadership / financial narrative — NEVER for trade figures.
+- The REAL lanes are exactly the routes listed in routeKpis.topRoutesLast12m / topRoutes (e.g. for a company whose top lane is "Germany → United States", the macro briefing must discuss Germany→US flows, NOT invented China→New York flows). If you write a lane, carrier, TEU, or port that is not present in the provided LIT data, that is a critical fabrication and a violation.
+- If the snapshot has no carrier data, state carriers are not disclosed — do NOT name Maersk / MSC / CMA CGM / any line. If TEU is small, say so honestly (a sub-100-TEU importer is NOT "5,000+ TEU").
+- The Executive Macro Briefing must be consistent with the REAL lanes, REAL origin countries, and REAL TEU magnitude in the provided data.
+- NOTE: the structured numeric trade fields (trade_lane_velocity, logistics_volumetrics, headquarters, port gateway) are recomputed deterministically from the LIT data after you respond, so your narrative MUST agree with the real numbers or it will visibly contradict the figures shown next to it.
 - Every web_sources item must be based on a real web result.
 - similar_companies must contain exactly 5 companies.
 - Each similar company must include search_url in this format: /search?q=Company%20Name
@@ -980,10 +1295,10 @@ ABSOLUTE EXCLUSION RULES:
 - NO placeholder filler. When a real value is unknown, return the string "[Enrichment in Progress]" so the PDF renders the pending badge instead of fake data.
 
 corporate_metadata:
-- parent_company: the legal parent if different from the brand name (e.g. "Gap Inc.", "Inditex", "Berkshire Hathaway"). If same as brand, repeat the brand name.
-- naics_sector: NAICS sector / 2-4 digit classification phrased like "Retail — General Merchandise" or "Manufacturing — Motor Vehicles".
-- headquarters_location: corporate HQ "City, State/Country".
-- primary_port_gateway: the single dominant US port-of-entry complex this account flows through (e.g. "Los Angeles / Long Beach", "New York / Newark", "Savannah").
+- parent_company: the legal parent if different from the brand name (e.g. "Gap Inc.", "Inditex", "Berkshire Hathaway"). If same as brand, repeat the brand name. (This field is narrative — web research is allowed for it.)
+- naics_sector: NAICS sector / 2-4 digit classification phrased like "Retail — General Merchandise" or "Manufacturing — Motor Vehicles". (Narrative — web research allowed.)
+- headquarters_location: corporate HQ — use ONLY the address in the provided LIT data (snapshot.headline_trade_facts.headquarters_address / company.address). Do NOT browse for or guess the HQ. This value is overwritten from LIT data after you respond, so do not invent one.
+- primary_port_gateway: the dominant US port-of-entry — derive ONLY from the real top lane's US destination in the provided LIT data. Do NOT invent a port (e.g. do NOT write "New York / Newark" unless the real destination data says so). This value is overwritten from LIT data after you respond.
 
 opportunity_grade_letter / opportunity_score_0_to_100: as before. Score is the numeric the PDF renders next to the grade.
 
@@ -991,17 +1306,17 @@ data_freshness_label: short pill text, e.g. "Real-Time Customs Manifest Match", 
 
 executive_macro_briefing: a SINGLE dense paragraph (3-5 sentences, 60-120 words) bridging public financial standing — stock pressures, market cap shifts, restructuring, leadership changes — with the internal SUPPLY-CHAIN operational impacts. Frame everything through a logistics lens: how does this affect factory-to-shelf velocity, container volume capacity, transportation margin compression, sourcing diversification, port allocation? Do not narrate marketing campaigns as marketing news; narrate them as freight demand signals.
 
-logistics_volumetrics:
-- annual_teu_estimate: short human-readable string like "~85,000+", "12-18K", "Sub-1K (low-volume importer)". Include rough magnitude only.
-- importer_tier: enterprise tier label, one of: "Tier-1 Macro Importer" (>50K TEU/yr), "Tier-2 Strategic Importer" (10-50K), "Tier-3 Mid-Market Importer" (1-10K), "Tier-4 Specialty / Project Importer" (<1K). Pick based on annual_teu_estimate.
-- active_freight_lanes_count: integer count of currently active origin-destination corridors (BOL-derived).
-- primary_carriers: 1-6 ocean carrier / alliance names ordered by manifest share (e.g. ["ONE", "Cosco", "Maersk", "MSC"]).
+logistics_volumetrics (ALL fields are overwritten from real LIT data after you respond — base any narrative on the REAL numbers, never invent magnitude):
+- annual_teu_estimate: short human-readable string reflecting the REAL TEU magnitude from snapshot.headline_trade_facts.total_teu_12m / routeKpis.teuLast12m. If the real number is small (e.g. ~86 TEU), say so honestly — do NOT round up to thousands.
+- importer_tier: tier label derived from the REAL annual TEU, one of: "Tier-1 Macro Importer" (>50K TEU/yr), "Tier-2 Strategic Importer" (10-50K), "Tier-3 Mid-Market Importer" (1-10K), "Tier-4 Specialty / Project Importer" (<1K).
+- active_freight_lanes_count: integer count of the REAL active origin-destination corridors in routeKpis.topRoutesLast12m / topRoutes.
+- primary_carriers: ONLY real ocean carrier names if the LIT data contains them. If the snapshot has no carrier data, return ["[Enrichment in Progress]"]. NEVER invent carrier names (no Maersk / MSC / CMA CGM unless they appear in the data).
 
-trade_lane_velocity: EXACTLY 3 entries — the top three lanes by volume share for this account.
-- route: "Port of origin (CC) → Port of discharge (CC)" format using city + country code, e.g. "Yantian (CN) → Long Beach (US)".
-- volume_share_pct: integer percent of this account's total volume on that lane.
-- transit_days: estimated ocean transit days.
-- velocity_status: one of the enum values. "High Volume / Stable" for primary lanes. "Transit Congestion Warning" if known port congestion or detention risk. "Growing" / "Stable" / "Declining" for trend. "Moderate" as a neutral fallback.
+trade_lane_velocity: UP TO 3 entries, taken ONLY from the real lanes in routeKpis.topRoutesLast12m / topRoutes, ordered by real volume share. If fewer than 3 real lanes exist, return only that many — do NOT pad with invented lanes. This array is overwritten from real LIT data after you respond.
+- route: use the REAL route label from the LIT data verbatim (e.g. "Germany → United States"). Do NOT translate to port codes or substitute different ports.
+- volume_share_pct: integer percent of this account's total real lane volume on that lane.
+- transit_days: estimated ocean transit days (0 if not derivable from the data).
+- velocity_status: one of the enum values. Default to "Stable" unless the data supports another label.
 
 friction_points: 2-4 entries mapping a SPECIFIC, technical supply-chain stressor to a LIT-platform value hypothesis.
 - stressor: a logistics bottleneck. EXAMPLES: "High demurrage and detention risk at Los Angeles / Long Beach terminals due to holiday inventory staging", "Volatile transpacific ocean spot rates impacting product-to-market margins on value-space apparel (<$55 price point)", "Carrier concentration risk — top 2 carriers represent >70% of TEU; no failover lane", "Upstream supplier delays from Yantian-region power rationing extending lead times by 9-14 days". Do NOT use generic phrases like "supply chain disruptions".
@@ -1450,11 +1765,22 @@ serve(async (req) => {
       ? { ...loaded.context, freight_market_intelligence: freightMarketIntelligence }
       : loaded.context;
 
-    const { report, response } = await callOpenAi({
+    const { report: rawReport, response } = await callOpenAi({
       companyName: loaded.companyName,
       mode,
       context: enrichedContext,
     });
+
+    // GUARANTEE: overwrite the structured/numeric trade facts in
+    // executive_overview with values computed deterministically from the
+    // REAL snapshot, so the model can never ship fabricated lanes / TEU /
+    // carriers / HQ / port in a sales brief. The model authors NARRATIVE;
+    // this code authors the NUMBERS.
+    const report = applyGroundedTradeFacts(
+      rawReport,
+      loaded.snapshot?.parsed_summary ?? null,
+      loaded.company?.address ?? null,
+    );
 
     const tokenUsage = response?.usage ?? null;
 

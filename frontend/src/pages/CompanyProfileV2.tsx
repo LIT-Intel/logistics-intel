@@ -991,6 +991,55 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     [companyId, storedSelectedCompany],
   );
 
+  // Real trade KPIs + top routes for the Executive Brief PDF. Mirrors the
+  // exact derivation passed to <CDPResearch tradeKpis={...} topRoutes={...}/>
+  // (see the render below ~2292) so the exported PDF shows the SAME real
+  // importyeti numbers the modal renders — not the LLM's fabricated ones.
+  const pdfTradeKpis = useMemo(() => {
+    const top =
+      (activeProfile as any)?.topRoutes?.[0] ||
+      (activeProfile as any)?.top_routes?.[0] ||
+      null;
+    const total = Number(
+      activeRouteKpis?.shipmentsLast12m ?? shellCompany?.kpis?.shipments,
+    );
+    const topShip = Number(top?.shipments);
+    const topLaneShare =
+      total && topShip && total > 0 ? topShip / total : null;
+    return {
+      shipments12m:
+        activeRouteKpis?.shipmentsLast12m ??
+        shellCompany?.kpis?.shipments ??
+        null,
+      teu12m:
+        activeRouteKpis?.teuLast12m ??
+        (activeProfile as any)?.totalTeuAllTime ??
+        null,
+      activeLanes: Array.isArray((activeProfile as any)?.topRoutes)
+        ? (activeProfile as any).topRoutes.length
+        : Array.isArray((activeProfile as any)?.top_routes)
+          ? (activeProfile as any).top_routes.length
+          : null,
+      topLaneLabel:
+        activeRouteKpis?.topRouteLast12m ||
+        (activeProfile as any)?.topRoutes?.[0]?.route ||
+        (activeProfile as any)?.top_routes?.[0]?.route ||
+        null,
+      topLaneShare,
+      yoyPct: null,
+    };
+  }, [activeProfile, activeRouteKpis, shellCompany]);
+
+  const pdfTopRoutes = useMemo<any[]>(() => {
+    const fromKpis = activeRouteKpis?.topRoutesLast12m;
+    if (Array.isArray(fromKpis) && fromKpis.length > 0) return fromKpis as any[];
+    if (Array.isArray((activeProfile as any)?.topRoutes))
+      return (activeProfile as any).topRoutes;
+    if (Array.isArray((activeProfile as any)?.top_routes))
+      return (activeProfile as any).top_routes;
+    return [];
+  }, [activeProfile, activeRouteKpis]);
+
   const companyName =
     activeProfile?.title ||
     activeProfile?.name ||
@@ -1937,6 +1986,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         industry: bundle?.identity?.display?.industry ?? activeProfile?.industry ?? null,
         hq: bundle?.identity?.display?.hq_city ?? activeProfile?.city ?? null,
         brief: pulseBrief as any,
+        // Real importyeti snapshot KPIs — same numbers the modal renders.
+        tradeKpis: pdfTradeKpis as any,
+        topRoutes: pdfTopRoutes as any,
         generatedAt: pulseBrief?.generatedAt
           ? new Date(pulseBrief.generatedAt)
           : new Date(),
@@ -1976,6 +2028,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         industry: bundle?.identity?.display?.industry ?? activeProfile?.industry ?? null,
         hq: bundle?.identity?.display?.hq_city ?? activeProfile?.city ?? null,
         brief: pulseBrief as any,
+        // Real importyeti snapshot KPIs — same numbers the modal renders.
+        tradeKpis: pdfTradeKpis as any,
+        topRoutes: pdfTopRoutes as any,
         generatedAt: pulseBrief?.generatedAt
           ? new Date(pulseBrief.generatedAt)
           : new Date(),
