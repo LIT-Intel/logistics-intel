@@ -27,7 +27,7 @@ export default function IntelligenceExplorer() {
   // <main>, and use dvh on supporting browsers to dodge the iOS
   // address-bar bounce that makes 100vh trim the bottom row.
   return (
-    <div className="-mx-[10px] -my-4 flex h-[calc(100dvh-3.5rem)] min-h-[600px] flex-1 flex-col overflow-hidden">
+    <div className="-mx-[10px] -my-4 flex h-[calc(100dvh-3.5rem)] min-h-[660px] flex-1 flex-col overflow-hidden">
       <ExplorerShell defaultMode="company" />
     </div>
   );
