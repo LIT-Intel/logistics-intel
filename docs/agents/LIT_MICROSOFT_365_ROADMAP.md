@@ -1,6 +1,6 @@
 # LIT — Microsoft 365 Roadmap & Notes
 
-**Status:** PAUSED. Microsoft app work does not start until **Intelligence Explorer** and **Suppliers** are stable. This doc tracks prep/setup and the known surface area so implementation can start cleanly once unpaused.
+**Status (2026-06-23):** Explorer + Suppliers are stable, so Microsoft is unpaused for the **minimal "in-tab login" Teams Personal tab**. SSO + Outlook surfaces are code-complete (pending your live-QA). Deeper Teams SSO is deferred until you decide to invest the Azure config. This doc tracks prep, the shipped pieces, and the open items.
 
 ---
 
@@ -50,10 +50,13 @@ These exist in the codebase already and are **verify/finish**, not greenfield:
 - Supabase Edge secrets: `OUTLOOK_CLIENT_ID/SECRET/REDIRECT_URI/TENANT`, `OAUTH_STATE_SECRET`, `FRONTEND_URL`.
 - Supabase Auth: Azure provider enabled (SSO), redirect `https://<ref>.supabase.co/auth/v1/callback` + allow-listed app callback.
 
-**Teams Personal tab:**
-- Point Content URL at the production `/app/search` (not the preview alias) before GA.
-- The `/app/search` route must render correctly inside the Teams iframe (CSP `frame-ancestors` must allow `teams.microsoft.com` / `*.teams.microsoft.com`; verify the app doesn't bust out of the iframe or block third-party cookies needed for Supabase auth inside Teams).
-- Teams SSO (optional, later): exchange the Teams AAD token for a Supabase session so the user isn't asked to log in again inside the tab.
+**Teams Personal tab — "in-tab login" approach chosen 2026-06-23 (ship-now, minimal):**
+- ✅ App is iframe-ready: no `X-Frame-Options`, no frame-busting code, Supabase auth uses localStorage (works in the partitioned Teams iframe).
+- ✅ `frame-ancestors` CSP added in `frontend/vercel.json` — explicitly allows Teams web + desktop / Office / M365 to embed the app (and restricts everyone else). Header-only; doesn't affect app behavior.
+- ⏳ **Your action:** point the Teams app **Content URL at production** `/app/search` (not the preview alias) + tighten valid-domains to the production host before GA.
+- ⏳ **Your action — live-test in Teams:** add the app → open the Intelligence Explorer tab → it should load → sign in **with email/password**.
+- ⚠️ **Auth caveat (important for the demo):** inside the Teams iframe, **email/password sign-in works**, but the **"Sign in with Microsoft / Google" buttons will NOT** — OAuth providers refuse to render in an iframe and the redirect breaks out of the tab. So inside Teams, log in with email/password. (Removing this limitation = the deferred "Popup auth" or "Full Teams SSO" option.)
+- Deferred (when you want zero-second-login): **Teams SSO** — install `@microsoft/teams-js`, exchange the Teams AAD token for a Supabase session, + Azure "Expose an API" / manifest `webApplicationInfo`. Scoped but not built (your Azure work first).
 
 **Live-QA (needs a real M365 account):** SSO sign-in, Outlook connect (consent must list "Read your mail"), send a campaign from Outlook, reply → confirm detection.
 
