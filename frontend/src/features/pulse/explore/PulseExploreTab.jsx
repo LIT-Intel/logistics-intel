@@ -173,8 +173,12 @@ export default function PulseExploreTab() {
     }
   }, [fetchEnabled, rows.length]);
 
+  // True number of matching accounts in the universe (server head-count), not
+  // the capped loaded count. Sales/TEU stay summed from the loaded rows (the
+  // top MAX_ROWS by opportunity score) since we don't load every row.
+  const totalMatched = data?.totals?.total_matched ?? rows.length;
   const headerTotals = useMemo(() => {
-    if (!rows.length) return { total: 0, totalAnnualSales: 0, totalTeu: 0 };
+    if (!rows.length) return { total: totalMatched, totalAnnualSales: 0, totalTeu: 0 };
     let totalAnnualSales = 0;
     let totalTeu = 0;
     for (const r of rows) {
@@ -183,8 +187,8 @@ export default function PulseExploreTab() {
       const teu = typeof r.teu === 'number' ? r.teu : (r.teu ? Number(r.teu) : 0);
       if (Number.isFinite(teu)) totalTeu += teu;
     }
-    return { total: rows.length, totalAnnualSales, totalTeu };
-  }, [rows]);
+    return { total: totalMatched, totalAnnualSales, totalTeu };
+  }, [rows, totalMatched]);
 
   const toggleSelection = useCallback((id) => {
     const cur = new Set(state.selection ?? []);
@@ -584,9 +588,11 @@ export default function PulseExploreTab() {
                   <span className="text-slate-500 font-normal">
                     {isLoading
                       ? '· loading…'
-                      : displayRows.length === rows.length
-                        ? `· ${rows.length.toLocaleString()} accounts`
-                        : `· ${displayRows.length.toLocaleString()} of ${rows.length.toLocaleString()}`}
+                      : totalMatched > rows.length
+                        ? `· ${rows.length.toLocaleString()} of ${totalMatched.toLocaleString()} accounts`
+                        : displayRows.length === rows.length
+                          ? `· ${rows.length.toLocaleString()} accounts`
+                          : `· ${displayRows.length.toLocaleString()} of ${rows.length.toLocaleString()}`}
                   </span>
                 )}
               </button>
