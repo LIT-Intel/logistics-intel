@@ -64,6 +64,24 @@ Expected: all three resolve. If any is missing, stop and re-audit before continu
 
 ---
 
+## Cross-cutting requirement: Responsive / mobile-first (ALL frontend tasks 11–17)
+
+Every Quoting UI must be **fully responsive and adapt to any screen** — verified at
+**375px (mobile), 768px (tablet), 1440px (desktop)**. This is an acceptance gate, not a nice-to-have.
+
+Rules every frontend task MUST follow:
+- **Mobile-first flex/responsive layout.** Use flexbox + responsive grid utilities (`flex flex-col`, `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`). No fixed pixel widths that overflow small screens.
+- **Dashboard KPI row:** `grid-cols-2 lg:grid-cols-5` (2-up on mobile, full row on desktop) — mirror the `EnhancedKpiCard` grid that the existing Dashboard uses.
+- **Quote Builder:** the two-column layout (form + sticky summary) collapses to a **single column** below `lg`; the right summary panel stops being sticky and stacks under the form on mobile.
+- **Tables (dashboard + company tab):** wrap in `overflow-x-auto` so they scroll horizontally on mobile instead of breaking layout; never let a table force the page wider than the viewport.
+- **Mode-aware form:** field rows are responsive grids (`grid-cols-1 sm:grid-cols-2/3`) so inputs stack on mobile.
+- **Touch targets ≥ 44px** on mobile for buttons/row actions; CTAs remain reachable (sticky action header wraps gracefully — buttons may collapse to icon-only below `sm`).
+- **No horizontal page scroll** at 375px. Test by resizing.
+
+Each frontend task's manual-verification step includes: "resize to 375/768/1440 — no overflow, layout reflows, all actions reachable." The Task 18 QA pass re-checks all three viewports.
+
+---
+
 ## Task 1: Database migration
 
 **Files:**
