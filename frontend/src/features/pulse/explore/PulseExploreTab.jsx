@@ -395,7 +395,7 @@ export default function PulseExploreTab() {
             </div>
           </>
         )}
-        <div className="flex-1 min-w-0 min-h-0 relative flex flex-col overflow-y-auto">
+        <div className="flex-1 min-w-0 min-h-0 relative flex flex-col">
           {parsing && (
             <div className="absolute inset-x-0 top-0 z-30 bg-cyan-50 text-cyan-800 text-xs py-1.5 text-center border-b border-cyan-200">
               Parsing search…
@@ -407,19 +407,17 @@ export default function PulseExploreTab() {
             </div>
           )}
 
-          {/* Map — gets a guaranteed minimum height (min-h-[160px]) so it never
-              vanishes, and a flex share of the remaining space. On a SHORT
-              viewport the map.min + drawer.min exceed the column height, so the
-              column (parent, overflow-y-auto) scrolls instead of squeezing the
-              results table to ~0 (the real ThinkPad bug: container collapsed to
-              2px). Maximized = a thin 80px strip so results dominate. */}
+          {/* Map — fills available vertical space; collapses when the
+              results drawer is open. Uses flex-basis (not percentage height)
+              so the column splits deterministically and every child resolves
+              to real pixels even on short viewports. */}
           <div
-            className={`relative border-b border-slate-200 transition-[flex-basis] duration-200 ${
+            className={`relative border-b border-slate-200 transition-[flex-basis] duration-200 min-h-0 ${
               resultsMaximized
-                ? 'flex-none h-20'
+                ? 'flex-[0_0_84px]'
                 : resultsOpen
-                  ? 'flex-[1_1_0%] basis-[45%] min-h-[160px]'
-                  : 'flex-1 min-h-[160px]'
+                  ? 'flex-[1_1_0%] basis-[55%]'
+                  : 'flex-1'
             }`}
           >
             <ExploreMap
@@ -548,15 +546,14 @@ export default function PulseExploreTab() {
             )}
           </div>
 
-          {/* Results drawer — header bar always visible (so user knows they can
-              pop it open); body only renders when expanded. When open it gets a
-              GUARANTEED min-h-[320px] (~7 rows) so the table can never be
-              squeezed to nothing on a short viewport — the parent column scrolls
-              instead. Results-priority 55% share on tall screens. Closed =
-              flex-none (header bar only). */}
+          {/* Results drawer — header bar always visible (so user knows
+              they can pop it open); body only renders when expanded.
+              When open/maximized the drawer grows via flex (real pixel
+              height) so the virtualized table's AutoSizer can measure it.
+              When closed it's `flex-none` so only the header bar shows. */}
           <div
-            className={`flex flex-col ${
-              resultsOpen ? 'flex-[1_1_0%] basis-[55%] min-h-[320px]' : 'flex-none'
+            className={`flex flex-col min-h-0 ${
+              resultsOpen ? 'flex-[1_1_0%] basis-[45%]' : 'flex-none'
             }`}
           >
             <div className="flex items-center justify-between gap-2 border-y border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700">
