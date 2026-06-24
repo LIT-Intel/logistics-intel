@@ -71,8 +71,21 @@ export default function PulseExploreTab() {
   const [mapStyle, setMapStyle] = useState('alidade_smooth');
   const mapRef = useRef(null);
 
+  const [loadLimit, setLoadLimit] = useState(null); // "load more" cap; null = default 5k
   const fetchEnabled = hasAnyFilter(state.filters);
-  const { data, isLoading, error } = useExploreAccounts(state.filters, null, { enabled: fetchEnabled });
+  const { data, isLoading, error } = useExploreAccounts(state.filters, null, { enabled: fetchEnabled, limit: loadLimit });
+  // Reset the "load more" cap whenever the search filters change — a new search
+  // always starts from the default 5k page.
+  const filterSig = JSON.stringify(state.filters);
+  useEffect(() => { setLoadLimit(null); }, [filterSig]);
+  // The drawer's EFFECTIVE open state is gated on an active search. resultsOpen
+  // can remain true after a search is cleared (we deliberately never auto-close
+  // it while results exist), so without this gate the empty state renders an
+  // open drawer whose flex-1 placeholder inflates into a huge empty box.
+  // Deriving from fetchEnabled makes "collapsed when there's nothing to show"
+  // structural, not dependent on state being perfectly reset.
+  const drawerOpen = resultsOpen && fetchEnabled;
+  const drawerMaximized = drawerOpen && resultsMaximized;
   const rows = data?.rows ?? [];
   // Client-side refinement of the fetched result set (location / industry /
   // size / status). displayRows is what the table + cards actually render.
@@ -156,11 +169,21 @@ export default function PulseExploreTab() {
       autoOpenedRef.current = true;
       setResultsOpen(true);
     }
-    if (!fetchEnabled) autoOpenedRef.current = false;
+    if (!fetchEnabled) {
+      // Search cleared -> collapse the drawer so the empty state shows just the
+      // map + the "Results" header bar, never an open drawer over an empty box.
+      autoOpenedRef.current = false;
+      setResultsOpen(false);
+      setResultsMaximized(false);
+    }
   }, [fetchEnabled, rows.length]);
 
+  // True number of matching accounts in the universe (server head-count), not
+  // the capped loaded count. Sales/TEU stay summed from the loaded rows (the
+  // top MAX_ROWS by opportunity score) since we don't load every row.
+  const totalMatched = data?.totals?.total_matched ?? rows.length;
   const headerTotals = useMemo(() => {
-    if (!rows.length) return { total: 0, totalAnnualSales: 0, totalTeu: 0 };
+    if (!rows.length) return { total: totalMatched, totalAnnualSales: 0, totalTeu: 0 };
     let totalAnnualSales = 0;
     let totalTeu = 0;
     for (const r of rows) {
@@ -169,8 +192,8 @@ export default function PulseExploreTab() {
       const teu = typeof r.teu === 'number' ? r.teu : (r.teu ? Number(r.teu) : 0);
       if (Number.isFinite(teu)) totalTeu += teu;
     }
-    return { total: rows.length, totalAnnualSales, totalTeu };
-  }, [rows]);
+    return { total: totalMatched, totalAnnualSales, totalTeu };
+  }, [rows, totalMatched]);
 
   const toggleSelection = useCallback((id) => {
     const cur = new Set(state.selection ?? []);
@@ -407,16 +430,18 @@ export default function PulseExploreTab() {
             </div>
           )}
 
-          {/* Map — fills available vertical space; collapses when the
-              results drawer is open. Uses flex-basis (not percentage height)
-              so the column splits deterministically and every child resolves
-              to real pixels even on short viewports. */}
+          {/* Map — fills available vertical space; shares it with the results
+              drawer when open. Both map and drawer carry explicit min-h floors
+              so on a SHORT viewport they keep usable heights and the page
+              scrolls (via AppShell's overflow-y-auto) instead of crushing the
+              table to ~0. No transition — a moving height let the table's
+              ResizeObserver capture a mid-animation (near-zero) size. */}
           <div
-            className={`relative border-b border-slate-200 transition-[flex-basis] duration-200 min-h-0 ${
-              resultsMaximized
+            className={`relative border-b border-slate-200 ${
+              drawerMaximized
                 ? 'flex-[0_0_84px]'
-                : resultsOpen
-                  ? 'flex-[1_1_0%] basis-[55%]'
+                : drawerOpen
+                  ? 'flex-[1_1_0%] basis-[55%] min-h-[160px]'
                   : 'flex-1'
             }`}
           >
@@ -553,7 +578,7 @@ export default function PulseExploreTab() {
               When closed it's `flex-none` so only the header bar shows. */}
           <div
             className={`flex flex-col min-h-0 ${
-              resultsOpen ? 'flex-[1_1_0%] basis-[45%]' : 'flex-none'
+              drawerOpen ? 'flex-[1_1_0%] basis-[45%] min-h-[300px]' : 'flex-none'
             }`}
           >
             <div className="flex items-center justify-between gap-2 border-y border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700">
@@ -568,35 +593,48 @@ export default function PulseExploreTab() {
                   <span className="text-slate-500 font-normal">
                     {isLoading
                       ? '· loading…'
-                      : displayRows.length === rows.length
-                        ? `· ${rows.length.toLocaleString()} accounts`
-                        : `· ${displayRows.length.toLocaleString()} of ${rows.length.toLocaleString()}`}
+                      : totalMatched > rows.length
+                        ? `· ${rows.length.toLocaleString()} of ${totalMatched.toLocaleString()} accounts`
+                        : displayRows.length === rows.length
+                          ? `· ${rows.length.toLocaleString()} accounts`
+                          : `· ${displayRows.length.toLocaleString()} of ${rows.length.toLocaleString()}`}
                   </span>
                 )}
               </button>
               <div className="flex items-center gap-0.5">
-                {resultsOpen && (
+                {drawerOpen && rows.length < totalMatched && rows.length < 50000 && (
+                  <button
+                    type="button"
+                    onClick={() => setLoadLimit((prev) => (prev ?? 5000) + 5000)}
+                    disabled={isLoading}
+                    title={`Load 5,000 more (showing ${rows.length.toLocaleString()} of ${totalMatched.toLocaleString()})`}
+                    className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
+                  >
+                    {isLoading ? 'Loading…' : 'Load 5k more'}
+                  </button>
+                )}
+                {drawerOpen && (
                   <button
                     type="button"
                     onClick={() => setResultsMaximized((v) => !v)}
-                    aria-label={resultsMaximized ? 'Restore results size' : 'Maximize results'}
-                    title={resultsMaximized ? 'Restore' : 'Maximize'}
+                    aria-label={drawerMaximized ? 'Restore results size' : 'Maximize results'}
+                    title={drawerMaximized ? 'Restore' : 'Maximize'}
                     className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
                   >
-                    {resultsMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                    {drawerMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={toggleResultsOpen}
-                  aria-label={resultsOpen ? 'Collapse results' : 'Expand results'}
+                  aria-label={drawerOpen ? 'Collapse results' : 'Expand results'}
                   className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
                 >
-                  {resultsOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                  {drawerOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
                 </button>
               </div>
             </div>
-            {resultsOpen && (
+            {drawerOpen && (
               <>
                 <SelectionActionBar
                   selectionCount={(state.selection ?? []).length}
