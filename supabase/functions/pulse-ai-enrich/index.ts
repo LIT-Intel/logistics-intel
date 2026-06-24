@@ -1253,15 +1253,14 @@ Analyze verified company, shipment, carrier, forwarder, container, supplier, con
 
 Hard rules:
 - Do not invent facts.
-- Only use internal company/shipment/contact data provided in the payload or external web results from the web search tool.
+- Use ONLY the internal company/shipment/contact data provided in the payload. You have NO web access. If a fact is not in the payload, do not state it — list it in missing_data.
 - If data is missing, list it in missing_data.
 - Never fabricate emails, phone numbers, job titles, company revenue, employee count, shipment volume, carriers, forwarders, suppliers, or contacts.
-- Keep LIT trade data separate from external web signals.
-- Use web search only for recent company news, announcements, expansions, layoffs, M&A, recalls, product launches, leadership changes, regulatory/tariff signals, and other relevant public context.
+- For company news / expansion / leadership narrative, you may use well-established general knowledge about the company, but mark anything uncertain as [Enrichment in Progress] rather than guessing specifics.
 
 TRADE-DATA GROUNDING (NON-NEGOTIABLE — the most common failure mode):
 - ALL trade figures — trade lanes / routes, TEU / volume, ocean carriers, headquarters location, and port-of-entry gateway — MUST come ONLY from the provided LIT trade data (snapshot.headline_trade_facts, snapshot.normalized_json.routeKpis, snapshot.normalized_json.topRoutes, company.address).
-- Do NOT browse the web for, and do NOT infer or estimate, any of those numbers. web_search is ONLY for company news / expansion / leadership / financial narrative — NEVER for trade figures.
+- Do NOT infer or estimate any of those numbers. They are provided; use them verbatim. (You have no web access — there is no other source.)
 - The REAL lanes are exactly the routes listed in routeKpis.topRoutesLast12m / topRoutes (e.g. for a company whose top lane is "Germany → United States", the macro briefing must discuss Germany→US flows, NOT invented China→New York flows). If you write a lane, carrier, TEU, or port that is not present in the provided LIT data, that is a critical fabrication and a violation.
 - If the snapshot has no carrier data, state carriers are not disclosed — do NOT name Maersk / MSC / CMA CGM / any line. If TEU is small, say so honestly (a sub-100-TEU importer is NOT "5,000+ TEU").
 - The Executive Macro Briefing must be consistent with the REAL lanes, REAL origin countries, and REAL TEU magnitude in the provided data.
@@ -1491,17 +1490,15 @@ async function callOpenAi(payload: {
     model: OPENAI_MODEL,
     instructions: buildInstructions(),
     input: buildUserInput(payload),
-    tools: [
-      // Responses API web_search tool — no `external_web_access` field; that
-      // was an invalid key and caused silent fallbacks on some accounts.
-      { type: "web_search" },
-    ],
-    tool_choice: "auto",
-    include: ["web_search_call.action.sources"],
-    // Bumped from 4500 → 8000 because web_search reasoning + structured JSON
-    // routinely hit the cap and truncated the message mid-object, which is
-    // what produced "OpenAI returned invalid JSON" before this fix.
-    max_output_tokens: 8000,
+    // web_search REMOVED 2026-06-24 (cost + fabrication). It billed a per-search
+    // fee and pulled page content into context (~5k tokens/request), which spiked
+    // OpenAI spend ~10-30x per brief, and it was the source of invented trade
+    // figures. The brief no longer needs it: trade numbers are grounded
+    // deterministically from the real snapshot (applyGroundedTradeFacts) and the
+    // narrative is generated from that real LIT data. No tools = no search fee,
+    // no token bloat. Re-add only if live company-news narrative is worth the cost.
+    // Without web_search reasoning bloat the structured JSON fits well under 4500.
+    max_output_tokens: 4500,
     text: {
       format: {
         type: "json_schema",
