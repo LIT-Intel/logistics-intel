@@ -408,10 +408,16 @@ export default function PulseExploreTab() {
           )}
 
           {/* Map — fills available vertical space; collapses when the
-              results drawer is open. */}
+              results drawer is open. Uses flex-basis (not percentage height)
+              so the column splits deterministically and every child resolves
+              to real pixels even on short viewports. */}
           <div
-            className={`relative border-b border-slate-200 transition-[height] duration-200 ${
-              resultsMaximized ? 'h-[12%]' : resultsOpen ? 'h-3/5' : 'flex-1'
+            className={`relative border-b border-slate-200 transition-[flex-basis] duration-200 min-h-0 ${
+              resultsMaximized
+                ? 'flex-[0_0_84px]'
+                : resultsOpen
+                  ? 'flex-[1_1_0%] basis-[55%]'
+                  : 'flex-1'
             }`}
           >
             <ExploreMap
@@ -541,8 +547,15 @@ export default function PulseExploreTab() {
           </div>
 
           {/* Results drawer — header bar always visible (so user knows
-              they can pop it open); body only renders when expanded. */}
-          <div className="flex flex-col" style={{ height: resultsMaximized ? '88%' : resultsOpen ? '40%' : 'auto' }}>
+              they can pop it open); body only renders when expanded.
+              When open/maximized the drawer grows via flex (real pixel
+              height) so the virtualized table's AutoSizer can measure it.
+              When closed it's `flex-none` so only the header bar shows. */}
+          <div
+            className={`flex flex-col min-h-0 ${
+              resultsOpen ? 'flex-[1_1_0%] basis-[45%]' : 'flex-none'
+            }`}
+          >
             <div className="flex items-center justify-between gap-2 border-y border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700">
               <button
                 type="button"
