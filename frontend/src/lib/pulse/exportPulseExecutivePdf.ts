@@ -168,6 +168,28 @@ interface BriefReport {
   executive_overview?: ExecutiveOverview;
 }
 
+// ─── Real snapshot KPIs (mirror CDPResearch's TradeKpis / TopRouteItem) ────
+// These are the EXACT shapes the in-app modal renders (CDPResearch.tsx:138).
+// When present, the PDF prefers them over the LLM executive_overview numbers
+// so the brief shows the same real trade data the user sees on screen.
+export interface RealTradeKpis {
+  shipments12m?: number | null;
+  teu12m?: number | null;
+  activeLanes?: number | null;
+  topLaneLabel?: string | null;
+  /** 0–1 fraction (e.g. 0.42 = 42% of shipments on the top lane). */
+  topLaneShare?: number | null;
+  yoyPct?: number | null;
+}
+
+export interface RealTopRoute {
+  route?: string | null;
+  shipments?: number | null;
+  teu?: number | null;
+  fclShipments?: number | null;
+  lclShipments?: number | null;
+}
+
 interface ExportArgs {
   companyName: string;
   domain?: string | null;
@@ -175,6 +197,19 @@ interface ExportArgs {
   hq?: string | null;
   brief: { report?: BriefReport | null } | null | undefined;
   generatedAt?: Date;
+  /** Real importyeti snapshot KPIs from the modal (preferred over LLM). */
+  tradeKpis?: RealTradeKpis | null;
+  /** Real top routes from the modal (preferred over LLM trade_lane_velocity). */
+  topRoutes?: RealTopRoute[] | null;
+}
+
+// Compact numeric formatter — mirrors pulseReportPdf.fmtNum so TEU/shipment
+// counts read as "12.4k" / "1.2M" instead of long raw integers.
+function fmtCompact(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return Math.round(n).toLocaleString();
 }
 
 // ─── Markdown sanitiser ───────────────────────────────────────────────────
@@ -601,6 +636,9 @@ function drawCorporateSubHeader(doc: jsPDF, ov: ExecutiveOverview, startY: numbe
   const cellW = (CONTENT_W - 110) / cells.length;
   let x = MARGIN;
   const y = startY;
+  // Track the tallest cell so the block's returned y clears every wrapped
+  // value — single-line [0] truncation was clipping long HQ / sector text.
+  let maxLines = 1;
   for (const [label, value] of cells) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7);
@@ -610,10 +648,13 @@ function drawCorporateSubHeader(doc: jsPDF, ov: ExecutiveOverview, startY: numbe
     doc.setFontSize(9);
     doc.setTextColor(...INK_800);
     const valueLines = doc.splitTextToSize(value, cellW - 14);
-    doc.text(valueLines[0] ?? "—", x, y + 14);
+    // Cap at 3 lines so a runaway value can't blow out the sub-header band.
+    const shown = valueLines.length ? valueLines.slice(0, 3) : ["—"];
+    doc.text(shown, x, y + 14);
+    maxLines = Math.max(maxLines, shown.length);
     x += cellW;
   }
-  return y + 28;
+  return y + 14 + maxLines * 11 + 6;
 }
 
 // ─── Section 2: Executive macro briefing ──────────────────────────────────
@@ -628,7 +669,18 @@ function drawMacroBriefing(doc: jsPDF, ov: ExecutiveOverview, startY: number): n
   doc.setFontSize(9.5);
   doc.setTextColor(...INK_800);
   const lines = doc.splitTextToSize(briefing, CONTENT_W);
+  // Per-line page-break loop (mirrors pulseReportPdf.js:215-222): long
+  // briefings flow onto a new page instead of writing through the footer.
   for (const line of lines) {
+    if (y > PAGE_H - FOOTER_H - 16) {
+      doc.addPage();
+      y = HEADER_H + 28;
+      // Re-assert prose styling after the page break (autoTable/other
+      // helpers may have left the doc in a different font state).
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.setTextColor(...INK_800);
+    }
     doc.text(line, MARGIN, y);
     y += 13;
   }
@@ -636,22 +688,47 @@ function drawMacroBriefing(doc: jsPDF, ov: ExecutiveOverview, startY: number): n
 }
 
 // ─── Section 3: Sourcing demand & logistics volumetrics ───────────────────
-function drawVolumetricsGrid(doc: jsPDF, ov: ExecutiveOverview, startY: number): number {
+function drawVolumetricsGrid(
+  doc: jsPDF,
+  ov: ExecutiveOverview,
+  startY: number,
+  real?: RealTradeKpis | null,
+): number {
   const vol = ov.logistics_volumetrics ?? {};
-  const teu = stripMarkdown(vol.annual_teu_estimate);
+
+  // ── PREFER real snapshot KPIs over the LLM executive_overview ──────────
+  // Same precedence as the modal (CDPResearch): real importyeti numbers
+  // win; the LLM string is the fallback only when the snapshot is absent.
+  const realTeu = Number(real?.teu12m);
+  const teu = Number.isFinite(realTeu) && realTeu > 0
+    ? fmtCompact(realTeu)
+    : stripMarkdown(vol.annual_teu_estimate);
   const tier = stripMarkdown(vol.importer_tier);
-  const lanesCount = Number.isFinite(vol.active_freight_lanes_count) ? String(vol.active_freight_lanes_count) : "";
+
+  const realLanes = Number(real?.activeLanes);
+  const lanesCount = Number.isFinite(realLanes) && realLanes > 0
+    ? String(realLanes)
+    : Number.isFinite(vol.active_freight_lanes_count)
+      ? String(vol.active_freight_lanes_count)
+      : "";
+
   const carriers = Array.isArray(vol.primary_carriers) ? vol.primary_carriers.map((c) => stripMarkdown(c)).filter(Boolean) : [];
+
+  // Real shipments (12m) — surfaced as the TEU card subline when present,
+  // so the brief shows the same shipments figure the modal does.
+  const realShipments = Number(real?.shipments12m);
+  const shipmentsLabel = Number.isFinite(realShipments) && realShipments > 0
+    ? `${fmtCompact(realShipments)} shipments (12m)`
+    : "";
 
   let y = drawSectionHeader(doc, "Sourcing Demand & Logistics Volumetrics", startY);
 
   const cellW = CONTENT_W / 3;
-  const cellH = 70;
   const cells: Array<{ label: string; primary: string; subline: string }> = [
     {
       label: "EST. ANNUAL TEU",
       primary: teu || PENDING_TEXT,
-      subline: tier || "Tier classification pending",
+      subline: shipmentsLabel || tier || "Tier classification pending",
     },
     {
       label: "ACTIVE LOGISTICS LANES",
@@ -665,11 +742,33 @@ function drawVolumetricsGrid(doc: jsPDF, ov: ExecutiveOverview, startY: number):
     },
   ];
 
+  // ── Dynamic card height ────────────────────────────────────────────────
+  // Pre-measure every card's wrapped primary + subline so a long carrier
+  // name or multi-line subline can't clip past a fixed 70pt box. The grid
+  // shares one common height = the tallest card, keeping the row aligned.
+  type Measured = { primaryLines: string[]; subLines: string[]; isPending: boolean };
+  const measured: Measured[] = cells.map((c) => {
+    const isPending = c.primary === PENDING_TEXT;
+    const w = cellW - 8;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    const primaryLines = isPending ? [] : doc.splitTextToSize(c.primary, w - 20).slice(0, 2);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    const showSub = c.subline && !(isPending && c.subline.toLowerCase().includes("pending"));
+    const subLines = showSub ? doc.splitTextToSize(c.subline, w - 20).slice(0, 2) : [];
+    return { primaryLines, subLines, isPending };
+  });
+  const maxPrimary = Math.max(1, ...measured.map((m) => (m.isPending ? 1 : m.primaryLines.length)));
+  const maxSub = Math.max(0, ...measured.map((m) => m.subLines.length));
+  // 16 (label) + primary block (20pt/line) + sub block (11pt/line) + pad.
+  const cellH = 22 + maxPrimary * 20 + maxSub * 11 + 8;
+
   for (let i = 0; i < cells.length; i++) {
     const x = MARGIN + i * cellW + 4;
     const w = cellW - 8;
     const c = cells[i];
-    const isPending = c.primary === PENDING_TEXT;
+    const m = measured[i];
     doc.setDrawColor(...INK_200);
     doc.setFillColor(...WHITE);
     doc.setLineWidth(0.6);
@@ -679,38 +778,85 @@ function drawVolumetricsGrid(doc: jsPDF, ov: ExecutiveOverview, startY: number):
     doc.setTextColor(...INK_500);
     doc.text(c.label, x + 10, y + 16);
 
-    if (isPending) {
+    let cursor = y + 36;
+    if (m.isPending) {
       // Render the pending state as the consistent yellow pill used
-      // elsewhere — never as raw text at a different font size. This
-      // is the same component drawPendingPill renders for empty
-      // sections, so the card feels visually intentional, not broken.
+      // elsewhere — never as raw text at a different font size.
       drawPendingPill(doc, x + 10, y + 30);
+      cursor = y + 30 + 18;
     } else {
-      // Primary metric value — large dark numerals.
+      // Primary metric value — large dark numerals, FULL wrapped lines.
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(18);
+      doc.setFontSize(16);
       doc.setTextColor(...INK_900);
-      const primaryLines = doc.splitTextToSize(c.primary, w - 20);
-      doc.text(primaryLines[0] ?? "—", x + 10, y + 40);
+      for (const line of m.primaryLines) {
+        doc.text(line, x + 10, cursor);
+        cursor += 20;
+      }
     }
 
-    // Sub-line. Skip the auto "Tier classification pending" string
-    // when the primary itself is already a pending pill — would
-    // double up on the empty-state message in a single card.
-    if (c.subline && !(isPending && c.subline.toLowerCase().includes("pending"))) {
+    // Sub-line(s) below the primary block.
+    if (m.subLines.length) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.setTextColor(...INK_500);
-      const subLines = doc.splitTextToSize(c.subline, w - 20);
-      doc.text(subLines.slice(0, 2), x + 10, y + 56);
+      doc.text(m.subLines, x + 10, cursor + 2);
     }
   }
   return y + cellH + 14;
 }
 
-function drawTradeLanesTable(doc: jsPDF, ov: ExecutiveOverview, startY: number): number {
+// Build the Top-3 lane rows from the REAL importyeti routes (preferred),
+// mirroring the modal's TopLanesPanel: rank by shipments, derive volume
+// share from shipments/totalShipments. Falls back to the LLM
+// trade_lane_velocity only when no real routes are on file.
+function lanesFromRealRoutes(routes: RealTopRoute[]): TradeLaneRow[] {
+  const valid = (routes || []).filter(
+    (r) =>
+      r &&
+      typeof r.route === "string" &&
+      r.route.trim().length > 0 &&
+      r.route !== "Unknown → Unknown",
+  );
+  const totalShipments = valid.reduce((s, r) => s + (Number(r.shipments) || 0), 0);
+  const ranked = [...valid].sort(
+    (a, b) => (Number(b.shipments) || 0) - (Number(a.shipments) || 0),
+  );
+  return ranked.slice(0, 3).map((r) => {
+    const ships = Number(r.shipments) || 0;
+    const sharePct =
+      totalShipments > 0 ? Math.round((ships / totalShipments) * 100) : undefined;
+    const fcl = Number(r.fclShipments) || 0;
+    const lcl = Number(r.lclShipments) || 0;
+    // Derive a velocity-status pill label from the FCL/LCL mix so the
+    // column stays populated even though importyeti carries no explicit
+    // velocity flag. High-volume top lane reads "High Volume".
+    let velocity = "Active";
+    if (sharePct != null && sharePct >= 40) velocity = "High Volume";
+    else if (fcl > 0 && lcl === 0) velocity = "Stable";
+    return {
+      route: stripMarkdown(r.route),
+      volume_share_pct: sharePct,
+      transit_days: undefined,
+      velocity_status: velocity,
+    };
+  });
+}
+
+function drawTradeLanesTable(
+  doc: jsPDF,
+  ov: ExecutiveOverview,
+  startY: number,
+  real?: RealTopRoute[] | null,
+): number {
   let y = drawSectionHeader(doc, "Critical Trade Lane Velocity (Top 3)", startY);
-  const lanes = Array.isArray(ov.trade_lane_velocity) ? ov.trade_lane_velocity : [];
+  // PREFER real snapshot routes over the LLM-synthesised lanes.
+  const realLanes = Array.isArray(real) ? lanesFromRealRoutes(real) : [];
+  const lanes = realLanes.length
+    ? realLanes
+    : Array.isArray(ov.trade_lane_velocity)
+      ? ov.trade_lane_velocity
+      : [];
   if (!lanes.length) {
     drawPendingPill(doc, MARGIN, y);
     return y + 28;
@@ -882,6 +1028,18 @@ function drawLeadership(doc: jsPDF, ov: ExecutiveOverview, startY: number): numb
     const title = stripMarkdown(c.title) || PENDING_TEXT;
     const mandate = stripMarkdown(c.strategic_mandate) || PENDING_TEXT;
 
+    // Pre-measure the mandate so we know this contact's full block height
+    // and can page-break BEFORE drawing rather than writing through the
+    // navy footer strip (the overflow the user reported).
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8.5);
+    const mandateLines = doc.splitTextToSize(`Focus: ${mandate}`, CONTENT_W - 14).slice(0, 3);
+    const blockH = 12 + mandateLines.length * 11 + 6;
+    if (y + blockH > PAGE_H - FOOTER_H - 16) {
+      doc.addPage();
+      y = HEADER_H + 28;
+    }
+
     // Bullet marker.
     doc.setFillColor(...INK_900);
     doc.circle(MARGIN + 3, y - 3, 2, "F");
@@ -902,10 +1060,9 @@ function drawLeadership(doc: jsPDF, ov: ExecutiveOverview, startY: number): numb
     doc.setFont("helvetica", "italic");
     doc.setFontSize(8.5);
     doc.setTextColor(...INK_500);
-    const mandateLines = doc.splitTextToSize(`Focus: ${mandate}`, CONTENT_W - 14);
-    doc.text(mandateLines.slice(0, 2), MARGIN + 12, y + 12);
+    doc.text(mandateLines, MARGIN + 12, y + 12);
 
-    y += 12 + mandateLines.slice(0, 2).length * 11 + 6;
+    y += blockH;
   }
   return y + 4;
 }
@@ -941,13 +1098,14 @@ export function exportPulseExecutivePdf(args: ExportArgs): void {
   y = ensureRoom(doc, y, 90);
   y = drawMacroBriefing(doc, ov, y + 6);
 
-  // Block 3a: volumetrics grid.
+  // Block 3a: volumetrics grid. Prefer the real importyeti snapshot KPIs
+  // (same numbers the in-app modal shows) over the LLM executive_overview.
   y = ensureRoom(doc, y, 110);
-  y = drawVolumetricsGrid(doc, ov, y + 4);
+  y = drawVolumetricsGrid(doc, ov, y + 4, args.tradeKpis);
 
-  // Block 3b: trade lane table.
+  // Block 3b: trade lane table. Prefer the real top routes over the LLM.
   y = ensureRoom(doc, y, 120);
-  y = drawTradeLanesTable(doc, ov, y);
+  y = drawTradeLanesTable(doc, ov, y, args.topRoutes);
 
   // Block 4: friction points.
   y = ensureRoom(doc, y, 140);
