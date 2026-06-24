@@ -19,7 +19,6 @@ import {
   ArrowRight, Bookmark, ExternalLink, MapPin, RefreshCw,
   TrendingUp, Ship, Building2, X, Search,
 } from 'lucide-react';
-import { useExplorer } from '@/components/explorer/ExplorerContext';
 import { useImportYetiRefresh } from './useImportYetiRefresh';
 
 function fmtNum(n) {
@@ -141,7 +140,6 @@ function isCached24h(row) {
 export default function ExploreQuickCard({ row, onClose, onSaveToList }) {
   const navigate = useNavigate();
   const [, setSp] = useSearchParams();
-  const { setMode } = useExplorer();
   const refresh = useImportYetiRefresh();
   if (!row) return null;
 
@@ -303,16 +301,18 @@ export default function ExploreQuickCard({ row, onClose, onSaveToList }) {
             <button
               type="button"
               onClick={() => {
-                // Set the company name as the query, then switch to the Company
-                // Search tab via the SAME setMode() the tab bar uses (proven to
-                // work). navigate(?tab=) wasn't reliably switching the tab while
-                // the Pulse tab stayed mounted.
+                // Switch to the Company Search tab AND set the query in ONE
+                // atomic URL write. Two separate writes (setSp(q) then
+                // setMode -> setSp(tab)) raced: react-router gives BOTH
+                // functional updaters the SAME snapshot, so the tab write
+                // overwrote the q write -> tab switched but the company name
+                // was dropped (empty search box). One write sets both.
                 setSp((prev) => {
                   const next = new URLSearchParams(prev);
+                  next.set('tab', 'company');
                   next.set('q', row.company_name ?? '');
                   return next;
                 }, { replace: true });
-                setMode('company');
                 onClose?.();
               }}
               className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 text-white text-xs font-medium px-3 py-2 hover:bg-slate-700"
