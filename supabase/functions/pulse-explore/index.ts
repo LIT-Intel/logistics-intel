@@ -164,20 +164,8 @@ function expandStates(geo: Geo | undefined): string[] {
   return Array.from(new Set([...fromRegions, ...fromExplicit].map((s) => s.toUpperCase())));
 }
 
-function buildDirectoryQueryBase(admin: any, f: Filters) {
+function applyDirectoryFilters(q: any, f: Filters) {
   const states = expandStates(f.geo);
-  let q = admin
-    .from("lit_company_directory")
-    .select(
-      "id, company_name, canonical_name, canonical_domain, city, state, country, " +
-        "latitude, longitude, " +
-        "industry, vertical, employee_count, revenue, teu, shipments, lcl, value_usd, " +
-        "top_dimensions, top_forwarders, gp_potential, " +
-        "consignee_email_1, consignee_phone_1, " +
-        "opportunity_consolidation_score, opportunity_vulnerable_score, " +
-        "opportunity_velocity_score, opportunity_composite_score, " +
-        "last_opportunity_recompute_at",
-    );
   if (f.name?.trim()) q = q.ilike("company_name", `%${f.name.trim()}%`);
   if (f.industry?.length) q = q.in("industry", f.industry);
   if (states.length) q = q.in("state", statesToFullNames(states));
@@ -208,6 +196,36 @@ function buildDirectoryQueryBase(admin: any, f: Filters) {
   if (f.opportunity_score_min != null) q = q.gte("opportunity_composite_score", f.opportunity_score_min);
   if (f.opportunity_score_max != null) q = q.lte("opportunity_composite_score", f.opportunity_score_max);
   return q;
+}
+
+function buildDirectoryQueryBase(admin: any, f: Filters) {
+  const q = admin
+    .from("lit_company_directory")
+    .select(
+      "id, company_name, canonical_name, canonical_domain, city, state, country, " +
+        "latitude, longitude, " +
+        "industry, vertical, employee_count, revenue, teu, shipments, lcl, value_usd, " +
+        "top_dimensions, top_forwarders, gp_potential, " +
+        "consignee_email_1, consignee_phone_1, " +
+        "opportunity_consolidation_score, opportunity_vulnerable_score, " +
+        "opportunity_velocity_score, opportunity_composite_score, " +
+        "last_opportunity_recompute_at",
+    );
+  return applyDirectoryFilters(q, f);
+}
+
+// True universe count for the same directory filters. head:true returns ONLY
+// the count (no row data), so it's cheap and does NOT add to the MAX_ROWS fetch
+// time — it lets the UI show the real match total even though we only LOAD the
+// top MAX_ROWS for the map/table.
+async function countDirectory(admin: any, f: Filters): Promise<number | null> {
+  const q = applyDirectoryFilters(
+    admin.from("lit_company_directory").select("id", { count: "exact", head: true }),
+    f,
+  );
+  const { count, error } = await q;
+  if (error) return null;
+  return typeof count === "number" ? count : null;
 }
 
 async function fetchDirectory(admin: any, f: Filters): Promise<Row[]> {
@@ -947,10 +965,13 @@ Deno.serve(async (req: Request) => {
   // every active filter is one the index can actually satisfy.
   const includeIndex = dataset !== "directory_only" && indexCanSatisfy(filters);
 
-  const [directoryRows, liveRows, indexRows] = await Promise.all([
+  const [directoryRows, liveRows, indexRows, directoryTotal] = await Promise.all([
     dataset === "live_only" ? Promise.resolve([] as Row[]) : fetchDirectory(admin, filters),
     dataset === "directory_only" ? Promise.resolve([] as Row[]) : fetchLive(admin, filters),
     includeIndex ? fetchIndex(admin, filters) : Promise.resolve([] as Row[]),
+    // True universe count (cheap head-count, runs in parallel). Lets the UI show
+    // the real match total even though we only LOAD the top MAX_ROWS.
+    dataset === "live_only" ? Promise.resolve(null) : countDirectory(admin, filters),
   ]);
 
   let rows = mergeAndDedup(directoryRows, liveRows, indexRows);
@@ -970,6 +991,12 @@ Deno.serve(async (req: Request) => {
     rows: sorted,
     totals: {
       total: rows.length,
+      // The real number of matching accounts in the universe (not capped at
+      // MAX_ROWS). Floored at the merged row count so live/index extras can't
+      // make it smaller than what we actually returned.
+      total_matched: directoryTotal != null
+        ? Math.max(directoryTotal, rows.length)
+        : rows.length,
       returned: sorted.length,
       directory: directoryRows.length,
       live: liveRows.length,
