@@ -4,6 +4,28 @@
 
 ---
 
+## 🧪 Teams Demo QA Checklist (current goal)
+
+Live-test the **private Teams Personal tab** with the **in-tab email/password login** approach. Run in the Teams **desktop** app and/or Teams **web** (teams.microsoft.com). Open dev console to watch for errors: Teams web → browser F12; Teams desktop → `Ctrl+Shift+I`. Use a strong demo company (e.g. **Home Depot Usa**, **Kia Georgia**, **Adidas International Trade**, **Robert Bosch**, **Zara Usa**).
+
+| # | Step | Expected | Watch for |
+|---|---|---|---|
+| 1 | App loads inside Teams | The LIT app renders in the tab (not blank / not an error page) | Blank tab or "refused to connect" = CSP/`frame-ancestors` or Content-URL issue |
+| 2 | Intelligence Explorer loads | `/app/search` shows the **Company Search** + **Pulse Explorer** tabs | Wrong route / 404 |
+| 3 | **Email/password login works in the tab** | Enter email + password → lands authenticated in the app | If it bounces back to login, the session didn't persist in the partitioned iframe storage |
+| 4 | Company Search works | Search a company → results render | Empty/erroring results |
+| 5 | Pulse Explorer works | Switch tab → NL search → map + results | No map / no results |
+| 6 | Company Profile opens | Click a result → profile opens | Profile blank |
+| 7 | Suppliers tab opens | The top-level **Suppliers** tab loads | Tab missing / errors |
+| 8 | Supplier rows show **real 12M data** | shipments 12M, TEU 12M, share %, country, HS chapters, first/last dates — real values, missing fields show `—` | Any fabricated/placeholder numbers |
+| 9 | Save to Command Center works | Save a company → confirmation; appears in saved list | Save errors |
+| 10 | **No console / auth / CSP errors** | Console clean | `frame-ancestors` CSP violations, auth/session errors, third-party-storage blocked warnings |
+
+### ⚠️ Expected limitation — document for the demo
+Inside the Teams iframe, the **"Sign in with Google" and "Sign in with Microsoft" buttons are expected NOT to work**, and this is by design for now. OAuth providers send `X-Frame-Options: DENY` / `frame-ancestors` that forbid rendering inside an iframe, and the redirect breaks out of the Teams tab. **Use email/password inside Teams.** Social sign-in inside Teams becomes available only once **TeamsJS popup auth** (`microsoftTeams.authentication.authenticate`) or **full Teams SSO** is implemented — both deferred.
+
+---
+
 ## ✅ Completed setup / prep work
 
 ### Teams private app shell (Microsoft Developer Portal) — done 2026-06-23
