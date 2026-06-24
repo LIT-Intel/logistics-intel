@@ -73,6 +73,14 @@ export default function PulseExploreTab() {
 
   const fetchEnabled = hasAnyFilter(state.filters);
   const { data, isLoading, error } = useExploreAccounts(state.filters, null, { enabled: fetchEnabled });
+  // The drawer's EFFECTIVE open state is gated on an active search. resultsOpen
+  // can remain true after a search is cleared (we deliberately never auto-close
+  // it while results exist), so without this gate the empty state renders an
+  // open drawer whose flex-1 placeholder inflates into a huge empty box.
+  // Deriving from fetchEnabled makes "collapsed when there's nothing to show"
+  // structural, not dependent on state being perfectly reset.
+  const drawerOpen = resultsOpen && fetchEnabled;
+  const drawerMaximized = drawerOpen && resultsMaximized;
   const rows = data?.rows ?? [];
   // Client-side refinement of the fetched result set (location / industry /
   // size / status). displayRows is what the table + cards actually render.
@@ -156,7 +164,13 @@ export default function PulseExploreTab() {
       autoOpenedRef.current = true;
       setResultsOpen(true);
     }
-    if (!fetchEnabled) autoOpenedRef.current = false;
+    if (!fetchEnabled) {
+      // Search cleared -> collapse the drawer so the empty state shows just the
+      // map + the "Results" header bar, never an open drawer over an empty box.
+      autoOpenedRef.current = false;
+      setResultsOpen(false);
+      setResultsMaximized(false);
+    }
   }, [fetchEnabled, rows.length]);
 
   const headerTotals = useMemo(() => {
@@ -407,16 +421,18 @@ export default function PulseExploreTab() {
             </div>
           )}
 
-          {/* Map — fills available vertical space; collapses when the
-              results drawer is open. Uses flex-basis (not percentage height)
-              so the column splits deterministically and every child resolves
-              to real pixels even on short viewports. */}
+          {/* Map — fills available vertical space; shares it with the results
+              drawer when open. Both map and drawer carry explicit min-h floors
+              so on a SHORT viewport they keep usable heights and the page
+              scrolls (via AppShell's overflow-y-auto) instead of crushing the
+              table to ~0. No transition — a moving height let the table's
+              ResizeObserver capture a mid-animation (near-zero) size. */}
           <div
-            className={`relative border-b border-slate-200 transition-[flex-basis] duration-200 min-h-0 ${
-              resultsMaximized
+            className={`relative border-b border-slate-200 ${
+              drawerMaximized
                 ? 'flex-[0_0_84px]'
-                : resultsOpen
-                  ? 'flex-[1_1_0%] basis-[55%]'
+                : drawerOpen
+                  ? 'flex-[1_1_0%] basis-[55%] min-h-[160px]'
                   : 'flex-1'
             }`}
           >
@@ -553,7 +569,7 @@ export default function PulseExploreTab() {
               When closed it's `flex-none` so only the header bar shows. */}
           <div
             className={`flex flex-col min-h-0 ${
-              resultsOpen ? 'flex-[1_1_0%] basis-[45%]' : 'flex-none'
+              drawerOpen ? 'flex-[1_1_0%] basis-[45%] min-h-[300px]' : 'flex-none'
             }`}
           >
             <div className="flex items-center justify-between gap-2 border-y border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700">
@@ -575,28 +591,28 @@ export default function PulseExploreTab() {
                 )}
               </button>
               <div className="flex items-center gap-0.5">
-                {resultsOpen && (
+                {drawerOpen && (
                   <button
                     type="button"
                     onClick={() => setResultsMaximized((v) => !v)}
-                    aria-label={resultsMaximized ? 'Restore results size' : 'Maximize results'}
-                    title={resultsMaximized ? 'Restore' : 'Maximize'}
+                    aria-label={drawerMaximized ? 'Restore results size' : 'Maximize results'}
+                    title={drawerMaximized ? 'Restore' : 'Maximize'}
                     className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
                   >
-                    {resultsMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                    {drawerMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={toggleResultsOpen}
-                  aria-label={resultsOpen ? 'Collapse results' : 'Expand results'}
+                  aria-label={drawerOpen ? 'Collapse results' : 'Expand results'}
                   className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
                 >
-                  {resultsOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                  {drawerOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
                 </button>
               </div>
             </div>
-            {resultsOpen && (
+            {drawerOpen && (
               <>
                 <SelectionActionBar
                   selectionCount={(state.selection ?? []).length}
