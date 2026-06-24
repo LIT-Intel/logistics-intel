@@ -2,8 +2,8 @@
 // Dimensions column showing the lane chips + a forwarder chip, right-aligned
 // numeric columns (TEU Vol., Annual Sales, GP Potential).
 
-import { useMemo } from 'react';
-import { AutoSizer, List } from 'react-virtualized';
+import { useMemo, useRef, useState, useLayoutEffect } from 'react';
+import { List } from 'react-virtualized';
 import { CheckSquare, Square, ChevronRight } from 'lucide-react';
 import 'react-virtualized/styles.css';
 
@@ -97,6 +97,41 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
   const selSet = useMemo(() => new Set(selection ?? []), [selection]);
   const gridCols = useMemo(() => gridTemplate(), []);
 
+  // Body sizing — measure the scroll container directly with a ResizeObserver
+  // and hand the virtualized List an explicit pixel height/width. This replaces
+  // react-virtualized's AutoSizer, which measured the container ONCE at first
+  // paint — before this table's flex-derived height resolved — captured ~1
+  // row (ROW_HEIGHT), and never reliably re-measured, leaving a single row in a
+  // tall empty panel on short/laptop/mobile viewports. ResizeObserver fires on
+  // mount, after the flex/viewport settles, during the drawer open/close
+  // transition, and on any window resize, so the row count is always correct at
+  // every screen size. (Falls back to a window-resize listener on the rare
+  // engine without ResizeObserver.)
+  const bodyRef = useRef(null);
+  const [bodySize, setBodySize] = useState({ width: 0, height: 0 });
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return undefined;
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      const width = Math.round(rect.width);
+      const height = Math.round(rect.height);
+      setBodySize((prev) =>
+        prev.width === width && prev.height === height
+          ? prev
+          : { width, height },
+      );
+    };
+    measure(); // synchronous first measure so rows paint immediately
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
   const renderRow = ({ index, key, style }) => {
     const row = rows[index];
     const checked = selSet.has(row.id);
@@ -164,19 +199,17 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
           </div>
         ))}
       </div>
-      {/* Body */}
-      <div className="flex-1 min-h-0">
-        <AutoSizer>
-          {({ height, width }) => (
-            <List
-              height={height}
-              width={width}
-              rowCount={rows.length}
-              rowHeight={ROW_HEIGHT}
-              rowRenderer={renderRow}
-            />
-          )}
-        </AutoSizer>
+      {/* Body — explicit size from the ResizeObserver above (no AutoSizer). */}
+      <div ref={bodyRef} className="flex-1 min-h-0">
+        {bodySize.height > 0 && bodySize.width > 0 && (
+          <List
+            height={bodySize.height}
+            width={bodySize.width}
+            rowCount={rows.length}
+            rowHeight={ROW_HEIGHT}
+            rowRenderer={renderRow}
+          />
+        )}
       </div>
     </div>
   );
