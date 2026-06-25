@@ -334,7 +334,15 @@ export default function Billing() {
   // role-derived input that could affect the comparison grid.
 
   // ── Derived state ─────────────────────────────────────────────────
+  // Source of truth is the get-entitlements snapshot (entitlements.plan),
+  // which resolves the highest plan across ALL the user's org memberships
+  // (resolve_plan_code). subscription?.plan_code (get-billing-status) and
+  // user.plan (JWT metadata) only reflect the user's OWN subscription, so an
+  // invited member of a paid org reads free_trial there — which showed trial
+  // pricing on Billing for enterprise members. Prefer entitlements; fall back
+  // to the per-user sources only while the snapshot loads.
   const rawPlan =
+    entitlements?.plan ||
     subscription?.plan_code ||
     (user as any)?.plan ||
     (user as any)?.user_metadata?.plan ||
