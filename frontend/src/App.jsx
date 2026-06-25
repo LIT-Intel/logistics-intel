@@ -33,6 +33,7 @@ const EmailCenter = lazy(() => import("@/pages/EmailCenter"));
 // Route below redirects /app/rfp → /app/dashboard so old bookmarks land softly.
 const QuotingDashboard = lazy(() => import("@/features/quoting/QuotingDashboard"));
 const QuoteBuilder = lazy(() => import("@/features/quoting/QuoteBuilder"));
+const QuoteSettings = lazy(() => import("@/features/quoting/QuoteSettings"));
 const Settings = lazy(() => import("@/pages/SettingsPage"));
 const Billing = lazy(() => import("@/pages/BillingNew"));
 const AffiliateDash = lazy(() => import("@/pages/AffiliateDashboard"));
@@ -497,6 +498,16 @@ export default function App() {
             <RequireAuth>
               <LITPage>
                 <QuoteBuilder />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/quoting/settings"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <QuoteSettings />
               </LITPage>
             </RequireAuth>
           }

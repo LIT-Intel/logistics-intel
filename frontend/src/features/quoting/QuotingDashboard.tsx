@@ -30,6 +30,7 @@ import {
   Copy,
   FileText,
   Sparkles,
+  Settings as SettingsIcon,
 } from "lucide-react";
 
 import { quoting } from "@/api/quoting";
@@ -160,38 +161,49 @@ export default function QuotingDashboard() {
             Turn freight intelligence into priced, sent, and tracked revenue.
           </p>
         </div>
-        {quotingLocked ? (
+        <div className="flex w-full items-center gap-2 sm:w-auto">
           <button
             type="button"
-            onClick={() => navigate("/app/billing")}
-            title="Upgrade to Growth to create quotes"
-            className="inline-flex items-center justify-center gap-2 h-10 w-full sm:w-auto px-4 rounded-[10px] text-[13.5px] font-semibold text-white transition hover:brightness-105"
-            style={{
-              fontFamily: "'Space Grotesk', sans-serif",
-              background: "linear-gradient(180deg,#d97706,#b45309)",
-              boxShadow:
-                "0 6px 16px rgba(217,119,6,.28), inset 0 1px 0 rgba(255,255,255,.18)",
-            }}
+            onClick={() => navigate("/app/quoting/settings")}
+            aria-label="Quote settings"
+            title="Quote settings"
+            className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
           >
-            <Sparkles className="w-4 h-4" />
-            Upgrade to create quotes
+            <SettingsIcon className="w-[18px] h-[18px]" />
           </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => navigate("/app/quoting/new")}
-            className="inline-flex items-center justify-center gap-2 h-10 w-full sm:w-auto px-4 rounded-[10px] text-[13.5px] font-semibold text-white transition hover:brightness-105"
-            style={{
-              fontFamily: "'Space Grotesk', sans-serif",
-              background: "linear-gradient(180deg,#2563eb,#1d4ed8)",
-              boxShadow:
-                "0 6px 16px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18)",
-            }}
-          >
-            <Plus className="w-4 h-4" />
-            New Quote
-          </button>
-        )}
+          {quotingLocked ? (
+            <button
+              type="button"
+              onClick={() => navigate("/app/billing")}
+              title="Upgrade to Growth to create quotes"
+              className="inline-flex items-center justify-center gap-2 h-10 flex-1 sm:flex-none sm:w-auto px-4 rounded-[10px] text-[13.5px] font-semibold text-white transition hover:brightness-105"
+              style={{
+                fontFamily: "'Space Grotesk', sans-serif",
+                background: "linear-gradient(180deg,#d97706,#b45309)",
+                boxShadow:
+                  "0 6px 16px rgba(217,119,6,.28), inset 0 1px 0 rgba(255,255,255,.18)",
+              }}
+            >
+              <Sparkles className="w-4 h-4" />
+              Upgrade to create quotes
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => navigate("/app/quoting/new")}
+              className="inline-flex items-center justify-center gap-2 h-10 flex-1 sm:flex-none sm:w-auto px-4 rounded-[10px] text-[13.5px] font-semibold text-white transition hover:brightness-105"
+              style={{
+                fontFamily: "'Space Grotesk', sans-serif",
+                background: "linear-gradient(180deg,#2563eb,#1d4ed8)",
+                boxShadow:
+                  "0 6px 16px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18)",
+              }}
+            >
+              <Plus className="w-4 h-4" />
+              New Quote
+            </button>
+          )}
+        </div>
       </div>
 
       {/* KPI row */}

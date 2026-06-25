@@ -14,7 +14,7 @@
 import jsPDF from "jspdf";
 import autoTable, { type RowInput } from "jspdf-autotable";
 
-import type { Quote, QuoteLineItem, QuoteMode } from "@/api/quoting";
+import type { Quote, QuoteLineItem, QuoteMode, QuoteSettings } from "@/api/quoting";
 import { USES_PORTS } from "@/lib/quoting/modeFields";
 import { BRAND, PDF_PAGE } from "@/lib/pulse/reportBrand";
 
@@ -56,11 +56,59 @@ export interface QuoteOrgDefaults {
 
 export interface ExportQuotePdfOptions {
   orgDefaults?: QuoteOrgDefaults | null;
+  /** Full org quote settings (branding + defaults). Supersedes `orgDefaults`. */
+  settings?: QuoteSettings | null;
   /** Optional human-readable company name for the customer block. */
   companyName?: string | null;
   /** Optional contact name for the customer block. */
   contactName?: string | null;
   generatedAt?: Date;
+}
+
+/**
+ * Merge the full `settings` object (new path) with the legacy `orgDefaults`
+ * shape so the rest of the renderer reads one normalized object. `settings`
+ * wins; `orgDefaults` fields are a fallback for older callers.
+ */
+function resolveBranding(opts: ExportQuotePdfOptions): QuoteSettings {
+  const s = opts.settings ?? {};
+  const d = opts.orgDefaults ?? {};
+  return {
+    company_name: s.company_name ?? d.company_name ?? undefined,
+    company_address: s.company_address ?? undefined,
+    company_email: s.company_email ?? undefined,
+    company_phone: s.company_phone ?? undefined,
+    logo_url: s.logo_url ?? undefined,
+    signature_url: s.signature_url ?? undefined,
+    signature_name: s.signature_name ?? d.signature_name ?? undefined,
+    prepared_by: s.prepared_by ?? d.prepared_by ?? undefined,
+    default_payment_terms: s.default_payment_terms ?? d.payment_terms ?? undefined,
+    terms_text: s.terms_text ?? d.terms_text ?? undefined,
+  };
+}
+
+/**
+ * Load a (data-URI) image and resolve its natural pixel dimensions so the PDF
+ * can preserve aspect ratio when placing it. Resolves to null on any failure
+ * so callers can fall back to the text brand mark — never throws.
+ */
+function loadImageSize(dataUrl: string): Promise<{ w: number; h: number } | null> {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () =>
+        resolve(img.naturalWidth && img.naturalHeight ? { w: img.naturalWidth, h: img.naturalHeight } : null);
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+/** Map a data-URI mime to a jsPDF image format token. */
+function imageFormat(dataUrl: string): "PNG" | "JPEG" {
+  return /^data:image\/jpe?g/i.test(dataUrl) ? "JPEG" : "PNG";
 }
 
 // ─── Formatting helpers ────────────────────────────────────────────────────
@@ -129,12 +177,62 @@ function drawBrandMark(doc: jsPDF, x: number, y: number, size: number): void {
 }
 
 // ─── Page chrome ───────────────────────────────────────────────────────────
-function drawHeaderBar(doc: jsPDF, orgName: string): void {
+/** Pre-resolved logo placement so the per-page chrome stamp stays synchronous. */
+interface LogoPlacement {
+  dataUrl: string;
+  fmt: "PNG" | "JPEG";
+  w: number;
+  h: number;
+}
+
+/**
+ * Compute a logo placement (scaled to ≤`maxH` header height, aspect preserved)
+ * from a data-URI. Returns null when the image can't be sized — caller falls
+ * back to the text brand mark.
+ */
+async function resolveLogoPlacement(
+  dataUrl: string | undefined | null,
+  maxH = 32,
+  maxW = 150,
+): Promise<LogoPlacement | null> {
+  if (!dataUrl) return null;
+  const size = await loadImageSize(dataUrl);
+  if (!size) return null;
+  const scale = Math.min(maxH / size.h, maxW / size.w);
+  return {
+    dataUrl,
+    fmt: imageFormat(dataUrl),
+    w: Math.max(1, size.w * scale),
+    h: Math.max(1, size.h * scale),
+  };
+}
+
+function drawHeaderBar(doc: jsPDF, orgName: string, logo: LogoPlacement | null): void {
   doc.setFillColor(...WHITE);
   doc.rect(0, 0, PAGE_W, HEADER_H, "F");
   doc.setDrawColor(...INK_200);
   doc.setLineWidth(0.5);
   doc.line(0, HEADER_H, PAGE_W, HEADER_H);
+
+  if (logo) {
+    // Vertically center the logo within the header band; name sits to its right.
+    const y = (HEADER_H - logo.h) / 2;
+    try {
+      doc.addImage(logo.dataUrl, logo.fmt, MARGIN, y, logo.w, logo.h);
+    } catch {
+      drawBrandMark(doc, MARGIN, 14, 28);
+    }
+    const textX = MARGIN + logo.w + 12;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(...INK_900);
+    doc.text(orgName, textX, 27);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...INK_500);
+    doc.text("FREIGHT QUOTATION", textX, 39);
+    return;
+  }
 
   drawBrandMark(doc, MARGIN, 14, 28);
 
@@ -168,11 +266,11 @@ function drawFooter(doc: jsPDF, pageNum: number, pageCount: number): void {
   doc.text(right, PAGE_W - MARGIN - rw, barY + 11);
 }
 
-function stampPageChrome(doc: jsPDF, orgName: string): void {
+function stampPageChrome(doc: jsPDF, orgName: string, logo: LogoPlacement | null): void {
   const total = doc.getNumberOfPages();
   for (let i = 1; i <= total; i++) {
     doc.setPage(i);
-    drawHeaderBar(doc, orgName);
+    drawHeaderBar(doc, orgName, logo);
     drawFooter(doc, i, total);
   }
 }
@@ -207,6 +305,7 @@ function drawTitleBlock(
   doc: jsPDF,
   quote: Quote,
   opts: ExportQuotePdfOptions,
+  branding: QuoteSettings,
   startY: number,
 ): number {
   let y = startY;
@@ -215,6 +314,34 @@ function drawTitleBlock(
   doc.setFontSize(22);
   doc.setTextColor(...INK_900);
   doc.text("QUOTATION", MARGIN, y);
+  y += 6;
+
+  // Issuing-company block under the title (name + contact lines). Each field
+  // is optional and guarded; nothing renders when all are empty.
+  const companyName = clean(branding.company_name);
+  const contactLines = [
+    clean(branding.company_address),
+    [clean(branding.company_email), clean(branding.company_phone)].filter(Boolean).join("  ·  "),
+  ].filter(Boolean);
+
+  if (companyName) {
+    y += 10;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10.5);
+    doc.setTextColor(...INK_800);
+    doc.text(companyName, MARGIN, y);
+  }
+  if (contactLines.length) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...INK_500);
+    for (const block of contactLines) {
+      for (const line of doc.splitTextToSize(block, CONTENT_W * 0.55)) {
+        y += 12;
+        doc.text(line, MARGIN, y);
+      }
+    }
+  }
 
   // Meta card top-right: quote #, date, valid-until.
   const generated = opts.generatedAt ?? (quote.created_at ? new Date(quote.created_at) : new Date());
@@ -451,16 +578,20 @@ function drawTotals(doc: jsPDF, quote: Quote, startY: number): number {
 function drawTermsAndSignature(
   doc: jsPDF,
   quote: Quote,
-  opts: ExportQuotePdfOptions,
+  branding: QuoteSettings,
+  signature: LogoPlacement | null,
   startY: number,
 ): number {
-  const defaults = opts.orgDefaults ?? {};
   let y = drawSectionHeader(doc, "Terms & Conditions", startY);
 
-  const paymentTerms = clean(defaults.payment_terms) || "Payment due Net 30 from invoice date.";
+  // Payment terms: org default first, then quote-specific override fallback.
+  const paymentTerms =
+    clean(branding.default_payment_terms) || "Payment due Net 30 from invoice date.";
+  // Terms text: the quote's own terms win (per-quote override), then the org
+  // default, then a sane boilerplate.
   const termsText =
-    clean(defaults.terms_text) ||
     clean(quote.terms_text) ||
+    clean(branding.terms_text) ||
     "Rates exclude duties & taxes. Subject to space & equipment availability. This quotation is valid until the date noted above.";
 
   doc.setFont("helvetica", "bold");
@@ -486,10 +617,21 @@ function drawTermsAndSignature(
   }
 
   // Prepared by + signature line.
-  y = ensureRoom(doc, y, 60);
+  y = ensureRoom(doc, y, signature ? 90 : 60);
   y += 14;
-  const preparedBy = clean(defaults.prepared_by) || clean(defaults.signature_name);
-  const orgName = clean(defaults.company_name) || BRAND.wordmark;
+  const preparedBy = clean(branding.prepared_by) || clean(branding.signature_name);
+  const signatureName = clean(branding.signature_name);
+  const orgName = clean(branding.company_name) || BRAND.wordmark;
+
+  // Draw the signature image (if any) sitting on the prepared-by line.
+  if (signature) {
+    try {
+      const sigY = y + 18 - signature.h; // baseline-aligned to the rule below
+      doc.addImage(signature.dataUrl, signature.fmt, MARGIN, Math.max(y, sigY), signature.w, signature.h);
+    } catch {
+      // Drawing failed — silently skip the image; the text block still renders.
+    }
+  }
 
   doc.setDrawColor(...INK_300);
   doc.setLineWidth(0.6);
@@ -501,12 +643,14 @@ function drawTermsAndSignature(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(...INK_900);
-  doc.text(preparedBy || orgName, MARGIN, y + 14);
-  if (preparedBy) {
+  doc.text(signatureName || preparedBy || orgName, MARGIN, y + 30);
+  // Secondary line: show the prepared-by name (or org) under the signed name.
+  const secondary = signatureName ? preparedBy || orgName : preparedBy ? orgName : "";
+  if (secondary) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.setTextColor(...INK_500);
-    doc.text(orgName, MARGIN, y + 30);
+    doc.text(secondary, MARGIN, y + 44);
   }
 
   doc.setFont("helvetica", "bold");
@@ -520,7 +664,7 @@ function drawTermsAndSignature(
   doc.setTextColor(...INK_400);
   doc.text("Signature / Date", MARGIN + 300, y + 28);
 
-  return y + 36;
+  return y + 52;
 }
 
 // ─── Public entry point ────────────────────────────────────────────────────
@@ -538,10 +682,19 @@ export async function exportQuotePdf(
   doc.setFillColor(...WHITE);
   doc.rect(0, 0, PAGE_W, PAGE_H, "F");
 
-  const orgName = clean(opts.orgDefaults?.company_name) || BRAND.wordmark;
+  const branding = resolveBranding(opts);
+  const orgName = clean(branding.company_name) || BRAND.wordmark;
+
+  // Pre-load image dimensions up-front (async) so the synchronous draw passes
+  // — including the per-page chrome stamp — can place them with correct aspect
+  // ratio. Either resolve to null on failure → text fallbacks kick in.
+  const [logo, signature] = await Promise.all([
+    resolveLogoPlacement(branding.logo_url, 32, 150),
+    resolveLogoPlacement(branding.signature_url, 30, 180),
+  ]);
 
   let y = HEADER_H + 30;
-  y = drawTitleBlock(doc, quote, opts, y);
+  y = drawTitleBlock(doc, quote, opts, branding, y);
   y = drawCustomerAndLane(doc, quote, opts, y + 6);
 
   y = ensureRoom(doc, y, 120);
@@ -551,9 +704,9 @@ export async function exportQuotePdf(
   y = drawTotals(doc, quote, y);
 
   y = ensureRoom(doc, y, 140);
-  drawTermsAndSignature(doc, quote, opts, y + 8);
+  drawTermsAndSignature(doc, quote, branding, signature, y + 8);
 
-  stampPageChrome(doc, orgName);
+  stampPageChrome(doc, orgName, logo);
 
   return doc.output("datauristring");
 }

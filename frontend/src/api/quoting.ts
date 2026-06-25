@@ -187,6 +187,26 @@ export interface QuoteUpdateInput extends QuoteCreateInput {
 }
 
 /**
+ * Org-level quote branding + defaults, persisted via `quote-settings-*` edge
+ * functions. `logo_url` / `signature_url` may be base64 data-URIs (resized
+ * client-side before save to stay under the server's 700k-char cap).
+ */
+export interface QuoteSettings {
+  company_name?: string;
+  company_address?: string;
+  company_email?: string;
+  company_phone?: string;
+  logo_url?: string;
+  signature_url?: string;
+  signature_name?: string;
+  prepared_by?: string;
+  default_payment_terms?: string;
+  default_fuel_surcharge_pct?: number;
+  default_currency?: string;
+  terms_text?: string;
+}
+
+/**
  * Invoke a `quote-*` edge function. Delegates to the shared `invokeEdge`
  * helper, which throws `EdgeFunctionError` on transport failures and on
  * application-level `{ ok: false }` responses.
@@ -336,4 +356,23 @@ export const quoting = {
     res.data = coerceNums(res.data, NUMERIC_METRIC_FIELDS) as CompanyMetrics;
     return res;
   },
+  /**
+   * Fetch the org's quote branding/defaults plus org-derived starting values
+   * (org_name / org_logo_url) so first-time users see their workspace name +
+   * logo pre-filled. Auth-only (any member can read).
+   */
+  settingsGet: () =>
+    invoke<{
+      ok: true;
+      data: { org_name: string | null; org_logo_url: string | null; settings: QuoteSettings };
+    }>("quote-settings-get", {}),
+  /**
+   * Persist quote branding/defaults. Admin-only on the server: non-admins get
+   * `{ ok:false, code:"FORBIDDEN" }` (403); an oversized data-URI logo/signature
+   * returns `code:"IMAGE_TOO_LARGE"` (413). Both surface as `EdgeFunctionError`.
+   */
+  settingsUpdate: (settings: QuoteSettings) =>
+    invoke<{ ok: true; data: { settings: QuoteSettings } }>("quote-settings-update", {
+      settings,
+    }),
 };

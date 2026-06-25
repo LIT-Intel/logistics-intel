@@ -35,6 +35,7 @@ import {
   type QuoteMode,
   type QuoteStatus,
   type QuoteCreateInput,
+  type QuoteSettings,
 } from "@/api/quoting";
 import { computeTotals, type QuoteTotals } from "@/lib/quoting/totals";
 import LitSectionCard from "@/components/ui/LitSectionCard";
@@ -230,6 +231,9 @@ export default function QuoteBuilder() {
   const [serverTotals, setServerTotals] = useState<QuoteTotals | null>(null);
   // Last server-authoritative Quote — the source for PDF generation + send.
   const [savedQuote, setSavedQuote] = useState<Quote | null>(null);
+  // Org quote settings (branding + defaults). Loaded once; drives NEW-quote
+  // prefill and is passed to the PDF exporter for logo/signature/terms.
+  const [orgSettings, setOrgSettings] = useState<QuoteSettings | null>(null);
 
   // PDF state.
   const [pdfSignedUrl, setPdfSignedUrl] = useState<string | null>(null);
@@ -293,6 +297,45 @@ export default function QuoteBuilder() {
       cancelled = true;
     };
   }, [quoteId]);
+
+  // Load org quote settings once. On a NEW quote (no :quoteId) prefill the
+  // defaults that are still empty — never clobbering values the user already
+  // typed. For an existing quote we still load settings (for the PDF) but skip
+  // prefill so the saved quote's own values stand.
+  const settingsAppliedRef = useRef(false);
+  useEffect(() => {
+    if (settingsAppliedRef.current) return;
+    settingsAppliedRef.current = true;
+    let cancelled = false;
+    quoting
+      .settingsGet()
+      .then((res) => {
+        if (cancelled) return;
+        const s = res.data.settings ?? {};
+        setOrgSettings(s);
+        if (quoteId) return; // existing quote: don't prefill
+        const fill: Partial<BuilderState> = {};
+        // Only fill where the current state hasn't been set yet.
+        if ((state.currency === "USD" || !state.currency) && s.default_currency) {
+          fill.currency = s.default_currency;
+        }
+        if (state.fuel_surcharge_pct == null && s.default_fuel_surcharge_pct != null) {
+          fill.fuel_surcharge_pct = s.default_fuel_surcharge_pct;
+        }
+        if (!state.terms_text && s.terms_text) {
+          fill.terms_text = s.terms_text;
+        }
+        if (Object.keys(fill).length) patch(fill);
+      })
+      .catch(() => {
+        // Settings are best-effort prefill; a failure leaves manual entry.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Run once on mount; `state`/`patch` reads are intentional snapshots.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Live local totals — server is authoritative on save, but this drives the
   // panel on every keystroke.
@@ -421,6 +464,7 @@ export default function QuoteBuilder() {
         return;
       }
       const dataUri = await exportQuotePdf(quote, state.line_items, {
+        settings: orgSettings,
         companyName: company?.company_name ?? null,
       });
       const res = await quoting.generatePdf(quote.id, dataUri);
