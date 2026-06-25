@@ -67,6 +67,7 @@ Deno.serve(async (req) => {
     distance_miles: numOrNull(body.distance_miles), equipment_type: body.equipment_type ?? null,
     container_count: numOrNull(body.container_count), weight_lbs: numOrNull(body.weight_lbs),
     volume_cbm: numOrNull(body.volume_cbm), pallet_count: numOrNull(body.pallet_count),
+    hazmat: body.hazmat === true || body.hazmat === "true", temp_controlled: body.temp_controlled === true || body.temp_controlled === "true",
     commodity: body.commodity ?? null, hs_code: body.hs_code ?? null, cargo_value: numOrNull(body.cargo_value),
     currency: body.currency ?? "USD", fuel_surcharge_pct: numOrNull(body.fuel_surcharge_pct),
     notes: body.notes ?? null, terms_text: body.terms_text ?? null, valid_until: emptyToNull(body.valid_until),
