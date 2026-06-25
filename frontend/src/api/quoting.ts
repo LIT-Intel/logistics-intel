@@ -120,12 +120,12 @@ export interface QuoteListItem {
 }
 
 export interface CompanySearchHit {
-  source_company_key: string;
+  company_id: string;
   company_name: string;
-  country?: string | null;
+  domain?: string | null;
   city?: string | null;
-  total_shipments?: number | null;
-  total_teu?: number | null;
+  country?: string | null;
+  shipments_12m?: number | null;
 }
 
 export interface DashboardMetrics {

@@ -6,12 +6,14 @@
  * display it (logo, name, domain, contact) with a "Change" affordance.
  *
  * FALLBACK path: no company attached → a minimal search box backed by the
- * Supabase-native `quote-company-search` edge function (over `lit_company_index`).
- * Picking a result emits `{ source_company_key, company_name }` up to the
- * builder — the source key is an ImportYeti slug, NOT an internal UUID, so the
- * server resolves it to a real `lit_companies.id` on save.
+ * Supabase-native `quote-company-search` edge function. Per the product rule, a
+ * user may only quote companies they've SAVED to their org's Command Center, so
+ * the search is scoped to `lit_saved_companies` (NOT the global index). Each hit
+ * already carries the internal `lit_companies.id` UUID, so picking a result
+ * emits `{ company_id, company_name }` — no slug resolution needed on save.
  */
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Building2,
   Globe,
@@ -198,7 +200,7 @@ function CompanySearch({
           autoFocus
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search companies by name…"
+          placeholder="Search your saved companies…"
           className="h-10 w-full rounded-[9px] border border-slate-200 bg-slate-50 pl-9 pr-3 text-[13px] text-slate-900 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-500/15"
         />
       </div>
@@ -229,19 +231,19 @@ function CompanySearch({
             const place = [r.city, r.country].filter(Boolean).join(", ");
             const subtitle = [
               place || null,
-              r.total_shipments != null ? `${r.total_shipments.toLocaleString()} shipments` : null,
+              r.shipments_12m != null ? `${r.shipments_12m.toLocaleString()} shipments` : null,
             ]
               .filter(Boolean)
               .join(" · ");
             return (
               <button
-                key={r.source_company_key}
+                key={r.company_id}
                 type="button"
                 onClick={() =>
                   onSelect({
-                    // No company_id here — the source key is an ImportYeti slug,
-                    // not an internal UUID. The server resolves it on save.
-                    source_company_key: r.source_company_key,
+                    // Saved companies carry a real internal lit_companies UUID —
+                    // pass it through directly; no slug resolution on save.
+                    company_id: r.company_id,
                     company_name: r.company_name,
                   })
                 }
@@ -263,15 +265,19 @@ function CompanySearch({
       )}
 
       {!loading && q.trim().length >= 2 && rows.length === 0 && !error && (
-        <div className="mt-3 px-1 text-[12px] text-slate-400">
-          No companies found for “{q.trim()}”.
+        <div className="mt-3 px-1 text-[12px] text-slate-500">
+          No saved companies match “{q.trim()}”.{" "}
+          <Link to="/app/search" className="font-semibold text-blue-600 hover:text-blue-700">
+            Save companies from Search &amp; Intel
+          </Link>{" "}
+          to quote them.
         </div>
       )}
 
       {q.trim().length < 2 && (
         <div className="mt-3 flex items-start gap-2 px-1 text-[12px] text-slate-400">
           <Building2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          Type at least 2 characters to search your company index.
+          Type at least 2 characters to search your saved companies.
         </div>
       )}
 

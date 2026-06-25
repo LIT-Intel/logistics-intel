@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createLogger, requestId } from "../_shared/logger.ts";
+import { resolveOrg } from "../_shared/quote_helpers.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -20,29 +21,47 @@ Deno.serve(async (req) => {
   const admin = createClient(url, svc);
   const { data: u } = await userClient.auth.getUser();
   if (!u?.user) return json({ ok: false, code: "UNAUTHORIZED" }, 401);
+  const userId = u.user.id;
 
-  // Search/view op over shared reference data (lit_company_index). Auth only —
-  // no org scoping and no quoting feature gate: the company index is not
-  // workspace-private, and the actual write boundary lives in quote-create.
+  // Product rule: a user may only quote companies they have SAVED to their org's
+  // Command Center. So this searches the org's saved companies (lit_saved_companies
+  // joined to lit_companies), NOT the global lit_company_index. Each hit already
+  // carries the internal lit_companies UUID — no slug linking needed downstream.
+  // Auth only — the real write boundary lives in quote-create.
   const body = await req.json().catch(() => ({}));
   const q = typeof body.q === "string" ? body.q.trim() : "";
   const limit = Math.min(20, Math.max(1, Number(body.limit) || 8));
   if (q.length < 2) return json({ ok: true, items: [] });
 
-  const { data, error } = await admin.from("lit_company_index")
-    .select("company_id, company_name, country, city, total_shipments, total_teu")
-    .ilike("company_name", `%${q}%`)
-    .order("total_shipments", { ascending: false, nullsFirst: false })
-    .limit(limit);
+  const orgId = await resolveOrg(admin, userId);
+  if (!orgId) return json({ ok: true, items: [] }); // no org → nothing saved to quote
+
+  // Org's saved companies, name-filtered via the embedded company table.
+  // Single FK (lit_saved_companies.company_id → lit_companies.id) makes the
+  // plain `lit_companies!inner(...)` embed unambiguous.
+  const { data, error } = await admin
+    .from("lit_saved_companies")
+    .select("company_id, lit_companies!inner(id, name, domain, city, state, country_code, shipments_12m)")
+    .eq("org_id", orgId)
+    .ilike("lit_companies.name", `%${q}%`)
+    .limit(50);
   if (error) { log.error("search_failed", { err: error.message }); return json({ ok: false, code: "SEARCH_FAILED" }, 500); }
 
-  const items = (data ?? []).map((r) => ({
-    source_company_key: r.company_id, // the slug → becomes lit_companies.source_company_key on link
-    company_name: r.company_name,
-    country: r.country ?? null,
-    city: r.city ?? null,
-    total_shipments: r.total_shipments ?? null,
-    total_teu: r.total_teu ?? null,
-  }));
+  const items = (data ?? [])
+    .map((r: any) => {
+      const c = r.lit_companies;
+      return c ? {
+        company_id: c.id,                 // internal UUID — already a real lit_companies row
+        company_name: c.name,
+        domain: c.domain ?? null,
+        city: c.city ?? null,
+        country: c.country_code ?? null,
+        shipments_12m: c.shipments_12m ?? null,
+      } : null;
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) => (b.shipments_12m ?? 0) - (a.shipments_12m ?? 0))
+    .slice(0, limit);
+
   return json({ ok: true, items });
 });
