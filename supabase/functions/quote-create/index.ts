@@ -29,14 +29,20 @@ Deno.serve(async (req) => {
   if (!gate.ok) return json(gate.body, gate.status);
 
   const body = await req.json().catch(() => ({}));
-  let companyId: string | null = body.company_id ?? null;
-  if (!companyId && body.source_company_key) {
+  // Defensive company resolution: the company search now returns ImportYeti
+  // slugs (e.g. "eae-usa") as source keys, NOT internal UUIDs. If a non-UUID
+  // sneaks in as company_id, treat it as a source key so we never try to use a
+  // slug as the lit_quotes.company_id FK (which would fail the FK constraint).
+  const isUuid = (v: unknown) => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+  let companyId: string | null = isUuid(body.company_id) ? body.company_id : null;
+  const sourceKey = body.source_company_key ?? (!isUuid(body.company_id) && body.company_id ? body.company_id : null);
+  if (!companyId && sourceKey) {
     const { data: existing } = await admin.from("lit_companies").select("id")
-      .eq("source_company_key", body.source_company_key).maybeSingle();
+      .eq("source_company_key", sourceKey).maybeSingle();
     if (existing) companyId = existing.id;
     else {
       const { data: created, error } = await admin.from("lit_companies")
-        .insert({ source: body.source ?? "importyeti", source_company_key: body.source_company_key, name: body.company_name ?? "Unknown" })
+        .insert({ source: body.source ?? "importyeti", source_company_key: sourceKey, name: body.company_name ?? "Unknown" })
         .select("id").single();
       if (error) { log.error("company_link_failed", { err: error.message }); return json({ ok: false, code: "COMPANY_LINK_FAILED" }, 500); }
       companyId = created.id;

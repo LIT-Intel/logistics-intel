@@ -119,6 +119,15 @@ export interface QuoteListItem {
   } | null;
 }
 
+export interface CompanySearchHit {
+  source_company_key: string;
+  company_name: string;
+  country?: string | null;
+  city?: string | null;
+  total_shipments?: number | null;
+  total_teu?: number | null;
+}
+
 export interface DashboardMetrics {
   draft: number;
   sent: number;
@@ -307,6 +316,8 @@ export const quoting = {
     res.data = coerceNums(res.data, NUMERIC_METRIC_FIELDS) as DashboardMetrics;
     return res;
   },
+  companySearch: (q: string) =>
+    invoke<{ ok: true; items: CompanySearchHit[] }>("quote-company-search", { q, limit: 8 }),
   companyMetrics: async (company_id: string) => {
     const res = await invoke<{ ok: true; data: CompanyMetrics }>("quote-company-metrics", {
       company_id,

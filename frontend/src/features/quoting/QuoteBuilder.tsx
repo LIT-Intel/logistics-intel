@@ -57,8 +57,14 @@ import { exportQuotePdf } from "@/lib/quoting/exportQuotePdf";
  * Editable builder state. Keyed to QuoteCreateInput fields plus the line items
  * the table maintains. `company_id` is required by the server on create.
  */
+/** True for a canonical lit_companies UUID; false for an ImportYeti slug. */
+const isUuid = (v: unknown): v is string =>
+  typeof v === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
 interface BuilderState {
   company_id?: string;
+  source_company_key?: string;
   contact_id?: string;
   mode: QuoteMode;
   service_type?: string;
@@ -93,10 +99,13 @@ type Action =
   | { type: "setLineItems"; items: QuoteLineItem[] }
   | { type: "hydrate"; quote: Quote; line_items: QuoteLineItem[] };
 
-function initialState(companyId?: string): BuilderState {
+function initialState(companyKey?: string): BuilderState {
   // TODO: prefill from org_settings.quote_defaults once an endpoint exists.
+  // `?company_id=` from a saved-company launch is normally an internal UUID, but
+  // guard against a slug sneaking in by routing non-UUIDs to source_company_key.
   return {
-    company_id: companyId,
+    company_id: isUuid(companyKey) ? companyKey : undefined,
+    source_company_key: companyKey && !isUuid(companyKey) ? companyKey : undefined,
     mode: "ocean",
     currency: "USD",
     fuel_surcharge_pct: undefined,
@@ -114,6 +123,7 @@ function reducer(state: BuilderState, action: Action): BuilderState {
       const q = action.quote;
       return {
         company_id: q.company_id,
+        source_company_key: undefined,
         contact_id: q.contact_id ?? undefined,
         mode: (q.mode ?? "ocean") as QuoteMode,
         service_type: q.service_type ?? undefined,
@@ -151,7 +161,10 @@ function reducer(state: BuilderState, action: Action): BuilderState {
 /** Strip the editable state down to the create/update input the edge fn wants. */
 function toInput(state: BuilderState): QuoteCreateInput {
   return {
+    // Send both — the server resolves source_company_key → a real company UUID
+    // when company_id is absent (or a non-UUID slug slips through).
     company_id: state.company_id,
+    source_company_key: state.source_company_key,
     contact_id: state.contact_id,
     mode: state.mode,
     service_type: state.service_type,
@@ -205,7 +218,11 @@ export default function QuoteBuilder() {
     initialState(companyIdParam),
   );
   const [company, setCompany] = useState<AttachedCompany | null>(
-    companyIdParam ? { company_id: companyIdParam, company_name: "Company" } : null,
+    companyIdParam
+      ? isUuid(companyIdParam)
+        ? { company_id: companyIdParam, company_name: "Company" }
+        : { source_company_key: companyIdParam, company_name: "Company" }
+      : null,
   );
 
   const [quoteNumber, setQuoteNumber] = useState<string | null>(null);
@@ -283,8 +300,8 @@ export default function QuoteBuilder() {
    * the Save button and as the save-first step of Generate PDF.
    */
   async function saveQuote(): Promise<Quote | null> {
-    if (!state.company_id) {
-      setSaveError("Attach a company before saving.");
+    if (!state.company_id && !state.source_company_key) {
+      setSaveError("Select a company first.");
       return null;
     }
     setSaving(true);
@@ -513,7 +530,14 @@ export default function QuoteBuilder() {
               company={company}
               onSelect={(c) => {
                 setCompany(c);
-                patch({ company_id: c.company_id });
+                // A UUID is a real internal company; otherwise it's a source
+                // slug the server resolves on save. Clear the other field so we
+                // never send a stale value.
+                if (isUuid(c.company_id)) {
+                  patch({ company_id: c.company_id, source_company_key: undefined });
+                } else {
+                  patch({ source_company_key: c.source_company_key, company_id: undefined });
+                }
               }}
             />
           </LitSectionCard>

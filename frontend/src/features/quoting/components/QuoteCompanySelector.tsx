@@ -6,8 +6,10 @@
  * display it (logo, name, domain, contact) with a "Change" affordance.
  *
  * FALLBACK path: no company attached → a minimal search box backed by the
- * existing `searchCompanies` proxy (`frontend/src/lib/api.ts`). Picking a result
- * emits `{ company_id, company_name, domain }` up to the builder.
+ * Supabase-native `quote-company-search` edge function (over `lit_company_index`).
+ * Picking a result emits `{ source_company_key, company_name }` up to the
+ * builder — the source key is an ImportYeti slug, NOT an internal UUID, so the
+ * server resolves it to a real `lit_companies.id` on save.
  */
 import { useEffect, useRef, useState } from "react";
 import {
@@ -20,11 +22,11 @@ import {
   Loader2,
   RotateCw,
 } from "lucide-react";
-import { searchCompanies, type CompanyHit } from "@/lib/api";
-import { parseLimitExceeded } from "@/lib/usage";
+import { quoting, type CompanySearchHit } from "@/api/quoting";
 
 export interface AttachedCompany {
-  company_id: string;
+  company_id?: string;
+  source_company_key?: string;
   company_name: string;
   domain?: string | null;
   /** Real ImportYeti shipment volume — used by the revenue-opportunity panel. */
@@ -142,14 +144,16 @@ function CompanySearch({
   onCancel?: () => void;
 }) {
   const [q, setQ] = useState("");
-  const [rows, setRows] = useState<CompanyHit[]>([]);
+  const [rows, setRows] = useState<CompanySearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Bumped by the Retry button to re-run the effect for the current query.
   const [retryNonce, setRetryNonce] = useState(0);
-  const abortRef = useRef<AbortController | null>(null);
+  // Monotonic request id so a slow earlier response can't overwrite a newer one
+  // (the edge invoke has no AbortController/signal support).
+  const reqRef = useRef(0);
 
-  // Debounced search against the existing companies proxy.
+  // Debounced search against the Supabase-native `quote-company-search` fn.
   // TODO: richer company search (filters, contacts) — Phase 1 keeps this minimal.
   useEffect(() => {
     const term = q.trim();
@@ -161,31 +165,26 @@ function CompanySearch({
     setLoading(true);
     setError(null);
     const t = setTimeout(async () => {
-      abortRef.current?.abort();
-      const ctrl = new AbortController();
-      abortRef.current = ctrl;
+      const myReq = ++reqRef.current;
       try {
-        const res = await searchCompanies({ q: term, limit: 8 }, ctrl.signal);
-        setRows(res.rows ?? []);
+        const res = await quoting.companySearch(term);
+        if (myReq !== reqRef.current) return;
+        setRows(res.items ?? []);
       } catch (e: any) {
-        if (ctrl.signal.aborted) return;
-        // Distinguish a plan-limit gate (403 LIMIT_EXCEEDED) and a backend
-        // outage (5xx / network) from a generic failure — mirrors how
-        // AddCompanyModal surfaces the search-credit limit.
+        if (myReq !== reqRef.current) return;
+        // It's a Supabase edge fn now — a generic "temporarily unavailable +
+        // retry" message covers transport/5xx/OK_FALSE. Keep a 403 branch in
+        // case a future gate surfaces a plan limit via code/status.
+        const code: string | undefined = e?.code;
         const status: number | undefined = e?.status;
-        if (status === 403) {
-          // Quota gate. We surface a static plan-limit message; parse the
-          // body so a future copy tweak can show used/limit if present.
-          parseLimitExceeded(e?.body);
+        if (status === 403 || code === "FORBIDDEN" || code === "LIMIT_EXCEEDED") {
           setError("Company search limit reached on your plan.");
-        } else if (status == null || status >= 500) {
-          setError("Search is temporarily unavailable. Please retry.");
         } else {
-          setError("Search failed. Try again.");
+          setError("Search is temporarily unavailable. Please retry.");
         }
         setRows([]);
       } finally {
-        if (!ctrl.signal.aborted) setLoading(false);
+        if (myReq === reqRef.current) setLoading(false);
       }
     }, 300);
     return () => clearTimeout(t);
@@ -226,36 +225,40 @@ function CompanySearch({
 
       {rows.length > 0 && (
         <div className="mt-3 max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-[10px] border border-slate-200">
-          {rows.map((r) => (
-            <button
-              key={r.company_id}
-              type="button"
-              onClick={() =>
-                onSelect({
-                  company_id: r.company_id,
-                  company_name: r.company_name,
-                  domain: r.domain,
-                  shipments_12m: r.shipments_12m,
-                  top_routes: r.top_routes,
-                  address: r.address,
-                })
-              }
-              className="flex w-full min-h-[44px] items-center gap-3 px-3 py-2.5 text-left transition hover:bg-slate-50"
-            >
-              <div className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-md bg-slate-100 text-[11px] font-bold text-slate-600">
-                {initials(r.company_name)}
-              </div>
-              <div className="min-w-0">
-                <div className="truncate text-[13px] font-semibold text-slate-900">
-                  {r.company_name}
+          {rows.map((r) => {
+            const place = [r.city, r.country].filter(Boolean).join(", ");
+            const subtitle = [
+              place || null,
+              r.total_shipments != null ? `${r.total_shipments.toLocaleString()} shipments` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <button
+                key={r.source_company_key}
+                type="button"
+                onClick={() =>
+                  onSelect({
+                    // No company_id here — the source key is an ImportYeti slug,
+                    // not an internal UUID. The server resolves it on save.
+                    source_company_key: r.source_company_key,
+                    company_name: r.company_name,
+                  })
+                }
+                className="flex w-full min-h-[44px] items-center gap-3 px-3 py-2.5 text-left transition hover:bg-slate-50"
+              >
+                <div className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-md bg-slate-100 text-[11px] font-bold text-slate-600">
+                  {initials(r.company_name)}
                 </div>
-                <div className="truncate text-[11px] text-slate-400">
-                  {r.domain ?? "—"}
-                  {r.shipments_12m != null ? ` · ${r.shipments_12m.toLocaleString()} shp/12M` : ""}
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-semibold text-slate-900">
+                    {r.company_name}
+                  </div>
+                  <div className="truncate text-[11px] text-slate-400">{subtitle || "—"}</div>
                 </div>
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       )}
 
