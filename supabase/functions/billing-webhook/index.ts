@@ -30,10 +30,16 @@
 //   customer.subscription.deleted
 //   invoice.payment_succeeded
 //   invoice.payment_failed
+//   charge.refunded            (affiliate-commission void on refund)
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@16.5.0?target=deno";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { createLogger, requestId } from "../_shared/logger.ts";
+import {
+  creditAffiliateForInvoice,
+  voidAffiliateCommissionsForInvoice,
+} from "../_shared/affiliate_commission.ts";
 
 const moduleLog = createLogger("billing-webhook");
 
@@ -49,6 +55,14 @@ if (!supabaseUrl) throw new Error("Missing SUPABASE_URL");
 if (!supabaseServiceRoleKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
 
 const stripe = new Stripe(stripeSecretKey, { apiVersion: "2024-06-20" });
+
+// Service-role Supabase client used ONLY by the additive affiliate-commission
+// path (creditAffiliateForInvoice / voidAffiliateCommissionsForInvoice). The
+// core subscription writes above still go through raw PostgREST fetch and are
+// unchanged. This client never participates in the billing-critical path.
+const affiliateAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -538,6 +552,45 @@ serve(async (req) => {
           ...(planCode ? { plan: planCode } : {}),
         });
         log.info("invoice_payment_succeeded", { user_id: userId, plan_code: planCode ?? "(unchanged)" });
+
+        // ── Affiliate money path (additive, never breaks billing) ──
+        // Credit a pending affiliate commission for this paid invoice. The
+        // helper is fully self-wrapped and returns a structured result instead
+        // of throwing; the extra try/catch here is belt-and-suspenders so an
+        // unexpected throw can never affect the 200-to-Stripe response.
+        try {
+          const result = await creditAffiliateForInvoice(
+            affiliateAdmin,
+            invoice as unknown as Parameters<typeof creditAffiliateForInvoice>[1],
+          );
+          log.info("affiliate_credit_result", { invoice_id: invoice.id, ...result });
+        } catch (e: any) {
+          log.error("affiliate_credit_failed", { err: e?.message || String(e), invoice_id: invoice.id });
+        }
+        break;
+      }
+
+      // ── Refund: void any non-paid affiliate commissions for the invoice ──
+      // The endpoint subscribes to charge.refunded. A charge carries the
+      // originating invoice id (when it came from a subscription invoice).
+      // This is additive only — it never touches the subscription rows.
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        const invoiceId = (charge as any).invoice as string | null;
+        if (!invoiceId) {
+          log.info("charge_refunded_no_invoice", { charge_id: charge.id });
+          break;
+        }
+        try {
+          const result = await voidAffiliateCommissionsForInvoice(
+            affiliateAdmin,
+            invoiceId,
+            `refund:${charge.id}`,
+          );
+          log.info("affiliate_void_result", { invoice_id: invoiceId, charge_id: charge.id, ...result });
+        } catch (e: any) {
+          log.error("affiliate_void_failed", { err: e?.message || String(e), invoice_id: invoiceId, charge_id: charge.id });
+        }
         break;
       }
 
