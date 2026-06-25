@@ -1,6 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createLogger, requestId } from "../_shared/logger.ts";
-import { resolveOrg, requireQuotingFeature, computeTotals, LineItem } from "../_shared/quote_helpers.ts";
+import { resolveOrg, requireQuotingFeature, computeTotals, LineItem, numOrNull, numOr, emptyToNull } from "../_shared/quote_helpers.ts";
+
+// Numeric and date columns that must be coerced from form "" → null before update.
+const NUMERIC_FIELDS = new Set([
+  "distance_miles", "container_count", "weight_lbs", "volume_cbm", "pallet_count",
+  "cargo_value", "fuel_surcharge_pct", "benchmark_low", "benchmark_high", "revenue_opportunity",
+]);
+const DATE_FIELDS = new Set(["valid_until"]);
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -27,7 +34,10 @@ const EDITABLE_FIELDS = [
 function pickQuoteFields(body: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const k of EDITABLE_FIELDS) {
-    if (body[k] !== undefined) out[k] = body[k];
+    if (body[k] === undefined) continue;
+    if (NUMERIC_FIELDS.has(k)) out[k] = numOrNull(body[k]);
+    else if (DATE_FIELDS.has(k)) out[k] = emptyToNull(body[k]);
+    else out[k] = body[k];
   }
   return out;
 }
@@ -67,7 +77,7 @@ Deno.serve(async (req) => {
   if (items.length) {
     await admin.from("lit_quote_line_items").insert(items.map((li, i) => ({
       quote_id: quoteId, org_id: orgId, type: li.type ?? null, name: li.name, description: li.description ?? null,
-      unit: li.unit ?? null, quantity: li.quantity ?? 1, unit_cost: li.unit_cost ?? 0, unit_sell: li.unit_sell ?? 0,
+      unit: li.unit ?? null, quantity: numOr(li.quantity, 1), unit_cost: numOr(li.unit_cost, 0), unit_sell: numOr(li.unit_sell, 0),
       is_accessorial: !!li.is_accessorial, taxable: !!li.taxable, sort_order: li.sort_order ?? i,
     })));
   }
