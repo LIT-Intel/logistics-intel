@@ -22,7 +22,11 @@ import {
   Send,
   CheckCircle2,
   Loader2,
+  Lock,
+  Sparkles,
 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { useEntitlements } from "@/hooks/useEntitlements";
 
 import {
   quoting,
@@ -189,6 +193,10 @@ function laneSummary(s: BuilderState): string {
 
 export default function QuoteBuilder() {
   const navigate = useNavigate();
+  const { entitlements, isAdmin } = useEntitlements();
+  // Gate persist/PDF/send ONLY when the server explicitly disables quoting.
+  // Viewing/editing the form stays open; the server re-checks on every write.
+  const quotingLocked = !isAdmin && entitlements?.features?.quoting === false;
   const { quoteId } = useParams<{ quoteId: string }>();
   const [searchParams] = useSearchParams();
   const companyIdParam = searchParams.get("company_id") ?? undefined;
@@ -431,8 +439,9 @@ export default function QuoteBuilder() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving}
-            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 font-display text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 sm:flex-none"
+            disabled={saving || quotingLocked}
+            title={quotingLocked ? "Upgrade to Growth to save quotes" : undefined}
+            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 font-display text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed sm:flex-none"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save Draft
@@ -440,8 +449,9 @@ export default function QuoteBuilder() {
           <button
             type="button"
             onClick={handleGeneratePdf}
-            disabled={generatingPdf || saving}
-            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white transition disabled:opacity-60 sm:flex-none"
+            disabled={generatingPdf || saving || quotingLocked}
+            title={quotingLocked ? "Upgrade to Growth to generate PDFs" : undefined}
+            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white transition disabled:opacity-60 disabled:cursor-not-allowed sm:flex-none"
             style={{ background: "linear-gradient(180deg,#0891b2,#0e7490)" }}
           >
             {generatingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
@@ -450,7 +460,9 @@ export default function QuoteBuilder() {
           <button
             type="button"
             onClick={scrollToSend}
-            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white transition hover:brightness-110 sm:flex-none"
+            disabled={quotingLocked}
+            title={quotingLocked ? "Upgrade to Growth to send quotes" : undefined}
+            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white transition hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed sm:flex-none"
             style={{ background: "linear-gradient(180deg,#2563eb,#1d4ed8)" }}
           >
             <Send className="h-4 w-4" />
@@ -458,6 +470,31 @@ export default function QuoteBuilder() {
           </button>
         </div>
       </div>
+
+      {quotingLocked && (
+        <div className="mx-auto mt-3 max-w-[1320px] px-4 sm:px-6">
+          <div className="flex flex-wrap items-center gap-3 rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3">
+            <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-[9px] bg-amber-100 text-amber-700">
+              <Lock className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-display text-[13px] font-semibold text-amber-900">
+                Quoting is available on Growth and above.
+              </div>
+              <p className="text-[12.5px] text-amber-800">
+                Upgrade to create and send quotes.
+              </p>
+            </div>
+            <Link
+              to="/app/billing"
+              className="inline-flex h-9 flex-shrink-0 items-center gap-1.5 rounded-[10px] bg-amber-600 px-3.5 font-display text-[12.5px] font-semibold text-white transition hover:bg-amber-700"
+            >
+              <Sparkles className="h-4 w-4" />
+              Upgrade
+            </Link>
+          </div>
+        </div>
+      )}
 
       {saveError && (
         <div className="mx-auto mt-3 max-w-[1320px] px-4 sm:px-6">

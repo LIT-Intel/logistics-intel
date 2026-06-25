@@ -979,7 +979,15 @@ export async function searchCompanies(
   });
 
   if (!response.ok) {
-    throw new Error(`search ${response.status}`);
+    // Carry the HTTP status (and, for 403, the parsed limit body) so callers
+    // can distinguish a plan-limit gate (403 LIMIT_EXCEEDED) from a backend
+    // outage (5xx) instead of collapsing everything into one generic message.
+    const err: any = new Error(`search_${response.status}`);
+    err.status = response.status;
+    if (response.status === 403) {
+      err.body = await response.json().catch(() => null);
+    }
+    throw err;
   }
 
   const data = await response.json().catch(() => ({}));

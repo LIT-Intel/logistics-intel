@@ -29,9 +29,11 @@ import {
   Eye,
   Copy,
   FileText,
+  Sparkles,
 } from "lucide-react";
 
 import { quoting } from "@/api/quoting";
+import { useEntitlements } from "@/hooks/useEntitlements";
 import type { QuoteStatus, QuoteListItem, QuoteMode } from "@/api/quoting";
 import EnhancedKpiCard from "@/components/dashboard/EnhancedKpiCard";
 import LitSectionCard from "@/components/ui/LitSectionCard";
@@ -88,6 +90,10 @@ function formatMargin(pct?: number | null): string {
 
 export default function QuotingDashboard() {
   const navigate = useNavigate();
+  const { entitlements, isAdmin } = useEntitlements();
+  // Viewing the dashboard (KPIs + list) is allowed on every plan; only the
+  // "New Quote" CTA is gated when the server explicitly disables quoting.
+  const quotingLocked = !isAdmin && entitlements?.features?.quoting === false;
   const [filter, setFilter] = useState<FilterKey>("all");
 
   const activeTab = FILTER_TABS.find((t) => t.key === filter) ?? FILTER_TABS[0];
@@ -154,20 +160,38 @@ export default function QuotingDashboard() {
             Turn freight intelligence into priced, sent, and tracked revenue.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => navigate("/app/quoting/new")}
-          className="inline-flex items-center justify-center gap-2 h-10 w-full sm:w-auto px-4 rounded-[10px] text-[13.5px] font-semibold text-white transition hover:brightness-105"
-          style={{
-            fontFamily: "'Space Grotesk', sans-serif",
-            background: "linear-gradient(180deg,#2563eb,#1d4ed8)",
-            boxShadow:
-              "0 6px 16px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18)",
-          }}
-        >
-          <Plus className="w-4 h-4" />
-          New Quote
-        </button>
+        {quotingLocked ? (
+          <button
+            type="button"
+            onClick={() => navigate("/app/billing")}
+            title="Upgrade to Growth to create quotes"
+            className="inline-flex items-center justify-center gap-2 h-10 w-full sm:w-auto px-4 rounded-[10px] text-[13.5px] font-semibold text-white transition hover:brightness-105"
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              background: "linear-gradient(180deg,#d97706,#b45309)",
+              boxShadow:
+                "0 6px 16px rgba(217,119,6,.28), inset 0 1px 0 rgba(255,255,255,.18)",
+            }}
+          >
+            <Sparkles className="w-4 h-4" />
+            Upgrade to create quotes
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => navigate("/app/quoting/new")}
+            className="inline-flex items-center justify-center gap-2 h-10 w-full sm:w-auto px-4 rounded-[10px] text-[13.5px] font-semibold text-white transition hover:brightness-105"
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              background: "linear-gradient(180deg,#2563eb,#1d4ed8)",
+              boxShadow:
+                "0 6px 16px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18)",
+            }}
+          >
+            <Plus className="w-4 h-4" />
+            New Quote
+          </button>
+        )}
       </div>
 
       {/* KPI row */}
@@ -222,7 +246,12 @@ export default function QuotingDashboard() {
         {listQuery.isLoading ? (
           <QuotesSkeleton />
         ) : quotes.length === 0 ? (
-          <EmptyState onNew={() => navigate("/app/quoting/new")} />
+          <EmptyState
+            locked={quotingLocked}
+            onNew={() =>
+              navigate(quotingLocked ? "/app/billing" : "/app/quoting/new")
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
@@ -432,7 +461,7 @@ function QuotesSkeleton() {
   );
 }
 
-function EmptyState({ onNew }: { onNew: () => void }) {
+function EmptyState({ onNew, locked = false }: { onNew: () => void; locked?: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center text-center px-6 py-14">
       <div className="w-12 h-12 rounded-xl bg-slate-100 grid place-items-center mb-4">
@@ -445,21 +474,27 @@ function EmptyState({ onNew }: { onNew: () => void }) {
         No quotes yet
       </div>
       <p className="text-[13px] text-slate-500 mt-1 max-w-sm">
-        Create your first quote to start pricing, sending, and tracking revenue.
+        {locked
+          ? "Quoting is available on Growth and above. Upgrade to start pricing, sending, and tracking revenue."
+          : "Create your first quote to start pricing, sending, and tracking revenue."}
       </p>
       <button
         type="button"
         onClick={onNew}
+        title={locked ? "Upgrade to Growth to create quotes" : undefined}
         className="mt-5 inline-flex items-center justify-center gap-2 h-10 px-4 rounded-[10px] text-[13.5px] font-semibold text-white transition hover:brightness-105"
         style={{
           fontFamily: "'Space Grotesk', sans-serif",
-          background: "linear-gradient(180deg,#2563eb,#1d4ed8)",
-          boxShadow:
-            "0 6px 16px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18)",
+          background: locked
+            ? "linear-gradient(180deg,#d97706,#b45309)"
+            : "linear-gradient(180deg,#2563eb,#1d4ed8)",
+          boxShadow: locked
+            ? "0 6px 16px rgba(217,119,6,.28), inset 0 1px 0 rgba(255,255,255,.18)"
+            : "0 6px 16px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18)",
         }}
       >
-        <Plus className="w-4 h-4" />
-        New Quote
+        {locked ? <Sparkles className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+        {locked ? "Upgrade to create quotes" : "New Quote"}
       </button>
     </div>
   );

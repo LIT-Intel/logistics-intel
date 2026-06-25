@@ -10,8 +10,18 @@
  * emits `{ company_id, company_name, domain }` up to the builder.
  */
 import { useEffect, useRef, useState } from "react";
-import { Building2, Globe, MapPin, User, Repeat, Search, Loader2 } from "lucide-react";
+import {
+  Building2,
+  Globe,
+  MapPin,
+  User,
+  Repeat,
+  Search,
+  Loader2,
+  RotateCw,
+} from "lucide-react";
 import { searchCompanies, type CompanyHit } from "@/lib/api";
+import { parseLimitExceeded } from "@/lib/usage";
 
 export interface AttachedCompany {
   company_id: string;
@@ -135,6 +145,8 @@ function CompanySearch({
   const [rows, setRows] = useState<CompanyHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped by the Retry button to re-run the effect for the current query.
+  const [retryNonce, setRetryNonce] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
   // Debounced search against the existing companies proxy.
@@ -155,17 +167,29 @@ function CompanySearch({
       try {
         const res = await searchCompanies({ q: term, limit: 8 }, ctrl.signal);
         setRows(res.rows ?? []);
-      } catch (e) {
-        if (!ctrl.signal.aborted) {
+      } catch (e: any) {
+        if (ctrl.signal.aborted) return;
+        // Distinguish a plan-limit gate (403 LIMIT_EXCEEDED) and a backend
+        // outage (5xx / network) from a generic failure — mirrors how
+        // AddCompanyModal surfaces the search-credit limit.
+        const status: number | undefined = e?.status;
+        if (status === 403) {
+          // Quota gate. We surface a static plan-limit message; parse the
+          // body so a future copy tweak can show used/limit if present.
+          parseLimitExceeded(e?.body);
+          setError("Company search limit reached on your plan.");
+        } else if (status == null || status >= 500) {
+          setError("Search is temporarily unavailable. Please retry.");
+        } else {
           setError("Search failed. Try again.");
-          setRows([]);
         }
+        setRows([]);
       } finally {
         if (!ctrl.signal.aborted) setLoading(false);
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, retryNonce]);
 
   return (
     <div>
@@ -186,7 +210,19 @@ function CompanySearch({
           Searching…
         </div>
       )}
-      {error && <div className="mt-3 px-1 text-[12px] text-rose-600">{error}</div>}
+      {error && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 px-1 text-[12px] text-rose-600">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => setRetryNonce((n) => n + 1)}
+            className="inline-flex h-7 items-center gap-1 rounded-[8px] border border-rose-200 bg-white px-2 font-semibold text-rose-700 transition hover:bg-rose-50"
+          >
+            <RotateCw className="h-3 w-3" />
+            Retry
+          </button>
+        </div>
+      )}
 
       {rows.length > 0 && (
         <div className="mt-3 max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-[10px] border border-slate-200">
