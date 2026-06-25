@@ -212,15 +212,68 @@ export async function sendViaOutlook(
 }
 
 /**
- * Single entry point: refresh the token, pick the provider, send one email.
- * Gmail and Outlook only (the two OAuth mailbox providers). Resend is NOT
- * used here — quotes go through the user's own connected mailbox.
+ * Send a single HTML email through Resend (the connected system mailbox).
+ *
+ * Resend is API-key based — there is NO OAuth token to refresh. Mirrors the
+ * Resend send path in send-campaign-email's sendEmail(): same endpoint, bearer
+ * auth, `"Display Name <email>"` from-line, and message-id read (respJson.id).
+ * The account's own email is used as the verified sender + reply_to.
+ */
+export async function sendViaResend(
+  account: QuoteSenderAccount,
+  args: { to: string; toName?: string | null; subject: string; html: string },
+): Promise<{ ok: true; messageId: string | null } | { ok: false; error: string }> {
+  const apiKey = Deno.env.get("LIT_RESEND_API_KEY");
+  if (!apiKey) return { ok: false, error: "resend_not_configured" };
+
+  const { to, subject, html } = args;
+  const fromLine = `${account.display_name || "Logistic Intel"} <${account.email}>`;
+  try {
+    const resp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromLine,
+        to: [to],
+        subject,
+        html,
+        reply_to: account.email,
+      }),
+    });
+    const respJson: { id?: string; message?: string; name?: string } = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      return { ok: false, error: `resend_${resp.status}:${respJson?.message || respJson?.name || ""}`.slice(0, 500) };
+    }
+    return { ok: true, messageId: respJson?.id ?? null };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "resend_threw" };
+  }
+}
+
+/**
+ * Single entry point: pick the provider, send one email.
+ *   - Gmail / Outlook: OAuth mailboxes — refresh the token, then send.
+ *   - Resend: the connected system mailbox (API key, no OAuth). Skips the
+ *     token path entirely.
  */
 export async function sendQuoteEmail(
   admin: SupabaseClient,
   account: QuoteSenderAccount,
   msg: { to: string; toName?: string | null; subject: string; html: string },
 ): Promise<{ ok: true; messageId: string | null } | { ok: false; error: string }> {
+  // Resend uses an API key, not OAuth — do NOT call getAccessToken.
+  if (account.provider === "resend") {
+    return await sendViaResend(account, {
+      to: msg.to,
+      toName: msg.toName,
+      subject: msg.subject,
+      html: msg.html,
+    });
+  }
+
   if (account.provider !== "gmail" && account.provider !== "outlook") {
     return { ok: false, error: `unsupported_provider:${account.provider}` };
   }
