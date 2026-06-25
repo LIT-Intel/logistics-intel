@@ -45,6 +45,7 @@ import {
   Radio,
   ChevronDown,
   ChevronRight,
+  FileText,
 } from "lucide-react";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import AddToListPicker from "@/features/pulse/AddToListPicker";
@@ -77,6 +78,7 @@ import CDPActivity from "@/components/company/CDPActivity";
 import CDPRateBenchmark from "@/components/company/CDPRateBenchmark";
 import CDPRevenueOpportunity from "@/components/company/CDPRevenueOpportunity";
 import CompanyInboxTab from "@/components/company/CompanyInboxTab";
+import CompanyQuotesTab from "@/features/company/CompanyQuotesTab";
 import CompanyProfileGuard from "@/components/company/CompanyProfileGuard";
 // Premium Intel tab was retired 2026-06-16 — its cards were folded into the
 // Supply Chain tab (see frontend/src/components/intel/cards/*). The
@@ -309,6 +311,7 @@ const MORE_TABS = [
   { id: "research", label: "Pulse AI", Icon: Sparkles },
   { id: "rates", label: "Rate Benchmark", Icon: Anchor },
   { id: "revenue", label: "Revenue Opportunity", Icon: TrendingUp },
+  { id: "quotes", label: "Quotes", Icon: FileText },
 ] as const;
 const TABS = [...VISIBLE_TABS, ...MORE_TABS] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -657,7 +660,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   const [searchParams] = useSearchParams();
   const initialTab: TabId = (() => {
     const t = String(searchParams?.get("tab") || "").toLowerCase();
-    return (["supply", "suppliers", "live", "rates", "contacts", "research", "activity", "inbox"] as const).includes(
+    return (["supply", "suppliers", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
       t as TabId,
     )
       ? (t as TabId)
@@ -667,7 +670,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   useEffect(() => {
     const t = String(searchParams?.get("tab") || "").toLowerCase();
     if (
-      (["supply", "suppliers", "live", "rates", "contacts", "research", "activity", "inbox"] as const).includes(
+      (["supply", "suppliers", "live", "rates", "contacts", "research", "activity", "inbox", "quotes"] as const).includes(
         t as TabId,
       )
     ) {
@@ -2480,6 +2483,9 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           )}
           {tab === "inbox" && (
             <CompanyInboxTab companyId={companyId} navigate={navigate as any} />
+          )}
+          {tab === "quotes" && companyId && (
+            <CompanyQuotesTab companyId={companyId} />
           )}
         </div>
         {panelOpen && (
