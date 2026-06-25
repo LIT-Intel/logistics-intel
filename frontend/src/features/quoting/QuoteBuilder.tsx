@@ -242,6 +242,14 @@ export default function QuoteBuilder() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
+  // --- Auto-mileage (domestic lanes only) ---------------------------------
+  // Once the user types in the Distance field we stop auto-overriding it.
+  const distanceManuallyEdited = useRef(false);
+  // Monotonic guard so a slow earlier request can't clobber a newer one.
+  const distanceReqSeq = useRef(0);
+  const [distanceCalcing, setDistanceCalcing] = useState(false);
+  const [autoDistanceSource, setAutoDistanceSource] = useState<string | null>(null);
+
   // Hydrate an existing quote.
   useEffect(() => {
     if (!quoteId) return;
@@ -254,6 +262,9 @@ export default function QuoteBuilder() {
         if (cancelled) return;
         const { quote, line_items, company: co } = res.data;
         dispatch({ type: "hydrate", quote, line_items: line_items ?? [] });
+        // A saved quote with a distance is treated as user-owned; don't
+        // auto-override it on load.
+        if (quote.distance_miles != null) distanceManuallyEdited.current = true;
         setQuoteNumber(quote.quote_number);
         setStatus(quote.status);
         setServerTotals(totalsFromQuote(quote));
@@ -293,6 +304,59 @@ export default function QuoteBuilder() {
   const totals = serverTotals ?? liveTotals;
 
   const laneValue: LaneFields = state;
+
+  // Domestic modes drive a road-miles lookup; ocean/air have no mileage.
+  const isDomesticMode = state.mode === "ftl" || state.mode === "ltl" || state.mode === "drayage";
+  // Mode-aware origin/destination strings for geocoding. For ftl/ltl the lane
+  // fields write to the city columns; drayage origin is a port/ramp (city-ish)
+  // string and its destination is an address kept in the city column.
+  const autoOrigin = (state.mode === "drayage" ? state.origin_port : state.origin_city) ?? "";
+  const autoDestination = state.destination_city ?? "";
+
+  // Debounced auto-mileage. Fires ~700ms after both endpoints are non-empty,
+  // skips when the user has manually edited the distance, and ignores stale
+  // responses via a monotonic request id.
+  useEffect(() => {
+    if (!isDomesticMode) return;
+    if (distanceManuallyEdited.current) return;
+    const origin = autoOrigin.trim();
+    const destination = autoDestination.trim();
+    if (origin.length < 2 || destination.length < 2) return;
+
+    const seq = ++distanceReqSeq.current;
+    const handle = setTimeout(() => {
+      setDistanceCalcing(true);
+      quoting
+        .distance(origin, destination)
+        .then((res) => {
+          if (seq !== distanceReqSeq.current) return; // stale
+          if (distanceManuallyEdited.current) return; // user took over mid-flight
+          if (typeof res.miles === "number") {
+            setAutoDistanceSource(res.source ?? "osrm");
+            patch({ distance_miles: res.miles });
+          }
+          // res.miles === null → leave the field for manual entry; never fake a number.
+        })
+        .catch(() => {
+          // Network/edge failure: silently leave the field for manual entry.
+        })
+        .finally(() => {
+          if (seq === distanceReqSeq.current) setDistanceCalcing(false);
+        });
+    }, 700);
+
+    return () => clearTimeout(handle);
+  }, [isDomesticMode, autoOrigin, autoDestination]);
+
+  // Manual edit of the Distance field: stop auto-calc from overriding it and
+  // drop the "Auto" hint.
+  function patchDistanceManual(distance_miles: number | undefined) {
+    distanceManuallyEdited.current = true;
+    distanceReqSeq.current++; // invalidate any in-flight auto request
+    setDistanceCalcing(false);
+    setAutoDistanceSource(null);
+    patch({ distance_miles });
+  }
 
   /**
    * Persist the quote and return the server-authoritative Quote. Returns null
@@ -376,6 +440,18 @@ export default function QuoteBuilder() {
   function setLineItems(items: QuoteLineItem[]) {
     setServerTotals(null);
     dispatch({ type: "setLineItems", items });
+  }
+
+  // Patch from the lane form. A direct edit to its Distance (mi) input counts
+  // as a manual override, same as the dedicated field below.
+  function patchLane(p: Partial<BuilderState>) {
+    if ("distance_miles" in p) {
+      patchDistanceManual(p.distance_miles);
+      const { distance_miles, ...rest } = p;
+      if (Object.keys(rest).length) patch(rest);
+    } else {
+      patch(p);
+    }
   }
 
   const lane = useMemo(() => laneSummary(state), [state]);
@@ -543,7 +619,7 @@ export default function QuoteBuilder() {
           </LitSectionCard>
 
           <LitSectionCard title="Lane & Shipment Details" collapsible defaultOpen>
-            <QuoteLaneShipmentForm value={laneValue} onChange={patch} />
+            <QuoteLaneShipmentForm value={laneValue} onChange={patchLane} />
           </LitSectionCard>
 
           <LitSectionCard title="Line Items & Accessorials" collapsible defaultOpen padded={false}>
@@ -558,12 +634,20 @@ export default function QuoteBuilder() {
                 <FieldLabel label="Distance (mi)" mono>
                   <input
                     value={state.distance_miles == null ? "" : String(state.distance_miles)}
-                    onChange={(e) =>
-                      patch({ distance_miles: toNum(e.target.value) })
-                    }
+                    onChange={(e) => patchDistanceManual(toNum(e.target.value))}
                     inputMode="decimal"
                     className={inputMono}
                   />
+                  {distanceCalcing ? (
+                    <span className="mt-1 inline-flex items-center gap-1 text-[10.5px] font-medium text-slate-400">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Calculating…
+                    </span>
+                  ) : autoDistanceSource && !distanceManuallyEdited.current ? (
+                    <span className="mt-1 text-[10.5px] font-medium text-cyan-700">
+                      Auto (via {autoDistanceSource})
+                    </span>
+                  ) : null}
                 </FieldLabel>
                 <FieldLabel label="Fuel Surcharge %" mono>
                   <input

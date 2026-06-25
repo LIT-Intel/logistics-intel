@@ -318,6 +318,17 @@ export const quoting = {
   },
   companySearch: (q: string) =>
     invoke<{ ok: true; items: CompanySearchHit[] }>("quote-company-search", { q, limit: 8 }),
+  /**
+   * Auto-mileage for a domestic lane. Geocodes origin + destination via
+   * Nominatim and returns OSRM driving miles (rounded). `miles` is null when
+   * inputs are too short or a location can't be geocoded — callers must NOT
+   * fabricate a number in that case.
+   */
+  distance: (origin: string, destination: string) =>
+    invoke<{ ok: true; miles: number | null; source?: string; reason?: string }>(
+      "quote-distance",
+      { origin, destination },
+    ),
   companyMetrics: async (company_id: string) => {
     const res = await invoke<{ ok: true; data: CompanyMetrics }>("quote-company-metrics", {
       company_id,
