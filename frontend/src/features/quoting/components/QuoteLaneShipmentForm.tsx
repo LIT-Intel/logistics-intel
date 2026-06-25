@@ -13,6 +13,7 @@
  */
 import { Ship, Plane, Truck, Container } from "lucide-react";
 import type { QuoteMode } from "@/api/quoting";
+import LocationAutocomplete from "./LocationAutocomplete";
 import {
   SERVICE_TYPES,
   CATEGORY,
@@ -153,32 +154,37 @@ export default function QuoteLaneShipmentForm({
       {/* Origin / Destination */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label={cfg.originLabel}>
-          <input
-            value={originVal ?? ""}
-            onChange={(e) =>
-              onChange(
-                originIsPort
-                  ? { origin_port: e.target.value }
-                  : { origin_city: e.target.value },
-              )
-            }
-            className={inputCls}
-            placeholder={cfg.originLabel}
-          />
+          {originIsPort ? (
+            // Port / ramp / airport: city autocomplete doesn't fit port codes.
+            <input
+              value={originVal ?? ""}
+              onChange={(e) => onChange({ origin_port: e.target.value })}
+              className={inputCls}
+              placeholder={cfg.originLabel}
+            />
+          ) : (
+            <LocationAutocomplete
+              value={originVal ?? ""}
+              onChange={(v) => onChange({ origin_city: v })}
+              placeholder={cfg.originLabel}
+            />
+          )}
         </Field>
         <Field label={cfg.destLabel}>
-          <input
-            value={destVal ?? ""}
-            onChange={(e) =>
-              onChange(
-                destIsPort
-                  ? { destination_port: e.target.value }
-                  : { destination_city: e.target.value },
-              )
-            }
-            className={inputCls}
-            placeholder={cfg.destLabel}
-          />
+          {destIsPort ? (
+            <input
+              value={destVal ?? ""}
+              onChange={(e) => onChange({ destination_port: e.target.value })}
+              className={inputCls}
+              placeholder={cfg.destLabel}
+            />
+          ) : (
+            <LocationAutocomplete
+              value={destVal ?? ""}
+              onChange={(v) => onChange({ destination_city: v })}
+              placeholder={cfg.destLabel}
+            />
+          )}
         </Field>
       </div>
 
