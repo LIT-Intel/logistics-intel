@@ -8,7 +8,34 @@
  * Worked example for the api.ts domain split. See _client.ts and CLAUDE.md.
  */
 import { invokeEdge } from "./_client";
+import { supabase } from "@/lib/supabase";
 import type { FeatureKey, UsageLimitKey } from "@/lib/planLimits";
+import { parseLimitExceeded, type LimitExceeded } from "@/lib/usage";
+
+/**
+ * Server feature-keys actually emitted by the get-entitlements snapshot's
+ * `limits` / `used` maps. These are the canonical edge-function keys (e.g.
+ * `export_pdf`, `saved_map_view`, `company_search`, `pulse_search`) — distinct
+ * from the `_per_month` UI mirror keys in UsageLimitKey. Folding them in lets
+ * UI gates (e.g. PulseExploreTab's saveViewAllowed, the Billing meters) address
+ * them type-safely.
+ */
+export type SnapshotLimitKey =
+  | UsageLimitKey
+  | "company_search"
+  | "company_profile_view"
+  | "saved_company"
+  | "saved_contact"
+  | "contact_enrichment"
+  | "pulse_brief"
+  | "pulse_ai"
+  | "pulse_search"
+  | "saved_pulse_list"
+  | "export_pdf"
+  | "saved_map_view"
+  | "campaign_send"
+  | "ai_brief"
+  | "team_invite";
 
 /**
  * Enrichment credit snapshot (Phase 1).
@@ -33,8 +60,8 @@ export interface EntitlementsSnapshot {
   plan_name?: string;
   reset_at?: string | null;
   features: Partial<Record<FeatureKey, boolean>>;
-  limits: Partial<Record<UsageLimitKey, number | null>>;
-  used: Partial<Record<UsageLimitKey, number>>;
+  limits: Partial<Record<SnapshotLimitKey, number | null>>;
+  used: Partial<Record<SnapshotLimitKey, number>>;
   market_benchmark_enabled?: boolean;
   is_platform_admin?: boolean;
   /**
@@ -77,4 +104,85 @@ export async function fetchEntitlementsSnapshot(): Promise<EntitlementsSnapshot 
     snap.org_id = res.org_id ?? null;
   }
   return snap;
+}
+
+/**
+ * Result of a server-side PDF export-quota pre-flight.
+ *  - { ok: true }                    → caller may generate the PDF.
+ *  - { ok: false, limit }            → quota exceeded (export_pdf). Caller must
+ *                                      surface the UpgradeModal and ABORT.
+ */
+export type ExportQuotaResult =
+  | { ok: true }
+  | { ok: false; limit: LimitExceeded };
+
+/**
+ * Server-side gate for CLIENT-SIDE PDF generation.
+ *
+ * The PDF surfaces (CompanyProfileV2 jsPDF export, Pulse Explorer report PDF)
+ * render entirely in the browser, so a client-only entitlement hint can be
+ * bypassed. This calls export-company-profile with intent='check', which runs
+ * check_usage_limit('export_pdf') server-side and — on ok — consumes one unit.
+ * The security boundary is the edge function (CLAUDE.md rule #6); this helper
+ * is the client's way of honoring it before doing local work.
+ *
+ * Returns { ok:true } when generation is allowed (also fails OPEN on a
+ * transport/infra error so a transient hiccup never blocks a paying user —
+ * the edge fn returns a clean 403 for the real over-limit case). Returns
+ * { ok:false, limit } only when the server explicitly reports LIMIT_EXCEEDED.
+ *
+ * Direct fetch (not invokeEdge) so we can read the 403 LIMIT_EXCEEDED body,
+ * mirroring pulse-explore.js.
+ */
+export async function checkExportQuota(): Promise<ExportQuotaResult> {
+  const { data: sess } = await supabase.auth.getSession();
+  const token = sess?.session?.access_token;
+  const baseUrl =
+    (import.meta as ImportMeta & { env?: { VITE_SUPABASE_URL?: string } }).env
+      ?.VITE_SUPABASE_URL ?? "";
+  if (!token || !baseUrl) {
+    // Can't reach the server — fail open rather than block on auth glitch.
+    return { ok: true };
+  }
+  try {
+    const res = await fetch(`${baseUrl}/functions/v1/export-company-profile`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ intent: "check" }),
+    });
+    if (res.status === 403) {
+      let payload: unknown = null;
+      try {
+        payload = await res.json();
+      } catch {
+        /* ignore */
+      }
+      const limit = parseLimitExceeded(payload);
+      if (limit) return { ok: false, limit };
+      // 403 without a parseable LIMIT_EXCEEDED — treat as blocked but
+      // synthesize a payload so the modal still renders.
+      return {
+        ok: false,
+        limit: {
+          ok: false,
+          code: "LIMIT_EXCEEDED",
+          feature: "export_pdf",
+          used: 0,
+          limit: 0,
+          plan: "free_trial",
+          reset_at: null,
+          upgrade_url: "/app/billing",
+          message: "PDF exports are included on paid plans.",
+        },
+      };
+    }
+    // Any other status (200 ok, or a non-quota error) → allow generation.
+    return { ok: true };
+  } catch {
+    // Network failure — fail open.
+    return { ok: true };
+  }
 }

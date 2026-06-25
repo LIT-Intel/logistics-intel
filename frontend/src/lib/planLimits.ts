@@ -4,7 +4,7 @@
 // rendering speed only — never for gating decisions.
 //
 // PRICING (Stripe truth, see Stripe products STARTER/GROWTH/SCALE):
-//   free_trial  $0          — 30-day trial
+//   free_trial  $0          — 14-day trial
 //   starter     $125/mo,  $1,500/yr   (1 seat)
 //   growth      $499/mo,  $4,790/yr   (3 seats)
 //   scale       $999/mo,  $8,991/yr   (5 seats)
@@ -110,9 +110,19 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       credit_rating_ready: false,
       contact_intel_ready: false,
     },
+    // 2026-06-24 gating-free-trial sync. Mirrors the Supabase `plans` row for
+    // free_trial after migration 20260624130000:
+    //   - Pulse Explorer + Company Search SHARE one lifetime budget of 5
+    //     (search_limit). Both mirror keys read 5 so the UI never implies a
+    //     larger allowance than the server enforces.
+    //   - pulse_ai_per_month = 0 (Pulse Coach is paid-only).
+    //   - export_pdf = 0 and saved_map_view = 0 are enforced server-side; they
+    //     have no UsageLimitKey mirror here (UI reads them straight from the
+    //     get-entitlements snapshot), so there's nothing to set in this block.
+    //   - saved_pulse_lists = 1.
     limits: {
-      searches_per_month: 10,
-      company_views_per_month: 10,
+      searches_per_month: 5,
+      company_views_per_month: 5,
       command_center_saves_per_month: 10,
       saved_contacts: 10,
       enrichment_credits_per_month: 5,
@@ -121,8 +131,8 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       team_seats: 1,
       connected_mailboxes: 0,
       pulse_runs_per_month: 5,
-      pulse_ai_per_month: 5,
-      pulse_search_per_month: 10,
+      pulse_ai_per_month: 0,
+      pulse_search_per_month: 5,
       saved_pulse_lists: 1,
     },
   },

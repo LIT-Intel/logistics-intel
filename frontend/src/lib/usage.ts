@@ -18,6 +18,7 @@ export type FeatureKey =
   | 'pulse_ai'
   | 'pulse_search'
   | 'saved_pulse_list'
+  | 'saved_map_view'
   | 'export_pdf'
   | 'campaign_send'
   | 'ai_brief'
@@ -59,6 +60,7 @@ export const FEATURE_LABELS: Record<FeatureKey, { singular: string; plural: stri
   pulse_ai:             { singular: 'Pulse AI run',       plural: 'Pulse AI runs',     verb: 'run Pulse AI' },
   pulse_search:         { singular: 'Pulse search',       plural: 'Pulse searches',    verb: 'run a Pulse search' },
   saved_pulse_list:     { singular: 'saved Pulse list',   plural: 'saved Pulse lists', verb: 'save a Pulse list' },
+  saved_map_view:       { singular: 'saved map view',     plural: 'saved map views',   verb: 'save a map view' },
   export_pdf:           { singular: 'PDF export',         plural: 'PDF exports',       verb: 'export a PDF' },
   campaign_send:        { singular: 'campaign send',      plural: 'campaign sends',    verb: 'send a campaign' },
   ai_brief:             { singular: 'AI brief',           plural: 'AI briefs',         verb: 'generate an AI brief' },

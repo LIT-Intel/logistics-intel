@@ -111,10 +111,62 @@ serve(async (req) => {
     .maybeSingle();
   const isPlatformAdmin = paRow !== null;
 
+  // saved_map_view is enforced by check_usage_limit (migration
+  // 20260624130000) but is NOT emitted by the get_entitlements RPC's
+  // limits/used maps. The frontend's saveViewAllowed gate reads
+  // entitlements.limits.saved_map_view, so derive it here from the
+  // authoritative gate (limit/used) and fold it into the snapshot. We call
+  // check_usage_limit with quantity 0 so it never consumes — it just reports
+  // the current limit + used. Soft-fail (leave the key absent) on error; the
+  // frontend already treats a missing key as blocked for free_trial.
+  let savedMapView: { limit: number | null; used: number } | null = null;
+  try {
+    const { data: smvData, error: smvErr } = await adminClient.rpc(
+      "check_usage_limit",
+      {
+        p_org_id: orgId,
+        p_user_id: user.id,
+        p_feature_key: "saved_map_view",
+        p_quantity: 0,
+      },
+    );
+    if (!smvErr && smvData && typeof smvData === "object") {
+      const row = smvData as Record<string, unknown>;
+      const rawLimit = row.limit;
+      const rawUsed = row.used;
+      savedMapView = {
+        limit:
+          rawLimit === null || rawLimit === undefined
+            ? null
+            : Number(rawLimit),
+        used: typeof rawUsed === "number" ? rawUsed : Number(rawUsed ?? 0) || 0,
+      };
+    }
+  } catch (_) {
+    // RPC unavailable in this env — leave the key absent.
+  }
+
   const entitlements =
     data && typeof data === "object"
       ? { ...(data as Record<string, unknown>), credits }
       : data;
+
+  // Fold saved_map_view into the limits/used maps so the UI gate + Billing
+  // meter can read it like any other feature key.
+  if (
+    savedMapView &&
+    entitlements &&
+    typeof entitlements === "object"
+  ) {
+    const ent = entitlements as Record<string, unknown>;
+    if (ent.limits && typeof ent.limits === "object") {
+      (ent.limits as Record<string, unknown>).saved_map_view =
+        savedMapView.limit;
+    }
+    if (ent.used && typeof ent.used === "object") {
+      (ent.used as Record<string, unknown>).saved_map_view = savedMapView.used;
+    }
+  }
 
   return json({
     ok: true,
