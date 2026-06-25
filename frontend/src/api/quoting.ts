@@ -186,18 +186,98 @@ async function invoke<T>(fn: string, body: Record<string, unknown>): Promise<T> 
   return invokeEdge<T>(fn, body);
 }
 
+// Postgres `numeric` columns are serialized by PostgREST as JSON *strings* (to
+// preserve arbitrary precision). The declared TS types say `number`, so we
+// coerce at the API boundary on the way OUT — callers can safely call
+// `.toFixed()` / `Number.isFinite()` on the results.
+const NUMERIC_QUOTE_FIELDS = [
+  "subtotal_cost",
+  "subtotal_sell",
+  "fuel_surcharge_pct",
+  "fuel_surcharge_amount",
+  "accessorial_total",
+  "total_cost",
+  "total_sell",
+  "gross_profit",
+  "gross_margin_pct",
+  "distance_miles",
+  "container_count",
+  "weight_lbs",
+  "volume_cbm",
+  "pallet_count",
+  "cargo_value",
+  "benchmark_low",
+  "benchmark_high",
+  "revenue_opportunity",
+];
+
+const NUMERIC_METRIC_FIELDS = [
+  "draft",
+  "sent",
+  "approved",
+  "won",
+  "lost",
+  "open_pipeline",
+  "win_rate",
+  "count",
+];
+
+function coerceNums<T extends Record<string, any>>(
+  obj: T | null | undefined,
+  fields: string[],
+): T | null | undefined {
+  if (!obj) return obj;
+  const out: any = { ...obj };
+  for (const f of fields) if (out[f] != null && out[f] !== "") out[f] = Number(out[f]);
+  return out;
+}
+
+function coerceLineItem(li: any) {
+  return coerceNums(li, [
+    "quantity",
+    "unit_cost",
+    "unit_sell",
+    "total_cost",
+    "total_sell",
+    "sort_order",
+  ]);
+}
+
 export const quoting = {
-  create: (input: QuoteCreateInput) =>
-    invoke<{ ok: true; data: { quote: Quote } }>("quote-create", { ...input }),
-  update: (input: QuoteUpdateInput) =>
-    invoke<{ ok: true; data: { quote: Quote } }>("quote-update", { ...input }),
-  list: (filter: { status?: QuoteStatus; company_id?: string } = {}) =>
-    invoke<{ ok: true; items: QuoteListItem[] }>("quote-list", { ...filter }),
-  detail: (quote_id: string) =>
-    invoke<{
+  create: async (input: QuoteCreateInput) => {
+    const res = await invoke<{ ok: true; data: { quote: Quote } }>("quote-create", {
+      ...input,
+    });
+    res.data.quote = coerceNums(res.data.quote, NUMERIC_QUOTE_FIELDS) as Quote;
+    return res;
+  },
+  update: async (input: QuoteUpdateInput) => {
+    const res = await invoke<{ ok: true; data: { quote: Quote } }>("quote-update", {
+      ...input,
+    });
+    res.data.quote = coerceNums(res.data.quote, NUMERIC_QUOTE_FIELDS) as Quote;
+    return res;
+  },
+  list: async (filter: { status?: QuoteStatus; company_id?: string } = {}) => {
+    const res = await invoke<{ ok: true; items: QuoteListItem[] }>("quote-list", {
+      ...filter,
+    });
+    res.items = (res.items ?? []).map(
+      (item) => coerceNums(item, NUMERIC_QUOTE_FIELDS) as QuoteListItem,
+    );
+    return res;
+  },
+  detail: async (quote_id: string) => {
+    const res = await invoke<{
       ok: true;
       data: { quote: Quote; line_items: QuoteLineItem[]; events: any[]; company: any };
-    }>("quote-detail", { quote_id }),
+    }>("quote-detail", { quote_id });
+    res.data.quote = coerceNums(res.data.quote, NUMERIC_QUOTE_FIELDS) as Quote;
+    res.data.line_items = (res.data.line_items ?? []).map(
+      (li) => coerceLineItem(li) as QuoteLineItem,
+    );
+    return res;
+  },
   setStatus: (quote_id: string, status: QuoteStatus) =>
     invoke<{ ok: true; data: { quote: Quote } }>("quote-status-update", {
       quote_id,
@@ -219,8 +299,19 @@ export const quoting = {
     invoke<{ ok: true; data: { quote: Quote; message_id: string } }>("quote-send", {
       ...input,
     }),
-  dashboardMetrics: () =>
-    invoke<{ ok: true; data: DashboardMetrics }>("quote-dashboard-metrics", {}),
-  companyMetrics: (company_id: string) =>
-    invoke<{ ok: true; data: CompanyMetrics }>("quote-company-metrics", { company_id }),
+  dashboardMetrics: async () => {
+    const res = await invoke<{ ok: true; data: DashboardMetrics }>(
+      "quote-dashboard-metrics",
+      {},
+    );
+    res.data = coerceNums(res.data, NUMERIC_METRIC_FIELDS) as DashboardMetrics;
+    return res;
+  },
+  companyMetrics: async (company_id: string) => {
+    const res = await invoke<{ ok: true; data: CompanyMetrics }>("quote-company-metrics", {
+      company_id,
+    });
+    res.data = coerceNums(res.data, NUMERIC_METRIC_FIELDS) as CompanyMetrics;
+    return res;
+  },
 };

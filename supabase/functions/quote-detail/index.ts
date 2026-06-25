@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
   const [{ data: line_items }, { data: events }, { data: company }] = await Promise.all([
     admin.from("lit_quote_line_items").select("*").eq("quote_id", quoteId).order("sort_order", { ascending: true }),
     admin.from("lit_quote_events").select("*").eq("quote_id", quoteId).order("created_at", { ascending: false }),
-    admin.from("lit_companies").select("id,name,domain,website,logo_url,city,state,country_code").eq("id", quote.company_id).maybeSingle(),
+    admin.from("lit_companies").select("id,name,domain,website,logo_url,city,state,country_code,shipments_12m,teu_12m,top_route_12m").eq("id", quote.company_id).maybeSingle(),
   ]);
   return json({ ok: true, data: { quote, line_items: line_items ?? [], events: events ?? [], company: company ?? null } });
 });

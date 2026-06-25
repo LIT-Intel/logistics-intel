@@ -64,7 +64,7 @@ export default function QuoteTotalsPanel({
             Gross Profit
           </div>
           <div className="mt-0.5 font-mono text-[12px] font-semibold text-sky-300">
-            {totals.gross_margin_pct.toFixed(1)}% margin
+            {Number(totals.gross_margin_pct ?? 0).toFixed(1)}% margin
           </div>
         </div>
         <div className="font-mono text-[17px] font-bold text-emerald-400">

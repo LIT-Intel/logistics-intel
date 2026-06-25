@@ -43,6 +43,11 @@ Deno.serve(async (req) => {
 
   const token = new URL(req.url).searchParams.get("token");
   if (!token) return notAvailable(400);
+  // share_token is a uuid; reject non-uuid input before the query to avoid a
+  // noisy Postgres cast error (and surface the same 404 the recipient sees).
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) {
+    return notAvailable(404);
+  }
 
   const url = Deno.env.get("SUPABASE_URL")!, svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const admin = createClient(url, svc);

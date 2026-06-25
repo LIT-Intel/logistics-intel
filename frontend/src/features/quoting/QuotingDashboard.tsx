@@ -82,8 +82,8 @@ function formatValidUntil(iso?: string | null): string {
 }
 
 function formatMargin(pct?: number | null): string {
-  if (pct == null || !Number.isFinite(pct)) return "—";
-  return `${pct.toFixed(1)}%`;
+  if (pct == null || !Number.isFinite(Number(pct))) return "—";
+  return `${Number(pct).toFixed(1)}%`;
 }
 
 export default function QuotingDashboard() {

@@ -110,6 +110,9 @@ Deno.serve(async (req) => {
   if (!quoteId || !toEmail) {
     return json({ ok: false, code: "INVALID_INPUT", message: "quote_id and to_email required" }, 400);
   }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toEmail)) {
+    return json({ ok: false, code: "INVALID_INPUT", message: "valid to_email required" }, 400);
+  }
 
   // 2. Load the quote (org-scoped) + company name.
   const { data: quote } = await admin
