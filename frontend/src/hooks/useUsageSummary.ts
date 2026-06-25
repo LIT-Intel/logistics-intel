@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/auth/AuthProvider";
+import { useEntitlements } from "@/hooks/useEntitlements";
 import { PLAN_LIMITS, normalizePlan, type PlanCode } from "@/lib/planLimits";
 
 /**
@@ -56,8 +57,15 @@ const TRACKED_FEATURES: Array<{ key: string; label: string }> = [
  * if the precise period_start/period_end can shift by a few days.
  */
 export function useUsageSummary(): UsageSummary {
-  const { user, plan } = useAuth();
-  const planCode = normalizePlan(plan ?? "free_trial");
+  const { user, plan: authPlan } = useAuth();
+  // Source of truth for the plan is the server entitlements snapshot
+  // (resolve_plan_code → highest plan across the user's own subscription AND
+  // every org they belong to). `useAuth().plan` only reflects the user's OWN
+  // subscription metadata, so an invited member of a paid org still reads
+  // `free_trial` there — which made this strip show trial caps for enterprise
+  // members. Prefer the snapshot; fall back to authPlan while it loads.
+  const { entitlements } = useEntitlements();
+  const planCode = normalizePlan(entitlements?.plan ?? authPlan ?? "free_trial");
   const planConfig = PLAN_LIMITS[planCode];
 
   const [loading, setLoading] = useState(true);
