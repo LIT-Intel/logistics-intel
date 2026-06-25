@@ -16,7 +16,7 @@ export default function MarketingHeader() {
         <nav className="hidden md:flex items-center gap-6 text-sm text-gray-700">
           <Link to="/search" className="hover:text-gray-900">Search</Link>
           <Link to="/command-center" className="hover:text-gray-900">Command Center</Link>
-          <Link to="/rfp" className="hover:text-gray-900">RFPs</Link>
+          <Link to="/quoting" className="hover:text-gray-900">Quoting</Link>
           <button type="button" className="hover:text-gray-900" onClick={() => navigate("/app/dashboard")}>Dashboard</button>
         </nav>
 
@@ -42,7 +42,7 @@ export default function MarketingHeader() {
           <nav className="flex flex-col gap-3">
             <Link to="/search" onClick={() => setOpen(false)}>Search</Link>
             <Link to="/command-center" onClick={() => setOpen(false)}>Command Center</Link>
-            <Link to="/rfp" onClick={() => setOpen(false)}>RFPs</Link>
+            <Link to="/quoting" onClick={() => setOpen(false)}>Quoting</Link>
             <button
               type="button"
               className="text-left"

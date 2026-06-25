@@ -31,6 +31,8 @@ const NotificationsInbox = lazy(() => import("@/pages/NotificationsInbox"));
 const EmailCenter = lazy(() => import("@/pages/EmailCenter"));
 // RFPStudio discontinued 2026-06 — see docs/agents/2026-06-02-app-review-roadmap.md.
 // Route below redirects /app/rfp → /app/dashboard so old bookmarks land softly.
+const QuotingDashboard = lazy(() => import("@/features/quoting/QuotingDashboard"));
+const QuoteBuilder = lazy(() => import("@/features/quoting/QuoteBuilder"));
 const Settings = lazy(() => import("@/pages/SettingsPage"));
 const Billing = lazy(() => import("@/pages/BillingNew"));
 const AffiliateDash = lazy(() => import("@/pages/AffiliateDashboard"));
@@ -478,10 +480,43 @@ export default function App() {
           }
         />
 
-        {/* RFP Studio discontinued — soft redirect for stale bookmarks. */}
-        <Route path="/app/rfp" element={<Navigate to="/app/dashboard" replace />} />
-        <Route path="/app/rfp/*" element={<Navigate to="/app/dashboard" replace />} />
-        <Route path="/app/rfp-studio" element={<Navigate to="/app/dashboard" replace />} />
+        {/* Quoting — replaces the discontinued RFP Studio. */}
+        <Route
+          path="/app/quoting"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <QuotingDashboard />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/quoting/new"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <QuoteBuilder />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/quoting/:quoteId"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <QuoteBuilder />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+
+        {/* RFP Studio discontinued — soft redirect for stale bookmarks now
+            lands on the Quoting workspace that replaced it. */}
+        <Route path="/app/rfp" element={<Navigate to="/app/quoting" replace />} />
+        <Route path="/app/rfp/*" element={<Navigate to="/app/quoting" replace />} />
+        <Route path="/app/rfp-studio" element={<Navigate to="/app/quoting" replace />} />
 
         <Route
           path="/app/settings"

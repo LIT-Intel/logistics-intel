@@ -13,6 +13,7 @@ import {
   Inbox,
   BarChart3,
   Send,
+  FileText,
 } from "lucide-react";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 import { useAuth } from "@/auth/AuthProvider";
@@ -88,6 +89,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
           icon: Megaphone,
           locked: !canUseCampaigns,
         },
+        { label: "Quoting", href: "/app/quoting", icon: FileText },
       ],
     },
     // Account links (Settings / Billing / Affiliate) intentionally

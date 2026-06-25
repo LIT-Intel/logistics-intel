@@ -136,8 +136,6 @@ export default function AppShell({ currentPageName, children }) {
   const isAdmin = Boolean(canAccessAdmin || isOrgAdmin || isSuperAdmin);
   const showCampaigns = isAdmin || canAccessFeature(plan, "campaign_builder");
   const showPulse = isAdmin || canAccessFeature(plan, "pulse");
-  // RFP Studio discontinued 2026-06 — see roadmap doc.
-  const showRfp = false;
   const showAdminSection = isAdmin;
 
   const breadcrumbs = useMemo(() => {
@@ -221,6 +219,12 @@ export default function AppShell({ currentPageName, children }) {
                 />
               )
             )}
+            {/* TODO: gate on quoting entitlement — server enforces anyway. */}
+            <SideLink
+              to="/app/quoting"
+              icon={FileText}
+              label={collapsed ? "" : "Quoting"}
+            />
             {showPulse && (
               <SideLink
                 to="/app/prospecting"
@@ -393,6 +397,8 @@ export default function AppShell({ currentPageName, children }) {
               ) : (
                 <SideLink to="#" icon={Mail} label="Campaigns" locked onClick={lockedClick} />
               )}
+              {/* TODO: gate on quoting entitlement — server enforces anyway. */}
+              <SideLink to="/app/quoting" icon={FileText} label="Quoting" />
               {showPulse && (
                 <SideLink to="/app/prospecting" icon={TrendingUp} label="Pulse" />
               )}
