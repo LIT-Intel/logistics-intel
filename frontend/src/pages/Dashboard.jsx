@@ -42,8 +42,10 @@ import {
   Sparkles,
   Package,
   ShieldCheck,
+  DollarSign,
 } from "lucide-react";
 import { listSavedCompanies, getCrmCampaigns } from "@/lib/api";
+import { quoting } from "@/api/quoting";
 import { getLitCampaigns } from "@/lib/litCampaigns";
 import { supabase } from "@/lib/supabase";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
@@ -690,6 +692,7 @@ export default function Dashboard() {
   const [campaigns, setCampaigns] = useState([]);
   const [searchCount, setSearchCount] = useState(0);
   const [contactsCount, setContactsCount] = useState(0);
+  const [quoteMetrics, setQuoteMetrics] = useState({ open_pipeline: 0, won: 0 });
 
   useDashboardShortcuts();
 
@@ -732,6 +735,7 @@ export default function Dashboard() {
           campaignsRes,
           searchRes,
           contactsCountRes,
+          quotingRes,
         ] = await Promise.allSettled([
           listSavedCompanies(),
           getLitCampaigns().catch(() => getCrmCampaigns()),
@@ -742,6 +746,9 @@ export default function Dashboard() {
             .eq("event_type", "search")
             .gte("created_at", monthStart),
           buildContactsCountQuery(),
+          // Quoting revenue metrics. Failure leaves zeros — never crashes
+          // the dashboard.
+          quoting.dashboardMetrics(),
         ]);
 
         if (!mounted) return;
@@ -764,6 +771,13 @@ export default function Dashboard() {
         }
         if (searchRes.status === "fulfilled") {
           setSearchCount(searchRes.value?.count || 0);
+        }
+        if (quotingRes.status === "fulfilled") {
+          const data = quotingRes.value?.data || {};
+          setQuoteMetrics({
+            open_pipeline: Number(data.open_pipeline) || 0,
+            won: Number(data.won) || 0,
+          });
         }
         if (
           contactsCountRes.status === "fulfilled" &&
@@ -829,6 +843,15 @@ export default function Dashboard() {
 
   const hasSaved = savedCompanies.length > 0;
 
+  // USD formatter for the quoting revenue card. EnhancedKpiCard runs
+  // toLocaleString() on numeric values, so we pass a pre-formatted string.
+  const usd = (n) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    }).format(Number(n) || 0);
+
   // Phase B.16 — KPI cards. New users (0 saved) see "0" with a helper
   // pointing to where they can act, NOT a fabricated value.
   const KPI_CARDS = [
@@ -873,6 +896,15 @@ export default function Dashboard() {
       iconColor: "#8B5CF6",
       href: "/app/search",
       delay: 0.15,
+    },
+    {
+      icon: DollarSign,
+      label: "Quoted Pipeline",
+      value: usd(quoteMetrics.open_pipeline),
+      sub: `Won ${usd(quoteMetrics.won)}`,
+      iconColor: "#10B981",
+      href: "/app/quoting",
+      delay: 0.2,
     },
   ];
 
