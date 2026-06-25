@@ -635,50 +635,30 @@ export default function SettingsPage() {
       };
     }
 
-    const token = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-    const { data: inserted, error: insertError } = await supabase
-      .from("org_invites")
-      .insert({
-        org_id: orgId,
-        email: email.trim().toLowerCase(),
-        role,
-        token,
-        status: "pending",
-        expires_at: expiresAt,
-        invited_by_user_id: user?.id ?? null,
-      })
-      .select("id")
-      .single();
-
-    if (insertError) {
-      return { error: insertError.message || "Failed creating invite" };
-    }
-
-    // Backend exists — call send-org-invite so the email actually goes
-    // out. Don't claim success unless the edge function did its job.
-    let emailError: string | null = null;
+    // Invite creation + email are handled atomically server-side by
+    // send-org-invite: it creates the org_invites row with the service-role
+    // client (bypassing the INSERT RLS that silently blocked the old
+    // browser-side insert whenever the inviter's org_members.status drifted off
+    // 'active'), after verifying the caller is an org admin, then emails it.
+    let inviteError: string | null = null;
     try {
       const { data: sendResult, error: sendError } = await supabase.functions.invoke(
         "send-org-invite",
-        { body: { inviteId: inserted?.id } },
+        { body: { org_id: orgId, email: email.trim().toLowerCase(), role } },
       );
       if (sendError) {
-        emailError = sendError.message || "Failed to send invite email";
+        inviteError = sendError.message || "Failed to send invite";
       } else if (sendResult && (sendResult as any).error) {
-        emailError = String((sendResult as any).error);
+        inviteError = String((sendResult as any).error);
       }
     } catch (e: any) {
-      emailError = e?.message || "Failed to reach invite service";
+      inviteError = e?.message || "Failed to reach invite service";
     }
 
     await loadAll();
 
-    if (emailError) {
-      return {
-        error: `Invite saved but email could not be sent: ${emailError}`,
-      };
+    if (inviteError) {
+      return { error: inviteError };
     }
   };
 

@@ -11,7 +11,13 @@ const corsHeaders = {
 };
 
 type InviteRequest = {
+  // Legacy "resend an existing invite" mode.
   inviteId?: string;
+  // Primary "create + send" mode — the frontend passes these and the row is
+  // created here (service-role), not inserted from the browser.
+  org_id?: string;
+  email?: string;
+  role?: string;
 };
 
 function json(body: Record<string, unknown>, status = 200) {
@@ -53,7 +59,10 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
     const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const resendApiKey = Deno.env.get("RESEND_API_KEY");
+    // Project standard is LIT_RESEND_API_KEY (see CLAUDE.md); keep RESEND_API_KEY
+    // as a fallback. Reading only RESEND_API_KEY was a silent break — the invite
+    // row got created but the email never sent ("Missing RESEND_API_KEY" 500).
+    const resendApiKey = Deno.env.get("LIT_RESEND_API_KEY") || Deno.env.get("RESEND_API_KEY");
     // Fallback chain mirrors send-affiliate-invite. Default targets the APP
     // domain (not marketing) — invite links land on /accept-invite which
     // only exists on app.logisticintel.com.
@@ -104,14 +113,11 @@ serve(async (req) => {
 
     const body = (await req.json()) as InviteRequest;
     const inviteId = String(body?.inviteId || "").trim();
+    const bodyOrgId = String(body?.org_id || "").trim();
+    const bodyEmail = String(body?.email || "").trim().toLowerCase();
+    const bodyRole = String(body?.role || "member").trim().toLowerCase() || "member";
 
-    if (!inviteId) {
-      return json({ error: "inviteId is required" }, 400);
-    }
-
-    const { data: invite, error: inviteError } = await adminClient
-      .from("org_invites")
-      .select(`
+    const inviteCols = `
         id,
         org_id,
         email,
@@ -120,27 +126,50 @@ serve(async (req) => {
         status,
         expires_at,
         invited_by_user_id
-      `)
-      .eq("id", inviteId)
-      .maybeSingle();
+      `;
 
-    if (inviteError) {
-      log.error("invite_load_failed", { err: String(inviteError?.message ?? inviteError) });
-      return json({ error: inviteError.message || "Failed loading invite" }, 500);
+    // Two modes:
+    //   - resend: { inviteId }            -> load the existing invite, use its org
+    //   - create: { org_id, email, role } -> create the invite row server-side
+    // Create is the primary path. The frontend used to insert into org_invites
+    // directly under the user's JWT, which failed silently whenever the
+    // inviter's own org_members.status drifted off 'active' (the INSERT RLS
+    // policy hard-requires is_org_admin(org_id) → status='active' AND
+    // role in owner/admin). Creating it here with the service-role client after
+    // an explicit admin check removes that fragility.
+    let invite: any = null;
+    let targetOrgId = "";
+
+    if (inviteId) {
+      const { data: existing, error: inviteError } = await adminClient
+        .from("org_invites")
+        .select(inviteCols)
+        .eq("id", inviteId)
+        .maybeSingle();
+      if (inviteError) {
+        log.error("invite_load_failed", { err: String(inviteError?.message ?? inviteError) });
+        return json({ error: inviteError.message || "Failed loading invite" }, 500);
+      }
+      if (!existing) {
+        return json({ error: "Invite not found" }, 404);
+      }
+      if (existing.status !== "pending") {
+        return json({ error: "Only pending invites can be emailed" }, 400);
+      }
+      invite = existing;
+      targetOrgId = existing.org_id;
+    } else {
+      if (!bodyOrgId || !bodyEmail) {
+        return json({ error: "org_id and email are required" }, 400);
+      }
+      targetOrgId = bodyOrgId;
     }
 
-    if (!invite) {
-      return json({ error: "Invite not found" }, 404);
-    }
-
-    if (invite.status !== "pending") {
-      return json({ error: "Only pending invites can be emailed" }, 400);
-    }
-
+    // ── Permission: caller must be owner/admin of targetOrgId, or a platform admin. ──
     const { data: membership, error: membershipError } = await adminClient
       .from("org_members")
       .select("org_id, role, status")
-      .eq("org_id", invite.org_id)
+      .eq("org_id", targetOrgId)
       .eq("user_id", user.id)
       .eq("status", "active")
       .maybeSingle();
@@ -151,7 +180,19 @@ serve(async (req) => {
     }
 
     const inviterEmail = (user.email || "").toLowerCase();
-    const isPlatformAdmin = ["vraymond@sparkfusiondigital.com"].includes(inviterEmail);
+    // Platform-admin bypass via the platform_admins table (no hardcoded emails).
+    // Fail-safe to false so a missing table never blocks the org-admin path.
+    let isPlatformAdmin = false;
+    try {
+      const { data: pa } = await adminClient
+        .from("platform_admins")
+        .select("user_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      isPlatformAdmin = Boolean(pa);
+    } catch (_e) {
+      isPlatformAdmin = false;
+    }
 
     const allowedRoles = ["owner", "admin"];
     const membershipRole = String(membership?.role || "").toLowerCase();
@@ -160,22 +201,63 @@ serve(async (req) => {
     log.info("permission_check", {
       inviter_email: inviterEmail,
       membership_role: membershipRole,
-      invite_org_id: invite.org_id,
+      invite_org_id: targetOrgId,
       is_platform_admin: isPlatformAdmin,
       can_manage_invites: canManageInvites,
+      mode: inviteId ? "resend" : "create",
     });
 
     if (!canManageInvites) {
       log.error("permission_denied", {
         inviter_email: inviterEmail,
         membership_role: membershipRole,
-        invite_org_id: invite.org_id,
+        invite_org_id: targetOrgId,
       });
 
       return json(
         { error: "You do not have permission to send invites for this workspace" },
         403
       );
+    }
+
+    // ── Create mode: create (or reuse an existing pending) invite row. ──
+    if (!invite) {
+      const { data: existingPending, error: existingErr } = await adminClient
+        .from("org_invites")
+        .select(inviteCols)
+        .eq("org_id", targetOrgId)
+        .eq("email", bodyEmail)
+        .eq("status", "pending")
+        .maybeSingle();
+      if (existingErr) {
+        log.error("existing_invite_check_failed", { err: String(existingErr?.message ?? existingErr) });
+        return json({ error: existingErr.message || "Failed checking existing invite" }, 500);
+      }
+
+      if (existingPending) {
+        invite = existingPending;
+      } else {
+        const token = crypto.randomUUID();
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: created, error: createErr } = await adminClient
+          .from("org_invites")
+          .insert({
+            org_id: targetOrgId,
+            email: bodyEmail,
+            role: bodyRole,
+            token,
+            status: "pending",
+            expires_at: expiresAt,
+            invited_by_user_id: user.id,
+          })
+          .select(inviteCols)
+          .single();
+        if (createErr || !created) {
+          log.error("invite_create_failed", { err: String(createErr?.message ?? createErr) });
+          return json({ error: createErr?.message || "Failed creating invite" }, 500);
+        }
+        invite = created;
+      }
     }
 
     const { data: org, error: orgError } = await adminClient
