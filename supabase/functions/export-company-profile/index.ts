@@ -97,9 +97,17 @@ interface ExportRequest {
    *            LIT branding, so we don't charge the user to share).
    * 'export' → produce a printable HTML the user can Save as PDF in the
    *            browser. Consumes one unit of the `export_pdf` quota.
+   * 'check'  → server-side quota pre-flight for CLIENT-SIDE PDF generation
+   *            (CompanyProfileV2 jsPDF export, Pulse Explorer report PDF).
+   *            Runs check_usage_limit('export_pdf') and, on ok, consumes one
+   *            unit — then returns {ok:true} WITHOUT doing any company
+   *            resolve / render / storage work. On limit, returns 403 with
+   *            the LIMIT_EXCEEDED payload so the client can show UpgradeModal
+   *            and abort generation. This closes the bypass where free-trial
+   *            users generated PDFs entirely client-side with no server gate.
    * Default 'export' for backwards-compatibility with v33 callers.
    */
-  intent?: "share" | "export";
+  intent?: "share" | "export" | "check";
 }
 
 function isUuid(value: unknown): value is string {
@@ -495,6 +503,77 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  const intent: "share" | "export" | "check" =
+    body.intent === "share"
+      ? "share"
+      : body.intent === "check"
+        ? "check"
+        : "export";
+
+  // ---- intent='check' fast path -------------------------------------------
+  // Server-side quota pre-flight for client-side PDF generation. Resolve the
+  // user's org, run the export_pdf gate, and (on ok) consume one unit — then
+  // return {ok} WITHOUT any company resolve / render / storage work. The
+  // client calls this BEFORE generating a PDF locally so free-trial users
+  // (export_pdf=0) are blocked server-side, not just by a client hint.
+  if (intent === "check") {
+    let checkOrgId: string | null = null;
+    try {
+      const { data: orgRow } = await adminClient
+        .from("org_members")
+        .select("org_id")
+        .eq("user_id", user.id)
+        .order("joined_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      checkOrgId = (orgRow as any)?.org_id ?? null;
+    } catch {
+      checkOrgId = null;
+    }
+
+    const { data: gateData, error: gateErr } = await adminClient.rpc(
+      "check_usage_limit",
+      {
+        p_org_id: checkOrgId,
+        p_user_id: user.id,
+        p_feature_key: "export_pdf",
+        p_quantity: 1,
+      },
+    );
+    if (gateErr) {
+      // Fail OPEN on infra error (RPC unreachable) so we never block a paying
+      // user because of a transient DB hiccup — the security-critical case
+      // (free-trial export_pdf=0) returns ok:false from a healthy RPC, which
+      // is handled below. Log so we can spot a misconfiguration.
+      log.error("check_gate_rpc_failed", {
+        err: String(gateErr?.message ?? gateErr),
+      });
+      return jsonResponse(200, { ok: true, intent: "check", gate_skipped: true });
+    }
+    if (gateData && (gateData as any).ok === false) {
+      return new Response(JSON.stringify(gateData), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Gate passed — consume one unit so the client-side PDF counts against
+    // the quota, mirroring the intent='export' path.
+    try {
+      await adminClient.rpc("consume_usage", {
+        p_org_id: checkOrgId,
+        p_user_id: user.id,
+        p_feature_key: "export_pdf",
+        p_quantity: 1,
+        p_metadata: { source: "client_pdf_check" },
+      });
+    } catch (err) {
+      log.warn("check_consume_usage_failed", { err: String(err), nonfatal: true });
+    }
+
+    return jsonResponse(200, { ok: true, intent: "check" });
+  }
+
   const format = body.format === "pdf" ? "pdf" : body.format === "html" ? "html" : null;
   if (!format) {
     return jsonResponse(200, {
@@ -516,7 +595,6 @@ Deno.serve(async (req: Request) => {
     });
   }
   const includeBrief = Boolean(body.include_pulse_brief);
-  const intent = body.intent === "share" ? "share" : "export";
 
   // ---- Plan-limit gate -----------------------------------------------------
   // intent='share' bypasses the quota — Share Link is an acquisition surface

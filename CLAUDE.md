@@ -25,7 +25,7 @@ Before doing anything non-trivial, read the relevant brief from `docs/agents/`:
 
 ## Non-negotiable rules
 
-1. **Branch lock for plan-limits / entitlements / usage work:** stay on `claude/review-dashboard-deploy-3AmMD`. Do not branch off. Do not deploy from a new branch for this workstream.
+1. ~~**Branch lock for plan-limits / entitlements / usage work:** stay on `claude/review-dashboard-deploy-3AmMD`.~~ **RETIRED 2026-06-24.** That branch was `2877` commits behind `main` (predated essentially all of production); following it would have regressed prod. Branch deleted. Entitlements/usage work now happens on normal feature branches off current `main`, with DB-level changes (the `plans` table + `resolve_feature_limit`/`get_entitlements` SQL fns) applied as migrations to the shared prod DB. The real invariant is rule #4 + #6 below (server-side `get-entitlements` is the source of truth; the security boundary is the edge function).
 2. **Dashboard visual language is the source of truth** for all app pages. Drift from it is a P1.
 3. **Stripe is the source of truth for billing.** No fake plans, no hardcoded prices in production paths.
 4. **Supabase is the source of truth for access and entitlements.** All entitlement checks derive from `get-entitlements` edge fn (JWT-verified). Never query `subscriptions` from the frontend.

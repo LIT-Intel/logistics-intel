@@ -20,6 +20,7 @@ import ResultsFilterBar, { applyResultsFilter } from './ResultsFilterBar';
 import { useEntitlements } from '@/hooks/useEntitlements';
 import { useUpgradeModal } from '@/components/billing/UpgradeModal';
 import { PulseExploreLimitError } from '@/api/pulse-explore';
+import { checkExportQuota } from '@/api/entitlements';
 import ExploreAccountCards from './ExploreAccountCards';
 import { Filter, Bookmark, Layers as LayersIcon, BarChart3, Sparkles as SparklesIcon, Library as LibraryIcon } from 'lucide-react';
 import SelectionActionBar from './SelectionActionBar';
@@ -112,6 +113,13 @@ export default function PulseExploreTab() {
   const coachAllowed = isPlatformAdmin
     || entitlements?.limits?.pulse_ai === null
     || (entitlements?.limits?.pulse_ai ?? 0) > 0;
+  // saved_map_view: free_trial = 0 (blocked). Missing key (older
+  // get-entitlements snapshot that doesn't emit it yet) is treated as
+  // blocked for free_trial so we never silently allow a 403 surprise; any
+  // paid plan / unlimited / admin passes.
+  const saveViewAllowed = isPlatformAdmin
+    || entitlements?.limits?.saved_map_view === null
+    || (entitlements?.limits?.saved_map_view ?? (planCode === 'free_trial' ? 0 : 1)) > 0;
 
   const requireCoach = useCallback(() => {
     if (coachAllowed) return true;
@@ -124,27 +132,54 @@ export default function PulseExploreTab() {
     return false;
   }, [coachAllowed, upgradeModal, planCode]);
 
-  const requirePdf = useCallback(() => {
-    if (pdfAllowed) return true;
+  // PDF gate for the Pulse Explorer report (client-side jsPDF). ASYNC and
+  // server-backed: the real boundary is export-company-profile intent='check'
+  // which enforces export_pdf via check_usage_limit and consumes one unit on
+  // ok. The client-side `pdfAllowed` is only a fast pre-empt to avoid a
+  // needless round-trip when we already know the user is blocked. Returns a
+  // Promise<boolean>; callers must AWAIT it before generating.
+  const requirePdf = useCallback(async () => {
+    if (!pdfAllowed) {
+      upgradeModal.show({
+        ok: false, code: 'LIMIT_EXCEEDED', feature: 'export_pdf',
+        used: 0, limit: 0, plan: planCode,
+        reset_at: null, upgrade_url: '/app/billing',
+        message: 'PDF reports are included on paid plans.',
+      });
+      return false;
+    }
+    const quota = await checkExportQuota();
+    if (!quota.ok) {
+      upgradeModal.show(quota.limit);
+      return false;
+    }
+    return true;
+  }, [pdfAllowed, upgradeModal, planCode]);
+
+  // Saved-view gate. Server-side gate in pulse-map-selection-save is the real
+  // boundary; this gives free-trial users the upgrade prompt instead of a 403
+  // surprise after typing a name.
+  const requireSaveView = useCallback(() => {
+    if (saveViewAllowed) return true;
     upgradeModal.show({
-      ok: false, code: 'LIMIT_EXCEEDED', feature: 'export_pdf',
+      ok: false, code: 'LIMIT_EXCEEDED', feature: 'saved_map_view',
       used: 0, limit: 0, plan: planCode,
       reset_at: null, upgrade_url: '/app/billing',
-      message: 'PDF reports are included on paid plans.',
+      message: 'Saved map views are included on paid plans.',
     });
     return false;
-  }, [pdfAllowed, upgradeModal, planCode]);
+  }, [saveViewAllowed, upgradeModal, planCode]);
 
   // Sidebar tool dispatch — opens the corresponding panel or fires an action.
   const onSidebarSelect = useCallback((t) => {
     setSidebarTool(t);
-    if (t === 'bookmark') { setViewOpen(true); return; }
+    if (t === 'bookmark') { if (requireSaveView()) setViewOpen(true); return; }
     if (t === 'filter') {
       // Filter is implicit — chips already render at the top. Close any panel.
       setToolPanel(null); return;
     }
     setToolPanel((cur) => cur === t ? null : t);
-  }, []);
+  }, [requireSaveView]);
 
   // Loads a saved map view (filters + map state).
   const onLoadSelection = useCallback((sel) => {
@@ -642,7 +677,7 @@ export default function PulseExploreTab() {
                   onClear={() => setSelection([])}
                   onExport={onExport}
                   onSaveToList={() => setSaveListOpen(true)}
-                  onSaveAsView={() => setViewOpen(true)}
+                  onSaveAsView={() => { if (requireSaveView()) setViewOpen(true); }}
                   onBulkRefresh={() => setBulkOpen(true)}
                   onAddToCampaign={() => toast('Add to campaign — coming in next polish pass')}
                 />

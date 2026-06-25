@@ -4,13 +4,15 @@
 // only the filter + zoom state.
 
 import { useState } from 'react';
-import { saveMapSelection } from '@/api/pulse-map-selections';
+import { saveMapSelection, SaveMapViewLimitError } from '@/api/pulse-map-selections';
+import { useUpgradeModal } from '@/components/billing/UpgradeModal';
 import { toast } from 'sonner';
 import { X, Bookmark } from 'lucide-react';
 
 export default function SaveAsViewModal({ open, onClose, state, mapCenter, mapZoom }) {
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
+  const upgradeModal = useUpgradeModal();
   if (!open) return null;
 
   const submit = async (e) => {
@@ -33,7 +35,16 @@ export default function SaveAsViewModal({ open, onClose, state, mapCenter, mapZo
       setName('');
       onClose?.();
     } catch (err) {
-      toast.error(err?.message ?? 'Save failed');
+      // Server enforced the saved_map_view limit (free trial) — surface the
+      // canonical upgrade modal instead of a generic error toast. The client
+      // guard in PulseExploreTab usually pre-empts this, but a stale
+      // entitlements snapshot could still let a 403 through here.
+      if (err instanceof SaveMapViewLimitError && err.limit) {
+        onClose?.();
+        upgradeModal.show(err.limit);
+      } else {
+        toast.error(err?.message ?? 'Save failed');
+      }
     } finally {
       setSaving(false);
     }

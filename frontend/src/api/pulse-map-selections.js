@@ -13,8 +13,27 @@ async function authed(path, init = {}) {
   });
 }
 
+// Thrown when pulse-map-selection-save returns 403 LIMIT_EXCEEDED (free-trial
+// saved_map_view = 0). Carries the structured limit payload so the caller can
+// render the canonical UpgradeModal instead of a generic error toast.
+export class SaveMapViewLimitError extends Error {
+  constructor(limit) {
+    super(limit?.message || 'Saved map views are included on paid plans.');
+    this.name = 'SaveMapViewLimitError';
+    this.limit = limit;
+  }
+}
+
 export async function saveMapSelection(payload) {
   const r = await authed('pulse-map-selection-save', { method: 'POST', body: JSON.stringify(payload) });
+  if (r.status === 403) {
+    let body = null;
+    try { body = await r.json(); } catch { /* ignore */ }
+    if (body && body.code === 'LIMIT_EXCEEDED') {
+      throw new SaveMapViewLimitError(body);
+    }
+    throw new Error(`save selection 403`);
+  }
   if (!r.ok) throw new Error(`save selection ${r.status}`);
   return await r.json();
 }

@@ -57,6 +57,8 @@ import {
   saveCompanyToCommandCenter,
 } from "@/lib/api";
 import { useAuth } from "@/auth/AuthProvider";
+import { useUpgradeModal } from "@/components/billing/UpgradeModal";
+import { checkExportQuota } from "@/api/entitlements";
 import { capFutureDate } from "@/lib/dateUtils";
 import { supabase } from "@/lib/supabase";
 
@@ -706,6 +708,12 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     message: string;
     tone: string;
   } | null>(null);
+
+  // Server-side PDF export gate. The PDF generators below run client-side
+  // (jsPDF), so a client-only entitlement hint is bypassable. checkExportQuota
+  // hits export-company-profile intent='check' which enforces export_pdf via
+  // check_usage_limit (the real boundary) and consumes one unit on ok.
+  const upgradeModal = useUpgradeModal();
 
   // ── Cached-first load (verbatim from Company.jsx 354–418) ──────────────
   useEffect(() => {
@@ -1970,6 +1978,14 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         showShareToast("Generate the Pulse brief first.", "warning");
         return;
       }
+      // Server-side export_pdf gate BEFORE any client-side generation. On a
+      // free-trial account (export_pdf=0) the server returns 403/LIMIT_EXCEEDED
+      // and we surface the UpgradeModal + abort instead of silently generating.
+      const quota = await checkExportQuota();
+      if (!quota.ok) {
+        upgradeModal.show(quota.limit);
+        return;
+      }
       const companyDisplayName =
         bundle?.identity?.display?.name ||
         activeProfile?.company_name ||
@@ -2015,6 +2031,12 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     try {
       if (!pulseBrief) {
         showShareToast("Generate the Pulse brief first.", "warning");
+        return;
+      }
+      // Server-side export_pdf gate before client-side generation (see above).
+      const quota = await checkExportQuota();
+      if (!quota.ok) {
+        upgradeModal.show(quota.limit);
         return;
       }
       const companyDisplayName =

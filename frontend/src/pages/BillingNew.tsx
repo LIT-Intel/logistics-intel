@@ -488,36 +488,70 @@ export default function Billing() {
   // saved_companies / lit_campaigns.
   const usageMeters: UsageMeter[] = useMemo(() => {
     if (!entitlements) return [];
+    const isFreeTrial = currentPlanCode === 'free_trial';
+    const meters: UsageMeter[] = [];
+
+    // Searches. On free_trial, Pulse Explorer + Company Search share ONE
+    // lifetime budget of 5 (enforced by check_usage_limit). Render that as a
+    // single unified "Searches" meter: used = company_search + pulse_search,
+    // limit = the shared cap (company_search limit, which the RPC sets to the
+    // trial search budget). On paid plans the two are separate monthly limits,
+    // so keep them as distinct meters (company_search here + pulse_search
+    // appended from the ledger below).
+    if (isFreeTrial) {
+      const usedCompany = entitlements.used.company_search ?? 0;
+      const usedPulse =
+        (pulseSearchRow && !pulseUsage.loading
+          ? pulseSearchRow.used
+          : entitlements.used.pulse_search) ?? 0;
+      meters.push({
+        key: 'company_search',
+        label: 'Searches',
+        used: usedCompany + usedPulse,
+        limit: entitlements.limits.company_search ?? null,
+      });
+    } else {
+      meters.push({
+        key: 'company_search',
+        label: capitalize(FEATURE_LABELS.company_search.plural),
+        used: entitlements.used.company_search ?? 0,
+        limit: entitlements.limits.company_search ?? null,
+      });
+    }
+
     const keys: FeatureKey[] = [
-      'company_search',
       'saved_company',
       'company_profile_view',
       'contact_enrichment',
       'campaign_send',
       'pulse_brief',
       'export_pdf',
+      'saved_map_view',
     ];
-    const base = keys
-      .filter((k) => k in entitlements.limits || k in entitlements.used)
-      .map<UsageMeter>((k) => ({
+    for (const k of keys) {
+      if (!(k in entitlements.limits) && !(k in entitlements.used)) continue;
+      meters.push({
         key: k,
         label: capitalize(FEATURE_LABELS[k]?.plural || k),
         used: entitlements.used[k] ?? 0,
         limit: entitlements.limits[k] ?? null,
-      }));
-    // Append Pulse search (sourced from lit_usage_ledger via
-    // useUsageSummary). Only show once the ledger read has resolved so
-    // we don't briefly render 0/limit before real numbers arrive.
-    if (pulseSearchRow && !pulseUsage.loading) {
-      base.push({
+      });
+    }
+
+    // Pulse search as a SEPARATE meter only on paid plans — free_trial already
+    // folds it into the unified "Searches" meter above. Sourced from
+    // lit_usage_ledger via useUsageSummary; only show once that read resolves
+    // so we don't briefly render 0/limit before real numbers arrive.
+    if (!isFreeTrial && pulseSearchRow && !pulseUsage.loading) {
+      meters.push({
         key: 'pulse_search',
         label: capitalize(FEATURE_LABELS.pulse_search.plural),
         used: pulseSearchRow.used,
         limit: pulseSearchRow.limit,
       });
     }
-    return base;
-  }, [entitlements, pulseSearchRow, pulseUsage.loading]);
+    return meters;
+  }, [entitlements, pulseSearchRow, pulseUsage.loading, currentPlanCode]);
 
   // Usage warnings for BillingAlerts (≥80% of any limited counter)
   const usageWarnings = useMemo(() => {

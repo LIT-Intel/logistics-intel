@@ -239,9 +239,11 @@ function ReportActions({ entry, rows, filters, summary, requirePdf }) {
     return { reportRows: out, segmentLabel: labels.join('  •  ') || undefined };
   }, [entry.question, rows]);
 
-  function onDownload() {
-    // Trial-preview gating: trial users get the upgrade modal instead.
-    if (requirePdf && !requirePdf()) return;
+  async function onDownload() {
+    // Server-side export_pdf gate. requirePdf is async (it calls
+    // export-company-profile intent='check' which enforces + consumes the
+    // quota server-side); trial users get the upgrade modal and we abort.
+    if (requirePdf && !(await requirePdf())) return;
     try {
       generatePulseReportPdf({
         title: 'LIT Pulse Explorer Report',
@@ -264,7 +266,7 @@ function ReportActions({ entry, rows, filters, summary, requirePdf }) {
 
   async function onSendEmail(e) {
     e?.preventDefault?.();
-    if (requirePdf && !requirePdf()) return;
+    if (requirePdf && !(await requirePdf())) return;
     if (!email.trim()) {
       toast.error('Enter a recipient email');
       return;

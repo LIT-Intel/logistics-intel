@@ -111,8 +111,20 @@ export function useUsageSummary(): UsageSummary {
     };
   }, [user?.id, periodStart, periodEnd]);
 
-  const rows: UsageRow[] = TRACKED_FEATURES.map(({ key, label }) => {
-    const used = usedByFeature[key] || 0;
+  // On free_trial, Pulse Explorer + Company Search SHARE one lifetime budget of
+  // 5 (check_usage_limit). Two separate "5"-capped tiles would imply a 10-search
+  // allowance, so collapse them into a single "Searches" tile (used = sum of
+  // both). Paid plans keep distinct monthly tiles.
+  const isFreeTrial = planCode === "free_trial";
+  const trackedForPlan = isFreeTrial
+    ? TRACKED_FEATURES.filter((f) => f.key !== "pulse_search")
+    : TRACKED_FEATURES;
+
+  const rows: UsageRow[] = trackedForPlan.map(({ key, label }) => {
+    let used = usedByFeature[key] || 0;
+    if (isFreeTrial && key === "company_search") {
+      used += usedByFeature["pulse_search"] || 0;
+    }
     const limitKey = FEATURE_TO_LIMIT_KEY[key];
     const limit = limitKey ? planConfig.limits[limitKey] : null;
     const pctUsed =
