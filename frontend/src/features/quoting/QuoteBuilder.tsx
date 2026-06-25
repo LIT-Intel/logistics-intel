@@ -13,7 +13,7 @@
  * authoritative and its returned numbers replace the preview after each save.
  * Generate PDF / Send are rendered but inert here — wired in Task 15.
  */
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -45,6 +45,9 @@ import QuoteLineItemsTable from "@/features/quoting/components/QuoteLineItemsTab
 import QuoteTotalsPanel from "@/features/quoting/components/QuoteTotalsPanel";
 import QuoteBenchmarkPanel from "@/features/quoting/components/QuoteBenchmarkPanel";
 import QuoteRevenueOpportunityPanel from "@/features/quoting/components/QuoteRevenueOpportunityPanel";
+import QuotePdfPreview from "@/features/quoting/components/QuotePdfPreview";
+import QuoteSendBox from "@/features/quoting/components/QuoteSendBox";
+import { exportQuotePdf } from "@/lib/quoting/exportQuotePdf";
 
 /**
  * Editable builder state. Keyed to QuoteCreateInput fields plus the line items
@@ -200,6 +203,13 @@ export default function QuoteBuilder() {
   const [quoteNumber, setQuoteNumber] = useState<string | null>(null);
   const [status, setStatus] = useState<QuoteStatus>("draft");
   const [serverTotals, setServerTotals] = useState<QuoteTotals | null>(null);
+  // Last server-authoritative Quote — the source for PDF generation + send.
+  const [savedQuote, setSavedQuote] = useState<Quote | null>(null);
+
+  // PDF state.
+  const [pdfSignedUrl, setPdfSignedUrl] = useState<string | null>(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(Boolean(quoteId));
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -222,6 +232,8 @@ export default function QuoteBuilder() {
         setQuoteNumber(quote.quote_number);
         setStatus(quote.status);
         setServerTotals(totalsFromQuote(quote));
+        setSavedQuote(quote);
+        setPdfSignedUrl(quote.pdf_signed_url ?? null);
         if (co && (co.id || co.company_id)) {
           setCompany({
             company_id: co.id ?? co.company_id,
@@ -257,35 +269,78 @@ export default function QuoteBuilder() {
 
   const laneValue: LaneFields = state;
 
-  async function handleSave() {
+  /**
+   * Persist the quote and return the server-authoritative Quote. Returns null
+   * when validation fails (no company) so callers can abort. Used directly by
+   * the Save button and as the save-first step of Generate PDF.
+   */
+  async function saveQuote(): Promise<Quote | null> {
     if (!state.company_id) {
       setSaveError("Attach a company before saving.");
-      return;
+      return null;
     }
     setSaving(true);
     setSaveError(null);
     try {
       const input = toInput(state);
+      let quote: Quote;
       if (quoteId) {
         const res = await quoting.update({ quote_id: quoteId, ...input });
-        applySaved(res.data.quote);
+        quote = res.data.quote;
       } else {
         const res = await quoting.create(input);
-        applySaved(res.data.quote);
-        navigate(`/app/quoting/${res.data.quote.id}`);
+        quote = res.data.quote;
+        navigate(`/app/quoting/${quote.id}`);
       }
+      applySaved(quote);
       setSavedAt(Date.now());
+      return quote;
     } catch (e: any) {
       setSaveError(e?.message ?? "Save failed.");
+      return null;
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleSave() {
+    void saveQuote();
   }
 
   function applySaved(quote: Quote) {
     setQuoteNumber(quote.quote_number);
     setStatus(quote.status);
     setServerTotals(totalsFromQuote(quote));
+    setSavedQuote(quote);
+  }
+
+  /**
+   * Generate the branded quote PDF client-side and upload it. Saves the quote
+   * first when it's unsaved (or has unsaved edits) so the server has the
+   * authoritative totals the PDF renders, then forwards the base64 data URI to
+   * `quote-generate-pdf` and stores the returned signed URL.
+   */
+  async function handleGeneratePdf() {
+    setPdfError(null);
+    setGeneratingPdf(true);
+    try {
+      // Always save first: guarantees a quote id and that the PDF renders the
+      // server's authoritative totals rather than the local preview.
+      const quote = await saveQuote();
+      if (!quote) {
+        setGeneratingPdf(false);
+        return;
+      }
+      const dataUri = await exportQuotePdf(quote, state.line_items, {
+        companyName: company?.company_name ?? null,
+      });
+      const res = await quoting.generatePdf(quote.id, dataUri);
+      setPdfSignedUrl(res.data.pdf_signed_url);
+    } catch (e: any) {
+      setPdfError(e?.message ?? "Failed to generate the PDF.");
+    } finally {
+      setGeneratingPdf(false);
+    }
   }
 
   // Any edit invalidates the cached server totals so the live preview shows.
@@ -299,6 +354,11 @@ export default function QuoteBuilder() {
   }
 
   const lane = useMemo(() => laneSummary(state), [state]);
+
+  const sendRef = useRef<HTMLDivElement | null>(null);
+  function scrollToSend() {
+    sendRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   if (loading) {
     return (
@@ -379,19 +439,18 @@ export default function QuoteBuilder() {
           </button>
           <button
             type="button"
-            disabled
-            title="Wired in a later task"
-            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white opacity-60 sm:flex-none"
+            onClick={handleGeneratePdf}
+            disabled={generatingPdf || saving}
+            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white transition disabled:opacity-60 sm:flex-none"
             style={{ background: "linear-gradient(180deg,#0891b2,#0e7490)" }}
           >
-            <FileDown className="h-4 w-4" />
+            {generatingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
             Generate PDF
           </button>
           <button
             type="button"
-            disabled
-            title="Wired in a later task"
-            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white opacity-60 sm:flex-none"
+            onClick={scrollToSend}
+            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white transition hover:brightness-110 sm:flex-none"
             style={{ background: "linear-gradient(180deg,#2563eb,#1d4ed8)" }}
           >
             <Send className="h-4 w-4" />
@@ -488,7 +547,32 @@ export default function QuoteBuilder() {
             totalSell={totals.total_sell}
             lineItemCount={state.line_items.length}
           />
-          {/* PDF Preview + Send box internals — Task 15. */}
+
+          {pdfError && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12.5px] text-rose-700">
+              {pdfError}
+            </div>
+          )}
+
+          <QuotePdfPreview
+            generating={generatingPdf}
+            signedUrl={pdfSignedUrl}
+            onGenerate={handleGeneratePdf}
+          />
+
+          <div ref={sendRef} className="scroll-mt-[88px]">
+            {savedQuote ? (
+              <QuoteSendBox
+                quote={savedQuote}
+                signedUrl={pdfSignedUrl}
+                onSent={() => setStatus("sent")}
+              />
+            ) : (
+              <section className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-[12.5px] text-slate-500">
+                Save the quote to enable sending.
+              </section>
+            )}
+          </div>
         </div>
       </div>
     </div>
