@@ -21,11 +21,11 @@ export default function CTABanners() {
       </Link>
 
       <Link
-        to="/rfp"
+        to="/quoting"
         className="group relative overflow-hidden rounded-xl border border-gray-200 bg-white p-8 shadow-sm transition hover:shadow"
       >
         <div className="absolute right-0 top-0 -mr-8 -mt-8 h-40 w-40 rounded-full bg-amber-100 opacity-60 blur-2xl transition group-hover:opacity-90" />
-        <h3 className="text-2xl font-semibold text-gray-900">RFPs and Pricing</h3>
+        <h3 className="text-2xl font-semibold text-gray-900">Quoting</h3>
         <p className="mt-2 text-gray-600">Instantly estimate volumes, lanes and benchmark TEUs for proposals.</p>
         <div className="mt-6 inline-flex items-center gap-2 text-amber-600">
           Try it now
