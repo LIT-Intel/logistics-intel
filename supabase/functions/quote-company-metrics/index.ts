@@ -34,9 +34,9 @@ Deno.serve(async (req) => {
   if (error) { log.error("metrics_failed", { err: error.message }); return json({ ok: false, code: "METRICS_FAILED" }, 500); }
   const rows = data ?? [];
   const sum = (pred: (s: string) => boolean) => rows.filter((r) => pred(r.status)).reduce((a, r) => a + Number(r.total_sell || 0), 0);
-  const won = rows.filter((r) => r.status === "closed_won").length;
-  const lost = rows.filter((r) => r.status === "closed_lost").length;
-  const decided = won + lost;
+  const wonCount = rows.filter((r) => r.status === "closed_won").length;
+  const lostCount = rows.filter((r) => r.status === "closed_lost").length;
+  const decided = wonCount + lostCount;
   return json({
     ok: true,
     data: {
@@ -45,7 +45,8 @@ Deno.serve(async (req) => {
       approved: sum((s) => s === "approved"),
       won: sum((s) => s === "closed_won"),
       lost: sum((s) => s === "closed_lost"),
-      win_rate: decided > 0 ? Math.round((won / decided) * 100) : 0,
+      open_pipeline: sum((s) => ["draft", "sent", "viewed", "approved"].includes(s)),
+      win_rate: decided > 0 ? +((wonCount / decided) * 100).toFixed(1) : 0,
       count: rows.length,
     },
   });
