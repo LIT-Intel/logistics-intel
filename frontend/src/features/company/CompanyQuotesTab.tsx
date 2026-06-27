@@ -34,9 +34,11 @@ import {
   FileDown,
   Plus,
   FileText,
+  Sparkles,
 } from "lucide-react";
 
 import { quoting } from "@/api/quoting";
+import { useEntitlements } from "@/hooks/useEntitlements";
 import type { QuoteListItem, QuoteMode, QuoteCreateInput } from "@/api/quoting";
 import EnhancedKpiCard from "@/components/dashboard/EnhancedKpiCard";
 import LitSectionCard from "@/components/ui/LitSectionCard";
@@ -75,6 +77,13 @@ function formatMargin(pct?: number | null): string {
 export default function CompanyQuotesTab({ companyId }: { companyId: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { entitlements, isAdmin } = useEntitlements();
+  // KPIs + list stay visible on every plan; only "New Quote" is gated when the
+  // server explicitly disables quoting.
+  const quotingLocked = !isAdmin && entitlements?.features?.quoting === false;
+  const newQuotePath = quotingLocked
+    ? "/app/billing"
+    : `/app/quoting/new?company_id=${companyId}`;
 
   const metricsKey = ["quoting", "companyMetrics", companyId];
   const listKey = ["quoting", "list", "company", companyId];
@@ -210,17 +219,21 @@ export default function CompanyQuotesTab({ companyId }: { companyId: string }) {
         </div>
         <button
           type="button"
-          onClick={() => navigate(`/app/quoting/new?company_id=${companyId}`)}
+          onClick={() => navigate(newQuotePath)}
+          title={quotingLocked ? "Upgrade to Growth to create quotes" : undefined}
           className="inline-flex items-center justify-center gap-2 h-10 w-full sm:w-auto px-4 rounded-[10px] text-[13.5px] font-semibold text-white transition hover:brightness-105"
           style={{
             fontFamily: "'Space Grotesk', sans-serif",
-            background: "linear-gradient(180deg,#2563eb,#1d4ed8)",
-            boxShadow:
-              "0 6px 16px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18)",
+            background: quotingLocked
+              ? "linear-gradient(180deg,#d97706,#b45309)"
+              : "linear-gradient(180deg,#2563eb,#1d4ed8)",
+            boxShadow: quotingLocked
+              ? "0 6px 16px rgba(217,119,6,.28), inset 0 1px 0 rgba(255,255,255,.18)"
+              : "0 6px 16px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18)",
           }}
         >
-          <Plus className="w-4 h-4" />
-          New Quote
+          {quotingLocked ? <Sparkles className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          {quotingLocked ? "Upgrade to create quotes" : "New Quote"}
         </button>
       </div>
 
@@ -253,7 +266,8 @@ export default function CompanyQuotesTab({ companyId }: { companyId: string }) {
           <QuotesSkeleton />
         ) : quotes.length === 0 ? (
           <EmptyState
-            onNew={() => navigate(`/app/quoting/new?company_id=${companyId}`)}
+            locked={quotingLocked}
+            onNew={() => navigate(newQuotePath)}
           />
         ) : (
           <div className="overflow-x-auto">
@@ -465,7 +479,7 @@ function QuotesSkeleton() {
   );
 }
 
-function EmptyState({ onNew }: { onNew: () => void }) {
+function EmptyState({ onNew, locked = false }: { onNew: () => void; locked?: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center text-center px-6 py-14">
       <div className="w-12 h-12 rounded-xl bg-slate-100 grid place-items-center mb-4">
@@ -478,22 +492,27 @@ function EmptyState({ onNew }: { onNew: () => void }) {
         No quotes for this company yet
       </div>
       <p className="text-[13px] text-slate-500 mt-1 max-w-sm">
-        Create the first quote to start pricing, sending, and tracking revenue
-        for this company.
+        {locked
+          ? "Quoting is available on Growth and above. Upgrade to price, send, and track revenue for this company."
+          : "Create the first quote to start pricing, sending, and tracking revenue for this company."}
       </p>
       <button
         type="button"
         onClick={onNew}
+        title={locked ? "Upgrade to Growth to create quotes" : undefined}
         className="mt-5 inline-flex items-center justify-center gap-2 h-10 px-4 rounded-[10px] text-[13.5px] font-semibold text-white transition hover:brightness-105"
         style={{
           fontFamily: "'Space Grotesk', sans-serif",
-          background: "linear-gradient(180deg,#2563eb,#1d4ed8)",
-          boxShadow:
-            "0 6px 16px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18)",
+          background: locked
+            ? "linear-gradient(180deg,#d97706,#b45309)"
+            : "linear-gradient(180deg,#2563eb,#1d4ed8)",
+          boxShadow: locked
+            ? "0 6px 16px rgba(217,119,6,.28), inset 0 1px 0 rgba(255,255,255,.18)"
+            : "0 6px 16px rgba(37,99,235,.28), inset 0 1px 0 rgba(255,255,255,.18)",
         }}
       >
-        <Plus className="w-4 h-4" />
-        New Quote
+        {locked ? <Sparkles className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+        {locked ? "Upgrade to create quotes" : "New Quote"}
       </button>
     </div>
   );

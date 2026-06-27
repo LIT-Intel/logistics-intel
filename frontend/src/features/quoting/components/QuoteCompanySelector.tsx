@@ -6,15 +6,29 @@
  * display it (logo, name, domain, contact) with a "Change" affordance.
  *
  * FALLBACK path: no company attached → a minimal search box backed by the
- * existing `searchCompanies` proxy (`frontend/src/lib/api.ts`). Picking a result
- * emits `{ company_id, company_name, domain }` up to the builder.
+ * Supabase-native `quote-company-search` edge function. Per the product rule, a
+ * user may only quote companies they've SAVED to their org's Command Center, so
+ * the search is scoped to `lit_saved_companies` (NOT the global index). Each hit
+ * already carries the internal `lit_companies.id` UUID, so picking a result
+ * emits `{ company_id, company_name }` — no slug resolution needed on save.
  */
 import { useEffect, useRef, useState } from "react";
-import { Building2, Globe, MapPin, User, Repeat, Search, Loader2 } from "lucide-react";
-import { searchCompanies, type CompanyHit } from "@/lib/api";
+import { Link } from "react-router-dom";
+import {
+  Building2,
+  Globe,
+  MapPin,
+  User,
+  Repeat,
+  Search,
+  Loader2,
+  RotateCw,
+} from "lucide-react";
+import { quoting, type CompanySearchHit } from "@/api/quoting";
 
 export interface AttachedCompany {
-  company_id: string;
+  company_id?: string;
+  source_company_key?: string;
   company_name: string;
   domain?: string | null;
   /** Real ImportYeti shipment volume — used by the revenue-opportunity panel. */
@@ -132,12 +146,16 @@ function CompanySearch({
   onCancel?: () => void;
 }) {
   const [q, setQ] = useState("");
-  const [rows, setRows] = useState<CompanyHit[]>([]);
+  const [rows, setRows] = useState<CompanySearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  // Bumped by the Retry button to re-run the effect for the current query.
+  const [retryNonce, setRetryNonce] = useState(0);
+  // Monotonic request id so a slow earlier response can't overwrite a newer one
+  // (the edge invoke has no AbortController/signal support).
+  const reqRef = useRef(0);
 
-  // Debounced search against the existing companies proxy.
+  // Debounced search against the Supabase-native `quote-company-search` fn.
   // TODO: richer company search (filters, contacts) — Phase 1 keeps this minimal.
   useEffect(() => {
     const term = q.trim();
@@ -149,23 +167,30 @@ function CompanySearch({
     setLoading(true);
     setError(null);
     const t = setTimeout(async () => {
-      abortRef.current?.abort();
-      const ctrl = new AbortController();
-      abortRef.current = ctrl;
+      const myReq = ++reqRef.current;
       try {
-        const res = await searchCompanies({ q: term, limit: 8 }, ctrl.signal);
-        setRows(res.rows ?? []);
-      } catch (e) {
-        if (!ctrl.signal.aborted) {
-          setError("Search failed. Try again.");
-          setRows([]);
+        const res = await quoting.companySearch(term);
+        if (myReq !== reqRef.current) return;
+        setRows(res.items ?? []);
+      } catch (e: any) {
+        if (myReq !== reqRef.current) return;
+        // It's a Supabase edge fn now — a generic "temporarily unavailable +
+        // retry" message covers transport/5xx/OK_FALSE. Keep a 403 branch in
+        // case a future gate surfaces a plan limit via code/status.
+        const code: string | undefined = e?.code;
+        const status: number | undefined = e?.status;
+        if (status === 403 || code === "FORBIDDEN" || code === "LIMIT_EXCEEDED") {
+          setError("Company search limit reached on your plan.");
+        } else {
+          setError("Search is temporarily unavailable. Please retry.");
         }
+        setRows([]);
       } finally {
-        if (!ctrl.signal.aborted) setLoading(false);
+        if (myReq === reqRef.current) setLoading(false);
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, retryNonce]);
 
   return (
     <div>
@@ -175,7 +200,7 @@ function CompanySearch({
           autoFocus
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search companies by name…"
+          placeholder="Search your saved companies…"
           className="h-10 w-full rounded-[9px] border border-slate-200 bg-slate-50 pl-9 pr-3 text-[13px] text-slate-900 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-500/15"
         />
       </div>
@@ -186,53 +211,73 @@ function CompanySearch({
           Searching…
         </div>
       )}
-      {error && <div className="mt-3 px-1 text-[12px] text-rose-600">{error}</div>}
+      {error && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 px-1 text-[12px] text-rose-600">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => setRetryNonce((n) => n + 1)}
+            className="inline-flex h-7 items-center gap-1 rounded-[8px] border border-rose-200 bg-white px-2 font-semibold text-rose-700 transition hover:bg-rose-50"
+          >
+            <RotateCw className="h-3 w-3" />
+            Retry
+          </button>
+        </div>
+      )}
 
       {rows.length > 0 && (
         <div className="mt-3 max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-[10px] border border-slate-200">
-          {rows.map((r) => (
-            <button
-              key={r.company_id}
-              type="button"
-              onClick={() =>
-                onSelect({
-                  company_id: r.company_id,
-                  company_name: r.company_name,
-                  domain: r.domain,
-                  shipments_12m: r.shipments_12m,
-                  top_routes: r.top_routes,
-                  address: r.address,
-                })
-              }
-              className="flex w-full min-h-[44px] items-center gap-3 px-3 py-2.5 text-left transition hover:bg-slate-50"
-            >
-              <div className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-md bg-slate-100 text-[11px] font-bold text-slate-600">
-                {initials(r.company_name)}
-              </div>
-              <div className="min-w-0">
-                <div className="truncate text-[13px] font-semibold text-slate-900">
-                  {r.company_name}
+          {rows.map((r) => {
+            const place = [r.city, r.country].filter(Boolean).join(", ");
+            const subtitle = [
+              place || null,
+              r.shipments_12m != null ? `${r.shipments_12m.toLocaleString()} shipments` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <button
+                key={r.company_id}
+                type="button"
+                onClick={() =>
+                  onSelect({
+                    // Saved companies carry a real internal lit_companies UUID —
+                    // pass it through directly; no slug resolution on save.
+                    company_id: r.company_id,
+                    company_name: r.company_name,
+                  })
+                }
+                className="flex w-full min-h-[44px] items-center gap-3 px-3 py-2.5 text-left transition hover:bg-slate-50"
+              >
+                <div className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-md bg-slate-100 text-[11px] font-bold text-slate-600">
+                  {initials(r.company_name)}
                 </div>
-                <div className="truncate text-[11px] text-slate-400">
-                  {r.domain ?? "—"}
-                  {r.shipments_12m != null ? ` · ${r.shipments_12m.toLocaleString()} shp/12M` : ""}
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-semibold text-slate-900">
+                    {r.company_name}
+                  </div>
+                  <div className="truncate text-[11px] text-slate-400">{subtitle || "—"}</div>
                 </div>
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       )}
 
       {!loading && q.trim().length >= 2 && rows.length === 0 && !error && (
-        <div className="mt-3 px-1 text-[12px] text-slate-400">
-          No companies found for “{q.trim()}”.
+        <div className="mt-3 px-1 text-[12px] text-slate-500">
+          No saved companies match “{q.trim()}”.{" "}
+          <Link to="/app/search" className="font-semibold text-blue-600 hover:text-blue-700">
+            Save companies from Search &amp; Intel
+          </Link>{" "}
+          to quote them.
         </div>
       )}
 
       {q.trim().length < 2 && (
         <div className="mt-3 flex items-start gap-2 px-1 text-[12px] text-slate-400">
           <Building2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          Type at least 2 characters to search your company index.
+          Type at least 2 characters to search your saved companies.
         </div>
       )}
 

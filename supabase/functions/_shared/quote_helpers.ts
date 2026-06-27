@@ -20,6 +20,26 @@ export type LineItem = {
   is_accessorial?: boolean; taxable?: boolean; sort_order?: number;
 };
 
+/** Coerce a value to a number or null. Empty string / null / undefined / NaN → null.
+ *  Critical: form inputs send "" for untouched numeric fields, and Postgres rejects
+ *  "" for numeric columns. Use for every numeric quote column before insert/update. */
+export function numOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Coerce a numeric with a fallback (for line-item qty/cost that must not be null). */
+export function numOr(v: unknown, fallback: number): number {
+  const n = numOrNull(v);
+  return n === null ? fallback : n;
+}
+
+/** Empty string / null / undefined → null; otherwise pass through (for date/text-nullable cols). */
+export function emptyToNull<T>(v: T): T | null {
+  return v === "" || v === undefined || v === null ? null : v;
+}
+
 /** Recompute all quote financials from line items + fuel %. Server is source of truth. */
 export function computeTotals(items: LineItem[], fuelPct: number | null | undefined) {
   const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);

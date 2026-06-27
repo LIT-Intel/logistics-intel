@@ -20,12 +20,13 @@ import {
   Send,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
+import { useEntitlements } from "@/hooks/useEntitlements";
 import { canAccessFeature } from "@/lib/planLimits";
 import { logout } from "@/auth/supabaseAuthClient";
 import { LockoutBanner } from "@/components/subscription/LockoutBanner";
 import NotificationBell from "@/components/layout/NotificationBell";
 
-function SideLink({ to, icon: Icon, label, locked = false, onClick = null }) {
+function SideLink({ to, icon: Icon, label, locked = false, lockHint = false, onClick = null }) {
   const baseClass =
     "flex items-center justify-between px-4 py-3 mx-2 rounded-xl transition-all duration-200";
 
@@ -48,6 +49,7 @@ function SideLink({ to, icon: Icon, label, locked = false, onClick = null }) {
   return (
     <NavLink
       to={to}
+      title={lockHint ? "Upgrade to Growth to create and send quotes" : undefined}
       className={({ isActive }) =>
         `${baseClass} ${
           isActive
@@ -60,6 +62,7 @@ function SideLink({ to, icon: Icon, label, locked = false, onClick = null }) {
         <Icon size={18} className="mr-3 shrink-0" />
         {label}
       </span>
+      {lockHint && <Lock size={14} className="opacity-70 shrink-0" />}
     </NavLink>
   );
 }
@@ -133,10 +136,16 @@ export default function AppShell({ currentPageName, children }) {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
 
+  const { entitlements } = useEntitlements();
+
   const isAdmin = Boolean(canAccessAdmin || isOrgAdmin || isSuperAdmin);
   const showCampaigns = isAdmin || canAccessFeature(plan, "campaign_builder");
   const showPulse = isAdmin || canAccessFeature(plan, "pulse");
   const showAdminSection = isAdmin;
+  // Lock Quoting ONLY when the server explicitly reports the feature as false.
+  // While the entitlements payload predates the quoting key (undefined) or is
+  // still loading, leave it unlocked — the server enforces on every mutation.
+  const quotingLocked = !isAdmin && entitlements?.features?.quoting === false;
 
   const breadcrumbs = useMemo(() => {
     const path = location.pathname.replace(/^\/+|\/+$|\?.*$/g, "");
@@ -219,11 +228,11 @@ export default function AppShell({ currentPageName, children }) {
                 />
               )
             )}
-            {/* TODO: gate on quoting entitlement — server enforces anyway. */}
             <SideLink
               to="/app/quoting"
               icon={FileText}
               label={collapsed ? "" : "Quoting"}
+              lockHint={!collapsed && quotingLocked}
             />
             {showPulse && (
               <SideLink
@@ -397,8 +406,7 @@ export default function AppShell({ currentPageName, children }) {
               ) : (
                 <SideLink to="#" icon={Mail} label="Campaigns" locked onClick={lockedClick} />
               )}
-              {/* TODO: gate on quoting entitlement — server enforces anyway. */}
-              <SideLink to="/app/quoting" icon={FileText} label="Quoting" />
+              <SideLink to="/app/quoting" icon={FileText} label="Quoting" lockHint={quotingLocked} />
               {showPulse && (
                 <SideLink to="/app/prospecting" icon={TrendingUp} label="Pulse" />
               )}

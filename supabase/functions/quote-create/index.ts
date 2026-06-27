@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createLogger, requestId } from "../_shared/logger.ts";
-import { resolveOrg, requireQuotingFeature, computeTotals, LineItem } from "../_shared/quote_helpers.ts";
+import { resolveOrg, requireQuotingFeature, computeTotals, LineItem, numOrNull, numOr, emptyToNull } from "../_shared/quote_helpers.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -29,14 +29,20 @@ Deno.serve(async (req) => {
   if (!gate.ok) return json(gate.body, gate.status);
 
   const body = await req.json().catch(() => ({}));
-  let companyId: string | null = body.company_id ?? null;
-  if (!companyId && body.source_company_key) {
+  // Defensive company resolution: the company search now returns ImportYeti
+  // slugs (e.g. "eae-usa") as source keys, NOT internal UUIDs. If a non-UUID
+  // sneaks in as company_id, treat it as a source key so we never try to use a
+  // slug as the lit_quotes.company_id FK (which would fail the FK constraint).
+  const isUuid = (v: unknown) => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+  let companyId: string | null = isUuid(body.company_id) ? body.company_id : null;
+  const sourceKey = body.source_company_key ?? (!isUuid(body.company_id) && body.company_id ? body.company_id : null);
+  if (!companyId && sourceKey) {
     const { data: existing } = await admin.from("lit_companies").select("id")
-      .eq("source_company_key", body.source_company_key).maybeSingle();
+      .eq("source_company_key", sourceKey).maybeSingle();
     if (existing) companyId = existing.id;
     else {
       const { data: created, error } = await admin.from("lit_companies")
-        .insert({ source: body.source ?? "importyeti", source_company_key: body.source_company_key, name: body.company_name ?? "Unknown" })
+        .insert({ source: body.source ?? "importyeti", source_company_key: sourceKey, name: body.company_name ?? "Unknown" })
         .select("id").single();
       if (error) { log.error("company_link_failed", { err: error.message }); return json({ ok: false, code: "COMPANY_LINK_FAILED" }, 500); }
       companyId = created.id;
@@ -58,11 +64,13 @@ Deno.serve(async (req) => {
     origin_port: body.origin_port ?? null, destination_port: body.destination_port ?? null,
     origin_city: body.origin_city ?? null, origin_state: body.origin_state ?? null, origin_country: body.origin_country ?? null, origin_postal: body.origin_postal ?? null,
     destination_city: body.destination_city ?? null, destination_state: body.destination_state ?? null, destination_country: body.destination_country ?? null, destination_postal: body.destination_postal ?? null,
-    distance_miles: body.distance_miles ?? null, equipment_type: body.equipment_type ?? null,
-    container_count: body.container_count ?? null, weight_lbs: body.weight_lbs ?? null,
-    commodity: body.commodity ?? null, hs_code: body.hs_code ?? null, cargo_value: body.cargo_value ?? null,
-    currency: body.currency ?? "USD", fuel_surcharge_pct: body.fuel_surcharge_pct ?? null,
-    notes: body.notes ?? null, terms_text: body.terms_text ?? null, valid_until: body.valid_until ?? null,
+    distance_miles: numOrNull(body.distance_miles), equipment_type: body.equipment_type ?? null,
+    container_count: numOrNull(body.container_count), weight_lbs: numOrNull(body.weight_lbs),
+    volume_cbm: numOrNull(body.volume_cbm), pallet_count: numOrNull(body.pallet_count),
+    hazmat: body.hazmat === true || body.hazmat === "true", temp_controlled: body.temp_controlled === true || body.temp_controlled === "true",
+    commodity: body.commodity ?? null, hs_code: body.hs_code ?? null, cargo_value: numOrNull(body.cargo_value),
+    currency: body.currency ?? "USD", fuel_surcharge_pct: numOrNull(body.fuel_surcharge_pct),
+    notes: body.notes ?? null, terms_text: body.terms_text ?? null, valid_until: emptyToNull(body.valid_until),
     ...totals,
   }).select("*").single();
   if (error) { log.error("insert_failed", { err: error.message }); return json({ ok: false, code: "INSERT_FAILED", message: error.message }, 500); }
@@ -70,7 +78,7 @@ Deno.serve(async (req) => {
   if (items.length) {
     const rows = items.map((li, i) => ({
       quote_id: quote.id, org_id: orgId, type: li.type ?? null, name: li.name, description: li.description ?? null,
-      unit: li.unit ?? null, quantity: li.quantity ?? 1, unit_cost: li.unit_cost ?? 0, unit_sell: li.unit_sell ?? 0,
+      unit: li.unit ?? null, quantity: numOr(li.quantity, 1), unit_cost: numOr(li.unit_cost, 0), unit_sell: numOr(li.unit_sell, 0),
       is_accessorial: !!li.is_accessorial, taxable: !!li.taxable, sort_order: li.sort_order ?? i,
     }));
     await admin.from("lit_quote_line_items").insert(rows);

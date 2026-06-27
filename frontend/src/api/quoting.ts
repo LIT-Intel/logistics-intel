@@ -119,6 +119,15 @@ export interface QuoteListItem {
   } | null;
 }
 
+export interface CompanySearchHit {
+  company_id: string;
+  company_name: string;
+  domain?: string | null;
+  city?: string | null;
+  country?: string | null;
+  shipments_12m?: number | null;
+}
+
 export interface DashboardMetrics {
   draft: number;
   sent: number;
@@ -175,6 +184,26 @@ export interface QuoteCreateInput {
 
 export interface QuoteUpdateInput extends QuoteCreateInput {
   quote_id: string;
+}
+
+/**
+ * Org-level quote branding + defaults, persisted via `quote-settings-*` edge
+ * functions. `logo_url` / `signature_url` may be base64 data-URIs (resized
+ * client-side before save to stay under the server's 700k-char cap).
+ */
+export interface QuoteSettings {
+  company_name?: string;
+  company_address?: string;
+  company_email?: string;
+  company_phone?: string;
+  logo_url?: string;
+  signature_url?: string;
+  signature_name?: string;
+  prepared_by?: string;
+  default_payment_terms?: string;
+  default_fuel_surcharge_pct?: number;
+  default_currency?: string;
+  terms_text?: string;
 }
 
 /**
@@ -307,6 +336,19 @@ export const quoting = {
     res.data = coerceNums(res.data, NUMERIC_METRIC_FIELDS) as DashboardMetrics;
     return res;
   },
+  companySearch: (q: string) =>
+    invoke<{ ok: true; items: CompanySearchHit[] }>("quote-company-search", { q, limit: 8 }),
+  /**
+   * Auto-mileage for a domestic lane. Geocodes origin + destination via
+   * Nominatim and returns OSRM driving miles (rounded). `miles` is null when
+   * inputs are too short or a location can't be geocoded — callers must NOT
+   * fabricate a number in that case.
+   */
+  distance: (origin: string, destination: string) =>
+    invoke<{ ok: true; miles: number | null; source?: string; reason?: string }>(
+      "quote-distance",
+      { origin, destination },
+    ),
   companyMetrics: async (company_id: string) => {
     const res = await invoke<{ ok: true; data: CompanyMetrics }>("quote-company-metrics", {
       company_id,
@@ -314,4 +356,23 @@ export const quoting = {
     res.data = coerceNums(res.data, NUMERIC_METRIC_FIELDS) as CompanyMetrics;
     return res;
   },
+  /**
+   * Fetch the org's quote branding/defaults plus org-derived starting values
+   * (org_name / org_logo_url) so first-time users see their workspace name +
+   * logo pre-filled. Auth-only (any member can read).
+   */
+  settingsGet: () =>
+    invoke<{
+      ok: true;
+      data: { org_name: string | null; org_logo_url: string | null; settings: QuoteSettings };
+    }>("quote-settings-get", {}),
+  /**
+   * Persist quote branding/defaults. Admin-only on the server: non-admins get
+   * `{ ok:false, code:"FORBIDDEN" }` (403); an oversized data-URI logo/signature
+   * returns `code:"IMAGE_TOO_LARGE"` (413). Both surface as `EdgeFunctionError`.
+   */
+  settingsUpdate: (settings: QuoteSettings) =>
+    invoke<{ ok: true; data: { settings: QuoteSettings } }>("quote-settings-update", {
+      settings,
+    }),
 };

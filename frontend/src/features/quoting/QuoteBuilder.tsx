@@ -22,7 +22,11 @@ import {
   Send,
   CheckCircle2,
   Loader2,
+  Lock,
+  Sparkles,
 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { useEntitlements } from "@/hooks/useEntitlements";
 
 import {
   quoting,
@@ -31,6 +35,7 @@ import {
   type QuoteMode,
   type QuoteStatus,
   type QuoteCreateInput,
+  type QuoteSettings,
 } from "@/api/quoting";
 import { computeTotals, type QuoteTotals } from "@/lib/quoting/totals";
 import LitSectionCard from "@/components/ui/LitSectionCard";
@@ -53,8 +58,14 @@ import { exportQuotePdf } from "@/lib/quoting/exportQuotePdf";
  * Editable builder state. Keyed to QuoteCreateInput fields plus the line items
  * the table maintains. `company_id` is required by the server on create.
  */
+/** True for a canonical lit_companies UUID; false for an ImportYeti slug. */
+const isUuid = (v: unknown): v is string =>
+  typeof v === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
 interface BuilderState {
   company_id?: string;
+  source_company_key?: string;
   contact_id?: string;
   mode: QuoteMode;
   service_type?: string;
@@ -89,10 +100,13 @@ type Action =
   | { type: "setLineItems"; items: QuoteLineItem[] }
   | { type: "hydrate"; quote: Quote; line_items: QuoteLineItem[] };
 
-function initialState(companyId?: string): BuilderState {
+function initialState(companyKey?: string): BuilderState {
   // TODO: prefill from org_settings.quote_defaults once an endpoint exists.
+  // `?company_id=` from a saved-company launch is normally an internal UUID, but
+  // guard against a slug sneaking in by routing non-UUIDs to source_company_key.
   return {
-    company_id: companyId,
+    company_id: isUuid(companyKey) ? companyKey : undefined,
+    source_company_key: companyKey && !isUuid(companyKey) ? companyKey : undefined,
     mode: "ocean",
     currency: "USD",
     fuel_surcharge_pct: undefined,
@@ -110,6 +124,7 @@ function reducer(state: BuilderState, action: Action): BuilderState {
       const q = action.quote;
       return {
         company_id: q.company_id,
+        source_company_key: undefined,
         contact_id: q.contact_id ?? undefined,
         mode: (q.mode ?? "ocean") as QuoteMode,
         service_type: q.service_type ?? undefined,
@@ -147,7 +162,10 @@ function reducer(state: BuilderState, action: Action): BuilderState {
 /** Strip the editable state down to the create/update input the edge fn wants. */
 function toInput(state: BuilderState): QuoteCreateInput {
   return {
+    // Send both — the server resolves source_company_key → a real company UUID
+    // when company_id is absent (or a non-UUID slug slips through).
     company_id: state.company_id,
+    source_company_key: state.source_company_key,
     contact_id: state.contact_id,
     mode: state.mode,
     service_type: state.service_type,
@@ -189,6 +207,10 @@ function laneSummary(s: BuilderState): string {
 
 export default function QuoteBuilder() {
   const navigate = useNavigate();
+  const { entitlements, isAdmin } = useEntitlements();
+  // Gate persist/PDF/send ONLY when the server explicitly disables quoting.
+  // Viewing/editing the form stays open; the server re-checks on every write.
+  const quotingLocked = !isAdmin && entitlements?.features?.quoting === false;
   const { quoteId } = useParams<{ quoteId: string }>();
   const [searchParams] = useSearchParams();
   const companyIdParam = searchParams.get("company_id") ?? undefined;
@@ -197,7 +219,11 @@ export default function QuoteBuilder() {
     initialState(companyIdParam),
   );
   const [company, setCompany] = useState<AttachedCompany | null>(
-    companyIdParam ? { company_id: companyIdParam, company_name: "Company" } : null,
+    companyIdParam
+      ? isUuid(companyIdParam)
+        ? { company_id: companyIdParam, company_name: "Company" }
+        : { source_company_key: companyIdParam, company_name: "Company" }
+      : null,
   );
 
   const [quoteNumber, setQuoteNumber] = useState<string | null>(null);
@@ -205,6 +231,9 @@ export default function QuoteBuilder() {
   const [serverTotals, setServerTotals] = useState<QuoteTotals | null>(null);
   // Last server-authoritative Quote — the source for PDF generation + send.
   const [savedQuote, setSavedQuote] = useState<Quote | null>(null);
+  // Org quote settings (branding + defaults). Loaded once; drives NEW-quote
+  // prefill and is passed to the PDF exporter for logo/signature/terms.
+  const [orgSettings, setOrgSettings] = useState<QuoteSettings | null>(null);
 
   // PDF state.
   const [pdfSignedUrl, setPdfSignedUrl] = useState<string | null>(null);
@@ -216,6 +245,14 @@ export default function QuoteBuilder() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  // --- Auto-mileage (domestic lanes only) ---------------------------------
+  // Once the user types in the Distance field we stop auto-overriding it.
+  const distanceManuallyEdited = useRef(false);
+  // Monotonic guard so a slow earlier request can't clobber a newer one.
+  const distanceReqSeq = useRef(0);
+  const [distanceCalcing, setDistanceCalcing] = useState(false);
+  const [autoDistanceSource, setAutoDistanceSource] = useState<string | null>(null);
 
   // Hydrate an existing quote.
   useEffect(() => {
@@ -229,6 +266,9 @@ export default function QuoteBuilder() {
         if (cancelled) return;
         const { quote, line_items, company: co } = res.data;
         dispatch({ type: "hydrate", quote, line_items: line_items ?? [] });
+        // A saved quote with a distance is treated as user-owned; don't
+        // auto-override it on load.
+        if (quote.distance_miles != null) distanceManuallyEdited.current = true;
         setQuoteNumber(quote.quote_number);
         setStatus(quote.status);
         setServerTotals(totalsFromQuote(quote));
@@ -258,6 +298,45 @@ export default function QuoteBuilder() {
     };
   }, [quoteId]);
 
+  // Load org quote settings once. On a NEW quote (no :quoteId) prefill the
+  // defaults that are still empty — never clobbering values the user already
+  // typed. For an existing quote we still load settings (for the PDF) but skip
+  // prefill so the saved quote's own values stand.
+  const settingsAppliedRef = useRef(false);
+  useEffect(() => {
+    if (settingsAppliedRef.current) return;
+    settingsAppliedRef.current = true;
+    let cancelled = false;
+    quoting
+      .settingsGet()
+      .then((res) => {
+        if (cancelled) return;
+        const s = res.data.settings ?? {};
+        setOrgSettings(s);
+        if (quoteId) return; // existing quote: don't prefill
+        const fill: Partial<BuilderState> = {};
+        // Only fill where the current state hasn't been set yet.
+        if ((state.currency === "USD" || !state.currency) && s.default_currency) {
+          fill.currency = s.default_currency;
+        }
+        if (state.fuel_surcharge_pct == null && s.default_fuel_surcharge_pct != null) {
+          fill.fuel_surcharge_pct = s.default_fuel_surcharge_pct;
+        }
+        if (!state.terms_text && s.terms_text) {
+          fill.terms_text = s.terms_text;
+        }
+        if (Object.keys(fill).length) patch(fill);
+      })
+      .catch(() => {
+        // Settings are best-effort prefill; a failure leaves manual entry.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Run once on mount; `state`/`patch` reads are intentional snapshots.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Live local totals — server is authoritative on save, but this drives the
   // panel on every keystroke.
   const liveTotals = useMemo(
@@ -269,14 +348,67 @@ export default function QuoteBuilder() {
 
   const laneValue: LaneFields = state;
 
+  // Domestic modes drive a road-miles lookup; ocean/air have no mileage.
+  const isDomesticMode = state.mode === "ftl" || state.mode === "ltl" || state.mode === "drayage";
+  // Mode-aware origin/destination strings for geocoding. For ftl/ltl the lane
+  // fields write to the city columns; drayage origin is a port/ramp (city-ish)
+  // string and its destination is an address kept in the city column.
+  const autoOrigin = (state.mode === "drayage" ? state.origin_port : state.origin_city) ?? "";
+  const autoDestination = state.destination_city ?? "";
+
+  // Debounced auto-mileage. Fires ~700ms after both endpoints are non-empty,
+  // skips when the user has manually edited the distance, and ignores stale
+  // responses via a monotonic request id.
+  useEffect(() => {
+    if (!isDomesticMode) return;
+    if (distanceManuallyEdited.current) return;
+    const origin = autoOrigin.trim();
+    const destination = autoDestination.trim();
+    if (origin.length < 2 || destination.length < 2) return;
+
+    const seq = ++distanceReqSeq.current;
+    const handle = setTimeout(() => {
+      setDistanceCalcing(true);
+      quoting
+        .distance(origin, destination)
+        .then((res) => {
+          if (seq !== distanceReqSeq.current) return; // stale
+          if (distanceManuallyEdited.current) return; // user took over mid-flight
+          if (typeof res.miles === "number") {
+            setAutoDistanceSource(res.source ?? "osrm");
+            patch({ distance_miles: res.miles });
+          }
+          // res.miles === null → leave the field for manual entry; never fake a number.
+        })
+        .catch(() => {
+          // Network/edge failure: silently leave the field for manual entry.
+        })
+        .finally(() => {
+          if (seq === distanceReqSeq.current) setDistanceCalcing(false);
+        });
+    }, 700);
+
+    return () => clearTimeout(handle);
+  }, [isDomesticMode, autoOrigin, autoDestination]);
+
+  // Manual edit of the Distance field: stop auto-calc from overriding it and
+  // drop the "Auto" hint.
+  function patchDistanceManual(distance_miles: number | undefined) {
+    distanceManuallyEdited.current = true;
+    distanceReqSeq.current++; // invalidate any in-flight auto request
+    setDistanceCalcing(false);
+    setAutoDistanceSource(null);
+    patch({ distance_miles });
+  }
+
   /**
    * Persist the quote and return the server-authoritative Quote. Returns null
    * when validation fails (no company) so callers can abort. Used directly by
    * the Save button and as the save-first step of Generate PDF.
    */
   async function saveQuote(): Promise<Quote | null> {
-    if (!state.company_id) {
-      setSaveError("Attach a company before saving.");
+    if (!state.company_id && !state.source_company_key) {
+      setSaveError("Select a company first.");
       return null;
     }
     setSaving(true);
@@ -332,6 +464,7 @@ export default function QuoteBuilder() {
         return;
       }
       const dataUri = await exportQuotePdf(quote, state.line_items, {
+        settings: orgSettings,
         companyName: company?.company_name ?? null,
       });
       const res = await quoting.generatePdf(quote.id, dataUri);
@@ -351,6 +484,18 @@ export default function QuoteBuilder() {
   function setLineItems(items: QuoteLineItem[]) {
     setServerTotals(null);
     dispatch({ type: "setLineItems", items });
+  }
+
+  // Patch from the lane form. A direct edit to its Distance (mi) input counts
+  // as a manual override, same as the dedicated field below.
+  function patchLane(p: Partial<BuilderState>) {
+    if ("distance_miles" in p) {
+      patchDistanceManual(p.distance_miles);
+      const { distance_miles, ...rest } = p;
+      if (Object.keys(rest).length) patch(rest);
+    } else {
+      patch(p);
+    }
   }
 
   const lane = useMemo(() => laneSummary(state), [state]);
@@ -431,8 +576,9 @@ export default function QuoteBuilder() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving}
-            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 font-display text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 sm:flex-none"
+            disabled={saving || quotingLocked}
+            title={quotingLocked ? "Upgrade to Growth to save quotes" : undefined}
+            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 font-display text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed sm:flex-none"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save Draft
@@ -440,8 +586,9 @@ export default function QuoteBuilder() {
           <button
             type="button"
             onClick={handleGeneratePdf}
-            disabled={generatingPdf || saving}
-            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white transition disabled:opacity-60 sm:flex-none"
+            disabled={generatingPdf || saving || quotingLocked}
+            title={quotingLocked ? "Upgrade to Growth to generate PDFs" : undefined}
+            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white transition disabled:opacity-60 disabled:cursor-not-allowed sm:flex-none"
             style={{ background: "linear-gradient(180deg,#0891b2,#0e7490)" }}
           >
             {generatingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
@@ -450,7 +597,9 @@ export default function QuoteBuilder() {
           <button
             type="button"
             onClick={scrollToSend}
-            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white transition hover:brightness-110 sm:flex-none"
+            disabled={quotingLocked}
+            title={quotingLocked ? "Upgrade to Growth to send quotes" : undefined}
+            className="inline-flex h-[38px] flex-1 items-center justify-center gap-2 rounded-[10px] px-4 font-display text-[13px] font-semibold text-white transition hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed sm:flex-none"
             style={{ background: "linear-gradient(180deg,#2563eb,#1d4ed8)" }}
           >
             <Send className="h-4 w-4" />
@@ -458,6 +607,31 @@ export default function QuoteBuilder() {
           </button>
         </div>
       </div>
+
+      {quotingLocked && (
+        <div className="mx-auto mt-3 max-w-[1320px] px-4 sm:px-6">
+          <div className="flex flex-wrap items-center gap-3 rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3">
+            <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-[9px] bg-amber-100 text-amber-700">
+              <Lock className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-display text-[13px] font-semibold text-amber-900">
+                Quoting is available on Growth and above.
+              </div>
+              <p className="text-[12.5px] text-amber-800">
+                Upgrade to create and send quotes.
+              </p>
+            </div>
+            <Link
+              to="/app/billing"
+              className="inline-flex h-9 flex-shrink-0 items-center gap-1.5 rounded-[10px] bg-amber-600 px-3.5 font-display text-[12.5px] font-semibold text-white transition hover:bg-amber-700"
+            >
+              <Sparkles className="h-4 w-4" />
+              Upgrade
+            </Link>
+          </div>
+        </div>
+      )}
 
       {saveError && (
         <div className="mx-auto mt-3 max-w-[1320px] px-4 sm:px-6">
@@ -476,13 +650,20 @@ export default function QuoteBuilder() {
               company={company}
               onSelect={(c) => {
                 setCompany(c);
-                patch({ company_id: c.company_id });
+                // A UUID is a real internal company; otherwise it's a source
+                // slug the server resolves on save. Clear the other field so we
+                // never send a stale value.
+                if (isUuid(c.company_id)) {
+                  patch({ company_id: c.company_id, source_company_key: undefined });
+                } else {
+                  patch({ source_company_key: c.source_company_key, company_id: undefined });
+                }
               }}
             />
           </LitSectionCard>
 
           <LitSectionCard title="Lane & Shipment Details" collapsible defaultOpen>
-            <QuoteLaneShipmentForm value={laneValue} onChange={patch} />
+            <QuoteLaneShipmentForm value={laneValue} onChange={patchLane} />
           </LitSectionCard>
 
           <LitSectionCard title="Line Items & Accessorials" collapsible defaultOpen padded={false}>
@@ -497,12 +678,20 @@ export default function QuoteBuilder() {
                 <FieldLabel label="Distance (mi)" mono>
                   <input
                     value={state.distance_miles == null ? "" : String(state.distance_miles)}
-                    onChange={(e) =>
-                      patch({ distance_miles: toNum(e.target.value) })
-                    }
+                    onChange={(e) => patchDistanceManual(toNum(e.target.value))}
                     inputMode="decimal"
                     className={inputMono}
                   />
+                  {distanceCalcing ? (
+                    <span className="mt-1 inline-flex items-center gap-1 text-[10.5px] font-medium text-slate-400">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Calculating…
+                    </span>
+                  ) : autoDistanceSource && !distanceManuallyEdited.current ? (
+                    <span className="mt-1 text-[10.5px] font-medium text-cyan-700">
+                      Auto (via {autoDistanceSource})
+                    </span>
+                  ) : null}
                 </FieldLabel>
                 <FieldLabel label="Fuel Surcharge %" mono>
                   <input

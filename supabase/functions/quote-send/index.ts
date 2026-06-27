@@ -83,6 +83,26 @@ function defaultTemplate(opts: {
 </body></html>`;
 }
 
+// The secure-link CTA. ALWAYS appended to the outgoing email (even when the
+// sender supplies a custom message body) so the recipient always gets the link.
+function linkBlock(viewUrl: string): string {
+  return `<div style="max-width:560px;margin:8px auto 0;padding:0 24px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;text-align:center;">
+    <a href="${esc(viewUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 28px;border-radius:8px;">View your quote</a>
+    <p style="margin:14px 0 0;font-size:12px;color:#94a3b8;">If the button doesn't work, paste this link into your browser:<br/>
+      <a href="${esc(viewUrl)}" style="color:#2563eb;word-break:break-all;">${esc(viewUrl)}</a>
+    </p>
+  </div>`;
+}
+
+// Wrap a sender-edited plain-text body as HTML and append the secure link.
+function wrapUserBody(text: string, viewUrl: string): string {
+  const safe = esc(text).replace(/\r\n|\r|\n/g, "<br/>");
+  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f1f5f9;">
+  <div style="max-width:560px;margin:0 auto;padding:32px 24px 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;font-size:15px;line-height:1.5;">${safe}</div>
+  ${linkBlock(viewUrl)}
+</body></html>`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: cors });
   if (req.method !== "POST") return json({ ok: false, code: "METHOD_NOT_ALLOWED" }, 405);
@@ -179,7 +199,7 @@ Deno.serve(async (req) => {
   const subject = (body.subject ? String(body.subject) : "") || `Quote for ${lane} - ${companyName}`;
   const viewUrl = `${url}/functions/v1/quote-view?token=${quote.share_token}`;
   const html = (body.body && String(body.body).trim())
-    ? String(body.body)
+    ? wrapUserBody(String(body.body), viewUrl)
     : defaultTemplate({
         toName,
         lane,
