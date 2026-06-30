@@ -11,6 +11,8 @@ declare global {
 const CAL_NAMESPACE = "15min";
 const CAL_LINK = "logisticintel/15min";
 
+type QueuedCalApi = ((...args: any[]) => void) & { q?: any[] };
+
 export function CalInlineEmbed() {
   useEffect(() => {
     (function (C: Window, A: string, L: string) {
@@ -30,7 +32,7 @@ export function CalInlineEmbed() {
             cal.loaded = true;
           }
           if (ar[0] === L) {
-            const api = function () {
+            const api: QueuedCalApi = function () {
               p(api, arguments);
             };
             const namespace = ar[1];
