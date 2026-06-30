@@ -1,12 +1,12 @@
 {
-  "name": "Logistic Intel",
+  "name": "Logistics Intel",
   "short_name": "LIT",
-  "description": "Freight revenue intelligence — shipper data, contacts, and outbound from one workspace.",
+  "description": "Freight prospecting software for brokers, forwarders, and 3PLs — shipper data, contacts, trade lanes, and outbound from one workspace.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0F172A",
-  "theme_color": "#0F172A",
+  "background_color": "#050B1B",
+  "theme_color": "#00E5FF",
   "icons": [
     {
       "src": "/favicon.svg",
