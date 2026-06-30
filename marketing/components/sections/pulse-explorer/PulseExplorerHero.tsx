@@ -8,7 +8,7 @@ import { PulseExplorerMock } from "./PulseExplorerMock";
 import { PulseVideoButton } from "./PulseVideoButton";
 import type { MapMode } from "./PulseMapCanvas";
 
-const DEMO_URL = "https://cal.com/logisticintel/30min";
+const DEMO_URL = "#book-demo";
 
 const KPIS: Array<[string, string]> = [
   ["78K+", "Shipper accounts mapped"],
