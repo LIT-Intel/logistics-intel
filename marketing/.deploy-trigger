@@ -1,0 +1,2 @@
+lit-marketing deployment trigger
+reason: force fresh Vercel build after connecting Git integration and setting root to marketing
