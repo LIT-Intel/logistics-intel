@@ -39,12 +39,22 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "LIT — Market intelligence & revenue execution, in one platform",
-    template: "%s · LIT",
+    default: "Logistics Intel — Freight Prospecting Software for Brokers, Forwarders, and 3PLs",
+    template: "%s · Logistics Intel",
   },
   description:
-    "LIT combines company intelligence, trade data, CRM, Pulse search, and outbound execution into one platform built for modern growth teams.",
+    "Logistics Intel helps freight brokers, forwarders, and 3PLs find active shippers, analyze trade lanes, enrich contacts, and turn shipment intelligence into revenue.",
   keywords: [
+    "freight prospecting software",
+    "freight broker leads",
+    "shipper lead generation",
+    "freight forwarding sales software",
+    "logistics CRM",
+    "supply chain intelligence",
+    "shipment intelligence",
+    "trade lane intelligence",
+    "3PL sales tools",
+    "importer database",
     "trade intelligence",
     "shipper data",
     "BOL data",
@@ -56,29 +66,29 @@ export const metadata: Metadata = {
     "ZoomInfo alternative",
     "Apollo alternative",
   ],
-  authors: [{ name: "Logistic Intel" }],
-  creator: "Logistic Intel, Inc.",
-  publisher: "Logistic Intel, Inc.",
-  applicationName: "LIT",
+  authors: [{ name: "Logistics Intel" }],
+  creator: "Logistics Intel, Inc.",
+  publisher: "Logistics Intel, Inc.",
+  applicationName: "Logistics Intel",
   referrer: "origin-when-cross-origin",
   formatDetection: { email: false, address: false, telephone: false },
   openGraph: {
     type: "website",
     locale: "en_US",
-    siteName: "LIT — Logistic Intel",
+    siteName: "Logistics Intel",
     url: SITE_URL,
-    title: "LIT — Market intelligence & revenue execution, in one platform",
+    title: "Logistics Intel — Freight Prospecting Software for Logistics Sales Teams",
     description:
-      "Find the companies, contacts, shipments, and market signals your competitors miss. LIT is the unified intelligence + execution platform for modern revenue teams.",
+      "Find active shippers, logistics contacts, shipment activity, trade lanes, and freight sales signals in one revenue intelligence platform.",
     images: [
-      { url: "/api/og", width: 1200, height: 630, alt: "LIT — Logistic Intel" },
+      { url: "/api/og", width: 1200, height: 630, alt: "Logistics Intel" },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "LIT — Market intelligence & revenue execution",
+    title: "Logistics Intel — Freight Prospecting Software",
     description:
-      "Find the companies, contacts, shipments, and market signals your competitors miss.",
+      "Find active shippers, logistics contacts, shipment activity, and trade lane signals.",
     images: ["/api/og"],
   },
   robots: {
@@ -94,8 +104,10 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
       { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
     ],
     apple: "/apple-touch-icon.png",
   },
@@ -115,7 +127,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
-  themeColor: "#020617",
+  themeColor: "#00E5FF",
   colorScheme: "light" as const,
 };
 
@@ -133,9 +145,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             __html: JSON.stringify({
               "@context": "https://schema.org",
               "@type": "Organization",
-              name: "Logistic Intel",
+              name: "Logistics Intel",
+              alternateName: "LIT",
               url: SITE_URL,
-              logo: `${SITE_URL}/lit-icon-master.svg`,
+              logo: `${SITE_URL}/icon-512.png`,
               sameAs: [
                 "https://www.linkedin.com/company/logistic-intel",
                 "https://www.youtube.com/@logisticsintel",
@@ -158,7 +171,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             __html: JSON.stringify({
               "@context": "https://schema.org",
               "@type": "WebSite",
-              name: "LIT — Logistic Intel",
+              name: "Logistics Intel",
+              alternateName: "LIT",
               url: SITE_URL,
               potentialAction: {
                 "@type": "SearchAction",
