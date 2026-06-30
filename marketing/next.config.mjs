@@ -129,23 +129,17 @@ const nextConfig = {
     // redirect to the canonical URL. Fetched at build time.
     const sanityAliasRedirects = await fetchSanityAliasRedirects();
 
-    // Pascal-case marketing URLs Google indexed before the canonical
-    // lowercase routes were set.
+    // Note (2026-06-17): the prior PascalCase block also tried to redirect
+    // /About → /about, /Solutions → /solutions, /Resources → /resources.
+    // Vercel matches the `source` case-insensitively (path-to-regexp's
+    // default), so /solutions matched /Solutions, redirected to /solutions,
+    // re-matched, and infinite-308-looped. /about, /solutions, /resources,
+    // and /solutions/* were all unreachable in production for as long as
+    // those rules existed. Vercel already normalizes path casing on hits,
+    // so those PascalCase rules bought nothing for GSC and broke production.
     //
-    // 2026-06-18 hotfix — REMOVED the /About /Solutions /Resources rules
-    // (plus their /:path* variants). Vercel/path-to-regexp matches the
-    // `source` case-insensitively, so /solutions hit /Solutions, redirected
-    // to /solutions, re-matched, and infinite-308-looped. /about, /solutions,
-    // /resources, and /solutions/* were all unreachable in production for
-    // ~13 days (since efa7193e on 2026-06-04 shipped them, until this
-    // commit on 2026-06-18). Vercel already normalizes path casing on
-    // direct hits to lowercase routes, so the original PascalCase rules
-    // bought nothing for GSC and took down core marketing surfaces.
-    //
-    // Only the rules that target distinct destinations (and therefore
-    // can't self-loop) are kept. If we ever need Pascal-to-lowercase
-    // redirects with case-sensitive matching, do it via middleware.ts
-    // (next.config redirects can't express case-sensitive matchers).
+    // The /Platform, /Search, /Billing rules were kept because they target
+    // distinct destinations and don't collide with their own sources.
     const pascalCaseRedirects = [
       { source: "/Platform", destination: "/", permanent: true },
       { source: "/Search", destination: "/", permanent: true },
@@ -163,10 +157,8 @@ const nextConfig = {
       { source: "/partners/apply", destination: "/partners#apply", permanent: false },
       // SEO de-duplication: /features/company-intelligence had the same
       // topic targeting as the canonical /company-intelligence page (the
-      // Pulse Explorer V2 rebuild). Google was seeing two pages compete
-      // for the same keywords. The /features one is also being removed
-      // from FEATURE_PAGES in app/features/_data.ts so it stops appearing
-      // in the sitemap. The redirect catches any inbound link/cache hits.
+      // Pulse Explorer V2 rebuild). The redirect catches inbound links and
+      // cached Google results while consolidating equity onto the canonical.
       { source: "/features/company-intelligence", destination: "/company-intelligence", permanent: true },
       ...pascalCaseRedirects,
       ...sanityAliasRedirects,
