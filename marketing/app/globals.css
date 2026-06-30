@@ -42,6 +42,30 @@
   --violet-tint: rgba(139, 92, 246, 0.06);
   --emerald-tint: rgba(16, 185, 129, 0.06);
   --amber-tint: rgba(245, 158, 11, 0.06);
+
+  /* Page wash tokens — cool off-white base, single source of truth. The
+     beige predecessor (#fbfbf9 + #fbfaf6→#f3f5fb gradient) read warm and
+     clashed with the product UI. These values are biased cooler than a
+     literal "off-white" so the shift is actually perceptible at viewing
+     distance, while staying pale enough not to compete with content. */
+  --ink-25: #f5f8fe;
+  --ink-50: #ecf1fa;
+}
+
+/* Cross-cutting section utilities. Used by the Pulse Explorer V2 page
+   and any future handoff that ports section-based JSX so content files
+   don't have to know the exact spacing scale. The vertical rhythm
+   tightens on phones so the 8-section page doesn't read as endless
+   scrolling. */
+.section { padding: 100px 0; position: relative; }
+.section-title {
+  text-align: center;
+  max-width: 780px;
+  margin: 0 auto 56px;
+}
+@media (max-width: 768px) {
+  .section { padding: 56px 0; }
+  .section-title { margin: 0 auto 32px; }
 }
 
 html {
@@ -52,9 +76,7 @@ html {
 body {
   font-family: var(--font-body);
   color: theme('colors.ink.500');
-  /* Warm site base — the radial tints in `.lit-page` overlay this near
-     the top of every page. Avoids the cold sterile white feel. */
-  background: #fbfbf9;
+  background: var(--ink-25);
 }
 
 /* Site-wide ambient backdrop. The radial pools live behind every page so
@@ -71,7 +93,7 @@ body {
     radial-gradient(1200px 600px at -10% 30%, rgba(59,130,246,0.07), transparent 62%),
     radial-gradient(900px 480px at 110% 55%, rgba(139,92,246,0.05), transparent 60%),
     radial-gradient(900px 460px at 50% 110%, rgba(0,240,255,0.04), transparent 60%),
-    linear-gradient(180deg, #fbfaf6 0%, #f3f5fb 100%);
+    linear-gradient(180deg, var(--ink-25) 0%, var(--ink-50) 100%);
 }
 /* Decorative grid overlay. Pinned to the viewport (position: fixed) rather
    than stretched to document height — on tall mobile pages the document-

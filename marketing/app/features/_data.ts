@@ -441,43 +441,14 @@ export const FEATURE_PAGES: FeaturePage[] = [
       { q: "Can I export to a spreadsheet?", a: "Yes — both CSV and a PDF report formatted for procurement review." },
     ],
   },
-  {
-    slug: "company-intelligence",
-    title: "Company intelligence —",
-    titleHighlight: "shipment-aware account research.",
-    eyebrow: "Intelligence",
-    metaDescription:
-      "Research any importer in seconds: shipment history, lane mix, carriers, HS codes, contacts, and tech stack. Built for freight account teams.",
-    lede:
-      "Open any importer and see the full picture in seconds — shipment cadence, lane mix, carrier share, HS coverage, headcount, and the right contacts to call.",
-    shortAnswer:
-      "Company intelligence in LIT gives you a one-screen profile of any importer: trailing-12m TEU, top lanes, dominant carriers, HS mix, last shipment, and 5-30 verified buying contacts. Refreshed continuously.",
-    problem:
-      "Account research takes 30+ minutes per company across half a dozen tools. Reps end calls knowing less than they should.",
-    solution:
-      "LIT pre-builds the research view. Every importer page is one screen with shipment context, contacts, alerts, and saved-list status — researched in seconds, not half an hour.",
-    capabilities: [
-      { title: "One-screen profile", body: "Volume, lanes, carriers, HS, contacts — all at a glance." },
-      { title: "Shipment timeline", body: "Last 12 months of BOL filings, sortable and exportable." },
-      { title: "Contact panel", body: "Buyer-side contacts grouped by role, with deliverability + recency tags." },
-      { title: "Saved + watchlisted", body: "Save accounts to lists; Pulse Coach surfaces when their shipments shift." },
-    ],
-    whoItsFor: [
-      "AEs preparing for first-call discovery in 5 minutes, not 30.",
-      "SDRs prioritizing account research before sequencing.",
-      "RevOps teams enriching CRM company records with shipment context.",
-    ],
-    related: [
-      { label: "Importer database", href: "/features/importer-database" },
-      { label: "Bill of Lading search", href: "/features/bill-of-lading-search" },
-      { label: "Contact enrichment", href: "/features/contact-enrichment" },
-      { label: "Freight sales CRM", href: "/features/freight-sales-crm" },
-    ],
-    faqs: [
-      { q: "Can I export company data?", a: "Yes — push to CRM, CSV, or via API on Pro/Enterprise." },
-      { q: "Does this replace ZoomInfo for account research?", a: "For freight ICP, yes — see the side-by-side at /vs/zoominfo. The headline difference is shipment-grounded context that horizontal tools can't provide." },
-    ],
-  },
+  // 2026-06-18 — removed the `company-intelligence` FEATURE_PAGES entry
+  // (and its sitemap presence + static page generation). The canonical
+  // page for this topic is the Pulse Explorer V2 rebuild at
+  // /company-intelligence (app/company-intelligence/page.tsx). The old
+  // /features/company-intelligence URL now 308-redirects to the canonical
+  // (see marketing/next.config.mjs). Inbound links from the solutions/_data
+  // related-list were also updated to point at /company-intelligence
+  // directly so the user never sees the redirect hop.
   {
     slug: "freight-prospecting",
     title: "Freight prospecting —",

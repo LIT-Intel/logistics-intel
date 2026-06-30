@@ -399,7 +399,7 @@ export const SOLUTION_PAGES: SolutionPage[] = [
       "Enterprise reps targeting the Fortune 1000 importer set.",
     ],
     related: [
-      { label: "Company intelligence", href: "/features/company-intelligence" },
+      { label: "Company intelligence", href: "/company-intelligence" },
       { label: "Pulse AI", href: "/pulse" },
       { label: "Logistics command center", href: "/features/logistics-command-center" },
     ],

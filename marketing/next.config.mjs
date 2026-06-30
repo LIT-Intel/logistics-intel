@@ -155,6 +155,11 @@ const nextConfig = {
       { source: "/affiliate-program", destination: "/partners", permanent: true },
       // Old in-app affiliate apply URL — drive to the public landing.
       { source: "/partners/apply", destination: "/partners#apply", permanent: false },
+      // SEO de-duplication: /features/company-intelligence had the same
+      // topic targeting as the canonical /company-intelligence page (the
+      // Pulse Explorer V2 rebuild). The redirect catches inbound links and
+      // cached Google results while consolidating equity onto the canonical.
+      { source: "/features/company-intelligence", destination: "/company-intelligence", permanent: true },
       ...pascalCaseRedirects,
       ...sanityAliasRedirects,
     ];
