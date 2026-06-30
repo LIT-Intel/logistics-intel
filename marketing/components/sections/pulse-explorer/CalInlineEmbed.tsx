@@ -2,20 +2,17 @@
 
 import { useEffect } from "react";
 
-declare global {
-  interface Window {
-    Cal?: any;
-  }
-}
-
 const CAL_NAMESPACE = "15min";
 const CAL_LINK = "logisticintel/15min";
 
 type QueuedCalApi = ((...args: any[]) => void) & { q?: any[] };
+type CalWindow = Window & { Cal?: any };
 
 export function CalInlineEmbed() {
   useEffect(() => {
-    (function (C: Window, A: string, L: string) {
+    const calWindow = window as CalWindow;
+
+    (function (C: CalWindow, A: string, L: string) {
       const p = function (a: any, ar: IArguments | any[]) {
         a.q.push(ar);
       };
@@ -48,17 +45,17 @@ export function CalInlineEmbed() {
           }
           p(cal, ar);
         };
-    })(window, "https://app.cal.com/embed/embed.js", "init");
+    })(calWindow, "https://app.cal.com/embed/embed.js", "init");
 
-    window.Cal?.("init", CAL_NAMESPACE, { origin: "https://app.cal.com" });
-    window.Cal!.config = window.Cal!.config || {};
-    window.Cal!.config.forwardQueryParams = true;
-    window.Cal?.ns?.[CAL_NAMESPACE]?.("inline", {
+    calWindow.Cal?.("init", CAL_NAMESPACE, { origin: "https://app.cal.com" });
+    calWindow.Cal!.config = calWindow.Cal!.config || {};
+    calWindow.Cal!.config.forwardQueryParams = true;
+    calWindow.Cal?.ns?.[CAL_NAMESPACE]?.("inline", {
       elementOrSelector: "#my-cal-inline-15min",
       config: { layout: "month_view", useSlotsViewOnSmallScreen: "true" },
       calLink: CAL_LINK,
     });
-    window.Cal?.ns?.[CAL_NAMESPACE]?.("ui", {
+    calWindow.Cal?.ns?.[CAL_NAMESPACE]?.("ui", {
       hideEventTypeDetails: false,
       layout: "month_view",
     });
