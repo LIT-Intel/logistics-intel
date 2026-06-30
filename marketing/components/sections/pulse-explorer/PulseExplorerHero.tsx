@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, Calendar, Mail, Phone } from "lucide-react";
+import { ArrowRight, Calendar, Mail, Phone, Play } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import { PulseExplorerMock } from "./PulseExplorerMock";
+import { PulseVideoButton } from "./PulseVideoButton";
 import type { MapMode } from "./PulseMapCanvas";
+
+const DEMO_URL = "https://cal.com/logisticintel/30min";
 
 const KPIS: Array<[string, string]> = [
   ["78K+", "Shipper accounts mapped"],
@@ -54,21 +57,20 @@ export function PulseExplorerHero() {
             New · Pulse Explorer V2 — map-first sales intelligence
           </div>
           <h1 className="display-xl" style={{ marginTop: 22 }}>
-            Find high-value shippers before your competitors —{" "}
-            <span className="grad-text-cyan">on one live map.</span>
+            Pulse Explorer: Freight Prospecting Software Built for{" "}
+            <span className="grad-text-cyan">Logistics Sales Teams</span>
           </h1>
           <p
             className="lead"
             style={{
               marginTop: 20,
-              maxWidth: 660,
+              maxWidth: 700,
               marginLeft: "auto",
               marginRight: "auto",
             }}
           >
-            Pulse Explorer plots 78K+ U.S. shipper accounts as a living map,
-            scores every opportunity, and answers plain-English questions —
-            so your team works the right accounts first.
+            Find active shippers, analyze trade lanes, enrich decision-makers,
+            and build targeted lead lists from one interactive freight intelligence workspace.
           </p>
           <div
             style={{
@@ -79,9 +81,9 @@ export function PulseExplorerHero() {
               flexWrap: "wrap",
             }}
           >
-            <Button variant="primary" size="lg" href="/book-a-demo">
+            <Button variant="primary" size="lg" href={DEMO_URL}>
               <Calendar size={16} />
-              Book a Demo
+              Book a Pulse Explorer Demo
             </Button>
             <Button variant="secondary" size="lg" href={APP_SIGNUP_URL}>
               Start Free
@@ -111,8 +113,52 @@ export function PulseExplorerHero() {
               filter: "blur(4px)",
             }}
           />
-          <div style={{ position: "relative" }}>
+          <div
+            aria-label="Pulse Explorer freight prospecting software map interface by Logistics Intel"
+            style={{ position: "relative" }}
+          >
             <PulseExplorerMock mode={mode} onMode={setMode} />
+            <PulseVideoButton
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                zIndex: 1300,
+                transform: "translate(-50%, -50%)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                minHeight: 48,
+                padding: "0 18px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.28)",
+                background: "rgba(2,6,23,0.82)",
+                color: "#fff",
+                boxShadow: "0 20px 48px rgba(2,6,23,0.32)",
+                fontFamily: "var(--font-display)",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: "pointer",
+                backdropFilter: "blur(10px)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 999,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "linear-gradient(135deg,#2563eb,#06b6d4)",
+                }}
+              >
+                <Play size={14} fill="currentColor" />
+              </span>
+              Watch the Demo
+            </PulseVideoButton>
           </div>
           {/* QuickCard — kept INSIDE the frame bounds (right:18, bottom:24)
               per handoff Jun-17 fix; never use negative offsets while the
