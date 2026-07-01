@@ -104,6 +104,10 @@ export interface CampaignStepRow {
   delay_minutes: number;
   subject_b: string | null;
   include_signature: boolean;
+  // J.2: schedule hints must hydrate too; otherwise a saved "send at
+  // 9:00 AM" step appears unset after navigating away and back.
+  time_of_day_local: string | null;
+  weekdays_only: boolean | null;
 }
 
 export async function getCampaignWithDetails(
@@ -123,10 +127,9 @@ export async function getCampaignWithDetails(
     supabase
       .from("lit_campaign_steps")
       .select(
-        // P0-5: include delay_minutes / subject_b / include_signature so
-        // dbStepToBuilder can rehydrate the A/B variant, the signature
-        // toggle, and minute-precision delays on edit-load.
-        "id, step_order, channel, step_type, subject, body, delay_days, delay_hours, delay_minutes, subject_b, include_signature",
+        // Include the full scheduling surface so dbStepToBuilder can
+        // faithfully rehydrate the builder after navigation/reload.
+        "id, step_order, channel, step_type, subject, body, delay_days, delay_hours, delay_minutes, subject_b, include_signature, time_of_day_local, weekdays_only",
       )
       .eq("campaign_id", campaignId)
       .order("step_order", { ascending: true }),
@@ -281,6 +284,8 @@ export interface SaveCampaignDraftStep {
   delay_hours?: number;
   delay_minutes?: number;
   include_signature?: boolean;
+  time_of_day_local?: string | null;
+  weekdays_only?: boolean;
   metadata?: Record<string, unknown>;
 }
 
