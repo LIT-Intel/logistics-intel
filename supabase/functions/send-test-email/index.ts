@@ -45,6 +45,27 @@ function toBase64Url(str: string): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+function looksLikeHtml(body: string): boolean {
+  return /^<[a-z!]/i.test(body.trim()) || /<table|<div|<p[\s>]|<!doctype/i.test(body);
+}
+
+/**
+ * Gmail raw messages need a transfer encoding for rich HTML bodies.
+ * Without this, non-ASCII characters and HTML entities in branded emails
+ * can be interpreted as literal plain text by Gmail's MIME parser.
+ */
+function encodeBodyMimeBase64(body: string): string {
+  const bytes = new TextEncoder().encode(body);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  const b64 = btoa(bin);
+  const lines: string[] = [];
+  for (let i = 0; i < b64.length; i += 76) {
+    lines.push(b64.slice(i, i + 76));
+  }
+  return lines.join("\r\n");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -336,6 +357,7 @@ serve(async (req) => {
   let sendOk = false;
   let sendErrorCode: string | null = null;
   let sendErrorMessage: string | null = null;
+  const isHtmlBody = looksLikeHtml(body);
 
   if (isResendAccount) {
     // LIT Marketing mailbox — Resend HTTP API, env-scoped key.
@@ -348,16 +370,13 @@ serve(async (req) => {
       const fromLine = account.display_name
         ? `${account.display_name} <${account.email}>`
         : account.email;
-      // Body may already be HTML (composer-authored) or plain text. Detect
-      // so the recipient renders branded markup correctly.
-      const isHtml = /^<[a-z!]/i.test(body.trim()) || /<table|<div|<p[\s>]/i.test(body);
       const payload: Record<string, unknown> = {
         from: fromLine,
         to: [toEmail],
         subject,
         reply_to: account.email,
       };
-      if (isHtml) payload.html = body;
+      if (isHtmlBody) payload.html = body;
       else payload.text = body;
       try {
         const resp = await fetch("https://api.resend.com/emails", {
@@ -395,9 +414,10 @@ serve(async (req) => {
       `To: ${toEmail}`,
       `Subject: ${subject}`,
       `MIME-Version: 1.0`,
-      `Content-Type: text/plain; charset=UTF-8`,
+      `Content-Type: ${isHtmlBody ? "text/html" : "text/plain"}; charset=UTF-8`,
+      `Content-Transfer-Encoding: base64`,
       ``,
-      body,
+      encodeBodyMimeBase64(body),
     ].join("\r\n");
 
     const encodedMessage = toBase64Url(rawMessage);
@@ -442,7 +462,7 @@ serve(async (req) => {
           body: JSON.stringify({
             message: {
               subject,
-              body: { contentType: "Text", content: body },
+              body: { contentType: isHtmlBody ? "HTML" : "Text", content: body },
               toRecipients: [{ emailAddress: { address: toEmail } }],
             },
             saveToSentItems: true,
@@ -471,7 +491,7 @@ serve(async (req) => {
   if (sendOk) {
     await writeTestRow(account.id, account.provider, account.email, "sent", {
       message_id: messageId,
-      metadata: { provider: account.provider, to: toEmail },
+      metadata: { provider: account.provider, to: toEmail, content_type: isHtmlBody ? "html" : "text" },
     });
     await writeHistoryRow(account.provider, "test_sent", "sent", messageId, campaignId);
     // Touch last_synced_at.
@@ -491,6 +511,7 @@ serve(async (req) => {
     await writeTestRow(account.id, account.provider, account.email, "failed", {
       error_code: sendErrorCode,
       error_message: sendErrorMessage,
+      metadata: { content_type: isHtmlBody ? "html" : "text" },
     });
     await writeHistoryRow(account.provider, "test_failed", "failed", null, campaignId);
 
