@@ -1,16 +1,11 @@
 /**
- * CampaignKpiHero — state-dependent hero for the campaign builder.
- * Replaces the old single AUDIENCE SIZE strip.
+ * CampaignKpiHero — top KPI strip for the campaign builder.
  *
- * Draft state (DR Move 4): a single truthful "configuration summary"
- * card showing audience size, schedule, and sequence shape. No
- * industry-average estimate tiles — those signal "metrics demo" not
- * "real outbound campaign you're configuring." A single thin disclosure
- * line explains where rates will appear.
- *
- * Active/paused/complete: shows audience + sent + 4 real rates
- * (open/click/reply/bounce) from the funnel data. Paused state adds
- * a grey "Paused" badge.
+ * The seven-card layout is intentionally stable across draft, active,
+ * paused, and archived campaigns. Draft campaigns still have no real
+ * engagement yet, but keeping the same KPI surface visible prevents the
+ * page from reshaping after launch and makes it obvious where sent/open/
+ * reply metrics will appear once the dispatcher starts writing events.
  */
 import { useState } from "react";
 import type { CampaignFunnel, CampaignStatus } from "../types";
@@ -27,9 +22,6 @@ interface Props {
   sparkData: number[];
   scheduledLabel?: string;
   campaignId?: string | null;
-  /** DR Move 4: sequence shape for the draft summary card (e.g.
-   *  "3 emails over 14 days"). Optional; falls back to a generic
-   *  "Sequence configured" line if not provided. */
   sequenceSummary?: string;
 }
 
@@ -101,7 +93,6 @@ export function CampaignKpiHero({
   campaignId,
   sequenceSummary,
 }: Props) {
-  const isDraft = status === "draft";
   const audienceDisplay = audienceCount > 0 ? formatCount(audienceCount) : "—";
   const [drill, setDrill] = useState<EngagementEventType | null>(null);
 
@@ -119,6 +110,12 @@ export function CampaignKpiHero({
   const replyClick    = canDrill && (funnel?.replied  ?? 0) > 0 ? () => setDrill("replied")  : undefined;
   const bounceClick   = canDrill && (funnel?.bounced  ?? 0) > 0 ? () => setDrill("bounced")  : undefined;
   const meetingsClick = canDrill && (funnel?.meetings ?? 0) > 0 ? () => setDrill("meetings") : undefined;
+
+  const sentHint = hasMeaningfulSpark(sparkData)
+    ? "sends / day, last 14d"
+    : scheduledLabel
+      ? `first send ${scheduledLabel}`
+      : sequenceSummary || "waiting for first send";
 
   return (
     <div className="relative">
@@ -139,123 +136,62 @@ export function CampaignKpiHero({
         </div>
       )}
 
-      {isDraft ? (
-        /* DR Move 4: collapse 6 fake-metric tiles to ONE truthful
-           summary card. Draft campaigns have no real KPIs yet — six
-           tiles of industry-average estimates signalled "metrics demo"
-           and ate ~60% of the page. The card mirrors Tile's visual
-           language (rounded-2xl border bg-white shadow-sm) for
-           continuity, but uses a slate / neutral tone end-to-end so
-           it never competes visually with the live-data hero. */
-        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
-          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between md:gap-6">
-            <div className="flex flex-col gap-1">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                Audience
-              </span>
-              <span className="text-4xl font-bold tabular-nums text-slate-900">
-                {audienceDisplay}
-              </span>
-              <span className="text-[11px] text-slate-500">
-                {audienceCount > 0
-                  ? `${audienceCount === 1 ? "recipient" : "recipients"} selected`
-                  : "Pick recipients to continue"}
-              </span>
-            </div>
-
-            <div className="hidden h-12 w-px shrink-0 bg-slate-200 md:block" aria-hidden="true" />
-
-            <div className="flex flex-col gap-1">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                Schedule
-              </span>
-              <span className="text-lg font-semibold text-slate-900">
-                {scheduledLabel ?? "Not scheduled"}
-              </span>
-              <span className="text-[11px] text-slate-500">
-                {scheduledLabel ? "First send" : "Pick a time to launch"}
-              </span>
-            </div>
-
-            <div className="hidden h-12 w-px shrink-0 bg-slate-200 md:block" aria-hidden="true" />
-
-            <div className="flex flex-col gap-1">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                Sequence
-              </span>
-              <span className="text-lg font-semibold text-slate-900">
-                {sequenceSummary ?? "Sequence configured"}
-              </span>
-              <span className="text-[11px] text-slate-500">
-                Steps in this campaign
-              </span>
-            </div>
-          </div>
-
-          <div className="mt-4 border-t border-slate-100 pt-3">
-            <p className="text-[11px] text-slate-500">
-              Open / click / reply rates appear after first send.
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-7">
-          <Tile
-            label="Audience"
-            value={audienceDisplay}
-            hint={audienceCount > 0 ? "selected" : "pick recipients"}
-          />
-          <Tile
-            label="Sent"
-            value={formatCount(funnel?.sent ?? null)}
-            hint={hasMeaningfulSpark(sparkData) ? "sends / day, last 14d" : undefined}
-            spark={sparkData}
-            tone="neutral"
-            onClick={sentClick}
-          />
-          <Tile
-            label="Open Rate"
-            value={formatRate(funnel?.openRate ?? null)}
-            hint={funnel ? `${formatCount(funnel.opened)} opened` : undefined}
-            tone="blue"
-            onClick={openClick}
-          />
-          <Tile
-            label="Click Rate"
-            value={formatRate(funnel?.clickRate ?? null)}
-            hint={funnel ? `${formatCount(funnel.clicked)} clicked` : undefined}
-            tone="indigo"
-            onClick={clickedClick}
-          />
-          <Tile
-            label="Reply Rate"
-            value={formatRate(funnel?.replyRate ?? null)}
-            hint={funnel ? `${formatCount(funnel.replied)} replied` : undefined}
-            tone="emerald"
-            onClick={replyClick}
-          />
-          <Tile
-            label="Bounce Rate"
-            value={formatRate(funnel?.bounceRate ?? null)}
-            hint={funnel ? `${formatCount(funnel.bounced)} bounced` : undefined}
-            tone={bounceTone}
-            onClick={bounceClick}
-          />
-          <Tile
-            label="Meetings"
-            value={formatCount(funnel?.meetings ?? 0)}
-            hint={
-              funnel
-                ? (funnel.meetings ?? 0) > 0
-                  ? "Cal.com booked"
-                  : "Cal.com integration"
-                : undefined
-            }
-            tone="emerald"
-            onClick={meetingsClick}
-          />
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-7">
+        <Tile
+          label="Audience"
+          value={audienceDisplay}
+          hint={audienceCount > 0 ? "selected" : "pick recipients"}
+        />
+        <Tile
+          label="Sent"
+          value={formatCount(funnel?.sent ?? 0)}
+          hint={sentHint}
+          spark={sparkData}
+          tone="neutral"
+          onClick={sentClick}
+        />
+        <Tile
+          label="Open Rate"
+          value={formatRate(funnel?.openRate ?? null)}
+          hint={funnel ? `${formatCount(funnel.opened)} opened` : "after first send"}
+          tone="blue"
+          onClick={openClick}
+        />
+        <Tile
+          label="Click Rate"
+          value={formatRate(funnel?.clickRate ?? null)}
+          hint={funnel ? `${formatCount(funnel.clicked)} clicked` : "after first send"}
+          tone="indigo"
+          onClick={clickedClick}
+        />
+        <Tile
+          label="Reply Rate"
+          value={formatRate(funnel?.replyRate ?? null)}
+          hint={funnel ? `${formatCount(funnel.replied)} replied` : "after first send"}
+          tone="emerald"
+          onClick={replyClick}
+        />
+        <Tile
+          label="Bounce Rate"
+          value={formatRate(funnel?.bounceRate ?? null)}
+          hint={funnel ? `${formatCount(funnel.bounced)} bounced` : "after first send"}
+          tone={bounceTone}
+          onClick={bounceClick}
+        />
+        <Tile
+          label="Meetings"
+          value={formatCount(funnel?.meetings ?? 0)}
+          hint={
+            funnel
+              ? (funnel.meetings ?? 0) > 0
+                ? "Cal.com booked"
+                : "Cal.com integration"
+              : "Cal.com integration"
+          }
+          tone="emerald"
+          onClick={meetingsClick}
+        />
+      </div>
 
       {/* CR P1-4: conditional mount. The drill-in subscribes to a
           useEngagementRecipients query on mount even though it gates
