@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, Play } from "lucide-react";
+import { ArrowRight, Calendar, CheckCircle2, Download, Play } from "lucide-react";
 import { PageShell } from "@/components/sections/PageShell";
 import { PulseExplorerHero } from "@/components/sections/pulse-explorer/PulseExplorerHero";
 import { OpportunityScoring } from "@/components/sections/pulse-explorer/OpportunityScoring";
@@ -9,13 +9,16 @@ import { CoachSection } from "@/components/sections/pulse-explorer/CoachSection"
 import { FeatureShowcase } from "@/components/sections/pulse-explorer/FeatureShowcase";
 import { CapabilityBand } from "@/components/sections/pulse-explorer/CapabilityBand";
 import { PulseFinalCta } from "@/components/sections/pulse-explorer/PulseFinalCta";
+import { CalInlineEmbed } from "@/components/sections/pulse-explorer/CalInlineEmbed";
 import { PulseVideoButton } from "@/components/sections/pulse-explorer/PulseVideoButton";
 import { buildMetadata, siteUrl } from "@/lib/seo";
 
 const PAGE_TITLE = "Pulse Explorer | Freight Prospecting Software for Brokers, Forwarders, and 3PLs";
 const PAGE_DESCRIPTION =
   "Discover Pulse Explorer by Logistics Intel, a freight prospecting tool that helps brokers, forwarders, and 3PLs find active shippers, analyze trade lanes, enrich contacts, and build targeted lead lists.";
-const DEMO_URL = "https://cal.com/logisticintel/30min";
+const DEMO_URL = "#book-demo";
+const DIRECT_DEMO_URL = "https://cal.com/logisticintel/15min";
+const PLAYBOOK_URL = "/freight-leads";
 const VIDEO_URL = "https://www.youtube.com/watch?v=a9FhnCW89wY";
 const VIDEO_THUMBNAIL_URL = "https://i.ytimg.com/vi/a9FhnCW89wY/maxresdefault.jpg";
 
@@ -62,7 +65,7 @@ const FAQS = [
   {
     question: "Can I watch a Pulse Explorer demo?",
     answer:
-      "Yes. You can watch the Pulse Explorer tutorial video on this page or book a live demo with the Logistics Intel team.",
+      "Yes. You can watch the Pulse Explorer tutorial video on this page or schedule a 15-minute demo with the Logistics Intel team.",
   },
   {
     question: "Can Pulse Explorer generate reports?",
@@ -147,6 +150,8 @@ export default function CompanyIntelligencePage() {
       <div className="lit-page">
         <PulseExplorerHero />
         <VideoTutorialSection />
+        <LeadMagnetCtaSection />
+        <DemoSchedulerSection />
         <LearningSection />
         <OpportunityScoring />
         <NLSearchSection />
@@ -257,14 +262,12 @@ function VideoTutorialSection() {
               See the shipper search workflow before you book time.
             </h3>
             <p className="lead" style={{ marginBottom: 22 }}>
-              Open the YouTube tutorial when you want a quick walkthrough, or book
-              time with the Logistics Intel team for a live Pulse Explorer demo.
+              Open the YouTube tutorial when you want a quick walkthrough, or
+              use the calendar below to schedule a live Pulse Explorer demo.
             </p>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <a
                 href={DEMO_URL}
-                target="_blank"
-                rel="noreferrer"
                 className="btn btn-primary btn-lg"
                 style={{ textDecoration: "none" }}
               >
@@ -272,15 +275,120 @@ function VideoTutorialSection() {
                 <ArrowRight size={16} />
               </a>
               <Link
-                href="/resources"
+                href={PLAYBOOK_URL}
                 className="btn btn-secondary btn-lg"
                 style={{ textDecoration: "none" }}
               >
-                Freight sales playbooks
+                Download the Free Freight Prospecting Playbook
               </Link>
             </div>
           </div>
         </div>
+      </div>
+    </section>
+  );
+}
+
+function LeadMagnetCtaSection() {
+  return (
+    <section className="section" style={{ paddingTop: 18, paddingBottom: 52 }}>
+      <div className="mx-auto px-8" style={{ maxWidth: 1120 }}>
+        <div
+          style={{
+            borderRadius: 18,
+            padding: "32px clamp(22px, 4vw, 42px)",
+            background: "linear-gradient(135deg, #020617 0%, #07172f 58%, #0e7490 130%)",
+            color: "#fff",
+            boxShadow: "0 34px 90px rgba(2,6,23,0.18)",
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) auto",
+            gap: 22,
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 800,
+                textTransform: "uppercase",
+                letterSpacing: "0.14em",
+                color: "#67e8f9",
+                marginBottom: 10,
+              }}
+            >
+              Free freight prospecting resource
+            </div>
+            <h2
+              style={{
+                margin: 0,
+                fontFamily: "var(--font-display)",
+                fontSize: "clamp(28px, 4vw, 44px)",
+                lineHeight: 1.05,
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Download the Free Freight Prospecting Playbook
+            </h2>
+            <p style={{ maxWidth: 700, margin: "12px 0 0", color: "rgba(255,255,255,0.72)", lineHeight: 1.65 }}>
+              See how modern freight teams find active shippers, prioritize the
+              right accounts, and turn shipment signals into targeted outreach.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <Link
+              href={PLAYBOOK_URL}
+              className="btn btn-primary btn-lg"
+              style={{ textDecoration: "none", background: "#fff", color: "#0f172a" }}
+            >
+              <Download size={16} />
+              Download Playbook
+            </Link>
+            <a
+              href={DEMO_URL}
+              className="btn btn-secondary btn-lg"
+              style={{ textDecoration: "none", color: "#fff", borderColor: "rgba(255,255,255,0.24)", background: "rgba(255,255,255,0.08)" }}
+            >
+              <Calendar size={16} />
+              Book 15 Minutes
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DemoSchedulerSection() {
+  return (
+    <section id="book-demo" className="section" style={{ paddingTop: 44, paddingBottom: 70 }}>
+      <div className="mx-auto px-8" style={{ maxWidth: 1120 }}>
+        <div className="section-title" style={{ marginBottom: 28 }}>
+          <div className="eyebrow">Book a live demo</div>
+          <h2 className="display-lg">Pick a 15-minute Pulse Explorer slot.</h2>
+          <p className="lead" style={{ maxWidth: 720 }}>
+            Choose a time that works for you. The calendar below uses the configured
+            Logistics Intel 15-minute Cal.com event.
+          </p>
+        </div>
+        <div
+          className="card-glossy"
+          style={{
+            padding: 12,
+            minHeight: 760,
+            overflow: "hidden",
+            borderRadius: 18,
+          }}
+        >
+          <CalInlineEmbed />
+        </div>
+        <p style={{ margin: "12px 0 0", textAlign: "center", color: "rgba(15,23,42,0.58)", fontSize: 13 }}>
+          Calendar not loading?{" "}
+          <a href={DIRECT_DEMO_URL} target="_blank" rel="noreferrer" style={{ color: "var(--brand-blue-700, #2563eb)", fontWeight: 700 }}>
+            Open the 15-minute scheduler directly.
+          </a>
+        </p>
       </div>
     </section>
   );
@@ -354,8 +462,6 @@ function InternalLinksSection() {
             ))}
             <a
               href={DEMO_URL}
-              target="_blank"
-              rel="noreferrer"
               style={{
                 border: "1px solid rgba(6,182,212,0.26)",
                 borderRadius: 999,
