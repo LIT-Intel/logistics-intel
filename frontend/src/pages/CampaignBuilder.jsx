@@ -1121,6 +1121,11 @@ export default function CampaignBuilder() {
           rejectedManual,
         );
       }
+      const saved = await handleSave();
+      if (!saved) {
+        setError("Launch paused — save the selected schedule and campaign changes, then try again.");
+        return;
+      }
       const res = await launchCampaign(editId, validManual);
       if (res.ok) {
         const skippedTotal = (res.skipped ?? 0) + rejectedManual.length;
@@ -1136,7 +1141,7 @@ export default function CampaignBuilder() {
     } finally {
       setLaunching(false);
     }
-  }, [canLaunch, editId, manualEmails, navigate]);
+  }, [canLaunch, editId, handleSave, manualEmails, navigate]);
 
   // ---- Misc keyboard handler ----
   // CR P1-6: WCAG 2.1.2 — every dismissable overlay must be reachable by
