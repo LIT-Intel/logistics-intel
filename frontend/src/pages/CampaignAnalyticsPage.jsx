@@ -2,28 +2,29 @@
 //
 // Source-of-truth: lit_outreach_history (engagement events) joined with
 // lit_campaigns (definition) and lit_campaign_contacts (recipient state).
-// Recipient.status is dispatcher-state-only and is not used for engagement
-// counts — events drive the funnel.
+// Engagement counts are event-driven, with reply-detection status updates
+// treated as replies so Gmail-detected responses appear in analytics.
 //
 // Sections:
 //   1. KPI strip — Sent / Open rate / Click rate / Reply rate / Bounce rate
 //      + secondary chips (Recipients, Active campaigns, Replies, Last activity).
-//   2. Time-range filter (7d / 30d / MTD / All).
-//   3. Recent activity feed — latest 10 events of any engagement type.
-//   4. Per-campaign table with rates + click-through into a per-campaign
-//      drill-down (expandable row) showing per-step funnel + recent events.
+//   2. Acquisition funnel — recipients through meetings booked.
+//   3. Time-range filter (7d / 30d / MTD / All) with live refresh.
+//   4. Recent activity feed — latest engagement events.
+//   5. Per-campaign table with rates + click-through drill-down.
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   BarChart3,
+  CalendarClock,
   ChevronDown,
   ChevronRight,
-  Mail,
   MailOpen,
   MessageSquare,
   MousePointer,
+  RefreshCw,
   Reply,
   Send,
   AlertTriangle,
@@ -76,20 +77,48 @@ function fmtAgo(date) {
   return `${d}d ago`;
 }
 
+function metricKey(e, { includeStep = true } = {}) {
+  const meta = e.metadata || {};
+  return [
+    e.campaign_id || "no_campaign",
+    meta.recipient_id || meta.recipient_email || e.recipient_email || e.id,
+    includeStep ? (e.campaign_step_id || meta.step_order || "") : "",
+  ].join(":");
+}
+
+function isReplyEvent(e) {
+  return e.event_type === "replied" || e.status === "replied";
+}
+
+function isMeetingEvent(e) {
+  return e.event_type === "meeting_booked" || e.status === "meeting_booked";
+}
+
 const EVENT_LABEL = {
   sent: { label: "Sent", color: "#1d4ed8", bg: "#DBEAFE", Icon: Send },
   opened: { label: "Opened", color: "#15803d", bg: "#DCFCE7", Icon: MailOpen },
   clicked: { label: "Clicked", color: "#7c3aed", bg: "#EDE9FE", Icon: MousePointer },
   replied: { label: "Replied", color: "#b45309", bg: "#FEF3C7", Icon: Reply },
+  meeting_booked: { label: "Meeting", color: "#0f766e", bg: "#CCFBF1", Icon: CalendarClock },
   bounced: { label: "Bounced", color: "#991b1b", bg: "#FECACA", Icon: AlertTriangle },
   send_failed: { label: "Failed", color: "#991b1b", bg: "#FECACA", Icon: AlertTriangle },
   suppressed: { label: "Suppressed", color: "#64748b", bg: "#F1F5F9", Icon: AlertTriangle },
 };
 
+function labelForEvent(e) {
+  if (isMeetingEvent(e)) return EVENT_LABEL.meeting_booked;
+  if (isReplyEvent(e)) return EVENT_LABEL.replied;
+  return EVENT_LABEL[e.event_type] || EVENT_LABEL.sent;
+}
+
 export default function CampaignAnalyticsPage() {
   const navigate = useNavigate();
   const { orgId } = useAuth();
+  const loadedOnceRef = useRef(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastLoadedAt, setLastLoadedAt] = useState(null);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [error, setError] = useState(null);
   const [recipients, setRecipients] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -100,10 +129,16 @@ export default function CampaignAnalyticsPage() {
   const [orgUserIds, setOrgUserIds] = useState([]);
 
   useEffect(() => {
+    const id = window.setInterval(() => setRefreshTick((tick) => tick + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     async function load() {
       if (!orgId) return;
-      setLoading(true);
+      if (!loadedOnceRef.current) setLoading(true);
+      else setRefreshing(true);
       setError(null);
       try {
         const { data: members, error: membersErr } = await supabase
@@ -122,11 +157,11 @@ export default function CampaignAnalyticsPage() {
         const startIso = rangeStartIso(rangeId);
         let evtQuery = supabase
           .from("lit_outreach_history")
-          .select("id,campaign_id,campaign_step_id,event_type,occurred_at,subject,metadata,error_message")
-          .in("event_type", ["sent", "opened", "clicked", "replied", "bounced", "send_failed", "suppressed"]);
+          .select("id,campaign_id,campaign_step_id,event_type,status,occurred_at,subject,metadata,error_message")
+          .in("event_type", ["sent", "opened", "clicked", "replied", "bounced", "send_failed", "suppressed", "meeting_booked"]);
         if (orgUserIds.length) evtQuery = evtQuery.in("user_id", orgUserIds);
         if (startIso) evtQuery = evtQuery.gte("occurred_at", startIso);
-        const eventsPromise = orgUserIds.length ? evtQuery.order("occurred_at", { ascending: false }).limit(2000) : Promise.resolve({ data: [], error: null });
+        const eventsPromise = orgUserIds.length ? evtQuery.order("occurred_at", { ascending: false }).limit(5000) : Promise.resolve({ data: [], error: null });
 
         const [recRes, campRes, evtRes] = await Promise.all([recPromise, campPromise, eventsPromise]);
         if (cancelled) return;
@@ -136,24 +171,52 @@ export default function CampaignAnalyticsPage() {
         setRecipients(recRes.data ?? []);
         setCampaigns(campRes.data ?? []);
         setEvents(evtRes.data ?? []);
+        setLastLoadedAt(new Date().toISOString());
+        loadedOnceRef.current = true;
       } catch (e) {
         if (!cancelled) setError(e?.message || "Failed to load analytics");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [orgId, rangeId]);
+  }, [orgId, rangeId, refreshTick]);
 
   const totals = useMemo(() => {
-    const counts = { sent: 0, opened: 0, clicked: 0, replied: 0, bounced: 0, send_failed: 0, suppressed: 0 };
-    for (const e of events) if (e.event_type in counts) counts[e.event_type] += 1;
+    const counts = { sent: 0, opened: 0, clicked: 0, replied: 0, meetings: 0, bounced: 0, send_failed: 0, suppressed: 0 };
+    const openKeys = new Set();
+    const clickKeys = new Set();
+    const replyKeys = new Set();
+    const meetingKeys = new Set();
+    const bounceKeys = new Set();
+
+    for (const e of events) {
+      if (e.event_type === "sent") counts.sent += 1;
+      if (e.event_type === "send_failed") counts.send_failed += 1;
+      if (e.event_type === "suppressed") counts.suppressed += 1;
+      if (e.event_type === "opened") openKeys.add(metricKey(e));
+      if (e.event_type === "clicked") clickKeys.add(metricKey(e));
+      if (e.event_type === "bounced") bounceKeys.add(metricKey(e, { includeStep: false }));
+      if (isReplyEvent(e)) replyKeys.add(metricKey(e, { includeStep: false }));
+      if (isMeetingEvent(e)) meetingKeys.add(metricKey(e, { includeStep: false }));
+    }
+
+    counts.opened = openKeys.size;
+    counts.clicked = clickKeys.size;
+    counts.replied = replyKeys.size;
+    counts.meetings = meetingKeys.size;
+    counts.bounced = bounceKeys.size;
+
     return {
       sent: counts.sent,
       opened: counts.opened,
       clicked: counts.clicked,
       replied: counts.replied,
+      meetings: counts.meetings,
       bounced: counts.bounced,
       failed: counts.send_failed,
       suppressed: counts.suppressed,
@@ -161,6 +224,7 @@ export default function CampaignAnalyticsPage() {
       clickRate: pct(counts.clicked, counts.sent),
       replyRate: pct(counts.replied, counts.sent),
       bounceRate: pct(counts.bounced, counts.sent),
+      meetingRate: pct(counts.meetings, counts.sent),
       lastEventAt: events[0]?.occurred_at ?? null,
     };
   }, [events]);
@@ -170,8 +234,9 @@ export default function CampaignAnalyticsPage() {
     for (const c of campaigns) {
       byId.set(c.id, {
         id: c.id, name: c.name, status: c.status, created_at: c.created_at,
-        recipients: 0, sent: 0, opened: 0, clicked: 0, replied: 0, bounced: 0, failed: 0,
+        recipients: 0, sent: 0, opened: 0, clicked: 0, replied: 0, meetings: 0, bounced: 0, failed: 0,
         lastEventAt: null, byStep: new Map(),
+        _openKeys: new Set(), _clickKeys: new Set(), _replyKeys: new Set(), _meetingKeys: new Set(), _bounceKeys: new Set(),
       });
     }
     for (const r of recipients) {
@@ -183,19 +248,37 @@ export default function CampaignAnalyticsPage() {
       if (!row) continue;
       const k = e.event_type;
       if (k === "sent") row.sent += 1;
-      else if (k === "opened") row.opened += 1;
-      else if (k === "clicked") row.clicked += 1;
-      else if (k === "replied") row.replied += 1;
-      else if (k === "bounced") row.bounced += 1;
+      else if (k === "opened") row._openKeys.add(metricKey(e));
+      else if (k === "clicked") row._clickKeys.add(metricKey(e));
+      else if (k === "bounced") row._bounceKeys.add(metricKey(e, { includeStep: false }));
       else if (k === "send_failed") row.failed += 1;
+      if (isReplyEvent(e)) row._replyKeys.add(metricKey(e, { includeStep: false }));
+      if (isMeetingEvent(e)) row._meetingKeys.add(metricKey(e, { includeStep: false }));
       if (!row.lastEventAt || new Date(e.occurred_at) > new Date(row.lastEventAt)) {
         row.lastEventAt = e.occurred_at;
       }
       if (e.campaign_step_id) {
-        const step = row.byStep.get(e.campaign_step_id) ?? { sent: 0, opened: 0, clicked: 0, replied: 0 };
-        if (k in step) step[k] += 1;
+        const stepOrder = Number(e.metadata?.step_order ?? 9999);
+        const step = row.byStep.get(e.campaign_step_id) ?? { sent: 0, opened: 0, clicked: 0, replied: 0, order: stepOrder };
+        step.order = Math.min(step.order, stepOrder);
+        if (k === "sent") step.sent += 1;
+        if (k === "opened") step.opened += 1;
+        if (k === "clicked") step.clicked += 1;
+        if (isReplyEvent(e)) step.replied += 1;
         row.byStep.set(e.campaign_step_id, step);
       }
+    }
+    for (const row of byId.values()) {
+      row.opened = row._openKeys.size;
+      row.clicked = row._clickKeys.size;
+      row.replied = row._replyKeys.size;
+      row.meetings = row._meetingKeys.size;
+      row.bounced = row._bounceKeys.size;
+      delete row._openKeys;
+      delete row._clickKeys;
+      delete row._replyKeys;
+      delete row._meetingKeys;
+      delete row._bounceKeys;
     }
     return Array.from(byId.values()).sort((a, b) => {
       const ad = a.lastEventAt ? new Date(a.lastEventAt).getTime() : 0;
@@ -207,6 +290,13 @@ export default function CampaignAnalyticsPage() {
   const recentEvents = useMemo(() => events.slice(0, 12), [events]);
   const activeCampaigns = perCampaign.filter((c) => c.status === "active").length;
   const totalRecipients = recipients.length;
+  const nextScheduledAt = useMemo(() => {
+    const upcoming = recipients
+      .map((r) => r.next_send_at)
+      .filter((date) => date && new Date(date).getTime() > Date.now())
+      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    return upcoming[0] || null;
+  }, [recipients]);
 
   const isEmpty = !loading && events.length === 0 && totalRecipients === 0;
 
@@ -229,9 +319,18 @@ export default function CampaignAnalyticsPage() {
             </div>
             <div className="text-[11px] text-slate-500">
               Live from outreach history. {totals.lastEventAt ? `Last activity ${fmtAgo(totals.lastEventAt)}.` : "No activity yet in this range."}
+              {lastLoadedAt ? ` Refreshed ${fmtAgo(lastLoadedAt)}.` : ""}
             </div>
           </div>
-          <div className="ml-auto flex items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5">
+          <button
+            type="button"
+            onClick={() => setRefreshTick((tick) => tick + 1)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            <RefreshCw className={["h-3 w-3", refreshing ? "animate-spin text-blue-600" : ""].join(" ")} />
+            Refresh
+          </button>
+          <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5">
             {RANGE_OPTIONS.map((r) => (
               <button
                 key={r.id}
@@ -248,7 +347,6 @@ export default function CampaignAnalyticsPage() {
           </div>
         </div>
 
-        {/* Tab navigation */}
         <div className="mb-4 flex items-center gap-1 border-b border-slate-200">
           {[
             { id: "overview", label: "Overview" },
@@ -300,24 +398,43 @@ export default function CampaignAnalyticsPage() {
           <EmptyState onCreate={() => navigate("/app/campaigns/new")} />
         ) : (
           <>
-            {/* KPI strip — primary */}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
               <KpiCard label="Sent" value={totals.sent.toLocaleString()} hint={`${totalRecipients} recipient${totalRecipients === 1 ? "" : "s"}`} Icon={Send} tone="#1d4ed8" />
-              <KpiCard label="Open rate" value={`${totals.openRate}%`} hint={`${totals.opened} opens`} Icon={MailOpen} tone="#15803d" />
-              <KpiCard label="Click rate" value={`${totals.clickRate}%`} hint={`${totals.clicked} clicks`} Icon={MousePointer} tone="#7c3aed" />
+              <KpiCard label="Open rate" value={`${totals.openRate}%`} hint={`${totals.opened} unique opens`} Icon={MailOpen} tone="#15803d" />
+              <KpiCard label="Click rate" value={`${totals.clickRate}%`} hint={`${totals.clicked} unique clicks`} Icon={MousePointer} tone="#7c3aed" />
               <KpiCard label="Reply rate" value={`${totals.replyRate}%`} hint={`${totals.replied} replies`} Icon={Reply} tone="#b45309" />
               <KpiCard label="Bounce rate" value={`${totals.bounceRate}%`} hint={`${totals.bounced} bounces`} Icon={AlertTriangle} tone={totals.bounced > 0 ? "#991b1b" : "#64748b"} />
             </div>
 
-            {/* Secondary chips */}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Chip>{activeCampaigns} active campaign{activeCampaigns === 1 ? "" : "s"}</Chip>
               <Chip>{perCampaign.length} total</Chip>
+              <Chip>{totals.meetings} meeting{totals.meetings === 1 ? "" : "s"} booked</Chip>
+              {nextScheduledAt ? <Chip tone="blue">Next send {fmtAbsolute(nextScheduledAt)}</Chip> : null}
               {totals.failed > 0 ? <Chip tone="rose">{totals.failed} send failure{totals.failed === 1 ? "" : "s"}</Chip> : null}
               {totals.suppressed > 0 ? <Chip tone="slate">{totals.suppressed} suppressed</Chip> : null}
             </div>
 
-            {/* Two-column lower: recent activity + per-campaign table */}
+            <section className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-[12px] font-bold uppercase tracking-wider text-slate-500">Acquisition funnel</div>
+                  <div className="text-[11px] text-slate-500">Recipient movement from campaign volume into conversations and booked meetings.</div>
+                </div>
+                <div className="hidden items-center gap-1 text-[10.5px] font-semibold text-slate-500 sm:flex">
+                  <RefreshCw className="h-3 w-3" />
+                  Auto-refreshes every 30s
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+                <FunnelCard label="Recipients" value={totalRecipients} sub="Loaded audience" Icon={MessageSquare} />
+                <FunnelCard label="Sent" value={totals.sent} sub={`${pct(totals.sent, totalRecipients)}% of audience`} Icon={Send} />
+                <FunnelCard label="Engaged" value={Math.max(totals.opened, totals.clicked)} sub="Opened or clicked" Icon={MailOpen} />
+                <FunnelCard label="Replies" value={totals.replied} sub={`${totals.replyRate}% reply rate`} Icon={Reply} />
+                <FunnelCard label="Meetings" value={totals.meetings} sub={`${totals.meetingRate}% of sends`} Icon={CalendarClock} />
+              </div>
+            </section>
+
             <div className="mt-5 grid gap-4 lg:grid-cols-[280px_1fr]">
               <section className="rounded-xl border border-slate-200 bg-white">
                 <div className="border-b border-slate-100 px-4 py-3">
@@ -328,7 +445,7 @@ export default function CampaignAnalyticsPage() {
                     <li className="px-4 py-6 text-center text-[12px] text-slate-500">No engagement events in this range.</li>
                   ) : (
                     recentEvents.map((e) => {
-                      const meta = EVENT_LABEL[e.event_type] || EVENT_LABEL.sent;
+                      const meta = labelForEvent(e);
                       const Icon = meta.Icon;
                       const recipient =
                         e.metadata?.recipient_email
@@ -363,7 +480,7 @@ export default function CampaignAnalyticsPage() {
                   <div className="text-[12px] font-bold uppercase tracking-wider text-slate-500">Per campaign</div>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[720px] text-left text-[12px]">
+                  <table className="w-full min-w-[780px] text-left text-[12px]">
                     <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
                       <tr>
                         <th className="px-3 py-2 font-semibold"></th>
@@ -374,13 +491,14 @@ export default function CampaignAnalyticsPage() {
                         <th className="px-2 py-2 text-right font-semibold">Open%</th>
                         <th className="px-2 py-2 text-right font-semibold">Click%</th>
                         <th className="px-2 py-2 text-right font-semibold">Reply%</th>
+                        <th className="px-2 py-2 text-right font-semibold">Meetings</th>
                         <th className="px-2 py-2 text-right font-semibold">Bounce%</th>
                         <th className="px-2 py-2 text-right font-semibold">Last</th>
                       </tr>
                     </thead>
                     <tbody>
                       {perCampaign.length === 0 ? (
-                        <tr><td colSpan={10} className="px-4 py-6 text-center text-slate-500">No campaigns yet.</td></tr>
+                        <tr><td colSpan={11} className="px-4 py-6 text-center text-slate-500">No campaigns yet.</td></tr>
                       ) : perCampaign.map((c) => (
                         <React.Fragment key={c.id}>
                           <tr
@@ -397,6 +515,7 @@ export default function CampaignAnalyticsPage() {
                             <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{pct(c.opened, c.sent)}%</td>
                             <td className="px-2 py-2 text-right tabular-nums text-violet-700">{pct(c.clicked, c.sent)}%</td>
                             <td className="px-2 py-2 text-right tabular-nums text-amber-700">{pct(c.replied, c.sent)}%</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-teal-700">{c.meetings}</td>
                             <td className="px-2 py-2 text-right tabular-nums text-rose-700">{pct(c.bounced, c.sent)}%</td>
                             <td className="px-2 py-2 text-right tabular-nums text-[10px] text-slate-500">
                               {c.lastEventAt ? fmtAgo(c.lastEventAt) : "—"}
@@ -404,8 +523,8 @@ export default function CampaignAnalyticsPage() {
                           </tr>
                           {expanded === c.id ? (
                             <tr className="bg-slate-50/60">
-                              <td colSpan={10} className="px-4 py-3">
-                                <CampaignDetail campaign={c} events={events.filter((e) => e.campaign_id === c.id)} navigate={navigate} />
+                              <td colSpan={11} className="px-4 py-3">
+                                <CampaignDetail campaign={c} events={events.filter((e) => e.campaign_id === c.id)} recipients={recipients} navigate={navigate} />
                               </td>
                             </tr>
                           ) : null}
@@ -436,9 +555,23 @@ function KpiCard({ label, value, hint, Icon, tone }) {
   );
 }
 
+function FunnelCard({ label, value, sub, Icon }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+        <Icon className="h-3 w-3 text-blue-600" />
+        {label}
+      </div>
+      <div className="mt-1.5 text-[18px] font-bold leading-none text-[#0F172A]">{Number(value || 0).toLocaleString()}</div>
+      <div className="mt-1 text-[10.5px] text-slate-500">{sub}</div>
+    </div>
+  );
+}
+
 function Chip({ children, tone = "slate" }) {
   const map = {
     slate: "border-slate-200 bg-slate-50 text-slate-700",
+    blue: "border-blue-200 bg-blue-50 text-blue-700",
     rose: "border-rose-200 bg-rose-50 text-rose-700",
   };
   return (
@@ -448,9 +581,9 @@ function Chip({ children, tone = "slate" }) {
   );
 }
 
-function CampaignDetail({ campaign, events, navigate }) {
+function CampaignDetail({ campaign, events, recipients, navigate }) {
   const recent = events.slice(0, 8);
-  const stepCounts = Array.from(campaign.byStep.entries());
+  const stepCounts = Array.from(campaign.byStep.entries()).sort((a, b) => a[1].order - b[1].order);
   return (
     <div className="grid gap-3 md:grid-cols-2">
       <div>
@@ -461,7 +594,7 @@ function CampaignDetail({ campaign, events, navigate }) {
           <ul className="space-y-1">
             {stepCounts.map(([stepId, c], i) => (
               <li key={stepId} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px]">
-                <span className="font-mono text-[10px] text-slate-400">Step {i + 1}</span>
+                <span className="font-mono text-[10px] text-slate-400">Step {Number.isFinite(c.order) && c.order !== 9999 ? c.order + 1 : i + 1}</span>
                 <span className="ml-auto inline-flex gap-2 tabular-nums">
                   <span className="text-blue-700">{c.sent}s</span>
                   <span className="text-emerald-700">{c.opened}o</span>
@@ -487,7 +620,7 @@ function CampaignDetail({ campaign, events, navigate }) {
         ) : (
           <ul className="space-y-1">
             {recent.map((e) => {
-              const meta = EVENT_LABEL[e.event_type] || EVENT_LABEL.sent;
+              const meta = labelForEvent(e);
               const Icon = meta.Icon;
               return (
                 <li key={e.id} className="flex items-start gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11px]">
