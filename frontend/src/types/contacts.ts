@@ -1,14 +1,32 @@
 export interface ContactCore {
   id: string;
-  fullName: string;
-  title: string;
+  name?: string;
+  fullName?: string;
+  full_name?: string;
+  first_name?: string;
+  last_name?: string;
+  title?: string;
   department?: string;
   seniority?: string;
   email?: string;
+  personal_email?: string;
   phone?: string;
+  mobile_phone?: string;
+  direct_dial?: string;
   location?: string;
   linkedin?: string;
+  linkedin_url?: string;
+  avatar_url?: string;
+  photo_url?: string;
+  picture?: string;
+  company_id?: string;
+  company_name?: string;
   confidence?: number;
   isPrimary?: boolean;
+  enrichment_status?: string;
+  enrichment_provider?: string;
+  source_provider?: string;
+  enrichment_result?: Record<string, unknown> | null;
+  job_history?: Array<Record<string, unknown>>;
+  education?: Array<Record<string, unknown>>;
 }
-
