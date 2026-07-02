@@ -1,28 +1,9 @@
-// enrich-contact-orchestrator — Phase 4 multi-provider cascade
+// enrich-contact-orchestrator — multi-provider contact enrichment cascade.
 //
-// Tries each provider in the org's configured order until one returns
-// non-empty contacts. Defaults: ['apollo','lusha']. Tier-3 (ZoomInfo /
-// Cognism stub) only runs when `lit_org_enrichment_settings.enable_tier3
-// = true` even if 'tier3' is in `provider_order`.
-//
-// Design notes:
-//   - The orchestrator forwards the caller's Authorization header to each
-//     provider fn. That means per-user phone rate limits, org credit
-//     quotas, and ledger writes all happen INSIDE the provider fn — no
-//     duplicate gating logic here. The orchestrator is purely a router.
-//   - "No match" is detected by `count === 0` OR `errors.every(e => e.error === 'no_match')`.
-//     A 4xx/5xx from a provider stops the cascade (don't burn fallback
-//     credits on a real outage) and is surfaced as `provider_error`.
-//   - When a provider yields contacts, the orchestrator patches
-//     `lit_contacts.source_provider` on each persisted row so analytics
-//     can attribute matches per provider. Each provider fn already
-//     persists rows; the patch is a follow-up UPDATE keyed by
-//     (source, source_contact_key).
-//
-// Frontend migration path: switch `frontend/src/lib/api.ts`'s
-// `enrichApolloContacts` to invoke this fn instead of `apollo-contact-enrich`
-// — the request shape is identical. Tracked as a follow-up to keep this
-// PR small.
+// Current LIT strategy: Lemlist first, Apollo fallback. Lusha is intentionally
+// inactive while LIT evaluates the best enrichment provider. Lemlist may return
+// pending=true because its enrichment workflow is asynchronous; when that
+// happens the cascade stops because the request was accepted.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -39,17 +20,14 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-type ProviderName = "apollo" | "lusha" | "tier3";
+type ProviderName = "lemlist" | "apollo" | "tier3";
 
-const DEFAULT_ORDER: ProviderName[] = ["apollo", "lusha"];
-const VALID_PROVIDERS = new Set<ProviderName>(["apollo", "lusha", "tier3"]);
+const DEFAULT_ORDER: ProviderName[] = ["lemlist", "apollo"];
+const VALID_PROVIDERS = new Set<ProviderName>(["lemlist", "apollo", "tier3"]);
 
-// Map provider name → edge function name. Lusha's enrichment fn takes a
-// different request shape (single company_id + optional contact identifiers)
-// vs Apollo's bulk `contacts[]`. We adapt below.
 const PROVIDER_FN: Record<ProviderName, string> = {
+  lemlist: "lemlist-enrichment",
   apollo: "apollo-contact-enrich",
-  lusha: "lusha-enrichment",
   tier3: "tier3-enrichment",
 };
 
@@ -65,6 +43,7 @@ interface OrchestratorTarget {
   linkedin_url?: string | null;
   domain?: string | null;
   organization_name?: string | null;
+  company_name?: string | null;
   title?: string | null;
   company_id?: string | null;
   reveal_personal_emails?: boolean;
@@ -80,8 +59,11 @@ interface OrchestratorRequest {
   reveal_personal_emails?: boolean;
   reveal_phone_number?: boolean;
   unlock_phone?: boolean;
-  /** Optional override — if set, ignores the org's stored order. */
-  provider_order?: ProviderName[];
+  source_context?: string;
+  source_entity_type?: string;
+  source_entity_id?: string;
+  enrichment_requests?: string[];
+  provider_order?: string[];
 }
 
 interface ProviderResult {
@@ -90,9 +72,19 @@ interface ProviderResult {
   provider: ProviderName;
   contacts: any[];
   count: number;
+  pending?: boolean;
+  submitted?: number;
+  jobs?: any[];
   error?: string;
   code?: string;
   raw?: any;
+}
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }
 
 function buildProviderUrl(fnName: string): string {
@@ -104,23 +96,15 @@ async function callProvider(
   payload: Record<string, unknown>,
   authHeader: string,
 ): Promise<ProviderResult> {
-  const url = buildProviderUrl(PROVIDER_FN[provider]);
   try {
-    const res = await fetch(url, {
+    const res = await fetch(buildProviderUrl(PROVIDER_FN[provider]), {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: authHeader,
-      },
+      headers: { "Content-Type": "application/json", Authorization: authHeader },
       body: JSON.stringify(payload),
     });
     const raw = await res.text().catch(() => "");
     let data: any = null;
-    try {
-      data = raw ? JSON.parse(raw) : null;
-    } catch (_) {
-      data = null;
-    }
+    try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
     const contacts: any[] = Array.isArray(data?.contacts) ? data.contacts : [];
     return {
       ok: res.ok && data?.ok !== false,
@@ -128,6 +112,9 @@ async function callProvider(
       provider,
       contacts,
       count: contacts.length,
+      pending: data?.pending === true,
+      submitted: Number(data?.submitted || 0),
+      jobs: Array.isArray(data?.jobs) ? data.jobs : [],
       error: data?.error || data?.message || undefined,
       code: data?.code || undefined,
       raw: data,
@@ -145,8 +132,7 @@ async function callProvider(
   }
 }
 
-function buildApolloPayload(req: OrchestratorRequest): Record<string, unknown> {
-  // Apollo's fn already accepts the orchestrator's payload shape verbatim.
+function buildImmediatePayload(req: OrchestratorRequest): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (req.contacts) out.contacts = req.contacts;
   if (req.contact) out.contact = req.contact;
@@ -159,61 +145,37 @@ function buildApolloPayload(req: OrchestratorRequest): Record<string, unknown> {
   return out;
 }
 
-function buildLushaPayload(req: OrchestratorRequest): Record<string, unknown> | null {
-  // Lusha's fn expects a single contact identifier shape:
-  //   { company_id, domain?, linkedin_url?, first_name?, last_name?, title?, unlock_phone? }
-  // We adapt from the orchestrator's `contacts[]` by taking the first target.
-  const first = req.contact || (req.contacts && req.contacts[0]) || null;
-  if (!req.company_id && !first?.company_id) return null;
-  const out: Record<string, unknown> = {
-    company_id: req.company_id || first?.company_id,
-  };
-  const domain = req.domain || first?.domain;
-  if (domain) out.domain = domain;
-  if (first?.linkedin_url) out.linkedin_url = first.linkedin_url;
-  if (first?.first_name) out.first_name = first.first_name;
-  if (first?.last_name) out.last_name = first.last_name;
-  if (first?.title) out.title = first.title;
-  if (req.unlock_phone || req.reveal_phone_number) out.unlock_phone = true;
+function buildLemlistPayload(req: OrchestratorRequest): Record<string, unknown> {
+  const out: Record<string, unknown> = buildImmediatePayload(req);
+  out.source_context = req.source_context || "orchestrator";
+  if (req.source_entity_type !== undefined) out.source_entity_type = req.source_entity_type;
+  if (req.source_entity_id !== undefined) out.source_entity_id = req.source_entity_id;
+  if (req.enrichment_requests !== undefined) out.enrichment_requests = req.enrichment_requests;
   return out;
 }
 
-function buildTier3Payload(req: OrchestratorRequest): Record<string, unknown> {
-  // Tier-3 stub accepts the same shape as Apollo (forward compatible).
-  return buildApolloPayload(req);
-}
-
 function payloadForProvider(provider: ProviderName, req: OrchestratorRequest): Record<string, unknown> | null {
-  if (provider === "apollo") return buildApolloPayload(req);
-  if (provider === "lusha") return buildLushaPayload(req);
-  if (provider === "tier3") return buildTier3Payload(req);
+  if (provider === "lemlist") return buildLemlistPayload(req);
+  if (provider === "apollo") return buildImmediatePayload(req);
+  if (provider === "tier3") return buildImmediatePayload(req);
   return null;
 }
 
 function isNoMatch(result: ProviderResult): boolean {
-  if (result.count > 0) return false;
-  // OK responses with empty contacts are a no_match — fall through.
+  if (result.count > 0 || result.pending) return false;
   if (result.ok) return true;
-  // 404 from a provider counts as no_match.
   if (result.status === 404) return true;
-  // Apollo's per-contact `no_match` is surfaced via the response body's
-  // `errors[]`. When the top-level `ok` is true but every error is no_match,
-  // it's still a fall-through candidate.
   const errs = Array.isArray(result.raw?.errors) ? result.raw.errors : [];
-  if (errs.length > 0 && errs.every((e: any) => e?.error === "no_match")) return true;
-  return false;
+  return errs.length > 0 && errs.every((e: any) => e?.error === "no_match");
 }
 
 function shouldStopCascade(result: ProviderResult): boolean {
-  // Quota / rate-limit / auth failures are terminal — don't burn fallback
-  // credits when the user is already over their cap or the upstream is down.
+  if (result.code === "PROVIDER_NOT_CONFIGURED") return false;
   if (result.code === "CREDIT_QUOTA_EXCEEDED") return true;
   if (result.code === "USER_RATE_LIMITED") return true;
   if (result.code === "LIMIT_EXCEEDED") return true;
   if (result.status === 401 || result.status === 403) return true;
   if (result.status === 429) return true;
-  // 5xx OR network error from a provider → stop. The user can retry; we
-  // shouldn't silently switch providers and charge them double.
   if (result.status >= 500 && !result.ok) return true;
   if (result.code === "PROVIDER_FETCH_FAILED") return true;
   return false;
@@ -223,7 +185,6 @@ async function loadOrgSettings(
   supabase: ReturnType<typeof createClient>,
   userId: string,
 ): Promise<{ orgId: string | null; order: ProviderName[]; enableTier3: boolean }> {
-  // Resolve the caller's primary org first.
   let orgId: string | null = null;
   try {
     const { data: omRow } = await supabase
@@ -236,9 +197,7 @@ async function loadOrgSettings(
     orgId = (omRow as any)?.org_id ?? null;
   } catch (_) {}
 
-  if (!orgId) {
-    return { orgId: null, order: DEFAULT_ORDER, enableTier3: false };
-  }
+  if (!orgId) return { orgId: null, order: DEFAULT_ORDER, enableTier3: false };
 
   try {
     const { data } = await supabase
@@ -247,17 +206,11 @@ async function loadOrgSettings(
       .eq("org_id", orgId)
       .maybeSingle();
     if (data) {
-      const rawOrder: string[] = Array.isArray((data as any).provider_order)
-        ? (data as any).provider_order
-        : [];
+      const rawOrder = Array.isArray((data as any).provider_order) ? (data as any).provider_order : [];
       const order = rawOrder
-        .map((p) => p.trim().toLowerCase() as ProviderName)
-        .filter((p) => VALID_PROVIDERS.has(p));
-      return {
-        orgId,
-        order: order.length ? order : DEFAULT_ORDER,
-        enableTier3: (data as any).enable_tier3 === true,
-      };
+        .map((p: unknown) => String(p).trim().toLowerCase() as ProviderName)
+        .filter((p: ProviderName) => VALID_PROVIDERS.has(p));
+      return { orgId, order: order.length ? order : DEFAULT_ORDER, enableTier3: (data as any).enable_tier3 === true };
     }
   } catch (_) {}
 
@@ -269,66 +222,34 @@ async function tagSourceProvider(
   provider: ProviderName,
   contacts: any[],
 ): Promise<void> {
-  // The provider fn already persisted the row(s) into lit_contacts. Patch
-  // source_provider in a single UPDATE per contact so analytics can
-  // attribute matches per provider. Keyed by source_contact_key when
-  // available (Apollo), else by id (Lusha returns its own `id`).
   for (const c of contacts) {
     try {
       const key = (c as any)?.source_contact_key;
       const id = (c as any)?.id;
-      if (key) {
-        await supabase
-          .from("lit_contacts")
-          .update({ source_provider: provider })
-          .eq("source_contact_key", key);
-      } else if (id) {
-        await supabase
-          .from("lit_contacts")
-          .update({ source_provider: provider })
-          .eq("id", id);
-      }
-    } catch (_) {
-      // Non-fatal — the contact still exists, just won't have the tag.
-    }
+      const patch = { source_provider: provider, enrichment_provider: provider };
+      if (key) await supabase.from("lit_contacts").update(patch).eq("source_contact_key", key);
+      else if (id) await supabase.from("lit_contacts").update(patch).eq("id", id);
+    } catch (_) {}
   }
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
 
   try {
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
-
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "Missing authorization header", code: "UNAUTHENTICATED" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-    const { data: { user }, error: userError } = await supabase.auth.getUser(
-      authHeader.replace("Bearer ", ""),
-    );
-    if (userError || !user) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "Unauthorized", code: "UNAUTHENTICATED" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
+    if (!authHeader) return json({ ok: false, error: "Missing authorization header", code: "UNAUTHENTICATED" }, 401);
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+    if (userError || !user) return json({ ok: false, error: "Unauthorized", code: "UNAUTHENTICATED" }, 401);
 
     const body: OrchestratorRequest = await req.json().catch(() => ({}));
     const targets = Array.isArray(body.contacts) ? body.contacts : body.contact ? [body.contact] : [];
     if (!targets.length && !body.company_id) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "No contacts or company_id provided", code: "NO_TARGETS" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return json({ ok: false, error: "No contacts or company_id provided", code: "NO_TARGETS" }, 400);
     }
 
-    // Resolve provider order — request override beats org setting beats default.
     const { orgId, order: orgOrder, enableTier3 } = await loadOrgSettings(supabase, user.id);
     let providerOrder: ProviderName[] = Array.isArray(body.provider_order) && body.provider_order.length
       ? body.provider_order
@@ -336,13 +257,10 @@ Deno.serve(async (req: Request) => {
           .filter((p) => VALID_PROVIDERS.has(p))
       : orgOrder;
 
-    // Filter tier3 out unless explicitly enabled at the org level.
-    if (!enableTier3) {
-      providerOrder = providerOrder.filter((p) => p !== "tier3");
-    }
+    if (!enableTier3) providerOrder = providerOrder.filter((p) => p !== "tier3");
     if (!providerOrder.length) providerOrder = DEFAULT_ORDER;
 
-    const cascade: Array<{ provider: ProviderName; status: number; count: number; code?: string; error?: string }> = [];
+    const cascade: Array<{ provider: ProviderName; status: number; count: number; pending?: boolean; code?: string; error?: string }> = [];
 
     for (const provider of providerOrder) {
       const payload = payloadForProvider(provider, body);
@@ -350,102 +268,56 @@ Deno.serve(async (req: Request) => {
         cascade.push({ provider, status: 0, count: 0, code: "INSUFFICIENT_PAYLOAD" });
         continue;
       }
+
       const result = await callProvider(provider, payload, authHeader);
-      cascade.push({
-        provider,
-        status: result.status,
-        count: result.count,
-        code: result.code,
-        error: result.error,
-      });
+      cascade.push({ provider, status: result.status, count: result.count, pending: result.pending, code: result.code, error: result.error });
+
+      if (result.ok && result.pending) {
+        log.info("cascade_pending", { user_id: user.id, org_id: orgId, provider, submitted: result.submitted });
+        return json({
+          ok: true,
+          provider,
+          pending: true,
+          submitted: result.submitted,
+          jobs: result.jobs,
+          contacts: [],
+          count: 0,
+          cascade,
+          provider_order: providerOrder,
+          enable_tier3: enableTier3,
+          raw_provider_response: result.raw,
+        });
+      }
 
       if (result.ok && result.count > 0) {
-        // Success — tag source_provider on persisted rows and return.
         await tagSourceProvider(supabase, provider, result.contacts);
-        const taggedContacts = result.contacts.map((c) => ({ ...c, source_provider: provider }));
-        log.info("cascade_hit", {
-          user_id: user.id,
-          org_id: orgId,
-          provider,
-          count: result.count,
-          cascade_path: cascade.map((c) => c.provider).join(","),
-        });
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            provider,
-            contacts: taggedContacts,
-            count: result.count,
-            cascade,
-            provider_order: providerOrder,
-            enable_tier3: enableTier3,
-            raw_provider_response: result.raw,
-          }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+        const taggedContacts = result.contacts.map((c) => ({ ...c, source_provider: provider, enrichment_provider: provider }));
+        log.info("cascade_hit", { user_id: user.id, org_id: orgId, provider, count: result.count });
+        return json({ ok: true, provider, contacts: taggedContacts, count: result.count, cascade, provider_order: providerOrder, enable_tier3: enableTier3, raw_provider_response: result.raw });
       }
 
-      // Terminal error from this provider — don't burn fallback credits.
       if (shouldStopCascade(result)) {
-        log.warn("cascade_terminated", {
-          user_id: user.id,
+        log.warn("cascade_terminated", { user_id: user.id, provider, code: result.code, status: result.status });
+        return json({
+          ok: false,
+          error: result.error || "Provider returned a terminal error",
+          code: result.code || "PROVIDER_ERROR",
           provider,
-          code: result.code,
-          status: result.status,
-        });
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            error: result.error || "Provider returned a terminal error",
-            code: result.code || "PROVIDER_ERROR",
-            provider,
-            cascade,
-            provider_order: providerOrder,
-            raw_provider_response: result.raw,
-          }),
-          { status: result.status || 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+          cascade,
+          provider_order: providerOrder,
+          raw_provider_response: result.raw,
+        }, result.status || 502);
       }
 
-      // No match here — fall through to the next provider.
       if (!isNoMatch(result)) {
-        // Unexpected non-match, non-terminal response. Log + still fall
-        // through (the next provider may have better coverage) so the
-        // cascade isn't blocked by a flaky provider returning 200 with
-        // an unexpected shape.
-        log.warn("cascade_non_match_continue", {
-          user_id: user.id,
-          provider,
-          status: result.status,
-          code: result.code,
-        });
+        log.warn("cascade_non_match_continue", { user_id: user.id, provider, status: result.status, code: result.code });
       }
     }
 
-    // Cascade exhausted — every provider returned no_match.
-    log.info("cascade_exhausted", {
-      user_id: user.id,
-      org_id: orgId,
-      cascade_path: cascade.map((c) => c.provider).join(","),
-    });
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        provider: null,
-        contacts: [],
-        count: 0,
-        exhausted: true,
-        cascade,
-        provider_order: providerOrder,
-        enable_tier3: enableTier3,
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    log.info("cascade_exhausted", { user_id: user.id, org_id: orgId, cascade_path: cascade.map((c) => c.provider).join(",") });
+    return json({ ok: true, provider: null, contacts: [], count: 0, exhausted: true, cascade, provider_order: providerOrder, enable_tier3: enableTier3 });
   } catch (error: any) {
     log.error("orchestrator_unexpected_error", { err: String(error?.message ?? error) });
-    return new Response(
-      JSON.stringify({ ok: false, error: error?.message || "Internal server error", code: "INTERNAL_ERROR" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return json({ ok: false, error: error?.message || "Internal server error", code: "INTERNAL_ERROR" }, 500);
   }
 });
