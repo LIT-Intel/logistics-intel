@@ -1,4 +1,4 @@
-// Phase 4 — OrgEnrichmentSettingsPanel
+// Phase 4 - OrgEnrichmentSettingsPanel
 //
 // Settings tab panel for the multi-provider enrichment orchestrator. Reads
 // + writes `lit_org_enrichment_settings`. Mirrors the OrgExitRulesPanel
@@ -8,17 +8,13 @@
 // Provider cascade is a small ordered list. Admins reorder with up/down
 // buttons; the orchestrator (`enrich-contact-orchestrator`) reads the
 // stored order on every invocation. The Tier-3 toggle gates the
-// ZoomInfo/Cognism stub — even when 'tier3' is in the order, the
+// ZoomInfo/Cognism stub - even when 'tier3' is in the order, the
 // orchestrator skips it unless this toggle is on.
 
 import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { usePqCreditsSummary } from "@/api/intel";
 
-// PowerQuery credits gauge — surfaces live creditsRemaining from the latest
-// iy-powerquery-sync response (cached in lit_internal_meta) + 30-day burn
-// summed from lit_credit_ledger. Platform-admin-only panel — RLS protects
-// the underlying tables, the chip is just operator UX.
 function PqCreditsGauge() {
   const { data, isLoading } = usePqCreditsSummary();
   const remaining = data?.credits_remaining ?? null;
@@ -27,7 +23,6 @@ function PqCreditsGauge() {
     ? new Date(data.last_sync_at).toLocaleString()
     : null;
 
-  // Visual tone: green > 1000, amber 100–1000, red < 100.
   const tone =
     remaining == null
       ? { border: "#e2e8f0", bg: "#f8fafc", fg: "#64748b" }
@@ -55,9 +50,9 @@ function PqCreditsGauge() {
           <div style={{ marginTop: 4, display: "flex", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontSize: 22, fontWeight: 700, color: tone.fg, fontVariantNumeric: "tabular-nums" }}>
               {isLoading
-                ? "…"
+                ? "..."
                 : remaining == null
-                  ? "—"
+                  ? "-"
                   : remaining.toLocaleString()}
             </span>
             <span style={{ fontSize: 11, color: "#64748b" }}>remaining</span>
@@ -78,7 +73,7 @@ function PqCreditsGauge() {
   );
 }
 
-type ProviderName = "apollo" | "lusha" | "tier3";
+type ProviderName = "lemlist" | "apollo" | "tier3";
 
 type EnrichmentSettings = {
   provider_order: ProviderName[];
@@ -86,23 +81,37 @@ type EnrichmentSettings = {
 };
 
 const DEFAULTS: EnrichmentSettings = {
-  provider_order: ["apollo", "lusha"],
+  provider_order: ["lemlist", "apollo"],
   enable_tier3: false,
 };
 
 const PROVIDER_LABEL: Record<ProviderName, string> = {
-  apollo: "Apollo",
-  lusha: "Lusha",
+  lemlist: "Lemlist",
+  apollo: "Apollo fallback",
   tier3: "Tier-3 (ZoomInfo / Cognism)",
 };
 
 const PROVIDER_BLURB: Record<ProviderName, string> = {
-  apollo: "Largest contact graph. Best for net-new prospecting at scale.",
-  lusha: "Higher verified-phone hit rate for North American B2B.",
+  lemlist: "Primary enrichment path for email, phone, LinkedIn, verification, and campaign-ready profile data.",
+  apollo: "Fallback for discovery and enrichment gaps when Lemlist does not return a match.",
   tier3: "Premium fallback for enterprise targets. Disabled until credentials are configured.",
 };
 
-const VALID_PROVIDERS: ProviderName[] = ["apollo", "lusha", "tier3"];
+const VALID_PROVIDERS: ProviderName[] = ["lemlist", "apollo", "tier3"];
+
+function normalizeProviderOrder(rawOrder: string[]): ProviderName[] {
+  const seen = new Set<ProviderName>();
+  const normalized: ProviderName[] = [];
+  for (const raw of rawOrder) {
+    const provider = raw === "lusha" ? "lemlist" : raw;
+    if (!VALID_PROVIDERS.includes(provider as ProviderName)) continue;
+    const typed = provider as ProviderName;
+    if (seen.has(typed)) continue;
+    seen.add(typed);
+    normalized.push(typed);
+  }
+  return normalized.length ? normalized : DEFAULTS.provider_order;
+}
 
 export default function OrgEnrichmentSettingsPanel({
   orgId,
@@ -133,10 +142,8 @@ export default function OrgEnrichmentSettingsPanel({
         const rawOrder: string[] = Array.isArray((data as any).provider_order)
           ? (data as any).provider_order
           : DEFAULTS.provider_order;
-        const order = rawOrder
-          .filter((p): p is ProviderName => VALID_PROVIDERS.includes(p as ProviderName));
         setSettings({
-          provider_order: order.length ? order : DEFAULTS.provider_order,
+          provider_order: normalizeProviderOrder(rawOrder),
           enable_tier3: !!(data as any).enable_tier3,
         });
       }
@@ -192,11 +199,9 @@ export default function OrgEnrichmentSettingsPanel({
     return <div style={{ fontSize: 13, color: "#94a3b8" }}>No active org.</div>;
   }
   if (loading) {
-    return <div style={{ fontSize: 13, color: "#94a3b8" }}>Loading enrichment settings…</div>;
+    return <div style={{ fontSize: 13, color: "#94a3b8" }}>Loading enrichment settings...</div>;
   }
 
-  // Render every provider in the cascade order first, then any inactive
-  // providers as opt-in chips below.
   const inCascade = settings.provider_order;
   const inactive = VALID_PROVIDERS.filter((p) => !inCascade.includes(p));
 
@@ -206,8 +211,7 @@ export default function OrgEnrichmentSettingsPanel({
         Enrichment provider order
       </h2>
       <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 16px" }}>
-        Contact enrichment tries each provider in order until one returns a match. Reorder to favor the provider with the
-        best hit rate for your plan or target market.
+        Contact enrichment uses Lemlist first, then falls back only when needed. Reorder the cascade if your hit-rate data changes.
       </p>
 
       <div style={{ borderTop: "1px solid #e2e8f0", marginBottom: 16 }}>
@@ -232,7 +236,7 @@ export default function OrgEnrichmentSettingsPanel({
                   width: 24,
                   height: 24,
                   borderRadius: 6,
-                  background: "#0f172a",
+                  background: provider === "lemlist" ? "#0891b2" : "#0f172a",
                   color: "#fff",
                   fontSize: 12,
                   fontWeight: 600,
@@ -259,7 +263,7 @@ export default function OrgEnrichmentSettingsPanel({
                   aria-label={`Move ${PROVIDER_LABEL[provider]} up`}
                   style={btn(i === 0)}
                 >
-                  ↑
+                  Up
                 </button>
                 <button
                   type="button"
@@ -268,7 +272,7 @@ export default function OrgEnrichmentSettingsPanel({
                   aria-label={`Move ${PROVIDER_LABEL[provider]} down`}
                   style={btn(i === inCascade.length - 1)}
                 >
-                  ↓
+                  Down
                 </button>
                 <button
                   type="button"
@@ -280,7 +284,7 @@ export default function OrgEnrichmentSettingsPanel({
                     color: inCascade.length === 1 ? "#94a3b8" : "#dc2626",
                   }}
                 >
-                  ×
+                  Remove
                 </button>
               </div>
             )}
@@ -359,10 +363,10 @@ export default function OrgEnrichmentSettingsPanel({
             cursor: saving ? "wait" : canWrite ? "pointer" : "not-allowed",
           }}
         >
-          {saving ? "Saving…" : "Save order"}
+          {saving ? "Saving..." : "Save order"}
         </button>
         {savedAt && <span style={{ fontSize: 11, color: "#94a3b8" }}>Saved at {savedAt}</span>}
-        {!canWrite && <span style={{ fontSize: 11, color: "#94a3b8" }}>Read-only · org admin required</span>}
+        {!canWrite && <span style={{ fontSize: 11, color: "#94a3b8" }}>Read-only - org admin required</span>}
       </div>
 
       <PqCreditsGauge />
