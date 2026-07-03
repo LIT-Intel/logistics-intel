@@ -46,14 +46,10 @@ type RequestBody = {
   reveal_phone_number?: boolean;
 };
 
-type LemlistSubmitResult = { res: Response; raw: any; rawText: string; authMode: "bearer" | "basic" };
+type LemlistSubmitResult = { res: Response; raw: any; rawText: string; authMode: "basic" };
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-}
-
-function bearerAuthHeader(apiKey: string): string {
-  return `Bearer ${apiKey}`;
 }
 
 function basicAuthHeader(apiKey: string): string {
@@ -68,21 +64,13 @@ async function parseProviderResponse(res: Response): Promise<{ raw: any; rawText
 }
 
 async function submitToLemlist(payload: unknown): Promise<LemlistSubmitResult> {
-  const post = (authorization: string) => fetch(`${LEMLIST_BASE_URL}/v2/enrichments/bulk`, {
+  const res = await fetch(`${LEMLIST_BASE_URL}/v2/enrichments/bulk`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: authorization },
+    headers: { "Content-Type": "application/json", Authorization: basicAuthHeader(LEMLIST_API_KEY) },
     body: JSON.stringify(payload),
   });
-
-  const bearerRes = await post(bearerAuthHeader(LEMLIST_API_KEY));
-  const bearerParsed = await parseProviderResponse(bearerRes);
-  if (bearerRes.status !== 401) {
-    return { res: bearerRes, raw: bearerParsed.raw, rawText: bearerParsed.rawText, authMode: "bearer" };
-  }
-
-  const basicRes = await post(basicAuthHeader(LEMLIST_API_KEY));
-  const basicParsed = await parseProviderResponse(basicRes);
-  return { res: basicRes, raw: basicParsed.raw, rawText: basicParsed.rawText, authMode: "basic" };
+  const parsed = await parseProviderResponse(res);
+  return { res, raw: parsed.raw, rawText: parsed.rawText, authMode: "basic" };
 }
 
 function splitName(t: Target): { firstName?: string; lastName?: string } {
@@ -98,7 +86,7 @@ function splitName(t: Target): { firstName?: string; lastName?: string } {
 function workflowsFor(body: RequestBody, target: Target): string[] {
   const requested = Array.isArray(body.enrichment_requests) && body.enrichment_requests.length
     ? body.enrichment_requests
-    : ["find_email", "linkedin_enrichment"];
+    : ["find_email"];
   const out = new Set<string>();
   for (const workflow of requested) {
     if (workflow === "find_phone" && body.reveal_phone_number !== true) continue;
