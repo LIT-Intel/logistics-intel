@@ -9,6 +9,7 @@ import {
   Loader2,
   Mail,
   MapPin,
+  Maximize2,
   MoreHorizontal,
   Phone,
   RefreshCw,
@@ -181,6 +182,7 @@ export default function CDPContacts({
 
   // Apollo people-search & enrichment state
   const [apolloOpen, setApolloOpen] = useState(false);
+  const [apolloModalOpen, setApolloModalOpen] = useState(false);
   const [apolloLoading, setApolloLoading] = useState(false);
   // Pagination state for Apollo contact search. Increment on each
   // "Load more" click; reset to 1 on a fresh Search / Refresh.
@@ -562,6 +564,10 @@ export default function CDPContacts({
     setApolloSelected(new Set(apolloResults.map((p, i) => apolloKey(p, i))));
   }
 
+  function selectApolloKeys(keys: string[]) {
+    setApolloSelected(new Set(keys));
+  }
+
   function clearApolloSelection() {
     setApolloSelected(new Set());
   }
@@ -864,11 +870,13 @@ export default function CDPContacts({
           onDepartmentsChange={setApolloDepartments}
           onClose={() => {
             setApolloOpen(false);
+            setApolloModalOpen(false);
             setApolloEnrichError(null);
           }}
           onRetry={handleApolloSearch}
           onToggle={toggleApolloSelected}
           onSelectAll={selectAllApollo}
+          onSelectVisible={selectApolloKeys}
           onClearSelection={clearApolloSelection}
           onEnrichSelected={handleApolloEnrichSelected}
           keyOf={apolloKey}
@@ -879,8 +887,62 @@ export default function CDPContacts({
           onSaveCorrections={handleSaveCorrections}
           savingCorrections={savingCorrections}
           saveCorrectionsError={saveCorrectionsError}
+          onOpenModal={() => setApolloModalOpen(true)}
         />
       )}
+      <ContactResultsPopup
+        open={apolloModalOpen}
+        loading={apolloLoading}
+        searched={apolloSearched}
+        error={apolloError}
+        setupRequired={apolloSetupRequired}
+        results={apolloResults}
+        selected={apolloSelected}
+        enriching={apolloEnriching}
+        enrichError={apolloEnrichError}
+        companyName={searchCompanyName}
+        companyDomain={searchCompanyDomain}
+        companyLocation={companyLocation ?? null}
+        city={searchCity}
+        stateField={searchState}
+        country={searchCountry}
+        usePersonLocations={usePersonLocations}
+        includeSimilarTitles={includeSimilarTitles}
+        matchMode={searchMatchMode}
+        orgMatch={searchOrgMatch}
+        titles={apolloTitles}
+        seniorities={apolloSeniorities}
+        departments={apolloDepartments}
+        onCompanyNameChange={setSearchCompanyName}
+        onCompanyDomainChange={setSearchCompanyDomain}
+        onCityChange={setSearchCity}
+        onStateChange={setSearchState}
+        onCountryChange={setSearchCountry}
+        onUsePersonLocationsChange={setUsePersonLocations}
+        onIncludeSimilarTitlesChange={setIncludeSimilarTitles}
+        onTitlesChange={setApolloTitles}
+        onSenioritiesChange={setApolloSeniorities}
+        onDepartmentsChange={setApolloDepartments}
+        onClose={() => {
+          setApolloModalOpen(false);
+          setApolloEnrichError(null);
+        }}
+        onRetry={handleApolloSearch}
+        onToggle={toggleApolloSelected}
+        onSelectAll={selectAllApollo}
+        onSelectVisible={selectApolloKeys}
+        onClearSelection={clearApolloSelection}
+        onEnrichSelected={handleApolloEnrichSelected}
+        keyOf={apolloKey}
+        onLoadMore={handleApolloLoadMore}
+        loadingMore={apolloLoadingMore}
+        hasMore={apolloHasMore}
+        currentPage={apolloPage}
+        onSaveCorrections={handleSaveCorrections}
+        savingCorrections={savingCorrections}
+        saveCorrectionsError={saveCorrectionsError}
+        variant="modal"
+      />
       {addOpen && (
         <AddContactModal
           companyId={companyId ?? null}
@@ -1542,6 +1604,7 @@ type ApolloResultsPanelProps = {
   onRetry: () => void;
   onToggle: (key: string) => void;
   onSelectAll: () => void;
+  onSelectVisible: (keys: string[]) => void;
   onClearSelection: () => void;
   onEnrichSelected: () => void;
   keyOf: (p: ApolloContactPreview, i: number) => string;
@@ -1553,6 +1616,8 @@ type ApolloResultsPanelProps = {
   onSaveCorrections: () => void;
   savingCorrections: boolean;
   saveCorrectionsError: string | null;
+  variant?: "inline" | "modal";
+  onOpenModal?: () => void;
 };
 
 const APOLLO_DEPARTMENT_OPTIONS = [
@@ -1599,7 +1664,7 @@ function ApolloResultsPanel({
   onClose,
   onRetry,
   onToggle,
-  onSelectAll,
+  onSelectVisible,
   onClearSelection,
   onEnrichSelected,
   keyOf,
@@ -1610,15 +1675,68 @@ function ApolloResultsPanel({
   onSaveCorrections,
   savingCorrections,
   saveCorrectionsError,
+  variant = "inline",
+  onOpenModal,
 }: ApolloResultsPanelProps) {
+  const [resultQuery, setResultQuery] = useState("");
+  const [resultStatus, setResultStatus] = useState<"all" | "ready" | "pending" | "enriched">("all");
+
   function toggle(list: string[], value: string, setter: (n: string[]) => void) {
     setter(list.includes(value) ? list.filter((x) => x !== value) : [...list, value]);
   }
   const scopeLabel = companyDomain
     ? companyDomain
     : companyName || "current company";
+  const isModal = variant === "modal";
+  const visibleRows = useMemo(() => {
+    const q = resultQuery.trim().toLowerCase();
+    return results
+      .map((p, i) => ({ p, i, key: keyOf(p, i) }))
+      .filter(({ p }) => {
+        if (resultStatus === "pending" && p.enrichment_status !== "pending") return false;
+        if (resultStatus === "enriched" && p.enrichment_status !== "enriched") return false;
+        if (
+          resultStatus === "ready" &&
+          (p.enrichment_status === "pending" || p.enrichment_status === "enriched")
+        ) {
+          return false;
+        }
+        if (!q) return true;
+        return [
+          p.full_name,
+          p.first_name,
+          p.last_name,
+          p.title,
+          p.company,
+          p.location,
+          p.city,
+          p.state,
+          p.country_code,
+          p.company_size,
+          p.company_website,
+          p.company_industry,
+          p.email_status,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      });
+  }, [keyOf, resultQuery, resultStatus, results]);
+  const selectableVisibleKeys = visibleRows
+    .filter(({ p }) => p.enrichment_status !== "pending" && p.enrichment_status !== "enriched")
+    .map(({ key }) => key);
+  const allVisibleSelected =
+    selectableVisibleKeys.length > 0 &&
+    selectableVisibleKeys.every((key) => selected.has(key));
   return (
-    <div className="overflow-hidden rounded-xl border border-violet-200 bg-white shadow-sm">
+    <div
+      className={[
+        isModal
+          ? "flex h-full min-h-0 flex-col overflow-hidden bg-white"
+          : "overflow-hidden rounded-xl border border-violet-200 bg-white shadow-sm",
+      ].join(" ")}
+    >
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-violet-100 bg-gradient-to-r from-violet-50 to-white px-3.5 py-2.5">
         <div className="flex items-center gap-2">
@@ -1635,12 +1753,29 @@ function ApolloResultsPanel({
         <div className="flex items-center gap-1.5">
           {!loading && !error && results.length > 0 && (
             <>
+              {!isModal && onOpenModal ? (
+                <button
+                  type="button"
+                  onClick={onOpenModal}
+                  className="font-display inline-flex items-center gap-1 rounded-md border border-violet-200 bg-white px-2 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-50"
+                >
+                  <Maximize2 className="h-3 w-3" />
+                  Open results
+                </button>
+              ) : null}
               <button
                 type="button"
-                onClick={selected.size === results.length ? onClearSelection : onSelectAll}
+                onClick={() => {
+                  if (allVisibleSelected) {
+                    onClearSelection();
+                    return;
+                  }
+                  onSelectVisible(selectableVisibleKeys);
+                }}
+                disabled={selectableVisibleKeys.length === 0}
                 className="font-display rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900"
               >
-                {selected.size === results.length ? "Clear all" : "Select all"}
+                {allVisibleSelected ? "Clear all" : "Select shown"}
               </button>
               <button
                 type="button"
@@ -1944,7 +2079,41 @@ function ApolloResultsPanel({
               {enrichError}
             </div>
           )}
-          <div className="max-h-[420px] overflow-auto">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-3.5 py-2">
+            <label className="relative min-w-[240px] flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={resultQuery}
+                onChange={(e) => setResultQuery(e.target.value)}
+                placeholder="Filter results by name, title, location, company..."
+                className="font-body w-full rounded-md border border-slate-200 bg-white py-1.5 pl-8 pr-2 text-[12px] text-slate-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-500/10"
+              />
+            </label>
+            <div className="flex flex-wrap items-center gap-1">
+              {[
+                ["all", "All"],
+                ["ready", "Ready"],
+                ["pending", "Pending"],
+                ["enriched", "Enriched"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setResultStatus(value as typeof resultStatus)}
+                  className={[
+                    "font-display rounded-md border px-2 py-1 text-[11px] font-semibold",
+                    resultStatus === value
+                      ? "border-violet-300 bg-violet-50 text-violet-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  ].join(" ")}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className={isModal ? "min-h-0 flex-1 overflow-auto" : "max-h-[420px] overflow-auto"}>
             <table className="min-w-[1180px] w-full border-collapse">
               <thead className="sticky top-0 z-[1] bg-[#FAFBFC]">
                 <tr className="border-b border-slate-200">
@@ -1962,8 +2131,17 @@ function ApolloResultsPanel({
                 </tr>
               </thead>
               <tbody>
-                {results.map((p, i) => {
-                  const k = keyOf(p, i);
+                {visibleRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={11}
+                      className="font-body px-6 py-8 text-center text-[12px] text-slate-500"
+                    >
+                      No contacts match the current result filter.
+                    </td>
+                  </tr>
+                ) : (
+                visibleRows.map(({ p, key: k }) => {
                   const checked = selected.has(k);
                   // Always render the full name. The api.ts normalizer
                   // computes full_name = name ?? first+last, so this
@@ -2136,14 +2314,14 @@ function ApolloResultsPanel({
                       </td>
                     </tr>
                   );
-                })}
+                }))}
               </tbody>
             </table>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-[#FAFBFC] px-3.5 py-2">
             <div className="font-body text-[11px] text-slate-500">
               <CheckCircle2 className="mr-1 inline h-3 w-3 text-violet-500" />
-              Showing {results.length} {results.length === 1 ? "contact" : "contacts"} (page {currentPage}). Email + phone are only revealed after enrichment.
+              Showing {visibleRows.length} of {results.length} {results.length === 1 ? "contact" : "contacts"} (page {currentPage}). Email + phone are only revealed after enrichment.
             </div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-[11px] text-slate-500">
@@ -2174,6 +2352,25 @@ function ApolloResultsPanel({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function ContactResultsPopup({
+  open,
+  ...props
+}: ApolloResultsPanelProps & { open: boolean }) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[80] bg-slate-950/50 px-3 py-4 backdrop-blur-sm sm:px-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Contact enrichment results"
+    >
+      <div className="mx-auto flex h-full max-w-[1480px] flex-col overflow-hidden rounded-lg bg-white shadow-2xl ring-1 ring-slate-900/10">
+        <ApolloResultsPanel {...props} variant="modal" />
+      </div>
     </div>
   );
 }
