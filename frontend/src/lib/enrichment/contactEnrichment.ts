@@ -9,6 +9,7 @@ export interface EnrichContactParams {
   companyDomain?: string;
   linkedinUrl?: string;
   title?: string;
+  revealPhoneNumber?: boolean;
 }
 
 export interface EnrichmentResult {
@@ -46,16 +47,23 @@ function toContactPayload(params: EnrichContactParams) {
 }
 
 export async function enrichContact(params: EnrichContactParams): Promise<EnrichmentResult> {
+  const revealPhoneNumber = params.revealPhoneNumber === true;
+  const enrichmentRequests = revealPhoneNumber
+    ? ['find_email', 'find_phone', 'verify', 'linkedin_enrichment']
+    : ['find_email', 'verify', 'linkedin_enrichment'];
+
   const { data, error } = await supabase.functions.invoke('enrich-contact-orchestrator', {
     body: {
       contact: toContactPayload(params),
       company_name: params.companyName,
       domain: params.companyDomain,
-      source_context: 'command_center_contact_drawer',
+      source_context: revealPhoneNumber
+        ? 'command_center_contact_phone_unlock'
+        : 'command_center_contact_email_enrichment',
       source_entity_type: 'lit_contact',
       source_entity_id: params.contactId,
-      enrichment_requests: ['find_email', 'find_phone', 'verify', 'linkedin_enrichment'],
-      reveal_phone_number: true,
+      enrichment_requests: enrichmentRequests,
+      reveal_phone_number: revealPhoneNumber,
     },
   });
 
