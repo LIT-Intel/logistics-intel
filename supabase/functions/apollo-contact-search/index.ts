@@ -9,7 +9,7 @@ const corsHeaders = {
 
 const APOLLO_API_KEY = Deno.env.get("APOLLO_API_KEY") || "";
 // Apollo migrated their people-search endpoint from
-// `/api/v1/mixed_people/search` to `/api/v1/mixed_people/api_search` —
+// `/api/v1/mixed_people/search` to `/api/v1/mixed_people/api_search` -
 // API keys now require the `api_search` path. Request/response shape
 // is unchanged.
 const APOLLO_PEOPLE_URL =
@@ -35,7 +35,7 @@ interface ApolloSearchRequest {
   city?: string;
   state?: string;
   country?: string;
-  // Backwards-compat — older payload sent `locations[]` and we treated
+  // Backwards-compat: older payload sent `locations[]` and we treated
   // it as organization_locations[].
   locations?: string[];
   // When true, scope by where the contact LIVES (person_locations[])
@@ -62,7 +62,7 @@ interface NormalizedContact {
   // Apollo person id surfaced explicitly so downstream enrich calls
   // can pass it as `id`. Without this, callers were forced to derive
   // it from source_contact_key (which they often missed), and the
-  // enrich request fell back to fuzzy name+domain matching — Apollo
+  // enrich request fell back to fuzzy name+domain matching. Apollo
   // returns email_not_unlocked@... in that mode even when credits
   // are available.
   apollo_person_id: string | null;
@@ -84,9 +84,6 @@ interface NormalizedContact {
   raw_payload: Record<string, unknown>;
 }
 
-// Apollo returns the locked-email marker with the actual company
-// domain on some plan tiers (`email_not_unlocked@odfl.com`) and the
-// literal "domain.com" string on others. Match the prefix only.
 const APOLLO_LOCKED_EMAIL_PREFIX = "email_not_unlocked@";
 function isLockedEmail(value: unknown): boolean {
   if (typeof value !== "string") return false;
@@ -142,21 +139,11 @@ function normalizeDomain(input: unknown): string | null {
     .split("?")[0] || null;
 }
 
-function buildLocationStrings(
-  city: string | null,
-  state: string | null,
-  country: string | null,
-  legacyLocations: string[] | null,
-): string[] {
+function buildLocationStrings(city: string | null, state: string | null, country: string | null, legacyLocations: string[] | null): string[] {
   const out: string[] = [];
-  // Combined city/state/country pairs Apollo recognizes (e.g. "San
-  // Francisco, California, US"). We pass several variants so Apollo's
-  // looser matcher catches whichever shape it prefers.
   const parts = [city, state, country].filter(Boolean) as string[];
   if (parts.length) out.push(parts.join(", "));
-  if (city && country && (!state || state !== city)) {
-    out.push(`${city}, ${country}`);
-  }
+  if (city && country && (!state || state !== city)) out.push(`${city}, ${country}`);
   if (state && country) out.push(`${state}, ${country}`);
   if (country) out.push(country);
   if (Array.isArray(legacyLocations)) {
@@ -171,19 +158,12 @@ function buildLocationStrings(
 async function isSuperAdmin(adminClient: any, user: any): Promise<boolean> {
   if (!user) return false;
   try {
-    const { data: row } = await adminClient
-      .from("platform_admins")
-      .select("user_id")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const { data: row } = await adminClient.from("platform_admins").select("user_id").eq("user_id", user.id).maybeSingle();
     if (row?.user_id) return true;
   } catch (_) {}
   const email = String(user.email || "").trim().toLowerCase();
   if (email) {
-    const envList = (Deno.env.get("SUPER_ADMIN_EMAILS") || "")
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean);
+    const envList = (Deno.env.get("SUPER_ADMIN_EMAILS") || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
     if (envList.includes(email)) return true;
   }
   const appMeta = user.app_metadata || {};
@@ -202,10 +182,7 @@ async function isSuperAdmin(adminClient: any, user: any): Promise<boolean> {
     } catch (_) {}
   }
   try {
-    const { data } = await adminClient
-      .from("organization_memberships")
-      .select("org_role")
-      .eq("user_id", user.id);
+    const { data } = await adminClient.from("organization_memberships").select("org_role").eq("user_id", user.id);
     if (Array.isArray(data)) {
       for (const r of data) {
         const rr = String(r?.org_role || "").toLowerCase();
@@ -219,18 +196,9 @@ async function isSuperAdmin(adminClient: any, user: any): Promise<boolean> {
 async function getOrgPlan(adminClient: any, userId: string): Promise<string> {
   for (const t of ["org_members", "org_memberships"] as const) {
     try {
-      const { data: row } = await adminClient
-        .from(t)
-        .select("org_id")
-        .eq("user_id", userId)
-        .limit(1)
-        .maybeSingle();
+      const { data: row } = await adminClient.from(t).select("org_id").eq("user_id", userId).limit(1).maybeSingle();
       if (row?.org_id) {
-        const { data: org } = await adminClient
-          .from("organizations")
-          .select("plan")
-          .eq("id", row.org_id)
-          .maybeSingle();
+        const { data: org } = await adminClient.from("organizations").select("plan").eq("id", row.org_id).maybeSingle();
         if (org?.plan) return String(org.plan).toLowerCase();
       }
     } catch (_) {}
@@ -238,178 +206,81 @@ async function getOrgPlan(adminClient: any, userId: string): Promise<string> {
   return "free_trial";
 }
 
-async function apolloPost(
-  url: string,
-  body: Record<string, unknown>,
-): Promise<{ ok: boolean; status: number; data: any; raw: string }> {
+async function apolloPost(url: string, body: Record<string, unknown>): Promise<{ ok: boolean; status: number; data: any; raw: string }> {
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-cache",
-      "X-Api-Key": APOLLO_API_KEY,
-    },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-cache", "X-Api-Key": APOLLO_API_KEY },
     body: JSON.stringify(body),
   });
   const raw = await res.text().catch(() => "");
   let data: any = null;
-  try {
-    data = raw ? JSON.parse(raw) : null;
-  } catch (_) {
-    data = null;
-  }
+  try { data = raw ? JSON.parse(raw) : null; } catch (_) { data = null; }
   return { ok: res.ok, status: res.status, data, raw };
 }
 
-type OrgMatch = {
-  id: string;
-  name: string | null;
-  primary_domain: string | null;
-};
+type OrgMatch = { id: string; name: string | null; primary_domain: string | null };
 
-function pickBestOrg(
-  orgs: any[],
-  domain: string | null,
-  companyName: string | null,
-): OrgMatch | null {
+function pickBestOrg(orgs: any[], domain: string | null, companyName: string | null): OrgMatch | null {
   if (!Array.isArray(orgs) || orgs.length === 0) return null;
   const wantedName = (companyName || "").trim().toLowerCase();
-  // 1. exact domain match
   if (domain) {
     const exact = orgs.find((o) => normalizeDomain(o?.primary_domain) === domain);
-    if (exact?.id) {
-      return {
-        id: String(exact.id),
-        name: exact.name ?? null,
-        primary_domain: exact.primary_domain ?? null,
-      };
-    }
-    const byWebsite = orgs.find(
-      (o) => normalizeDomain(o?.website_url) === domain,
-    );
-    if (byWebsite?.id) {
-      return {
-        id: String(byWebsite.id),
-        name: byWebsite.name ?? null,
-        primary_domain: byWebsite.primary_domain ?? null,
-      };
-    }
+    if (exact?.id) return { id: String(exact.id), name: exact.name ?? null, primary_domain: exact.primary_domain ?? null };
+    const byWebsite = orgs.find((o) => normalizeDomain(o?.website_url) === domain);
+    if (byWebsite?.id) return { id: String(byWebsite.id), name: byWebsite.name ?? null, primary_domain: byWebsite.primary_domain ?? null };
   }
-  // 2. exact / close company name match
   if (wantedName) {
-    const exact = orgs.find(
-      (o) => String(o?.name || "").trim().toLowerCase() === wantedName,
-    );
-    if (exact?.id) {
-      return {
-        id: String(exact.id),
-        name: exact.name ?? null,
-        primary_domain: exact.primary_domain ?? null,
-      };
-    }
+    const exact = orgs.find((o) => String(o?.name || "").trim().toLowerCase() === wantedName);
+    if (exact?.id) return { id: String(exact.id), name: exact.name ?? null, primary_domain: exact.primary_domain ?? null };
     const includes = orgs.find((o) => {
       const n = String(o?.name || "").trim().toLowerCase();
       return n && (n.includes(wantedName) || wantedName.includes(n));
     });
-    if (includes?.id) {
-      return {
-        id: String(includes.id),
-        name: includes.name ?? null,
-        primary_domain: includes.primary_domain ?? null,
-      };
-    }
+    if (includes?.id) return { id: String(includes.id), name: includes.name ?? null, primary_domain: includes.primary_domain ?? null };
   }
-  // 3. first hit
   const first = orgs[0];
-  if (first?.id) {
-    return {
-      id: String(first.id),
-      name: first.name ?? null,
-      primary_domain: first.primary_domain ?? null,
-    };
-  }
+  if (first?.id) return { id: String(first.id), name: first.name ?? null, primary_domain: first.primary_domain ?? null };
   return null;
 }
 
-async function resolveOrgByDomain(
-  domain: string,
-): Promise<{ org: OrgMatch | null; status: number }> {
-  const r = await apolloPost(APOLLO_ORG_URL, {
-    q_organization_domains_list: [domain],
-    page: 1,
-    per_page: 5,
-  });
+async function resolveOrgByDomain(domain: string): Promise<{ org: OrgMatch | null; status: number }> {
+  const r = await apolloPost(APOLLO_ORG_URL, { q_organization_domains_list: [domain], page: 1, per_page: 5 });
   if (!r.ok) return { org: null, status: r.status };
-  const orgs: any[] = Array.isArray(r.data?.organizations)
-    ? r.data.organizations
-    : Array.isArray(r.data?.accounts)
-      ? r.data.accounts
-      : [];
+  const orgs: any[] = Array.isArray(r.data?.organizations) ? r.data.organizations : Array.isArray(r.data?.accounts) ? r.data.accounts : [];
   return { org: pickBestOrg(orgs, domain, null), status: r.status };
 }
 
-async function resolveOrgByNameLocation(
-  companyName: string,
-  organizationLocations: string[],
-): Promise<{ org: OrgMatch | null; status: number }> {
-  const body: Record<string, unknown> = {
-    q_organization_name: companyName,
-    page: 1,
-    per_page: 5,
-  };
-  if (organizationLocations.length) {
-    body.organization_locations = organizationLocations;
-  }
+async function resolveOrgByNameLocation(companyName: string, organizationLocations: string[]): Promise<{ org: OrgMatch | null; status: number }> {
+  const body: Record<string, unknown> = { q_organization_name: companyName, page: 1, per_page: 5 };
+  if (organizationLocations.length) body.organization_locations = organizationLocations;
   const r = await apolloPost(APOLLO_ORG_URL, body);
   if (!r.ok) return { org: null, status: r.status };
-  const orgs: any[] = Array.isArray(r.data?.organizations)
-    ? r.data.organizations
-    : Array.isArray(r.data?.accounts)
-      ? r.data.accounts
-      : [];
+  const orgs: any[] = Array.isArray(r.data?.organizations) ? r.data.organizations : Array.isArray(r.data?.accounts) ? r.data.accounts : [];
   return { org: pickBestOrg(orgs, null, companyName), status: r.status };
 }
 
-function matchesEmployer(
-  contact: NormalizedContact,
-  apolloOrgId: string | null,
-  expectedDomain: string | null,
-  expectedName: string | null,
-): boolean {
+function matchesEmployer(contact: NormalizedContact, apolloOrgId: string | null, expectedDomain: string | null, expectedName: string | null): boolean {
   const raw: any = contact.raw_payload;
   const org = raw?.organization || {};
   if (apolloOrgId) {
     const orgId = String(org?.id || raw?.organization_id || "").trim();
     if (orgId && orgId === apolloOrgId) return true;
-    // Continue checking other signals — Apollo sometimes returns
-    // people whose nested organization differs from the search org_id.
   }
   if (expectedDomain) {
-    const orgDomain = normalizeDomain(
-      org?.primary_domain || org?.website_url || contact.organization_domain,
-    );
+    const orgDomain = normalizeDomain(org?.primary_domain || org?.website_url || contact.organization_domain);
     if (orgDomain && orgDomain === expectedDomain) return true;
-    // Match same root domain (e.g. oldnavy.gap.com → gap.com)
-    if (orgDomain && expectedDomain && orgDomain.endsWith(`.${expectedDomain}`)) {
-      return true;
-    }
+    if (orgDomain && expectedDomain && orgDomain.endsWith(`.${expectedDomain}`)) return true;
   }
   if (expectedName) {
     const wanted = expectedName.trim().toLowerCase();
-    const got = String(org?.name || contact.organization_name || "")
-      .trim()
-      .toLowerCase();
-    if (wanted && got && (got === wanted || got.includes(wanted) || wanted.includes(got))) {
-      return true;
-    }
+    const got = String(org?.name || contact.organization_name || "").trim().toLowerCase();
+    if (wanted && got && (got === wanted || got.includes(wanted) || wanted.includes(got))) return true;
   }
   return false;
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -418,27 +289,16 @@ Deno.serve(async (req: Request) => {
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "Missing authorization header", code: "UNAUTHENTICATED" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ ok: false, error: "Missing authorization header", code: "UNAUTHENTICATED" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    const { data: { user }, error: userError } = await supabase.auth.getUser(
-      authHeader.replace("Bearer ", ""),
-    );
+    const { data: { user }, error: userError } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
     if (userError || !user) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "Unauthorized", code: "UNAUTHENTICATED" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ ok: false, error: "Unauthorized", code: "UNAUTHENTICATED" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     if (!APOLLO_API_KEY) {
       console.error(JSON.stringify({ fn: "apollo-contact-search", error: "APOLLO_API_KEY not configured" }));
-      return new Response(
-        JSON.stringify({ ok: false, error: "Contact search is not configured.", code: "APOLLO_NOT_CONFIGURED" }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ ok: false, error: "Contact search is not configured.", code: "APOLLO_NOT_CONFIGURED" }), { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const body: ApolloSearchRequest = await req.json().catch(() => ({}));
@@ -447,13 +307,8 @@ Deno.serve(async (req: Request) => {
     let companyName: string | null = body.company_name?.trim() || null;
     let resolvedCompanyId: string | null = body.company_id || null;
 
-    // Hydrate company row when only company_id provided.
     if (body.company_id && (!domain || !companyName)) {
-      const { data: company } = await supabase
-        .from("lit_companies")
-        .select("id, name, domain, website")
-        .eq("id", body.company_id)
-        .maybeSingle();
+      const { data: company } = await supabase.from("lit_companies").select("id, name, domain, website").eq("id", body.company_id).maybeSingle();
       if (company) {
         resolvedCompanyId = company.id;
         domain = domain || normalizeDomain(company.domain || company.website);
@@ -465,36 +320,18 @@ Deno.serve(async (req: Request) => {
     const state = (body.state || "").trim() || null;
     const country = (body.country || "").trim() || null;
     const usePersonLocations = body.use_person_locations === true;
-
-    // Build location arrays for both org-search and people-search.
     const orgLocations = buildLocationStrings(city, state, country, body.locations || null);
 
-    // Refuse with a clear message when we have no hooks at all.
     if (!domain && !companyName) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          code: "COMPANY_NOT_VERIFIED",
-          message:
-            "LIT could not confirm this company in the contact database. Try editing company name, website, or location.",
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ ok: false, code: "COMPANY_NOT_VERIFIED", message: "LIT could not confirm this company in the contact database. Try editing company name, website, or location." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Resolve plan + super-admin bypass for per_page cap.
     const bypassLimits = await isSuperAdmin(supabase, user);
     const planCode = bypassLimits ? "enterprise" : await getOrgPlan(supabase, user.id);
-    const planCap = bypassLimits
-      ? HARD_CAP
-      : PLAN_PREVIEW_CAPS[planCode] ?? PLAN_PREVIEW_CAPS.free_trial;
-    const requestedPerPage = Math.min(
-      HARD_CAP,
-      Math.max(1, Number(body.per_page) || 25),
-    );
+    const planCap = bypassLimits ? HARD_CAP : PLAN_PREVIEW_CAPS[planCode] ?? PLAN_PREVIEW_CAPS.free_trial;
+    const requestedPerPage = Math.min(HARD_CAP, Math.max(1, Number(body.per_page) || 25));
     const perPage = Math.min(planCap, requestedPerPage);
 
-    // ── Stage A: resolve org by domain ────────────────────────────────
     let matchMode: MatchMode = "none";
     let apolloOrg: OrgMatch | null = null;
     if (domain) {
@@ -505,7 +342,6 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ── Stage B: resolve org by name + location ───────────────────────
     if (!apolloOrg && companyName) {
       const r = await resolveOrgByNameLocation(companyName, orgLocations);
       if (r.org) {
@@ -514,38 +350,20 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Prepare common people-search filters.
     const titles = Array.isArray(body.titles) ? body.titles.filter(Boolean) : [];
-    const seniorities = Array.isArray(body.seniorities)
-      ? body.seniorities.filter(Boolean)
-      : [];
-    const departments = Array.isArray(body.departments)
-      ? body.departments.filter(Boolean)
-      : [];
-    const emailStatuses = Array.isArray(body.email_statuses)
-      ? body.email_statuses.filter(Boolean)
-      : [];
+    const seniorities = Array.isArray(body.seniorities) ? body.seniorities.filter(Boolean) : [];
+    const departments = Array.isArray(body.departments) ? body.departments.filter(Boolean) : [];
+    const emailStatuses = Array.isArray(body.email_statuses) ? body.email_statuses.filter(Boolean) : [];
 
     function buildPeopleBody(scopeFields: Record<string, unknown>): Record<string, unknown> {
-      const b: Record<string, unknown> = {
-        page: Math.max(1, Number(body.page) || 1),
-        per_page: perPage,
-        // Default false (strict). User can opt into broader matching.
-        include_similar_titles: body.include_similar_titles === true,
-        ...scopeFields,
-      };
+      const b: Record<string, unknown> = { page: Math.max(1, Number(body.page) || 1), per_page: perPage, include_similar_titles: body.include_similar_titles === true, ...scopeFields };
       if (titles.length) b.person_titles = titles;
       if (seniorities.length) b.person_seniorities = seniorities;
       if (departments.length) b.person_departments = departments;
       if (emailStatuses.length) b.contact_email_status = emailStatuses;
-      // Locations: by default scope by employer HQ. Toggle moves it to
-      // where the contact lives.
       if (orgLocations.length) {
-        if (usePersonLocations) {
-          b.person_locations = orgLocations;
-        } else {
-          b.organization_locations = orgLocations;
-        }
+        if (usePersonLocations) b.person_locations = orgLocations;
+        else b.organization_locations = orgLocations;
       }
       return b;
     }
@@ -553,27 +371,15 @@ Deno.serve(async (req: Request) => {
     let peopleData: any = null;
     let peopleStatus = 0;
 
-    // ── Stage C/D: people search with org_id, falling back to domain,
-    //              then name+location org-resolution if 0 hits ─────────
     if (apolloOrg?.id) {
-      const r = await apolloPost(
-        APOLLO_PEOPLE_URL,
-        buildPeopleBody({ organization_ids: [apolloOrg.id] }),
-      );
+      const r = await apolloPost(APOLLO_PEOPLE_URL, buildPeopleBody({ organization_ids: [apolloOrg.id] }));
       peopleData = r.data;
       peopleStatus = r.status;
-      if (!r.ok) {
-        console.error(JSON.stringify({ fn: "apollo-contact-search", stage: "people_org", apolloStatus: r.status, body: r.raw.slice(0, 200) }));
-      }
+      if (!r.ok) console.error(JSON.stringify({ fn: "apollo-contact-search", stage: "people_org", apolloStatus: r.status, body: r.raw.slice(0, 200) }));
     }
 
-    // If no org match yet OR org-scoped people-search returned 0, try
-    // domain-scoped people-search as a safety net.
     if ((!apolloOrg || !Array.isArray(peopleData?.people) || peopleData.people.length === 0) && domain) {
-      const r = await apolloPost(
-        APOLLO_PEOPLE_URL,
-        buildPeopleBody({ q_organization_domains_list: [domain] }),
-      );
+      const r = await apolloPost(APOLLO_PEOPLE_URL, buildPeopleBody({ q_organization_domains_list: [domain] }));
       if (r.ok && Array.isArray(r.data?.people) && r.data.people.length > 0) {
         peopleData = r.data;
         peopleStatus = r.status;
@@ -583,21 +389,12 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // If still empty AND we have a name, try one more round: re-resolve
-    // org via name + location and re-run people-search by org_id.
-    if (
-      (!Array.isArray(peopleData?.people) || peopleData.people.length === 0) &&
-      companyName &&
-      !apolloOrg
-    ) {
+    if ((!Array.isArray(peopleData?.people) || peopleData.people.length === 0) && companyName && !apolloOrg) {
       const r2 = await resolveOrgByNameLocation(companyName, orgLocations);
       if (r2.org) {
         apolloOrg = r2.org;
         matchMode = "name_location_fallback";
-        const r = await apolloPost(
-          APOLLO_PEOPLE_URL,
-          buildPeopleBody({ organization_ids: [r2.org.id] }),
-        );
+        const r = await apolloPost(APOLLO_PEOPLE_URL, buildPeopleBody({ organization_ids: [r2.org.id] }));
         if (r.ok) {
           peopleData = r.data;
           peopleStatus = r.status;
@@ -606,57 +403,28 @@ Deno.serve(async (req: Request) => {
     }
 
     if (peopleStatus !== 0 && peopleStatus >= 400 && peopleStatus !== 404) {
-      // Apollo upstream error, surface a structured response.
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          code: "APOLLO_API_ERROR",
-          status: peopleStatus,
-          message: `Upstream contact provider error (${peopleStatus}).`,
-        }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({
+        ok: false,
+        code: "APOLLO_API_ERROR",
+        status: peopleStatus,
+        provider: "apollo",
+        capability: "company_contact_discovery",
+        message: peopleStatus === 403
+          ? "Apollo contact discovery is blocked (403). Lemlist is still the primary enrichment provider for known contacts, but this company people-search requires a discovery provider such as Apollo."
+          : `Apollo contact discovery failed (${peopleStatus}).`,
+      }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const rawPeople: Record<string, any>[] = Array.isArray(peopleData?.people)
-      ? peopleData.people
-      : [];
-    let normalized = rawPeople.map(normalizeApolloPerson);
-
-    // Filter to current-employer match. If we resolved an org_id, we
-    // require the contact's organization to be that org or a matching
-    // domain / name. If we only had a domain, require domain match.
-    const expectedDomain = apolloOrg?.primary_domain
-      ? normalizeDomain(apolloOrg.primary_domain)
-      : domain;
+    const rawPeople: Record<string, any>[] = Array.isArray(peopleData?.people) ? peopleData.people : [];
+    const normalized = rawPeople.map(normalizeApolloPerson);
+    const expectedDomain = apolloOrg?.primary_domain ? normalizeDomain(apolloOrg.primary_domain) : domain;
     const expectedName = apolloOrg?.name || companyName;
-    const filtered = normalized.filter((c) =>
-      matchesEmployer(c, apolloOrg?.id || null, expectedDomain, expectedName),
-    );
-    // If filtering removed everything but Apollo did return rows, fall
-    // back to the raw set so we never silently swallow legitimate hits.
+    const filtered = normalized.filter((c) => matchesEmployer(c, apolloOrg?.id || null, expectedDomain, expectedName));
     const contacts = filtered.length > 0 ? filtered : normalized;
     const droppedCount = normalized.length - filtered.length;
 
     if (contacts.length === 0) {
-      // Nothing came back at all — surface a precise empty state with
-      // the search mode so the UI can suggest the right tweak.
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          provider: "apollo",
-          contacts: [],
-          count: 0,
-          match_mode: matchMode,
-          apollo_organization: apolloOrg,
-          plan: planCode,
-          plan_cap: planCap,
-          per_page: perPage,
-          message:
-            "No matching contacts found for this company and filter set.",
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ ok: true, provider: "apollo", contacts: [], count: 0, match_mode: matchMode, apollo_organization: apolloOrg, plan: planCode, plan_cap: planCap, per_page: perPage, message: "No matching contacts found for this company and filter set." }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     await supabase.from("lit_activity_events").insert({
@@ -675,42 +443,13 @@ Deno.serve(async (req: Request) => {
         match_mode: matchMode,
         apollo_organization_id: apolloOrg?.id || null,
         apollo_organization_match: apolloOrg,
-        filters: {
-          domain,
-          company_name: companyName,
-          city,
-          state,
-          country,
-          titles,
-          seniorities,
-          departments,
-          email_statuses: emailStatuses,
-          use_person_locations: usePersonLocations,
-        },
+        filters: { domain, company_name: companyName, city, state, country, titles, seniorities, departments, email_statuses: emailStatuses, use_person_locations: usePersonLocations },
       },
     });
 
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        provider: "apollo",
-        contacts,
-        count: contacts.length,
-        match_mode: matchMode,
-        apollo_organization: apolloOrg,
-        plan: planCode,
-        plan_cap: planCap,
-        per_page: perPage,
-        dropped_unrelated: droppedCount,
-        pagination: peopleData?.pagination || null,
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ ok: true, provider: "apollo", contacts, count: contacts.length, match_mode: matchMode, apollo_organization: apolloOrg, plan: planCode, plan_cap: planCap, per_page: perPage, dropped_unrelated: droppedCount, pagination: peopleData?.pagination || null }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error: any) {
     console.error(JSON.stringify({ fn: "apollo-contact-search", error: error?.message || String(error) }));
-    return new Response(
-      JSON.stringify({ ok: false, error: error?.message || "Internal server error", code: "INTERNAL_ERROR" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ ok: false, error: error?.message || "Internal server error", code: "INTERNAL_ERROR" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
