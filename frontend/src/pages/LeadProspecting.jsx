@@ -45,42 +45,42 @@ const TYPEWRITER_EXAMPLES = [
 const PROVIDERS = [
   {
     key: 'apollo',
-    name: 'Apollo',
+    name: 'LIT search',
     role: 'Broad company & contact search',
     icon: Search,
     tier: 'configured',
   },
   {
     key: 'tavily',
-    name: 'Tavily',
+    name: 'Web research',
     role: 'Web research & company context',
     icon: Globe,
     tier: 'configured',
   },
   {
     key: 'hunter',
-    name: 'Hunter',
+    name: 'Email verification',
     role: 'Email discovery & verification',
     icon: Mail,
     tier: 'configured',
   },
   {
     key: 'lusha',
-    name: 'Lusha',
+    name: 'Contact enrichment',
     role: 'Contact enrichment (email + phone)',
     icon: UserRound,
     tier: 'optional',
   },
   {
     key: 'phantombuster',
-    name: 'PhantomBuster',
+    name: 'LinkedIn workflows',
     role: 'User-authorized LinkedIn workflows (rate-limited)',
     icon: Network,
     tier: 'optional',
   },
   {
     key: 'explorium',
-    name: 'Explorium',
+    name: 'Firmographic API',
     role: 'Firmographic + prospect API',
     icon: Layers,
     tier: 'paused',
@@ -95,13 +95,13 @@ const TUTORIAL_STEPS = [
   },
   {
     icon: Search,
-    title: 'Apollo + Tavily search',
-    body: 'Pulse queries Apollo for companies and people, and Tavily for web research and company context.',
+    title: 'LIT search and research',
+    body: 'Pulse queries LIT for companies and people, then adds web research and company context.',
   },
   {
     icon: Sparkles,
     title: 'Verify and enrich',
-    body: 'Resolve and verify emails with Hunter (and Lusha when configured) only on the rows you act on. No bulk credit burn.',
+    body: 'Resolve and verify emails only on the rows you act on. No bulk credit burn.',
   },
   {
     icon: Send,
@@ -459,14 +459,12 @@ function PermissionIssueState({ message }) {
           <ShieldAlert className='h-5 w-5 text-orange-600' />
         </div>
         <div className='min-w-0'>
-          <h3 className='text-sm font-semibold text-orange-900'>Apollo API permission issue</h3>
+          <h3 className='text-sm font-semibold text-orange-900'>Contact search permission issue</h3>
           <p className='mt-1 text-sm leading-6 text-orange-800'>
-            Your API key exists, but Apollo rejected the endpoint. This usually means the current
-            Apollo plan or API scopes do not allow this search endpoint.
+            The contact search key exists, but the search endpoint rejected the request.
           </p>
           <p className='mt-2 text-sm leading-6 text-orange-800'>
-            Enable Apollo prospecting API access on the key (or upgrade the plan), or import data
-            into your Apollo CRM so the fallback CRM endpoints return results.
+            Confirm contact search access is enabled for this workspace, or import contacts directly into LIT.
           </p>
           {message ? (
             <pre className='mt-3 overflow-x-auto rounded-lg bg-white/70 p-3 font-mono text-[11px] text-orange-900'>

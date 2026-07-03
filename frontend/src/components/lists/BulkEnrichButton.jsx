@@ -318,7 +318,7 @@ export default function BulkEnrichButton({ list }) {
           Enrich contacts for all companies
         </h3>
         <p className="mt-1 text-[12.5px] text-slate-600">
-          Estimated ~{estimateMins} minutes · ~{estimateCredits} Apollo credits ·
+          Estimated ~{estimateMins} minutes · ~{estimateCredits} enrichment credits ·
           Finds decision-makers and syncs them to Attio automatically.
         </p>
         <button

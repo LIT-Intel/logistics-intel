@@ -41,7 +41,7 @@ export default function AdminSettings(){
         <CardPanel title='Third-Party Keys'>
           <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
             <div>
-              <Label htmlFor='apollo'>Apollo.io API Key</Label>
+              <Label htmlFor='apollo'>Contact search API key</Label>
               <Input id='apollo' type='password' placeholder='••••••••' value={third.apollo} onChange={(e)=>setThird(v=>({...v, apollo:e.target.value}))}/>
             </div>
             <div>

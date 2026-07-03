@@ -5054,7 +5054,7 @@ export type ApolloContactPreview = {
   phone?: string | null;
   linkedin_url?: string | null;
   email_status?: string | null;
-  source?: "apollo";
+  source?: "apollo" | "lemlist";
   enrichment_status?: "preview" | "enriched" | "failed";
 };
 
@@ -5105,7 +5105,7 @@ export async function searchApolloContacts(
     per_page: payload.perPage ?? 25,
   };
   const { data, error } = await supabase.functions.invoke(
-    "apollo-contact-search",
+    "lemlist-contact-search",
     { body: requestBody },
   );
   if (error) {
@@ -5186,7 +5186,7 @@ export async function searchApolloContacts(
         ([p.city, p.state, p.country].filter(Boolean).join(", ") || null),
       linkedin_url: p.linkedin_url ?? p.linkedin ?? null,
       email_status: p.email_status ?? null,
-      source: "apollo",
+      source: p.source === "lemlist" ? "lemlist" : "apollo",
       enrichment_status: "preview",
     };
   });

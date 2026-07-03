@@ -1125,7 +1125,7 @@ function DecisionMakersPanel({
             type="button"
             onClick={() => onFetch({ force: true, applyFilters: hasCustomFilters })}
             className="font-display inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-700"
-            title="Bypass cache and re-query Apollo"
+            title="Bypass cache and re-query contacts"
           >
             <RefreshCw className="h-2.5 w-2.5" />
             Re-fetch
@@ -1175,9 +1175,9 @@ function DecisionMakersPanel({
                     ) : c.email_status === 'locked' ? (
                       <span
                         className="font-body text-[10.5px] italic text-amber-600"
-                        title="Apollo found this contact but their email is gated behind a paid unlock credit."
+                        title="LIT found this contact, but email enrichment is not available yet."
                       >
-                        Email locked — Apollo plan limit
+                        Email not available yet
                       </span>
                     ) : (
                       <span className="font-body text-[10.5px] italic text-slate-400">

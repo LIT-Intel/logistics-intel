@@ -20,7 +20,6 @@ function enrichedFields(contact: ContactCore) {
   const result = (contact.enrichment_result || {}) as Record<string, unknown>;
   return [
     ['Company', contact.company_name || result.companyName],
-    ['Provider', contact.enrichment_provider || contact.source_provider],
     ['Personal email', contact.personal_email || result.personalEmail],
     ['Profile image', avatarUrl(contact) ? 'Available' : null],
   ].filter(([, value]) => Boolean(value));
@@ -37,7 +36,6 @@ export default function ContactProfileModal({ isOpen, contact, onClose, onEnrich
   const linkedIn = linkedinUrl(contact);
   const phone = contact.direct_dial || contact.mobile_phone || contact.phone;
   const extraFields = enrichedFields(contact);
-  const provider = contact.enrichment_provider || contact.source_provider;
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -64,7 +62,7 @@ export default function ContactProfileModal({ isOpen, contact, onClose, onEnrich
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="mb-2 flex flex-wrap items-center gap-2">
-                    {provider && <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2.5 py-1 text-xs font-semibold text-cyan-100">{provider}</span>}
+                    {(contact.enrichment_provider || contact.source_provider) && <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2.5 py-1 text-xs font-semibold text-cyan-100">LIT enriched</span>}
                     {contact.enrichment_status && <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-xs font-semibold capitalize text-white/85">{contact.enrichment_status}</span>}
                   </div>
                   <h2 className="truncate text-2xl font-bold tracking-tight">{name}</h2>

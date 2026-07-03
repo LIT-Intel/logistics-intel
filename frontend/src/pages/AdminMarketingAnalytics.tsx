@@ -144,7 +144,7 @@ export default function AdminMarketingAnalytics() {
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-blue-600"><BarChart3 className="h-4 w-4" /><span className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ fontFamily: fontDisplay }}>Admin marketing analytics</span></div>
             <h1 className="mt-1.5 text-[28px] font-bold tracking-[-0.02em] text-slate-950" style={{ fontFamily: fontDisplay }}>Customer acquisition command center</h1>
-            <p className="mt-1.5 max-w-3xl text-[13.5px] leading-relaxed text-slate-500">A unified view of marketing email, LinkedIn, Lemlist enrichment, and the opportunity funnel. This page is admin-only.</p>
+            <p className="mt-1.5 max-w-3xl text-[13.5px] leading-relaxed text-slate-500">A unified view of marketing email, LinkedIn, LIT enrichment, and the opportunity funnel. This page is admin-only.</p>
           </div>
           <div className="flex items-center gap-2">
             <div className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
@@ -161,17 +161,17 @@ export default function AdminMarketingAnalytics() {
             <div className="p-6">
               <div className="flex items-center gap-2 text-cyan-200"><Target className="h-4 w-4" /><span className="text-xs font-bold uppercase tracking-wide">Opportunity flow</span></div>
               <h2 className="mt-2 text-2xl font-bold" style={{ fontFamily: fontDisplay }}>From prospect to customer</h2>
-              <p className="mt-1 text-sm text-slate-300">Resend, outbound campaign engagement, and Lemlist activity roll into one acquisition pipeline.</p>
+              <p className="mt-1 text-sm text-slate-300">Outbound campaign engagement and LIT enrichment activity roll into one acquisition pipeline.</p>
               <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-6">
                 {STAGES.map((stage) => <FunnelTile key={stage.key} label={stage.label} value={stageCounts.get(stage.key) || 0} />)}
               </div>
             </div>
             <div className="border-t border-white/10 bg-white/5 p-6 lg:border-l lg:border-t-0">
-              <div className="flex items-center gap-2 text-cyan-200"><Sparkles className="h-4 w-4" /><span className="text-xs font-bold uppercase tracking-wide">Lemlist</span></div>
+              <div className="flex items-center gap-2 text-cyan-200"><Sparkles className="h-4 w-4" /><span className="text-xs font-bold uppercase tracking-wide">LIT enrichment</span></div>
               <div className="mt-3 text-3xl font-bold tabular-nums">{fmtInt(lemlistEvents)}</div>
-              <p className="mt-1 text-sm text-slate-300">Lemlist-sourced opportunities in this window</p>
+              <p className="mt-1 text-sm text-slate-300">Enrichment-sourced opportunities in this window</p>
               <div className="mt-4 rounded-lg border border-white/10 bg-white/10 p-3 text-sm">
-                <div className="font-semibold">{latestCampaign?.name || "No Lemlist campaign found"}</div>
+                <div className="font-semibold">{latestCampaign?.name || "No acquisition campaign found"}</div>
                 {latestCampaign && <div className="mt-1 text-slate-300">Status: {latestCampaign.status} · Last sync {fmtRelative(latestCampaign.last_synced_at)}</div>}
               </div>
             </div>
@@ -196,7 +196,7 @@ export default function AdminMarketingAnalytics() {
             </Card>
           </div>
           <div className="space-y-6">
-            <Card title="Enrichment jobs" subtitle="Lemlist primary, Apollo fallback">
+            <Card title="Enrichment jobs" subtitle="LIT enrichment activity">
               <JobList jobs={enrichmentJobs} />
             </Card>
             <Card title="LinkedIn performance" subtitle={`Last ${days} days`}>
@@ -228,7 +228,7 @@ function Card({ title, subtitle, children }: { title: string; subtitle?: string;
 
 function Table({ rows }: { rows: OpportunityRow[] }) {
   if (!rows.length) return <Empty title="No opportunities yet" text="Events will appear here as prospects engage, reply, book meetings, and convert." />;
-  return <div className="overflow-x-auto"><table className="w-full"><thead><tr><Th>Contact</Th><Th>Company</Th><Th>Stage</Th><Th>Source</Th><Th align="right">Updated</Th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50"><Td><div className="font-semibold text-slate-900">{row.contact_name || row.email || "Unknown"}</div><div className="text-xs text-slate-500">{row.title || row.email}</div></Td><Td>{row.company_name || "-"}</Td><Td><span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold capitalize text-blue-700">{row.stage.replace(/_/g, " ")}</span></Td><Td>{row.source_provider || "manual"}</Td><Td align="right">{fmtRelative(row.stage_changed_at)}</Td></tr>)}</tbody></table></div>;
+  return <div className="overflow-x-auto"><table className="w-full"><thead><tr><Th>Contact</Th><Th>Company</Th><Th>Stage</Th><Th>Source</Th><Th align="right">Updated</Th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50"><Td><div className="font-semibold text-slate-900">{row.contact_name || row.email || "Unknown"}</div><div className="text-xs text-slate-500">{row.title || row.email}</div></Td><Td>{row.company_name || "-"}</Td><Td><span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold capitalize text-blue-700">{row.stage.replace(/_/g, " ")}</span></Td><Td>{row.source_provider ? "LIT" : "Direct"}</Td><Td align="right">{fmtRelative(row.stage_changed_at)}</Td></tr>)}</tbody></table></div>;
 }
 
 function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
@@ -246,8 +246,8 @@ function DailyBars({ data, loading }: { data: Array<{ day: string; sent: number;
 }
 
 function JobList({ jobs }: { jobs: EnrichmentJobRow[] }) {
-  if (!jobs.length) return <Empty title="No enrichment jobs" text="Lemlist enrichment submissions will appear here." />;
-  return <ul className="divide-y divide-slate-100">{jobs.map((job) => <li key={job.id} className="px-5 py-3"><div className="flex items-center justify-between gap-3"><div><div className="text-sm font-semibold text-slate-900">{job.provider}</div><div className="text-xs text-slate-500">{job.source_context} · {(job.workflows || []).join(", ")}</div></div><div className="text-right"><div className="text-xs font-semibold capitalize text-slate-700">{job.status}</div><div className="text-[11px] text-slate-400" style={{ fontFamily: fontMono }}>{fmtRelative(job.created_at)}</div></div></div></li>)}</ul>;
+  if (!jobs.length) return <Empty title="No enrichment jobs" text="LIT enrichment submissions will appear here." />;
+  return <ul className="divide-y divide-slate-100">{jobs.map((job) => <li key={job.id} className="px-5 py-3"><div className="flex items-center justify-between gap-3"><div><div className="text-sm font-semibold text-slate-900">LIT enrichment</div><div className="text-xs text-slate-500">{job.source_context} · {(job.workflows || []).join(", ")}</div></div><div className="text-right"><div className="text-xs font-semibold capitalize text-slate-700">{job.status}</div><div className="text-[11px] text-slate-400" style={{ fontFamily: fontMono }}>{fmtRelative(job.created_at)}</div></div></div></li>)}</ul>;
 }
 
 function LinkedInSummary({ data, notConfigured }: { data: LinkedInAnalyticsResponse | null; notConfigured: boolean }) {

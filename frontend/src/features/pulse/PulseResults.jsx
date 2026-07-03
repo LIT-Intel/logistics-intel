@@ -86,14 +86,12 @@ export function PermissionIssueState({ message }) {
           <ShieldAlert className='h-5 w-5 text-orange-600' />
         </div>
         <div className='min-w-0'>
-          <h3 className='text-sm font-semibold text-orange-900'>Apollo API permission issue</h3>
+          <h3 className='text-sm font-semibold text-orange-900'>Contact search permission issue</h3>
           <p className='mt-1 text-sm leading-6 text-orange-800'>
-            Your API key exists, but Apollo rejected the endpoint. This usually means the current
-            Apollo plan or API scopes do not allow this search endpoint.
+            The contact search key exists, but the search endpoint rejected the request.
           </p>
           <p className='mt-2 text-sm leading-6 text-orange-800'>
-            Enable Apollo prospecting API access on the key (or upgrade the plan), or import data
-            into your Apollo CRM so the fallback CRM endpoints return results.
+            Confirm contact search access is enabled for this workspace, or import contacts directly into LIT.
           </p>
           {message ? (
             <pre className='mt-3 overflow-x-auto rounded-lg bg-white/70 p-3 font-mono text-[11px] text-orange-900'>

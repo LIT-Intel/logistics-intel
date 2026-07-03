@@ -95,7 +95,7 @@ export default function CompanyDrawer({ company, open, onOpenChange }: Props) {
 
           {!isImportYeti && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-              ImportYeti shipment data is only available for Shippers. Save this company and check back once Lusha is live.
+              Shipment data is only available for Shippers. Save this company and check back once enrichment is live.
             </div>
           )}
 

@@ -1303,9 +1303,9 @@ function V2IntentChips({ parsed, sources, apolloCalled }) {
         <span className="text-slate-400 normal-case font-normal tracking-normal">
           {sources?.saved ? `${sources.saved} saved · ` : ''}
           {sources?.directory ? `${sources.directory} LIT · ` : ''}
-          {sources?.apollo ? `${sources.apollo} Apollo · ` : ''}
+          {sources?.apollo ? `${sources.apollo} LIT contacts · ` : ''}
           total {total}
-          {apolloCalled ? '' : ' · Apollo not called'}
+          {apolloCalled ? '' : ' · contact search not called'}
         </span>
       </div>
       <div className="flex flex-wrap gap-1.5">
@@ -1782,7 +1782,7 @@ function BulkSaveBar({ selectedIds, results, savedMemberships, onClear, onSaved,
       } else if (enrichError) {
         parts.push(`(contact enrichment hit an error — companies still synced to Attio)`);
       } else {
-        parts.push(`(Apollo found no decision-maker contacts to enrich — companies still synced to Attio)`);
+        parts.push(`(LIT found no decision-maker contacts to enrich — companies still synced to Attio)`);
       }
       toast.success(parts.join(' · '));
       onSaved?.();

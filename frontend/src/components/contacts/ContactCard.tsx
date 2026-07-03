@@ -23,8 +23,8 @@ const getEnrichmentStatusColor = (status?: string) => {
   }
 };
 
-const getEnrichmentStatusLabel = (status?: string, provider?: string) => {
-  if (status === 'complete') return provider ? `${provider} enriched` : 'Enriched';
+const getEnrichmentStatusLabel = (status?: string) => {
+  if (status === 'complete') return 'LIT enriched';
   if (status === 'partial') return 'Partially enriched';
   if (status === 'submitted' || status === 'pending') return 'Enrichment pending';
   return 'Not enriched';
@@ -49,7 +49,6 @@ export default function ContactCard({ contact, onViewProfile, onEnrich, index = 
   const resolvedCompanyId = companyId || contact.company_id || undefined;
   const canAddToList = Boolean(contact.id);
   const name = displayName(contact);
-  const provider = contact.enrichment_provider || contact.source_provider;
   const linkedIn = linkedinUrl(contact);
   const phone = contact.direct_dial || contact.mobile_phone || contact.phone;
 
@@ -81,7 +80,7 @@ export default function ContactCard({ contact, onViewProfile, onEnrich, index = 
             </div>
           </div>
           <span className={`flex-shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold capitalize ${getEnrichmentStatusColor(contact.enrichment_status)}`}>
-            {getEnrichmentStatusLabel(contact.enrichment_status, provider)}
+            {getEnrichmentStatusLabel(contact.enrichment_status)}
           </span>
         </div>
 

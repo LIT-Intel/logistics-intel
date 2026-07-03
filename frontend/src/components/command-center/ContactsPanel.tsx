@@ -109,7 +109,7 @@ export default function ContactsPanel() {
         const patch = { enrichment_status: 'pending', enrichment_provider: result.provider || 'lemlist' } as Partial<ContactCore>;
         setRows((prev) => (prev || []).map((c) => (c.id === contact.id ? { ...c, ...patch } : c)));
         if (selectedContact?.id === contact.id) setSelectedContact({ ...contact, ...patch });
-        toast.success('Enrichment submitted', { description: 'Lemlist is enriching this profile. Results will appear after the enrichment job completes.' });
+        toast.success('Enrichment submitted', { description: 'LIT is enriching this profile. Results will appear after the enrichment job completes.' });
         return;
       }
 
@@ -131,11 +131,11 @@ export default function ContactsPanel() {
 
   const handleExportCsv = () => {
     if (!filteredRows.length) return;
-    const header = ["name","title","department","seniority","email","phone","linkedin","location","provider"];
+    const header = ["name","title","department","seniority","email","phone","linkedin","location"];
     const csv = [header.join(",")].concat(
       filteredRows.map((r) => [
         contactName(r), r.title ?? "", r.department ?? "", r.seniority ?? "", r.email ?? "",
-        r.direct_dial || r.mobile_phone || r.phone || "", r.linkedin_url || r.linkedin || "", r.location ?? "", r.enrichment_provider || r.source_provider || "",
+        r.direct_dial || r.mobile_phone || r.phone || "", r.linkedin_url || r.linkedin || "", r.location ?? "",
       ].map(escapeCsv).join(","))
     ).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -160,7 +160,7 @@ export default function ContactsPanel() {
             <div>
               <div className="flex items-center gap-2 text-cyan-200"><UsersRound className="h-4 w-4" /><span className="text-xs font-bold uppercase tracking-wide">Contact Intelligence</span></div>
               <h3 className="mt-1 text-xl font-bold">Decision-makers at {selected?.name || 'this company'}</h3>
-              <p className="mt-1 text-sm text-slate-300">Lemlist enrichment first, Apollo fallback for verified contact discovery.</p>
+              <p className="mt-1 text-sm text-slate-300">Find verified decision-makers, enrich selected profiles, and keep contacts ready for outreach.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <EnrichmentCreditsBadge />

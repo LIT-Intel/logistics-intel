@@ -1952,7 +1952,7 @@ export function IntegrationsHubSection(props: {
       {/* Enrichment card */}
       <SCard
         title="Enrichment"
-        subtitle="Apollo, Lusha, or Hunter contact enrichment providers."
+        subtitle="LIT contact enrichment."
         right={
           <SBadge tone={enrichmentRows.length > 0 ? "green" : "slate"} dot>
             {enrichmentRows.length > 0 ? `${enrichmentRows.length} connected` : "Not connected"}

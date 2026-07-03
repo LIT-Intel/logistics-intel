@@ -25,6 +25,7 @@ import {
   updateCompany,
   addCompanyToCampaign,
   getCrmCampaigns,
+  saveContact,
   type ApolloContactPreview,
 } from "@/lib/api";
 import { enrichContact as enrichKnownContact } from "@/lib/enrichment/contactEnrichment";
@@ -326,7 +327,7 @@ export default function CDPContacts({
     try {
       const targets = contacts.filter((c) => c.email || c.linkedin_url || c.full_name || c.name);
       if (targets.length === 0) {
-        setEnrichToast("Add a known contact first, then enrich it with Lemlist.");
+        setEnrichToast("Find or add a contact first, then enrich it with LIT.");
         return;
       }
       await Promise.allSettled(
@@ -441,28 +442,114 @@ export default function CDPContacts({
   async function handleApolloSearch() {
     if (apolloLoading) return;
     setApolloOpen(true);
-    setApolloLoading(false);
+    setApolloLoading(true);
     setApolloError(null);
-    setApolloSetupRequired(true);
-    setApolloSearched(true);
+    setApolloSetupRequired(false);
+    setApolloSearched(false);
     setApolloSelected(new Set());
     setSearchMatchMode(null);
     setSearchOrgMatch(null);
     setApolloPage(1);
     setApolloHasMore(false);
-    setApolloResults([]);
-    setApolloError(
-      "Company contact discovery is paused because Apollo is no longer used for contact enrichment. Add a known contact, then enrich it with Lemlist.",
-    );
+    const effectiveDomain = (searchCompanyDomain || "").trim();
+    const effectiveName = (searchCompanyName || "").trim();
+    if (!effectiveDomain && !effectiveName) {
+      setApolloLoading(false);
+      setApolloSearched(true);
+      setApolloError(
+        "Add either a company domain, name, or location before searching contacts.",
+      );
+      setApolloSetupRequired(true);
+      return;
+    }
+    try {
+      const result = await searchApolloContacts({
+        companyId: companyId ?? null,
+        companyName: effectiveName || null,
+        companyDomain: effectiveDomain || null,
+        city: searchCity.trim() || null,
+        state: searchState.trim() || null,
+        country: searchCountry.trim() || null,
+        usePersonLocations,
+        includeSimilarTitles,
+        titles: apolloTitles.length ? apolloTitles : APOLLO_DEFAULT_TITLES,
+        seniorities: apolloSeniorities.length
+          ? apolloSeniorities
+          : APOLLO_DEFAULT_SENIORITIES,
+        departments: apolloDepartments,
+        perPage: 50,
+      });
+      setApolloSearched(true);
+      setSearchMatchMode(result.matchMode ?? null);
+      setSearchOrgMatch(result.organization ?? null);
+      if (!result.ok) {
+        setApolloResults([]);
+        setApolloError(result.error || "Contact search failed.");
+        setApolloSetupRequired(Boolean(result.setupRequired));
+      } else {
+        setApolloResults(result.contacts);
+        setApolloHasMore(result.contacts.length >= 50);
+        if (result.contacts.length === 0 && result.message) {
+          setApolloError(result.message);
+          setApolloSetupRequired(false);
+        }
+      }
+    } catch (err: any) {
+      setApolloSearched(true);
+      setApolloResults([]);
+      setApolloError(err?.message || "Contact search failed.");
+    } finally {
+      setApolloLoading(false);
+    }
   }
 
   async function handleApolloLoadMore() {
     if (apolloLoadingMore || apolloLoading) return;
     setApolloLoadingMore(true);
     setApolloError(null);
-    setApolloHasMore(false);
-    setApolloLoadingMore(false);
-    setApolloError("Company contact discovery is paused because Apollo is no longer used.");
+    const nextPage = apolloPage + 1;
+    try {
+      const result = await searchApolloContacts({
+        companyId: companyId ?? null,
+        companyName: (searchCompanyName || "").trim() || null,
+        companyDomain: (searchCompanyDomain || "").trim() || null,
+        city: searchCity.trim() || null,
+        state: searchState.trim() || null,
+        country: searchCountry.trim() || null,
+        usePersonLocations,
+        includeSimilarTitles,
+        titles: apolloTitles.length ? apolloTitles : APOLLO_DEFAULT_TITLES,
+        seniorities: apolloSeniorities.length
+          ? apolloSeniorities
+          : APOLLO_DEFAULT_SENIORITIES,
+        departments: apolloDepartments,
+        perPage: 50,
+        page: nextPage,
+      });
+      if (result.ok && Array.isArray(result.contacts)) {
+        if (result.contacts.length === 0) {
+          setApolloHasMore(false);
+        } else {
+          setApolloResults((prev) => {
+            const seen = new Set(
+              prev.map((p: any) => p.apollo_person_id || `${p.full_name}|${p.title}`),
+            );
+            const fresh = result.contacts.filter(
+              (p: any) => !seen.has(p.apollo_person_id || `${p.full_name}|${p.title}`),
+            );
+            return [...prev, ...fresh];
+          });
+          setApolloPage(nextPage);
+          setApolloHasMore(result.contacts.length >= 50);
+        }
+      } else {
+        setApolloError(result.error || "Load more failed.");
+      }
+    } catch (err: any) {
+      setApolloError(err?.message || "Load more failed.");
+    } finally {
+      setApolloLoadingMore(false);
+    }
   }
 
   function toggleApolloSelected(key: string) {
@@ -484,11 +571,66 @@ export default function CDPContacts({
 
   async function handleApolloEnrichSelected() {
     if (apolloEnriching) return;
-    setApolloEnriching(true);
-    setApolloEnrichError(
-      "Add the contact to this company first, then enrich it with Lemlist from the saved contact row.",
+    if (apolloSelected.size === 0) {
+      setApolloEnrichError("Select contacts before enriching.");
+      return;
+    }
+    if (!companyId) {
+      setApolloEnrichError("Save this company before enriching contacts.");
+      return;
+    }
+    const picked = apolloResults.filter((p, i) =>
+      apolloSelected.has(apolloKey(p, i)),
     );
-    setApolloEnriching(false);
+    setApolloEnriching(true);
+    setApolloEnrichError(null);
+    try {
+      const savedRows: Contact[] = [];
+      for (const p of picked) {
+        const fullName =
+          p.full_name ||
+          [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+        const nameParts = fullName.split(/\s+/).filter(Boolean);
+        const saved = await saveContact(companyId, {
+          first_name: p.first_name || nameParts[0] || "",
+          last_name: p.last_name || nameParts.slice(1).join(" ") || "",
+          title: p.title || "",
+          email: "",
+          phone: "",
+          linkedin_url: p.linkedin_url || "",
+          department: p.department || "",
+        });
+        savedRows.push(saved as Contact);
+        await enrichKnownContact({
+          contactId: saved.id ? String(saved.id) : undefined,
+          fullName: saved.full_name || fullName || undefined,
+          companyName: companyName || p.company || undefined,
+          companyDomain: companyDomain || undefined,
+          linkedinUrl: p.linkedin_url || undefined,
+          title: p.title || undefined,
+          revealPhoneNumber: false,
+        });
+      }
+      setContacts((prev) => {
+        const next = [...savedRows, ...prev];
+        onContactsChanged?.(next);
+        return next;
+      });
+      setApolloResults((prev) =>
+        prev.map((p, i) =>
+          apolloSelected.has(apolloKey(p, i))
+            ? { ...p, enrichment_status: "enriched" as const }
+            : p,
+        ),
+      );
+      setApolloSelected(new Set());
+      setEnrichToast(`Submitted ${savedRows.length} contact${savedRows.length === 1 ? "" : "s"} for LIT enrichment`);
+      setTimeout(() => setEnrichToast(null), 3500);
+    } catch (err: any) {
+      setApolloEnrichError(err?.message || "Contact enrichment failed.");
+    } finally {
+      setApolloEnriching(false);
+    }
   }
 
   // Row-level action handlers
@@ -521,7 +663,7 @@ export default function CDPContacts({
         revealPhoneNumber: false,
       });
       if (!lemlistResult.success) {
-        setEnrichToast(lemlistResult.error || "Lemlist enrichment returned no match.");
+        setEnrichToast(lemlistResult.error || "LIT enrichment returned no match.");
         setTimeout(() => setEnrichToast(null), 3000);
         return;
       }
@@ -533,7 +675,7 @@ export default function CDPContacts({
               : x,
           ),
         );
-        setEnrichToast("Lemlist enrichment submitted.");
+        setEnrichToast("LIT enrichment submitted.");
         setTimeout(() => setEnrichToast(null), 3000);
         return;
       }
@@ -552,7 +694,7 @@ export default function CDPContacts({
           ),
         );
       }
-      setEnrichToast("Contact enriched with Lemlist");
+      setEnrichToast("Contact enriched with LIT");
       setTimeout(() => setEnrichToast(null), 2500);
     } catch (err: any) {
       setEnrichToast(err?.message || "Enrichment failed.");
@@ -561,7 +703,7 @@ export default function CDPContacts({
   }
 
   async function handleRowRevealPhone(_c: Contact) {
-    setEnrichToast("Phone enrichment is not enabled for Lemlist yet. Email enrichment remains active.");
+    setEnrichToast("Phone enrichment is not enabled yet. Email enrichment remains active.");
     setTimeout(() => setEnrichToast(null), 3500);
   }
 
@@ -660,7 +802,7 @@ export default function CDPContacts({
         </button>
         <button
           type="button"
-          onClick={() => setAddOpen(true)}
+          onClick={handleApolloSearch}
           disabled={apolloLoading}
           className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-gradient-to-b from-violet-500 to-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -670,8 +812,8 @@ export default function CDPContacts({
             <Sparkles className="h-3 w-3" />
           )}
           {contacts.length === 0
-            ? "Add contact to enrich"
-            : "Add another contact"}
+            ? "Find contacts with LIT"
+            : "Find more contacts"}
         </button>
       </div>
 
@@ -994,7 +1136,7 @@ function ContactRow({
           contact.phone
         ) : contact.phone_unlock_status === "pending" ? (
           <span
-            title="Phone enrichment is not enabled for Lemlist yet."
+            title="Phone enrichment is not enabled yet."
             className="font-display inline-flex items-center gap-1 rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-amber-700"
           >
             <Loader2 className="h-2.5 w-2.5 animate-spin" />
@@ -1002,7 +1144,7 @@ function ContactRow({
           </span>
         ) : contact.phone_unlock_status === "failed" ? (
           <span
-            title="Phone enrichment is not enabled for Lemlist yet."
+            title="Phone enrichment is not enabled yet."
             className="font-display inline-flex items-center gap-1 rounded-sm border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-rose-700"
           >
             No phone
@@ -1011,7 +1153,7 @@ function ContactRow({
           <button
             type="button"
             onClick={() => handlers.onRevealPhone(contact)}
-            title="Phone enrichment is not enabled for Lemlist yet."
+            title="Phone enrichment is not enabled yet."
             className="font-display inline-flex items-center gap-1 rounded-sm border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-slate-500 hover:bg-slate-100"
           >
             <Phone className="h-2.5 w-2.5" />
@@ -1024,13 +1166,13 @@ function ContactRow({
       </td>
       <td className="font-display px-3.5 py-2.5 text-[10px] font-semibold text-slate-500">
         {source ? (
-          /apollo|lit/i.test(String(source)) ? (
+          /apollo|lemlist|lusha|lit/i.test(String(source)) ? (
             <span className="inline-flex items-center gap-1 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-violet-700">
               <Sparkles className="h-2.5 w-2.5" />
               LIT
             </span>
           ) : (
-            String(source)
+            "LIT"
           )
         ) : (
           "—"

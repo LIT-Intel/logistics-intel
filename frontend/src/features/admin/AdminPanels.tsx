@@ -1115,7 +1115,7 @@ export function IngestionStatus() {
 
       const overrides: Record<string, { last: string | null; tone?: "ok" | "warning" | "stale" }> = {
         "ImportYeti · BOL feed": { last: (importYetiLast.data as any)?.updated_at ?? null },
-        "Apollo enrichment · contacts": { last: (contactsLast.data as any)?.updated_at ?? null },
+        "LIT enrichment · contacts": { last: (contactsLast.data as any)?.updated_at ?? null },
         "Clay enrichment · companies": { last: (companiesLast.data as any)?.updated_at ?? null },
       };
 

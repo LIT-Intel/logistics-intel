@@ -81,23 +81,23 @@ type EnrichmentSettings = {
 };
 
 const DEFAULTS: EnrichmentSettings = {
-  provider_order: ["lemlist", "apollo"],
+  provider_order: ["lemlist"],
   enable_tier3: false,
 };
 
 const PROVIDER_LABEL: Record<ProviderName, string> = {
-  lemlist: "Lemlist",
-  apollo: "Apollo fallback",
-  tier3: "Tier-3 (ZoomInfo / Cognism)",
+  lemlist: "Primary enrichment",
+  apollo: "Legacy discovery only",
+  tier3: "Enterprise fallback",
 };
 
 const PROVIDER_BLURB: Record<ProviderName, string> = {
-  lemlist: "Primary enrichment path for email, phone, LinkedIn, verification, and campaign-ready profile data.",
-  apollo: "Fallback for discovery and enrichment gaps when Lemlist does not return a match.",
+  lemlist: "Primary path for email, LinkedIn, verification, and campaign-ready profile data.",
+  apollo: "Not used for contact enrichment. Reserved only for legacy discovery flows.",
   tier3: "Premium fallback for enterprise targets. Disabled until credentials are configured.",
 };
 
-const VALID_PROVIDERS: ProviderName[] = ["lemlist", "apollo", "tier3"];
+const VALID_PROVIDERS: ProviderName[] = ["lemlist", "tier3"];
 
 function normalizeProviderOrder(rawOrder: string[]): ProviderName[] {
   const seen = new Set<ProviderName>();
@@ -211,7 +211,7 @@ export default function OrgEnrichmentSettingsPanel({
         Enrichment provider order
       </h2>
       <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 16px" }}>
-        Contact enrichment uses Lemlist first, then falls back only when needed. Reorder the cascade if your hit-rate data changes.
+        Contact enrichment uses LIT enrichment only. Legacy discovery is not used as an enrichment fallback.
       </p>
 
       <div style={{ borderTop: "1px solid #e2e8f0", marginBottom: 16 }}>
@@ -334,7 +334,7 @@ export default function OrgEnrichmentSettingsPanel({
         <div>
           <div style={{ fontSize: 13, color: "#0f172a", fontWeight: 500 }}>Enable Tier-3 provider</div>
           <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
-            ZoomInfo / Cognism cascade fallback. Returns no contacts until provider credentials are configured.
+            Enterprise cascade fallback. Returns no contacts until provider credentials are configured.
           </div>
         </div>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
