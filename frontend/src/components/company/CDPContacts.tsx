@@ -22,15 +22,12 @@ import {
 import LitPill from "@/components/ui/LitPill";
 import {
   listContacts,
-  enrichContacts as enrichContactsApi,
-  searchApolloContacts,
-  enrichApolloContacts,
   updateCompany,
   addCompanyToCampaign,
   getCrmCampaigns,
   type ApolloContactPreview,
-  type ApolloContactRecord,
 } from "@/lib/api";
+import { enrichContact as enrichKnownContact } from "@/lib/enrichment/contactEnrichment";
 import {
   computeContactScore,
   tierTone,
@@ -327,7 +324,25 @@ export default function CDPContacts({
     setEnriching(true);
     setEnrichToast(null);
     try {
-      await enrichContactsApi(companyId);
+      const targets = contacts.filter((c) => c.email || c.linkedin_url || c.full_name || c.name);
+      if (targets.length === 0) {
+        setEnrichToast("Add a known contact first, then enrich it with Lemlist.");
+        return;
+      }
+      await Promise.allSettled(
+        targets.map((c) =>
+          enrichKnownContact({
+            contactId: c.id ? String(c.id) : undefined,
+            email: c.email || undefined,
+            fullName: c.full_name || c.name || undefined,
+            companyName: companyName || undefined,
+            companyDomain: companyDomain || undefined,
+            linkedinUrl: c.linkedin_url || undefined,
+            title: c.title || undefined,
+            revealPhoneNumber: false,
+          }),
+        ),
+      );
       // Refresh
       const rows: any = await listContacts(companyId);
       const next = Array.isArray(rows)
@@ -426,124 +441,28 @@ export default function CDPContacts({
   async function handleApolloSearch() {
     if (apolloLoading) return;
     setApolloOpen(true);
-    setApolloLoading(true);
+    setApolloLoading(false);
     setApolloError(null);
-    setApolloSetupRequired(false);
-    setApolloSearched(false);
+    setApolloSetupRequired(true);
+    setApolloSearched(true);
     setApolloSelected(new Set());
     setSearchMatchMode(null);
     setSearchOrgMatch(null);
     setApolloPage(1);
     setApolloHasMore(false);
-
-    // We can search if we have EITHER a domain OR a company name. The
-    // edge function will resolve via Apollo Organization Search using
-    // whichever signal is available, then fall back as needed.
-    const effectiveDomain = (searchCompanyDomain || "").trim();
-    const effectiveName = (searchCompanyName || "").trim();
-    if (!effectiveDomain && !effectiveName) {
-      setApolloLoading(false);
-      setApolloSearched(true);
-      setApolloError(
-        "Add either a company domain, name, or location before searching contacts.",
-      );
-      setApolloSetupRequired(true);
-      return;
-    }
-    try {
-      const result = await searchApolloContacts({
-        companyId: companyId ?? null,
-        companyName: effectiveName || null,
-        companyDomain: effectiveDomain || null,
-        city: searchCity.trim() || null,
-        state: searchState.trim() || null,
-        country: searchCountry.trim() || null,
-        usePersonLocations,
-        includeSimilarTitles,
-        titles: apolloTitles.length ? apolloTitles : APOLLO_DEFAULT_TITLES,
-        seniorities: apolloSeniorities.length
-          ? apolloSeniorities
-          : APOLLO_DEFAULT_SENIORITIES,
-        departments: apolloDepartments,
-        perPage: 50,
-      });
-      setApolloSearched(true);
-      setSearchMatchMode(result.matchMode ?? null);
-      setSearchOrgMatch(result.organization ?? null);
-      if (!result.ok) {
-        setApolloResults([]);
-        setApolloError(result.error || "Contact search failed.");
-        setApolloSetupRequired(Boolean(result.setupRequired));
-      } else {
-        setApolloResults(result.contacts);
-        // If the response returned a full page (per_page=50), assume
-        // there may be more. Apollo's API doesn't reliably surface a
-        // total-count for /mixed_people; the "Load more" button is the
-        // honest signal that we'll try the next page.
-        setApolloHasMore(result.contacts.length >= 50);
-        if (result.contacts.length === 0 && result.message) {
-          // Honest empty state — surface the precise message.
-          setApolloError(result.message);
-          setApolloSetupRequired(false);
-        }
-      }
-    } catch (err: any) {
-      setApolloSearched(true);
-      setApolloResults([]);
-      setApolloError(err?.message || "Contact search failed.");
-    } finally {
-      setApolloLoading(false);
-    }
+    setApolloResults([]);
+    setApolloError(
+      "Company contact discovery is paused because Apollo is no longer used for contact enrichment. Add a known contact, then enrich it with Lemlist.",
+    );
   }
 
-  // Load the next page of Apollo results, appending to the existing
-  // list. De-dupes by apollo_person_id + name+title in case Apollo
-  // returns overlaps across pages.
   async function handleApolloLoadMore() {
     if (apolloLoadingMore || apolloLoading) return;
     setApolloLoadingMore(true);
     setApolloError(null);
-    const nextPage = apolloPage + 1;
-    try {
-      const result = await searchApolloContacts({
-        companyId: companyId ?? null,
-        companyName: (searchCompanyName || "").trim() || null,
-        companyDomain: (searchCompanyDomain || "").trim() || null,
-        city: searchCity.trim() || null,
-        state: searchState.trim() || null,
-        country: searchCountry.trim() || null,
-        usePersonLocations,
-        includeSimilarTitles,
-        titles: apolloTitles.length ? apolloTitles : APOLLO_DEFAULT_TITLES,
-        seniorities: apolloSeniorities.length ? apolloSeniorities : APOLLO_DEFAULT_SENIORITIES,
-        departments: apolloDepartments,
-        perPage: 50,
-        page: nextPage,
-      });
-      if (result.ok && Array.isArray(result.contacts)) {
-        if (result.contacts.length === 0) {
-          setApolloHasMore(false);
-        } else {
-          setApolloResults((prev) => {
-            const seen = new Set(
-              prev.map((p: any) => p.apollo_person_id || `${p.full_name}|${p.title}`),
-            );
-            const fresh = result.contacts.filter(
-              (p: any) => !seen.has(p.apollo_person_id || `${p.full_name}|${p.title}`),
-            );
-            return [...prev, ...fresh];
-          });
-          setApolloPage(nextPage);
-          setApolloHasMore(result.contacts.length >= 50);
-        }
-      } else {
-        setApolloError(result.error || "Load more failed.");
-      }
-    } catch (err: any) {
-      setApolloError(err?.message || "Load more failed.");
-    } finally {
-      setApolloLoadingMore(false);
-    }
+    setApolloHasMore(false);
+    setApolloLoadingMore(false);
+    setApolloError("Company contact discovery is paused because Apollo is no longer used.");
   }
 
   function toggleApolloSelected(key: string) {
@@ -565,173 +484,14 @@ export default function CDPContacts({
 
   async function handleApolloEnrichSelected() {
     if (apolloEnriching) return;
-    if (apolloSelected.size === 0) {
-      setApolloEnrichError("Select contacts before enriching.");
-      return;
-    }
-    // Build a map of apollo_person_id → preview index so we can update
-    // the right rows in-place after enrichment returns.
-    const pickedKeys = Array.from(apolloSelected);
-    const picked = apolloResults.filter((p, i) =>
-      apolloSelected.has(apolloKey(p, i)),
-    );
     setApolloEnriching(true);
-    setApolloEnrichError(null);
-    try {
-      const result = await enrichApolloContacts({
-        companyId: companyId ?? null,
-        companyName: companyName ?? null,
-        companyDomain: companyDomain ?? null,
-        // Pass every identifier we have so Apollo enrichment has the
-        // best chance of matching. The edge function refuses
-        // too-weak identifiers before billing a credit.
-        contacts: picked.map((p) => ({
-          apollo_person_id: p.apollo_person_id ?? null,
-          id: p.apollo_person_id ?? null,
-          first_name: p.first_name ?? null,
-          last_name: p.last_name ?? null,
-          full_name:
-            p.full_name ||
-            [p.first_name, p.last_name].filter(Boolean).join(" ").trim() ||
-            null,
-          name:
-            p.full_name ||
-            [p.first_name, p.last_name].filter(Boolean).join(" ").trim() ||
-            null,
-          title: p.title ?? null,
-          linkedin_url: p.linkedin_url ?? null,
-          domain: companyDomain ?? null,
-          organization_name: p.company ?? companyName ?? null,
-        })),
-      });
-      if (!result.ok) {
-        setApolloEnrichError(result.error || "Contact enrichment failed.");
-        return;
-      }
-
-      // Index the enriched results by apollo_person_id for in-place updates.
-      // The upstream provider may return a slightly different person count
-      // than we requested (no_match), so positional matching is unreliable.
-      const enrichedById = new Map<string, ApolloContactRecord>();
-      result.enriched.forEach((r) => {
-        const key = r.apollo_person_id || "";
-        if (key) enrichedById.set(key, r);
-      });
-
-      // 1. Update searchResults in place — DO NOT clear apolloResults.
-      //    Selected rows that came back enriched flip their status to
-      //    "enriched" and merge in email/phone/etc. Unselected rows stay
-      //    untouched. Selected rows with no match keep their preview row
-      //    so the user can see exactly which selections didn't enrich.
-      setApolloResults((prev) =>
-        prev.map((p, i) => {
-          const k = apolloKey(p, i);
-          if (!apolloSelected.has(k)) return p;
-          const match =
-            (p.apollo_person_id && enrichedById.get(p.apollo_person_id)) || null;
-          if (!match) {
-            return { ...p, enrichment_status: "failed" as const };
-          }
-          return {
-            ...p,
-            ...match,
-            // Preserve the preview's full_name / first / last when the
-            // enriched payload doesn't echo them back.
-            full_name: match.full_name ?? p.full_name ?? null,
-            first_name: match.first_name ?? p.first_name ?? null,
-            last_name: match.last_name ?? p.last_name ?? null,
-            enrichment_status: "enriched" as const,
-          };
-        }),
-      );
-
-      // 2. Upsert enriched contacts into the saved-contacts list
-      //    immediately (no clobber, no waiting on the round-trip). Match
-      //    by apollo_person_id so re-enrich just merges fields.
-      //    Compute display name with the canonical fallback: never
-      //    leave a saved contact as "Unnamed contact" if first_name
-      //    exists.
-      const upsertedRows: Contact[] = result.enriched.map((r) => {
-        const fullName =
-          r.full_name ||
-          [r.first_name, r.last_name].filter(Boolean).join(" ").trim() ||
-          r.first_name ||
-          null;
-        return {
-          id: r.apollo_person_id || `apollo-${Date.now()}-${Math.random()}`,
-          full_name: fullName,
-          first_name: (r as any).first_name ?? null,
-          last_name: (r as any).last_name ?? null,
-          name: fullName,
-          title: r.title ?? null,
-          department: (r as any).department ?? null,
-          email: r.email ?? null,
-          phone: r.phone ?? null,
-          location: r.location ?? null,
-          linkedin_url: r.linkedin_url ?? null,
-          source: "lit",
-          source_provider: "lit",
-          apollo_person_id: r.apollo_person_id ?? null,
-          enriched_at: r.enriched_at ?? new Date().toISOString(),
-          enrichment_status: "enriched",
-          email_verification_status: r.email_verification_status ?? null,
-          verified_by_provider: r.verified_by_provider ?? null,
-        } as any;
-      });
-      const upsertedById = new Map(
-        upsertedRows.map((row) => [String(row.id), row]),
-      );
-      setContacts((prev) => {
-        const next = prev.map((c) => {
-          const k = String(c.id ?? "");
-          const fresh = upsertedById.get(k);
-          return fresh ? { ...c, ...fresh } : c;
-        });
-        const existingIds = new Set(next.map((c) => String(c.id ?? "")));
-        for (const row of upsertedRows) {
-          if (!existingIds.has(String(row.id))) next.unshift(row);
-        }
-        onContactsChanged?.(next);
-        return next;
-      });
-
-      // 3. Refetch saved contacts in the background so RLS-persisted
-      //    rows take precedence — but never clear searchResults, never
-      //    close the panel.
-      if (companyId) {
-        listContacts(companyId)
-          .then((rows: any) => {
-            const next = Array.isArray(rows)
-              ? rows
-              : Array.isArray(rows?.contacts)
-                ? rows.contacts
-                : Array.isArray(rows?.rows)
-                  ? rows.rows
-                  : [];
-            if (Array.isArray(next) && next.length > 0) {
-              setContacts(next as Contact[]);
-              onContactsChanged?.(next);
-            }
-          })
-          .catch(() => {
-            // persistence helper may be missing; in-memory upsert is enough.
-          });
-      }
-
-      setEnrichToast(
-        `Enriched ${result.enriched.length} contact${result.enriched.length === 1 ? "" : "s"}`,
-      );
-      // Clear selection (the rows are now Enriched), but keep the panel
-      // open and the search results visible.
-      setApolloSelected(new Set());
-      setTimeout(() => setEnrichToast(null), 3500);
-    } catch (err: any) {
-      setApolloEnrichError(err?.message || "Contact enrichment failed.");
-    } finally {
-      setApolloEnriching(false);
-    }
+    setApolloEnrichError(
+      "Add the contact to this company first, then enrich it with Lemlist from the saved contact row.",
+    );
+    setApolloEnriching(false);
   }
 
+  // Row-level action handlers
   // ── Row-level action handlers ────────────────────────────────────
 
   /** Re-enrich a single saved contact via /people/match. Skipped if
@@ -750,56 +510,49 @@ export default function CDPContacts({
       return;
     }
     try {
-      const result = await enrichApolloContacts({
-        companyId: companyId ?? null,
-        companyName: companyName ?? null,
-        companyDomain: companyDomain ?? null,
-        contacts: [
-          {
-            apollo_person_id: c.apollo_person_id ?? null,
-            id: c.apollo_person_id ?? null,
-            first_name: c.first_name ?? null,
-            last_name: c.last_name ?? null,
-            full_name: c.full_name ?? c.name ?? null,
-            name: c.full_name ?? c.name ?? null,
-            email: c.email ?? null,
-            linkedin_url: c.linkedin_url ?? null,
-            domain: companyDomain ?? null,
-            organization_name: companyName ?? null,
-            title: c.title ?? null,
-          },
-        ],
+      const lemlistResult = await enrichKnownContact({
+        contactId: c.id ? String(c.id) : undefined,
+        email: c.email || undefined,
+        fullName: c.full_name || c.name || undefined,
+        companyName: companyName || undefined,
+        companyDomain: companyDomain || undefined,
+        linkedinUrl: c.linkedin_url || undefined,
+        title: c.title || undefined,
+        revealPhoneNumber: false,
       });
-      if (!result.ok || result.enriched.length === 0) {
-        setEnrichToast(result.error || "Enrichment returned no match.");
+      if (!lemlistResult.success) {
+        setEnrichToast(lemlistResult.error || "Lemlist enrichment returned no match.");
         setTimeout(() => setEnrichToast(null), 3000);
         return;
       }
-      const r = result.enriched[0];
-      setContacts((prev) =>
-        prev.map((x) =>
-          String(x.id) === String(c.id)
-            ? ({
-                ...x,
-                full_name: r.full_name ?? x.full_name ?? null,
-                first_name: (r as any).first_name ?? x.first_name ?? null,
-                last_name: (r as any).last_name ?? x.last_name ?? null,
-                title: r.title ?? x.title ?? null,
-                email: r.email ?? x.email ?? null,
-                phone: r.phone ?? x.phone ?? null,
-                linkedin_url: r.linkedin_url ?? x.linkedin_url ?? null,
-                apollo_person_id: r.apollo_person_id ?? x.apollo_person_id ?? null,
-                enrichment_status: "enriched",
-                enriched_at: r.enriched_at ?? new Date().toISOString(),
-                email_verification_status:
-                  r.email_verification_status ?? x.email_verification_status ?? null,
-                verified_by_provider:
-                  r.verified_by_provider ?? x.verified_by_provider ?? null,
-              } as Contact)
-            : x,
-        ),
-      );
-      setEnrichToast("Contact enriched");
+      if (lemlistResult.pending) {
+        setContacts((prev) =>
+          prev.map((x) =>
+            String(x.id) === String(c.id)
+              ? ({ ...x, enrichment_status: "pending" } as Contact)
+              : x,
+          ),
+        );
+        setEnrichToast("Lemlist enrichment submitted.");
+        setTimeout(() => setEnrichToast(null), 3000);
+        return;
+      }
+      const lemlistContact = lemlistResult.contact;
+      if (lemlistContact) {
+        setContacts((prev) =>
+          prev.map((x) =>
+            String(x.id) === String(c.id)
+              ? ({
+                  ...x,
+                  ...lemlistContact,
+                  enrichment_status: "enriched",
+                  enriched_at: new Date().toISOString(),
+                } as Contact)
+              : x,
+          ),
+        );
+      }
+      setEnrichToast("Contact enriched with Lemlist");
       setTimeout(() => setEnrichToast(null), 2500);
     } catch (err: any) {
       setEnrichToast(err?.message || "Enrichment failed.");
@@ -807,85 +560,9 @@ export default function CDPContacts({
     }
   }
 
-  /**
-   * Phase 3 — Reveal phone. Routes through enrichApolloContacts with
-   * unlock_phone=true. Apollo charges 10 credits and replies async via
-   * apollo-phone-webhook, so we optimistically flip the row to
-   * phone_unlock_status='pending' on success.
-   */
-  async function handleRowRevealPhone(c: Contact) {
-    if (!c.apollo_person_id && !c.linkedin_url && !c.full_name) {
-      setEnrichToast("Need an Apollo id, LinkedIn URL, or full name before unlocking phone.");
-      setTimeout(() => setEnrichToast(null), 3000);
-      return;
-    }
-    if (c.phone || c.phone_unlock_status === "delivered") {
-      setEnrichToast("Phone already on file.");
-      setTimeout(() => setEnrichToast(null), 2000);
-      return;
-    }
-    if (c.phone_unlock_status === "pending") {
-      setEnrichToast("Phone unlock already pending — Apollo is delivering.");
-      setTimeout(() => setEnrichToast(null), 2500);
-      return;
-    }
-    try {
-      const result = await enrichApolloContacts({
-        companyId: companyId ?? null,
-        companyName: companyName ?? null,
-        companyDomain: companyDomain ?? null,
-        unlockPhone: true,
-        contacts: [
-          {
-            apollo_person_id: c.apollo_person_id ?? null,
-            id: c.apollo_person_id ?? null,
-            first_name: c.first_name ?? null,
-            last_name: c.last_name ?? null,
-            full_name: c.full_name ?? c.name ?? null,
-            name: c.full_name ?? c.name ?? null,
-            email: c.email ?? null,
-            linkedin_url: c.linkedin_url ?? null,
-            domain: companyDomain ?? null,
-            organization_name: companyName ?? null,
-            title: c.title ?? null,
-          },
-        ],
-      });
-      if (!result.ok) {
-        if (result.rateLimited) {
-          setEnrichToast("Daily phone unlock cap reached — try again tomorrow.");
-        } else {
-          setEnrichToast(result.error || "Phone unlock failed.");
-        }
-        setTimeout(() => setEnrichToast(null), 3500);
-        return;
-      }
-      const first = result.enriched[0];
-      const nextStatus: "pending" | "delivered" | "failed" =
-        first?.phone_unlock_status ?? (first?.phone ? "delivered" : "pending");
-      setContacts((prev) =>
-        prev.map((x) =>
-          String(x.id) === String(c.id)
-            ? ({
-                ...x,
-                phone: first?.phone ?? x.phone ?? null,
-                phone_unlock_status: nextStatus,
-                phone_unlock_request_id:
-                  first?.phone_unlock_request_id ?? x.phone_unlock_request_id ?? null,
-              } as Contact)
-            : x,
-        ),
-      );
-      setEnrichToast(
-        first?.phone
-          ? "Phone unlocked"
-          : "Phone unlock queued — 10 credits charged.",
-      );
-      setTimeout(() => setEnrichToast(null), 3000);
-    } catch (err: any) {
-      setEnrichToast(err?.message || "Phone unlock failed.");
-      setTimeout(() => setEnrichToast(null), 3000);
-    }
+  async function handleRowRevealPhone(_c: Contact) {
+    setEnrichToast("Phone enrichment is not enabled for Lemlist yet. Email enrichment remains active.");
+    setTimeout(() => setEnrichToast(null), 3500);
   }
 
   function handleRowCopyEmail(c: Contact) {
@@ -983,7 +660,7 @@ export default function CDPContacts({
         </button>
         <button
           type="button"
-          onClick={handleApolloSearch}
+          onClick={() => setAddOpen(true)}
           disabled={apolloLoading}
           className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-gradient-to-b from-violet-500 to-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -993,8 +670,8 @@ export default function CDPContacts({
             <Sparkles className="h-3 w-3" />
           )}
           {contacts.length === 0
-            ? "Find contacts with LIT"
-            : "Find more with LIT"}
+            ? "Add contact to enrich"
+            : "Add another contact"}
         </button>
       </div>
 
@@ -1317,7 +994,7 @@ function ContactRow({
           contact.phone
         ) : contact.phone_unlock_status === "pending" ? (
           <span
-            title="Apollo is delivering this phone async — usually within a minute."
+            title="Phone enrichment is not enabled for Lemlist yet."
             className="font-display inline-flex items-center gap-1 rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-amber-700"
           >
             <Loader2 className="h-2.5 w-2.5 animate-spin" />
@@ -1325,7 +1002,7 @@ function ContactRow({
           </span>
         ) : contact.phone_unlock_status === "failed" ? (
           <span
-            title="Apollo confirmed no phone on file for this contact."
+            title="Phone enrichment is not enabled for Lemlist yet."
             className="font-display inline-flex items-center gap-1 rounded-sm border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-rose-700"
           >
             No phone
@@ -1334,11 +1011,11 @@ function ContactRow({
           <button
             type="button"
             onClick={() => handlers.onRevealPhone(contact)}
-            title="Unlocks phone for 10 credits"
-            className="font-display inline-flex items-center gap-1 rounded-sm border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-violet-700 hover:bg-violet-100"
+            title="Phone enrichment is not enabled for Lemlist yet."
+            className="font-display inline-flex items-center gap-1 rounded-sm border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-slate-500 hover:bg-slate-100"
           >
             <Phone className="h-2.5 w-2.5" />
-            Reveal (10c)
+            Phone off
           </button>
         )}
       </td>
@@ -2289,7 +1966,7 @@ function ApolloResultsPanel({
                   onClick={onLoadMore}
                   disabled={loadingMore || loading}
                   className="font-display inline-flex items-center gap-1 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-                  title="Fetch next page from Apollo"
+                  title="Load more contacts"
                 >
                   {loadingMore ? "Loading…" : "Load more"}
                 </button>
