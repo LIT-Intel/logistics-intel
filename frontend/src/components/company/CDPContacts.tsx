@@ -204,8 +204,8 @@ export default function CDPContacts({
   // Filter state — scoped to the current company. The edge function
   // enforces actual scoping; titles/seniorities are simply hints we
   // pass through. Defaults match the LIT outbound playbook personas.
-  const [apolloTitles, setApolloTitles] = useState<string[]>(APOLLO_DEFAULT_TITLES);
-  const [apolloSeniorities, setApolloSeniorities] = useState<string[]>(APOLLO_DEFAULT_SENIORITIES);
+  const [apolloTitles, setApolloTitles] = useState<string[]>([]);
+  const [apolloSeniorities, setApolloSeniorities] = useState<string[]>([]);
   const [apolloDepartments, setApolloDepartments] = useState<string[]>([]);
   // Editable company name + domain (locked-by-default, but user can
   // override before re-running). Default to the company props.
@@ -473,10 +473,8 @@ export default function CDPContacts({
         country: searchCountry.trim() || null,
         usePersonLocations,
         includeSimilarTitles,
-        titles: apolloTitles.length ? apolloTitles : APOLLO_DEFAULT_TITLES,
-        seniorities: apolloSeniorities.length
-          ? apolloSeniorities
-          : APOLLO_DEFAULT_SENIORITIES,
+        titles: apolloTitles,
+        seniorities: apolloSeniorities,
         departments: apolloDepartments,
         perPage: 50,
       });
@@ -489,7 +487,7 @@ export default function CDPContacts({
         setApolloSetupRequired(Boolean(result.setupRequired));
       } else {
         setApolloResults(result.contacts);
-        setApolloHasMore(result.contacts.length >= 50);
+        setApolloHasMore(result.hasMore === true);
         if (result.contacts.length === 0 && result.message) {
           setApolloError(result.message);
           setApolloSetupRequired(false);
@@ -519,10 +517,8 @@ export default function CDPContacts({
         country: searchCountry.trim() || null,
         usePersonLocations,
         includeSimilarTitles,
-        titles: apolloTitles.length ? apolloTitles : APOLLO_DEFAULT_TITLES,
-        seniorities: apolloSeniorities.length
-          ? apolloSeniorities
-          : APOLLO_DEFAULT_SENIORITIES,
+        titles: apolloTitles,
+        seniorities: apolloSeniorities,
         departments: apolloDepartments,
         perPage: 50,
         page: nextPage,
@@ -541,7 +537,7 @@ export default function CDPContacts({
             return [...prev, ...fresh];
           });
           setApolloPage(nextPage);
-          setApolloHasMore(result.contacts.length >= 50);
+          setApolloHasMore(result.hasMore === true);
         }
       } else {
         setApolloError(result.error || "Load more failed.");
@@ -596,13 +592,16 @@ export default function CDPContacts({
           first_name: p.first_name || nameParts[0] || "",
           last_name: p.last_name || nameParts.slice(1).join(" ") || "",
           title: p.title || "",
-          email: "",
+          email: p.email || "",
           phone: "",
           linkedin_url: p.linkedin_url || "",
           department: p.department || "",
+          source_contact_key: p.source_contact_key || p.apollo_person_id || null,
+          source: "lit",
+          source_provider: "lit",
+          enrichment_status: "pending",
         });
-        savedRows.push(saved as Contact);
-        await enrichKnownContact({
+        const enrichmentResult = await enrichKnownContact({
           contactId: saved.id ? String(saved.id) : undefined,
           fullName: saved.full_name || fullName || undefined,
           companyName: companyName || p.company || undefined,
@@ -610,6 +609,15 @@ export default function CDPContacts({
           linkedinUrl: p.linkedin_url || undefined,
           title: p.title || undefined,
           revealPhoneNumber: false,
+        });
+        savedRows.push({
+          ...(saved as Contact),
+          ...(enrichmentResult.contact || {}),
+          enrichment_status: enrichmentResult.contact
+            ? "enriched"
+            : enrichmentResult.pending
+              ? "pending"
+              : saved.enrichment_status || "pending",
         });
       }
       setContacts((prev) => {
@@ -620,7 +628,7 @@ export default function CDPContacts({
       setApolloResults((prev) =>
         prev.map((p, i) =>
           apolloSelected.has(apolloKey(p, i))
-            ? { ...p, enrichment_status: "enriched" as const }
+            ? { ...p, enrichment_status: "pending" as const }
             : p,
         ),
       );
@@ -668,18 +676,6 @@ export default function CDPContacts({
         setTimeout(() => setEnrichToast(null), 3000);
         return;
       }
-      if (lemlistResult.pending) {
-        setContacts((prev) =>
-          prev.map((x) =>
-            String(x.id) === String(c.id)
-              ? ({ ...x, enrichment_status: "pending" } as Contact)
-              : x,
-          ),
-        );
-        setEnrichToast("LIT enrichment submitted.");
-        setTimeout(() => setEnrichToast(null), 3000);
-        return;
-      }
       const lemlistContact = lemlistResult.contact;
       if (lemlistContact) {
         setContacts((prev) =>
@@ -694,8 +690,23 @@ export default function CDPContacts({
               : x,
           ),
         );
+        setEnrichToast("Contact enriched with LIT");
+        setTimeout(() => setEnrichToast(null), 2500);
+        return;
       }
-      setEnrichToast("Contact enriched with LIT");
+      if (lemlistResult.pending) {
+        setContacts((prev) =>
+          prev.map((x) =>
+            String(x.id) === String(c.id)
+              ? ({ ...x, enrichment_status: "pending" } as Contact)
+              : x,
+          ),
+        );
+        setEnrichToast("LIT enrichment submitted.");
+        setTimeout(() => setEnrichToast(null), 3000);
+        return;
+      }
+      setEnrichToast("No new contact data was returned.");
       setTimeout(() => setEnrichToast(null), 2500);
     } catch (err: any) {
       setEnrichToast(err?.message || "Enrichment failed.");
@@ -1933,12 +1944,12 @@ function ApolloResultsPanel({
               {enrichError}
             </div>
           )}
-          <div className="max-h-[420px] overflow-y-auto">
-            <table className="w-full border-collapse">
+          <div className="max-h-[420px] overflow-auto">
+            <table className="min-w-[1180px] w-full border-collapse">
               <thead className="sticky top-0 z-[1] bg-[#FAFBFC]">
                 <tr className="border-b border-slate-200">
                   <th className="w-8 px-3 py-2" />
-                  {["Contact", "Title", "Location", "Phone", "Email status", "LinkedIn"].map(
+                  {["Contact", "Title", "Location", "Company", "Company size", "Website", "Industry", "Email", "Phone", "LinkedIn"].map(
                     (h) => (
                       <th
                         key={h}
@@ -1962,6 +1973,7 @@ function ApolloResultsPanel({
                     [p.first_name, p.last_name].filter(Boolean).join(" ").trim() ||
                     "Unnamed contact";
                   const isEnriched = p.enrichment_status === "enriched";
+                  const isPending = p.enrichment_status === "pending";
                   const isFailed = p.enrichment_status === "failed";
                   return (
                     <tr
@@ -1970,6 +1982,8 @@ function ApolloResultsPanel({
                         "border-b border-slate-100 last:border-b-0",
                         isEnriched
                           ? "bg-emerald-50/40"
+                          : isPending
+                            ? "bg-blue-50/30"
                           : checked
                             ? "bg-violet-50/40"
                             : "hover:bg-slate-50/60",
@@ -1981,13 +1995,21 @@ function ApolloResultsPanel({
                           checked={checked}
                           onChange={() => onToggle(k)}
                           aria-label={`Select ${name}`}
-                          disabled={isEnriched}
+                          disabled={isEnriched || isPending}
                           className="h-3.5 w-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-400 disabled:opacity-40"
                         />
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
-                          <Avatar name={name} />
+                          {p.avatar_url ? (
+                            <img
+                              src={p.avatar_url}
+                              alt=""
+                              className="h-7 w-7 shrink-0 rounded-full object-cover"
+                            />
+                          ) : (
+                            <Avatar name={name} />
+                          )}
                           <div className="min-w-0">
                             <div className="font-display flex items-center gap-1.5 text-[12px] font-semibold text-slate-900">
                               {name}
@@ -1995,6 +2017,11 @@ function ApolloResultsPanel({
                                 <span className="font-display inline-flex items-center gap-0.5 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-emerald-700">
                                   <Sparkles className="h-2.5 w-2.5" />
                                   LIT Enriched
+                                </span>
+                              ) : isPending ? (
+                                <span className="font-display inline-flex items-center gap-0.5 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-blue-700">
+                                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                  Pending
                                 </span>
                               ) : isFailed ? (
                                 <span className="font-display inline-flex items-center rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.04em] text-rose-700">
@@ -2006,11 +2033,11 @@ function ApolloResultsPanel({
                                 </span>
                               )}
                             </div>
-                            {p.company && (
-                              <div className="font-body mt-0.5 text-[10px] text-slate-400">
-                                {p.company}
+                            {p.fit_score ? (
+                              <div className="font-mono mt-0.5 text-[10px] text-slate-400">
+                                Fit {p.fit_score}
                               </div>
-                            )}
+                            ) : null}
                           </div>
                         </div>
                       </td>
@@ -2038,6 +2065,46 @@ function ApolloResultsPanel({
                           );
                         })()}
                       </td>
+                      <td className="font-body px-3 py-2 text-[11px] text-slate-600">
+                        {p.company || "-"}
+                      </td>
+                      <td className="font-body px-3 py-2 text-[11px] text-slate-500">
+                        {p.company_size || "-"}
+                      </td>
+                      <td className="font-body px-3 py-2 text-[11px] text-slate-500">
+                        {p.company_website ? (
+                          <a
+                            href={/^https?:\/\//i.test(p.company_website) ? p.company_website : `https://${p.company_website}`}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            {p.company_website.replace(/^https?:\/\//i, "").replace(/^www\./i, "")}
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="font-body px-3 py-2 text-[11px] text-slate-500">
+                        {p.company_industry || "-"}
+                      </td>
+                      <td className="px-3 py-2">
+                        {isEnriched && (p as any).email ? (
+                          <span className="font-mono text-[10px] text-slate-700">
+                            {(p as any).email}
+                          </span>
+                        ) : isPending ? (
+                          <span className="font-body text-[10px] text-blue-600">
+                            Enrichment pending
+                          </span>
+                        ) : isEnriched ? (
+                          <span className="font-body text-[10px] text-slate-400">
+                            Not available
+                          </span>
+                        ) : (
+                          <ApolloEmailStatusBadge status={p.email_status} />
+                        )}
+                      </td>
                       <td className="font-mono px-3 py-2 text-[11px] text-slate-600">
                         {p.phone ? (
                           <a
@@ -2047,20 +2114,9 @@ function ApolloResultsPanel({
                             {p.phone}
                           </a>
                         ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        {isEnriched && (p as any).email ? (
-                          <span className="font-mono text-[10px] text-slate-700">
-                            {(p as any).email}
+                          <span className="font-body text-[10px] uppercase tracking-[0.08em] text-slate-400">
+                            Phone off
                           </span>
-                        ) : isEnriched ? (
-                          <span className="font-body text-[10px] text-slate-400">
-                            Not available
-                          </span>
-                        ) : (
-                          <ApolloEmailStatusBadge status={p.email_status} />
                         )}
                       </td>
                       <td className="px-3 py-2">

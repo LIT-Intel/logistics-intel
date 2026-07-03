@@ -78,7 +78,9 @@ export async function enrichContact(params: EnrichContactParams): Promise<Enrich
     return { success: false, provider: data?.provider ?? null, error: data?.error || data?.message || 'Enrichment failed' };
   }
 
-  if (data.pending) {
+  const contact = Array.isArray(data.contacts) && data.contacts.length ? data.contacts[0] : null;
+
+  if (data.pending && !contact) {
     return {
       success: true,
       pending: true,
@@ -90,10 +92,10 @@ export async function enrichContact(params: EnrichContactParams): Promise<Enrich
     };
   }
 
-  const contact = Array.isArray(data.contacts) && data.contacts.length ? data.contacts[0] : null;
   return {
     success: true,
     provider: data.provider,
+    pending: data.pending === true,
     contact: contact || undefined,
     fieldsAdded: contact ? Object.keys(contact).filter((key) => contact[key] != null) : [],
     cost: 0,

@@ -6,9 +6,12 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { createLogger } from "../_shared/logger.ts";
 
-const log = createLogger("lemlist-enrichment");
+const log = {
+  info: (event: string, data?: unknown) => console.log(JSON.stringify({ level: "info", scope: "lemlist-enrichment", event, data })),
+  warn: (event: string, data?: unknown) => console.warn(JSON.stringify({ level: "warn", scope: "lemlist-enrichment", event, data })),
+  error: (event: string, data?: unknown) => console.error(JSON.stringify({ level: "error", scope: "lemlist-enrichment", event, data })),
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -46,7 +49,8 @@ type RequestBody = {
   reveal_phone_number?: boolean;
 };
 
-type LemlistSubmitResult = { res: Response; raw: any; rawText: string; authMode: "basic" };
+type LemlistSubmitResult = { res: Response; raw: any; rawText: string; authMode: "bearer" | "basic" };
+type PollResult = { completed: boolean; raw: any; contact: Record<string, unknown> | null; error?: string | null };
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -64,13 +68,126 @@ async function parseProviderResponse(res: Response): Promise<{ raw: any; rawText
 }
 
 async function submitToLemlist(payload: unknown): Promise<LemlistSubmitResult> {
-  const res = await fetch(`${LEMLIST_BASE_URL}/v2/enrichments/bulk`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: basicAuthHeader(LEMLIST_API_KEY) },
-    body: JSON.stringify(payload),
-  });
-  const parsed = await parseProviderResponse(res);
-  return { res, raw: parsed.raw, rawText: parsed.rawText, authMode: "basic" };
+  const authorization = basicAuthHeader(LEMLIST_API_KEY);
+  const endpoints = [
+    `${LEMLIST_BASE_URL}/enrich/bulk`,
+    `${LEMLIST_BASE_URL}/v2/enrichments/bulk`,
+  ];
+  let last: LemlistSubmitResult | null = null;
+
+  for (const endpoint of endpoints) {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: authorization },
+      body: JSON.stringify(payload),
+    });
+    const parsed = await parseProviderResponse(res);
+    last = { res, raw: parsed.raw, rawText: parsed.rawText, authMode: "basic" };
+    if (res.status !== 404) return last;
+  }
+
+  return last!;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readString(raw: any, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = key.split(".").reduce((acc, part) => acc?.[part], raw);
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function contactFromResult(raw: any): Record<string, unknown> | null {
+  const source = raw?.result || raw?.data || raw?.lead || raw?.contact || raw;
+  const email = readString(source, ["email", "professionalEmail", "workEmail", "result.email", "data.email"]);
+  const linkedinUrl = readString(source, ["linkedinUrl", "linkedin_url", "linkedin", "result.linkedinUrl"]);
+  const fullName = readString(source, ["fullName", "full_name", "name"]);
+  const firstName = readString(source, ["firstName", "first_name"]);
+  const lastName = readString(source, ["lastName", "last_name"]);
+  const title = readString(source, ["jobTitle", "title", "currentTitle"]);
+  const phone = readString(source, ["phone", "phoneNumber", "mobilePhone"]);
+  const patch: Record<string, unknown> = {};
+  if (email) {
+    patch.email = email;
+    patch.email_verified = true;
+    patch.verified_by_provider = true;
+    patch.email_verification_status = "verified";
+  }
+  if (linkedinUrl) patch.linkedin_url = linkedinUrl;
+  if (fullName) patch.full_name = fullName;
+  if (firstName) patch.first_name = firstName;
+  if (lastName) patch.last_name = lastName;
+  if (title) patch.title = title;
+  if (phone) patch.phone = phone;
+  return Object.keys(patch).length ? patch : null;
+}
+
+function isCompletedResult(raw: any): boolean {
+  const status = String(raw?.status || raw?.state || raw?.result?.status || "").toLowerCase();
+  if (["completed", "complete", "done", "success", "succeeded", "finished"].includes(status)) return true;
+  return Boolean(contactFromResult(raw));
+}
+
+async function pollLemlistResult(providerRequestId: string): Promise<PollResult> {
+  const endpoints = [
+    `${LEMLIST_BASE_URL}/v2/enrichments/${encodeURIComponent(providerRequestId)}/result`,
+    `${LEMLIST_BASE_URL}/v2/enrichments/${encodeURIComponent(providerRequestId)}`,
+    `${LEMLIST_BASE_URL}/enrich/${encodeURIComponent(providerRequestId)}/result`,
+  ];
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (attempt > 0) await sleep(5000);
+    for (const endpoint of endpoints) {
+      const res = await fetch(endpoint, {
+        method: "GET",
+        headers: { "Accept": "application/json", Authorization: basicAuthHeader(LEMLIST_API_KEY) },
+      });
+      if (res.status === 404) continue;
+      const { raw } = await parseProviderResponse(res);
+      if (!res.ok) {
+        if (res.status === 202 || res.status === 204) continue;
+        return { completed: false, raw, contact: null, error: typeof raw === "string" ? raw : raw?.message || raw?.error || null };
+      }
+      if (isCompletedResult(raw)) return { completed: true, raw, contact: contactFromResult(raw) };
+    }
+  }
+  return { completed: false, raw: null, contact: null };
+}
+
+async function persistCompletedContact(
+  admin: ReturnType<typeof createClient>,
+  contactId: string | null,
+  jobId: string | null,
+  providerRequestId: string,
+  poll: PollResult,
+): Promise<boolean> {
+  if (!poll.completed || !poll.contact) return false;
+  const patch = {
+    ...poll.contact,
+    enrichment_status: "enriched",
+    enrichment_provider: "lemlist",
+    source_provider: "lemlist",
+    enriched_at: new Date().toISOString(),
+  };
+  if (contactId) {
+    await admin.from("lit_contacts").update(patch).eq("id", contactId);
+  }
+  if (jobId) {
+    await admin
+      .from("lit_contact_enrichment_jobs")
+      .update({
+        status: "completed",
+        result: poll.raw,
+        completed_at: new Date().toISOString(),
+        error_message: null,
+      })
+      .eq("id", jobId);
+  }
+  log.info("lemlist_enrichment_completed", { provider_request_id: providerRequestId, contact_id: contactId });
+  return true;
 }
 
 function splitName(t: Target): { firstName?: string; lastName?: string } {
@@ -140,8 +257,8 @@ function firstProviderError(raw: any, statusHint = 502): { error: string; code: 
   const first = rows.find((row) => row?.error || row?.message) || (raw && typeof raw === "object" ? raw : {});
   const code = String(first.error || first.code || "PROVIDER_ERROR");
   const error = code === "CREDITS_USAGE_FORBIDDEN"
-    ? "Lemlist accepted the API key, but this workspace is not allowed to spend enrichment credits for the requested workflow. Confirm API credit spending is enabled for this user/key in Lemlist."
-    : String(first.message || first.error || "Lemlist enrichment submission failed");
+    ? "LIT enrichment is connected, but this workspace is not allowed to spend enrichment credits for the requested workflow. Confirm API credit spending is enabled for this account."
+    : String(first.message || first.error || "LIT enrichment submission failed");
   const status = code === "CREDITS_USAGE_FORBIDDEN" ? 403 : statusHint;
   return { error, code, status };
 }
@@ -149,7 +266,7 @@ function firstProviderError(raw: any, statusHint = 502): { error: string; code: 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (req.method !== "POST") return json({ ok: false, error: "Method not allowed" }, 405);
-  if (!LEMLIST_API_KEY) return json({ ok: false, error: "LEMLIST_API is not configured", code: "PROVIDER_NOT_CONFIGURED" }, 500);
+  if (!LEMLIST_API_KEY) return json({ ok: false, error: "LIT contact enrichment is not configured", code: "PROVIDER_NOT_CONFIGURED" }, 500);
 
   const authHeader = req.headers.get("Authorization") || "";
   if (!authHeader.startsWith("Bearer ")) return json({ ok: false, error: "Missing authorization header", code: "UNAUTHENTICATED" }, 401);
@@ -215,6 +332,7 @@ Deno.serve(async (req: Request) => {
 
   const responseRows = Array.isArray(raw) ? raw : [];
   const jobs: any[] = [];
+  const submittedRows: Array<{ job: any; request: (typeof validRequests)[number]; providerRequestId: string }> = [];
   for (let i = 0; i < validRequests.length; i += 1) {
     const reqRow = validRequests[i];
     const result = responseRows[i] || {};
@@ -239,7 +357,9 @@ Deno.serve(async (req: Request) => {
       })
       .select("id, provider_request_id, status")
       .maybeSingle();
-    jobs.push(job || { provider_request_id: providerRequestId, status });
+    const jobRow = job || { provider_request_id: providerRequestId, status };
+    jobs.push(jobRow);
+    if (providerRequestId) submittedRows.push({ job: jobRow, request: reqRow, providerRequestId });
   }
 
   const submittedCount = jobs.filter((j) => j?.status === "submitted").length;
@@ -259,5 +379,31 @@ Deno.serve(async (req: Request) => {
     }, providerError.status);
   }
 
-  return json({ ok: true, provider: "lemlist", pending: true, contacts: [], count: 0, submitted: submittedCount, jobs, auth_mode: authMode, raw_provider_response: raw });
+  const completedContacts: Record<string, unknown>[] = [];
+  for (const row of submittedRows.slice(0, 10)) {
+    const poll = await pollLemlistResult(row.providerRequestId);
+    const contactId = String(row.request.metadata.lit_contact_id || row.request.target.id || "") || null;
+    const completed = await persistCompletedContact(
+      admin,
+      contactId,
+      row.job?.id ? String(row.job.id) : null,
+      row.providerRequestId,
+      poll,
+    );
+    if (completed && poll.contact) completedContacts.push({ id: contactId, ...poll.contact });
+  }
+
+  const pending = completedContacts.length < submittedCount;
+  return json({
+    ok: true,
+    provider: "lemlist",
+    pending,
+    contacts: completedContacts,
+    count: completedContacts.length,
+    submitted: submittedCount,
+    completed: completedContacts.length,
+    jobs,
+    auth_mode: authMode,
+    raw_provider_response: raw,
+  });
 });

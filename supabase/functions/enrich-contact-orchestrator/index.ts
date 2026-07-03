@@ -1,15 +1,19 @@
 // enrich-contact-orchestrator — multi-provider contact enrichment cascade.
 //
-// Current LIT strategy: Lemlist first, Apollo fallback. Lusha is intentionally
-// inactive while LIT evaluates the best enrichment provider. Lemlist may return
+// Current LIT strategy: Lemlist is the only active contact enrichment provider.
+// Apollo remains a separate company-contact discovery provider, not an
+// enrichment fallback. Lemlist may return
 // pending=true because its enrichment workflow is asynchronous; when that
 // happens the cascade stops because the request was accepted.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { createLogger } from "../_shared/logger.ts";
 
-const log = createLogger("enrich-contact-orchestrator");
+const log = {
+  info: (event: string, data?: unknown) => console.log(JSON.stringify({ level: "info", scope: "enrich-contact-orchestrator", event, data })),
+  warn: (event: string, data?: unknown) => console.warn(JSON.stringify({ level: "warn", scope: "enrich-contact-orchestrator", event, data })),
+  error: (event: string, data?: unknown) => console.error(JSON.stringify({ level: "error", scope: "enrich-contact-orchestrator", event, data })),
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,7 +26,7 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 type ProviderName = "lemlist" | "apollo" | "tier3";
 
-const DEFAULT_ORDER: ProviderName[] = ["lemlist", "apollo"];
+const DEFAULT_ORDER: ProviderName[] = ["lemlist"];
 const VALID_PROVIDERS = new Set<ProviderName>(["lemlist", "apollo", "tier3"]);
 
 const PROVIDER_FN: Record<ProviderName, string> = {
@@ -209,7 +213,7 @@ async function loadOrgSettings(
       const rawOrder = Array.isArray((data as any).provider_order) ? (data as any).provider_order : [];
       const order = rawOrder
         .map((p: unknown) => String(p).trim().toLowerCase() as ProviderName)
-        .filter((p: ProviderName) => VALID_PROVIDERS.has(p));
+        .filter((p: ProviderName) => VALID_PROVIDERS.has(p) && p !== "apollo");
       return { orgId, order: order.length ? order : DEFAULT_ORDER, enableTier3: (data as any).enable_tier3 === true };
     }
   } catch (_) {}
@@ -254,7 +258,7 @@ Deno.serve(async (req: Request) => {
     let providerOrder: ProviderName[] = Array.isArray(body.provider_order) && body.provider_order.length
       ? body.provider_order
           .map((p) => String(p).trim().toLowerCase() as ProviderName)
-          .filter((p) => VALID_PROVIDERS.has(p))
+          .filter((p) => VALID_PROVIDERS.has(p) && p !== "apollo")
       : orgOrder;
 
     if (!enableTier3) providerOrder = providerOrder.filter((p) => p !== "tier3");
@@ -273,15 +277,17 @@ Deno.serve(async (req: Request) => {
       cascade.push({ provider, status: result.status, count: result.count, pending: result.pending, code: result.code, error: result.error });
 
       if (result.ok && result.pending) {
-        log.info("cascade_pending", { user_id: user.id, org_id: orgId, provider, submitted: result.submitted });
+        const taggedContacts = result.contacts.map((c) => ({ ...c, source_provider: provider, enrichment_provider: provider }));
+        if (taggedContacts.length) await tagSourceProvider(supabase, provider, taggedContacts);
+        log.info("cascade_pending", { user_id: user.id, org_id: orgId, provider, submitted: result.submitted, completed: taggedContacts.length });
         return json({
           ok: true,
           provider,
           pending: true,
           submitted: result.submitted,
           jobs: result.jobs,
-          contacts: [],
-          count: 0,
+          contacts: taggedContacts,
+          count: taggedContacts.length,
           cascade,
           provider_order: providerOrder,
           enable_tier3: enableTier3,

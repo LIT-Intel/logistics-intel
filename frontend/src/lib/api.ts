@@ -4936,6 +4936,10 @@ export async function saveContact(
     linkedin_url?: string;
     department?: string;
     notes?: string;
+    source_contact_key?: string | null;
+    source?: string | null;
+    source_provider?: string | null;
+    enrichment_status?: string | null;
   },
 ) {
   const company = await resolveCompanyUuid(company_id_or_slug);
@@ -4954,8 +4958,10 @@ export async function saveContact(
     linkedin_url: form.linkedin_url || null,
     department: form.department || null,
     notes: form.notes || null,
-    source: "manual",
-    source_provider: "manual",
+    source_contact_key: form.source_contact_key || null,
+    source: form.source || "manual",
+    source_provider: form.source_provider || "manual",
+    enrichment_status: form.enrichment_status || null,
   };
   const { data, error } = await supabase
     .from("lit_contacts")
@@ -5038,6 +5044,7 @@ export type ApolloOrganizationMatch = {
 
 export type ApolloContactPreview = {
   apollo_person_id?: string | null;
+  source_contact_key?: string | null;
   full_name?: string | null;
   first_name?: string | null;
   last_name?: string | null;
@@ -5050,12 +5057,22 @@ export type ApolloContactPreview = {
   // type omitted them; the UI was silently dropping the values.
   city?: string | null;
   state?: string | null;
+  country?: string | null;
   country_code?: string | null;
   phone?: string | null;
+  phone_status?: string | null;
+  email?: string | null;
   linkedin_url?: string | null;
+  avatar_url?: string | null;
+  company_size?: string | null;
+  company_website?: string | null;
+  company_industry?: string | null;
+  fit_score?: number | null;
+  fit_reasons?: string[] | null;
+  recommended?: boolean | null;
   email_status?: string | null;
   source?: "apollo" | "lemlist";
-  enrichment_status?: "preview" | "enriched" | "failed";
+  enrichment_status?: "preview" | "pending" | "enriched" | "failed";
 };
 
 export type ApolloContactRecord = ApolloContactPreview & {
@@ -5082,6 +5099,9 @@ export async function searchApolloContacts(
   organization?: ApolloOrganizationMatch;
   plan?: string | null;
   planCap?: number | null;
+  total?: number | null;
+  hasMore?: boolean;
+  recommendedCount?: number | null;
   message?: string | null;
   error?: string;
   setupRequired?: boolean;
@@ -5099,6 +5119,7 @@ export async function searchApolloContacts(
     titles: payload.titles ?? [],
     seniorities: payload.seniorities ?? [],
     departments: payload.departments ?? [],
+    recommended_only: true,
     email_statuses: payload.emailStatuses ?? [],
     locations: payload.location ? [payload.location] : [],
     page: payload.page ?? 1,
@@ -5164,6 +5185,7 @@ export async function searchApolloContacts(
     const lastName = p.last_name ?? null;
     return {
       apollo_person_id: p.apollo_person_id ?? p.source_contact_key ?? p.id ?? null,
+      source_contact_key: p.source_contact_key ?? p.apollo_person_id ?? p.id ?? null,
       // Always compute a non-null display name: prefer the upstream
       // `name` / `full_name`, fall back to first+last. Never drop
       // first_name / last_name even if name was provided — downstream
@@ -5184,8 +5206,22 @@ export async function searchApolloContacts(
         p.location ??
         p.city ??
         ([p.city, p.state, p.country].filter(Boolean).join(", ") || null),
+      city: p.city ?? null,
+      state: p.state ?? null,
+      country: p.country ?? null,
+      country_code: p.country_code ?? p.country ?? null,
+      phone: p.phone ?? null,
+      phone_status: p.phone_status ?? null,
+      email: p.email ?? null,
       linkedin_url: p.linkedin_url ?? p.linkedin ?? null,
-      email_status: p.email_status ?? null,
+      avatar_url: p.avatar_url ?? p.photo_url ?? p.picture ?? null,
+      company_size: p.company_size ?? null,
+      company_website: p.company_website ?? p.companyWebsite ?? null,
+      company_industry: p.company_industry ?? p.companyIndustry ?? p.industry ?? null,
+      fit_score: typeof p.fit_score === "number" ? p.fit_score : null,
+      fit_reasons: Array.isArray(p.fit_reasons) ? p.fit_reasons : null,
+      recommended: p.recommended === true,
+      email_status: p.email_status ?? (p.email ? "available" : null),
       source: p.source === "lemlist" ? "lemlist" : "apollo",
       enrichment_status: "preview",
     };
@@ -5197,6 +5233,9 @@ export async function searchApolloContacts(
     organization: (data?.apollo_organization as ApolloOrganizationMatch) ?? null,
     plan: data?.plan ?? null,
     planCap: typeof data?.plan_cap === "number" ? data.plan_cap : null,
+    total: typeof data?.total === "number" ? data.total : null,
+    hasMore: data?.has_more === true,
+    recommendedCount: typeof data?.recommended_count === "number" ? data.recommended_count : null,
     message: data?.message ?? null,
   };
 }

@@ -28,6 +28,7 @@ type SearchBody = {
   titles?: string[] | null;
   seniorities?: string[] | null;
   departments?: string[] | null;
+  recommended_only?: boolean | null;
   page?: number | null;
   per_page?: number | null;
 };
@@ -90,11 +91,39 @@ function mapDepartments(values?: string[] | null): string[] {
     ) mapped.add("Operations");
     else if (v.includes("legal")) mapped.add("Legal");
   }
-  if (mapped.size === 0) {
-    mapped.add("Operations");
-    mapped.add("Purchasing");
-  }
   return Array.from(mapped);
+}
+
+function lower(value?: string | null): string {
+  return String(value || "").toLowerCase();
+}
+
+function recommendationScore(row: any): { score: number; reasons: string[]; recommended: boolean } {
+  const exp = currentExperience(row);
+  const title = lower(row?.current_title || exp?.title || row?.title);
+  const department = lower(row?.department);
+  const seniority = lower(row?.seniority);
+  const reasons: string[] = [];
+  let score = 0;
+
+  if (/(logistics|supply chain|transport|transportation|import|customs|warehouse|distribution|fulfillment|operations|procurement|purchasing|sourcing)/.test(title)) {
+    score += 45;
+    reasons.push("role match");
+  }
+  if (/(owner|founder|president|chief|ceo|coo|vp|vice president|head|director|manager)/.test(title)) {
+    score += 25;
+    reasons.push("seniority match");
+  }
+  if (/(operations|purchasing|procurement|supply|logistics)/.test(department)) {
+    score += 20;
+    reasons.push("department match");
+  }
+  if (/(ownership|executive|leadership|management|director|vp|head|owner)/.test(seniority)) {
+    score += 10;
+    reasons.push("leadership signal");
+  }
+
+  return { score, reasons, recommended: score >= 35 };
 }
 
 function splitName(fullName?: string | null): { first_name: string | null; last_name: string | null } {
@@ -131,8 +160,17 @@ function toPreview(row: any) {
   const names = splitName(fullName);
   const title = row?.current_title || exp?.title || row?.title || null;
   const company = exp?.company_name || row?.current_company_name || row?.company_name || null;
+  const recommendation = recommendationScore(row);
+  const companyWebsite =
+    exp?.company_website ||
+    exp?.company_website_url ||
+    row?.current_company_website_url ||
+    row?.company_website ||
+    row?.company_website_url ||
+    null;
   return {
     apollo_person_id: row?.lead_id ? String(row.lead_id) : row?.id ? String(row.id) : null,
+    source_contact_key: row?.lead_id ? String(row.lead_id) : row?.id ? String(row.id) : null,
     full_name: fullName,
     first_name: row?.first_name || names.first_name,
     last_name: row?.last_name || names.last_name,
@@ -140,13 +178,23 @@ function toPreview(row: any) {
     department: row?.department || inferDepartment(title),
     seniority: row?.seniority || null,
     company,
-    location: row?.location || exp?.location || row?.country || null,
+    location: row?.location || exp?.location || row?.country || row?.current_country || null,
     city: row?.city || null,
     state: row?.state || null,
-    country_code: row?.country_code || null,
-    phone: null,
+    country: row?.country || row?.current_country || null,
+    country_code: row?.country_code || row?.country || null,
+    phone: row?.phone || row?.phone_number || null,
+    phone_status: row?.phone ? "available" : "disabled",
+    email: row?.email || null,
+    email_status: row?.email_status || row?.emailStatus || (row?.email ? "available" : "hidden"),
     linkedin_url: toLinkedInUrl(row),
-    email_status: null,
+    avatar_url: row?.picture || row?.photo_url || row?.avatar_url || row?.profile_picture_url || null,
+    company_size: row?.company_size || exp?.company_size || row?.current_company_size || null,
+    company_website: companyWebsite,
+    company_industry: row?.company_industry || exp?.company_industry || row?.industry || row?.current_company_industry || null,
+    fit_score: recommendation.score,
+    fit_reasons: recommendation.reasons,
+    recommended: recommendation.recommended,
     source: "lemlist",
     enrichment_status: "preview",
   };
@@ -172,7 +220,7 @@ async function hydrateCompany(supabase: ReturnType<typeof createClient>, body: S
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (req.method !== "POST") return json({ ok: false, error: "Method not allowed" }, 405);
-  if (!LEMLIST_API_KEY) return json({ ok: false, error: "LEMLIST_API is not configured", code: "PROVIDER_NOT_CONFIGURED" }, 500);
+  if (!LEMLIST_API_KEY) return json({ ok: false, error: "LIT contact search is not configured", code: "PROVIDER_NOT_CONFIGURED" }, 500);
 
   const authHeader = req.headers.get("Authorization") || "";
   if (!authHeader.startsWith("Bearer ")) return json({ ok: false, error: "Missing authorization header", code: "UNAUTHENTICATED" }, 401);
@@ -192,8 +240,8 @@ Deno.serve(async (req: Request) => {
   }
 
   const filters: LemlistFilter[] = [];
-  if (domain) filters.push({ filterId: "currentCompanyWebsiteUrl", in: [domain], out: [] });
-  else if (companyName) filters.push({ filterId: "currentCompany", in: [companyName], out: [] });
+  if (companyName) filters.push({ filterId: "currentCompany", in: [companyName], out: [] });
+  else if (domain) filters.push({ filterId: "currentCompanyWebsiteUrl", in: [domain], out: [] });
 
   const titles = nonEmptyStrings(body.titles).slice(0, 15);
   if (titles.length) filters.push({ filterId: "currentTitle", in: titles, out: [] });
@@ -230,16 +278,24 @@ Deno.serve(async (req: Request) => {
   }
 
   const results = Array.isArray(raw?.results) ? raw.results : [];
-  const contacts = results.map(toPreview).filter((c: any) => c.full_name || c.linkedin_url);
-  const matchMode = domain ? "domain" : "name_location_fallback";
+  const allContacts = results
+    .map(toPreview)
+    .filter((c: any) => c.full_name || c.linkedin_url)
+    .sort((a: any, b: any) => Number(b.fit_score || 0) - Number(a.fit_score || 0));
+  const recommendedContacts = allContacts.filter((c: any) => c.recommended);
+  const contacts = body.recommended_only === true && recommendedContacts.length >= 5
+    ? recommendedContacts
+    : allContacts;
+  const matchMode = companyName ? "name_location_fallback" : "domain";
   const organization = companyName || domain ? { id: null, name: companyName, primary_domain: domain } : null;
   return json({
     ok: true,
     provider: "lit",
     contacts,
     people: contacts,
+    recommended_count: recommendedContacts.length,
     total: raw?.totalCount ?? raw?.total ?? contacts.length,
-    has_more: raw?.hasMore === true || contacts.length >= size,
+    has_more: raw?.hasMore === true || results.length >= size,
     matchMode,
     match_mode: matchMode,
     organization,
