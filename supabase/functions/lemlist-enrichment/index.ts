@@ -46,12 +46,43 @@ type RequestBody = {
   reveal_phone_number?: boolean;
 };
 
+type LemlistSubmitResult = { res: Response; raw: any; rawText: string; authMode: "bearer" | "basic" };
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
 
-function lemlistAuthHeader(apiKey: string): string {
+function bearerAuthHeader(apiKey: string): string {
   return `Bearer ${apiKey}`;
+}
+
+function basicAuthHeader(apiKey: string): string {
+  return `Basic ${btoa(`:${apiKey}`)}`;
+}
+
+async function parseProviderResponse(res: Response): Promise<{ raw: any; rawText: string }> {
+  const rawText = await res.text().catch(() => "");
+  let raw: any = null;
+  try { raw = rawText ? JSON.parse(rawText) : null; } catch { raw = rawText; }
+  return { raw, rawText };
+}
+
+async function submitToLemlist(payload: unknown): Promise<LemlistSubmitResult> {
+  const post = (authorization: string) => fetch(`${LEMLIST_BASE_URL}/v2/enrichments/bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: authorization },
+    body: JSON.stringify(payload),
+  });
+
+  const bearerRes = await post(bearerAuthHeader(LEMLIST_API_KEY));
+  const bearerParsed = await parseProviderResponse(bearerRes);
+  if (bearerRes.status !== 401) {
+    return { res: bearerRes, raw: bearerParsed.raw, rawText: bearerParsed.rawText, authMode: "bearer" };
+  }
+
+  const basicRes = await post(basicAuthHeader(LEMLIST_API_KEY));
+  const basicParsed = await parseProviderResponse(basicRes);
+  return { res: basicRes, raw: basicParsed.raw, rawText: basicParsed.rawText, authMode: "basic" };
 }
 
 function splitName(t: Target): { firstName?: string; lastName?: string } {
@@ -121,7 +152,7 @@ function firstProviderError(raw: any, statusHint = 502): { error: string; code: 
   const first = rows.find((row) => row?.error || row?.message) || (raw && typeof raw === "object" ? raw : {});
   const code = String(first.error || first.code || "PROVIDER_ERROR");
   const error = code === "CREDITS_USAGE_FORBIDDEN"
-    ? "Lemlist accepted the API request, but this API key is not allowed to spend enrichment credits. Confirm the key belongs to an Admin/API-enabled user and was generated from Settings > Integrations."
+    ? "Lemlist accepted the API key, but this workspace is not allowed to spend enrichment credits for the requested workflow. Confirm API credit spending is enabled for this user/key in Lemlist."
     : String(first.message || first.error || "Lemlist enrichment submission failed");
   const status = code === "CREDITS_USAGE_FORBIDDEN" ? 403 : statusHint;
   return { error, code, status };
@@ -178,17 +209,10 @@ Deno.serve(async (req: Request) => {
   }
 
   const payload = validRequests.map((r) => ({ input: r.input, enrichmentRequests: r.workflows, metadata: r.metadata }));
-  const res = await fetch(`${LEMLIST_BASE_URL}/v2/enrichments/bulk`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: lemlistAuthHeader(LEMLIST_API_KEY) },
-    body: JSON.stringify(payload),
-  });
-  const rawText = await res.text().catch(() => "");
-  let raw: any = null;
-  try { raw = rawText ? JSON.parse(rawText) : null; } catch { raw = rawText; }
+  const { res, raw, authMode } = await submitToLemlist(payload);
 
   if (!res.ok) {
-    log.warn("lemlist_submit_failed", { status: res.status, body: typeof raw === "string" ? raw.slice(0, 240) : raw });
+    log.warn("lemlist_submit_failed", { status: res.status, auth_mode: authMode, body: typeof raw === "string" ? raw.slice(0, 240) : raw });
     const providerError = firstProviderError(raw, res.status || 502);
     return json({
       ok: false,
@@ -196,6 +220,7 @@ Deno.serve(async (req: Request) => {
       error: providerError.error,
       code: providerError.code,
       status: res.status,
+      auth_mode: authMode,
       raw,
     }, providerError.status);
   }
@@ -218,7 +243,7 @@ Deno.serve(async (req: Request) => {
         source_entity_id: String(reqRow.metadata.source_entity_id || "") || null,
         status,
         workflows: reqRow.workflows,
-        request_payload: { input: reqRow.input, metadata: reqRow.metadata },
+        request_payload: { input: reqRow.input, metadata: reqRow.metadata, auth_mode: authMode },
         provider_request_id: providerRequestId,
         result: result || {},
         error_message: result.error || result.message || null,
@@ -232,7 +257,7 @@ Deno.serve(async (req: Request) => {
   const submittedCount = jobs.filter((j) => j?.status === "submitted").length;
   if (submittedCount === 0) {
     const providerError = firstProviderError(raw);
-    log.warn("lemlist_no_jobs_submitted", { code: providerError.code, count: validRequests.length });
+    log.warn("lemlist_no_jobs_submitted", { code: providerError.code, count: validRequests.length, auth_mode: authMode });
     return json({
       ok: false,
       provider: "lemlist",
@@ -241,9 +266,10 @@ Deno.serve(async (req: Request) => {
       jobs,
       error: providerError.error,
       code: providerError.code,
+      auth_mode: authMode,
       raw_provider_response: raw,
     }, providerError.status);
   }
 
-  return json({ ok: true, provider: "lemlist", pending: true, contacts: [], count: 0, submitted: submittedCount, jobs, raw_provider_response: raw });
+  return json({ ok: true, provider: "lemlist", pending: true, contacts: [], count: 0, submitted: submittedCount, jobs, auth_mode: authMode, raw_provider_response: raw });
 });
