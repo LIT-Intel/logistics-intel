@@ -18,7 +18,7 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LEMLIST_API_KEY = Deno.env.get("LEMLIST_API_KEY") || Deno.env.get("Lemlist_API") || "";
+const LEMLIST_API_KEY = Deno.env.get("LEMLIST_API") || Deno.env.get("LEMLIST_API_KEY") || Deno.env.get("Lemlist_API") || "";
 const LEMLIST_BASE_URL = "https://api.lemlist.com/api";
 
 type Target = {
@@ -161,7 +161,7 @@ function firstProviderError(raw: any, statusHint = 502): { error: string; code: 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (req.method !== "POST") return json({ ok: false, error: "Method not allowed" }, 405);
-  if (!LEMLIST_API_KEY) return json({ ok: false, error: "LEMLIST_API_KEY is not configured", code: "PROVIDER_NOT_CONFIGURED" }, 500);
+  if (!LEMLIST_API_KEY) return json({ ok: false, error: "LEMLIST_API is not configured", code: "PROVIDER_NOT_CONFIGURED" }, 500);
 
   const authHeader = req.headers.get("Authorization") || "";
   if (!authHeader.startsWith("Bearer ")) return json({ ok: false, error: "Missing authorization header", code: "UNAUTHENTICATED" }, 401);
