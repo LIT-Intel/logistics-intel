@@ -50,8 +50,8 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
 
-function basicAuthHeader(apiKey: string): string {
-  return `Basic ${btoa(`:${apiKey}`)}`;
+function lemlistAuthHeader(apiKey: string): string {
+  return `Bearer ${apiKey}`;
 }
 
 function splitName(t: Target): { firstName?: string; lastName?: string } {
@@ -116,14 +116,14 @@ async function resolveOrgId(admin: ReturnType<typeof createClient>, userId: stri
   return (data as any)?.org_id ?? null;
 }
 
-function firstProviderError(raw: any): { error: string; code: string; status: number } {
+function firstProviderError(raw: any, statusHint = 502): { error: string; code: string; status: number } {
   const rows = Array.isArray(raw) ? raw : [];
-  const first = rows.find((row) => row?.error || row?.message) || {};
+  const first = rows.find((row) => row?.error || row?.message) || (raw && typeof raw === "object" ? raw : {});
   const code = String(first.error || first.code || "PROVIDER_ERROR");
   const error = code === "CREDITS_USAGE_FORBIDDEN"
-    ? "Lemlist accepted the API key, but this workspace is not allowed to use the requested enrichment workflow. The request is email-only unless phone reveal is explicitly enabled; confirm the Lemlist API key has Email Enrichment API access."
+    ? "Lemlist accepted the API request, but this API key is not allowed to spend enrichment credits. Confirm the key belongs to an Admin/API-enabled user and was generated from Settings > Integrations."
     : String(first.message || first.error || "Lemlist enrichment submission failed");
-  const status = code === "CREDITS_USAGE_FORBIDDEN" ? 403 : 502;
+  const status = code === "CREDITS_USAGE_FORBIDDEN" ? 403 : statusHint;
   return { error, code, status };
 }
 
@@ -180,7 +180,7 @@ Deno.serve(async (req: Request) => {
   const payload = validRequests.map((r) => ({ input: r.input, enrichmentRequests: r.workflows, metadata: r.metadata }));
   const res = await fetch(`${LEMLIST_BASE_URL}/v2/enrichments/bulk`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: basicAuthHeader(LEMLIST_API_KEY) },
+    headers: { "Content-Type": "application/json", Authorization: lemlistAuthHeader(LEMLIST_API_KEY) },
     body: JSON.stringify(payload),
   });
   const rawText = await res.text().catch(() => "");
@@ -189,7 +189,15 @@ Deno.serve(async (req: Request) => {
 
   if (!res.ok) {
     log.warn("lemlist_submit_failed", { status: res.status, body: typeof raw === "string" ? raw.slice(0, 240) : raw });
-    return json({ ok: false, provider: "lemlist", error: "Lemlist enrichment submission failed", code: "PROVIDER_ERROR", status: res.status, raw }, res.status || 502);
+    const providerError = firstProviderError(raw, res.status || 502);
+    return json({
+      ok: false,
+      provider: "lemlist",
+      error: providerError.error,
+      code: providerError.code,
+      status: res.status,
+      raw,
+    }, providerError.status);
   }
 
   const responseRows = Array.isArray(raw) ? raw : [];
