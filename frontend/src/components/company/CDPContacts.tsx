@@ -26,6 +26,7 @@ import {
   addCompanyToCampaign,
   getCrmCampaigns,
   saveContact,
+  searchApolloContacts,
   type ApolloContactPreview,
 } from "@/lib/api";
 import { enrichContact as enrichKnownContact } from "@/lib/enrichment/contactEnrichment";
