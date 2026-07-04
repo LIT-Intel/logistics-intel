@@ -28,6 +28,7 @@ import {
   getCrmCampaigns,
   saveContact,
   searchApolloContacts,
+  updateContactEnrichmentState,
   type ApolloContactPreview,
 } from "@/lib/api";
 import { enrichContact as enrichKnownContact } from "@/lib/enrichment/contactEnrichment";
@@ -63,6 +64,7 @@ type Contact = {
   source_provider?: string | null;
   linkedin_url?: string | null;
   apollo_person_id?: string | null;
+  enrichment_job_id?: string | null;
   enriched_at?: string | null;
   enrichment_status?: string | null;
   /** Phase 3 — phone-unlock pipeline state on this row. Rendered as
@@ -589,7 +591,10 @@ export default function CDPContacts({
     setApolloEnrichError(null);
     try {
       const savedRows: Contact[] = [];
+      const failedMessages: string[] = [];
+      const failedKeys = new Set<string>();
       for (const p of picked) {
+        const previewKey = apolloKey(p, apolloResults.indexOf(p));
         const fullName =
           p.full_name ||
           [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
@@ -616,6 +621,29 @@ export default function CDPContacts({
           title: p.title || undefined,
           revealPhoneNumber: false,
         });
+        if (!enrichmentResult.success) {
+          const failed = await updateContactEnrichmentState(String(saved.id), {
+            enrichment_status: "failed",
+            enrichment_result: {
+              error: enrichmentResult.error || "LIT enrichment failed",
+              jobs: enrichmentResult.jobs || [],
+            },
+          });
+          failedMessages.push(enrichmentResult.error || "LIT enrichment failed");
+          failedKeys.add(previewKey);
+          savedRows.push(failed as Contact);
+          continue;
+        }
+        const jobId = enrichmentResult.jobs?.find((job) => job?.id)?.id || null;
+        if (enrichmentResult.pending && jobId) {
+          await updateContactEnrichmentState(String(saved.id), {
+            enrichment_status: "pending",
+            enrichment_job_id: jobId,
+            enrichment_result: {
+              jobs: enrichmentResult.jobs,
+            },
+          });
+        }
         savedRows.push({
           ...(saved as Contact),
           ...(enrichmentResult.contact || {}),
@@ -624,6 +652,7 @@ export default function CDPContacts({
             : enrichmentResult.pending
               ? "pending"
               : saved.enrichment_status || "pending",
+          enrichment_job_id: jobId,
         });
       }
       setContacts((prev) => {
@@ -634,12 +663,22 @@ export default function CDPContacts({
       setApolloResults((prev) =>
         prev.map((p, i) =>
           apolloSelected.has(apolloKey(p, i))
-            ? { ...p, enrichment_status: "pending" as const }
+            ? {
+                ...p,
+                enrichment_status: failedKeys.has(apolloKey(p, i)) ? ("failed" as const) : ("pending" as const),
+              }
             : p,
         ),
       );
       setApolloSelected(new Set());
-      setEnrichToast(`Submitted ${savedRows.length} contact${savedRows.length === 1 ? "" : "s"} for LIT enrichment`);
+      if (failedMessages.length) {
+        setApolloEnrichError(
+          Array.from(new Set(failedMessages)).join(" ") ||
+            "LIT enrichment could not complete for the selected contact.",
+        );
+      } else {
+        setEnrichToast(`Submitted ${savedRows.length} contact${savedRows.length === 1 ? "" : "s"} for LIT enrichment`);
+      }
       setTimeout(() => setEnrichToast(null), 3500);
     } catch (err: any) {
       setApolloEnrichError(err?.message || "Contact enrichment failed.");

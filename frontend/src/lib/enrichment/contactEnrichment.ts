@@ -75,7 +75,12 @@ export async function enrichContact(params: EnrichContactParams): Promise<Enrich
   }
 
   if (!data?.ok) {
-    return { success: false, provider: data?.provider ?? null, error: data?.error || data?.message || 'Enrichment failed' };
+    return {
+      success: false,
+      provider: data?.provider ?? null,
+      jobs: Array.isArray(data?.jobs) ? data.jobs : [],
+      error: data?.error || data?.message || 'Enrichment failed',
+    };
   }
 
   const contact = Array.isArray(data.contacts) && data.contacts.length ? data.contacts[0] : null;
@@ -89,6 +94,18 @@ export async function enrichContact(params: EnrichContactParams): Promise<Enrich
       jobs: Array.isArray(data.jobs) ? data.jobs : [],
       fieldsAdded: ['enrichment job submitted'],
       cost: 0,
+    };
+  }
+
+  if (!contact && data.pending !== true) {
+    const firstError = Array.isArray(data.errors) && data.errors.length
+      ? data.errors[0]?.error || data.errors[0]?.message
+      : null;
+    return {
+      success: false,
+      provider: data.provider ?? null,
+      jobs: Array.isArray(data.jobs) ? data.jobs : [],
+      error: firstError || data.error || data.message || 'No enrichment result was returned.',
     };
   }
 

@@ -4974,6 +4974,32 @@ export async function saveContact(
   return data;
 }
 
+export async function updateContactEnrichmentState(
+  contactId: string,
+  patch: {
+    enrichment_status?: string | null;
+    enrichment_provider?: string | null;
+    enrichment_job_id?: string | null;
+    enrichment_result?: unknown;
+    email?: string | null;
+    email_verified?: boolean | null;
+    verified_by_provider?: boolean | null;
+    email_verification_status?: string | null;
+    enriched_at?: string | null;
+  },
+) {
+  const { data, error } = await supabase
+    .from("lit_contacts")
+    .update(patch)
+    .eq("id", contactId)
+    .select("*")
+    .single();
+  if (error) {
+    throw new Error(`contacts.enrichment ${error.code || ""}: ${error.message}`);
+  }
+  return data;
+}
+
 export async function listContacts(company_id_or_slug: string, dept?: string) {
   let company: Awaited<ReturnType<typeof resolveCompanyUuid>>;
   try {

@@ -190,6 +190,28 @@ async function persistCompletedContact(
   return true;
 }
 
+async function markTargetsFailed(
+  admin: ReturnType<typeof createClient>,
+  requests: Array<{ target: Target; metadata: Record<string, unknown> }>,
+  error: string,
+  raw: unknown,
+  jobIdsByContactId: Map<string, string | null> = new Map(),
+): Promise<void> {
+  for (const req of requests) {
+    const contactId = String(req.metadata.lit_contact_id || req.target.id || "") || null;
+    if (!contactId) continue;
+    await admin
+      .from("lit_contacts")
+      .update({
+        enrichment_status: "failed",
+        enrichment_job_id: jobIdsByContactId.get(contactId) || null,
+        enrichment_result: { error, raw },
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", contactId);
+  }
+}
+
 function splitName(t: Target): { firstName?: string; lastName?: string } {
   const firstName = t.first_name || undefined;
   const lastName = t.last_name || undefined;
@@ -302,6 +324,12 @@ Deno.serve(async (req: Request) => {
 
   const validRequests = requests.filter((r) => r.valid);
   if (!validRequests.length) {
+    await markTargetsFailed(
+      admin,
+      requests,
+      "LIT enrichment needs a name plus company, website, or LinkedIn profile.",
+      { errors: requests.map((r) => ({ target: r.target.id || r.target.email || r.target.linkedin_url, error: "insufficient_input" })) },
+    );
     return json({
       ok: true,
       provider: "lemlist",
@@ -319,6 +347,7 @@ Deno.serve(async (req: Request) => {
   if (!res.ok) {
     log.warn("lemlist_submit_failed", { status: res.status, auth_mode: authMode, body: typeof raw === "string" ? raw.slice(0, 240) : raw });
     const providerError = firstProviderError(raw, res.status || 502);
+    await markTargetsFailed(admin, validRequests, providerError.error, raw);
     return json({
       ok: false,
       provider: "lemlist",
@@ -366,6 +395,12 @@ Deno.serve(async (req: Request) => {
   if (submittedCount === 0) {
     const providerError = firstProviderError(raw);
     log.warn("lemlist_no_jobs_submitted", { code: providerError.code, count: validRequests.length, auth_mode: authMode });
+    const jobIdsByContactId = new Map<string, string | null>();
+    for (let i = 0; i < validRequests.length; i += 1) {
+      const contactId = String(validRequests[i].metadata.lit_contact_id || validRequests[i].target.id || "") || null;
+      if (contactId) jobIdsByContactId.set(contactId, jobs[i]?.id ? String(jobs[i].id) : null);
+    }
+    await markTargetsFailed(admin, validRequests, providerError.error, raw, jobIdsByContactId);
     return json({
       ok: false,
       provider: "lemlist",
