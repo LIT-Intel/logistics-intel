@@ -70,8 +70,8 @@ async function parseProviderResponse(res: Response): Promise<{ raw: any; rawText
 async function submitToLemlist(payload: unknown): Promise<LemlistSubmitResult> {
   const authorization = basicAuthHeader(LEMLIST_API_KEY);
   const endpoints = [
-    `${LEMLIST_BASE_URL}/enrich/bulk`,
     `${LEMLIST_BASE_URL}/v2/enrichments/bulk`,
+    `${LEMLIST_BASE_URL}/enrich/bulk`,
   ];
   let last: LemlistSubmitResult | null = null;
 
@@ -83,7 +83,7 @@ async function submitToLemlist(payload: unknown): Promise<LemlistSubmitResult> {
     });
     const parsed = await parseProviderResponse(res);
     last = { res, raw: parsed.raw, rawText: parsed.rawText, authMode: "basic" };
-    if (res.status !== 404) return last;
+    if (res.status !== 404 && res.status !== 405) return last;
   }
 
   return last!;
@@ -103,8 +103,27 @@ function readString(raw: any, keys: string[]): string | null {
 
 function contactFromResult(raw: any): Record<string, unknown> | null {
   const source = raw?.result || raw?.data || raw?.lead || raw?.contact || raw;
-  const email = readString(source, ["email", "professionalEmail", "workEmail", "result.email", "data.email"]);
-  const linkedinUrl = readString(source, ["linkedinUrl", "linkedin_url", "linkedin", "result.linkedinUrl"]);
+  const email = readString(raw, [
+    "data.email.email",
+    "data.find_email.email",
+    "data.findEmail.email",
+    "result.data.email.email",
+    "email",
+    "professionalEmail",
+    "workEmail",
+    "result.email",
+    "data.email",
+  ]);
+  const linkedinUrl = readString(raw, [
+    "data.linkedin.linkedinUrl",
+    "data.linkedin.url",
+    "data.linkedinUrl",
+    "input.linkedinUrl",
+    "linkedinUrl",
+    "linkedin_url",
+    "linkedin",
+    "result.linkedinUrl",
+  ]);
   const fullName = readString(source, ["fullName", "full_name", "name"]);
   const firstName = readString(source, ["firstName", "first_name"]);
   const lastName = readString(source, ["lastName", "last_name"]);
@@ -127,13 +146,14 @@ function contactFromResult(raw: any): Record<string, unknown> | null {
 }
 
 function isCompletedResult(raw: any): boolean {
-  const status = String(raw?.status || raw?.state || raw?.result?.status || "").toLowerCase();
+  const status = String(raw?.enrichmentStatus || raw?.enrichment_status || raw?.status || raw?.state || raw?.result?.status || "").toLowerCase();
   if (["completed", "complete", "done", "success", "succeeded", "finished"].includes(status)) return true;
   return Boolean(contactFromResult(raw));
 }
 
 async function pollLemlistResult(providerRequestId: string): Promise<PollResult> {
   const endpoints = [
+    `${LEMLIST_BASE_URL}/enrich/${encodeURIComponent(providerRequestId)}`,
     `${LEMLIST_BASE_URL}/v2/enrichments/${encodeURIComponent(providerRequestId)}/result`,
     `${LEMLIST_BASE_URL}/v2/enrichments/${encodeURIComponent(providerRequestId)}`,
     `${LEMLIST_BASE_URL}/enrich/${encodeURIComponent(providerRequestId)}/result`,
@@ -418,10 +438,42 @@ Deno.serve(async (req: Request) => {
   for (const row of submittedRows.slice(0, 10)) {
     const poll = await pollLemlistResult(row.providerRequestId);
     const contactId = String(row.request.metadata.lit_contact_id || row.request.target.id || "") || null;
+    const jobId = row.job?.id ? String(row.job.id) : null;
+    if (poll.completed && !poll.contact) {
+      const message = "LIT enrichment completed, but no email was found for this contact.";
+      await markTargetsFailed(admin, [row.request], message, poll.raw, new Map([[contactId || "", jobId]]));
+      if (jobId) {
+        await admin
+          .from("lit_contact_enrichment_jobs")
+          .update({
+            status: "failed",
+            result: poll.raw,
+            completed_at: new Date().toISOString(),
+            error_message: message,
+          })
+          .eq("id", jobId);
+      }
+      continue;
+    }
+    if (poll.error) {
+      await markTargetsFailed(admin, [row.request], poll.error, poll.raw, new Map([[contactId || "", jobId]]));
+      if (jobId) {
+        await admin
+          .from("lit_contact_enrichment_jobs")
+          .update({
+            status: "failed",
+            result: poll.raw,
+            completed_at: new Date().toISOString(),
+            error_message: poll.error,
+          })
+          .eq("id", jobId);
+      }
+      continue;
+    }
     const completed = await persistCompletedContact(
       admin,
       contactId,
-      row.job?.id ? String(row.job.id) : null,
+      jobId,
       row.providerRequestId,
       poll,
     );
