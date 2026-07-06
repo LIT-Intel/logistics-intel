@@ -49,8 +49,8 @@ function toContactPayload(params: EnrichContactParams) {
 export async function enrichContact(params: EnrichContactParams): Promise<EnrichmentResult> {
   const revealPhoneNumber = params.revealPhoneNumber === true;
   const enrichmentRequests = revealPhoneNumber
-    ? ['find_email', 'find_phone', 'verify']
-    : ['find_email', 'verify'];
+    ? ['find_email', 'find_phone']
+    : ['find_email'];
 
   const { data, error } = await supabase.functions.invoke('enrich-contact-orchestrator', {
     body: {

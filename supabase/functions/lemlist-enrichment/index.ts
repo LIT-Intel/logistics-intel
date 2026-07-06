@@ -249,10 +249,10 @@ function workflowsFor(body: RequestBody, target: Target): string[] {
   const out = new Set<string>();
   for (const workflow of requested) {
     if (workflow === "find_phone" && body.reveal_phone_number !== true) continue;
-    if (["find_email", "find_phone", "verify", "linkedin_enrichment"].includes(workflow)) out.add(workflow);
+    if (workflow === "verify") continue;
+    if (["find_email", "find_phone", "linkedin_enrichment"].includes(workflow)) out.add(workflow);
   }
   if (body.reveal_phone_number === true) out.add("find_phone");
-  if (target.email) out.add("verify");
   return Array.from(out);
 }
 
