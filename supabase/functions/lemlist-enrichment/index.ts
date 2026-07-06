@@ -259,13 +259,13 @@ function workflowsFor(body: RequestBody, target: Target): string[] {
 function toInput(target: Target): Record<string, string> {
   const { firstName, lastName } = splitName(target);
   const input: Record<string, string> = {};
-  if (target.linkedin_url) input.linkedinUrl = target.linkedin_url;
   if (target.email) input.email = target.email;
   if (target.organization_name || target.company_name) input.companyName = String(target.organization_name || target.company_name);
   if (target.domain) input.companyDomain = target.domain;
   if (firstName) input.firstName = firstName;
   if (lastName) input.lastName = lastName;
   if (target.title) input.jobTitle = target.title;
+  if (target.linkedin_url) input.linkedinUrl = target.linkedin_url;
   return input;
 }
 
@@ -277,10 +277,26 @@ function hasEnoughInput(input: Record<string, string>, workflows: string[]): boo
     if (input.firstName && input.lastName && (input.companyName || input.companyDomain)) return true;
   }
   if (workflows.includes("find_email")) {
-    if (input.linkedinUrl) return true;
     if (input.firstName && input.lastName && input.companyName && input.companyDomain) return true;
+    if (input.linkedinUrl) return true;
   }
   return false;
+}
+
+function toProviderInput(req: { input: Record<string, string>; workflows: string[] }): Record<string, string> {
+  const input = { ...req.input };
+  const canFindEmailFromCompany =
+    req.workflows.includes("find_email") &&
+    input.firstName &&
+    input.lastName &&
+    input.companyName &&
+    input.companyDomain;
+  const needsLinkedIn =
+    req.workflows.includes("linkedin_enrichment") ||
+    req.workflows.includes("find_phone") ||
+    !canFindEmailFromCompany;
+  if (!needsLinkedIn) delete input.linkedinUrl;
+  return input;
 }
 
 async function resolveOrgId(admin: ReturnType<typeof createClient>, userId: string): Promise<string | null> {
@@ -299,8 +315,10 @@ function firstProviderError(raw: any, statusHint = 502): { error: string; code: 
   const first = rows.find((row) => row?.error || row?.message) || (raw && typeof raw === "object" ? raw : {});
   const code = String(first.error || first.code || "PROVIDER_ERROR");
   const error = code === "CREDITS_USAGE_FORBIDDEN"
-    ? "LIT enrichment is connected, but this workspace is not allowed to spend enrichment credits for the requested workflow. Confirm API credit spending is enabled for this account."
-    : String(first.message || first.error || "LIT enrichment submission failed");
+    ? "LIT reached the enrichment service, but that workspace blocked API credit spend for this email enrichment request. Confirm the saved API key belongs to the active workspace and that API credit spending is enabled for that user."
+    : code === "LINKEDIN_NOT_LINKED"
+      ? "The enrichment service routed this request through a LinkedIn-only workflow. Retry with first name, last name, company name, and company domain so email enrichment can run without LinkedIn."
+      : String(first.message || first.error || "LIT enrichment submission failed");
   const status = code === "CREDITS_USAGE_FORBIDDEN" ? 403 : statusHint;
   return { error, code, status };
 }
@@ -361,7 +379,8 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const payload = validRequests.map((r) => ({ input: r.input, enrichmentRequests: r.workflows, metadata: r.metadata }));
+  const providerRequests = validRequests.map((r) => ({ ...r, providerInput: toProviderInput(r) }));
+  const payload = providerRequests.map((r) => ({ input: r.providerInput, enrichmentRequests: r.workflows, metadata: r.metadata }));
   const { res, raw, authMode } = await submitToLemlist(payload);
 
   if (!res.ok) {
@@ -382,8 +401,8 @@ Deno.serve(async (req: Request) => {
   const responseRows = Array.isArray(raw) ? raw : [];
   const jobs: any[] = [];
   const submittedRows: Array<{ job: any; request: (typeof validRequests)[number]; providerRequestId: string }> = [];
-  for (let i = 0; i < validRequests.length; i += 1) {
-    const reqRow = validRequests[i];
+  for (let i = 0; i < providerRequests.length; i += 1) {
+    const reqRow = providerRequests[i];
     const result = responseRows[i] || {};
     const providerRequestId = result.id || null;
     const status = providerRequestId ? "submitted" : "failed";
@@ -398,7 +417,7 @@ Deno.serve(async (req: Request) => {
         source_entity_id: String(reqRow.metadata.source_entity_id || "") || null,
         status,
         workflows: reqRow.workflows,
-        request_payload: { input: reqRow.input, metadata: reqRow.metadata, auth_mode: authMode },
+        request_payload: { input: reqRow.providerInput, metadata: reqRow.metadata, auth_mode: authMode },
         provider_request_id: providerRequestId,
         result: result || {},
         error_message: result.error || result.message || null,
