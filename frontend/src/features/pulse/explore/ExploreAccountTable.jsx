@@ -7,8 +7,8 @@ import { List } from 'react-virtualized';
 import { CheckSquare, Square, ChevronRight } from 'lucide-react';
 import 'react-virtualized/styles.css';
 
-const ROW_HEIGHT = 38;
-const HEADER_HEIGHT = 32;
+const ROW_HEIGHT = 56;
+const HEADER_HEIGHT = 36;
 
 // V6 "Estimated Annual Revenue" is stored as a numeric value in millions of
 // USD (e.g. "59.64" = $59.64M). We display in that unit to match what users
@@ -43,7 +43,7 @@ function LaneChip({ lane }) {
   if (!text) return null;
   const short = text.length > 18 ? `${text.slice(0, 16)}…` : text;
   return (
-    <span className="inline-flex items-center gap-1 rounded bg-emerald-50 ring-1 ring-emerald-200 px-1.5 py-0.5 text-[10px] text-emerald-700">
+    <span className="inline-flex max-w-[170px] items-center gap-1 rounded bg-emerald-50 ring-1 ring-emerald-200 px-1.5 py-0.5 text-[10px] text-emerald-700" title={text}>
       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />{short}
     </span>
   );
@@ -53,7 +53,7 @@ function ForwarderChip({ name }) {
   if (!name) return null;
   const short = name.length > 14 ? `${name.slice(0, 12)}…` : name;
   return (
-    <span className="inline-flex items-center gap-1 rounded bg-blue-50 ring-1 ring-blue-200 px-1.5 py-0.5 text-[10px] text-blue-700">
+    <span className="inline-flex max-w-[150px] items-center gap-1 rounded bg-blue-50 ring-1 ring-blue-200 px-1.5 py-0.5 text-[10px] text-blue-700" title={name}>
       <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />{short}
     </span>
   );
@@ -65,7 +65,7 @@ function TopDimensions({ row }) {
   const extras = (Array.isArray(row.top_dimensions) ? row.top_dimensions.length - lanes.length : 0)
     + (Array.isArray(row.top_forwarders) ? row.top_forwarders.length - forwarders.length : 0);
   return (
-    <div className="flex items-center gap-1 overflow-hidden">
+    <div className="flex min-w-0 flex-wrap items-center gap-1 overflow-hidden py-1">
       {lanes.map((l, i) => <LaneChip key={`l${i}`} lane={l} />)}
       {forwarders.map((f, i) => <ForwarderChip key={`f${i}`} name={f.name} />)}
       {extras > 0 && (
@@ -77,10 +77,10 @@ function TopDimensions({ row }) {
 
 const COLUMNS = [
   { id: 'select', width: 36, label: '', justify: 'center' },
-  { id: 'company', flex: 1.4, label: 'Account', justify: 'left' },
-  { id: 'location', flex: 1.2, label: 'Location', justify: 'left' },
-  { id: 'industry', flex: 1, label: 'Industry', justify: 'left' },
-  { id: 'vertical', flex: 1, label: 'Vertical', justify: 'left' },
+  { id: 'company', width: 250, label: 'Account', justify: 'left' },
+  { id: 'location', width: 190, label: 'Location', justify: 'left' },
+  { id: 'industry', width: 170, label: 'Industry', justify: 'left' },
+  { id: 'vertical', width: 190, label: 'Vertical', justify: 'left' },
   { id: 'dims', width: 240, label: 'Origin → Destination', justify: 'left' },
   { id: 'teu', width: 90, label: 'TEU 12m', justify: 'right' },
   { id: 'sales', width: 110, label: 'Annual Sales (US)', justify: 'right' },
@@ -90,8 +90,13 @@ const COLUMNS = [
 
 function gridTemplate(widths) {
   // Build grid-template-columns from COLUMNS — fixed widths or flex.
-  return COLUMNS.map((c) => c.width ? `${c.width}px` : `${c.flex}fr`).join(' ');
+  return COLUMNS.map((c) => {
+    if (c.id === 'dims') return '370px';
+    return c.width ? `${c.width}px` : `${c.flex}fr`;
+  }).join(' ');
 }
+
+const TABLE_MIN_WIDTH = COLUMNS.reduce((sum, c) => sum + (c.id === 'dims' ? 370 : c.width || 120), 0);
 
 export default function ExploreAccountTable({ rows, selection, onToggle, onRowClick }) {
   const selSet = useMemo(() => new Set(selection ?? []), [selection]);
@@ -109,6 +114,7 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
   // engine without ResizeObserver.)
   const bodyRef = useRef(null);
   const [bodySize, setBodySize] = useState({ width: 0, height: 0 });
+  const contentWidth = Math.max(bodySize.width, TABLE_MIN_WIDTH);
   useLayoutEffect(() => {
     const el = bodyRef.current;
     if (!el) return undefined;
@@ -138,7 +144,7 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
     return (
       <div
         key={key}
-        style={{ ...style, display: 'grid', gridTemplateColumns: gridCols }}
+        style={{ ...style, width: contentWidth, display: 'grid', gridTemplateColumns: gridCols }}
         className="border-b border-slate-100 hover:bg-cyan-50/30 cursor-pointer text-sm"
         onClick={() => onRowClick?.(row)}
       >
@@ -153,10 +159,12 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
           </button>
         </div>
         <div className="flex items-center px-2 gap-1.5 min-w-0">
-          <span className="font-medium text-slate-900 truncate">{row.company_name}</span>
+          <span className="font-medium leading-tight text-slate-900 break-words" title={row.company_name}>
+            {row.company_name}
+          </span>
           <ChevronRight size={12} className="text-slate-300 shrink-0" />
         </div>
-        <div className="flex items-center px-2 text-slate-600 truncate">
+        <div className="flex items-center px-2 text-slate-600">
           {[row.city, row.state].filter(Boolean).join(', ') || '—'}
         </div>
         <div className="flex items-center px-2 text-slate-700 truncate">{row.industry ?? '—'}</div>
@@ -187,7 +195,7 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
     <div className="flex-1 min-h-0 flex flex-col bg-white">
       {/* Header */}
       <div
-        style={{ display: 'grid', gridTemplateColumns: gridCols, height: HEADER_HEIGHT }}
+        style={{ width: contentWidth || '100%', display: 'grid', gridTemplateColumns: gridCols, height: HEADER_HEIGHT }}
         className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-600 uppercase tracking-wide"
       >
         {COLUMNS.map((c) => (
@@ -200,11 +208,11 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
         ))}
       </div>
       {/* Body — explicit size from the ResizeObserver above (no AutoSizer). */}
-      <div ref={bodyRef} className="flex-1 min-h-0">
+      <div ref={bodyRef} className="flex-1 min-h-0 overflow-auto">
         {bodySize.height > 0 && bodySize.width > 0 && (
           <List
             height={bodySize.height}
-            width={bodySize.width}
+            width={contentWidth}
             rowCount={rows.length}
             rowHeight={ROW_HEIGHT}
             rowRenderer={renderRow}
