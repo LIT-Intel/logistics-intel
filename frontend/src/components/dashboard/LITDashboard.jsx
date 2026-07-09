@@ -1,4 +1,4 @@
-// Phase 3 — Dashboard rebuild against the Pulse Coach + Workspace Lanes
+// Phase 3 â€” Dashboard rebuild against the Pulse Coach + Workspace Lanes
 // pairing. Replaces the prior layout's GlobeCard + StrategicBriefCard
 // hero with a paired surface: the AI Pulse Coach (LLM-driven nudges)
 // drives lane-focus events into the Workspace Lanes Globe, and the
@@ -33,6 +33,21 @@ import { PulseCoachInline } from "@/features/coach/PulseCoachWidget";
 import WorkspaceLanesGlobe from "@/features/coach/WorkspaceLanesGlobe";
 import ArrivingThisWeekTile from "@/components/dashboard/ArrivingThisWeekTile";
 import RecentEnrichmentsCard from "@/components/dashboard/sections/RecentEnrichmentsCard";
+
+function hasVerifiedEmailResult(job) {
+  const email = job?.result?.data?.email?.email;
+  return typeof email === "string" && email.trim().length > 0;
+}
+
+function countDistinctEnrichedContacts(jobs) {
+  const contactIds = new Set();
+  for (const job of jobs || []) {
+    if (!hasVerifiedEmailResult(job)) continue;
+    const contactId = job?.request_payload?.metadata?.lit_contact_id;
+    contactIds.add(contactId || job?.provider_request_id || job?.id);
+  }
+  return contactIds.size;
+}
 
 // Provider + floating pill are mounted by AppLayout so Pulse Coach
 // follows the user across pages. Here we only render the inline
@@ -92,19 +107,12 @@ export default function LITDashboard() {
           );
           promises.push(
             supabase
-              .from("lit_contacts")
-              .select("id, verified_by_provider, email_verified", {
-                count: "exact",
-              })
-              .limit(0),
+              .from("lit_contact_enrichment_jobs")
+              .select("id, provider_request_id, request_payload, result")
+              .eq("requested_by", user.id)
+              .eq("status", "completed"),
           );
-          promises.push(
-            supabase
-              .from("lit_contacts")
-              .select("id", { count: "exact", head: true })
-              .or("verified_by_provider.eq.true,email_verified.eq.true"),
-          );
-          // Outreach Sent MTD reads from lit_outreach_history — that's
+          // Outreach Sent MTD reads from lit_outreach_history â€” that's
           // where the dispatcher writes one row per actual email delivery.
           // (lit_activity_events is generic activity, not send events.)
           promises.push(
@@ -128,8 +136,7 @@ export default function LITDashboard() {
           campaignsRes,
           activityRes,
           pulseRes,
-          totalContactsRes,
-          verifiedRes,
+          completedEnrichmentRes,
           outreachRes,
         ] = await Promise.all(promises);
 
@@ -141,8 +148,11 @@ export default function LITDashboard() {
           setActivityEvents(activityRes.data || []);
         }
         setPulseBriefsMtd(Number(pulseRes?.count) || 0);
-        setSavedContactsTotal(Number(totalContactsRes?.count) || 0);
-        setVerifiedContacts(Number(verifiedRes?.count) || 0);
+        const completedEnrichments = Array.isArray(completedEnrichmentRes?.data)
+          ? completedEnrichmentRes.data
+          : [];
+        setSavedContactsTotal(completedEnrichments.length);
+        setVerifiedContacts(countDistinctEnrichedContacts(completedEnrichments));
         setOutreachSentMtd(Number(outreachRes?.count) || 0);
       } catch (err) {
         console.error("Dashboard load error:", err);
@@ -215,7 +225,7 @@ export default function LITDashboard() {
         value: verifiedContacts.toLocaleString(),
         trend:
           savedContactsTotal > verifiedContacts
-            ? `${savedContactsTotal.toLocaleString()} total`
+            ? `${savedContactsTotal.toLocaleString()} completed`
             : null,
       },
       {
@@ -224,11 +234,11 @@ export default function LITDashboard() {
       },
       {
         label: "OUTREACH SENT MTD",
-        value: outreachSentMtd > 0 ? outreachSentMtd.toLocaleString() : "—",
+        value: outreachSentMtd > 0 ? outreachSentMtd.toLocaleString() : "â€”",
       },
       {
         label: "SHIPMENTS 12M",
-        value: totalShipments > 0 ? formatNum(totalShipments) : "—",
+        value: totalShipments > 0 ? formatNum(totalShipments) : "â€”",
       },
     ],
     [
@@ -253,7 +263,7 @@ export default function LITDashboard() {
   return (
     <AppLayout>
       <div className="flex min-h-full flex-col bg-[#F8FAFC]">
-        {/* ── Hero / header ───────────────────────────────────────────── */}
+        {/* â”€â”€ Hero / header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className="shrink-0 border-b border-slate-200 bg-white">
           <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3 md:px-6">
             <div className="font-body flex items-center gap-1.5 text-[12px] text-slate-500">
@@ -270,8 +280,8 @@ export default function LITDashboard() {
                 />
                 Live
               </span>
-              <span className="text-slate-200">·</span>
-              <span>{dashboardLoading ? "Syncing…" : "Live data"}</span>
+              <span className="text-slate-200">Â·</span>
+              <span>{dashboardLoading ? "Syncingâ€¦" : "Live data"}</span>
             </div>
           </div>
 
@@ -294,7 +304,7 @@ export default function LITDashboard() {
                 saved {realSavedCompanies.length === 1 ? "account" : "accounts"}
                 {activeCampaigns > 0 && (
                   <>
-                    {" · "}
+                    {" Â· "}
                     <strong className="font-mono font-semibold text-slate-900">
                       {activeCampaigns}
                     </strong>{" "}
@@ -337,7 +347,7 @@ export default function LITDashboard() {
           <LitKpiStrip cells={kpiCells} />
         </div>
 
-        {/* ── Body ────────────────────────────────────────────────────── */}
+        {/* â”€â”€ Body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto flex max-w-[1600px] flex-col gap-4 p-3 md:p-6">
             {/* Globe + Coach paired hero */}
@@ -346,7 +356,7 @@ export default function LITDashboard() {
               <PulseCoachInline />
             </div>
 
-            {/* Arriving this week — F3 closure for pulse-arrival-alerts.
+            {/* Arriving this week â€” F3 closure for pulse-arrival-alerts.
                 Auto-hides nothing; the tile owns its own empty + loading
                 states. Single-column at every breakpoint to keep
                 ETA-by-day legible. */}
@@ -361,7 +371,7 @@ export default function LITDashboard() {
               />
             </div>
 
-            {/* Recent enrichments — inline add-to-campaign */}
+            {/* Recent enrichments â€” inline add-to-campaign */}
             <RecentEnrichmentsCard />
           </div>
         </div>
@@ -376,3 +386,4 @@ function formatNum(value) {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
   return Math.round(n).toLocaleString();
 }
+
