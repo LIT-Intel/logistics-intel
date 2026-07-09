@@ -1,8 +1,8 @@
-// V6-style virtualized account table — dense rows, sortable header, Top
+// V6-style virtualized account table â€” dense rows, sortable header, Top
 // Dimensions column showing the lane chips + a forwarder chip, right-aligned
 // numeric columns (TEU Vol., Annual Sales, GP Potential).
 
-import { useMemo, useRef, useState, useLayoutEffect } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { List } from 'react-virtualized';
 import { CheckSquare, Square, ChevronRight } from 'lucide-react';
 import 'react-virtualized/styles.css';
@@ -14,7 +14,7 @@ const HEADER_HEIGHT = 36;
 // USD (e.g. "59.64" = $59.64M). We display in that unit to match what users
 // see in the V6 source and on company profile pages.
 function fmtMoneyM(n) {
-  if (n == null || !Number.isFinite(Number(n))) return '—';
+  if (n == null || !Number.isFinite(Number(n))) return 'â€”';
   const v = Number(n);
   if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}T`; // 1M millions = 1T
   if (v >= 1_000) return `$${(v / 1_000).toFixed(2)}B`;          // 1k millions = 1B
@@ -24,7 +24,7 @@ function fmtMoneyM(n) {
 }
 
 function fmtInt(n) {
-  if (n == null) return '—';
+  if (n == null) return 'â€”';
   return n.toLocaleString();
 }
 
@@ -41,7 +41,7 @@ function FreshnessChip({ chip }) {
 function LaneChip({ lane }) {
   const text = typeof lane === 'string' ? lane : lane?.lane ?? lane?.route ?? '';
   if (!text) return null;
-  const short = text.length > 18 ? `${text.slice(0, 16)}…` : text;
+  const short = text.length > 18 ? `${text.slice(0, 16)}â€¦` : text;
   return (
     <span className="inline-flex max-w-[170px] items-center gap-1 rounded bg-emerald-50 ring-1 ring-emerald-200 px-1.5 py-0.5 text-[10px] text-emerald-700" title={text}>
       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />{short}
@@ -51,7 +51,7 @@ function LaneChip({ lane }) {
 
 function ForwarderChip({ name }) {
   if (!name) return null;
-  const short = name.length > 14 ? `${name.slice(0, 12)}…` : name;
+  const short = name.length > 14 ? `${name.slice(0, 12)}â€¦` : name;
   return (
     <span className="inline-flex max-w-[150px] items-center gap-1 rounded bg-blue-50 ring-1 ring-blue-200 px-1.5 py-0.5 text-[10px] text-blue-700" title={name}>
       <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />{short}
@@ -81,7 +81,7 @@ const COLUMNS = [
   { id: 'location', width: 190, label: 'Location', justify: 'left' },
   { id: 'industry', width: 170, label: 'Industry', justify: 'left' },
   { id: 'vertical', width: 190, label: 'Vertical', justify: 'left' },
-  { id: 'dims', width: 240, label: 'Origin → Destination', justify: 'left' },
+  { id: 'dims', width: 240, label: 'Origin â†’ Destination', justify: 'left' },
   { id: 'teu', width: 90, label: 'TEU 12m', justify: 'right' },
   { id: 'sales', width: 110, label: 'Annual Sales (US)', justify: 'right' },
   { id: 'opp', width: 90, label: 'Opp Score', justify: 'right' },
@@ -89,7 +89,7 @@ const COLUMNS = [
 ];
 
 function gridTemplate(widths) {
-  // Build grid-template-columns from COLUMNS — fixed widths or flex.
+  // Build grid-template-columns from COLUMNS â€” fixed widths or flex.
   return COLUMNS.map((c) => {
     if (c.id === 'dims') return '370px';
     return c.width ? `${c.width}px` : `${c.flex}fr`;
@@ -101,11 +101,12 @@ const TABLE_MIN_WIDTH = COLUMNS.reduce((sum, c) => sum + (c.id === 'dims' ? 370 
 export default function ExploreAccountTable({ rows, selection, onToggle, onRowClick }) {
   const selSet = useMemo(() => new Set(selection ?? []), [selection]);
   const gridCols = useMemo(() => gridTemplate(), []);
+  const headerInnerRef = useRef(null);
 
-  // Body sizing — measure the scroll container directly with a ResizeObserver
+  // Body sizing â€” measure the scroll container directly with a ResizeObserver
   // and hand the virtualized List an explicit pixel height/width. This replaces
   // react-virtualized's AutoSizer, which measured the container ONCE at first
-  // paint — before this table's flex-derived height resolved — captured ~1
+  // paint â€” before this table's flex-derived height resolved â€” captured ~1
   // row (ROW_HEIGHT), and never reliably re-measured, leaving a single row in a
   // tall empty panel on short/laptop/mobile viewports. ResizeObserver fires on
   // mount, after the flex/viewport settles, during the drawer open/close
@@ -165,10 +166,10 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
           <ChevronRight size={12} className="text-slate-300 shrink-0" />
         </div>
         <div className="flex items-center px-2 text-slate-600">
-          {[row.city, row.state].filter(Boolean).join(', ') || '—'}
+          {[row.city, row.state].filter(Boolean).join(', ') || 'â€”'}
         </div>
-        <div className="flex items-center px-2 text-slate-700 truncate">{row.industry ?? '—'}</div>
-        <div className="flex items-center px-2 text-slate-700 truncate">{row.vertical ?? '—'}</div>
+        <div className="flex items-center px-2 text-slate-700 truncate">{row.industry ?? 'â€”'}</div>
+        <div className="flex items-center px-2 text-slate-700 truncate">{row.vertical ?? 'â€”'}</div>
         <div className="flex items-center px-2 overflow-hidden">
           <TopDimensions row={row} />
         </div>
@@ -182,7 +183,7 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
           {fmtMoneyM(row.revenue != null ? Number(row.revenue) : null)}
         </div>
         <div className="flex items-center justify-end px-2 tabular-nums font-medium text-slate-900">
-          {row.opportunity_composite_score?.toFixed(0) ?? '—'}
+          {row.opportunity_composite_score?.toFixed(0) ?? 'â€”'}
         </div>
         <div className="flex items-center justify-center">
           <FreshnessChip chip={row.freshness?.chip} />
@@ -191,13 +192,21 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
     );
   };
 
+  const syncHeaderScroll = useCallback(({ scrollLeft }) => {
+    if (headerInnerRef.current) {
+      headerInnerRef.current.style.transform = `translateX(${-scrollLeft}px)`;
+    }
+  }, []);
+
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-white">
       {/* Header */}
-      <div
-        style={{ width: contentWidth || '100%', display: 'grid', gridTemplateColumns: gridCols, height: HEADER_HEIGHT }}
-        className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-600 uppercase tracking-wide"
-      >
+      <div className="flex-none overflow-hidden border-b border-slate-200 bg-slate-50">
+        <div
+          ref={headerInnerRef}
+          style={{ width: contentWidth || '100%', display: 'grid', gridTemplateColumns: gridCols, height: HEADER_HEIGHT }}
+          className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide will-change-transform"
+        >
         {COLUMNS.map((c) => (
           <div
             key={c.id}
@@ -207,18 +216,21 @@ export default function ExploreAccountTable({ rows, selection, onToggle, onRowCl
           </div>
         ))}
       </div>
-      {/* Body — explicit size from the ResizeObserver above (no AutoSizer). */}
-      <div ref={bodyRef} className="flex-1 min-h-0 overflow-auto">
+      {/* Body â€” explicit size from the ResizeObserver above (no AutoSizer). */}
+      </div>
+      <div ref={bodyRef} className="flex-1 min-h-0 overflow-hidden">
         {bodySize.height > 0 && bodySize.width > 0 && (
           <List
             height={bodySize.height}
-            width={contentWidth}
+            width={bodySize.width}
             rowCount={rows.length}
             rowHeight={ROW_HEIGHT}
             rowRenderer={renderRow}
+            onScroll={syncHeaderScroll}
           />
         )}
       </div>
     </div>
   );
 }
+
