@@ -1,5 +1,5 @@
-// PulseExploreTab — V6-styled Pulse Explorer page.
-// Behavior: LAZY — empty state until search/filter; map is the primary
+// PulseExploreTab â€” V6-styled Pulse Explorer page.
+// Behavior: LAZY â€” empty state until search/filter; map is the primary
 // surface (full height by default); results drawer is collapsible from
 // the bottom so the user can re-claim map space at any time.
 
@@ -75,7 +75,7 @@ export default function PulseExploreTab() {
   const [loadLimit, setLoadLimit] = useState(null); // "load more" cap; null = default 5k
   const fetchEnabled = hasAnyFilter(state.filters);
   const { data, isLoading, error } = useExploreAccounts(state.filters, null, { enabled: fetchEnabled, limit: loadLimit });
-  // Reset the "load more" cap whenever the search filters change — a new search
+  // Reset the "load more" cap whenever the search filters change â€” a new search
   // always starts from the default 5k page.
   const filterSig = JSON.stringify(state.filters);
   useEffect(() => { setLoadLimit(null); }, [filterSig]);
@@ -170,12 +170,12 @@ export default function PulseExploreTab() {
     return false;
   }, [saveViewAllowed, upgradeModal, planCode]);
 
-  // Sidebar tool dispatch — opens the corresponding panel or fires an action.
+  // Sidebar tool dispatch â€” opens the corresponding panel or fires an action.
   const onSidebarSelect = useCallback((t) => {
     setSidebarTool(t);
     if (t === 'bookmark') { if (requireSaveView()) setViewOpen(true); return; }
     if (t === 'filter') {
-      // Filter is implicit — chips already render at the top. Close any panel.
+      // Filter is implicit â€” chips already render at the top. Close any panel.
       setToolPanel(null); return;
     }
     setToolPanel((cur) => cur === t ? null : t);
@@ -197,7 +197,7 @@ export default function PulseExploreTab() {
   }, [setView]);
 
   // Auto-open the results drawer once data arrives (but never close
-  // automatically — let the user collapse it manually).
+  // automatically â€” let the user collapse it manually).
   const autoOpenedRef = useRef(false);
   useEffect(() => {
     if (fetchEnabled && rows.length > 0 && !autoOpenedRef.current) {
@@ -242,11 +242,11 @@ export default function PulseExploreTab() {
     setFilters({ ...(state.filters ?? {}), industry: Array.from(cur) });
   }, [state.filters, setFilters]);
 
-  // Parameterized so prompt-chip clicks pass the query DIRECTLY — the
+  // Parameterized so prompt-chip clicks pass the query DIRECTLY â€” the
   // previous setQuery + setTimeout pattern captured a stale query via
   // closure and parsed an empty string.
   // Resolve a query into filters WITHOUT the LLM. Order: deterministic
-  // geography parse → company-name guess. Returns null if nothing matched.
+  // geography parse â†’ company-name guess. Returns null if nothing matched.
   const resolveLocalFilters = useCallback((text) => {
     const local = localExtractFilters(text);
     if (hasAnyFilter(local)) return { filters: local, msg: 'Searching by location' };
@@ -280,19 +280,19 @@ export default function PulseExploreTab() {
         setFilters(local.filters);
         toast.success(local.msg);
       } else {
-        toast(`Couldn't extract filters from "${text}" — try a place ("Texas", "the southeast") or a company name`);
+        toast(`Couldn't extract filters from "${text}" â€” try a place ("Texas", "the southeast") or a company name`);
       }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[pulse-explore-parse] failed', err);
-      // Edge fn unreachable — still try the local parser so the Explorer
+      // Edge fn unreachable â€” still try the local parser so the Explorer
       // works even when pulse-explore-parse is completely down.
       const local = resolveLocalFilters(text);
       if (local) {
         setFilters(local.filters);
         toast.success(local.msg);
       } else {
-        toast.error('Search is temporarily degraded — try a place or company name (e.g. "Texas" or "Walmart")');
+        toast.error('Search is temporarily degraded â€” try a place or company name (e.g. "Texas" or "Walmart")');
       }
     } finally {
       setParsing(false);
@@ -302,7 +302,7 @@ export default function PulseExploreTab() {
   const onSubmitSearch = useCallback(() => doSearch(query), [doSearch, query]);
 
   const onSelectAllInView = useCallback(() => {
-    // Read the LIVE viewport from the map ref — relying on the cached
+    // Read the LIVE viewport from the map ref â€” relying on the cached
     // `mapBbox` state was racy: clicking the button before the bbox
     // effect re-fires would silently match nothing. The ref-based
     // getter falls back to the cached state if the ref isn't ready.
@@ -310,7 +310,7 @@ export default function PulseExploreTab() {
     // eslint-disable-next-line no-console
     console.log('[pulse-explore] select-in-view click', { liveBbox, rows: rows.length });
     if (!liveBbox) {
-      toast('Map not ready yet — pan or zoom once, then try again');
+      toast('Map not ready yet â€” pan or zoom once, then try again');
       return;
     }
     if (!rows.length) {
@@ -325,7 +325,7 @@ export default function PulseExploreTab() {
       if (c.lng >= w && c.lng <= e && c.lat >= s && c.lat <= n) ids.push(r.id);
     }
     if (!ids.length) {
-      toast('No plottable accounts in current view — try zooming out');
+      toast('No plottable accounts in current view â€” try zooming out');
       return;
     }
     const merged = Array.from(new Set([...(state.selection ?? []), ...ids]));
@@ -339,7 +339,7 @@ export default function PulseExploreTab() {
     console.log('[pulse-explore] lasso emit', { ids: ids?.length ?? 0 });
     setLassoActive(false);
     if (!ids?.length) {
-      toast('Lasso caught nothing — try a wider drag');
+      toast('Lasso caught nothing â€” try a wider drag');
       return;
     }
     const merged = Array.from(new Set([...(state.selection ?? []), ...ids]));
@@ -377,7 +377,7 @@ export default function PulseExploreTab() {
       />
       <FilterChipRow filters={state.filters} onChange={setFilters} />
 
-      {/* Mobile-only horizontal tool bar — the desktop vertical sidebar
+      {/* Mobile-only horizontal tool bar â€” the desktop vertical sidebar
           is `hidden sm:block`, leaving mobile users without access to
           filters/analytics/insights/layers. This bar covers that gap. */}
       <MobileToolBar
@@ -390,7 +390,7 @@ export default function PulseExploreTab() {
           <ExploreSidebar active={toolPanel ?? sidebarTool} onSelect={onSidebarSelect} />
         </div>
 
-        {/* Tool panel — desktop renders as a 320px side rail; mobile
+        {/* Tool panel â€” desktop renders as a 320px side rail; mobile
             renders as an 85vh bottom sheet with scrim. Both share the
             same content (renderToolPanel). */}
         {toolPanel && (
@@ -456,7 +456,7 @@ export default function PulseExploreTab() {
         <div className="flex-1 min-w-0 min-h-0 relative flex flex-col">
           {parsing && (
             <div className="absolute inset-x-0 top-0 z-30 bg-cyan-50 text-cyan-800 text-xs py-1.5 text-center border-b border-cyan-200">
-              Parsing search…
+              Parsing searchâ€¦
             </div>
           )}
           {error && (
@@ -465,11 +465,11 @@ export default function PulseExploreTab() {
             </div>
           )}
 
-          {/* Map — fills available vertical space; shares it with the results
+          {/* Map â€” fills available vertical space; shares it with the results
               drawer when open. Both map and drawer carry explicit min-h floors
               so on a SHORT viewport they keep usable heights and the page
               scrolls (via AppShell's overflow-y-auto) instead of crushing the
-              table to ~0. No transition — a moving height let the table's
+              table to ~0. No transition â€” a moving height let the table's
               ResizeObserver capture a mid-animation (near-zero) size. */}
           <div
             className={`relative border-b border-slate-200 ${
@@ -493,7 +493,7 @@ export default function PulseExploreTab() {
               onLassoSelect={onLassoSelect}
               mapStyle={mapStyle}
             />
-            {/* Loading overlay — covers the map while the query is PARSED
+            {/* Loading overlay â€” covers the map while the query is PARSED
                 (NL -> filters, ~10-15s) AND while accounts load, so the user
                 gets immediate feedback the moment they hit search. */}
             {(parsing || isLoading) ? (
@@ -504,11 +504,11 @@ export default function PulseExploreTab() {
                     <Sparkles size={18} className="animate-pulse text-cyan-600" />
                   </div>
                   <div className="font-display text-[14px] font-bold text-slate-900">
-                    Cooking up your query…
+                    Cooking up your queryâ€¦
                   </div>
                   <p className="font-body max-w-[240px] text-[11.5px] leading-snug text-slate-500">
                     Parsing your question and pulling matching accounts. This can
-                    take 10–15 seconds.
+                    take 10â€“15 seconds.
                   </p>
                   <div className="flex gap-1">
                     <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-500 [animation-delay:-0.3s]" />
@@ -518,7 +518,7 @@ export default function PulseExploreTab() {
                 </div>
               </div>
             ) : null}
-            {/* Right-side floating selection buttons — labels hide on xs */}
+            {/* Right-side floating selection buttons â€” labels hide on xs */}
             {fetchEnabled && (
               <div className="absolute right-2 top-2 sm:right-3 sm:top-3 z-20 flex flex-col gap-1.5">
                 <button
@@ -543,7 +543,7 @@ export default function PulseExploreTab() {
                   }`}
                 >
                   <Lasso size={13} />
-                  <span className="hidden sm:inline">{lassoActive ? 'Drag a rectangle…' : 'Lasso'}</span>
+                  <span className="hidden sm:inline">{lassoActive ? 'Drag a rectangleâ€¦' : 'Lasso'}</span>
                 </button>
               </div>
             )}
@@ -563,7 +563,7 @@ export default function PulseExploreTab() {
               }}
             />
 
-            {/* Empty-state CTA card — pinned bottom-center on desktop only.
+            {/* Empty-state CTA card â€” pinned bottom-center on desktop only.
                 Hidden on mobile (<sm) because the popup covered most of the
                 viewport and made the map unusable. Mobile users get a tiny
                 hint chip via the empty-state in the toolbar instead. */}
@@ -575,7 +575,7 @@ export default function PulseExploreTab() {
                     <span className="font-semibold">Search to begin</span>
                   </div>
                   <p className="text-xs text-slate-600">
-                    Type a query above (or pick a chip) — we&apos;ll plot up to 78K accounts on the map.
+                    Type a query above (or pick a chip) â€” we&apos;ll plot up to 78K accounts on the map.
                   </p>
                   <div className="mt-3 flex flex-wrap gap-1.5 justify-center">
                     {PROMPTS.map((p) => (
@@ -592,7 +592,7 @@ export default function PulseExploreTab() {
                 </div>
               </div>
             )}
-            {/* Mobile-only empty-state hint — small, sits above the bottom
+            {/* Mobile-only empty-state hint â€” small, sits above the bottom
                 results drawer header so it doesn't compete with the map. */}
             {!fetchEnabled && !parsing && (
               <div className="sm:hidden absolute inset-x-3 bottom-3 z-20 pointer-events-none">
@@ -600,13 +600,13 @@ export default function PulseExploreTab() {
                   <span className="text-cyan-700 font-semibold inline-flex items-center gap-1">
                     <Sparkles size={13} /> Search to begin
                   </span>
-                  <span className="ml-1">— type a query in the bar above.</span>
+                  <span className="ml-1">â€” type a query in the bar above.</span>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Results drawer — header bar always visible (so user knows
+          {/* Results drawer â€” header bar always visible (so user knows
               they can pop it open); body only renders when expanded.
               When open/maximized the drawer grows via flex (real pixel
               height) so the virtualized table's AutoSizer can measure it.
@@ -623,16 +623,16 @@ export default function PulseExploreTab() {
                 className="inline-flex items-center gap-1.5 hover:text-slate-900"
               >
                 <Table2 size={13} className="text-slate-500" />
-                Results
+                Account results
                 {fetchEnabled && (
                   <span className="text-slate-500 font-normal">
                     {isLoading
-                      ? '· loading…'
+                      ? 'Â· loadingâ€¦'
                       : totalMatched > rows.length
-                        ? `· ${rows.length.toLocaleString()} of ${totalMatched.toLocaleString()} accounts`
+                        ? `Â· ${rows.length.toLocaleString()} of ${totalMatched.toLocaleString()} accounts`
                         : displayRows.length === rows.length
-                          ? `· ${rows.length.toLocaleString()} accounts`
-                          : `· ${displayRows.length.toLocaleString()} of ${rows.length.toLocaleString()}`}
+                          ? `Â· ${rows.length.toLocaleString()} accounts`
+                          : `Â· ${displayRows.length.toLocaleString()} of ${rows.length.toLocaleString()}`}
                   </span>
                 )}
               </button>
@@ -645,7 +645,7 @@ export default function PulseExploreTab() {
                     title={`Load 5,000 more (showing ${rows.length.toLocaleString()} of ${totalMatched.toLocaleString()})`}
                     className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
                   >
-                    {isLoading ? 'Loading…' : 'Load 5k more'}
+                    {isLoading ? 'Loadingâ€¦' : 'Load 5k more'}
                   </button>
                 )}
                 {drawerOpen && (
@@ -679,7 +679,7 @@ export default function PulseExploreTab() {
                   onSaveToList={() => setSaveListOpen(true)}
                   onSaveAsView={() => { if (requireSaveView()) setViewOpen(true); }}
                   onBulkRefresh={() => setBulkOpen(true)}
-                  onAddToCampaign={() => toast('Add to campaign — coming in next polish pass')}
+                  onAddToCampaign={() => toast('Add to campaign â€” coming in next polish pass')}
                 />
                 {fetchEnabled ? (
                   <>
@@ -719,7 +719,7 @@ export default function PulseExploreTab() {
         </div>
         {activeRow && (
           <>
-            {/* Mobile scrim — taps outside the panel close it */}
+            {/* Mobile scrim â€” taps outside the panel close it */}
             <button
               type="button"
               aria-label="Close panel"
@@ -800,3 +800,4 @@ function MobileToolBar({ active, onSelect }) {
     </div>
   );
 }
+
