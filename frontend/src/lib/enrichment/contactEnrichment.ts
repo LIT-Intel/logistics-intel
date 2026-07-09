@@ -49,8 +49,8 @@ function toContactPayload(params: EnrichContactParams) {
 export async function enrichContact(params: EnrichContactParams): Promise<EnrichmentResult> {
   const revealPhoneNumber = params.revealPhoneNumber === true;
   const enrichmentRequests = revealPhoneNumber
-    ? ['find_email', 'find_phone']
-    : ['find_email'];
+    ? ['find_email', 'find_phone', 'verify']
+    : ['find_email', 'verify'];
 
   const { data, error } = await supabase.functions.invoke('enrich-contact-orchestrator', {
     body: {
@@ -64,7 +64,7 @@ export async function enrichContact(params: EnrichContactParams): Promise<Enrich
       source_entity_id: params.contactId,
       enrichment_requests: enrichmentRequests,
       reveal_phone_number: revealPhoneNumber,
-      provider_order: ['lemlist'],
+      provider_order: ['lemlist', 'apollo'],
     },
   });
 
@@ -74,37 +74,43 @@ export async function enrichContact(params: EnrichContactParams): Promise<Enrich
     return { success: false, error: parsed?.error || parsed?.message || error.message || 'Enrichment failed' };
   }
 
+  const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
+
   if (!data?.ok) {
     return {
       success: false,
       provider: data?.provider ?? null,
-      jobs: Array.isArray(data?.jobs) ? data.jobs : [],
+      jobs,
       error: data?.error || data?.message || 'Enrichment failed',
     };
   }
 
   const contact = Array.isArray(data.contacts) && data.contacts.length ? data.contacts[0] : null;
+  const hasAcceptedJob = jobs.some((job) => {
+    const status = String(job?.status || '').toLowerCase();
+    return Boolean(job?.id || job?.provider_request_id || /pending|queued|submitted|processing|running/.test(status));
+  });
 
-  if (data.pending && !contact) {
+  if ((data.pending || hasAcceptedJob || Number(data.submitted || 0) > 0) && !contact) {
     return {
       success: true,
       pending: true,
       provider: data.provider,
       submitted: data.submitted || 0,
-      jobs: Array.isArray(data.jobs) ? data.jobs : [],
+      jobs,
       fieldsAdded: ['enrichment job submitted'],
       cost: 0,
     };
   }
 
-  if (!contact && data.pending !== true) {
+  if (!contact) {
     const firstError = Array.isArray(data.errors) && data.errors.length
       ? data.errors[0]?.error || data.errors[0]?.message
       : null;
     return {
       success: false,
       provider: data.provider ?? null,
-      jobs: Array.isArray(data.jobs) ? data.jobs : [],
+      jobs,
       error: firstError || data.error || data.message || 'No enrichment result was returned.',
     };
   }
