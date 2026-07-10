@@ -3823,4 +3823,3 @@ const PROVIDER_COLORS = [
 ];
 
 const MODE_COLORS = ["#3B82F6", "#67E8F9", "#8B5CF6", "#10B981", "#F59E0B"];
-￿ 
