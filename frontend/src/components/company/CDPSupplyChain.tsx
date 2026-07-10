@@ -7,11 +7,13 @@ import {
   Container,
 } from "lucide-react";
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
   ResponsiveContainer,
   Tooltip,
   XAxis,
+  YAxis,
 } from "recharts";
 import LitSectionCard from "@/components/ui/LitSectionCard";
 import LitFlag from "@/components/ui/LitFlag";
@@ -640,8 +642,13 @@ function CadenceAndModalMix({
     label: c.label,
     fcl: c.fcl,
     lcl: c.lcl,
-    air: 0,
   }));
+  const serviceBars = [
+    { key: "fcl", label: "FCL", color: "#0EA5E9" },
+    { key: "lcl", label: "LCL", color: "#F59E0B" },
+  ].filter((bar) =>
+    chartData.some((point) => Number(point[bar.key as "fcl" | "lcl"] || 0) > 0),
+  );
 
   const fcl = containerProfile.fcl;
   const lcl = containerProfile.lcl;
@@ -650,23 +657,16 @@ function CadenceAndModalMix({
   // chip renders below the chart explaining the ImportYeti coverage gap.
   const air = mxAirCount;
   const total = fcl + lcl + air;
-  const donut = [
-    { name: "FCL", value: fcl, color: "#0EA5E9" },
-    { name: "LCL", value: lcl, color: "#F59E0B" },
-    // Only push the air slice when there's REAL air data — no 0% wedges.
-    ...(air > 0 ? [{ name: "Air", value: air, color: "#8B5CF6" }] : []),
-  ].filter((s) => s.value > 0);
-
   if (cadence.length === 0 && total === 0) {
     return (
-      <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months · click a slice to filter">
-        <EmptyMessage text="No cadence data on file yet — try Refresh Intel to pull the latest shipments." />
+      <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months - hover a month to inspect service totals">
+        <EmptyMessage text="No cadence data on file yet - try Refresh Intel to pull the latest shipments." />
       </LitSectionCard>
     );
   }
 
   return (
-    <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months · click a slice to filter">
+    <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months - hover a month to inspect service totals">
       {/* Service modes covered — derived from real signal in this account.
           Replaces the prior implicit FCL/LCL-only framing so the user can
           see at a glance which legs LIT has coverage for on this shipper. */}
@@ -688,78 +688,46 @@ function CadenceAndModalMix({
         <div className="min-w-0 flex-1 lg:basis-[60%]">
           <div className="h-[200px] sm:h-[240px] md:h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="cad-fcl" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0EA5E9" stopOpacity={0.5} />
-                    <stop offset="100%" stopColor="#0EA5E9" stopOpacity={0.05} />
-                  </linearGradient>
-                  <linearGradient id="cad-lcl" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#F59E0B" stopOpacity={0.5} />
-                    <stop offset="100%" stopColor="#F59E0B" stopOpacity={0.05} />
-                  </linearGradient>
-                  <linearGradient id="cad-air" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#8B5CF6" stopOpacity={0.5} />
-                    <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0.05} />
-                  </linearGradient>
-                </defs>
+              <BarChart
+                data={chartData}
+                margin={{ top: 10, right: 8, left: 0, bottom: 0 }}
+                barCategoryGap="24%"
+                barGap={4}
+              >
+                <CartesianGrid vertical={false} stroke="#E2E8F0" strokeDasharray="3 3" />
                 <XAxis
                   dataKey="label"
                   tick={{ fontSize: 10, fill: "#64748B" }}
                   tickLine={false}
                   axisLine={{ stroke: "#E2E8F0" }}
                 />
+                <YAxis hide allowDecimals={false} />
                 <Tooltip
-                  contentStyle={{
-                    fontSize: 11,
-                    border: "1px solid #E2E8F0",
-                    borderRadius: 6,
-                    maxWidth: 240,
-                  }}
+                  cursor={{ fill: "#EEF2FF", opacity: 0.65 }}
+                  content={<CadenceBarTooltip />}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="fcl"
-                  stackId="1"
-                  stroke="#0EA5E9"
-                  fill="url(#cad-fcl)"
-                  name="FCL"
-                  isAnimationActive={!reducedMotion}
-                  animationDuration={reducedMotion ? 0 : 1600}
-                  animationBegin={0}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="lcl"
-                  stackId="1"
-                  stroke="#F59E0B"
-                  fill="url(#cad-lcl)"
-                  name="LCL"
-                  isAnimationActive={!reducedMotion}
-                  animationDuration={reducedMotion ? 0 : 1600}
-                  animationBegin={0}
-                />
-                {hasMxAir && (
-                  <Area
-                    type="monotone"
-                    dataKey="air"
-                    stackId="1"
-                    stroke="#8B5CF6"
-                    fill="url(#cad-air)"
-                    name="Air"
+                {serviceBars.map((bar, index) => (
+                  <Bar
+                    key={bar.key}
+                    dataKey={bar.key}
+                    name={bar.label}
+                    fill={bar.color}
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={26}
                     isAnimationActive={!reducedMotion}
-                    animationDuration={reducedMotion ? 0 : 1600}
-                    animationBegin={0}
+                    animationDuration={reducedMotion ? 0 : 900}
+                    animationBegin={reducedMotion ? 0 : index * 120}
+                    activeBar={{ stroke: "#0F172A", strokeWidth: 1.25, fillOpacity: 0.92 }}
                   />
-                )}
-              </AreaChart>
+                ))}
+              </BarChart>
             </ResponsiveContainer>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <LegendDot color="#0EA5E9" label="FCL" />
             <LegendDot color="#F59E0B" label="LCL" />
             {hasMxAir ? (
-              <LegendDot color="#8B5CF6" label={`Air · ${mxAirCount} MX`} />
+              <LegendDot color="#8B5CF6" label={`Air - ${mxAirCount} MX`} />
             ) : (
               // Honest disclosure — no air series, no fake 0% slice. The
               // ImportYeti US-import feed doesn't carry air freight; we say
@@ -782,6 +750,38 @@ function CadenceAndModalMix({
         </div>
       </div>
     </LitSectionCard>
+  );
+}
+
+function CadenceBarTooltip({ active, payload, label }: any) {
+  if (!active || !Array.isArray(payload) || payload.length === 0) return null;
+  const rows = payload
+    .filter((entry) => Number(entry?.value || 0) > 0)
+    .map((entry) => ({
+      name: entry.name,
+      value: Number(entry.value || 0),
+      color: entry.color || entry.fill,
+    }));
+  if (!rows.length) return null;
+  const total = rows.reduce((sum, row) => sum + row.value, 0);
+  return (
+    <div className="rounded-md border border-slate-200 bg-white px-2.5 py-2 text-[11px] shadow-sm">
+      <div className="font-display mb-1 font-semibold text-slate-900">{label}</div>
+      <div className="space-y-1">
+        {rows.map((row) => (
+          <div key={row.name} className="flex min-w-[130px] items-center justify-between gap-4">
+            <span className="inline-flex items-center gap-1.5 text-slate-600">
+              <span className="h-2 w-2 rounded-full" style={{ background: row.color }} />
+              {row.name}
+            </span>
+            <span className="font-mono font-semibold text-slate-900">{row.value}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 border-t border-slate-100 pt-1 font-mono text-[10px] text-slate-500">
+        {total} shipments this month
+      </div>
+    </div>
   );
 }
 
@@ -3823,3 +3823,4 @@ const PROVIDER_COLORS = [
 ];
 
 const MODE_COLORS = ["#3B82F6", "#67E8F9", "#8B5CF6", "#10B981", "#F59E0B"];
+￿ 
