@@ -25,7 +25,7 @@ export const maxDuration = 60;
  *   1. lit_leads row exists with created_at older than 30 days.
  *   2. No row in lit_lead_sequence_queue with sequence_key='re-engagement'
  *      for this email (never enrolled before — re-engagement is once-only).
- *   3. No 'opened' event in lit_resend_events for this email in the last
+ *   3. No 'opened' event in lit_email_events for this email in the last
  *      30 days. (Open = active = leave them alone.)
  *   4. Not bounced or complained per lit_email_suppression_status RPC.
  *   5. Not globally unsubscribed per lit_email_preferences.unsubscribed_all.
@@ -96,13 +96,15 @@ export async function GET(req: NextRequest) {
 
   // 3. Exclude anyone with an opened event in the last 30d (active).
   const { data: recentOpens } = await supa
-    .from("lit_resend_events")
-    .select("email_to")
+    .from("lit_email_events")
+    .select("metadata_json")
     .eq("event_type", "opened")
     .gt("created_at", cutoffIso)
-    .in("email_to", uniqueEmails);
+    .filter("metadata_json->>email_to", "in", `(${uniqueEmails.join(",")})`);
   const openedSet = new Set(
-    (recentOpens ?? []).map((r: { email_to: string }) => (r.email_to || "").toLowerCase()),
+    (recentOpens ?? []).map((r: { metadata_json?: { email_to?: string } }) =>
+      (r.metadata_json?.email_to || "").toLowerCase(),
+    ),
   );
 
   // 4. Exclude leads with global unsubscribe preference.
@@ -181,7 +183,10 @@ export async function GET(req: NextRequest) {
 
     const { error: insErr } = await supa
       .from("lit_lead_sequence_queue")
-      .insert(queueRows);
+      .upsert(queueRows, {
+        onConflict: "lead_id,sequence_key,step",
+        ignoreDuplicates: true,
+      });
 
     if (insErr) {
       console.error(

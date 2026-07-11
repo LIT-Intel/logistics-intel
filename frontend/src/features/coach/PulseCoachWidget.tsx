@@ -13,6 +13,7 @@ import {
   ChevronRight,
   RefreshCw,
   Sparkles,
+  Video,
   X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -732,6 +733,7 @@ export function PulseCoachFloating() {
       ) : null}
 
       <TutorialCard />
+      <CoachVideoGuide />
       <CoachComposer />
     </div>
   );
@@ -840,6 +842,52 @@ function TutorialCard() {
 }
 
 /* ── Coach Composer — ask Pulse Coach anything ───────────────────── */
+function CoachVideoGuide() {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <section className="border-b border-slate-700/80 bg-slate-950/30 px-5 py-4">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-center justify-between gap-4 text-left"
+        aria-expanded={expanded}
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center border border-cyan-400/40 bg-cyan-400/10 text-cyan-300">
+            <Video className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-white">Watch how search works</span>
+            <span className="block text-xs text-slate-400">
+              Pulse Search and Company Search walkthrough
+            </span>
+          </span>
+        </span>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`}
+          aria-hidden="true"
+        />
+      </button>
+
+      {expanded ? (
+        <div className="mt-4 overflow-hidden border border-slate-700 bg-black">
+          <div className="aspect-video w-full">
+            <iframe
+              className="h-full w-full"
+              src="https://www.youtube-nocookie.com/embed/a9FhnCW89wY?rel=0"
+              title="How to use LIT Pulse Search and Company Search"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function CoachComposer() {
   const navigate = useNavigate();
   const { pathname } = useLocation();

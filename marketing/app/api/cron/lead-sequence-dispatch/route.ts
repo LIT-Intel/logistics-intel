@@ -88,8 +88,9 @@ function checkAuth(req: NextRequest): Response | null {
     });
   }
   const auth = req.headers.get("authorization");
-  const vercelCron = req.headers.get("x-vercel-cron");
-  if (auth !== `Bearer ${expected}` || !vercelCron) {
+  // Vercel Cron authenticates with CRON_SECRET in Authorization. It does
+  // not guarantee a separate x-vercel-cron header.
+  if (auth !== `Bearer ${expected}`) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { "content-type": "application/json" },
