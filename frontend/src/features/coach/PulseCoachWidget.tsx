@@ -42,13 +42,13 @@ import {
 } from "@/lib/onboardingState";
 
 /**
- * Pulse Coach widget â€” proactive AI nudges grounded in the user's
+ * Pulse Coach widget — proactive AI nudges grounded in the user's
  * workspace state. Two render modes share a single data source:
  *
- *   "floating"  â€” bottom-right pill that expands into a card. Mounted
+ *   "floating"  — bottom-right pill that expands into a card. Mounted
  *                 globally in AppShell so it follows the user across
  *                 every page.
- *   "inline"    â€” full hero panel rendered on the Dashboard.
+ *   "inline"    — full hero panel rendered on the Dashboard.
  *
  * The widget hits the `pulse-coach` edge function which returns LLM-
  * generated nudges + an aggregated workspace_lanes envelope used by
@@ -134,7 +134,7 @@ export function PulseCoachProvider({
   const { user } = useAuth();
   const userId = user?.id || null;
   // Initial render: read cache for the current user only. If the user
-  // is not yet known (auth still warming up) start empty â€” the userId
+  // is not yet known (auth still warming up) start empty — the userId
   // effect below kicks in once auth resolves.
   const [result, setResult] = useState<PulseCoachResult | null>(() => {
     if (typeof window === "undefined") return null;
@@ -167,15 +167,15 @@ export function PulseCoachProvider({
           // and the workspace-lanes list don't reflow on every coach
           // refresh:
           //
-          //   A. Zero-lane response while prev had lanes â†’ keep prev.
+          //   A. Zero-lane response while prev had lanes → keep prev.
           //      Prevents the globe blanking out if the LLM call drops
           //      the lanes block.
           //
-          //   B. Same lane keys as before â†’ reuse the prev array
+          //   B. Same lane keys as before → reuse the prev array
           //      reference. Without this, every refresh produced a new
           //      array (same content, new identity) which forced the
           //      `sorted` / `globeLanes` useMemos to recompute and the
-          //      GlobeCanvas three.js scene to rebuild â€” the visible
+          //      GlobeCanvas three.js scene to rebuild — the visible
           //      "tabs disappear and reflow" symptom on dashboard.
           setResult((prev) => {
             if (!r.ok) return r;
@@ -269,7 +269,7 @@ export function usePulseCoach(): PulseCoachContextValue {
   return ctx;
 }
 
-/* â”€â”€ Action handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Action handler ──────────────────────────────────────────────── */
 
 function useNudgeActionHandler() {
   const navigate = useNavigate();
@@ -320,7 +320,7 @@ function useNudgeActionHandler() {
   );
 }
 
-/* â”€â”€ Inline (dashboard hero) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Inline (dashboard hero) ─────────────────────────────────────── */
 
 export function PulseCoachInline() {
   const { result, loading, error, refresh, highlightLane, highlightedLane } =
@@ -390,15 +390,15 @@ export function PulseCoachInline() {
       {/* body */}
       {loading && nudges.length === 0 ? (
         <div className="font-body relative px-1 py-6 text-center text-[12px] text-slate-400">
-          Reading your workspaceâ€¦
+          Reading your workspace…
         </div>
       ) : error && nudges.length === 0 ? (
         <div className="font-body relative px-1 py-4 text-[12px] text-amber-300">
-          Coach is offline â€” {error}
+          Coach is offline — {error}
         </div>
       ) : nudges.length === 0 ? (
         <div className="font-body relative px-1 py-4 text-[12px] text-slate-400">
-          No nudges right now. Try saving a company or enriching a contact â€”
+          No nudges right now. Try saving a company or enriching a contact —
           Coach lights up once there's signal to work with.
         </div>
       ) : (
@@ -436,7 +436,7 @@ export function PulseCoachInline() {
   );
 }
 
-/* â”€â”€ Plan + usage warning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Plan + usage warning ───────────────────────────────────────── */
 
 const PLAN_PULSE_LIMITS: Record<string, number> = {
   free_trial: 3,
@@ -548,7 +548,7 @@ function UsageBanner({ usage }: { usage: UsageState | null }) {
   );
 }
 
-/* â”€â”€ Floating widget â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Floating widget ─────────────────────────────────────────────── */
 
 const FLOATING_COLLAPSED_KEY = "lit.pulse_coach.floating.collapsed";
 
@@ -719,8 +719,8 @@ export function PulseCoachFloating() {
           {!t ? (
             <div className="font-body text-[11px] text-slate-400">
               {loading
-                ? "Reading your workspaceâ€¦"
-                : "All clear â€” nothing urgent on your plate today."}
+                ? "Reading your workspace…"
+                : "All clear — nothing urgent on your plate today."}
             </div>
           ) : (
             <NudgeCard
@@ -739,7 +739,7 @@ export function PulseCoachFloating() {
   );
 }
 
-/* â”€â”€ Tutorial card â€” page-aware onboarding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Tutorial card — page-aware onboarding ───────────────────────── */
 function TutorialCard() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -803,7 +803,7 @@ function TutorialCard() {
           className="inline-flex h-4 items-center rounded px-1.5 text-[9px] font-bold uppercase tracking-[0.06em]"
           style={{ background: "rgba(0,240,255,0.15)", color: "#67E8F9", border: "1px solid rgba(0,240,255,0.3)" }}
         >
-          Tutorial Â· 30s
+          Tutorial · 30s
         </span>
         <button
           type="button"
@@ -841,54 +841,50 @@ function TutorialCard() {
   );
 }
 
-/* â”€â”€ Coach Composer â€” ask Pulse Coach anything â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-const PULSE_SEARCH_VIDEO_URL = "https://www.youtube-nocookie.com/embed/a9FhnCW89wY?rel=0";
-
+/* ── Coach Composer — ask Pulse Coach anything ───────────────────── */
 function CoachVideoGuide() {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="border-t border-white/5 px-3.5 py-3">
+    <section className="border-b border-slate-700/80 bg-slate-950/30 px-5 py-4">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center gap-2 text-left"
+        className="flex w-full items-center justify-between gap-4 text-left"
         aria-expanded={expanded}
-        aria-controls="pulse-coach-video"
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-cyan-400/30 bg-cyan-400/10 text-cyan-300">
-          <Video className="h-3.5 w-3.5" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="font-display block text-[11.5px] font-semibold text-white">
-            Watch how search works
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center border border-cyan-400/40 bg-cyan-400/10 text-cyan-300">
+            <Video className="h-4 w-4" aria-hidden="true" />
           </span>
-          <span className="font-body block text-[10.5px] text-slate-400">
-            Pulse Search and Company Search walkthrough
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-white">Watch how search works</span>
+            <span className="block text-xs text-slate-400">
+              Pulse Search and Company Search walkthrough
+            </span>
           </span>
         </span>
-        <ChevronRight
-          className={`h-3.5 w-3.5 text-slate-400 transition-transform ${expanded ? "rotate-90" : ""}`}
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`}
+          aria-hidden="true"
         />
       </button>
 
       {expanded ? (
-        <div
-          id="pulse-coach-video"
-          className="mt-3 aspect-video w-full overflow-hidden rounded-md border border-white/10 bg-slate-950"
-        >
-          <iframe
-            className="h-full w-full"
-            src={PULSE_SEARCH_VIDEO_URL}
-            title="How to use Pulse Search and Company Search"
-            loading="lazy"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            referrerPolicy="strict-origin-when-cross-origin"
-            allowFullScreen
-          />
+        <div className="mt-4 overflow-hidden border border-slate-700 bg-black">
+          <div className="aspect-video w-full">
+            <iframe
+              className="h-full w-full"
+              src="https://www.youtube-nocookie.com/embed/a9FhnCW89wY?rel=0"
+              title="How to use LIT Pulse Search and Company Search"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen
+            />
+          </div>
         </div>
       ) : null}
-    </div>
+    </section>
   );
 }
 
@@ -960,7 +956,7 @@ function CoachComposer() {
           <div className="font-body text-[12px] leading-relaxed text-slate-200" style={{ whiteSpace: "pre-wrap" }}>
             {answer.md}
           </div>
-          {/* Inline search results â€” the Coach detected a data query
+          {/* Inline search results — the Coach detected a data query
               (geography / industry / lane / etc.) and ran it through
               the Pulse search pipeline. Each row navigates straight
               to the company profile. Hidden for meta / help answers. */}
@@ -985,7 +981,7 @@ function CoachComposer() {
                       </div>
                       {(loc || c.industry) ? (
                         <div className="font-body text-[10.5px] text-slate-400">
-                          {[loc, c.industry].filter(Boolean).join(" Â· ")}
+                          {[loc, c.industry].filter(Boolean).join(" · ")}
                         </div>
                       ) : null}
                     </button>
@@ -1032,14 +1028,14 @@ function CoachComposer() {
           className="rounded-md px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40"
           style={{ background: asking ? "rgba(0,240,255,0.1)" : "rgba(0,240,255,0.18)", border: "1px solid rgba(0,240,255,0.4)" }}
         >
-          {asking ? "â€¦" : "Ask"}
+          {asking ? "…" : "Ask"}
         </button>
       </form>
     </div>
   );
 }
 
-/* â”€â”€ Nudge card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Nudge card ──────────────────────────────────────────────────── */
 
 function NudgeCard({
   nudge,
@@ -1060,12 +1056,12 @@ function NudgeCard({
   // header ("PULSE COACH" in #00F0FF) so no dark/black font ever lands on
   // the slate gradient. The per-nudge accent is still used for the icon
   // chip + the dark-compact button background, but every text run is
-  // hardcoded bright via inline style â€” Tailwind purge / dark-mode
+  // hardcoded bright via inline style — Tailwind purge / dark-mode
   // overrides can't override these.
   const accent = nudge.accent || "#00F0FF";
   const TITLE_COLOR = "#FFFFFF";
   const BODY_COLOR = "#CBD5E1";   // slate-300
-  const CTA_COLOR = "#00F0FF";    // cyan â€” matches the PULSE COACH header
+  const CTA_COLOR = "#00F0FF";    // cyan — matches the PULSE COACH header
 
   if (variant === "dark-compact") {
     return (
@@ -1130,7 +1126,7 @@ function NudgeCard({
               color: "#7DD3FC",
             }}
           >
-            {nudge.lane_focus.from} â†’ {nudge.lane_focus.to}
+            {nudge.lane_focus.from} → {nudge.lane_focus.to}
           </span>
         )}
       </div>
@@ -1157,7 +1153,7 @@ function NudgeCard({
   );
 }
 
-/* â”€â”€ Re-export workspace lanes hook for the globe â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Re-export workspace lanes hook for the globe ────────────────── */
 
 export function useWorkspaceLanes(): {
   lanes: WorkspaceLane[];
@@ -1166,4 +1162,3 @@ export function useWorkspaceLanes(): {
   const { result, loading } = usePulseCoach();
   return { lanes: result?.workspace_lanes || [], loading };
 }
-
