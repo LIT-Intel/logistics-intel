@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/lead-sequence-dispatch",
-      "schedule": "0 15 * * *"
+      "schedule": "*/30 * * * *"
     },
     {
       "path": "/api/cron/reengagement-enroll",
