@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import {
   ArrowRight,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
