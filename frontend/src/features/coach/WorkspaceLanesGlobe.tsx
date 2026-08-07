@@ -194,6 +194,12 @@ export default function WorkspaceLanesGlobe() {
                 size={globeSize}
                 theme="trade"
                 showFlagPins
+                onSelectLane={(laneId) => {
+                  const lane = sorted.find((l) => l.key === laneId);
+                  highlightLane(
+                    lane ? { from: lane.from_label, to: lane.to_label } : null,
+                  );
+                }}
               />
             ) : (
               <LaneMap
@@ -249,8 +255,25 @@ export default function WorkspaceLanesGlobe() {
                     const short = formatLaneShort(
                       `${l.from_label} → ${l.to_label}`,
                     );
-                    const fromLabel = short?.fromLabel || l.from_label;
-                    const toLabel = short?.toLabel || l.to_label;
+                    // Bare ISO codes ("CN", "PL") read as data debris next
+                    // to full city labels — swap them for the resolved
+                    // country name ("China") when we have one. The flag
+                    // glyph already carries the code visually.
+                    const humanize = (
+                      label: string,
+                      meta: typeof fromMeta,
+                    ): string =>
+                      label.trim().length <= 3 && meta?.countryName
+                        ? meta.countryName
+                        : label;
+                    const fromLabel = humanize(
+                      short?.fromLabel || l.from_label,
+                      fromMeta,
+                    );
+                    const toLabel = humanize(
+                      short?.toLabel || l.to_label,
+                      toMeta,
+                    );
                     return (
                       <>
                         <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">

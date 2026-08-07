@@ -4,6 +4,7 @@ import {
   geoPath,
   geoGraticule,
   geoDistance,
+  geoInterpolate,
   type GeoProjection,
 } from "d3-geo";
 import { feature } from "topojson-client";
@@ -163,6 +164,14 @@ type Props = {
    * Defaults to false to preserve existing callers.
    */
   showFlagPins?: boolean;
+  /**
+   * Living Network (2026-08): when provided, the globe becomes directly
+   * interactive — hovering an arc shows a pointer cursor and clicking it
+   * fires this callback with the lane id (or null when clicking open
+   * ocean, which callers should treat as "deselect"). Auto-rotation
+   * pauses while the pointer is over the canvas.
+   */
+  onSelectLane?: (laneId: string | null) => void;
 };
 
 type FlagPin = {
@@ -184,8 +193,33 @@ type GlobeState = {
   spinning: boolean;
   animFrame: number | null;
   dashOffset: number;
+  /** 0→1 clock driving the flow particles along every arc. */
+  flow: number;
   loaded: boolean;
 };
+
+/** Stable per-lane 0→1 phase so particles on different lanes don't march in
+ *  lockstep. Hash of the lane id — deterministic across renders. */
+function lanePhase(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 997;
+  return h / 997;
+}
+
+/** Point-to-segment distance in canvas px — used by the arc hit-test. */
+function distToSegment(
+  px: number, py: number,
+  ax: number, ay: number,
+  bx: number, by: number,
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  const cx = ax + t * dx;
+  const cy = ay + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
 
 export default function GlobeCanvas({
   lanes,
@@ -193,6 +227,7 @@ export default function GlobeCanvas({
   size = 268,
   theme = "light",
   showFlagPins = false,
+  onSelectLane,
 }: Props) {
   const palette: GlobePalette =
     theme === "dark"
@@ -208,10 +243,15 @@ export default function GlobeCanvas({
     spinning: true,
     animFrame: null,
     dashOffset: 0,
+    flow: 0,
     loaded: false,
   });
   const lanesRef = useRef(lanes);
   const selectedRef = useRef(selectedLane);
+  const hoveredRef = useRef<string | null>(null);
+  const pointerInsideRef = useRef(false);
+  const onSelectRef = useRef(onSelectLane);
+  useEffect(() => { onSelectRef.current = onSelectLane; }, [onSelectLane]);
   const [loaded, setLoaded] = useState(false);
   // Flag-pin overlay state — populated by the rAF tick when showFlagPins is
   // true. Throttled to one update every 3 frames so React doesn't thrash.
@@ -285,7 +325,9 @@ export default function GlobeCanvas({
           s.rotation = [tr0, tr1];
           s.targetRotation = null;
         }
-      } else if (s.spinning) {
+      } else if (s.spinning && !pointerInsideRef.current) {
+        // Ambient rotation pauses while the pointer is over the globe so
+        // the arc under the cursor holds still for hover + click.
         s.rotation[0] += 0.1;
       }
       s.dashOffset = (s.dashOffset + 0.4) % 24;
@@ -443,7 +485,89 @@ export default function GlobeCanvas({
         }
       }
 
-      // Trade route arc
+      // ── Living Network: every lane is always visible ──────────────────
+      // The old renderer drew arcs ONLY for the selected lane, so on page
+      // load the globe was an empty decorative sphere. Now every lane is
+      // drawn each frame — width + opacity encode relative volume — and
+      // when a lane is selected/hovered the rest dim so the focus pops.
+      const allLanes = lanesRef.current;
+      const selNow = selectedRef.current;
+      const hovNow = hoveredRef.current;
+      const maxShip = Math.max(1, ...allLanes.map((l) => l.shipments || 1));
+      const visCenter: [number, number] = [-s.rotation[0], -s.rotation[1]];
+
+      for (const lane of allLanes) {
+        if (lane.id === selNow) continue; // emphasis pass below draws it
+        const w = Math.sqrt((lane.shipments || 1) / maxShip);
+        const isHov = hovNow === lane.id;
+        let alpha = 0.3 + 0.45 * w;
+        if ((selNow || hovNow) && !isHov) alpha *= 0.35; // dim non-focus lanes
+        if (isHov) alpha = 0.95;
+        const arcObj = { type: "LineString", coordinates: [lane.coords[0], lane.coords[1]] };
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        pathGen(arcObj as any);
+        ctx.strokeStyle = palette.arcStroke;
+        ctx.lineWidth = 1 + 2.2 * w + (isHov ? 0.7 : 0);
+        ctx.stroke();
+        ctx.restore();
+        // Context endpoint dots (no pulse — pulses are selection-only).
+        for (const coord of lane.coords) {
+          if (geoDistance(coord, visCenter) >= Math.PI / 2) continue;
+          const pt = proj(coord);
+          if (!pt) continue;
+          ctx.save();
+          ctx.globalAlpha = Math.min(1, alpha + 0.15);
+          ctx.beginPath();
+          ctx.arc(pt[0], pt[1], 1.6 + 1.6 * w, 0, Math.PI * 2);
+          ctx.fillStyle = palette.dotFill;
+          ctx.fill();
+          ctx.strokeStyle = palette.dotStroke;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      // Flow particles — 1-3 comets per lane (count scales with volume)
+      // travelling origin → destination with a short fading tail. This is
+      // what makes the network read as ALIVE rather than a static chart.
+      s.flow = (s.flow + 0.0025) % 1;
+      for (const lane of allLanes) {
+        const w = Math.sqrt((lane.shipments || 1) / maxShip);
+        const focused = !selNow || selNow === lane.id;
+        const particleAlpha = focused ? 0.9 : 0.25;
+        const count = 1 + Math.round(2 * w);
+        const interp = geoInterpolate(lane.coords[0], lane.coords[1]);
+        const phase = lanePhase(lane.id);
+        for (let p = 0; p < count; p++) {
+          const t = (s.flow + phase + p / count) % 1;
+          for (let trail = 0; trail < 3; trail++) {
+            const tt = t - trail * 0.018;
+            if (tt < 0 || tt > 1) continue;
+            const pos = interp(tt);
+            if (geoDistance(pos, visCenter) >= Math.PI / 2) continue;
+            const pt = proj(pos);
+            if (!pt) continue;
+            ctx.save();
+            ctx.globalAlpha =
+              particleAlpha * (trail === 0 ? 1 : trail === 1 ? 0.45 : 0.2);
+            ctx.beginPath();
+            ctx.arc(
+              pt[0], pt[1],
+              (1.3 + 1.1 * w) * (trail === 0 ? 1 : 0.7),
+              0, Math.PI * 2,
+            );
+            ctx.fillStyle = palette.dotFill;
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      }
+
+      // Trade route arc — selected-lane emphasis pass (bright glow +
+      // animated dash + endpoint pulses + flag pins).
       const sel = selectedRef.current;
       if (sel) {
         const lane = lanesRef.current.find((l) => l.id === sel);
@@ -575,13 +699,71 @@ export default function GlobeCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, size, theme]);
 
+  // Living Network hit-test: sample each lane's great-circle at 24 steps,
+  // project the visible segments, and find the arc within 9px of the
+  // cursor. Cheap enough (≤8 lanes × 24 segments) to run per pointermove.
+  const hitTestLane = (clientX: number, clientY: number): string | null => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const mx = clientX - rect.left;
+    const my = clientY - rect.top;
+    const s = stateRef.current;
+    const sphereRadius = size / 2 - 24;
+    const proj = geoOrthographic()
+      .scale(sphereRadius)
+      .translate([size / 2, size / 2])
+      .rotate([s.rotation[0], s.rotation[1], 0])
+      .clipAngle(90);
+    const visCenter: [number, number] = [-s.rotation[0], -s.rotation[1]];
+    let best: string | null = null;
+    let bestD = 9;
+    for (const lane of lanesRef.current) {
+      const interp = geoInterpolate(lane.coords[0], lane.coords[1]);
+      let prev: [number, number] | null = null;
+      const STEPS = 24;
+      for (let k = 0; k <= STEPS; k++) {
+        const pos = interp(k / STEPS);
+        if (geoDistance(pos, visCenter) >= Math.PI / 2) { prev = null; continue; }
+        const pt = proj(pos);
+        if (!pt) { prev = null; continue; }
+        if (prev) {
+          const d = distToSegment(mx, my, prev[0], prev[1], pt[0], pt[1]);
+          if (d < bestD) { bestD = d; best = lane.id; }
+        }
+        prev = pt as [number, number];
+      }
+    }
+    return best;
+  };
+
   return (
     <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
       {/* Phase B.4 — no `borderRadius: 50%` clip on the canvas: the
           atmosphere halo and drop shadow paint outside the sphere edge
           and need the full canvas square to render. The sphere itself
           stays a perfect circle via `pathGen({type:"Sphere"})`. */}
-      <canvas ref={canvasRef} style={{ display: "block" }} />
+      <canvas
+        ref={canvasRef}
+        style={{ display: "block" }}
+        onPointerEnter={() => { pointerInsideRef.current = true; }}
+        onPointerLeave={() => {
+          pointerInsideRef.current = false;
+          hoveredRef.current = null;
+          const c = canvasRef.current;
+          if (c) c.style.cursor = "default";
+        }}
+        onPointerMove={(e) => {
+          const id = hitTestLane(e.clientX, e.clientY);
+          hoveredRef.current = id;
+          const c = canvasRef.current;
+          if (c) c.style.cursor = id ? "pointer" : "default";
+        }}
+        onClick={(e) => {
+          if (!onSelectRef.current) return;
+          onSelectRef.current(hitTestLane(e.clientX, e.clientY));
+        }}
+      />
       {showFlagPins && flagPins && flagPins.map((pin, i) => {
         const glyph = flagFromCode(pin.code) || "🏳️";
         const muted = !pin.visible;
