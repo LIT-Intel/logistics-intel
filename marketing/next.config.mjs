@@ -160,6 +160,18 @@ const nextConfig = {
       // Pulse Explorer V2 rebuild). The redirect catches inbound links and
       // cached Google results while consolidating equity onto the canonical.
       { source: "/features/company-intelligence", destination: "/company-intelligence", permanent: true },
+      // SEO keyword-target aliases (lit_seo_keyword_targets pointed at these
+      // top-level URLs before the canonical pages existed). Each consolidates
+      // onto the page that already targets the keyword.
+      { source: "/freight-prospecting-software", destination: "/", permanent: true },
+      { source: "/freight-sales-crm", destination: "/features/freight-sales-crm", permanent: true },
+      { source: "/importer-database", destination: "/features/importer-database", permanent: true },
+      { source: "/bill-of-lading-data", destination: "/features/bill-of-lading-search", permanent: true },
+      { source: "/trade-lane-intelligence", destination: "/features/trade-lane-intelligence", permanent: true },
+      // /compare/* was the roadmap's naming for comparison pages; the site
+      // shipped them under /vs/*.
+      { source: "/compare", destination: "/vs", permanent: true },
+      { source: "/compare/lit-vs-:slug", destination: "/vs/:slug", permanent: true },
       ...pascalCaseRedirects,
       ...sanityAliasRedirects,
     ];
