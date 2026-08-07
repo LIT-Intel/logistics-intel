@@ -39,6 +39,47 @@ const PULSE_REFRESH_CACHE_TTL_HOURS = 24;
 // queries free without serving meaningfully stale rows.
 const SEARCH_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const BOLS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Negative cache for company slugs that 404 upstream. ImportYeti bills the
+// request even when the company doesn't exist — and Explorer/directory rows
+// often carry a slug GUESSED from the company name, so the same bad slug
+// gets retried on every page open. 7 days: a name-derived slug that's wrong
+// today will still be wrong next week.
+const PROFILE_404_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function hasFreshProfile404(supabase: any, slug: string): Promise<boolean> {
+  try {
+    const { data } = await supabase
+      .from("lit_importyeti_cache")
+      .select("expires_at")
+      .eq("cache_key", `profile404:${slug}`)
+      .maybeSingle();
+    return Boolean(
+      data?.expires_at && new Date(data.expires_at).getTime() > Date.now(),
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function writeProfile404(supabase: any, slug: string): Promise<void> {
+  try {
+    await supabase.from("lit_importyeti_cache").upsert(
+      {
+        cache_key: `profile404:${slug}`,
+        endpoint: "company/profile",
+        params_hash: `profile404:${slug}`,
+        request_params: { company_id: slug },
+        response_data: { ok: false, code: "COMPANY_NOT_FOUND" },
+        status_code: 404,
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + PROFILE_404_TTL_MS).toISOString(),
+      },
+      { onConflict: "cache_key" },
+    );
+  } catch (err: any) {
+    console.warn("profile404 cache write failed:", err?.message || err);
+  }
+}
 
 type KeySource =
   | "IYApiKey"
@@ -572,6 +613,15 @@ async function handlePulseRefreshAction(
     });
   }
 
+  // 1b. Known-bad slug — don't burn quota or IY spend on a company that
+  // 404'd upstream within the TTL.
+  if (await hasFreshProfile404(supabase, normalizedCompanyKey)) {
+    return jsonResponse(
+      { ok: false, error: "Company not found upstream", code: "COMPANY_NOT_FOUND", negative_cache: true },
+      404,
+    );
+  }
+
   // 2. Per-user daily quota (Pulse Explorer specific).
   const planTier = await loadPlanTier(supabase, userId);
   const quota = await checkAndIncrementPulseQuota(supabase, userId, planTier);
@@ -598,6 +648,7 @@ async function handlePulseRefreshAction(
       { IMPORTYETI_API_KEY: env.apiKey, IMPORTYETI_API_BASE: env.dmaBaseUrl },
     );
     if (fetchResult.httpStatus === 404 || !fetchResult.parsedSummary) {
+      await writeProfile404(supabase, normalizedCompanyKey);
       return jsonResponse(
         { ok: false, error: "Company not found upstream", code: "COMPANY_NOT_FOUND" },
         404,
@@ -1260,6 +1311,17 @@ async function handleCompanyProfileAction(
     }
   }
 
+  // Known-bad slug: don't pay ImportYeti again for a company that 404'd
+  // within the TTL. Applies to forced refreshes too — refreshing can't make
+  // a nonexistent slug exist.
+  if (await hasFreshProfile404(supabase, normalizedCompanyKey)) {
+    console.log("⛔ Negative-cache hit — skipping upstream:", { requestId, normalizedCompanyKey });
+    return jsonResponse(
+      { ok: false, error: "Company not found upstream", code: "COMPANY_NOT_FOUND", negative_cache: true },
+      404,
+    );
+  }
+
   // Cache miss OR explicit refresh: gate before upstream. Maps to
   // `company_profile_view` feature key (free trial: 10/month).
   if (userId) {
@@ -1295,6 +1357,7 @@ async function handleCompanyProfileAction(
         requestId,
         company_id: normalizedCompanyKey,
       });
+      await writeProfile404(supabase, normalizedCompanyKey);
       return jsonResponse(
         {
           ok: false,

@@ -2898,6 +2898,12 @@ export async function getIyCompanyProfile({
   let data: any = null;
   let error: any = null;
 
+  // Single call only. The old "fallback" retry with action:"company" hit the
+  // EXACT same server handler (companyProfile/company both route to
+  // handleCompanyProfileAction), so any 404/error — e.g. an Explorer row
+  // whose slug was guessed from the company name and doesn't exist on
+  // ImportYeti — fired a second identical upstream request: double the paid
+  // IY spend and double the latency for the same failure.
   const primaryCall = await supabase.functions.invoke(
     "importyeti-proxy",
     {
@@ -2911,22 +2917,6 @@ export async function getIyCompanyProfile({
 
   data = primaryCall.data;
   error = primaryCall.error;
-
-  if (error || !(data?.companyProfile || data?.company)) {
-    const fallbackCall = await supabase.functions.invoke(
-      "importyeti-proxy",
-      {
-        body: {
-          action: "company",
-          company_id: normalizedSlug,
-          refresh: forceRefresh ? true : undefined,
-        },
-      }
-    );
-
-    data = fallbackCall.data;
-    error = fallbackCall.error;
-  }
 
   if (error) {
     console.error("ImportYeti companyProfile error:", error);
