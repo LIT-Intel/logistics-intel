@@ -73,9 +73,35 @@ const STATIC_PATHS = [
   "/integrations",
   "/security",
   "/about",
+  "/about/founders",
   "/careers",
   "/demo",
   "/contact",
+  // Previously missing: commercial + money pages (the highest-value URLs on
+  // the site were the only ones IndexNow never pinged).
+  "/pricing",
+  "/press",
+  "/book-a-demo",
+  "/partners",
+  "/industries",
+  "/use-cases",
+  "/freight-leads",
+  "/shipper-leads",
+  "/freight-broker-leads",
+  "/freight-leads/automotive",
+  "/freight-leads/apparel-and-textiles",
+  "/freight-leads/consumer-electronics",
+  "/freight-leads/furniture-and-home-goods",
+  "/freight-leads/food-and-beverage",
+  "/freight-leads/industrial-machinery",
+  // BOFU keyword cluster (2026-08-07).
+  "/importer-leads",
+  "/logistics-leads",
+  "/freight-forwarding-leads",
+  "/direct-shipper-leads",
+  "/3pl-leads",
+  "/customs-broker-leads",
+  "/logistics-sales-intelligence",
 ];
 
 export async function GET(req: NextRequest) {

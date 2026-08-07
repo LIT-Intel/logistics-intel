@@ -5,6 +5,7 @@ import { FEATURE_PAGES } from "./features/_data";
 import { SOLUTION_PAGES } from "./solutions/_data";
 import { ALTERNATIVE_PAGES } from "./alternatives/_data";
 import { BEST_LIST_PAGES } from "./best/_data";
+import { INDUSTRIES as FREIGHT_LEAD_INDUSTRIES } from "./freight-leads/_industries";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://logisticintel.com";
 
@@ -63,6 +64,27 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/freight-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.95 },
     { url: `${SITE_URL}/shipper-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${SITE_URL}/freight-broker-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    // BOFU keyword cluster (2026-08-07) — one page per tracked lead-gen keyword.
+    { url: `${SITE_URL}/importer-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${SITE_URL}/logistics-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${SITE_URL}/freight-forwarding-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${SITE_URL}/direct-shipper-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${SITE_URL}/3pl-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${SITE_URL}/customs-broker-leads`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${SITE_URL}/logistics-sales-intelligence`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    // /freight-leads industry sub-pages — previously missing from the sitemap.
+    ...FREIGHT_LEAD_INDUSTRIES.map((ind) => ({
+      url: `${SITE_URL}/freight-leads/${ind.slug}`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
+    })),
+    // Commercial pages that were missing from the sitemap entirely.
+    { url: `${SITE_URL}/pricing`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${SITE_URL}/press`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
+    { url: `${SITE_URL}/book-a-demo`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${SITE_URL}/about/founders`, lastModified: now, changeFrequency: "monthly", priority: 0.4 },
+    { url: `${SITE_URL}/legal/cookies`, lastModified: now, changeFrequency: "yearly", priority: 0.2 },
     ...FEATURE_PAGES.map((f) => ({
       url: `${SITE_URL}/features/${f.slug}`,
       lastModified: now,
