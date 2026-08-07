@@ -110,19 +110,21 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       credit_rating_ready: false,
       contact_intel_ready: false,
     },
-    // 2026-06-24 gating-free-trial sync. Mirrors the Supabase `plans` row for
-    // free_trial after migration 20260624130000:
-    //   - Pulse Explorer + Company Search SHARE one lifetime budget of 5
-    //     (search_limit). Both mirror keys read 5 so the UI never implies a
-    //     larger allowance than the server enforces.
+    // 2026-08-06 search-billing inversion (migration
+    // 20260806121000_search_free_company_view_gated):
+    //   - LIST searches (Company Search + Pulse Explorer browsing) are FREE
+    //     and unmetered — external IY spend is contained server-side via
+    //     response caching + a per-user daily upstream quota.
+    //   - The metered action is the company CLICK: company_profile_view is
+    //     capped at 10/month on free_trial (plans.company_view_limit).
     //   - pulse_ai_per_month = 0 (Pulse Coach is paid-only).
     //   - export_pdf = 0 and saved_map_view = 0 are enforced server-side; they
     //     have no UsageLimitKey mirror here (UI reads them straight from the
     //     get-entitlements snapshot), so there's nothing to set in this block.
     //   - saved_pulse_lists = 1.
     limits: {
-      searches_per_month: 5,
-      company_views_per_month: 5,
+      searches_per_month: null,
+      company_views_per_month: 10,
       command_center_saves_per_month: 10,
       saved_contacts: 10,
       enrichment_credits_per_month: 5,

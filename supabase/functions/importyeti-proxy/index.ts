@@ -34,6 +34,12 @@ const PULSE_REFRESH_DAILY_CAP: Record<string, number> = {
 // Explorer use case is "did this account's freshness chip move?".
 const PULSE_REFRESH_CACHE_TTL_HOURS = 24;
 
+// TTLs for lit_importyeti_cache response caching (search lists + /bols).
+// IY BOL data updates on roughly a weekly cadence, so 7 days keeps repeat
+// queries free without serving meaningfully stale rows.
+const SEARCH_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const BOLS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 type KeySource =
   | "IYApiKey"
   | "IY_DMA_API_KEY"
@@ -897,15 +903,65 @@ async function handleCompanyBolsAction(supabase: any, companyId: string, request
       });
     }
 
+    // Second-level cache: snapshots without recent_bols used to go straight
+    // upstream on EVERY call (a paid IY request each time, amplified by the
+    // old 1 s ShipmentsPanel refetch loop). Serve from lit_importyeti_cache
+    // within the TTL before paying again.
+    const bolsCacheKey = `bols:${normalizedCompanyKey}`;
+    try {
+      const { data: bolsHit } = await supabase
+        .from("lit_importyeti_cache")
+        .select("response_data, expires_at, hit_count")
+        .eq("cache_key", bolsCacheKey)
+        .maybeSingle();
+      if (
+        bolsHit?.response_data &&
+        bolsHit.expires_at &&
+        new Date(bolsHit.expires_at).getTime() > Date.now()
+      ) {
+        console.log("✅ BOLs served from lit_importyeti_cache:", { requestId, bolsCacheKey });
+        await supabase
+          .from("lit_importyeti_cache")
+          .update({
+            hit_count: (bolsHit.hit_count ?? 0) + 1,
+            last_hit_at: new Date().toISOString(),
+          })
+          .eq("cache_key", bolsCacheKey);
+        return jsonResponse({ ...bolsHit.response_data, source: "cache" });
+      }
+    } catch (cacheErr: any) {
+      console.warn("BOLs cache read failed (continuing to upstream):", cacheErr?.message || cacheErr);
+    }
+
     const upstream = await fetchCompanyBolsUpstream(normalizedCompanyKey, env);
     console.log("✅ BOL rows fetched:", upstream.rows.length);
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    return jsonResponse({
+    const bolsBody = {
       ok: true,
       rows: upstream.rows,
       total: upstream.rows.length,
-    });
+    };
+
+    try {
+      await supabase.from("lit_importyeti_cache").upsert(
+        {
+          cache_key: bolsCacheKey,
+          endpoint: "company/bols",
+          params_hash: bolsCacheKey,
+          request_params: { company_id: normalizedCompanyKey },
+          response_data: bolsBody,
+          status_code: 200,
+          created_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + BOLS_CACHE_TTL_MS).toISOString(),
+        },
+        { onConflict: "cache_key" },
+      );
+    } catch (cacheWriteErr: any) {
+      console.warn("BOLs cache write failed:", cacheWriteErr?.message || cacheWriteErr);
+    }
+
+    return jsonResponse(bolsBody);
   } catch (error: any) {
     console.error("❌ companyBols failed:", { requestId, error: error?.message || error });
     return jsonResponse(
@@ -925,6 +981,7 @@ async function handleSearchAction(
   page: number = 1,
   pageSize: number = 25,
   requestId: string = crypto.randomUUID(),
+  userId: string | null = null,
 ) {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("🔍 SEARCH REQUEST:", { requestId, q, page, pageSize });
@@ -945,18 +1002,62 @@ async function handleSearchAction(
   }
 
   const validatedPage = Math.max(1, Number.isFinite(page) ? Number(page) : 1);
-  // Bumped cap from 25 → 50 so a query like "automotive" returns a richer
-  // lead surface for sales discovery. The IY upstream returns a larger
-  // pool by default; we just slice down to validatedPageSize, so this
-  // doesn't add any extra upstream load — only what we expose to the UI.
+  // Cap back down 50 → 25 (2026-08-06). ImportYeti's DMA bills a variable
+  // requestCost that scales with the row count we ask for — the limit=50
+  // bump is what took a search from ~$0.5–1 to ~$3. 25 rows halves the
+  // per-search cost while keeping a rich-enough first page; page 2 is one
+  // more (cached) call away.
   const validatedPageSize = Math.max(
     1,
-    Math.min(50, Number.isFinite(pageSize) ? Number(pageSize) : 25),
+    Math.min(25, Number.isFinite(pageSize) ? Number(pageSize) : 25),
   );
   const offset = (validatedPage - 1) * validatedPageSize;
   const searchTerm = q.trim();
 
+  // Response cache: an identical (q, page, pageSize) within the TTL is
+  // served from lit_importyeti_cache and never hits the paid IY endpoint.
+  const cacheKey = `search:${searchTerm.toLowerCase()}:${validatedPage}:${validatedPageSize}`;
   try {
+    const { data: cacheHit } = await supabase
+      .from("lit_importyeti_cache")
+      .select("response_data, expires_at, hit_count")
+      .eq("cache_key", cacheKey)
+      .maybeSingle();
+    if (
+      cacheHit?.response_data &&
+      cacheHit.expires_at &&
+      new Date(cacheHit.expires_at).getTime() > Date.now()
+    ) {
+      console.log("✅ Search served from lit_importyeti_cache:", { requestId, cacheKey });
+      await supabase
+        .from("lit_importyeti_cache")
+        .update({
+          hit_count: (cacheHit.hit_count ?? 0) + 1,
+          last_hit_at: new Date().toISOString(),
+        })
+        .eq("cache_key", cacheKey);
+      return jsonResponse({ ...cacheHit.response_data, source: "cache" });
+    }
+  } catch (cacheErr: any) {
+    console.warn("Search cache read failed (continuing to upstream):", cacheErr?.message || cacheErr);
+  }
+
+  try {
+    // Cost guard: an uncached search consumes the per-user daily ImportYeti
+    // quota (same pool as Pulse refresh). When exhausted, fall through to
+    // the free local-index search instead of hard-failing.
+    if (userId) {
+      const planTier = await loadPlanTier(supabase, userId);
+      const quota = await checkAndIncrementPulseQuota(supabase, userId, planTier);
+      if (!quota.ok) {
+        console.log("⛔ Daily IY quota exhausted — serving local index:", {
+          requestId,
+          userId,
+          cap: quota.cap,
+        });
+        throw new Error("iy_daily_quota_exhausted");
+      }
+    }
     const url = new URL(env.searchUrl);
     url.searchParams.set("name", searchTerm);
     // Tell the upstream how many rows we actually want. Without this,
@@ -994,7 +1095,10 @@ async function handleSearchAction(
       sample_keys: normalizedResults.slice(0, 3).map((row: any) => row.key),
     });
 
-    const pagedResults = normalizedResults.slice(offset, offset + validatedPageSize);
+    // Upstream already applied limit+offset, so the payload IS the requested
+    // page. The old slice(offset, …) double-applied the offset and returned
+    // an empty array for every page ≥ 2 — discarding rows we'd paid for.
+    const pagedResults = normalizedResults.slice(0, validatedPageSize);
 
     for (const row of pagedResults.slice(0, 25)) {
       const companyId = normalizeCompanyKey(row.company_id || row.key || row.title);
@@ -1020,14 +1124,36 @@ async function handleSearchAction(
 
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    return jsonResponse({
+    const responseBody = {
       ok: true,
       source: "importyeti",
       results: pagedResults,
       page: validatedPage,
       pageSize: validatedPageSize,
       total,
-    });
+    };
+
+    // Persist the full paid response so repeats of this query are free for
+    // the next 7 days.
+    try {
+      await supabase.from("lit_importyeti_cache").upsert(
+        {
+          cache_key: cacheKey,
+          endpoint: "company/search",
+          params_hash: cacheKey,
+          request_params: { q: searchTerm, page: validatedPage, pageSize: validatedPageSize },
+          response_data: responseBody,
+          status_code: 200,
+          created_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + SEARCH_CACHE_TTL_MS).toISOString(),
+        },
+        { onConflict: "cache_key" },
+      );
+    } catch (cacheWriteErr: any) {
+      console.warn("Search cache write failed:", cacheWriteErr?.message || cacheWriteErr);
+    }
+
+    return jsonResponse(responseBody);
   } catch (error: any) {
     console.error("❌ Upstream search failed, falling back to local index:", {
       requestId,
@@ -1654,36 +1780,12 @@ Deno.serve(async (req: Request) => {
     }
 
     if (resolvedAction === "search") {
-      const { data: gateData, error: gateError } = await supabase.rpc("check_usage_limit", {
-        p_org_id: orgIdForUsage,
-        p_user_id: userId,
-        p_feature_key: "company_search",
-        p_quantity: 1,
-      });
-      if (gateError) {
-        console.error("[importyeti-proxy] gate rpc failed", gateError);
-      } else if (gateData && gateData.ok === false) {
-        return jsonResponse(gateData, 403);
-      }
-    }
-
-    if (resolvedAction === "search") {
-      const searchResp = await handleSearchAction(supabase, q, page, pageSize, requestId);
-      // Consume only on a successful upstream call.
-      if (searchResp.status >= 200 && searchResp.status < 300) {
-        try {
-          await supabase.rpc("consume_usage", {
-            p_org_id: orgIdForUsage,
-            p_user_id: userId,
-            p_feature_key: "company_search",
-            p_quantity: 1,
-            p_metadata: { q: typeof q === "string" ? q : null, page: page ?? null },
-          });
-        } catch (consumeErr) {
-          console.error("[importyeti-proxy] consume_usage failed", consumeErr);
-        }
-      }
-      return searchResp;
+      // Company-LIST search is free as of 2026-08-06: it no longer gates or
+      // consumes `company_search` credits. The metered action is the company
+      // click (`company_profile_view`). External IY spend is contained inside
+      // handleSearchAction via the response cache + per-user daily quota
+      // (quota-exhausted searches degrade to the free local index).
+      return await handleSearchAction(supabase, q, page, pageSize, requestId, userId);
     }
 
     if (!requestedCompanyId) {

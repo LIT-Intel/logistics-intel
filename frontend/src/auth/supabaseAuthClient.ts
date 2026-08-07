@@ -70,7 +70,9 @@ export async function registerWithEmailPassword({
       data: {
         full_name: fullName || '',
         display_name: fullName || email.split('@')[0],
-        onboarding_completed: false,
+        // Wizard removed 2026-08-06 — DB triggers provision everything at
+        // signup. Kept true (not dropped) so legacy onboarding checks pass.
+        onboarding_completed: true,
       },
       emailRedirectTo:
         emailRedirectTo || `${window.location.origin}/auth/callback`,
@@ -82,7 +84,7 @@ export async function registerWithEmailPassword({
 }
 
 // Google OAuth Sign In
-export async function signInWithGoogle(redirectPath = "/app/dashboard") {
+export async function signInWithGoogle(redirectPath = "/app/search") {
   if (!auth) throw new Error('Auth not configured');
 
   const appUrl =
@@ -106,7 +108,7 @@ export async function signInWithGoogle(redirectPath = "/app/dashboard") {
 }
 
 // Microsoft OAuth Sign In
-export async function signInWithMicrosoft(redirectPath = "/app/dashboard") {
+export async function signInWithMicrosoft(redirectPath = "/app/search") {
   if (!auth) throw new Error('Auth not configured');
 
   const appUrl =

@@ -61,7 +61,6 @@ const CommandCenterPage = lazy(() => import("@/components/command-center/Command
 const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany = lazy(() => import("@/pages/demo/company"));
 const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
-const OnboardingFlow = lazy(() => import("@/pages/OnboardingFlow"));
 const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
@@ -69,31 +68,14 @@ const SectorLandingPage = lazy(() => import("@/pages/landing/SectorLandingPage")
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
-  const { user, loading, isSuperAdmin } = useAuth();
-  const location = useLocation();
+  const { user, loading } = useAuth();
   if (DEMO_MODE) return children;
   if (loading) return null;
-  if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
-
-  const meta = user?.user_metadata || {};
-  // Primary: explicit flag written at signup / after onboarding.
-  // Secondary: account < 2 h old without an explicit true = treat as new signup.
-  //
-  // NOTE: do NOT bypass the gate based on org_members membership. Every
-  // regular signup auto-gets an org_members row via the
-  // `on_new_user_org_bootstrap` DB trigger BEFORE going through the 6-step
-  // wizard — the wizard customizes that auto-created workspace. Invited
-  // users already have onboarding_completed=true written server-side by
-  // accept-workspace-invite / signup-with-invite, so the metadata gate
-  // routes them straight to the dashboard without needing a bypass here.
-  const accountAgeHours = (Date.now() - new Date(user?.created_at || 0).getTime()) / 3_600_000;
-  const onboardingDone =
-    meta.onboarding_completed === true ||
-    (meta.onboarding_completed !== false && accountAgeHours >= 2);
-
-  if (!isSuperAdmin && !onboardingDone && location.pathname !== "/onboarding") {
-    return <Navigate to="/onboarding" replace />;
-  }
+  if (!user) return <Navigate to="/login?next=/app/search" replace />;
+  // The 6-step onboarding wizard was removed 2026-08-06: the
+  // `on_new_user_org_bootstrap` + `handle_new_user_profile` DB triggers
+  // already provision profile, workspace, and free_trial subscription at
+  // signup, so authenticated users go straight into the app.
   return children;
 }
 
@@ -101,8 +83,8 @@ function RequireAdmin({ children }) {
   const { user, loading, canAccessAdmin } = useAuth();
   if (DEMO_MODE) return children;
   if (loading) return null;
-  if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
-  if (!canAccessAdmin) return <Navigate to="/app/dashboard" replace />;
+  if (!user) return <Navigate to="/login?next=/app/search" replace />;
+  if (!canAccessAdmin) return <Navigate to="/app/search" replace />;
   return children;
 }
 
@@ -110,8 +92,8 @@ function RequireSuperAdmin({ children }) {
   const { user, loading, isSuperAdmin } = useAuth();
   if (DEMO_MODE) return children;
   if (loading) return null;
-  if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
-  if (!isSuperAdmin) return <Navigate to="/app/dashboard" replace />;
+  if (!user) return <Navigate to="/login?next=/app/search" replace />;
+  if (!isSuperAdmin) return <Navigate to="/app/search" replace />;
   return children;
 }
 
@@ -119,7 +101,7 @@ function RequirePlan({ feature, featureName, description, requiredPlan = "growth
   const { user, loading, plan: userPlan } = useAuth();
   if (DEMO_MODE) return children;
   if (loading) return null;
-  if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
+  if (!user) return <Navigate to="/login?next=/app/search" replace />;
   const plan = normalizePlan(userPlan);
   const hasAccess = canAccessFeature(plan, feature);
   // Always render the underlying page through UpgradeGate — when the
@@ -180,7 +162,7 @@ export default function App() {
       }
     >
       <Routes>
-        <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
+        <Route path="/" element={<Navigate to="/app/search" replace />} />
 
         {/* /company/:id was the legacy public route. Redirect to the
             canonical CDP profile so any external links keep working. */}
@@ -225,14 +207,10 @@ export default function App() {
         <Route path="/accept-invite" element={<AcceptInvitePage />} />
         <Route path="/invite" element={<Navigate to="/accept-invite" replace />} />
 
-        <Route
-          path="/onboarding"
-          element={
-            <RequireAuth>
-              <OnboardingFlow />
-            </RequireAuth>
-          }
-        />
+        {/* The 6-step onboarding wizard was removed 2026-08-06. Keep the
+            route as a redirect so old confirmation-email links and
+            bookmarks land in the app instead of 404ing. */}
+        <Route path="/onboarding" element={<Navigate to="/app/search" replace />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/l/:sector" element={<SectorLandingPage />} />
@@ -728,7 +706,7 @@ export default function App() {
           }
         />
 
-        <Route path="/app" element={<Navigate to="/app/dashboard" replace />} />
+        <Route path="/app" element={<Navigate to="/app/search" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>

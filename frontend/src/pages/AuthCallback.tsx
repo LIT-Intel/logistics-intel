@@ -66,36 +66,17 @@ export default function AuthCallback() {
           return;
         }
 
-        // NOTE: do NOT short-circuit on "user has org_members row" here.
-        // Every regular signup auto-gets an org_members row via the
-        // `on_new_user_org_bootstrap` DB trigger BEFORE going through the
-        // 6-step onboarding wizard. The wizard customizes the auto-created
-        // workspace (name, industry, plan, team). Skipping the gate based
-        // on membership breaks regular signup.
-        //
-        // Invite flows already write onboarding_completed=true server-side
-        // (accept-workspace-invite via admin.auth.admin.updateUserById;
-        // signup-with-invite via createUser's user_metadata). That value
-        // is present in the JWT minted by email-confirmation verifyOtp,
-        // so the metadata gate below correctly routes invitees to the
-        // dashboard while regular signups go to /onboarding.
-
-        // Primary: flag written at registration via signUp options.data
-        // Secondary: account < 30 min old = first confirmation click
-        const createdAt = new Date(user.created_at || 0);
-        const accountAgeMinutes = (Date.now() - createdAt.getTime()) / 60_000;
-        const isFreshSignup = accountAgeMinutes < 30;
-
-        const needsOnboarding =
-          meta.onboarding_completed === false ||
-          (meta.onboarding_completed !== true && isFreshSignup);
-
-        // Write the flag so RequireAuth sees it on subsequent navigations
-        if (needsOnboarding && meta.onboarding_completed !== false) {
-          await auth.auth.updateUser({ data: { onboarding_completed: false } });
+        // The 6-step onboarding wizard was removed 2026-08-06. DB triggers
+        // (`on_new_user_org_bootstrap`, `handle_new_user_profile`) provision
+        // profile, workspace, and free_trial subscription at signup, so
+        // every confirmed user goes straight to Intelligence Explorer.
+        // Heal accounts created pre-removal that still carry
+        // onboarding_completed=false so legacy checks stop firing.
+        if (meta.onboarding_completed !== true) {
+          await auth.auth.updateUser({ data: { onboarding_completed: true } });
         }
 
-        const destination = nextParam || (needsOnboarding ? '/onboarding' : '/app/dashboard');
+        const destination = nextParam || '/app/search';
         navigate(destination, { replace: true });
       } catch (err: any) {
         console.error('[AuthCallback] error:', err);

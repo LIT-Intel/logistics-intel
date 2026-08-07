@@ -11,7 +11,7 @@ export default function AuthRedirectGate({ children }) {
     if (!loading && user) {
       const params = new URLSearchParams(search);
       const next = params.get('next');
-      navigate(next || '/app/dashboard', { replace: true });
+      navigate(next || '/app/search', { replace: true });
     }
   }, [user, loading, navigate, search]);
 

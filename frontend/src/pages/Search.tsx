@@ -272,7 +272,7 @@ export default function SearchPage() {
     }
 
     try {
-      const response = await searchShippers({ q: query, page: 1, pageSize: 50 });
+      const response = await searchShippers({ q: query, page: 1, pageSize: 25 });
 
       if (response?.ok && Array.isArray(response?.results)) {
         const mappedResults: SearchCompany[] = response.results.map((result: any, idx: number) => {
