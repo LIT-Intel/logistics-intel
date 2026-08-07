@@ -2177,6 +2177,13 @@ function TopLanesCard({
                 size={260}
                 theme="trade"
                 showFlagPins
+                onSelectLane={(id) => {
+                  // Tagged "map" so the row list scroll-into-view behavior
+                  // (keyed off non-row selection sources) fires for globe
+                  // clicks exactly like 2-D map clicks.
+                  lastSelectionSourceRef.current = "map";
+                  setSelectedId(id);
+                }}
               />
             </div>
           ) : (
