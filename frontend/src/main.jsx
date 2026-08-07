@@ -18,9 +18,9 @@ initSentry();
 if (typeof window !== "undefined") {
   const { pathname, hash, search } = window.location;
   if (!pathname || pathname === "/") {
-    window.location.replace(`/app/dashboard${search}${hash}`);
+    window.location.replace(`/app/search${search}${hash}`);
   } else if (pathname.endsWith("/index.html")) {
-    window.location.replace(`/app/dashboard${search}${hash}`);
+    window.location.replace(`/app/search${search}${hash}`);
   }
 }
 

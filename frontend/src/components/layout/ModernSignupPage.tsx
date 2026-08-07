@@ -148,7 +148,7 @@ export default function ModernSignupPage() {
     ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
         inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
       }`
-    : nextParam || "/onboarding";
+    : nextParam || "/app/search";
 
   useEffect(() => {
     if (inviteEmail) setEmail(inviteEmail);
@@ -250,7 +250,7 @@ export default function ModernSignupPage() {
               <p className="mt-3 max-w-sm text-sm text-slate-500">
                 {isInviteFlow
                   ? "Your account is ready. Taking you to your workspace now…"
-                  : `We sent a confirmation link to ${email}. Click it to activate your account and you'll be guided through workspace setup.`}
+                  : `We sent a confirmation link to ${email}. Click it to activate your account and you'll land right in Intelligence Explorer — your workspace and free trial are already set up.`}
               </p>
               {!isInviteFlow && (
                 <button
@@ -319,7 +319,7 @@ export default function ModernSignupPage() {
                     <input
                       type="email"
                       required
-                      disabled={Boolean(inviteEmail)}
+                      disabled={isInviteFlow}
                       placeholder="you@company.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}

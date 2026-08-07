@@ -131,7 +131,7 @@ export default function ModernLoginPage() {
     ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
         inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
       }`
-    : nextParam || "/app/dashboard";
+    : nextParam || "/app/search";
 
   const [err, setErr]           = useState("");
   const [email, setEmail]       = useState(inviteEmail);

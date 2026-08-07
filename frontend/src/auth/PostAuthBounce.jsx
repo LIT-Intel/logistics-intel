@@ -12,7 +12,7 @@ export default function PostAuthBounce() {
       const params = new URLSearchParams(search);
       const next = params.get('next');
       if (user) {
-        navigate(next || '/app/dashboard', { replace: true });
+        navigate(next || '/app/search', { replace: true });
       } else {
         navigate(`/login${ next ? `?next=${encodeURIComponent(next)}` : ''}`, { replace: true });
       }

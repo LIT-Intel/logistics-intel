@@ -27,17 +27,20 @@ export default function ShipmentsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<"all" | "ocean" | "air">("all");
 
-  const [selectedRefresh, setSelectedRefresh] = useState(0);
-  const selected = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem("lit:selectedCompany") || "null");
-    } catch {
-      return null;
-    }
-  }, [selectedRefresh]);
-
+  // Track the raw localStorage string and only update state when it actually
+  // changes. The previous version re-parsed on a 1 s interval, producing a new
+  // object identity every tick — which re-fired the fetch effect below once
+  // per second, each one a paid ImportYeti /bols call on cache miss.
+  const [selectedRaw, setSelectedRaw] = useState<string>(
+    () => localStorage.getItem("lit:selectedCompany") || "null",
+  );
   useEffect(() => {
-    const handler = () => setSelectedRefresh(prev => prev + 1);
+    const handler = () => {
+      const raw = localStorage.getItem("lit:selectedCompany") || "null";
+      setSelectedRaw((prev) => (prev === raw ? prev : raw));
+    };
+    // 'storage' only fires for other tabs; the interval catches same-tab
+    // writes. Both are no-ops unless the stored value really changed.
     window.addEventListener('storage', handler);
     const interval = setInterval(handler, 1000);
     return () => {
@@ -45,6 +48,13 @@ export default function ShipmentsPanel() {
       clearInterval(interval);
     };
   }, []);
+  const selected = useMemo(() => {
+    try {
+      return JSON.parse(selectedRaw);
+    } catch {
+      return null;
+    }
+  }, [selectedRaw]);
 
   useEffect(() => {
     const companyKey = selected?.company_id ?? selected?.source_company_key ?? null;
