@@ -214,6 +214,14 @@ serve(async (req: Request) => {
       .eq("user_id", userId)
       .maybeSingle();
     const { data: authUser } = await db.auth.admin.getUserById(userId);
+    // Confirmation gate (2026-08-08): never drip to users who haven't
+    // confirmed their email. trial_welcome is already held until the
+    // confirm click (see migration trial_welcome_after_email_confirm);
+    // returning null here makes every calendar-driven day-N loop skip
+    // unconfirmed users the same way.
+    if (!authUser?.user?.email_confirmed_at) {
+      return { email: null, firstName: null };
+    }
     const email = authUser?.user?.email ?? null;
     const fullName = (profile as any)?.full_name ?? null;
     const firstName = fullName ? fullName.split(" ")[0] : null;
