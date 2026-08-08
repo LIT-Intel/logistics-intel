@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Globe2, Layers } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ArrowRight, Globe2, Layers, X } from "lucide-react";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import LaneMap from "@/components/LaneMap";
 import LaneViewToggle from "@/components/LaneViewToggle";
@@ -40,6 +41,10 @@ export default function WorkspaceLanesGlobe() {
   const { lanes, loading } = useWorkspaceLanes();
   const { highlightedLane, highlightLane } = usePulseCoach();
   const [mode, setMode] = useState<Mode>("volume");
+  // Sticky selection for the "so-what" panel — set by clicking a row or a
+  // globe arc, survives hover churn, cleared via the panel's ✕ or an
+  // open-ocean click on the globe.
+  const [stickyKey, setStickyKey] = useState<string | null>(null);
   const { mode: viewMode, setMode: setViewMode } = useLaneViewMode();
   const globeWrapRef = useRef<HTMLDivElement | null>(null);
   const [globeSize, setGlobeSize] = useState<number>(300);
@@ -131,6 +136,17 @@ export default function WorkspaceLanesGlobe() {
 
   const empty = !loading && sorted.length === 0;
 
+  // Hover wins for transient emphasis; the sticky click-selection keeps the
+  // globe focused (and the panel open) when the pointer moves away.
+  const effectiveHighlightId = highlightId ?? stickyKey;
+  const stickyLane = stickyKey
+    ? sorted.find((l) => l.key === stickyKey) ?? null
+    : null;
+  const workspaceShipTotal = sorted.reduce(
+    (s, l) => s + (l.shipments_total || 0),
+    0,
+  );
+
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       {/* header */}
@@ -179,6 +195,7 @@ export default function WorkspaceLanesGlobe() {
           </p>
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,1fr)_minmax(260px,1.2fr)] xl:grid-cols-[minmax(320px,1.1fr)_minmax(280px,1fr)] 2xl:grid-cols-[minmax(420px,1.4fr)_minmax(280px,1fr)]">
           <div
             ref={globeWrapRef}
@@ -190,12 +207,13 @@ export default function WorkspaceLanesGlobe() {
             {viewMode === "globe" ? (
               <GlobeCanvas
                 lanes={globeLanes}
-                selectedLane={highlightId}
+                selectedLane={effectiveHighlightId}
                 size={globeSize}
                 theme="trade"
                 showFlagPins
                 onSelectLane={(laneId) => {
                   const lane = sorted.find((l) => l.key === laneId);
+                  setStickyKey(lane ? lane.key : null);
                   highlightLane(
                     lane ? { from: lane.from_label, to: lane.to_label } : null,
                   );
@@ -204,7 +222,7 @@ export default function WorkspaceLanesGlobe() {
             ) : (
               <LaneMap
                 lanes={globeLanes}
-                selectedLane={highlightId}
+                selectedLane={effectiveHighlightId}
                 onSelectLane={(laneId) => {
                   const lane = sorted.find((l) => l.key === laneId);
                   if (lane) highlightLane({ from: lane.from_label, to: lane.to_label });
@@ -220,7 +238,7 @@ export default function WorkspaceLanesGlobe() {
                 resolveEndpoint(l.from_label) || resolveEndpoint(`Port ${l.from_label}`);
               const toMeta =
                 resolveEndpoint(l.to_label) || resolveEndpoint(`Port ${l.to_label}`);
-              const isActive = highlightId === l.key;
+              const isActive = effectiveHighlightId === l.key;
               return (
                 <button
                   key={l.key}
@@ -229,9 +247,10 @@ export default function WorkspaceLanesGlobe() {
                     highlightLane({ from: l.from_label, to: l.to_label })
                   }
                   onMouseLeave={() => highlightLane(null)}
-                  onClick={() =>
-                    highlightLane({ from: l.from_label, to: l.to_label })
-                  }
+                  onClick={() => {
+                    setStickyKey(l.key);
+                    highlightLane({ from: l.from_label, to: l.to_label });
+                  }}
                   className={[
                     // Single-line grid: index | from | arrow | to | metric.
                     // Fixed slots for index, arrow, and metric column keep
@@ -320,6 +339,97 @@ export default function WorkspaceLanesGlobe() {
             })}
           </div>
         </div>
+
+        {/* ── "So-what" panel — answers the question the globe raises. ──
+            Appears when a lane is click-selected (row, arc, or 2-D map):
+            volume, workspace share, the actual accounts on the lane as
+            clickable chips, and a hand-off into the Explorer. */}
+        {stickyLane && (() => {
+          const share =
+            workspaceShipTotal > 0
+              ? Math.round(
+                  ((stickyLane.shipments_total || 0) / workspaceShipTotal) * 100,
+                )
+              : null;
+          const names = Array.isArray(stickyLane.account_names)
+            ? stickyLane.account_names.slice(0, 6)
+            : [];
+          const extraNames =
+            (stickyLane.account_names?.length || 0) - names.length;
+          return (
+            <div className="border-t border-slate-200 bg-slate-50/70 px-3 py-3 md:px-4">
+              <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-display text-[12px] font-bold text-slate-900">
+                      {stickyLane.from_label} → {stickyLane.to_label}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Clear lane selection"
+                      onClick={() => {
+                        setStickyKey(null);
+                        highlightLane(null);
+                      }}
+                      className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <div className="font-body mt-0.5 text-[11px] text-slate-600">
+                    <span className="font-mono font-bold text-slate-900">
+                      {stickyLane.shipments_total.toLocaleString()}
+                    </span>{" "}
+                    shipments
+                    {share !== null && (
+                      <>
+                        {" · "}
+                        <span className="font-mono font-bold text-slate-900">
+                          {share}%
+                        </span>{" "}
+                        of your workspace volume
+                      </>
+                    )}
+                    {" · "}
+                    <span className="font-mono font-bold text-slate-900">
+                      {stickyLane.account_count}
+                    </span>{" "}
+                    {stickyLane.account_count === 1 ? "account" : "accounts"}
+                  </div>
+                  {names.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className="font-body text-[10px] uppercase tracking-[0.08em] text-slate-400">
+                        Your accounts here
+                      </span>
+                      {names.map((n) => (
+                        <Link
+                          key={n}
+                          to={`/app/search?q=${encodeURIComponent(n)}`}
+                          className="font-display rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10.5px] font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
+                        >
+                          {n}
+                        </Link>
+                      ))}
+                      {extraNames > 0 && (
+                        <span className="font-body text-[10.5px] text-slate-400">
+                          +{extraNames} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <Link
+                  to="/app/search?tab=pulse"
+                  className="font-display inline-flex shrink-0 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11.5px] font-semibold text-blue-700 transition hover:bg-blue-100"
+                >
+                  Find more shippers like these
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+              </div>
+            </div>
+          );
+        })()}
+        </>
       )}
     </div>
   );

@@ -67,6 +67,7 @@ import CDPHeader from "@/components/company/CDPHeader";
 import CompanySignalsStrip from "@/components/company/CompanySignalsStrip";
 import CDPDetailsPanel from "@/components/company/CDPDetailsPanel";
 import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
+import LockedAccountPreview from "@/components/company/LockedAccountPreview";
 import CDPSupplyChain, {
   SuppliersView,
   deriveRecentBols,
@@ -2210,17 +2211,30 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       <CompanyTabsRow tab={tab} onSelect={setTab} />
 
 
-      {refreshLimitState && (
-        <PulseCoachQuotaCard
-          plan={refreshLimitState.plan}
-          feature={refreshLimitState.feature}
-          used={refreshLimitState.used}
-          limit={refreshLimitState.limit}
-          reset_at={refreshLimitState.reset_at}
-          upgrade_url={refreshLimitState.upgrade_url}
-          onDismiss={() => setRefreshLimitState(null)}
-        />
-      )}
+      {refreshLimitState &&
+        (refreshLimitState.feature === "company_profile_view" ? (
+          // Upgrade-moment redesign (2026-08-08): hitting the profile-view
+          // cap shows a blurred locked-account preview anchored to THIS
+          // company — what's behind the gate and one CTA — instead of a
+          // generic quota banner.
+          <LockedAccountPreview
+            companyName={companyName}
+            used={refreshLimitState.used}
+            limit={refreshLimitState.limit}
+            upgradeUrl={refreshLimitState.upgrade_url}
+            onDismiss={() => setRefreshLimitState(null)}
+          />
+        ) : (
+          <PulseCoachQuotaCard
+            plan={refreshLimitState.plan}
+            feature={refreshLimitState.feature}
+            used={refreshLimitState.used}
+            limit={refreshLimitState.limit}
+            reset_at={refreshLimitState.reset_at}
+            upgrade_url={refreshLimitState.upgrade_url}
+            onDismiss={() => setRefreshLimitState(null)}
+          />
+        ))}
 
       {refreshError && (
         <div className="font-body shrink-0 border-b border-amber-100 bg-amber-50 px-6 py-2 text-[12px] text-amber-700">
