@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { SEQUENCES, type SequenceKey, type SequenceStep } from "@/lib/lead-sequences";
 import { signPreferencesToken } from "@/lib/preferences-token";
+import { renderSequenceEmail } from "@/lib/sequence-email-templates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -194,22 +195,32 @@ async function sendOne(
     preferences_url: preferencesUrl,
   };
 
-  // Variant resolution order (highest precedence first):
-  //   1. A/B variant pick — when the operator has active rows in
-  //      public.lit_template_variants for this sequence-step's env-var, the
-  //      cron does a weighted-random pick via lit_pick_variant() (resolved
-  //      one level up, before sendOne). The chosen variant's resend
-  //      template_id wins so the send fires against the variant template.
-  //   2. Queue row's template_id (snapshot at enqueue time).
-  //   3. Sequence-step env-var lookup (the historical default).
-  //   4. Inline HTML fallback (renderFallbackHtml).
+  // Content resolution order (highest precedence first):
+  //   1. Code-defined branded email (lib/sequence-email-templates.ts) —
+  //      the source of truth as of 2026-08-08. Git-versioned copy in the
+  //      LIT house layout; immune to Resend template draft-status 422s
+  //      and to the generic-placeholder banners the hosted templates
+  //      shipped with. Covers the marketing nurture sequences; cold
+  //      outbound + partner-onboarding intentionally fall through.
+  //   2. A/B variant pick (lit_template_variants → Resend template id).
+  //   3. Queue row's template_id (snapshot at enqueue time).
+  //   4. Sequence-step env-var lookup (the historical default).
+  //   5. Inline HTML stub (renderFallbackHtml).
+  const coded = renderSequenceEmail(row.sequence_key, row.step, {
+    firstName,
+    competitor,
+    offer: row.offer ?? "",
+    preferencesUrl,
+  });
+
   const resolvedTemplateId =
     pickedVariant?.templateId ||
     row.template_id ||
     (seqStep?.envTemplateVar ? process.env[seqStep.envTemplateVar] || null : null);
 
   const fromAddress = getFromAddress();
-  const rawSubject = row.subject || seqStep?.subject || "An update from Logistic Intel";
+  const rawSubject =
+    coded?.subject || row.subject || seqStep?.subject || "An update from Logistic Intel";
   const subject = applyMergeTokens(rawSubject, vars);
 
   const payload: Record<string, unknown> = {
@@ -218,7 +229,10 @@ async function sendOne(
     subject,
   };
 
-  if (resolvedTemplateId) {
+  if (coded) {
+    payload.html = coded.html;
+    payload.text = coded.text;
+  } else if (resolvedTemplateId) {
     // Resend template-based send. Variables are surfaced to the template
     // engine; subject is still required at the top level.
     (payload as any).template = {
