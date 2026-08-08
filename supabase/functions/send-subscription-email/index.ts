@@ -21,6 +21,7 @@ type EventType =
   | "trial_tip_contact_enrichment"
   | "trial_tip_revenue_opportunity"
   | "trial_ending_soon"
+  | "trial_limit_reached"
   | "trial_book_demo"
   | "trial_check_in_inactive"
   | "paid_plan_welcome"
@@ -36,6 +37,7 @@ const VALID_EVENT_TYPES: EventType[] = [
   "trial_tip_contact_enrichment",
   "trial_tip_revenue_opportunity",
   "trial_ending_soon",
+  "trial_limit_reached",
   "trial_book_demo",
   "trial_check_in_inactive",
   "paid_plan_welcome",
@@ -359,6 +361,31 @@ function buildEmail(
         unsubscribeUrl,
       });
       return { subject: "Lead with revenue, not capacity", html, text };
+    }
+    case "trial_limit_reached": {
+      // Fired by importyeti-proxy the moment a trial user's
+      // company_profile_view gate blocks — the highest-intent moment in
+      // the trial: they just found accounts worth paying for. Dedup in
+      // the handler below sends this at most once per user.
+      const bodyHtml = `<p style="margin:0 0 18px 0;">Hi ${esc(name)},</p><p style="margin:0 0 18px 0;">You just used your 10th deep account unlock — that's the full free allowance, and it usually means the data is working.</p><p style="margin:0 0 18px 0;">Searching stays free, forever. But the accounts you're finding right now — their lanes, volumes, carrier mix, and the decision-maker contacts — stay locked until you upgrade.</p><p style="margin:0 0 8px 0;font-weight:700;color:${COLOR.text};">On Starter you keep going with:</p>${benefitsHtml(PLAN_EMAIL_COPY.starter.benefits)}${proTipHtml(`Everything you found this week is saved. Upgrade and pick up exactly where you left off — the accounts are still there.`)}<p style="margin:24px 0 0 0;font-style:italic;color:${COLOR.textSubtle};font-size:14px;">Not sure which plan fits? Reply with your team size and target lanes and I'll tell you straight. — Gabriel</p>`;
+      const bodyText = `Hi ${name},\n\nYou just used your 10th deep account unlock — that's the full free allowance, and it usually means the data is working.\n\nSearching stays free, forever. But the accounts you're finding right now — their lanes, volumes, carrier mix, and the decision-maker contacts — stay locked until you upgrade.\n\nOn Starter you keep going with:\n\n${benefitsText(PLAN_EMAIL_COPY.starter.benefits)}\n\nEverything you found this week is saved — upgrade and pick up where you left off.\n\nNot sure which plan fits? Reply with your team size and target lanes and I'll tell you straight. — Gabriel`;
+      const { html, text } = buildLayout({
+        previewText: "You found them. Here's how to unlock the rest.",
+        headline: "You hit your free limit — at exactly the right moment.",
+        subtitle: "Searching stays free. Unlocking accounts is the paid part.",
+        bodyHtml,
+        bodyText,
+        ctaText: "See plans & upgrade",
+        ctaUrl: `${appUrl}/app/billing`,
+        unsubscribeUrl,
+      });
+      return {
+        subject: "You found them — here's how to unlock the rest",
+        html,
+        text,
+        fromOverride: SALES_FROM,
+        replyToOverride: SALES_REPLY_TO,
+      };
     }
     case "trial_ending_soon": {
       const endsPhrase = payload.trial_ends_date

@@ -1334,6 +1334,41 @@ async function handleCompanyProfileAction(
     if (gateErr) {
       console.error("[importyeti-proxy] profile gate rpc failed", gateErr);
     } else if (gateData && gateData.ok === false) {
+      // Upgrade-moment email: hitting the profile-view cap is the
+      // highest-intent moment in the trial — the user just found accounts
+      // worth paying for. send-subscription-email dedups internally, so
+      // this fires a real email at most once per user.
+      try {
+        const { data: u } = await supabase.auth.admin.getUserById(userId);
+        const email = u?.user?.email;
+        if (email) {
+          const fnBase = Deno.env.get("SUPABASE_URL");
+          const srk = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+          if (fnBase && srk) {
+            await fetch(`${fnBase}/functions/v1/send-subscription-email`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${srk}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                recipient_email: email,
+                event_type: "trial_limit_reached",
+                user_id: userId,
+                plan_slug: "free_trial",
+                first_name:
+                  (u?.user?.user_metadata?.full_name || "").split(" ")[0] ||
+                  undefined,
+              }),
+            });
+          }
+        }
+      } catch (e) {
+        console.warn(
+          "[importyeti-proxy] limit-reached email trigger failed",
+          (e as any)?.message || e,
+        );
+      }
       return jsonResponse(gateData, 403);
     }
   }
