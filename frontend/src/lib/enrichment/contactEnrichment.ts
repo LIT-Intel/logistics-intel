@@ -64,7 +64,10 @@ export async function enrichContact(params: EnrichContactParams): Promise<Enrich
       source_entity_id: params.contactId,
       enrichment_requests: enrichmentRequests,
       reveal_phone_number: revealPhoneNumber,
-      provider_order: ['lemlist', 'apollo'],
+      // No provider_order override: the orchestrator resolves it from
+      // lit_org_enrichment_settings (currently apollo → lemlist). The old
+      // hardcoded ['lemlist','apollo'] here silently overrode org config
+      // and kept Lemlist primary even after the Apollo restore.
     },
   });
 

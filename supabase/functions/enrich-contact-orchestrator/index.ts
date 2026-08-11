@@ -257,6 +257,40 @@ Deno.serve(async (req: Request) => {
     }
 
     const { orgId, order: orgOrder, enableTier3 } = await loadOrgSettings(supabase, user.id);
+
+    // Entitlement gate — the orchestrator previously had NO usage check, so
+    // users past their contact_enrichment limit could still fire provider
+    // requests. Gate before any provider call; consume only on acceptance.
+    const enrichQty = Math.max(1, targets.length);
+    try {
+      const { data: gateData, error: gateErr } = await supabase.rpc("check_usage_limit", {
+        p_org_id: orgId,
+        p_user_id: user.id,
+        p_feature_key: "contact_enrichment",
+        p_quantity: enrichQty,
+      });
+      if (gateErr) {
+        log.warn("usage_gate_rpc_failed", { err: gateErr.message });
+      } else if (gateData && (gateData as any).ok === false) {
+        return json(gateData, 403);
+      }
+    } catch (gateEx: any) {
+      log.warn("usage_gate_threw", { err: String(gateEx?.message ?? gateEx) });
+    }
+
+    const consumeEnrichment = async (provider: ProviderName) => {
+      try {
+        await supabase.rpc("consume_usage", {
+          p_org_id: orgId,
+          p_user_id: user.id,
+          p_feature_key: "contact_enrichment",
+          p_quantity: enrichQty,
+          p_metadata: { provider, source: body.source_context ?? null },
+        });
+      } catch (consumeEx: any) {
+        log.warn("consume_usage_failed", { err: String(consumeEx?.message ?? consumeEx) });
+      }
+    };
     let providerOrder: ProviderName[] = Array.isArray(body.provider_order) && body.provider_order.length
       ? body.provider_order
           .map((p) => String(p).trim().toLowerCase() as ProviderName)
@@ -281,6 +315,7 @@ Deno.serve(async (req: Request) => {
       if (result.ok && result.pending) {
         const taggedContacts = result.contacts.map((c) => ({ ...c, source_provider: provider, enrichment_provider: provider }));
         if (taggedContacts.length) await tagSourceProvider(supabase, provider, taggedContacts);
+        await consumeEnrichment(provider);
         log.info("cascade_pending", { user_id: user.id, org_id: orgId, provider, submitted: result.submitted, completed: taggedContacts.length });
         return json({
           ok: true,
@@ -300,6 +335,7 @@ Deno.serve(async (req: Request) => {
       if (result.ok && result.count > 0) {
         await tagSourceProvider(supabase, provider, result.contacts);
         const taggedContacts = result.contacts.map((c) => ({ ...c, source_provider: provider, enrichment_provider: provider }));
+        await consumeEnrichment(provider);
         log.info("cascade_hit", { user_id: user.id, org_id: orgId, provider, count: result.count });
         return json({ ok: true, provider, contacts: taggedContacts, count: result.count, cascade, provider_order: providerOrder, enable_tier3: enableTier3, raw_provider_response: result.raw });
       }

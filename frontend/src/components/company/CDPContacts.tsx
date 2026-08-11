@@ -299,20 +299,35 @@ export default function CDPContacts({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return contacts.filter((c) => {
-      const name = String(c.full_name || c.name || "").toLowerCase();
-      const title = String(c.title || "").toLowerCase();
-      const dept = String(c.department || c.dept || "").toLowerCase();
-      const matchesQuery =
-        !q || name.includes(q) || title.includes(q) || dept.includes(q);
-      const matchesFilter =
-        filter === "all"
-          ? true
-          : filter === "verified"
-            ? isProviderVerified(c)
-            : dept === filter;
-      return matchesQuery && matchesFilter;
-    });
+    const scoreOf = (c: Contact) =>
+      computeContactScore({
+        title: c.title,
+        seniority: (c as any).seniority,
+        department: c.department || c.dept,
+        email: c.email,
+        email_verification_status: c.email_verification_status,
+        verified_by_provider: c.verified_by_provider,
+        linkedin_url: c.linkedin_url,
+        enrichment_status: c.enrichment_status,
+      }).score;
+    return contacts
+      .filter((c) => {
+        const name = String(c.full_name || c.name || "").toLowerCase();
+        const title = String(c.title || "").toLowerCase();
+        const dept = String(c.department || c.dept || "").toLowerCase();
+        const matchesQuery =
+          !q || name.includes(q) || title.includes(q) || dept.includes(q);
+        const matchesFilter =
+          filter === "all"
+            ? true
+            : filter === "verified"
+              ? isProviderVerified(c)
+              : dept === filter;
+        return matchesQuery && matchesFilter;
+      })
+      // Best-fit first: decision-makers with verified emails float to the
+      // top instead of the old alphabetical order burying them.
+      .sort((a, b) => scoreOf(b) - scoreOf(a));
   }, [contacts, query, filter]);
 
   const verifiedCount = useMemo(
@@ -759,9 +774,63 @@ export default function CDPContacts({
     }
   }
 
-  async function handleRowRevealPhone(_c: Contact) {
-    setEnrichToast("Phone enrichment is not enabled yet. Email enrichment remains active.");
-    setTimeout(() => setEnrichToast(null), 3500);
+  async function handleRowRevealPhone(c: Contact) {
+    // Re-enabled 2026-08-08 with the Apollo-primary cascade: Apollo
+    // supports reveal_phone_number synchronously. Was a stub during the
+    // Lemlist-only period.
+    if (!c.id && !c.email) return;
+    setContacts((prev) =>
+      prev.map((p) =>
+        p.id === c.id ? { ...p, phone_unlock_status: "pending" } : p,
+      ),
+    );
+    setEnrichToast("Unlocking direct dial…");
+    try {
+      const result = await enrichKnownContact({
+        contactId: c.id ? String(c.id) : undefined,
+        email: c.email || undefined,
+        fullName: c.full_name || c.name || undefined,
+        companyName: companyName || undefined,
+        companyDomain: companyDomain || undefined,
+        linkedinUrl: c.linkedin_url || undefined,
+        title: c.title || undefined,
+        revealPhoneNumber: true,
+      });
+      const rows: any = await listContacts(companyId);
+      const next = Array.isArray(rows)
+        ? rows
+        : Array.isArray(rows?.contacts)
+          ? rows.contacts
+          : Array.isArray(rows?.rows)
+            ? rows.rows
+            : [];
+      setContacts(next);
+      onContactsChanged?.(next);
+      const updated = next.find((p: any) => p.id === c.id);
+      if (updated?.phone) {
+        setEnrichToast("Direct dial unlocked");
+      } else if ((result as any)?.pending) {
+        setEnrichToast("Phone enrichment submitted — check back shortly.");
+      } else {
+        setContacts((prev: Contact[]) =>
+          prev.map((p) =>
+            p.id === c.id ? { ...p, phone_unlock_status: "failed" } : p,
+          ),
+        );
+        setEnrichToast(
+          (result as any)?.error || "No direct dial found for this contact.",
+        );
+      }
+    } catch (err: any) {
+      setContacts((prev) =>
+        prev.map((p) =>
+          p.id === c.id ? { ...p, phone_unlock_status: "failed" } : p,
+        ),
+      );
+      setEnrichToast(err?.message || "Phone unlock failed");
+    } finally {
+      setTimeout(() => setEnrichToast(null), 3500);
+    }
   }
 
   function handleRowCopyEmail(c: Contact) {
@@ -1249,15 +1318,15 @@ function ContactRow({
           contact.phone
         ) : contact.phone_unlock_status === "pending" ? (
           <span
-            title="Phone enrichment is not enabled yet."
+            title="Phone enrichment in progress."
             className="font-display inline-flex items-center gap-1 rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-amber-700"
           >
             <Loader2 className="h-2.5 w-2.5 animate-spin" />
-            Phone pending
+            Unlocking
           </span>
         ) : contact.phone_unlock_status === "failed" ? (
           <span
-            title="Phone enrichment is not enabled yet."
+            title="No direct dial found by the enrichment providers."
             className="font-display inline-flex items-center gap-1 rounded-sm border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-rose-700"
           >
             No phone
@@ -1266,11 +1335,11 @@ function ContactRow({
           <button
             type="button"
             onClick={() => handlers.onRevealPhone(contact)}
-            title="Phone enrichment is not enabled yet."
-            className="font-display inline-flex items-center gap-1 rounded-sm border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-slate-500 hover:bg-slate-100"
+            title="Unlock direct dial (uses one enrichment credit)."
+            className="font-display inline-flex items-center gap-1 rounded-sm border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-blue-700 hover:bg-blue-100"
           >
             <Phone className="h-2.5 w-2.5" />
-            Phone off
+            Unlock
           </button>
         )}
       </td>
@@ -1280,6 +1349,9 @@ function ContactRow({
       <td className="font-display px-3.5 py-2.5 text-[10px] font-semibold text-slate-500">
         {source ? (
           /apollo|lemlist|lusha|lit/i.test(String(source)) ? (
+            // Provider identity is deliberately NOT surfaced to users —
+            // every enriched contact reads as "LIT" regardless of which
+            // upstream provider delivered it (owner decision 2026-08-08).
             <span className="inline-flex items-center gap-1 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-violet-700">
               <Sparkles className="h-2.5 w-2.5" />
               LIT

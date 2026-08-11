@@ -223,8 +223,15 @@ async function getOrgIdAndPlan(
   return { orgId: null, plan: "free_trial" };
 }
 
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function buildIdentifierBlock(t: ApolloEnrichTarget, fallbackDomain: string | null, fallbackOrgName: string | null): Record<string, unknown> | null {
-  const id = t.id || t.apollo_id || t.apollo_person_id || null;
+  // t.id from the UI is the lit_contacts UUID, NOT an Apollo person id
+  // (Apollo ids are 24-char hex). Sending our UUID as `id` makes Apollo
+  // match the wrong thing or nothing — prefer explicit apollo ids and
+  // ignore UUID-shaped ids entirely.
+  const rawId = t.apollo_id || t.apollo_person_id || t.id || null;
+  const id = rawId && !UUID_SHAPE.test(String(rawId)) ? rawId : null;
   const firstName = t.first_name || null;
   const lastName = t.last_name || null;
   const name =
@@ -263,15 +270,27 @@ function buildIdentifierBlock(t: ApolloEnrichTarget, fallbackDomain: string | nu
 }
 
 async function apolloPost(url: string, body: Record<string, unknown>) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-cache",
-      "X-Api-Key": APOLLO_API_KEY,
-    },
-    body: JSON.stringify(body),
-  });
+  // 15s hard timeout — an untimed fetch here once hung the entire
+  // enrichment cascade past the edge wall-clock limit.
+  const ac = new AbortController();
+  const killer = setTimeout(() => ac.abort(), 15000);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
+        "X-Api-Key": APOLLO_API_KEY,
+      },
+      body: JSON.stringify(body),
+      signal: ac.signal,
+    });
+  } catch (err: any) {
+    clearTimeout(killer);
+    return { ok: false, status: 0, data: null, raw: `apollo_fetch_failed: ${String(err?.message ?? err)}` };
+  }
+  clearTimeout(killer);
   const raw = await res.text().catch(() => "");
   let data: any = null;
   try {
@@ -415,6 +434,11 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  // Step timings surfaced in every response — kept after the 2026-08
+  // hang investigation so the next stall self-diagnoses.
+  const _t0 = Date.now();
+  const _timings: Record<string, number> = {};
+  const _mark = (k: string) => { _timings[k] = Date.now() - _t0; };
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -437,6 +461,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    _mark("auth_done");
     if (!APOLLO_API_KEY) {
       return new Response(
         JSON.stringify({ ok: false, error: "Contact enrichment is not configured.", code: "APOLLO_NOT_CONFIGURED" }),
@@ -479,7 +504,9 @@ Deno.serve(async (req: Request) => {
     // Resolve company_id slug ("company/old-navy") to a real lit_companies
     // UUID before we insert. Without this, the row gets stored with a
     // string that listContacts() can never find on reload.
+    _mark("parse_done");
     const resolvedCompanyId = await resolveCompanyUuid(supabase, body.company_id ?? null);
+    _mark("company_resolved");
 
     // Auto-save the company to lit_saved_companies for this user.
     // Without this, a user who enriches a contact for a company they
@@ -512,7 +539,9 @@ Deno.serve(async (req: Request) => {
 
     // Plan + super-admin bypass for monthly enrichment cap.
     const bypassLimits = await isSuperAdmin(supabase, user);
+    _mark("superadmin_checked");
     const { orgId, plan } = await getOrgIdAndPlan(supabase, user.id);
+    _mark("org_plan_loaded");
     const monthlyLimit = bypassLimits
       ? PLAN_ENRICH_MONTHLY.enterprise
       : PLAN_ENRICH_MONTHLY[plan] ?? PLAN_ENRICH_MONTHLY.free_trial;
@@ -646,6 +675,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    _mark("gates_done");
     // Build identifier blocks; skip targets too weak to match.
     const ids: Array<{ block: Record<string, unknown>; idx: number }> = [];
     const skipped: Array<{ index: number; reason: string }> = [];
@@ -706,6 +736,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    _mark("apollo_calls_done");
     // Persist enriched contacts into lit_contacts. Upsert by
     // (source, source_contact_key) which is unique. Falls back to
     // (company_id + linkedin_url) when no apollo id.
@@ -850,6 +881,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    _mark("persist_done");
     await supabase.from("lit_activity_events").insert({
       user_id: user.id,
       event_type: "apollo_contact_enrich",
@@ -890,6 +922,7 @@ Deno.serve(async (req: Request) => {
         persist_errors: persistErrors.length ? persistErrors : undefined,
         plan,
         super_admin_bypass: bypassLimits,
+        _timings,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
