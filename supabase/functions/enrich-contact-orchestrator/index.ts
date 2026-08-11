@@ -1,10 +1,12 @@
 // enrich-contact-orchestrator — multi-provider contact enrichment cascade.
 //
-// Current LIT strategy: Lemlist is the only active contact enrichment provider.
-// Apollo remains a separate company-contact discovery provider, not an
-// enrichment fallback. Lemlist may return
-// pending=true because its enrichment workflow is asynchronous; when that
-// happens the cascade stops because the request was accepted.
+// Current LIT strategy (2026-08-08): Apollo is the PRIMARY enrichment
+// provider, Lemlist the fallback. The Lemlist-only period (Jul 2026)
+// produced a 64% no-email miss rate plus CREDITS_USAGE_FORBIDDEN account
+// blocks with no rescue path, so the earlier hard exclusion of Apollo
+// (`p !== "apollo"` filters) was removed. Lemlist may return pending=true
+// because its enrichment workflow is asynchronous; when that happens the
+// cascade stops because the request was accepted.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -26,7 +28,7 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 type ProviderName = "lemlist" | "apollo" | "tier3";
 
-const DEFAULT_ORDER: ProviderName[] = ["lemlist"];
+const DEFAULT_ORDER: ProviderName[] = ["apollo", "lemlist"];
 const VALID_PROVIDERS = new Set<ProviderName>(["lemlist", "apollo", "tier3"]);
 
 const PROVIDER_FN: Record<ProviderName, string> = {
@@ -213,7 +215,7 @@ async function loadOrgSettings(
       const rawOrder = Array.isArray((data as any).provider_order) ? (data as any).provider_order : [];
       const order = rawOrder
         .map((p: unknown) => String(p).trim().toLowerCase() as ProviderName)
-        .filter((p: ProviderName) => VALID_PROVIDERS.has(p) && p !== "apollo");
+        .filter((p: ProviderName) => VALID_PROVIDERS.has(p));
       return { orgId, order: order.length ? order : DEFAULT_ORDER, enableTier3: (data as any).enable_tier3 === true };
     }
   } catch (_) {}
@@ -258,7 +260,7 @@ Deno.serve(async (req: Request) => {
     let providerOrder: ProviderName[] = Array.isArray(body.provider_order) && body.provider_order.length
       ? body.provider_order
           .map((p) => String(p).trim().toLowerCase() as ProviderName)
-          .filter((p) => VALID_PROVIDERS.has(p) && p !== "apollo")
+          .filter((p) => VALID_PROVIDERS.has(p))
       : orgOrder;
 
     if (!enableTier3) providerOrder = providerOrder.filter((p) => p !== "tier3");
