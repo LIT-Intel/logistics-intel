@@ -2,6 +2,7 @@
 // SettingsIntegrations.jsx. Inline style={{ }} with exact hex tokens.
 // All export signatures preserved byte-identical so SettingsPage.tsx doesn't break.
 import React, { useEffect, useState, useRef, useMemo, useTransition } from "react";
+import { supabase } from "@/lib/supabase";
 import {
   User,
   Building2,
@@ -529,6 +530,11 @@ export function WorkspaceSection(props: {
   const [inviteRole, setInviteRole] = useState("member");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Per-member page permissions (2026-08-11). permOpenKey = member row whose
+  // editor is expanded; permOverrides holds optimistic local values after a
+  // save so the checkboxes reflect the write without a full settings reload.
+  const [permOpenKey, setPermOpenKey] = useState<string | null>(null);
+  const [permOverrides, setPermOverrides] = useState<Record<string, Record<string, boolean>>>({});
   // useTransition keeps the tab-button click responsive: the pressed state
   // commits synchronously, then the heavier members/invites/roles subtree
   // is rendered in a low-priority pass. Sentry flagged this click at 232ms
@@ -585,6 +591,38 @@ export function WorkspaceSection(props: {
       }),
     [members],
   );
+
+  // The page keys route-guarded by RequirePage in App.jsx. Order = display order.
+  const PAGE_KEYS: Array<{ key: string; label: string }> = [
+    { key: "dashboard", label: "Dashboard" },
+    { key: "search", label: "Intelligence Explorer" },
+    { key: "command_center", label: "Command Center" },
+    { key: "campaigns", label: "Campaigns" },
+    { key: "quoting", label: "Quoting" },
+    { key: "billing", label: "Billing" },
+  ];
+
+  const effectivePerms = (row: { key: string; m: any }): Record<string, boolean> => {
+    const stored = permOverrides[row.key] ?? row.m.page_permissions ?? {};
+    const out: Record<string, boolean> = {};
+    for (const p of PAGE_KEYS) out[p.key] = stored[p.key] !== false;
+    return out;
+  };
+
+  const savePagePermission = async (row: { key: string; m: any }, pageKey: string, enabled: boolean) => {
+    setErr(null); setMsg(null);
+    const next = { ...effectivePerms(row), [pageKey]: enabled };
+    const { error } = await supabase
+      .from("org_members")
+      .update({ page_permissions: next })
+      .eq("id", row.key);
+    if (error) {
+      setErr(error.message || "Failed updating page access");
+      return;
+    }
+    setPermOverrides((prev) => ({ ...prev, [row.key]: next }));
+    setMsg("Page access updated");
+  };
 
   const ROLES_ROWS = [
     ["Discover companies",               true, true, true, true],
@@ -685,8 +723,10 @@ export function WorkspaceSection(props: {
                   <div style={{ padding: "20px 4px", fontFamily: "DM Sans,sans-serif", fontSize: 13, color: "#94a3b8" }}>No members found.</div>
                 ) : memberRows.map((row, i) => (
                   <div key={row.key} style={{
-                    display: "flex", alignItems: "center", gap: 14, padding: "12px 4px",
                     borderBottom: i < memberRows.length - 1 ? "1px solid #F1F5F9" : "none",
+                  }}>
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 14, padding: "12px 4px",
                   }}>
                     <div style={{
                       width: 36, height: 36, borderRadius: "50%",
@@ -725,6 +765,22 @@ export function WorkspaceSection(props: {
                     )}
                     {props.isAdmin && !row.isOwner && (
                       <button
+                        onClick={() =>
+                          setPermOpenKey(permOpenKey === row.key ? null : row.key)
+                        }
+                        style={{
+                          ...sInputStyle, width: "auto", padding: "6px 11px",
+                          fontSize: 12, cursor: "pointer",
+                          background: permOpenKey === row.key ? "#EFF6FF" : "#fff",
+                          color: permOpenKey === row.key ? "#1D4ED8" : "#475569",
+                          fontFamily: "Space Grotesk,sans-serif", fontWeight: 600,
+                        }}
+                      >
+                        Pages
+                      </button>
+                    )}
+                    {props.isAdmin && !row.isOwner && (
+                      <button
                         onClick={async () => {
                           setErr(null); setMsg(null);
                           const result = await props.onRevoke?.(row.key);
@@ -736,6 +792,36 @@ export function WorkspaceSection(props: {
                         <Trash2 size={14} />
                       </button>
                     )}
+                  </div>
+                  {props.isAdmin && !row.isOwner && permOpenKey === row.key && (
+                    <div style={{
+                      margin: "0 4px 12px 54px", padding: "12px 14px",
+                      background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10,
+                    }}>
+                      <div style={{ fontFamily: "Space Grotesk,sans-serif", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                        Pages this member can use
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 18px" }}>
+                        {PAGE_KEYS.map((p) => {
+                          const perms = effectivePerms(row);
+                          return (
+                            <label key={p.key} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "DM Sans,sans-serif", fontSize: 12.5, color: "#0F172A", cursor: "pointer" }}>
+                              <input
+                                type="checkbox"
+                                checked={perms[p.key]}
+                                onChange={(e) => savePagePermission(row, p.key, e.target.checked)}
+                                style={{ accentColor: "#2563EB", cursor: "pointer" }}
+                              />
+                              {p.label}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11, color: "#94A3B8", marginTop: 8 }}>
+                        Changes apply the next time this member loads the app.
+                      </div>
+                    </div>
+                  )}
                   </div>
                 ))}
               </div>
@@ -768,6 +854,21 @@ export function WorkspaceSection(props: {
                   </div>
                   <SBadge tone="amber" dot>Pending</SBadge>
                   <SBadge tone="blue">{inv.role}</SBadge>
+                  {props.isAdmin && (
+                    <button
+                      onClick={async () => {
+                        setErr(null); setMsg(null);
+                        // send-org-invite is idempotent for pending invites:
+                        // it reuses the row and re-sends the email.
+                        const result = await props.onInvite?.(inv.email, inv.role);
+                        if ((result as any)?.error) setErr((result as any).error);
+                        else setMsg("Invite re-sent");
+                      }}
+                      style={{ ...sInputStyle, width: "auto", padding: "6px 11px", fontSize: 12, cursor: "pointer", fontFamily: "Space Grotesk,sans-serif", fontWeight: 600, color: "#1D4ED8" }}
+                    >
+                      Resend
+                    </button>
+                  )}
                   {props.isAdmin && (
                     <button
                       onClick={async () => {

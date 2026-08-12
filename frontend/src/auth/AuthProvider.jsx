@@ -122,7 +122,7 @@ async function fetchPrimaryOrgMembership(userId) {
     // Note: org_members has no status column — filter by user_id only
     const { data, error } = await supabase
       .from('org_members')
-      .select('org_id, role, email, full_name')
+      .select('org_id, role, email, full_name, page_permissions')
       .eq('user_id', userId)
       .order('joined_at', { ascending: true })
       .limit(1)
@@ -132,12 +132,13 @@ async function fetchPrimaryOrgMembership(userId) {
       if (error) {
         console.warn('[AuthProvider] org_members lookup failed:', error.message);
       }
-      return { orgId: null, orgRole: null, plan: null };
+      return { orgId: null, orgRole: null, plan: null, pagePermissions: null };
     }
 
     return {
       orgId: data.org_id,
       orgRole: data.role,
+      pagePermissions: data.page_permissions ?? null,
       plan: null,
     };
   } catch (error) {
@@ -154,6 +155,7 @@ export function AuthProvider({ children }) {
   const [orgRole, setOrgRole] = useState(null);
   const [orgId, setOrgId] = useState(null);
   const [plan, setPlan] = useState(null);
+  const [pagePermissions, setPagePermissions] = useState(null);
 
   useEffect(() => {
     const unsub = listenToAuth(async (u) => {
@@ -179,6 +181,7 @@ export function AuthProvider({ children }) {
         setIsSuperAdmin(superAdminByEmail);
         setOrgId(membership.orgId);
         setOrgRole(membership.orgRole);
+        setPagePermissions(membership.pagePermissions ?? null);
 
         const resolvedPlan = normalizePlan(
           membership.plan || normalized?.user_metadata?.plan || 'free_trial'
@@ -200,6 +203,7 @@ export function AuthProvider({ children }) {
         setOrgId(null);
         setOrgRole(null);
         setPlan(null);
+        setPagePermissions(null);
         clearSentryUser();
       }
 
@@ -239,6 +243,15 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => {
     const resolvedPlan = normalizePlan(plan || rawUser?.user_metadata?.plan || 'free_trial');
     const isOrgAdmin = orgRole === 'owner' || orgRole === 'admin';
+    // Per-member page access (2026-08-11). Owners/admins/superadmins always
+    // see everything; members default to full access unless the org admin
+    // explicitly set a page to false in org_members.page_permissions.
+    // UX control only — data access stays org-scoped by RLS regardless.
+    const canViewPage = (pageKey) => {
+      if (isSuperAdmin || isOrgAdmin) return true;
+      if (!pagePermissions || typeof pagePermissions !== 'object') return true;
+      return pagePermissions[pageKey] !== false;
+    };
     // Platform admin (Admin Dashboard, CMS, Debug Agent) = superadmin only.
     // isOrgAdmin means "owns/admins a workspace" — does NOT grant platform admin pages.
     const canAccessAdmin = Boolean(isSuperAdmin);
@@ -274,6 +287,8 @@ export function AuthProvider({ children }) {
       canAccessAdmin,
       orgRole,
       orgId,
+      pagePermissions,
+      canViewPage,
       signInWithGoogle,
       signInWithMicrosoft,
       signInWithEmailPassword,
@@ -281,7 +296,7 @@ export function AuthProvider({ children }) {
       logout: handleLogout,
       fullName: rawUser?.displayName || null,
     };
-  }, [rawUser, loading, authReady, isSuperAdmin, orgRole, orgId, plan]);
+  }, [rawUser, loading, authReady, isSuperAdmin, orgRole, orgId, plan, pagePermissions]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

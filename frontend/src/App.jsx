@@ -79,6 +79,34 @@ function RequireAuth({ children }) {
   return children;
 }
 
+// Per-member page access (2026-08-11). Org owners/admins restrict which
+// pages a member seat can use via Settings → Workspace; this guard reads
+// the resolved map from AuthProvider. Owners/admins/superadmins always
+// pass. Renders an explanatory card instead of redirecting so a member
+// with several disabled pages can't redirect-loop.
+function RequirePage({ page, children }) {
+  const { user, loading, canViewPage } = useAuth();
+  if (DEMO_MODE) return children;
+  if (loading) return null;
+  if (!user) return <Navigate to="/login?next=/app/search" replace />;
+  if (typeof canViewPage === "function" && !canViewPage(page)) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center px-6">
+        <div className="max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <h2 className="font-display text-[17px] font-bold text-slate-900">
+            This page isn't enabled for your seat
+          </h2>
+          <p className="font-body mt-2 text-[13.5px] leading-relaxed text-slate-600">
+            Your workspace owner controls which pages each member can use.
+            Ask them to enable it under Settings → Workspace.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  return children;
+}
+
 function RequireAdmin({ children }) {
   const { user, loading, canAccessAdmin } = useAuth();
   if (DEMO_MODE) return children;
@@ -225,7 +253,9 @@ export default function App() {
           path="/app/dashboard"
           element={
             <RequireAuth>
-              <LITDashboard />
+              <RequirePage page="dashboard">
+                <LITDashboard />
+              </RequirePage>
             </RequireAuth>
           }
         />
@@ -251,9 +281,11 @@ export default function App() {
           path="/app/search"
           element={
             <RequireAuth>
-              <LITPage>
-                <IntelligenceExplorer />
-              </LITPage>
+              <RequirePage page="search">
+                <LITPage>
+                  <IntelligenceExplorer />
+                </LITPage>
+              </RequirePage>
             </RequireAuth>
           }
         />
@@ -297,9 +329,11 @@ export default function App() {
           path="/app/command-center"
           element={
             <RequireAuth>
-              <LITPage>
-                <CommandCenterPage />
-              </LITPage>
+              <RequirePage page="command_center">
+                <LITPage>
+                  <CommandCenterPage />
+                </LITPage>
+              </RequirePage>
             </RequireAuth>
           }
         />
@@ -360,6 +394,7 @@ export default function App() {
         <Route
           path="/app/campaigns"
           element={
+            <RequirePage page="campaigns">
             <RequirePlan
               feature="campaign_builder"
               featureName="Campaign Builder"
@@ -370,6 +405,7 @@ export default function App() {
                 <Campaigns />
               </LITPage>
             </RequirePlan>
+            </RequirePage>
           }
         />
 
@@ -464,9 +500,11 @@ export default function App() {
           path="/app/quoting"
           element={
             <RequireAuth>
-              <LITPage>
-                <QuotingDashboard />
-              </LITPage>
+              <RequirePage page="quoting">
+                <LITPage>
+                  <QuotingDashboard />
+                </LITPage>
+              </RequirePage>
             </RequireAuth>
           }
         />
@@ -555,9 +593,11 @@ export default function App() {
           path="/app/billing"
           element={
             <RequireAuth>
-              <LITPage>
-                <Billing />
-              </LITPage>
+              <RequirePage page="billing">
+                <LITPage>
+                  <Billing />
+                </LITPage>
+              </RequirePage>
             </RequireAuth>
           }
         />
