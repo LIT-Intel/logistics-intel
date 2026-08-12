@@ -308,7 +308,7 @@ LIT KNOWLEDGE (always available):
 - Command Center: full company profile (supply chain, contacts, briefs, campaigns).
 - Outbound Engine: multi-touch campaigns (email + LinkedIn + call). Sends through the user's connected mailbox.
 - Pulse AI Brief: per-company AI summary + recommended outreach angle.
-- Trial = 14 days. After expiration, account gates behind upgrade. Login + Settings stay accessible.
+- Trial = 7 days. After expiration, account gates behind upgrade. Login + Settings stay accessible.
 - TEU = twenty-foot equivalent unit (ocean container).
 - LCL = less than container load; FCL = full container load.
 - HS code = Harmonized System, 6+ digit commodity classification.

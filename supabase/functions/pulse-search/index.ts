@@ -1592,7 +1592,7 @@ serve(async (req) => {
   } catch {}
 
   // Trial-expiry gate — independent of the usage cap. A free_trial user
-  // whose 14-day window has elapsed should be blocked even if they still
+  // whose 7-day window has elapsed should be blocked even if they still
   // have unused search credits. Returns a LIMIT_EXCEEDED-shaped payload
   // so the existing UI upgrade banner can render without a new code path.
   try {
@@ -1618,7 +1618,7 @@ serve(async (req) => {
           upgrade_url: "/app/billing",
           upgrade_required: true,
           message:
-            "Your 14-day free trial has ended. Upgrade to keep running Pulse searches.",
+            "Your 7-day free trial has ended. Upgrade to keep running Pulse searches.",
         }),
         { status: 403, headers: { ...corsHeaders(), "Content-Type": "application/json" } },
       );
@@ -1629,7 +1629,7 @@ serve(async (req) => {
 
   // Usage gate — maps to `pulse_search` feature_key.
   // Limits per plan (from public.plans.pulse_search_limit):
-  //   free_trial = 10 (per the 14-day trial — calendar month is the
+  //   free_trial = 10 (per the 7-day trial — calendar month is the
   //                    rolling window per resolve_feature_limit, but
   //                    trial expires before a new month begins)
   //   starter    = 0  (paywalled, upgrade prompt)

@@ -128,7 +128,7 @@ export default function FreightLeadsPage() {
 
         <MoneyPageOfferGrid
           eyebrow="What's in the free trial"
-          heading="Everything ZoomInfo gives you — built for freight, free for 14 days."
+          heading="Everything ZoomInfo gives you — built for freight, free for 7 days."
           body="10 searches. 10 verified contact enrichments. Every account comes with a full shipment profile, rate benchmark, AI brief, and revenue opportunity. No credit card required."
           cards={[
             {

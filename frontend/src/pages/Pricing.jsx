@@ -276,7 +276,7 @@ export default function Pricing() {
             </div>
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">What's included in the free trial?</h3>
-              <p className="text-gray-600">The free trial includes full access to our Sales Professional plan for 14 days, with no credit card required.</p>
+              <p className="text-gray-600">The free trial includes full access to our Sales Professional plan for 7 days, with no credit card required.</p>
             </div>
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Do you offer volume discounts?</h3>

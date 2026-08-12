@@ -2,14 +2,14 @@
 
 ## Why these decisions
 
-### Cadence: 6 emails over 14-day trial
+### Cadence: 6 emails over 7-day trial (trial shortened from 14 days on 2026-08-12)
 
 | Day | Template | Behavioral gate |
 |-----|----------|-----------------|
 | 0 | Trial Welcome | None — fires on signup |
 | 2 | Activation checklist | Skipped if user has any `lit_activity_events` since `started_at` |
 | 3 | Founder note (Vincent) | None — every trial user gets it |
-| 12 | Ending soon | None — fires 2 days before `trial_ends_at` |
+| 5 | Ending soon | None — fires 2 days before `trial_ends_at` (day 5 of a 7-day trial) |
 | — | Paid plan welcome | Fires on plan activation (called by billing flow) |
 | — | Upgrade confirmation | Fires on plan upgrade (called by billing flow) |
 
@@ -19,7 +19,7 @@ Day 5 is too late. Users who are going to churn typically do so in the first 3 d
 
 ### Why behavioral gate on Day 2 only
 
-The activation checklist is for users who haven't tried the core workflow yet. Sending it to someone who's already run a Pulse search is noise — they know how the product works. The founder note (Day 3) fires for everyone because it's personal touch, not instructions. The ending-soon email (Day 12) fires for everyone because the urgency is real regardless of usage.
+The activation checklist is for users who haven't tried the core workflow yet. Sending it to someone who's already run a Pulse search is noise — they know how the product works. The founder note (Day 3) fires for everyone because it's personal touch, not instructions. The ending-soon email (2 days before `trial_ends_at`) fires for everyone because the urgency is real regardless of usage.
 
 ### Why no Day 5 value email
 

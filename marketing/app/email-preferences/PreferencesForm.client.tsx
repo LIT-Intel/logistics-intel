@@ -25,7 +25,7 @@ const SEQUENCE_OPTIONS: Array<{
   {
     key: "trial_welcome",
     label: "Free trial nurture",
-    description: "5 emails over 14 days — onboarding and trial walkthroughs.",
+    description: "5 emails over 8 days — onboarding and trial walkthroughs.",
   },
   {
     key: "top_100_followup",

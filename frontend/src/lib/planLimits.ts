@@ -4,7 +4,7 @@
 // rendering speed only — never for gating decisions.
 //
 // PRICING (Stripe truth, see Stripe products STARTER/GROWTH/SCALE):
-//   free_trial  $0          — 14-day trial
+//   free_trial  $0          — 7-day trial
 //   starter     $125/mo,  $1,500/yr   (1 seat)
 //   growth      $499/mo,  $4,790/yr   (3 seats)
 //   scale       $999/mo,  $8,991/yr   (5 seats)

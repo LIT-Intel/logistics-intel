@@ -43,7 +43,7 @@ const FALLBACK_HERO = {
     { value: "42M+", label: "Verified contacts", trend: "95%+ deliverability" },
     { value: "60+", label: "Countries tracked", trend: "Customs sources" },
   ],
-  trialNote: "14-day free trial · Full feature access · Cancel anytime",
+  trialNote: "7-day free trial · Full feature access · Cancel anytime",
 };
 
 /** Static trust badges shown in the slim strip below the hero. Brand
@@ -166,7 +166,7 @@ function Hero({ hero }: { hero: any }) {
         lede={hero.subhead}
         ctaLabel="Start Prospecting →"
         formSource="home-hero"
-        formNote={hero.trialNote || "14-day free trial · Full feature access · Cancel anytime"}
+        formNote={hero.trialNote || "7-day free trial · Full feature access · Cancel anytime"}
       >
         <HeroSearchDemo />
       </LeadMagnetHero>

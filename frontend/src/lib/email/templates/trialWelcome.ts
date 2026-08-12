@@ -42,7 +42,7 @@ export function buildTrialWelcomeEmail(ctx: TrialWelcomeContext): {
 
   const bodyHtml = `
 <p style="margin:0 0 16px 0;">Hi ${name},</p>
-<p style="margin:0 0 16px 0;">Your free trial is active. You have full access to LIT's shipper intelligence database for the next 14 days — no credit card required until you decide to continue.</p>
+<p style="margin:0 0 16px 0;">Your free trial is active. You have full access to LIT's shipper intelligence database for the next 7 days — no credit card required until you decide to continue.</p>
 <p style="margin:0 0 12px 0;font-weight:600;">Here's what to try first:</p>
 ${benefitsHtml(plan.benefits)}
 <p style="margin:20px 0 16px 0;">The quickest way to see value: pick a trade lane your team already works, run a Pulse search, and open two or three company profiles. You'll see shipment history, carrier patterns, and buying signals in under five minutes.</p>
@@ -50,7 +50,7 @@ ${benefitsHtml(plan.benefits)}
 
   const bodyText = `Hi ${name},
 
-Your free trial is active. You have full access to LIT's shipper intelligence database for the next 14 days — no credit card required until you decide to continue.
+Your free trial is active. You have full access to LIT's shipper intelligence database for the next 7 days — no credit card required until you decide to continue.
 
 Here's what to try first:
 
@@ -62,7 +62,7 @@ P.S. Need help? Just reply to this email — we read every one.`;
 
   const { html, text } = renderEmailLayout({
     headline: plan.headline,
-    subtitle: "Your trial is live for 14 days.",
+    subtitle: "Your trial is live for 7 days.",
     bodyHtml,
     bodyText,
     ctaText: plan.primaryCta,

@@ -15,7 +15,7 @@ export function FinalCtaBand({
   body,
   ctaLabel,
   formSource,
-  formNote = "Cancel anytime. · No credit card · 14-day full access",
+  formNote = "Cancel anytime. · No credit card · 7-day full access",
 }: FinalCtaBandProps) {
   const { onSubmit, submitting, error } = useLeadMagnetForm({ source: formSource });
 

@@ -114,7 +114,7 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
       "the freight intel built for brokers",
       "Trade intelligence designed specifically for freight brokers.",
       undefined,
-      "Start your 14-day free trial",
+      "Start your 7-day free trial",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_broker_1_founder_intro",
       {
         headline: "The freight intel built for brokers.",
@@ -203,7 +203,7 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
       "Find domestic freight signals before your competitors",
       "Port spikes, lane shifts, and carrier changes that signal drayage and truckload need.",
       undefined,
-      "Try it free for 14 days",
+      "Try it free for 7 days",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_broker_3_signal_selling",
       {
         headline: "Find domestic freight signals before your competitors.",
@@ -213,7 +213,7 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
           "Carrier shifts and new origin activity surfaced as buying signals",
           "Account context your reps can use before the first call",
         ],
-        bodyAfterBullets: `<p style="margin:0;">The 14-day free trial gives your team access to the workspace so you can test it against the accounts you are already pursuing.</p>`,
+        bodyAfterBullets: `<p style="margin:0;">The 7-day free trial gives your team access to the workspace so you can test it against the accounts you are already pursuing.</p>`,
         signoff: `— The Logistics Intel Team`,
         resourceCard: {
           companyName: "Home Depot",
@@ -242,11 +242,11 @@ export const freightBrokerTemplates: CampaignEmailTemplate[] = [
 <p style="margin:0 0 16px 0;">What is the hardest part of finding new shipper accounts for your team right now?</p>
 <p style="margin:0 0 16px 0;">Is it stale lead lists, bad contact data, not knowing who is actively shipping, or not having a clear reason to reach out?</p>
 <p style="margin:0 0 16px 0;">One sentence is enough — we read every reply.</p>
-<p style="margin:0;">If it's easier to just take a look, the trial is 14 days with no card required.</p>`,
+<p style="margin:0;">If it's easier to just take a look, the trial is 7 days with no card required.</p>`,
       "one quick question",
       "What is the hardest part of finding new shipper accounts right now?",
       undefined,
-      "Start your 14-day free trial",
+      "Start your 7-day free trial",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_broker_4_quiet_close",
       {
         headline: "One quick question.",
@@ -282,7 +282,7 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
       "Freight leads built for forwarders",
       "Trade intelligence designed for freight sales teams.",
       undefined,
-      "Start your 14-day free trial",
+      "Start your 7-day free trial",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_1_founder_intro",
       {
         headline: "Freight leads built for forwarders.",
@@ -372,7 +372,7 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
       "A better reason to reach out",
       "Real shipping activity gives reps a more relevant reason to start the conversation.",
       undefined,
-      "Try it free for 14 days",
+      "Try it free for 7 days",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_3_velocity",
       {
         headline: "A better reason to reach out.",
@@ -383,7 +383,7 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
           "Carrier and routing shifts",
           "Contact enrichment for logistics decision-makers",
         ],
-        bodyAfterBullets: `<p style="margin:0;">The 14-day free trial gives your team access to the workspace so you can test it against the accounts you are already pursuing.</p>`,
+        bodyAfterBullets: `<p style="margin:0;">The 7-day free trial gives your team access to the workspace so you can test it against the accounts you are already pursuing.</p>`,
         signoff: `— The Logistics Intel Team`,
         resourceCard: {
           companyName: "Costco Wholesale",
@@ -412,11 +412,11 @@ export const smallForwarderTemplates: CampaignEmailTemplate[] = [
 <p style="margin:0 0 16px 0;">What is the hardest part of finding new shipper accounts for your forwarding team right now?</p>
 <p style="margin:0 0 16px 0;">Is it stale lead lists, bad contact data, not knowing who is actively shipping, or not having a clear reason to reach out?</p>
 <p style="margin:0 0 16px 0;">One sentence is enough — we read every reply.</p>
-<p style="margin:0;">If it is easier to just take a look, the trial is 14 days with no card required.</p>`,
+<p style="margin:0;">If it is easier to just take a look, the trial is 7 days with no card required.</p>`,
       "One quick question",
       "What is the hardest part of finding new shipper accounts right now?",
       undefined,
-      "Start your 14-day free trial",
+      "Start your 7-day free trial",
       "https://app.logisticintel.com/auth/signup?utm_source=campaign&utm_medium=email&utm_campaign=lit_marketing_forwarder_4_quiet_close",
       {
         headline: "One quick question.",

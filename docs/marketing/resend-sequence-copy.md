@@ -60,20 +60,20 @@ For the trigger → source-value mapping, see `docs/marketing/resend-template-tr
 
 ### 3. RESEND_TPL_TRIAL_DAY_5
 
-**Subject:** Five days in — here's the pattern that converts
-**Preview text:** Trial users who upgrade run a specific play in the back half of week one. Worth copying.
-**Trigger:** Cron, 120 hours (5 days) after trial lead capture. Fires for everyone in the trial sequence.
+**Subject:** Three days in — here's the pattern that converts
+**Preview text:** Trial users who upgrade run a specific play in the back half of the week. Worth copying.
+**Trigger:** Cron, 72 hours (3 days) after trial lead capture. Fires for everyone in the trial sequence.
 **Merge variables:** `{{firstName}}`
 **Hero kind:** dashboard
 **Accent:** blue
 
 ```html
 <p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
-<p style="margin:0 0 16px 0;">You're five days in. Trial users who upgrade follow the same pattern in the back half:</p>
+<p style="margin:0 0 16px 0;">You're three days in. Trial users who upgrade follow the same pattern in the back half:</p>
 <ul style="margin:0 0 16px 0;padding-left:20px;">
-  <li style="margin-bottom:8px;"><strong>Day 5–7:</strong> 3–4 searches to validate a second lane or vertical.</li>
-  <li style="margin-bottom:8px;"><strong>Day 7–10:</strong> Pull contacts on the top 10 saved companies and start an outreach test.</li>
-  <li style="margin-bottom:8px;"><strong>Day 10–14:</strong> Watch for the first reply. If the list is right, it lands inside two weeks.</li>
+  <li style="margin-bottom:8px;"><strong>Day 3–4:</strong> 3–4 searches to validate a second lane or vertical.</li>
+  <li style="margin-bottom:8px;"><strong>Day 4–6:</strong> Pull contacts on the top 10 saved companies and start an outreach test.</li>
+  <li style="margin-bottom:8px;"><strong>Day 6–7:</strong> Watch for the first reply. If the list is right, it lands inside the week.</li>
 </ul>
 <p style="margin:0 0 16px 0;">If you haven't pulled contacts yet, that's the next move. Saved companies are already in your account — the contact-finder runs against them in one click.</p>
 ```
@@ -84,14 +84,14 @@ For the trigger → source-value mapping, see `docs/marketing/resend-template-tr
 
 **Subject:** Want 20 minutes on your real lane this week?
 **Preview text:** Bring one lane you're trying to win. We'll build the prospect list with you. You keep it either way.
-**Trigger:** Cron, 216 hours (9 days) after trial lead capture. Fires for everyone — assumes most need a nudge by now.
+**Trigger:** Cron, 120 hours (5 days) after trial lead capture. Fires for everyone — assumes most need a nudge by now.
 **Merge variables:** `{{firstName}}`
 **Hero kind:** dashboard
 **Accent:** blue
 
 ```html
 <p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
-<p style="margin:0 0 16px 0;">Day 9. Two options for the rest of the trial.</p>
+<p style="margin:0 0 16px 0;">Day 5. Two options for the rest of the trial.</p>
 <p style="margin:0 0 16px 0;"><strong>Option A — Keep running solo.</strong> The product is built so you don't need a call.</p>
 <p style="margin:0 0 16px 0;"><strong>Option B — Book 20 minutes.</strong> Bring one lane you're trying to win. We'll build the prospect list with you on the call: saved searches, verified contacts, suggested outreach order. You keep the list in your account whether you upgrade or not.</p>
 <p style="margin:0 0 16px 0;">If option A is working, ignore this email.</p>
@@ -101,16 +101,16 @@ For the trigger → source-value mapping, see `docs/marketing/resend-template-tr
 
 ### 5. RESEND_TPL_TRIAL_DAY_14
 
-**Subject:** Last day on trial — three paths from here
+**Subject:** Your trial ended — three paths from here
 **Preview text:** Recap of what you used, what each plan unlocks, and how to tell us if LIT didn't fit.
-**Trigger:** Cron, 336 hours (14 days) after trial lead capture. Fires for everyone in the trial sequence regardless of activation.
+**Trigger:** Cron, 192 hours (8 days) after trial lead capture — the day after the 7-day trial ends. Fires for everyone in the trial sequence regardless of activation.
 **Merge variables:** `{{firstName}}`
 **Hero kind:** dashboard
 **Accent:** blue
 
 ```html
 <p style="margin:0 0 16px 0;">Hi {{firstName}},</p>
-<p style="margin:0 0 16px 0;">The trial wraps today. Quick recap: 10 company searches, 10 verified contacts, against an index of 524,000 active US shippers refreshed weekly.</p>
+<p style="margin:0 0 16px 0;">Your trial wrapped up. Quick recap: 10 company searches, 10 verified contacts, against an index of 524,000 active US shippers refreshed weekly.</p>
 <p style="margin:0 0 16px 0;">If the data held up, three plans:</p>
 <ul style="margin:0 0 16px 0;padding-left:20px;">
   <li style="margin-bottom:8px;"><strong>Starter ($149/mo):</strong> 200 searches, 200 contacts. One SDR or owner-operator.</li>

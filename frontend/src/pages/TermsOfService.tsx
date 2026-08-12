@@ -121,7 +121,7 @@ export default function TermsOfService() {
 
               <h3 className="text-xl font-semibold text-slate-900 mb-3 mt-6">Free Trial</h3>
               <p className="text-slate-700 leading-relaxed">
-                We may offer a 14-day free trial for new users. No payment method is required during the trial period. At the end of the trial, you must subscribe to a paid plan to continue using the Services.
+                We may offer a 7-day free trial for new users. No payment method is required during the trial period. At the end of the trial, you must subscribe to a paid plan to continue using the Services.
               </p>
 
               <h3 className="text-xl font-semibold text-slate-900 mb-3 mt-6">Payment Terms</h3>

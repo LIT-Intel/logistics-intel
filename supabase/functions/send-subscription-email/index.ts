@@ -272,12 +272,12 @@ function buildEmail(
   switch (eventType) {
     case "trial_welcome": {
       const tip = `Run a Pulse AI brief on a prospect <strong>before</strong> your next sales call. 30 seconds of context beats 30 minutes of generic outreach.`;
-      const bodyHtml = `<p style="margin:0 0 18px 0;">Hi ${esc(name)},</p><p style="margin:0 0 18px 0;">You're in. For the next 14 days you have access to the same shipper intelligence freight teams use to stop selling to dead lists — no credit card required.</p><p style="margin:0 0 8px 0;font-weight:700;color:${COLOR.text};">What you can do today:</p>${benefitsHtml(plan.benefits)}${proTipHtml(tip)}<p style="margin:24px 0 18px 0;">The 5-minute test: pick a shipper your team already sells to, search them in LIT, and walk through their full supply chain history.</p><p style="margin:0;font-style:italic;color:${COLOR.textSubtle};font-size:14px;">P.S. Hit reply if anything's unclear — I read every one. — Gabriel</p>`;
-      const bodyText = `Hi ${name},\n\nYou're in. For the next 14 days you have access to the same shipper intelligence freight teams use to stop selling to dead lists — no credit card required.\n\nWhat you can do today:\n\n${benefitsText(plan.benefits)}\n\nPRO TIP: Run a Pulse AI brief on a prospect BEFORE your next sales call.\n\nP.S. Hit reply if anything's unclear — I read every one. — Gabriel`;
+      const bodyHtml = `<p style="margin:0 0 18px 0;">Hi ${esc(name)},</p><p style="margin:0 0 18px 0;">You're in. For the next 7 days you have access to the same shipper intelligence freight teams use to stop selling to dead lists — no credit card required.</p><p style="margin:0 0 8px 0;font-weight:700;color:${COLOR.text};">What you can do today:</p>${benefitsHtml(plan.benefits)}${proTipHtml(tip)}<p style="margin:24px 0 18px 0;">The 5-minute test: pick a shipper your team already sells to, search them in LIT, and walk through their full supply chain history.</p><p style="margin:0;font-style:italic;color:${COLOR.textSubtle};font-size:14px;">P.S. Hit reply if anything's unclear — I read every one. — Gabriel</p>`;
+      const bodyText = `Hi ${name},\n\nYou're in. For the next 7 days you have access to the same shipper intelligence freight teams use to stop selling to dead lists — no credit card required.\n\nWhat you can do today:\n\n${benefitsText(plan.benefits)}\n\nPRO TIP: Run a Pulse AI brief on a prospect BEFORE your next sales call.\n\nP.S. Hit reply if anything's unclear — I read every one. — Gabriel`;
       const { html, text } = buildLayout({
-        previewText: "14 days. No credit card required.",
+        previewText: "7 days. No credit card required.",
         headline: name === "there" ? "Welcome to LIT." : `Welcome${nameSuffix}.`,
-        subtitle: "Your trial is live for 14 days.",
+        subtitle: "Your trial is live for 7 days.",
         bodyHtml,
         bodyText,
         ctaText: plan.primaryCta,

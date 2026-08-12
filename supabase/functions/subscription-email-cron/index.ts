@@ -6,6 +6,11 @@
 // multi-line for readability; behavior verified line-by-line against
 // deployed EZBR sha256 4b13242eeed404da30629d79db54ab3f42c3bc77ed337e6f6fe293abba06d27d.
 //
+// v6 — 7-day trial (2026-08-12, was 14): dropped the Day-8
+// trial_tip_revenue_opportunity sweep (would land after expiry; the
+// template stays available for one-off triggers). trial_ending_soon is
+// driven by trial_ends_at (fires when the trial ends within 2 days =
+// day 5+ of a 7-day trial), so it needed no change.
 // v5 — force redeploy to refresh gateway verify_jwt config; inlined
 // cron auth + logger so the function deploys standalone (no _shared
 // dependency). Daily sweep schedule:
@@ -14,8 +19,7 @@
 //   Day 4: trial_tip_pulse_ai
 //   Day 5: trial_book_demo (sales@ sender)
 //   Day 6: trial_tip_contact_enrichment
-//   Day 8: trial_tip_revenue_opportunity
-//   Day 12: trial_ending_soon
+//   trial_ends_at within 2 days: trial_ending_soon
 //   + inactivity check-in for trials >= 3 days with zero activity
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
@@ -152,7 +156,6 @@ serve(async (req: Request) => {
   const day4 = dayWindow(5, 4);
   const day5 = dayWindow(6, 5);
   const day6 = dayWindow(7, 6);
-  const day8 = dayWindow(9, 8);
 
   const { data: day2c } = await db
     .from("subscriptions")
@@ -184,12 +187,6 @@ serve(async (req: Request) => {
     .eq("status", "trialing")
     .gte("started_at", day6.gte)
     .lte("started_at", day6.lte);
-  const { data: day8c } = await db
-    .from("subscriptions")
-    .select(select)
-    .eq("status", "trialing")
-    .gte("started_at", day8.gte)
-    .lte("started_at", day8.lte);
   const { data: day12c } = await db
     .from("subscriptions")
     .select(day12Columns)
@@ -258,7 +255,6 @@ serve(async (req: Request) => {
     day_4: 0,
     day_5_book_demo: 0,
     day_6: 0,
-    day_8: 0,
     day_12: 0,
     check_in_inactive: 0,
     skipped_day_2_active: 0,
@@ -320,7 +316,6 @@ serve(async (req: Request) => {
   await fireSweep(day4c ?? [], "trial_tip_pulse_ai", "day_4");
   await fireSweep(day5c ?? [], "trial_book_demo", "day_5_book_demo");
   await fireSweep(day6c ?? [], "trial_tip_contact_enrichment", "day_6");
-  await fireSweep(day8c ?? [], "trial_tip_revenue_opportunity", "day_8");
 
   const inactiveCutoff = new Date(
     Date.now() - INACTIVE_DAYS_THRESHOLD * 86400 * 1000,

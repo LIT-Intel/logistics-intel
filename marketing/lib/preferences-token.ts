@@ -12,7 +12,7 @@
  * NEVER exposed to the client.
  *
  * Expiry is 90 days from generation, well past the longest active
- * sequence (trial-welcome = 14 days) so a recipient who clicks the
+ * sequence (trial-welcome = 8 days) so a recipient who clicks the
  * footer of an email weeks later still lands on a working page.
  *
  * Token format:

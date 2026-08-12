@@ -159,9 +159,9 @@ const CONTENT: Record<string, (v: SequenceEmailVars) => EmailDef> = {
     signoff: "— Gabriel",
   }),
   "trial-welcome:3": (v) => ({
-    subject: "Your trial perks expire in 9 days",
+    subject: "Your trial perks expire in 4 days",
     previewText: "Search stays free forever. The unlocks don't.",
-    headline: "9 days left on your unlocks.",
+    headline: "4 days left on your unlocks.",
     paragraphs: [
       hi(v),
       "Quick heads-up: searching LIT stays free forever, but your trial's 10 account unlocks and 10 contact enrichments expire with the trial.",

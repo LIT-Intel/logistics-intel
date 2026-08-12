@@ -51,6 +51,10 @@ export type SequenceStep = {
 };
 
 export const SEQUENCES: Record<SequenceKey, SequenceStep[]> = {
+  // Compressed to the 7-day trial (2026-08-12): day 0 / 2 / 3 / 5, then a
+  // day-8 post-expiry recap. Env var names keep their historical DAY_N
+  // suffixes (they are opaque template-id slots configured in Vercel;
+  // renaming them would orphan the configured template IDs).
   "trial-welcome": [
     {
       step: 1,
@@ -71,15 +75,15 @@ export const SEQUENCES: Record<SequenceKey, SequenceStep[]> = {
     },
     {
       step: 3,
-      delayHours: 120,
+      delayHours: 72,
       envTemplateVar: "RESEND_TPL_TRIAL_DAY_5",
       templateId: null,
-      subject: "Your free searches expire in 9 days",
+      subject: "Your free searches expire in 4 days",
       purpose: "Trial reminder + value recap",
     },
     {
       step: 4,
-      delayHours: 216,
+      delayHours: 120,
       envTemplateVar: "RESEND_TPL_TRIAL_DAY_9",
       templateId: null,
       subject: "Want a 30-min walkthrough on your lanes?",
@@ -87,7 +91,7 @@ export const SEQUENCES: Record<SequenceKey, SequenceStep[]> = {
     },
     {
       step: 5,
-      delayHours: 336,
+      delayHours: 192,
       envTemplateVar: "RESEND_TPL_TRIAL_DAY_14",
       templateId: null,
       subject: "Your LIT trial ended — here is what we built for you",

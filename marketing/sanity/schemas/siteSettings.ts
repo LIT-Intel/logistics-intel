@@ -185,7 +185,7 @@ export const siteSettings = defineType({
           name: "trialNote",
           title: "Trial reassurance microcopy",
           type: "string",
-          description: 'Below the CTAs. Defaults to "14-day free trial · Full feature access · Cancel anytime".',
+          description: 'Below the CTAs. Defaults to "7-day free trial · Full feature access · Cancel anytime".',
         },
       ],
     }),
