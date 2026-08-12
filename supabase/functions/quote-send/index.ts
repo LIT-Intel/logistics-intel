@@ -1,15 +1,20 @@
-// quote-send — Phase 1 quoting.
+// quote-send — digital quoting overhaul (2026-08-12).
 //
-// Sends a quote to a recipient through the USER's connected Gmail or Outlook
-// mailbox, as a SECURE LINK (NOT a PDF attachment). The email body carries a
-// "View your quote" button pointing at the PUBLIC quote-view function, which
-// validates the unguessable share_token, flips status sent->viewed on first
-// view, and 302-redirects to a fresh signed PDF URL.
+// Sends a quote to a recipient through the USER's connected Gmail / Outlook /
+// Resend mailbox with the quote rendered LIVE INSIDE THE EMAIL BODY: a
+// branded, table-based, email-client-safe HTML block (inline styles, tables
+// only — no flexbox/grid) carrying the lane, the full sell-side charges
+// breakdown, the validity date, and a prominent "View live quote" CTA that
+// opens the public tokenized live-quote page (`/q/<share_token>` in the app,
+// no login). Opening the live page stamps viewed_at + flips sent -> viewed.
 //
-// Secure-link only: no multipart MIME, no attachments, no Content-Disposition.
-// The PDF is generated separately (quote-generate-pdf) BEFORE this runs —
-// this function returns PDF_REQUIRED if the artifact is missing rather than
-// generating it here.
+// Branding: the SENDER is the user's company — org quote settings
+// (org_settings.quote_defaults: company_name, logo_url, contact lines) with
+// the organization name as fallback. LIT is only a discreet footer credit.
+//
+// PDF is OPTIONAL: if a PDF was generated it's offered as a secondary
+// "Download PDF" link in the email and on the live page, but sending no
+// longer requires one (the old PDF_REQUIRED gate is gone).
 //
 // Gating: the `quoting` server-side feature gate (requireQuotingFeature) is
 // enforced before any work. Admin bypass is server-side only, inside the gate.
@@ -18,6 +23,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createLogger, requestId } from "../_shared/logger.ts";
 import { resolveOrg, requireQuotingFeature } from "../_shared/quote_helpers.ts";
 import { sendQuoteEmail, QuoteSenderAccount } from "../_shared/quote_email.ts";
+
+const APP_BASE = (Deno.env.get("LIT_APP_URL") ?? "https://app.logisticintel.com").replace(/\/+$/, "");
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -30,21 +37,27 @@ const json = (b: unknown, s = 200) =>
 const esc = (s: string) =>
   String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-function laneLabel(q: Record<string, unknown>): string {
+function laneParts(q: Record<string, unknown>): { origin: string; dest: string } {
   const part = (port: unknown, city: unknown, state: unknown) => {
     if (port && String(port).trim()) return String(port).trim();
     const c = city ? String(city).trim() : "";
     const s = state ? String(state).trim() : "";
     return [c, s].filter(Boolean).join(", ");
   };
-  const origin = part(q.origin_port, q.origin_city, q.origin_state) || "Origin";
-  const dest = part(q.destination_port, q.destination_city, q.destination_state) || "Destination";
+  return {
+    origin: part(q.origin_port, q.origin_city, q.origin_state) || "Origin",
+    dest: part(q.destination_port, q.destination_city, q.destination_state) || "Destination",
+  };
+}
+
+function laneLabel(q: Record<string, unknown>): string {
+  const { origin, dest } = laneParts(q);
   return `${origin} → ${dest}`;
 }
 
 function formatUsd(n: unknown, currency = "USD"): string {
   const v = Number(n);
-  if (!Number.isFinite(v)) return "—";
+  if (!Number.isFinite(v)) return "-";
   try {
     return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD" }).format(v);
   } catch {
@@ -52,54 +65,224 @@ function formatUsd(n: unknown, currency = "USD"): string {
   }
 }
 
-function defaultTemplate(opts: {
-  toName?: string | null;
-  lane: string;
-  total: string;
-  validUntil: string | null;
+function fmtDate(value: unknown): string | null {
+  if (!value) return null;
+  const d = new Date(String(value));
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function modeLabel(mode: unknown): string {
+  switch (mode) {
+    case "ocean": return "Ocean Freight";
+    case "air": return "Air Freight";
+    case "drayage": return "Drayage";
+    case "ftl": return "Full Truckload (FTL)";
+    case "ltl": return "Less-than-Truckload (LTL)";
+    default: return mode ? String(mode) : "Freight";
+  }
+}
+
+interface EmailBranding {
+  company_name: string;
+  logo_url: string | null; // only http(s) URLs are embedded (Gmail blocks data: URIs)
+  company_email: string | null;
+  company_phone: string | null;
+}
+
+interface EmailLineItem {
+  name: string | null;
+  description: string | null;
+  quantity: unknown;
+  unit_sell: unknown;
+  is_accessorial: boolean | null;
+  sort_order: number | null;
+}
+
+const FONT = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
+
+/**
+ * The branded quote block — the quote itself, rendered live inside the email.
+ * Email-client-safe: nested tables, inline styles, bgcolor attributes, no
+ * flex/grid, no external CSS. Sell-side numbers only.
+ */
+function quoteBlockHtml(opts: {
+  quote: Record<string, unknown>;
+  items: EmailLineItem[];
+  branding: EmailBranding;
   viewUrl: string;
+  pdfUrl: string | null;
+}): string {
+  const { quote, items, branding, viewUrl, pdfUrl } = opts;
+  const currency = (quote.currency as string) || "USD";
+  const { origin, dest } = laneParts(quote);
+  const validUntil = fmtDate(quote.valid_until);
+
+  const subLine = [modeLabel(quote.mode), quote.service_type, quote.equipment_type]
+    .map((v) => (v ? String(v).trim() : ""))
+    .filter(Boolean)
+    .join(" &middot; ");
+
+  // Hero: logo (https only) or sender company name, cyan eyebrow, quote # right.
+  const logo =
+    branding.logo_url && /^https?:\/\//i.test(branding.logo_url)
+      ? `<img src="${esc(branding.logo_url)}" alt="${esc(branding.company_name)}" height="30" style="display:block;height:30px;width:auto;max-width:180px;border:0;" />`
+      : "";
+
+  const ordered = [...items].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const itemRows = ordered
+    .map((li) => {
+      const qty = Number.isFinite(Number(li.quantity)) && li.quantity != null ? Number(li.quantity) : 1;
+      const unit = Number.isFinite(Number(li.unit_sell)) && li.unit_sell != null ? Number(li.unit_sell) : 0;
+      const name = (li.name ?? "Charge").toString().trim() || "Charge";
+      const desc = (li.description ?? "").toString().trim();
+      const tag = li.is_accessorial ? ` <span style="color:#94a3b8;font-size:11px;">&middot; Accessorial</span>` : "";
+      return `<tr>
+        <td style="${FONT}padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#0f172a;">
+          ${esc(name)}${tag}${desc ? `<br/><span style="color:#94a3b8;font-size:11.5px;">${esc(desc)}</span>` : ""}
+        </td>
+        <td align="right" style="${FONT}padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#475569;white-space:nowrap;">${qty.toLocaleString("en-US")}</td>
+        <td align="right" style="${FONT}padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#475569;white-space:nowrap;">${esc(formatUsd(unit, currency))}</td>
+        <td align="right" style="${FONT}padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:700;color:#0f172a;white-space:nowrap;">${esc(formatUsd(qty * unit, currency))}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const totalRow = (label: string, value: string, opts2?: { muted?: boolean }) =>
+    `<tr>
+      <td colspan="3" align="right" style="${FONT}padding:6px 12px 0;font-size:12.5px;color:${opts2?.muted ? "#64748b" : "#334155"};">${label}</td>
+      <td align="right" style="${FONT}padding:6px 12px 0;font-size:12.5px;color:#0f172a;white-space:nowrap;">${esc(value)}</td>
+    </tr>`;
+
+  let totalsRows = "";
+  totalsRows += totalRow("Subtotal", formatUsd(quote.subtotal_sell, currency), { muted: true });
+  if (Number(quote.fuel_surcharge_amount) > 0) {
+    const pct = Number.isFinite(Number(quote.fuel_surcharge_pct)) && quote.fuel_surcharge_pct != null
+      ? ` (${Number(quote.fuel_surcharge_pct)}%)`
+      : "";
+    totalsRows += totalRow(`Fuel surcharge${pct}`, formatUsd(quote.fuel_surcharge_amount, currency), { muted: true });
+  }
+  if (Number(quote.accessorial_total) > 0) {
+    totalsRows += totalRow("Accessorials", formatUsd(quote.accessorial_total, currency), { muted: true });
+  }
+
+  const contactBits = [branding.company_email, branding.company_phone]
+    .map((v) => (v ? esc(String(v).trim()) : ""))
+    .filter(Boolean)
+    .join(" &middot; ");
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;background:#ffffff;">
+    <!-- Hero (sender's brand on LIT navy) -->
+    <tr>
+      <td bgcolor="#020617" style="padding:22px 26px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td valign="middle">
+              ${logo ? `${logo}<div style="height:8px;line-height:8px;font-size:0;">&nbsp;</div>` : ""}
+              <div style="${FONT}font-size:17px;font-weight:700;color:#ffffff;">${esc(branding.company_name)}</div>
+              <div style="${FONT}font-size:10.5px;font-weight:700;letter-spacing:0.14em;color:#00e0ff;padding-top:4px;">FREIGHT QUOTATION</div>
+            </td>
+            <td valign="middle" align="right" style="${FONT}font-size:12px;color:#94a3b8;white-space:nowrap;">
+              ${quote.quote_number ? `<span style="color:#e2e8f0;font-weight:700;">${esc(String(quote.quote_number))}</span><br/>` : ""}
+              ${validUntil ? `Valid until ${esc(validUntil)}` : ""}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <!-- Lane -->
+    <tr>
+      <td style="padding:18px 26px 4px;">
+        <div style="${FONT}font-size:15px;font-weight:700;color:#0f172a;">${esc(origin)} &rarr; ${esc(dest)}</div>
+        ${subLine ? `<div style="${FONT}font-size:12px;color:#64748b;padding-top:3px;">${subLine}</div>` : ""}
+        ${quote.commodity ? `<div style="${FONT}font-size:12px;color:#64748b;padding-top:2px;">Commodity: ${esc(String(quote.commodity))}</div>` : ""}
+      </td>
+    </tr>
+    <!-- Charges -->
+    <tr>
+      <td style="padding:14px 26px 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;">
+          <tr bgcolor="#f8fafc">
+            <td style="${FONT}padding:8px 12px;font-size:10.5px;font-weight:700;letter-spacing:0.08em;color:#64748b;border-bottom:1px solid #e2e8f0;">CHARGE</td>
+            <td align="right" style="${FONT}padding:8px 12px;font-size:10.5px;font-weight:700;letter-spacing:0.08em;color:#64748b;border-bottom:1px solid #e2e8f0;">QTY</td>
+            <td align="right" style="${FONT}padding:8px 12px;font-size:10.5px;font-weight:700;letter-spacing:0.08em;color:#64748b;border-bottom:1px solid #e2e8f0;">UNIT</td>
+            <td align="right" style="${FONT}padding:8px 12px;font-size:10.5px;font-weight:700;letter-spacing:0.08em;color:#64748b;border-bottom:1px solid #e2e8f0;">AMOUNT</td>
+          </tr>
+          ${itemRows || `<tr><td colspan="4" style="${FONT}padding:12px;font-size:12.5px;color:#94a3b8;">See the live quote for full details.</td></tr>`}
+          ${totalsRows}
+          <tr>
+            <td colspan="3" align="right" style="${FONT}padding:12px 12px 12px;font-size:13px;font-weight:700;color:#0f172a;">TOTAL</td>
+            <td align="right" style="${FONT}padding:12px 12px 12px;font-size:16px;font-weight:800;color:#1d4ed8;white-space:nowrap;">${esc(formatUsd(quote.total_sell, currency))}</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <!-- CTA -->
+    <tr>
+      <td align="center" style="padding:22px 26px 8px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td align="center" bgcolor="#2563eb" style="border-radius:10px;">
+              <a href="${esc(viewUrl)}" style="${FONT}display:inline-block;padding:13px 34px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px;">View live quote</a>
+            </td>
+          </tr>
+        </table>
+        <div style="${FONT}padding-top:10px;font-size:11.5px;color:#94a3b8;">
+          Opens in your browser &mdash; no account needed.${pdfUrl ? ` &nbsp;<a href="${esc(pdfUrl)}" style="color:#64748b;">Download PDF</a>` : ""}
+        </div>
+      </td>
+    </tr>
+    <!-- Sender footer -->
+    <tr>
+      <td style="padding:14px 26px 18px;border-top:1px solid #f1f5f9;">
+        <div style="${FONT}font-size:11.5px;color:#94a3b8;">
+          ${esc(branding.company_name)}${contactBits ? ` &middot; ${contactBits}` : ""}
+        </div>
+      </td>
+    </tr>
+  </table>`;
+}
+
+/** Full email document: intro paragraphs + the quote block + fallback link. */
+function buildEmailHtml(opts: {
+  introText: string | null;
+  toName: string | null;
+  lane: string;
+  quoteBlock: string;
+  viewUrl: string;
+  senderName: string;
 }): string {
   const greeting = opts.toName ? `Hi ${esc(opts.toName)},` : "Hello,";
-  const validLine = opts.validUntil
-    ? `<p style="margin:0 0 16px;color:#475569;font-size:14px;">Valid until <strong>${esc(opts.validUntil)}</strong>.</p>`
-    : "";
-  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f1f5f9;">
-  <div style="max-width:560px;margin:0 auto;padding:32px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
-    <p style="margin:0 0 16px;font-size:15px;">${greeting}</p>
-    <p style="margin:0 0 16px;font-size:15px;color:#334155;">
-      Please find your quote for <strong>${esc(opts.lane)}</strong> below.
-    </p>
-    <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin:0 0 24px;">
-      <p style="margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Total</p>
-      <p style="margin:0 0 16px;font-size:28px;font-weight:700;color:#0f172a;">${esc(opts.total)}</p>
-      ${validLine}
-      <a href="${esc(opts.viewUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 24px;border-radius:8px;">View your quote</a>
-    </div>
-    <p style="margin:0;font-size:12px;color:#94a3b8;">
-      If the button doesn't work, copy and paste this link into your browser:<br/>
-      <a href="${esc(opts.viewUrl)}" style="color:#2563eb;word-break:break-all;">${esc(opts.viewUrl)}</a>
-    </p>
-  </div>
-</body></html>`;
-}
+  const intro = opts.introText
+    ? esc(opts.introText).replace(/\r\n|\r|\n/g, "<br/>")
+    : `${greeting}<br/><br/>Please find your quote for <strong>${esc(opts.lane)}</strong> below. Happy to walk through any line item or adjust the scope &mdash; just reply to this email.`;
 
-// The secure-link CTA. ALWAYS appended to the outgoing email (even when the
-// sender supplies a custom message body) so the recipient always gets the link.
-function linkBlock(viewUrl: string): string {
-  return `<div style="max-width:560px;margin:8px auto 0;padding:0 24px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;text-align:center;">
-    <a href="${esc(viewUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 28px;border-radius:8px;">View your quote</a>
-    <p style="margin:14px 0 0;font-size:12px;color:#94a3b8;">If the button doesn't work, paste this link into your browser:<br/>
-      <a href="${esc(viewUrl)}" style="color:#2563eb;word-break:break-all;">${esc(viewUrl)}</a>
-    </p>
-  </div>`;
-}
-
-// Wrap a sender-edited plain-text body as HTML and append the secure link.
-function wrapUserBody(text: string, viewUrl: string): string {
-  const safe = esc(text).replace(/\r\n|\r|\n/g, "<br/>");
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f1f5f9;">
-  <div style="max-width:560px;margin:0 auto;padding:32px 24px 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;font-size:15px;line-height:1.5;">${safe}</div>
-  ${linkBlock(viewUrl)}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f1f5f9">
+    <tr>
+      <td align="center" style="padding:28px 12px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;">
+          <tr>
+            <td style="${FONT}padding:0 4px 18px;font-size:14.5px;line-height:1.6;color:#0f172a;">${intro}</td>
+          </tr>
+          <tr>
+            <td>${opts.quoteBlock}</td>
+          </tr>
+          <tr>
+            <td style="${FONT}padding:16px 4px 0;font-size:11px;line-height:1.6;color:#94a3b8;">
+              If the button doesn't work, copy and paste this link into your browser:<br/>
+              <a href="${esc(opts.viewUrl)}" style="color:#2563eb;word-break:break-all;">${esc(opts.viewUrl)}</a>
+            </td>
+          </tr>
+          <tr>
+            <td style="${FONT}padding:14px 4px 0;font-size:10.5px;color:#cbd5e1;">
+              Sent by ${esc(opts.senderName)} &middot; Digital quote powered by <a href="https://www.logisticintel.com" style="color:#94a3b8;text-decoration:none;">Logistic Intel</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body></html>`;
 }
 
@@ -134,7 +317,10 @@ Deno.serve(async (req) => {
     return json({ ok: false, code: "INVALID_INPUT", message: "valid to_email required" }, 400);
   }
 
-  // 2. Load the quote (org-scoped) + company name.
+  // 2. Load the quote (org-scoped) + line items + company + branding.
+  //    NOTE: the PDF is now OPTIONAL — no PDF_REQUIRED gate. The quote itself
+  //    is rendered inside the email; the PDF, when present, is a secondary
+  //    "Download PDF" link.
   const { data: quote } = await admin
     .from("lit_quotes")
     .select("*")
@@ -143,16 +329,28 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (!quote) return json({ ok: false, code: "NOT_FOUND" }, 404);
 
-  if (!quote.pdf_signed_url && !quote.pdf_storage_path) {
-    return json({ ok: false, code: "PDF_REQUIRED", message: "Generate the PDF before sending" }, 200);
-  }
-
-  const { data: company } = await admin
-    .from("lit_companies")
-    .select("name")
-    .eq("id", quote.company_id)
-    .maybeSingle();
+  const [{ data: items }, { data: company }, { data: org }, { data: os }] = await Promise.all([
+    admin
+      .from("lit_quote_line_items")
+      .select("name, description, quantity, unit_sell, is_accessorial, sort_order")
+      .eq("quote_id", quoteId)
+      .order("sort_order", { ascending: true }),
+    admin.from("lit_companies").select("name").eq("id", quote.company_id).maybeSingle(),
+    admin.from("organizations").select("name, logo_url").eq("id", orgId).maybeSingle(),
+    admin.from("org_settings").select("quote_defaults").eq("org_id", orgId).maybeSingle(),
+  ]);
   const companyName = company?.name || "your shipment";
+
+  const s = (os?.quote_defaults ?? {}) as Record<string, unknown>;
+  const rawLogo = (s.logo_url as string) || org?.logo_url || null;
+  const branding: EmailBranding = {
+    company_name: ((s.company_name as string) || org?.name || "Your logistics partner").trim(),
+    // Gmail strips data: URIs — only real URLs are embedded; otherwise the
+    // hero falls back to the text brand.
+    logo_url: rawLogo && /^https?:\/\//i.test(rawLogo) ? rawLogo : null,
+    company_email: (s.company_email as string) || null,
+    company_phone: (s.company_phone as string) || null,
+  };
 
   // 3. Resolve sender mailbox (must belong to the caller + be connected).
   let account: QuoteSenderAccount | null = null;
@@ -194,19 +392,23 @@ Deno.serve(async (req) => {
     return json({ ok: false, code: "NO_SENDER", message: "No connected Gmail or Outlook mailbox found" }, 400);
   }
 
-  // 4. Build the email.
+  // 4. Build the email: intro (user's message or default) + inline quote block.
   const lane = laneLabel(quote);
   const subject = (body.subject ? String(body.subject) : "") || `Quote for ${lane} - ${companyName}`;
-  const viewUrl = `${url}/functions/v1/quote-view?token=${quote.share_token}`;
-  const html = (body.body && String(body.body).trim())
-    ? wrapUserBody(String(body.body), viewUrl)
-    : defaultTemplate({
-        toName,
-        lane,
-        total: formatUsd(quote.total_sell, quote.currency),
-        validUntil: quote.valid_until ?? null,
-        viewUrl,
-      });
+  const viewUrl = `${APP_BASE}/q/${quote.share_token}`;
+  const pdfUrl = quote.pdf_storage_path
+    ? `${url}/functions/v1/quote-view?token=${quote.share_token}&format=pdf`
+    : null;
+
+  const quoteBlock = quoteBlockHtml({ quote, items: items ?? [], branding, viewUrl, pdfUrl });
+  const html = buildEmailHtml({
+    introText: body.body && String(body.body).trim() ? String(body.body) : null,
+    toName,
+    lane,
+    quoteBlock,
+    viewUrl,
+    senderName: branding.company_name,
+  });
 
   // 5. Send via the user's mailbox (refreshes token first).
   const sendRes = await sendQuoteEmail(admin, account, { to: toEmail, toName, subject, html });

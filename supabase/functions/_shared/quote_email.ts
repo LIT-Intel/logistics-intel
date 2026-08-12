@@ -34,6 +34,22 @@ function toBase64Url(str: string): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+/**
+ * RFC 2047 encoded-word for RFC822 headers (Subject, display names).
+ *
+ * The Gmail raw-MIME path writes headers verbatim; RFC 5322 headers must be
+ * ASCII, so any non-ASCII subject ("·", "→", accented names) previously
+ * reached recipients as mojibake ("Â·", "â†'"). ASCII strings pass through
+ * untouched; anything else becomes a UTF-8 B-encoded word.
+ */
+export function encodeHeaderWord(s: string): string {
+  if (/^[\x20-\x7E]*$/.test(s)) return s;
+  const bytes = new TextEncoder().encode(s);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return `=?UTF-8?B?${btoa(bin)}?=`;
+}
+
 /** Base64 (NOT base64url) body for Gmail RFC822 raw, wrapped at 76 chars per RFC 2045. */
 function encodeBodyMimeBase64(body: string): string {
   const bytes = new TextEncoder().encode(body);
@@ -141,13 +157,19 @@ export async function sendViaGmail(
   args: { from: QuoteSenderAccount; to: string; toName?: string | null; subject: string; html: string },
 ): Promise<{ ok: true; messageId: string | null } | { ok: false; error: string }> {
   const { from, to, toName, subject, html } = args;
-  const fromLine = from.display_name ? `"${from.display_name}" <${from.email}>` : from.email;
-  const toLine = toName ? `"${toName}" <${to}>` : to;
+  // Display names: ASCII names stay quoted-string; non-ASCII become an
+  // RFC 2047 encoded word (which must NOT be wrapped in quotes).
+  const nameToken = (name: string) => {
+    const enc = encodeHeaderWord(name);
+    return enc === name ? `"${name.replace(/"/g, "")}"` : enc;
+  };
+  const fromLine = from.display_name ? `${nameToken(from.display_name)} <${from.email}>` : from.email;
+  const toLine = toName ? `${nameToken(toName)} <${to}>` : to;
   const messageId = `<litquote-${crypto.randomUUID()}@logisticintel.com>`;
   const raw = [
     `From: ${fromLine}`,
     `To: ${toLine}`,
-    `Subject: ${subject}`,
+    `Subject: ${encodeHeaderWord(subject)}`,
     `Message-ID: ${messageId}`,
     `MIME-Version: 1.0`,
     `Content-Type: text/html; charset=UTF-8`,

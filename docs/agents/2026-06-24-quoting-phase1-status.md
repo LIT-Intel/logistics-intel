@@ -38,3 +38,32 @@ Ocean/Air = forwarding (ports/airports + incoterms); Drayage = port logistics; *
 - `quote-create` does not yet persist `pallet_count`/`volume_cbm`/`hazmat`/`temp_controlled` (update does); add to create when needed.
 - Org `quote_defaults` prefill + PDF logo/signature pending an org-settings read endpoint.
 - 1:1 `quote-send` intentionally bypasses campaign consent/suppression gates (user-triggered send).
+
+---
+
+## 2026-08-12 — Digital quoting overhaul (quote-in-email + live quote page)
+
+Owner directive: the quote must render INSIDE the email body (capture attention,
+not replace the prospect's quoting tool), with a button to a live quote tab.
+PDF demoted to optional.
+
+- **`quote-send` v12** — quote now rendered live in the email: branded,
+  table-based, email-client-safe HTML block (inline styles only) with lane,
+  full sell-side charge breakdown, validity date, and a "View live quote" CTA
+  to `/q/<share_token>`. Sender branding = `org_settings.quote_defaults` with
+  org name fallback; LIT is a discreet footer credit. **PDF_REQUIRED gate
+  removed** — a Download PDF link appears only when a PDF exists.
+- **Mojibake fix** (`_shared/quote_email.ts`) — the Gmail raw-MIME path wrote
+  non-ASCII header chars ("·", "→") verbatim, so recipients saw "Â·"/"â†'".
+  `encodeHeaderWord()` now RFC-2047-encodes Subject + display names.
+- **`quote-view` v9** (still `--no-verify-jwt`) — three modes: default 302 →
+  `/q/<token>` (old email links keep working), `&format=json` (public
+  sell-side-only payload for the live page; stamps first view), `&format=pdf`
+  (signs + redirects; also counts as a view).
+- **Live page** `frontend/src/pages/PublicQuotePage.tsx` at public route
+  `/q/:token` (App.jsx) — read-only quote in the dashboard visual language.
+- **View tracking** — migration `20260812184245_lit_quotes_viewed_at.sql`
+  adds `lit_quotes.viewed_at` (stamped once, on first open of live page or
+  PDF). Status flip sent→viewed unchanged; `viewed` event fires once.
+- **Builder UX** — `QuoteSendBox` no longer requires a PDF to send;
+  `QuotePdfPreview` labeled optional.

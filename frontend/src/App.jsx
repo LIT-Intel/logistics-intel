@@ -67,6 +67,9 @@ const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const SectorLandingPage = lazy(() => import("@/pages/landing/SectorLandingPage"));
+// Public live quote view (/q/:token) — recipients open this from the quote
+// email with no account; see frontend/src/pages/PublicQuotePage.tsx.
+const PublicQuotePage = lazy(() => import("@/pages/PublicQuotePage"));
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
@@ -262,6 +265,10 @@ export default function App() {
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/l/:sector" element={<SectorLandingPage />} />
+        {/* PUBLIC live quote view — the "View live quote" CTA in quote emails
+            lands here. No login: secured by the unguessable share_token; the
+            page's JSON fetch stamps viewed_at server-side (funnel signal). */}
+        <Route path="/q/:token" element={<PublicQuotePage />} />
 
         {/* /admin/marketing retired — LIT marketing now ships through
             /app/campaigns with provider=resend gated server-side to the

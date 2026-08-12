@@ -20,13 +20,20 @@ export default function QuotePdfPreview({ generating, signedUrl, onGenerate }: Q
   return (
     <section className="rounded-[14px] border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between">
-        <h3 className="font-display text-[13px] font-bold text-slate-900">Quote PDF</h3>
+        <h3 className="font-display text-[13px] font-bold text-slate-900">
+          Quote PDF{" "}
+          <span className="font-normal text-slate-400">(optional)</span>
+        </h3>
         {hasPdf && (
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
             Ready
           </span>
         )}
       </div>
+      <p className="mt-1 text-[11.5px] leading-snug text-slate-400">
+        The emailed quote already shows the full breakdown with a live link.
+        Generate a PDF only if you also want a downloadable attachment link.
+      </p>
 
       {/* Thumbnail / placeholder */}
       <div className="mt-3 grid h-32 place-items-center rounded-[10px] border border-dashed border-slate-200 bg-slate-50">

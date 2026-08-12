@@ -3,11 +3,14 @@
  *
  * Loads the workspace's connected email accounts (`listEmailAccounts`,
  * filtered to status === "connected"), lets the user pick a sender, edit the
- * recipient + subject + body, and sends via the `quote-send` edge function.
+ * recipient + subject + intro message, and sends via the `quote-send` edge
+ * function.
  *
- * The PDF must exist before sending: the server returns code `PDF_REQUIRED`
- * if no PDF is on file, and we also guard client-side by requiring a
- * `signedUrl` before enabling Send.
+ * Digital quoting (2026-08): the quote itself is rendered INSIDE the email
+ * body (branded table block) with a "View live quote" button to the public
+ * `/q/<share_token>` page. The PDF is OPTIONAL — when one has been generated
+ * it's offered as a secondary "Download PDF" link in the email, but sending
+ * never requires it (the old PDF_REQUIRED gate is gone server-side too).
  */
 import { useEffect, useMemo, useState } from "react";
 import { Send, Loader2, CheckCircle2, ShieldCheck, AlertCircle } from "lucide-react";
@@ -15,7 +18,6 @@ import { Send, Loader2, CheckCircle2, ShieldCheck, AlertCircle } from "lucide-re
 import { quoting, type Quote } from "@/api/quoting";
 import { listEmailAccounts } from "@/lib/api";
 import type { LitEmailAccountRow } from "@/types/lit-outbound";
-import { EdgeFunctionError } from "@/api/_client";
 import { USES_PORTS } from "@/lib/quoting/modeFields";
 
 export interface QuoteSendBoxProps {
@@ -62,15 +64,15 @@ export default function QuoteSendBox({ quote, signedUrl, onSent }: QuoteSendBoxP
   const [subject, setSubject] = useState(
     `Quote ${quote.quote_number} · ${lane}`,
   );
+  // Intro message only — the quote itself (lane, charges, total, live-quote
+  // button) is rendered by the server below this text inside the email.
   const [body, setBody] = useState(() => {
     const total = usd(quote.total_sell, quote.currency);
-    const validLine = quote.valid_until ? `\nThis quote is valid until ${fmtDate(quote.valid_until)}.` : "";
+    const validLine = quote.valid_until ? ` It's valid until ${fmtDate(quote.valid_until)}.` : "";
     return [
       `Hi there,`,
       "",
-      `Please find your freight quote for ${lane}. The total is ${total}.${validLine}`,
-      "",
-      "A secure link to the full quote PDF is included below — opening it lets us confirm receipt.",
+      `Please find your freight quote for ${lane} below — the total is ${total}.${validLine}`,
       "",
       "Happy to walk through any line item or adjust the scope. Just reply to this email.",
       "",
@@ -106,14 +108,10 @@ export default function QuoteSendBox({ quote, signedUrl, onSent }: QuoteSendBoxP
   }, []);
 
   const hasPdf = Boolean(signedUrl);
-  const canSend = hasPdf && toEmail.trim().length > 3 && !sending && !sent;
+  const canSend = toEmail.trim().length > 3 && !sending && !sent;
 
   async function handleSend() {
     setError(null);
-    if (!hasPdf) {
-      setError("Generate the PDF before sending so the customer receives the secure link.");
-      return;
-    }
     if (!toEmail.trim()) {
       setError("Add a recipient email address.");
       return;
@@ -131,11 +129,7 @@ export default function QuoteSendBox({ quote, signedUrl, onSent }: QuoteSendBoxP
       setSent(true);
       onSent();
     } catch (e) {
-      if (e instanceof EdgeFunctionError && e.code === "PDF_REQUIRED") {
-        setError("This quote needs a PDF before it can be sent. Generate the PDF, then try again.");
-      } else {
-        setError(e instanceof Error ? e.message : "Failed to send the quote.");
-      }
+      setError(e instanceof Error ? e.message : "Failed to send the quote.");
     } finally {
       setSending(false);
     }
@@ -150,7 +144,8 @@ export default function QuoteSendBox({ quote, signedUrl, onSent }: QuoteSendBoxP
           <CheckCircle2 className="h-7 w-7 text-emerald-600" />
           <div className="text-[13px] font-bold text-emerald-800">Sent ✓</div>
           <p className="text-[12px] text-emerald-700">
-            {toEmail} will receive the quote with a secure, view-tracked link.
+            {toEmail} received the quote right in their inbox, with a live,
+            view-tracked link to the full details.
           </p>
         </div>
       ) : (
@@ -222,21 +217,18 @@ export default function QuoteSendBox({ quote, signedUrl, onSent }: QuoteSendBoxP
             />
           </label>
 
-          {/* Secure-link / tracking note */}
+          {/* Quote-in-email / tracking note */}
           <div className="flex items-start gap-2 rounded-[10px] border border-blue-100 bg-blue-50/60 px-3 py-2 text-[11.5px] text-blue-800">
             <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" />
             <span>
-              A secure, expiring link to the quote PDF is attached automatically. Opening it marks the quote
-              as <strong>Viewed</strong> so you know the moment your customer reads it.
+              The quote is rendered <strong>inside the email</strong> — lane, charges, and total —
+              with a <strong>View live quote</strong> button. Opening it marks the quote as{" "}
+              <strong>Viewed</strong> so you know the moment your customer reads it.
+              {hasPdf
+                ? " A Download PDF link is included too."
+                : " Optional: generate a PDF to also include a Download PDF link."}
             </span>
           </div>
-
-          {!hasPdf && (
-            <div className="flex items-start gap-2 rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
-              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-              <span>Generate the PDF first — the customer email includes the secure link to it.</span>
-            </div>
-          )}
 
           {error && (
             <div className="flex items-start gap-2 rounded-[10px] border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700">
