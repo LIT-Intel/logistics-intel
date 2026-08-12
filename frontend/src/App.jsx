@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useEffect } from "react";
 import { captureRefFromUrl } from "@/lib/affiliateRef";
-import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useParams, useLocation, Link } from "react-router-dom";
 import Layout from "@/pages/Layout";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
 import ModernLoginPage from "@/components/layout/ModernLoginPage";
@@ -107,6 +107,24 @@ function RequirePage({ page, children }) {
     );
   }
   return children;
+}
+
+// Return bar for admin detail pages — every page opened from the Admin
+// Command Deck gets a persistent way back (Phase 3 follow-up).
+function AdminSubpage({ children }) {
+  return (
+    <>
+      <div className="border-b border-slate-200 bg-white/90 px-4 py-2 md:px-6">
+        <Link
+          to="/app/admin"
+          className="font-display inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-blue-700 hover:underline"
+        >
+          &larr; Back to Admin Control Panel
+        </Link>
+      </div>
+      {children}
+    </>
+  );
 }
 
 function RequireAdmin({ children }) {
@@ -335,7 +353,9 @@ export default function App() {
           element={
             <RequireAuth>
               <LITPage>
-                <DemoInvites />
+                <AdminSubpage>
+                  <DemoInvites />
+                </AdminSubpage>
               </LITPage>
             </RequireAuth>
           }
@@ -577,7 +597,9 @@ export default function App() {
           element={
             <RequireAdmin>
               <LITPage>
-                <AdminSettings />
+                <AdminSubpage>
+                  <AdminSettings />
+                </AdminSubpage>
               </LITPage>
             </RequireAdmin>
           }
@@ -661,7 +683,9 @@ export default function App() {
           element={
             <RequireAdmin>
               <LITPage>
-                <AdminDashboard />
+                <AdminSubpage>
+                  <AdminDashboard />
+                </AdminSubpage>
               </LITPage>
             </RequireAdmin>
           }
@@ -672,7 +696,9 @@ export default function App() {
           element={
             <RequireSuperAdmin>
               <LITPage>
-                <AdminPartnerProgram />
+                <AdminSubpage>
+                  <AdminPartnerProgram />
+                </AdminSubpage>
               </LITPage>
             </RequireSuperAdmin>
           }
@@ -683,7 +709,9 @@ export default function App() {
           element={
             <RequireAdmin>
               <LITPage>
-                <AdminDemoRequests />
+                <AdminSubpage>
+                  <AdminDemoRequests />
+                </AdminSubpage>
               </LITPage>
             </RequireAdmin>
           }
@@ -694,7 +722,9 @@ export default function App() {
           element={
             <RequireAdmin>
               <LITPage>
-                <AdminSubscribers />
+                <AdminSubpage>
+                  <AdminSubscribers />
+                </AdminSubpage>
               </LITPage>
             </RequireAdmin>
           }
@@ -705,7 +735,9 @@ export default function App() {
           element={
             <RequireAdmin>
               <LITPage>
-                <AdminFmcsaImport />
+                <AdminSubpage>
+                  <AdminFmcsaImport />
+                </AdminSubpage>
               </LITPage>
             </RequireAdmin>
           }
@@ -716,7 +748,9 @@ export default function App() {
           element={
             <RequireSuperAdmin>
               <LITPage>
-                <AdminMarketingAnalytics />
+                <AdminSubpage>
+                  <AdminMarketingAnalytics />
+                </AdminSubpage>
               </LITPage>
             </RequireSuperAdmin>
           }
@@ -727,7 +761,9 @@ export default function App() {
           element={
             <RequireSuperAdmin>
               <LITPage>
-                <AdminMarketingBroadcasts />
+                <AdminSubpage>
+                  <AdminMarketingBroadcasts />
+                </AdminSubpage>
               </LITPage>
             </RequireSuperAdmin>
           }

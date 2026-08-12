@@ -225,7 +225,7 @@ export default function SettingsPage() {
 
       const { data: membersData, error: membersError } = await supabase
         .from("org_members")
-        .select("id, org_id, user_id, role, joined_at, status, email, full_name")
+        .select("id, org_id, user_id, role, joined_at, status, email, full_name, title, page_permissions")
         .eq("org_id", currentOrgId)
         .order("joined_at", { ascending: false });
       if (membersError) console.warn("[SettingsPage] org_members load warning:", membersError.message);

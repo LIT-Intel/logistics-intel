@@ -609,6 +609,23 @@ export function WorkspaceSection(props: {
     return out;
   };
 
+  const [titleDrafts, setTitleDrafts] = useState<Record<string, string>>({});
+
+  const saveTitle = async (row: { key: string; m: any }) => {
+    setErr(null); setMsg(null);
+    const nextTitle = (titleDrafts[row.key] ?? row.m.title ?? "").trim() || null;
+    const { error } = await supabase
+      .from("org_members")
+      .update({ title: nextTitle })
+      .eq("id", row.key);
+    if (error) {
+      setErr(error.message || "Failed updating title");
+      return;
+    }
+    row.m.title = nextTitle;
+    setMsg("Title updated");
+  };
+
   const savePagePermission = async (row: { key: string; m: any }, pageKey: string, enabled: boolean) => {
     setErr(null); setMsg(null);
     const next = { ...effectivePerms(row), [pageKey]: enabled };
@@ -741,6 +758,9 @@ export function WorkspaceSection(props: {
                       </div>
                       <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 12, color: "#64748b", marginTop: 1 }}>
                         {row.secondary}
+                        {row.m.title ? (
+                          <span style={{ color: "#2563EB", fontWeight: 600 }}> · {row.m.title}</span>
+                        ) : null}
                       </div>
                     </div>
                     <SBadge tone={row.statusTone} dot>
@@ -798,6 +818,26 @@ export function WorkspaceSection(props: {
                       margin: "0 4px 12px 54px", padding: "12px 14px",
                       background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10,
                     }}>
+                      <div style={{ fontFamily: "Space Grotesk,sans-serif", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                        Job title
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                        <input
+                          type="text"
+                          placeholder="e.g. VP of Business Development"
+                          value={titleDrafts[row.key] ?? row.m.title ?? ""}
+                          onChange={(e) =>
+                            setTitleDrafts((prev) => ({ ...prev, [row.key]: e.target.value }))
+                          }
+                          style={{ ...sInputStyle, flex: 1, fontSize: 12.5, padding: "7px 10px" }}
+                        />
+                        <button
+                          onClick={() => saveTitle(row)}
+                          style={{ ...sBtnPrimary, padding: "7px 14px", fontSize: 12 }}
+                        >
+                          Save
+                        </button>
+                      </div>
                       <div style={{ fontFamily: "Space Grotesk,sans-serif", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
                         Pages this member can use
                       </div>

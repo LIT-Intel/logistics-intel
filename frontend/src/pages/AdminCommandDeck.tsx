@@ -6,6 +6,10 @@ import {
   BarChart3, Truck, Handshake, Settings2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as ChartTooltip,
+  CartesianGrid, PieChart, Pie, Cell, Legend,
+} from "recharts";
 
 /**
  * Admin Command Deck — Phase 3 of the enterprise admin build. One shell,
@@ -51,17 +55,46 @@ const SECTIONS = [
 
 type SectionId = (typeof SECTIONS)[number]["id"];
 
-function KpiCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
+const KPI_TONES: Record<string, string> = {
+  blue: "bg-blue-50 text-blue-600",
+  cyan: "bg-cyan-50 text-cyan-600",
+  emerald: "bg-emerald-50 text-emerald-600",
+  violet: "bg-violet-50 text-violet-600",
+  amber: "bg-amber-50 text-amber-600",
+  slate: "bg-slate-100 text-slate-500",
+};
+
+function KpiCard({ label, value, hint, icon: Icon, tone = "blue" }: {
+  label: string; value: string | number; hint?: string; icon?: any; tone?: string;
+}) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
-      <div className="font-mono text-[20px] font-bold leading-none text-slate-900">{value}</div>
-      <div className="font-display mt-1.5 text-[11px] font-semibold uppercase tracking-[0.07em] text-slate-400">
-        {label}
+      <div className="flex items-center gap-2.5">
+        {Icon && (
+          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${KPI_TONES[tone] || KPI_TONES.blue}`}>
+            <Icon className="h-4 w-4" />
+          </span>
+        )}
+        <div>
+          <div className="font-mono text-[20px] font-bold leading-none text-slate-900">{value}</div>
+          <div className="font-display mt-1 text-[10.5px] font-semibold uppercase tracking-[0.07em] text-slate-400">
+            {label}
+          </div>
+          {hint && <div className="font-body mt-0.5 text-[10.5px] text-slate-400">{hint}</div>}
+        </div>
       </div>
-      {hint && <div className="font-body mt-0.5 text-[10.5px] text-slate-400">{hint}</div>}
     </div>
   );
 }
+
+const PLAN_COLORS: Record<string, string> = {
+  free_trial: "#94A3B8",
+  starter: "#38BDF8",
+  growth: "#2563EB",
+  scale: "#7C3AED",
+  enterprise: "#059669",
+  none: "#E2E8F0",
+};
 
 function LinkCard({ to, icon: Icon, title, blurb }: { to: string; icon: any; title: string; blurb: string }) {
   return (
@@ -153,6 +186,49 @@ export default function AdminCommandDeck() {
 
   const setSection = (id: SectionId) => setParams(id === "overview" ? {} : { section: id });
 
+  // Chart data — computed client-side from the loaded rows.
+  const charts = useMemo(() => {
+    const now = new Date();
+    // Signups per week, last 8 weeks.
+    const weeks: { label: string; signups: number }[] = [];
+    for (let w = 7; w >= 0; w--) {
+      const start = new Date(now.getTime() - (w + 1) * 7 * 24 * 3600 * 1000);
+      const end = new Date(now.getTime() - w * 7 * 24 * 3600 * 1000);
+      weeks.push({
+        label: `${end.getMonth() + 1}/${end.getDate()}`,
+        signups: users.filter((u) => {
+          const t = new Date(u.created_at).getTime();
+          return t >= start.getTime() && t < end.getTime();
+        }).length,
+      });
+    }
+    // Plan distribution.
+    const planCounts = new Map<string, number>();
+    for (const u of users) {
+      const key = u.plan_code || "none";
+      planCounts.set(key, (planCounts.get(key) || 0) + 1);
+    }
+    const plans = Array.from(planCounts.entries())
+      .map(([name, value]) => ({ name: name === "none" ? "no plan" : name.replace("_", " "), key: name, value }))
+      .sort((a, b) => b.value - a.value);
+    // Engagement split.
+    const nowMs = now.getTime();
+    const wk = 7 * 24 * 3600 * 1000;
+    const active7 = users.filter((u) => u.last_sign_in_at && nowMs - new Date(u.last_sign_in_at).getTime() < wk).length;
+    const active30 = users.filter((u) => {
+      if (!u.last_sign_in_at) return false;
+      const age = nowMs - new Date(u.last_sign_in_at).getTime();
+      return age >= wk && age < 30 * 24 * 3600 * 1000;
+    }).length;
+    const dormant = users.length - active7 - active30;
+    const engagement = [
+      { name: "Active (7d)", value: active7, color: "#2563EB" },
+      { name: "Active (30d)", value: active30, color: "#38BDF8" },
+      { name: "Dormant", value: dormant, color: "#CBD5E1" },
+    ].filter((e) => e.value > 0);
+    return { weeks, plans, engagement };
+  }, [users]);
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 md:px-6">
       {/* Header */}
@@ -202,11 +278,86 @@ export default function AdminCommandDeck() {
           {section === "overview" && (
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-                <KpiCard label="Total users" value={kpis.total} />
-                <KpiCard label="New (7d)" value={kpis.new7d} />
-                <KpiCard label="Active (7d)" value={kpis.active7d} />
-                <KpiCard label="Trialing" value={kpis.trialing} />
-                <KpiCard label="Paying" value={kpis.paid} />
+                <KpiCard label="Total users" value={kpis.total} icon={Users} tone="blue" />
+                <KpiCard label="New (7d)" value={kpis.new7d} icon={ArrowUpRight} tone="cyan" />
+                <KpiCard label="Active (7d)" value={kpis.active7d} icon={TrendingUp} tone="violet" />
+                <KpiCard label="Trialing" value={kpis.trialing} icon={LayoutDashboard} tone="amber" />
+                <KpiCard label="Paying" value={kpis.paid} icon={CreditCard} tone="emerald" />
+              </div>
+
+              {/* Charts row */}
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-1">
+                  <div className="font-display mb-3 text-[13px] font-bold text-slate-900">
+                    Signups per week
+                  </div>
+                  <div style={{ width: "100%", height: 190 }}>
+                    <ResponsiveContainer>
+                      <BarChart data={charts.weeks} margin={{ top: 4, right: 4, left: -22, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <ChartTooltip
+                          cursor={{ fill: "rgba(37,99,235,0.06)" }}
+                          contentStyle={{ borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12 }}
+                        />
+                        <Bar dataKey="signups" fill="#2563EB" radius={[5, 5, 0, 0]} maxBarSize={26} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="font-display mb-1 text-[13px] font-bold text-slate-900">
+                    Plan distribution
+                  </div>
+                  <div style={{ width: "100%", height: 200 }}>
+                    <ResponsiveContainer>
+                      <PieChart>
+                        <Pie
+                          data={charts.plans}
+                          dataKey="value"
+                          nameKey="name"
+                          innerRadius={48}
+                          outerRadius={72}
+                          paddingAngle={2}
+                          strokeWidth={2}
+                        >
+                          {charts.plans.map((p) => (
+                            <Cell key={p.key} fill={PLAN_COLORS[p.key] || "#94A3B8"} />
+                          ))}
+                        </Pie>
+                        <ChartTooltip contentStyle={{ borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12 }} />
+                        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="font-display mb-1 text-[13px] font-bold text-slate-900">
+                    Engagement
+                  </div>
+                  <div style={{ width: "100%", height: 200 }}>
+                    <ResponsiveContainer>
+                      <PieChart>
+                        <Pie
+                          data={charts.engagement}
+                          dataKey="value"
+                          nameKey="name"
+                          innerRadius={48}
+                          outerRadius={72}
+                          paddingAngle={2}
+                          strokeWidth={2}
+                        >
+                          {charts.engagement.map((e) => (
+                            <Cell key={e.name} fill={e.color} />
+                          ))}
+                        </Pie>
+                        <ChartTooltip contentStyle={{ borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12 }} />
+                        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="font-display mb-3 text-[13px] font-bold text-slate-900">
