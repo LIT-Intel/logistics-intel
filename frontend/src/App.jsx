@@ -43,6 +43,7 @@ const AdminPartnerProgram = lazy(() => import("@/pages/AdminPartnerProgram"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboardV2"));
 const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
 const AdminDemoRequests = lazy(() => import("@/pages/AdminDemoRequests"));
+const DemoInvites = lazy(() => import("@/pages/DemoInvites"));
 const AdminSubscribers = lazy(() => import("@/pages/AdminSubscribers"));
 const AdminFmcsaImport = lazy(() => import("@/pages/AdminFmcsaImport"));
 const AdminMarketingAnalytics = lazy(() => import("@/pages/AdminMarketingAnalytics"));
@@ -320,6 +321,20 @@ export default function App() {
             <RequireAuth>
               <LITPage>
                 <Companies />
+              </LITPage>
+            </RequireAuth>
+          }
+        />
+
+        {/* Demo invitations — internal LIT team tool (Phase 2 sales funnel).
+            RequireAuth only: RLS returns zero rows and the send edge fn
+            rejects non-internal users, so the page self-gates. */}
+        <Route
+          path="/app/demo-invites"
+          element={
+            <RequireAuth>
+              <LITPage>
+                <DemoInvites />
               </LITPage>
             </RequireAuth>
           }
