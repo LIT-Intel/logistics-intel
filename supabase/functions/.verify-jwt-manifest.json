@@ -23,6 +23,7 @@
     "attio-webhook",
     "billing-webhook",
     "cal-webhook",
+    "company-history-ingest",
     "email-oauth-callback",
     "email-pixel",
     "email-unsubscribe",

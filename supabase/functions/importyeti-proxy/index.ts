@@ -1435,6 +1435,12 @@ async function handleCompanyProfileAction(
     // waiting for the next bi-weekly pulse-refresh-tick). Wrapped in
     // try/catch so a materializer failure does NOT fail the user-facing
     // save — the snapshot is already persisted and the cron will retry.
+    // NOTE (P0-L 2026-08-12): the shared materializer now leaves
+    // ingest_source='history' rows (deep pulls from company-history-ingest)
+    // out of its stale sweep; a DB trigger (lit_unified_shipments_history_guard)
+    // enforces the same invariant at the data layer. This comment bump also
+    // forces the auto-deploy workflow to rebundle this fn with the updated
+    // _shared/materialize_bols.ts (the workflow skips _shared-only diffs).
     try {
       const matResult = await rematerializeCompanyBols(
         supabase,

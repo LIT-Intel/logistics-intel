@@ -22,9 +22,11 @@ export async function rematerializeCompanyBols(
   const rawBols = Array.isArray(parsedSummary?.recent_bols) ? parsedSummary.recent_bols : [];
 
   // 1. Snapshot current tracking state to preserve across re-materialize.
+  // ingest_source is read so the stale-sweep below never deletes rows that
+  // came from the deep-history pagination worker (company-history-ingest).
   const { data: existing } = await supabase
     .from("lit_unified_shipments")
-    .select("bol_number, tracking_status, tracking_eta, tracking_arrival_actual, tracking_last_event_code, tracking_last_event_at, tracking_refreshed_at")
+    .select("bol_number, ingest_source, tracking_status, tracking_eta, tracking_arrival_actual, tracking_last_event_code, tracking_last_event_at, tracking_refreshed_at")
     .eq("company_id", companyId);
   const prior = new Map((existing || []).map((r: any) => [r.bol_number, r]));
 
@@ -41,9 +43,14 @@ export async function rematerializeCompanyBols(
     upserted = rows.length;
   }
 
-  // 4. Delete stale rows (BOLs no longer in the snapshot).
+  // 4. Delete stale rows (BOLs no longer in the snapshot). ONLY rows that were
+  // themselves materialized from the snapshot blob are swept — deep-history
+  // rows (ingest_source='history', written by company-history-ingest) fall
+  // outside the 50-row recent_bols window by design and must persist.
   const newKeys = new Set(rows.map((r) => r.bol_number));
-  const staleBolNumbers = Array.from(prior.keys()).filter((k) => !newKeys.has(k));
+  const staleBolNumbers = Array.from(prior.entries())
+    .filter(([k, v]) => !newKeys.has(k) && (v?.ingest_source ?? "snapshot") === "snapshot")
+    .map(([k]) => k);
   let removed = 0;
   if (staleBolNumbers.length > 0) {
     const { error } = await supabase
@@ -60,6 +67,18 @@ export async function rematerializeCompanyBols(
     removed,
     preserved_tracking_state: rows.filter((r) => r.tracking_refreshed_at).length,
   };
+}
+
+// Exported for company-history-ingest: builds a lit_unified_shipments row
+// from a raw ImportYeti BOL object. Pass an empty Map when there is no prior
+// tracking state to preserve (the deep-history worker strips tracking_* keys
+// from its upsert payload anyway so existing tracking survives).
+export function buildUnifiedShipmentRow(
+  companyId: string,
+  b: any,
+  prior: Map<string, any> = new Map(),
+): any | null {
+  return buildRow(companyId, b, prior);
 }
 
 function buildRow(companyId: string, b: any, prior: Map<string, any>): any | null {
@@ -85,10 +104,14 @@ function buildRow(companyId: string, b: any, prior: Map<string, any>): any | nul
 
   const originCountryCode = b.originCountryCode ?? b.country_code ?? b.supplier_address_country_code ?? null;
   const originCountry = b.originCountry ?? b.Country ?? b.supplier_address_country ?? null;
-  const originCity = b.supplier_address_location ?? null;
+  // supplier_address_location is the bare city ("Xinghe"); supplier_address_loc
+  // is "City, Country" (or just "Country" when the city is unknown). Prefer the
+  // bare city, else take the first comma part of the combined form ONLY when a
+  // country suffix follows it (a single token is a country, not a city).
+  const originCity = b.supplier_address_location ?? cityFromLoc(b.supplier_address_loc);
   const destCountryCode = b.destinationCountryCode ?? b.company_address_country_code ?? null;
   const destCountry = b.destinationCountry ?? b.company_address_country ?? null;
-  const destCity = b.company_address_location ?? null;
+  const destCity = b.company_address_location ?? cityFromLoc(b.company_address_loc);
 
   const originPort = (b.route && b.route.origin) ||
     (b.shipping_route && typeof b.shipping_route === "string" && b.shipping_route.includes("→")
@@ -115,6 +138,7 @@ function buildRow(companyId: string, b: any, prior: Map<string, any>): any | nul
     shipper_name: b.Shipper_Name || b.shipper_basename || null,
     consignee_name: b.Consignee_Name || b.consignee_basename || null,
     origin_country: originCountry, origin_country_code: originCountryCode,
+    origin_city: originCity,
     destination_country: destCountry, destination_country_code: destCountryCode,
     origin_port: originPort, destination_port: destPort,
     dest_city: finalDestCity, dest_state: finalDestState, dest_zip: finalDestZip,
@@ -136,6 +160,13 @@ function buildRow(companyId: string, b: any, prior: Map<string, any>): any | nul
     tracking_refreshed_at: preserved?.tracking_refreshed_at ?? null,
     updated_at: new Date().toISOString(),
   };
+}
+
+// "Xinghe, China" → "Xinghe"; "Taiwan" → null (single token is a country).
+function cityFromLoc(loc: any): string | null {
+  if (!loc || typeof loc !== "string") return null;
+  const parts = loc.split(",").map((p) => p.trim()).filter(Boolean);
+  return parts.length >= 2 ? parts[0] : null;
 }
 
 function parseDDMMYYYY(s: string | null | undefined): string | null {
