@@ -3,6 +3,14 @@ import type { ContactCore } from '@/types/contacts';
 
 export interface EnrichContactParams {
   contactId?: string;
+  /** Apollo person id (24-char hex) when the contact came from
+   *  apollo-contact-search. People/match with { id } is Apollo's most
+   *  reliable path — name-only matching returns stub records without
+   *  emails. */
+  apolloPersonId?: string | null;
+  /** lit_contacts.source_contact_key — holds the Apollo person id for
+   *  contacts saved from Apollo search results. */
+  sourceContactKey?: string | null;
   email?: string;
   fullName?: string;
   companyName?: string;
@@ -29,10 +37,19 @@ function splitName(fullName?: string) {
   return { first_name: parts[0] || undefined, last_name: parts.slice(1).join(' ') || undefined };
 }
 
+// Apollo person ids are 24-char hex (Mongo ObjectId shape). Never send
+// LIT UUIDs as apollo ids — the edge fn guards too, but filter here so
+// the payload stays honest.
+const APOLLO_ID_SHAPE = /^[0-9a-f]{24}$/i;
+
 function toContactPayload(params: EnrichContactParams) {
   const names = splitName(params.fullName);
+  const apolloPersonId = [params.apolloPersonId, params.sourceContactKey]
+    .map((v) => (v ? String(v) : ''))
+    .find((v) => APOLLO_ID_SHAPE.test(v));
   return {
     id: params.contactId,
+    apollo_person_id: apolloPersonId || undefined,
     name: params.fullName,
     full_name: params.fullName,
     first_name: names.first_name,

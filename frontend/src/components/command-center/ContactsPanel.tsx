@@ -97,6 +97,8 @@ export default function ContactsPanel() {
     try {
       const result = await enrichContact({
         contactId: contact.id,
+        apolloPersonId: (contact as any).apollo_person_id || undefined,
+        sourceContactKey: (contact as any).source_contact_key || undefined,
         email: contact.email,
         fullName: contactName(contact),
         companyName: selected?.name || contact.company_name,
@@ -114,10 +116,19 @@ export default function ContactsPanel() {
       }
 
       if (result.success && result.contact) {
-        const patch = { ...result.contact, enrichment_status: 'complete', enrichment_provider: result.provider || result.contact.enrichment_provider } as Partial<ContactCore>;
+        const gotEmail = Boolean((result.contact as any).email || contact.email);
+        const patch = {
+          ...result.contact,
+          enrichment_status: gotEmail ? 'complete' : 'no_email',
+          enrichment_provider: result.provider || result.contact.enrichment_provider,
+        } as Partial<ContactCore>;
         setRows((prev) => (prev || []).map((c) => (c.id === contact.id ? { ...c, ...patch } : c)));
         if (selectedContact?.id === contact.id) setSelectedContact({ ...contact, ...patch });
-        toast.success('Contact enriched', { description: `Added ${result.fieldsAdded?.length || 0} available profile fields.` });
+        if (gotEmail) {
+          toast.success('Contact enriched', { description: `Added ${result.fieldsAdded?.length || 0} available profile fields.` });
+        } else {
+          toast.info('No email found', { description: 'The provider matched this contact but has no email on file.' });
+        }
       } else {
         toast.error('Enrichment unavailable', { description: result.error || 'No enrichment data was returned for this contact.' });
       }

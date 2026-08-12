@@ -721,6 +721,11 @@ export default function CDPContacts({
         });
         const enrichmentResult = await enrichKnownContact({
           contactId: saved.id ? String(saved.id) : undefined,
+          // Apollo matches most reliably on its own person id — name-only
+          // matching returns stub people with no email.
+          apolloPersonId: p.apollo_person_id || undefined,
+          sourceContactKey:
+            p.source_contact_key || (saved as any)?.source_contact_key || undefined,
           fullName: saved.full_name || fullName || undefined,
           companyName: companyName || p.company || undefined,
           companyDomain: companyDomain || undefined,
@@ -755,12 +760,21 @@ export default function CDPContacts({
           ...(saved as Contact),
           ...(enrichmentResult.contact || {}),
           enrichment_status: enrichmentResult.contact
-            ? "enriched"
+            ? ((enrichmentResult.contact as any).enrichment_status ||
+              ((enrichmentResult.contact as any).email ? "enriched" : "no_email"))
             : enrichmentResult.pending
               ? "pending"
               : saved.enrichment_status || "pending",
           enrichment_job_id: jobId,
         });
+        if (
+          enrichmentResult.contact &&
+          !(enrichmentResult.contact as any).email
+        ) {
+          failedMessages.push(
+            `No email available for ${fullName || "this contact"}.`,
+          );
+        }
       }
       setContacts((prev) => {
         const next = [...savedRows, ...prev];
@@ -815,6 +829,8 @@ export default function CDPContacts({
     try {
       const lemlistResult = await enrichKnownContact({
         contactId: c.id ? String(c.id) : undefined,
+        apolloPersonId: c.apollo_person_id || undefined,
+        sourceContactKey: (c as any).source_contact_key || undefined,
         email: c.email || undefined,
         fullName: c.full_name || c.name || undefined,
         companyName: companyName || undefined,
@@ -830,19 +846,26 @@ export default function CDPContacts({
       }
       const lemlistContact = lemlistResult.contact;
       if (lemlistContact) {
+        const gotEmail = Boolean((lemlistContact as any).email || c.email);
         setContacts((prev) =>
           prev.map((x) =>
             String(x.id) === String(c.id)
               ? ({
                   ...x,
                   ...lemlistContact,
-                  enrichment_status: "enriched",
+                  enrichment_status:
+                    (lemlistContact as any).enrichment_status ||
+                    (gotEmail ? "enriched" : "no_email"),
                   enriched_at: new Date().toISOString(),
                 } as Contact)
               : x,
           ),
         );
-        setEnrichToast("Contact enriched with LIT");
+        setEnrichToast(
+          gotEmail
+            ? "Contact enriched with LIT"
+            : "Matched, but no email is available for this contact.",
+        );
         setTimeout(() => setEnrichToast(null), 2500);
         return;
       }
@@ -880,6 +903,8 @@ export default function CDPContacts({
     try {
       const result = await enrichKnownContact({
         contactId: c.id ? String(c.id) : undefined,
+        apolloPersonId: c.apollo_person_id || undefined,
+        sourceContactKey: (c as any).source_contact_key || undefined,
         email: c.email || undefined,
         fullName: c.full_name || c.name || undefined,
         companyName: companyName || undefined,

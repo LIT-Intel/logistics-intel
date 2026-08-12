@@ -224,6 +224,8 @@ async function getOrgIdAndPlan(
 }
 
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Apollo person ids are 24-char hex strings (Mongo ObjectId shape).
+const APOLLO_ID_SHAPE = /^[0-9a-f]{24}$/i;
 
 function buildIdentifierBlock(t: ApolloEnrichTarget, fallbackDomain: string | null, fallbackOrgName: string | null): Record<string, unknown> | null {
   // t.id from the UI is the lit_contacts UUID, NOT an Apollo person id
@@ -676,6 +678,46 @@ Deno.serve(async (req: Request) => {
     }
 
     _mark("gates_done");
+    // 2026-08-12 fix — contacts saved from apollo-contact-search carry
+    // their Apollo person id in lit_contacts.source_contact_key, but the
+    // frontend historically sent only name/title/company. Name-only
+    // matching (e.g. first name "Rajnish" + "Bison Life") makes Apollo
+    // return a fresh stub person — different 24-hex id per call, no
+    // email, no linkedin — which is exactly the "enrich produced no
+    // email" failure. Hydrate each UUID-target from its lit_contacts row
+    // so the match can use { id } (Apollo's most reliable path) or
+    // linkedin_url / full name when available.
+    const litRowByIdx = new Map<number, Record<string, any>>();
+    await Promise.all(targets.map(async (t, i) => {
+      const litUuid = t.id && UUID_SHAPE.test(String(t.id)) ? String(t.id) : null;
+      if (!litUuid) return;
+      try {
+        const { data: litRow } = await supabase
+          .from("lit_contacts")
+          .select("id, source_contact_key, linkedin_url, first_name, last_name, full_name, title, email, phone, raw_payload")
+          .eq("id", litUuid)
+          .maybeSingle();
+        if (!litRow) return;
+        litRowByIdx.set(i, litRow as Record<string, any>);
+        const raw = ((litRow as any).raw_payload || {}) as Record<string, any>;
+        const apolloId = [t.apollo_id, t.apollo_person_id, (litRow as any).source_contact_key, raw?.id]
+          .map((v) => (v ? String(v) : ""))
+          .find((v) => APOLLO_ID_SHAPE.test(v)) || null;
+        if (apolloId && !t.apollo_person_id) t.apollo_person_id = apolloId;
+        if (!t.linkedin_url) t.linkedin_url = (litRow as any).linkedin_url || raw?.linkedin_url || null;
+        if (!t.first_name) t.first_name = (litRow as any).first_name || raw?.first_name || null;
+        if (!t.last_name) t.last_name = (litRow as any).last_name || raw?.last_name || null;
+        if (!t.title) t.title = (litRow as any).title || null;
+        if (!t.domain) {
+          const d = raw?.organization?.primary_domain || raw?.organization?.website_url || null;
+          if (d) t.domain = d;
+        }
+        if (!t.organization_name) t.organization_name = raw?.organization?.name || null;
+      } catch (_) {
+        // Hydration is best-effort; the identifier gate below still applies.
+      }
+    }));
+    _mark("targets_hydrated");
     // Build identifier blocks; skip targets too weak to match.
     const ids: Array<{ block: Record<string, unknown>; idx: number }> = [];
     const skipped: Array<{ index: number; reason: string }> = [];
@@ -688,8 +730,9 @@ Deno.serve(async (req: Request) => {
       ids.push({ block, idx: i });
     });
 
-    // Chunk into batches of BULK_MAX.
-    const results: NormalizedContact[] = [];
+    // Chunk into batches of BULK_MAX. Each result keeps the originating
+    // target index so we can write back to the exact lit_contacts row.
+    const results: Array<{ norm: NormalizedContact; idx: number }> = [];
     // Phase 3 — track per-result phone request_id for the lit_contacts row.
     const phoneRequestIdByKey = new Map<string, string | null>();
     const errors: Array<{ index: number; error: string; status?: number }> = [];
@@ -711,7 +754,7 @@ Deno.serve(async (req: Request) => {
         if (phoneUnlockRequested) {
           phoneRequestIdByKey.set(norm.source_contact_key, r.phone_request_id ?? null);
         }
-        results.push(norm);
+        results.push({ norm, idx: chunk[0].idx });
       } else {
         const r = await bulkMatch(chunk.map((c) => c.block), sharedReveal);
         if (!r.ok) {
@@ -731,7 +774,7 @@ Deno.serve(async (req: Request) => {
             const reqId = (r.phone_request_ids && r.phone_request_ids[j]) || null;
             phoneRequestIdByKey.set(norm.source_contact_key, reqId);
           }
-          results.push(norm);
+          results.push({ norm, idx: c.idx });
         });
       }
     }
@@ -742,7 +785,7 @@ Deno.serve(async (req: Request) => {
     // (company_id + linkedin_url) when no apollo id.
     const persistErrors: Array<{ apollo_person_id: string | null; error: string }> = [];
     const persisted: NormalizedContact[] = [];
-    for (const c of results) {
+    for (const { norm: c, idx: targetIdx } of results) {
       // lit_contacts.full_name is NOT NULL. Compute a real fallback
       // so partial enrichment (Apollo returns no name) doesn't blow
       // up the insert silently.
@@ -797,24 +840,82 @@ Deno.serve(async (req: Request) => {
         phone_unlock_request_id: phoneReqId,
         raw_payload: c.raw_payload,
       };
+      // 2026-08-12 fix — when the enrich request originated from an
+      // existing lit_contacts row (UUID target), UPDATE that row instead
+      // of upserting a duplicate under (source='apollo', apollo id). The
+      // old behavior left the row the user clicked stuck at 'pending'
+      // (rendered as 'none') with a null email while the enrichment data
+      // landed on an invisible duplicate.
+      const originLitRow = litRowByIdx.get(targetIdx) || null;
       try {
-        const { data: saved, error: upsertError } = await supabase
-          .from("lit_contacts")
-          .upsert(row, { onConflict: "source,source_contact_key" })
-          .select()
-          .single();
-        if (upsertError) {
-          persistErrors.push({
-            apollo_person_id: c.apollo_person_id,
-            error: upsertError.message || String(upsertError),
-          });
-          persisted.push({ ...c, full_name: safeFullName });
-        } else {
-          persisted.push({
-            ...c,
+        if (originLitRow?.id) {
+          const finalEmail = c.email || (originLitRow.email as string | null) || null;
+          const updatePatch: Record<string, unknown> = {
             full_name: safeFullName,
-            ...(saved ? { id: (saved as any).id } : {}),
-          } as NormalizedContact);
+            first_name: c.first_name ?? originLitRow.first_name ?? null,
+            last_name: c.last_name ?? originLitRow.last_name ?? null,
+            title: c.title ?? originLitRow.title ?? null,
+            department: c.department,
+            seniority: c.seniority,
+            email: finalEmail,
+            phone: c.phone || (originLitRow.phone as string | null) || null,
+            linkedin_url: c.linkedin_url ?? originLitRow.linkedin_url ?? null,
+            city: c.city,
+            state: c.state,
+            country_code: c.country_code,
+            email_verification_status: c.email_status,
+            email_verified: (row as any).email_verified,
+            verified_by_provider: (row as any).verified_by_provider,
+            phone_unlock_status: phoneUnlockStatus,
+            phone_unlock_request_id: phoneReqId,
+            raw_payload: c.raw_payload,
+            enrichment_provider: "apollo",
+            enriched_at: c.enriched_at,
+            // Distinct outcome when Apollo matched a person but has no
+            // email on file — the UI must not silently show 'none'.
+            enrichment_status: finalEmail ? "enriched" : "no_email",
+          };
+          const { data: savedLit, error: updErr } = await supabase
+            .from("lit_contacts")
+            .update(updatePatch)
+            .eq("id", originLitRow.id)
+            .select()
+            .single();
+          if (updErr) {
+            persistErrors.push({
+              apollo_person_id: c.apollo_person_id,
+              error: updErr.message || String(updErr),
+            });
+            persisted.push({ ...c, full_name: safeFullName, ...( { id: originLitRow.id } as any) } as NormalizedContact);
+          } else {
+            persisted.push({
+              ...c,
+              full_name: safeFullName,
+              email: finalEmail,
+              ...(savedLit
+                ? { id: (savedLit as any).id, enrichment_status: (savedLit as any).enrichment_status }
+                : {}),
+            } as NormalizedContact);
+          }
+        } else {
+          const { data: saved, error: upsertError } = await supabase
+            .from("lit_contacts")
+            .upsert(row, { onConflict: "source,source_contact_key" })
+            .select()
+            .single();
+          if (upsertError) {
+            persistErrors.push({
+              apollo_person_id: c.apollo_person_id,
+              error: upsertError.message || String(upsertError),
+            });
+            persisted.push({ ...c, full_name: safeFullName });
+          } else {
+            persisted.push({
+              ...c,
+              full_name: safeFullName,
+              ...(saved ? { id: (saved as any).id } : {}),
+            } as NormalizedContact);
+          }
         }
       } catch (err: any) {
         persistErrors.push({ apollo_person_id: c.apollo_person_id, error: err?.message || String(err) });
@@ -879,6 +980,45 @@ Deno.serve(async (req: Request) => {
           }
         }
       }
+    }
+
+    // Surface no-match / provider errors / skipped targets on their
+    // originating lit_contacts rows so they never sit in 'pending'
+    // forever (which the contact list rendered as a silent 'none').
+    for (const e of errors) {
+      const originLitRow = litRowByIdx.get(e.index);
+      if (!originLitRow?.id) continue;
+      try {
+        await supabase
+          .from("lit_contacts")
+          .update({
+            enrichment_status: e.error === "no_match" ? "no_match" : "failed",
+            enrichment_result: {
+              provider: "apollo",
+              error: e.error,
+              status: e.status ?? null,
+              at: new Date().toISOString(),
+            },
+          })
+          .eq("id", originLitRow.id);
+      } catch (_) {}
+    }
+    for (const s of skipped) {
+      const originLitRow = litRowByIdx.get(s.index);
+      if (!originLitRow?.id) continue;
+      try {
+        await supabase
+          .from("lit_contacts")
+          .update({
+            enrichment_status: "failed",
+            enrichment_result: {
+              provider: "apollo",
+              error: s.reason,
+              at: new Date().toISOString(),
+            },
+          })
+          .eq("id", originLitRow.id);
+      } catch (_) {}
     }
 
     _mark("persist_done");
