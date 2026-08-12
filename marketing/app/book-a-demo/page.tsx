@@ -12,7 +12,10 @@ import CalEmbed from "./CalEmbed.client";
  */
 
 const CAL_LINK = (
-  process.env.NEXT_PUBLIC_CAL_COM_LINK ?? ""
+  // Hardcoded fallback (owner's live Cal.com handle) — the env var was
+  // never set in Vercel and demo-invite CTAs landed on the "not
+  // configured" card. Env still wins when present.
+  process.env.NEXT_PUBLIC_CAL_COM_LINK ?? "logisticintel/15min"
 ).trim();
 
 export const metadata: Metadata = {
