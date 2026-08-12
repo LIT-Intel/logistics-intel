@@ -10,11 +10,15 @@
     },
     {
       "path": "/api/cron/lead-sequence-dispatch",
-      "schedule": "0 15 * * *"
+      "schedule": "*/30 * * * *"
     },
     {
       "path": "/api/cron/reengagement-enroll",
       "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/cron/weekly-nurture-enroll",
+      "schedule": "0 14 * * 2"
     },
     {
       "path": "/api/cron/trade-lane-refresh",

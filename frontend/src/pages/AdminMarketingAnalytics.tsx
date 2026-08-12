@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, BriefcaseBusiness, Download, Linkedin, MailCheck, MailOpen, MousePointerClick, RefreshCw, Send, Sparkles, Target, UsersRound } from "lucide-react";
+import { AlertTriangle, BarChart3, BriefcaseBusiness, CalendarCheck2, Download, Linkedin, MailCheck, MailOpen, MousePointerClick, RefreshCw, Send, Sparkles, Target, UserPlus, UsersRound } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { fetchRecentEmailEvents, computeKpis, computeDailyVolume, type EmailEvent } from "@/api/marketingAnalytics";
 import { fetchLinkedInAnalytics, fetchLinkedInLeadCount, type LinkedInAnalyticsResponse } from "@/api/linkedinAnalytics";
@@ -29,6 +29,17 @@ type LemlistCampaignRow = {
   last_synced_at: string | null;
   stats: Record<string, unknown> | null;
   metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
+type MeetingRow = {
+  id: string;
+  attendee_email: string;
+  attendee_name: string | null;
+  event_type: string | null;
+  starts_at: string | null;
+  duration_minutes: number | null;
+  status: "booked" | "rescheduled" | "cancelled" | "completed" | "no_show";
   created_at: string;
 };
 
@@ -79,6 +90,7 @@ export default function AdminMarketingAnalytics() {
   const [events, setEvents] = useState<EmailEvent[]>([]);
   const [opportunities, setOpportunities] = useState<OpportunityRow[]>([]);
   const [lemlistCampaigns, setLemlistCampaigns] = useState<LemlistCampaignRow[]>([]);
+  const [meetings, setMeetings] = useState<MeetingRow[]>([]);
   const [enrichmentJobs, setEnrichmentJobs] = useState<EnrichmentJobRow[]>([]);
   const [li, setLi] = useState<LinkedInAnalyticsResponse | null>(null);
   const [liLeadCount, setLiLeadCount] = useState<number | null>(null);
@@ -106,10 +118,15 @@ export default function AdminMarketingAnalytics() {
           supabase.from("lit_lemlist_campaigns").select("id,name,status,audience_segment,lemlist_campaign_id,last_synced_at,stats,metadata,created_at").order("created_at", { ascending: false }).limit(20),
           supabase.from("lit_contact_enrichment_jobs").select("id,provider,status,source_context,workflows,created_at,submitted_at").gte("created_at", since).order("created_at", { ascending: false }).limit(50),
         ]);
+        // Meetings ledger is fed by the Cal.com webhook; RLS scopes it to
+        // internal-org members, so a failed select (non-internal viewer)
+        // degrades to an empty panel rather than an error banner.
+        const meetRes = await supabase.from("lit_meetings").select("id,attendee_email,attendee_name,event_type,starts_at,duration_minutes,status,created_at").order("starts_at", { ascending: false, nullsFirst: false }).limit(50);
         if (cancelled) return;
         if (oppRes.error) throw new Error(oppRes.error.message);
         if (campaignRes.error) throw new Error(campaignRes.error.message);
         if (jobRes.error) throw new Error(jobRes.error.message);
+        setMeetings((meetRes.data || []) as MeetingRow[]);
         setEvents(emailRows);
         setLi(liAnalytics);
         setLiNotConfigured(liAnalytics === null);
@@ -191,6 +208,9 @@ export default function AdminMarketingAnalytics() {
             <Card title="Recent opportunities" subtitle="Latest stage changes across acquisition sources">
               <Table rows={opportunities.slice(0, 12)} />
             </Card>
+            <Card title="Demo meetings" subtitle="Cal.com bookings with outcomes — mark no-shows to auto-enroll the recovery sequence">
+              <MeetingsTable rows={meetings} onChanged={() => setRefreshKey((k) => k + 1)} />
+            </Card>
             <Card title="Daily email activity" subtitle="Unique sent, opened, and clicked events">
               <DailyBars data={daily} loading={loading} />
             </Card>
@@ -236,6 +256,87 @@ function Th({ children, align = "left" }: { children: React.ReactNode; align?: "
 }
 function Td({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
   return <td className={`px-4 py-3 text-[13px] text-slate-700 ${align === "right" ? "text-right tabular-nums" : ""}`}>{children}</td>;
+}
+
+const MEETING_STATUS_STYLES: Record<MeetingRow["status"], string> = {
+  booked: "bg-blue-50 text-blue-700",
+  rescheduled: "bg-amber-50 text-amber-700",
+  cancelled: "bg-slate-100 text-slate-500",
+  completed: "bg-emerald-50 text-emerald-700",
+  no_show: "bg-rose-50 text-rose-700",
+};
+
+function MeetingsTable({ rows, onChanged }: { rows: MeetingRow[]; onChanged: () => void }) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  // Manual outcome marking exists because Cal.com only reports a no-show
+  // when the host flags it in Cal — marking here flips lit_meetings.status,
+  // and the no_show transition fires the DB trigger that enqueues the
+  // "meeting-no-show" recovery emails (2h + 4d).
+  async function setStatus(row: MeetingRow, status: MeetingRow["status"]) {
+    setBusyId(row.id);
+    setNote(null);
+    const { error } = await supabase.from("lit_meetings").update({ status, updated_at: new Date().toISOString() }).eq("id", row.id);
+    setBusyId(null);
+    if (error) { setNote(`Update failed: ${error.message}`); return; }
+    setNote(status === "no_show" ? `${row.attendee_email} marked no-show — recovery emails enrolled (first sends in ~2h).` : `Marked ${status.replace(/_/g, " ")}.`);
+    onChanged();
+  }
+
+  async function inviteToTrial(row: MeetingRow) {
+    setBusyId(row.id);
+    setNote(null);
+    const { data, error } = await supabase.functions.invoke("send-demo-invite", {
+      body: { email: row.attendee_email, name: row.attendee_name || "", note: "Following up on our demo — here's your trial access." },
+    });
+    setBusyId(null);
+    if (error || (data && data.error)) { setNote(`Invite failed: ${error?.message || data?.error}`); return; }
+    setNote(`Trial invite sent to ${row.attendee_email} — track it on the Demo invites page.`);
+    onChanged();
+  }
+
+  if (!rows.length) return <Empty title="No meetings yet" text="Cal.com bookings appear here once the cal-webhook events land (Booking Created / Meeting Ended / No-Show)." />;
+  return (
+    <div className="overflow-x-auto">
+      {note && <div className="border-b border-slate-100 bg-blue-50/60 px-4 py-2 text-[12.5px] text-blue-800">{note}</div>}
+      <table className="w-full">
+        <thead><tr><Th>Contact</Th><Th>Meeting</Th><Th>Result</Th><Th>Duration</Th><Th align="right">Actions</Th></tr></thead>
+        <tbody>
+          {rows.slice(0, 10).map((row) => (
+            <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50">
+              <Td>
+                <div className="font-semibold text-slate-900">{row.attendee_name || row.attendee_email}</div>
+                <div className="text-xs text-slate-500">{row.attendee_email}</div>
+              </Td>
+              <Td>
+                <div className="text-[13px] text-slate-700">{row.event_type || "Demo"}</div>
+                <div className="text-xs text-slate-500">{row.starts_at ? new Date(row.starts_at).toLocaleString() : "-"}</div>
+              </Td>
+              <Td><span className={`rounded-full px-2 py-1 text-xs font-semibold capitalize ${MEETING_STATUS_STYLES[row.status]}`}>{row.status.replace(/_/g, " ")}</span></Td>
+              <Td>{row.duration_minutes ? `${row.duration_minutes} min` : "-"}</Td>
+              <Td align="right">
+                <div className="flex justify-end gap-1.5">
+                  {(row.status === "booked" || row.status === "rescheduled") && (
+                    <>
+                      <button type="button" disabled={busyId === row.id} onClick={() => setStatus(row, "completed")} className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11.5px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">Completed</button>
+                      <button type="button" disabled={busyId === row.id} onClick={() => setStatus(row, "no_show")} className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11.5px] font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50">No-show</button>
+                    </>
+                  )}
+                  {row.status === "completed" && (
+                    <button type="button" disabled={busyId === row.id} onClick={() => inviteToTrial(row)} className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[11.5px] font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"><UserPlus className="h-3 w-3" />Invite to trial</button>
+                  )}
+                  {row.status === "no_show" && (
+                    <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-slate-500"><CalendarCheck2 className="h-3 w-3" />Recovery emails enrolled</span>
+                  )}
+                </div>
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function DailyBars({ data, loading }: { data: Array<{ day: string; sent: number; opened: number; clicked: number }>; loading: boolean }) {

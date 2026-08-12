@@ -1,10 +1,18 @@
-// cal-webhook v3 — receives Cal.com booking webhooks and logs them as
-// meeting events on the matching campaign recipient.
+// cal-webhook v4 — receives Cal.com booking webhooks, logs them as
+// meeting events on the matching campaign recipient, AND mirrors every
+// booking into public.lit_meetings — the admin-facing meetings ledger
+// (outcome, duration, no-show recovery).
 //
 // Wire-up (one-time): Cal.com Dashboard → Settings → Developer → Webhooks
 //   URL:        https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/cal-webhook
-//   Events:     BOOKING_CREATED, BOOKING_RESCHEDULED, BOOKING_CANCELLED
+//   Events:     BOOKING_CREATED, BOOKING_RESCHEDULED, BOOKING_CANCELLED,
+//               MEETING_ENDED, BOOKING_NO_SHOW_UPDATED
 //   Secret:     copy into CAL_WEBHOOK_SECRET on Supabase Edge Functions → Secrets
+//
+// v4: MEETING_ENDED now maps to meeting_completed (v3 wrongly logged it
+// as meeting_cancelled); BOOKING_NO_SHOW_UPDATED marks the lit_meetings
+// row no_show, which fires the trg_meeting_no_show_enroll DB trigger →
+// auto-enrolls the "meeting-no-show" recovery email sequence.
 //
 // Auth: HMAC-SHA256 of the raw JSON body, signed with CAL_WEBHOOK_SECRET,
 // sent by Cal.com as the X-Cal-Signature-256 header (hex, lowercase).
@@ -63,7 +71,9 @@ function mapEventType(trigger: string): string {
   const t = String(trigger || "").toUpperCase();
   if (t === "BOOKING_CREATED" || t === "BOOKING_CONFIRMED") return "meeting_booked";
   if (t === "BOOKING_RESCHEDULED") return "meeting_rescheduled";
-  if (t === "BOOKING_CANCELLED" || t === "BOOKING_CANCELED" || t === "MEETING_ENDED") return "meeting_cancelled";
+  if (t === "BOOKING_CANCELLED" || t === "BOOKING_CANCELED") return "meeting_cancelled";
+  if (t === "MEETING_ENDED") return "meeting_completed";
+  if (t === "BOOKING_NO_SHOW_UPDATED") return "meeting_no_show";
   return "meeting_" + t.toLowerCase();
 }
 
@@ -126,6 +136,63 @@ serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const db = createClient(supabaseUrl, serviceRoleKey);
+
+  // ── lit_meetings sync (v4) ───────────────────────────────────────────
+  // Runs BEFORE the campaign-history dedupe so status transitions (ended,
+  // no-show toggles, reschedules) land even when a timeline row for this
+  // (booking, event_type) pair already exists. Upsert keyed on the Cal
+  // booking uid; a transition to status='no_show' fires the
+  // trg_meeting_no_show_enroll trigger → "meeting-no-show" sequence.
+  const MEETING_STATUS: Record<string, string> = {
+    BOOKING_CREATED: "booked",
+    BOOKING_CONFIRMED: "booked",
+    BOOKING_REQUESTED: "booked",
+    BOOKING_RESCHEDULED: "rescheduled",
+    BOOKING_CANCELLED: "cancelled",
+    BOOKING_CANCELED: "cancelled",
+    BOOKING_REJECTED: "cancelled",
+    MEETING_ENDED: "completed",
+  };
+  const triggerUpper = trigger.toUpperCase();
+  let meetingStatus: string | null = MEETING_STATUS[triggerUpper] ?? null;
+  if (triggerUpper === "BOOKING_NO_SHOW_UPDATED") {
+    // Cal flags no-shows per attendee (guests) plus a separate host flag.
+    // Only a GUEST no-show enters lead recovery; unflagging reverts.
+    const guestNoShow = attendees.some((a: any) => a?.noShow === true);
+    meetingStatus = guestNoShow ? "no_show" : "booked";
+  }
+  const endTime = payload?.endTime || payload?.end_time || null;
+  const durationMinutes = (() => {
+    if (!startTime || !endTime) return null;
+    const ms = new Date(endTime).getTime() - new Date(startTime).getTime();
+    return Number.isFinite(ms) && ms > 0 ? Math.round(ms / 60000) : null;
+  })();
+  if (meetingStatus) {
+    const meetingRow: Record<string, unknown> = {
+      cal_booking_uid: bookingId,
+      event_type: meetingTitle,
+      organizer_email: organizerEmail || null,
+      starts_at: startTime,
+      ends_at: endTime,
+      duration_minutes: durationMinutes,
+      status: meetingStatus,
+      raw_payload: body,
+      updated_at: new Date().toISOString(),
+    };
+    if (attendeeEmail) {
+      meetingRow.attendee_email = attendeeEmail;
+      meetingRow.attendee_name = attendees[0]?.name ?? null;
+    }
+    const { error: meetErr } = await db
+      .from("lit_meetings")
+      .upsert(meetingRow, { onConflict: "cal_booking_uid" });
+    if (meetErr) {
+      // Non-fatal: the campaign timeline below still records the event.
+      log("warn", "lit_meetings_upsert_failed", { err: meetErr.message, cal_booking_id: bookingId });
+    } else {
+      log("info", "lit_meetings_synced", { cal_booking_id: bookingId, status: meetingStatus });
+    }
+  }
 
   // Dedupe: same cal_booking_id + event_type already logged? Cal.com
   // retries on 5xx; we never want duplicates on the campaign timeline.

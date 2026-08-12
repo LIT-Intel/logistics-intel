@@ -314,6 +314,107 @@ const CONTENT: Record<string, (v: SequenceEmailVars) => EmailDef> = {
     ctaUrl: "https://logisticintel.com/book-a-demo",
     signoff: "Calendar's first-come. — Gabriel",
   }),
+
+  /* ── meeting-no-show (Cal.com no-show → recovery) ───────────────── */
+  "meeting-no-show:1": (v) => ({
+    subject: "We missed you — want to grab another time?",
+    previewText: "No worries — calendars collide. Here's the link to rebook.",
+    headline: "We missed you today.",
+    paragraphs: [
+      hi(v),
+      "Our demo time came and went — no worries at all, calendars collide. The slot was yours, so the offer still stands: bring a lane or a vertical you sell into, and in 15 minutes we'll pull the actual importers moving freight on it, with the people who buy logistics there.",
+      "Grab any time that works — same link, zero judgment.",
+    ],
+    ctaText: "Pick a new time",
+    ctaUrl: "https://logisticintel.com/book-a-demo",
+    signoff: "Or just reply with two windows and I'll send an invite. — Gabriel",
+  }),
+  "meeting-no-show:2": (v) => ({
+    subject: "The 5-minute version of what we were going to show you",
+    previewText: "Skip the meeting — here's the self-serve version, free.",
+    headline: "Skip the meeting entirely.",
+    paragraphs: [
+      hi(v),
+      "If a live call isn't happening, here's the honest shortcut: everything I was going to demo, you can do yourself in about five minutes. Search any US import lane free — no card, no meeting.",
+      "Type a product or a company you already know, and watch its real lanes, carriers, and monthly cadence appear. That moment is the whole pitch.",
+    ],
+    bullets: [
+      "Search 524,000+ active importers — free, unlimited",
+      "Open one account for full shipment history",
+      "Unlock the verified contact who buys freight there",
+    ],
+    ctaText: "Try the 5-minute version",
+    ctaUrl: "https://logisticintel.com/signup",
+    signoff: "The rebook link works anytime too. — Gabriel",
+  }),
+
+  /* ── lit-weekly (evergreen thought-leadership floor; steps rotate
+        by ISO week so every audience gets one branded touch/week) ──── */
+  "lit-weekly:1": (v) => ({
+    subject: "The 30-second teardown that books freight meetings",
+    previewText: "One account, three data points, one email. Weekly play #1.",
+    headline: "This week's play: the 30-second teardown.",
+    subtitle: "LIT Signals Weekly — one field-tested play per week.",
+    paragraphs: [
+      hi(v),
+      "The highest-reply cold email in freight isn't clever — it's specific. Reps who win first meetings open with the prospect's own operation: their top lane, their carrier mix, their shipment cadence.",
+      "The play: pick one target importer, pull three facts about their freight, and lead with the most surprising one. “Your Ningbo → Savannah volume doubled last quarter — who's covering the overflow?” beats any pitch deck, because it proves you did the work before asking for time.",
+    ],
+    tip: "Volume changes beat volume totals. “Doubled since Q1” starts conversations; “you ship a lot” doesn't.",
+    ctaText: "Run a teardown free",
+    ctaUrl: "https://logisticintel.com/search",
+    signoff: "One play a week, always under 90 seconds to read. — Gabriel",
+  }),
+  "lit-weekly:2": (v) => ({
+    subject: "Why Q4 freight contracts are won in August",
+    previewText: "RFP season timing, and the window most reps miss. Play #2.",
+    headline: "The RFP window opens before the RFP.",
+    subtitle: "LIT Signals Weekly — one field-tested play per week.",
+    paragraphs: [
+      hi(v),
+      "Most importers lock annual freight contracts in Q4 — but the shortlist forms months earlier, when ops teams quietly benchmark their current providers. If your first touch lands during the RFP, you're a column in someone's spreadsheet. If it lands in the benchmarking window, you're the one who framed the spreadsheet.",
+      "The play: build your Q4 target list now, and open with lane-level observations — rate pressure on their trade lane, a carrier they rely on cutting capacity, a port their competitors are shifting to. Be the source of the benchmark.",
+    ],
+    tip: "Sort any lane by shipment count and prospect the middle of the list. The top 10 get twenty calls a week; numbers 30–80 get almost none.",
+    ctaText: "Build your Q4 list",
+    ctaUrl: "https://logisticintel.com/search",
+    signoff: "— Gabriel",
+  }),
+  "lit-weekly:3": (v) => ({
+    subject: "Read a prospect's carrier mix like a P&L",
+    previewText: "What consolidation, churn, and single-carrier risk tell you. Play #3.",
+    headline: "Carrier mix is a confession.",
+    subtitle: "LIT Signals Weekly — one field-tested play per week.",
+    paragraphs: [
+      hi(v),
+      "A prospect's carrier history tells you exactly how to sell them. One carrier for years? They buy stability — pitch reliability and a backup lane, not price. Four carriers in two years? They're shopping — pitch speed to quote. A recent switch after steady years? Something broke — that's your door.",
+      "The play: before any first call, read the target's last 12 months of carrier usage and name the pattern out loud in your opener. “Looks like you moved off MSC in March — how's the new setup holding up?” is a question only someone with the data can ask.",
+    ],
+    tip: "Single-carrier shippers are underrated targets: one service failure and they need a plan B overnight. Be the plan B they already know.",
+    ctaText: "Check a carrier mix",
+    ctaUrl: "https://logisticintel.com/search",
+    signoff: "— Gabriel",
+  }),
+  "lit-weekly:4": (v) => ({
+    subject: "The follow-up cadence that doesn't burn lists",
+    previewText: "Six touches, three angles, zero “just checking in.” Play #4.",
+    headline: "Never send “just checking in” again.",
+    subtitle: "LIT Signals Weekly — one field-tested play per week.",
+    paragraphs: [
+      hi(v),
+      "Most freight reps stop at two touches; most replies come after four. The difference between persistent and annoying is whether each touch adds new information — and freight data gives you an infinite supply of it.",
+      "The cadence: touch 1 is their lane observation. Touch 2, three days later, a market shift on that lane. Touch 3, a week on, what a similar shipper just changed. Then breathe two weeks and close the loop. Every message earns its place in the inbox because it teaches them something about their own freight.",
+    ],
+    bullets: [
+      "Day 0 — their own lane, one specific number",
+      "Day 3 — rate or capacity shift on that lane",
+      "Day 10 — what a comparable importer just did",
+      "Day 24 — polite close: “timing wrong, or wrong person?”",
+    ],
+    ctaText: "Arm your follow-ups",
+    ctaUrl: "https://logisticintel.com/search",
+    signoff: "Forward this to whoever runs your SDR cadence. — Gabriel",
+  }),
 };
 
 /**

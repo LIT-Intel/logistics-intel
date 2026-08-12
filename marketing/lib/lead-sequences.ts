@@ -29,7 +29,9 @@ export type SequenceKey =
   | "comparison-nurture"
   | "re-engagement"
   | "post-signup-demo"
-  | "cold-fmcsa-outbound";
+  | "cold-fmcsa-outbound"
+  | "meeting-no-show"
+  | "lit-weekly";
 
 export type SequenceStep = {
   /** 1-indexed step number, unique within a sequence. */
@@ -226,6 +228,67 @@ export const SEQUENCES: Record<SequenceKey, SequenceStep[]> = {
       templateId: null,
       subject: "closing the loop on {{companyName}}?",
       purpose: "Polite breakup — highest reply-rate touch",
+    },
+  ],
+  // Enqueued by the `trg_meeting_no_show_enroll` DB trigger when a
+  // lit_meetings row transitions to status='no_show' (Cal.com webhook or
+  // manual mark in admin). Delays are set by the trigger itself (+2h, +4d);
+  // delayHours here documents intent only.
+  "meeting-no-show": [
+    {
+      step: 1,
+      delayHours: 2,
+      envTemplateVar: "RESEND_TPL_NO_SHOW_1",
+      templateId: null,
+      subject: "We missed you — want to grab another time?",
+      purpose: "Same-day rebook nudge, zero guilt",
+    },
+    {
+      step: 2,
+      delayHours: 96,
+      envTemplateVar: "RESEND_TPL_NO_SHOW_2",
+      templateId: null,
+      subject: "The 5-minute version of what we were going to show you",
+      purpose: "Self-serve alternative — convert without a meeting",
+    },
+  ],
+  // Evergreen weekly thought-leadership floor ("LIT Signals Weekly").
+  // The weekly-nurture-enroll cron enqueues ONE step per eligible address
+  // per week, rotating step 1→4 by ISO week number, so nobody who has
+  // opted in ever goes more than a week without a branded touch. Steps
+  // are standalone plays, not a linear drip — any entry point works.
+  "lit-weekly": [
+    {
+      step: 1,
+      delayHours: 0,
+      envTemplateVar: "RESEND_TPL_WEEKLY_1",
+      templateId: null,
+      subject: "The 30-second teardown that books freight meetings",
+      purpose: "Play: open with the prospect's own freight",
+    },
+    {
+      step: 2,
+      delayHours: 0,
+      envTemplateVar: "RESEND_TPL_WEEKLY_2",
+      templateId: null,
+      subject: "Why Q4 freight contracts are won in August",
+      purpose: "Play: RFP-season timing + mid-list prospecting",
+    },
+    {
+      step: 3,
+      delayHours: 0,
+      envTemplateVar: "RESEND_TPL_WEEKLY_3",
+      templateId: null,
+      subject: "Read a prospect's carrier mix like a P&L",
+      purpose: "Play: carrier-history pattern reads",
+    },
+    {
+      step: 4,
+      delayHours: 0,
+      envTemplateVar: "RESEND_TPL_WEEKLY_4",
+      templateId: null,
+      subject: "The follow-up cadence that doesn't burn lists",
+      purpose: "Play: 4-touch cadence with fresh data per touch",
     },
   ],
 };
