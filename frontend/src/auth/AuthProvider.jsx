@@ -193,7 +193,26 @@ export function AuthProvider({ children }) {
 
         const normalized = normalizeUser(merged);
         const email = String(normalized?.email || '').trim().toLowerCase();
-        const superAdminByEmail = SUPER_ADMIN_EMAILS.has(email);
+        // Platform admin = hardcoded bootstrap emails OR a platform_admins
+        // row (RLS lets each user read only their own row). The table is
+        // the real source of truth — it's what every server-side admin
+        // gate checks — so the UI must honor it too (e.g. VP-level staff
+        // like evan@logisticintel.com get the Admin Control Panel without
+        // a code deploy). vraymond83@gmail.com stays a plain trial user by
+        // simply not having a row.
+        let superAdminByEmail = SUPER_ADMIN_EMAILS.has(email);
+        if (!superAdminByEmail && supabase) {
+          try {
+            const { data: paRow } = await supabase
+              .from('platform_admins')
+              .select('user_id')
+              .eq('user_id', u.id)
+              .maybeSingle();
+            superAdminByEmail = Boolean(paRow);
+          } catch {
+            // table unreadable — fall back to the email allowlist
+          }
+        }
 
         setRawUser(normalized);
         setAuthReady(true);
