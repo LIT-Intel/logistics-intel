@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  BadgeCheck,
   Bookmark,
   CheckCircle2,
   Download,
@@ -15,6 +16,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  SlidersHorizontal,
   Sparkles,
   UserPlus,
   X,
@@ -37,6 +39,11 @@ import {
   tierTone,
   type ContactScoreResult,
 } from "@/lib/contactScore";
+import {
+  deriveContactSignals,
+  signalToneClasses,
+  type LitSignal,
+} from "@/lib/contactSignals";
 
 type Contact = {
   id?: string | number;
@@ -71,6 +78,11 @@ type Contact = {
    *  a "Phone pending" pill until the apollo-phone-webhook delivers. */
   phone_unlock_status?: "pending" | "delivered" | "failed" | null;
   phone_unlock_request_id?: string | null;
+  /** Full provider payload persisted at enrichment time — used to derive
+   *  LIT Signals (new-in-role, decision maker, buyer dept) locally. */
+  raw_payload?: Record<string, any> | null;
+  /** Org-level buying-intent data when the provider plan exposes it. */
+  buying_intent?: Record<string, any> | Array<any> | null;
 };
 
 /**
@@ -141,6 +153,15 @@ const APOLLO_DEFAULT_SENIORITIES = [
   "owner",
 ];
 
+/**
+ * Default departments for contact discovery. Restores the pre-Jul-2026
+ * targeting model (LIT outbound playbook): search inside the freight-
+ * buying functions first. The edge function maps these labels to the
+ * provider's department/subdepartment taxonomy and automatically
+ * relaxes the filter if it produces zero results.
+ */
+const APOLLO_DEFAULT_DEPARTMENTS = ["Supply Chain", "Logistics"];
+
 const AVATAR_PALETTE = [
   "#3B82F6",
   "#6366F1",
@@ -207,10 +228,24 @@ export default function CDPContacts({
 
   // Filter state — scoped to the current company. The edge function
   // enforces actual scoping; titles/seniorities are simply hints we
-  // pass through. Defaults match the LIT outbound playbook personas.
-  const [apolloTitles, setApolloTitles] = useState<string[]>([]);
-  const [apolloSeniorities, setApolloSeniorities] = useState<string[]>([]);
-  const [apolloDepartments, setApolloDepartments] = useState<string[]>([]);
+  // pass through. Defaults restore the pre-Jul-2026 LIT outbound
+  // playbook targeting: logistics-buyer titles + manager-and-up
+  // seniorities inside Supply Chain / Logistics departments. The July
+  // provider swap reset these to empty arrays; owner asked for the
+  // targeted defaults back (2026-08-12).
+  const [apolloTitles, setApolloTitles] = useState<string[]>(
+    APOLLO_DEFAULT_TITLES,
+  );
+  const [apolloSeniorities, setApolloSeniorities] = useState<string[]>(
+    APOLLO_DEFAULT_SENIORITIES,
+  );
+  const [apolloDepartments, setApolloDepartments] = useState<string[]>(
+    APOLLO_DEFAULT_DEPARTMENTS,
+  );
+  // True when the server had to drop the department filter to find
+  // results (honest broadening note in the results footer).
+  const [searchRelaxedDepartments, setSearchRelaxedDepartments] =
+    useState(false);
   // Editable company name + domain (locked-by-default, but user can
   // override before re-running). Default to the company props.
   const [searchCompanyName, setSearchCompanyName] = useState<string>(
@@ -332,6 +367,38 @@ export default function CDPContacts({
 
   const verifiedCount = useMemo(
     () => contacts.filter((c) => isProviderVerified(c)).length,
+    [contacts],
+  );
+
+  // Summary-rail stats — all derived from real row data (no fabrication).
+  const strongFitCount = useMemo(
+    () =>
+      contacts.filter(
+        (c) =>
+          computeContactScore({
+            title: c.title,
+            seniority: (c as any).seniority,
+            department: c.department || c.dept,
+            email: c.email,
+            email_verification_status: c.email_verification_status,
+            verified_by_provider: c.verified_by_provider,
+            linkedin_url: c.linkedin_url,
+            enrichment_status: c.enrichment_status,
+          }).score >= 80,
+      ).length,
+    [contacts],
+  );
+  const decisionMakerCount = useMemo(
+    () =>
+      contacts.filter((c) =>
+        deriveContactSignals({
+          title: c.title,
+          seniority: (c as any).seniority,
+          department: c.department || c.dept,
+          raw_payload: c.raw_payload,
+          buying_intent: c.buying_intent,
+        }).some((s) => s.id === "decision_maker"),
+      ).length,
     [contacts],
   );
 
@@ -459,7 +526,12 @@ export default function CDPContacts({
     return p.apollo_person_id || `${p.full_name || "_"}|${p.title || ""}|${i}`;
   }
 
-  async function handleApolloSearch() {
+  async function handleApolloSearch(overrides?: {
+    titles?: string[];
+    seniorities?: string[];
+    departments?: string[];
+    includeSimilarTitles?: boolean;
+  }) {
     if (apolloLoading) return;
     setApolloOpen(true);
     setApolloLoading(true);
@@ -469,6 +541,7 @@ export default function CDPContacts({
     setApolloSelected(new Set());
     setSearchMatchMode(null);
     setSearchOrgMatch(null);
+    setSearchRelaxedDepartments(false);
     setApolloPage(1);
     setApolloHasMore(false);
     const effectiveDomain = (searchCompanyDomain || "").trim();
@@ -491,26 +564,26 @@ export default function CDPContacts({
         state: searchState.trim() || null,
         country: searchCountry.trim() || null,
         usePersonLocations,
-        includeSimilarTitles,
-        titles: apolloTitles,
-        seniorities: apolloSeniorities,
-        departments: apolloDepartments,
+        includeSimilarTitles:
+          overrides?.includeSimilarTitles ?? includeSimilarTitles,
+        titles: overrides?.titles ?? apolloTitles,
+        seniorities: overrides?.seniorities ?? apolloSeniorities,
+        departments: overrides?.departments ?? apolloDepartments,
         perPage: 50,
       });
       setApolloSearched(true);
       setSearchMatchMode(result.matchMode ?? null);
       setSearchOrgMatch(result.organization ?? null);
+      setSearchRelaxedDepartments(result.relaxedDepartments === true);
       if (!result.ok) {
         setApolloResults([]);
         setApolloError(result.error || "Contact search failed.");
         setApolloSetupRequired(Boolean(result.setupRequired));
       } else {
+        // Zero results is NOT an error — the panel renders a dedicated
+        // "broaden your filters" state instead of a red error banner.
         setApolloResults(result.contacts);
         setApolloHasMore(result.hasMore === true);
-        if (result.contacts.length === 0 && result.message) {
-          setApolloError(result.message);
-          setApolloSetupRequired(false);
-        }
       }
     } catch (err: any) {
       setApolloSearched(true);
@@ -519,6 +592,25 @@ export default function CDPContacts({
     } finally {
       setApolloLoading(false);
     }
+  }
+
+  /**
+   * One-click broaden path for the zero-result state: clears the
+   * role/department narrowing (the filter panel stays available for
+   * fine-grained control) and re-runs the search immediately.
+   */
+  function handleBroadenSearch() {
+    if (apolloLoading) return;
+    setApolloTitles([]);
+    setApolloSeniorities([]);
+    setApolloDepartments([]);
+    setIncludeSimilarTitles(true);
+    handleApolloSearch({
+      titles: [],
+      seniorities: [],
+      departments: [],
+      includeSimilarTitles: true,
+    });
   }
 
   async function handleApolloLoadMore() {
@@ -981,7 +1073,9 @@ export default function CDPContacts({
             setApolloModalOpen(false);
             setApolloEnrichError(null);
           }}
-          onRetry={handleApolloSearch}
+          onRetry={() => handleApolloSearch()}
+          onBroaden={handleBroadenSearch}
+          relaxedDepartments={searchRelaxedDepartments}
           onToggle={toggleApolloSelected}
           onSelectAll={selectAllApollo}
           onSelectVisible={selectApolloKeys}
@@ -1035,7 +1129,9 @@ export default function CDPContacts({
           setApolloModalOpen(false);
           setApolloEnrichError(null);
         }}
-        onRetry={handleApolloSearch}
+        onRetry={() => handleApolloSearch()}
+        onBroaden={handleBroadenSearch}
+        relaxedDepartments={searchRelaxedDepartments}
         onToggle={toggleApolloSelected}
         onSelectAll={selectAllApollo}
         onSelectVisible={selectApolloKeys}
@@ -1088,32 +1184,46 @@ export default function CDPContacts({
         />
       )}
 
-      {/* Result counter */}
-      <div className="flex items-center justify-between gap-2 px-1">
-        <div className="font-body text-[12px] text-slate-500">
-          <strong className="font-mono text-slate-900">{filtered.length}</strong>{" "}
-          {filtered.length === 1 ? "contact" : "contacts"} ·{" "}
-          <strong className="font-mono text-green-700">{verifiedCount}</strong>{" "}
-          verified
+      {/* Summary rail — real counts only (contacts / verified / strong
+          fit / decision makers). Doubles as the result counter. */}
+      {contacts.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-3.5 py-2.5 shadow-sm">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            <SummaryStat
+              value={filtered.length}
+              label={filtered.length === 1 ? "contact" : "contacts"}
+              tone="text-slate-900"
+            />
+            <SummaryDivider />
+            <SummaryStat value={verifiedCount} label="verified" tone="text-emerald-700" />
+            <SummaryDivider />
+            <SummaryStat value={strongFitCount} label="strong fit" tone="text-blue-700" />
+            <SummaryDivider />
+            <SummaryStat
+              value={decisionMakerCount}
+              label="decision makers"
+              tone="text-violet-700"
+            />
+          </div>
+          <div className="flex gap-2.5">
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-500 hover:text-blue-700"
+            >
+              <UserPlus className="h-3 w-3" />
+              Add contact
+            </button>
+            <button
+              type="button"
+              className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-500 hover:text-blue-700"
+            >
+              <Download className="h-3 w-3" />
+              Export CSV
+            </button>
+          </div>
         </div>
-        <div className="flex gap-2.5">
-          <button
-            type="button"
-            onClick={() => setAddOpen(true)}
-            className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-500 hover:text-blue-700"
-          >
-            <UserPlus className="h-3 w-3" />
-            Add contact
-          </button>
-          <button
-            type="button"
-            className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-500 hover:text-blue-700"
-          >
-            <Download className="h-3 w-3" />
-            Export CSV
-          </button>
-        </div>
-      </div>
+      )}
 
       {enrichToast && (
         <div className="font-body rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-[12px] text-blue-700">
@@ -1123,26 +1233,64 @@ export default function CDPContacts({
 
       {/* Body */}
       {loading ? (
-        <div className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
-          <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin text-blue-500" />
-          <p className="font-body text-[12px] text-slate-500">
-            Loading contacts…
-          </p>
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="flex animate-pulse items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0"
+              style={{ animationDelay: `${i * 120}ms` }}
+            >
+              <div className="h-7 w-7 shrink-0 rounded-full bg-slate-200" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-2.5 w-1/4 rounded bg-slate-200" />
+                <div className="h-2 w-1/3 rounded bg-slate-100" />
+              </div>
+              <div className="h-4 w-16 rounded-full bg-slate-100" />
+              <div className="h-4 w-12 rounded bg-slate-100" />
+            </div>
+          ))}
         </div>
       ) : error ? (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] text-rose-700">
           {error}
         </div>
       ) : contacts.length === 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
-          <p className="font-display mb-1 text-[13px] font-semibold text-slate-700">
+        <div className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center shadow-sm">
+          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-blue-600 shadow-md">
+            <Sparkles className="h-5 w-5 text-white" />
+          </div>
+          <p className="font-display mb-1 text-[14px] font-bold text-slate-900">
             No contacts on file yet
           </p>
-          <p className="font-body mx-auto max-w-md text-[12px] text-slate-400">
-            Click{" "}
-            <strong className="text-blue-700">Enrich All</strong> to discover
-            verified contacts for this account.
+          <p className="font-body mx-auto mb-4 max-w-md text-[12px] leading-relaxed text-slate-500">
+            LIT targets{" "}
+            <strong className="text-slate-700">Supply Chain &amp; Logistics</strong>{" "}
+            decision-makers by default — logistics, transportation, import,
+            customs, and procurement leaders at this account.
           </p>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleApolloSearch()}
+              disabled={apolloLoading}
+              className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-violet-500 to-violet-600 px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 disabled:opacity-60"
+            >
+              {apolloLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3" />
+              )}
+              Find contacts with LIT
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              className="font-display inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <UserPlus className="h-3 w-3" />
+              Add manually
+            </button>
+          </div>
         </div>
       ) : view === "list" ? (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -1274,13 +1422,23 @@ function ContactRow({
     linkedin_url: contact.linkedin_url,
     enrichment_status: contact.enrichment_status,
   });
+  const signals = deriveContactSignals(
+    {
+      title: contact.title,
+      seniority: (contact as any).seniority,
+      department: dept,
+      raw_payload: contact.raw_payload,
+      buying_intent: contact.buying_intent,
+    },
+    2,
+  );
   const rowId = String(contact.id ?? contact.email ?? name);
   const menuOpen = handlers.menuOpenId === contact.id;
   return (
-    <tr className="border-b border-slate-100 transition-colors last:border-b-0 hover:bg-slate-50/60">
+    <tr className="group border-b border-slate-100 transition-colors last:border-b-0 hover:bg-slate-50/60">
       <td className="px-3.5 py-2.5">
         <div className="flex items-center gap-2.5">
-          <Avatar name={name} />
+          <Avatar name={name} verified={verified} />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <button
@@ -1292,11 +1450,16 @@ function ContactRow({
               </button>
               <VerifiedBadge verified={verified} />
             </div>
-            {(contact.location || contact.city) && (
-              <div className="font-body mt-0.5 text-[10px] text-slate-400">
-                {contact.location || contact.city}
-              </div>
-            )}
+            <div className="mt-0.5 flex flex-wrap items-center gap-1">
+              {(contact.location || contact.city) && (
+                <span className="font-body text-[10px] text-slate-400">
+                  {contact.location || contact.city}
+                </span>
+              )}
+              {signals.map((s) => (
+                <LitSignalChip key={s.id} signal={s} />
+              ))}
+            </div>
           </div>
         </div>
       </td>
@@ -1406,19 +1569,133 @@ function ContactRow({
   );
 }
 
+/**
+ * Fit banding for the compact score indicator (owner spec 2026-08-12):
+ *   >= 80 → emerald "Strong fit", 50-79 → amber "Good fit",
+ *   <  50 → slate "Low fit".
+ */
+function fitBand(score: number): {
+  label: string;
+  ringColor: string;
+  pillClasses: string;
+} {
+  if (score >= 80) {
+    return {
+      label: "Strong fit",
+      ringColor: "#059669",
+      pillClasses: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    };
+  }
+  if (score >= 50) {
+    return {
+      label: "Good fit",
+      ringColor: "#D97706",
+      pillClasses: "border-amber-200 bg-amber-50 text-amber-700",
+    };
+  }
+  return {
+    label: "Low fit",
+    ringColor: "#94A3B8",
+    pillClasses: "border-slate-200 bg-slate-100 text-slate-500",
+  };
+}
+
+const FIT_TOOLTIP =
+  "LIT Fit score (0-100) — computed from title, department, and seniority match against the LIT logistics-buyer playbook, plus email verification and enrichment depth.";
+
+/** Tiny SVG progress ring used inside the fit pill. */
+function FitRing({ score, color }: { score: number; color: string }) {
+  const r = 5;
+  const c = 2 * Math.PI * r;
+  const filled = (Math.max(0, Math.min(100, score)) / 100) * c;
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 13 13"
+      className="shrink-0 -rotate-90"
+      aria-hidden="true"
+    >
+      <circle
+        cx="6.5"
+        cy="6.5"
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity="0.18"
+        strokeWidth="2.2"
+      />
+      <circle
+        cx="6.5"
+        cy="6.5"
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeDasharray={`${filled} ${c}`}
+      />
+    </svg>
+  );
+}
+
 function FitBadge({ fit }: { fit: ContactScoreResult }) {
+  return <FitPill score={fit.score} />;
+}
+
+/** Compact fit indicator: colored progress ring + score + band label. */
+function FitPill({ score }: { score: number }) {
+  const band = fitBand(score);
   return (
     <span
-      title={`LIT fit ${fit.score}/100`}
+      title={FIT_TOOLTIP}
       className={[
-        "font-display inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em]",
-        tierTone(fit.tier),
+        "font-display inline-flex cursor-default items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[9.5px] font-bold",
+        band.pillClasses,
       ].join(" ")}
     >
-      <span className="font-mono">{fit.score}</span>
-      {fit.label}
+      <FitRing score={score} color={band.ringColor} />
+      <span className="font-mono text-[10px]">{score}</span>
+      {band.label}
     </span>
   );
+}
+
+/** Branded LIT Signal chip — tooltip explains the underlying data. */
+function LitSignalChip({ signal }: { signal: LitSignal }) {
+  return (
+    <span
+      title={signal.detail}
+      className={[
+        "font-display inline-flex cursor-default items-center gap-0.5 whitespace-nowrap rounded-sm border px-1.5 py-px text-[8.5px] font-bold uppercase tracking-[0.05em]",
+        signalToneClasses(signal.tone),
+      ].join(" ")}
+    >
+      <Zap className="h-2 w-2" />
+      {signal.label}
+    </span>
+  );
+}
+
+function SummaryStat({
+  value,
+  label,
+  tone,
+}: {
+  value: number;
+  label: string;
+  tone: string;
+}) {
+  return (
+    <span className="font-body text-[12px] text-slate-500">
+      <strong className={["font-mono text-[13px]", tone].join(" ")}>{value}</strong>{" "}
+      {label}
+    </span>
+  );
+}
+
+function SummaryDivider() {
+  return <span className="hidden h-3 w-px bg-slate-200 sm:inline-block" />;
 }
 
 function RowMoreMenu({
@@ -1524,10 +1801,20 @@ function ContactCard({
     linkedin_url: contact.linkedin_url,
     enrichment_status: contact.enrichment_status,
   });
+  const signals = deriveContactSignals(
+    {
+      title: contact.title,
+      seniority: (contact as any).seniority,
+      department: dept,
+      raw_payload: contact.raw_payload,
+      buying_intent: contact.buying_intent,
+    },
+    3,
+  );
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3.5 transition-shadow hover:shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md">
       <div className="mb-2.5 flex items-start gap-2.5">
-        <Avatar name={name} size={36} />
+        <Avatar name={name} size={36} verified={verified} />
         <div className="min-w-0 flex-1">
           <div className="mb-0.5 flex items-center gap-1.5">
             <button
@@ -1542,6 +1829,13 @@ function ContactCard({
           <div className="font-body mb-1 text-[11px] leading-snug text-slate-600">
             {contact.title || "—"}
           </div>
+          {signals.length > 0 && (
+            <div className="mb-1 flex flex-wrap items-center gap-1">
+              {signals.map((s) => (
+                <LitSignalChip key={s.id} signal={s} />
+              ))}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-1">
             {dept && <LitPill tone="slate">{dept}</LitPill>}
             {(contact.location || contact.city) && (
@@ -1639,7 +1933,16 @@ function ActionButton({
   );
 }
 
-function Avatar({ name, size = 28 }: { name: string; size?: number }) {
+function Avatar({
+  name,
+  size = 28,
+  verified = false,
+}: {
+  name: string;
+  size?: number;
+  /** Renders a small check-badge overlay for provider-verified contacts. */
+  verified?: boolean;
+}) {
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
@@ -1649,17 +1952,31 @@ function Avatar({ name, size = 28 }: { name: string; size?: number }) {
   const color =
     AVATAR_PALETTE[(name || "").charCodeAt(0) % AVATAR_PALETTE.length];
   return (
-    <div
-      className="font-display flex shrink-0 items-center justify-center rounded-full font-bold text-white"
-      style={{
-        width: size,
-        height: size,
-        fontSize: size * 0.36,
-        background: `linear-gradient(135deg, ${color}, ${color}cc)`,
-        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.15)",
-      }}
-    >
-      {initials || "?"}
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <div
+        className="font-display flex items-center justify-center rounded-full font-bold text-white"
+        style={{
+          width: size,
+          height: size,
+          fontSize: size * 0.36,
+          background: `linear-gradient(135deg, ${color}, ${color}cc)`,
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.15)",
+        }}
+      >
+        {initials || "?"}
+      </div>
+      {verified && (
+        <span
+          title="Email verified by the LIT network"
+          className="absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full bg-white"
+          style={{ width: size * 0.44, height: size * 0.44 }}
+        >
+          <BadgeCheck
+            className="text-emerald-500"
+            style={{ width: size * 0.42, height: size * 0.42 }}
+          />
+        </span>
+      )}
     </div>
   );
 }
@@ -1713,6 +2030,11 @@ type ApolloResultsPanelProps = {
   onDepartmentsChange: (next: string[]) => void;
   onClose: () => void;
   onRetry: () => void;
+  /** Zero-result broaden path: clears role/department narrowing and
+   *  re-runs the search in one click. */
+  onBroaden: () => void;
+  /** True when the server dropped the department filter to find results. */
+  relaxedDepartments: boolean;
   onToggle: (key: string) => void;
   onSelectAll: () => void;
   onSelectVisible: (keys: string[]) => void;
@@ -1774,6 +2096,8 @@ function ApolloResultsPanel({
   onDepartmentsChange,
   onClose,
   onRetry,
+  onBroaden,
+  relaxedDepartments,
   onToggle,
   onSelectVisible,
   onClearSelection,
@@ -2176,18 +2500,62 @@ function ApolloResultsPanel({
         </div>
       ) : results.length === 0 && searched ? (
         <div className="px-6 py-8 text-center">
-          <p className="font-display text-[12px] font-semibold text-slate-700">
-            No matching contacts found for this company and filter set.
+          <div className="mx-auto mb-2.5 flex h-9 w-9 items-center justify-center rounded-full bg-slate-100">
+            <SlidersHorizontal className="h-4 w-4 text-slate-400" />
+          </div>
+          <p className="font-display text-[12px] font-bold text-slate-800">
+            No contacts matched the current targeting.
           </p>
-          <p className="font-body mt-1 text-[11px] text-slate-500">
-            Try editing the company name, website, city, or state before retrying.
+          <p className="font-body mx-auto mt-1 max-w-md text-[11px] leading-relaxed text-slate-500">
+            {titles.length || departments.length || seniorities.length ? (
+              <>
+                The default search targets Supply Chain &amp; Logistics
+                buyers. Use the <strong>filter panel above</strong> to broaden
+                — clear some titles or departments, add seniorities, or adjust
+                the location — then re-run.
+              </>
+            ) : (
+              <>
+                Try editing the company name, website, city, or state in the
+                filter panel above before retrying.
+              </>
+            )}
           </p>
+          <div className="mt-3 flex items-center justify-center gap-2">
+            {(titles.length > 0 ||
+              departments.length > 0 ||
+              seniorities.length > 0) && (
+              <button
+                type="button"
+                onClick={onBroaden}
+                className="font-display inline-flex items-center gap-1.5 rounded-md bg-gradient-to-b from-violet-500 to-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700"
+              >
+                <SlidersHorizontal className="h-3 w-3" />
+                Broaden filters &amp; retry
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onRetry}
+              className="font-display rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Re-run search
+            </button>
+          </div>
         </div>
       ) : (
         <>
           {enrichError && (
             <div className="font-body border-b border-rose-100 bg-rose-50 px-3.5 py-1.5 text-[11px] text-rose-700">
               {enrichError}
+            </div>
+          )}
+          {relaxedDepartments && (
+            <div className="font-body border-b border-blue-100 bg-blue-50/70 px-3.5 py-1.5 text-[11px] text-blue-700">
+              <SlidersHorizontal className="mr-1 inline h-2.5 w-2.5" />
+              No contacts matched the target departments, so LIT broadened the
+              search across all departments — titles, seniority, and location
+              filters still apply.
             </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-3.5 py-2">
@@ -2322,9 +2690,9 @@ function ApolloResultsPanel({
                                 </span>
                               )}
                             </div>
-                            {p.fit_score ? (
-                              <div className="font-mono mt-0.5 text-[10px] text-slate-400">
-                                Fit {p.fit_score}
+                            {typeof p.fit_score === "number" ? (
+                              <div className="mt-1">
+                                <FitPill score={p.fit_score} />
                               </div>
                             ) : null}
                           </div>
@@ -2783,6 +3151,16 @@ function ContactDetailDrawer({
     linkedin_url: contact.linkedin_url,
     enrichment_status: contact.enrichment_status,
   });
+  const signals = deriveContactSignals(
+    {
+      title: contact.title,
+      seniority: (contact as any).seniority,
+      department: dept,
+      raw_payload: contact.raw_payload,
+      buying_intent: contact.buying_intent,
+    },
+    5,
+  );
   const persona = derivePersonaSuggestion(contact);
   const angle = deriveOutreachAngle(contact, companyName);
   const emailOpener = deriveEmailOpener(contact, companyName);
@@ -2800,7 +3178,7 @@ function ContactDetailDrawer({
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-5 py-3.5 backdrop-blur">
           <div className="flex items-center gap-2.5">
-            <Avatar name={name} size={36} />
+            <Avatar name={name} size={36} verified={isProviderVerified(contact)} />
             <div className="min-w-0">
               <div className="font-display flex items-center gap-1.5 text-[14px] font-bold text-slate-900">
                 {name}
@@ -2831,7 +3209,7 @@ function ContactDetailDrawer({
           <div className="font-display mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
             LIT Contact Fit
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5" title={FIT_TOOLTIP}>
             <div
               className={[
                 "font-mono flex h-12 w-12 shrink-0 items-center justify-center rounded-md border text-[18px] font-bold",
@@ -2842,14 +3220,26 @@ function ContactDetailDrawer({
             </div>
             <div className="min-w-0">
               <div className="font-display text-[12px] font-bold text-slate-900">
-                {fit.label}
+                {fitBand(fit.score).label}
               </div>
               <div className="font-body mt-0.5 text-[10px] leading-tight text-slate-500">
-                Title fit · Seniority · Department · Email verified · LinkedIn
-                signal
+                Computed from title, department, and seniority match, plus
+                email verification and enrichment depth.
               </div>
             </div>
           </div>
+          {signals.length > 0 && (
+            <div className="mt-2.5">
+              <div className="font-display mb-1 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                LIT Signals
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {signals.map((s) => (
+                  <LitSignalChip key={s.id} signal={s} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Fields */}

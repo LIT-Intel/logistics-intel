@@ -355,11 +355,43 @@ Deno.serve(async (req: Request) => {
     const departments = Array.isArray(body.departments) ? body.departments.filter(Boolean) : [];
     const emailStatuses = Array.isArray(body.email_statuses) ? body.email_statuses.filter(Boolean) : [];
 
-    function buildPeopleBody(scopeFields: Record<string, unknown>): Record<string, unknown> {
+    // Map human-readable department labels from the UI to Apollo's
+    // department/subdepartment taxonomy tokens. Tokens verified against
+    // real Apollo payloads stored in lit_contacts.raw_payload
+    // (departments: master_operations / c_suite / …; subdepartments:
+    // supply_chain / logistics / operations / …).
+    const APOLLO_DEPT_TOKENS: Record<string, string[]> = {
+      "supply chain": ["supply_chain"],
+      logistics: ["logistics"],
+      operations: ["master_operations"],
+      procurement: ["purchasing"],
+      sourcing: ["purchasing"],
+      purchasing: ["purchasing"],
+      customs: ["logistics"],
+      legal: ["master_legal"],
+    };
+    const departmentTokens = Array.from(
+      new Set(
+        departments.flatMap((d) => {
+          const key = String(d).trim().toLowerCase();
+          return APOLLO_DEPT_TOKENS[key] ?? [key.replace(/[\s-]+/g, "_")];
+        }),
+      ),
+    );
+
+    function buildPeopleBody(
+      scopeFields: Record<string, unknown>,
+      opts?: { skipDepartments?: boolean },
+    ): Record<string, unknown> {
       const b: Record<string, unknown> = { page: Math.max(1, Number(body.page) || 1), per_page: perPage, include_similar_titles: body.include_similar_titles === true, ...scopeFields };
       if (titles.length) b.person_titles = titles;
       if (seniorities.length) b.person_seniorities = seniorities;
-      if (departments.length) b.person_departments = departments;
+      if (departmentTokens.length && !opts?.skipDepartments) {
+        // Apollo accepts department + subdepartment tokens on this
+        // filter; send both param spellings for API-version tolerance.
+        b.person_departments = departmentTokens;
+        b.person_department_or_subdepartments = departmentTokens;
+      }
       if (emailStatuses.length) b.contact_email_status = emailStatuses;
       if (orgLocations.length) {
         if (usePersonLocations) b.person_locations = orgLocations;
@@ -402,6 +434,32 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Department-filter relax: an unrecognized department token (or a
+    // company whose staff aren't tagged into those departments) yields
+    // zero people. Retry the strongest scope once WITHOUT the department
+    // filter (titles/seniorities/locations still apply) so the default
+    // Supply Chain + Logistics targeting degrades gracefully instead of
+    // returning an empty panel.
+    let relaxedDepartments = false;
+    if (
+      (!Array.isArray(peopleData?.people) || peopleData.people.length === 0) &&
+      departmentTokens.length > 0
+    ) {
+      const relaxScope: Record<string, unknown> | null = apolloOrg?.id
+        ? { organization_ids: [apolloOrg.id] }
+        : domain
+          ? { q_organization_domains_list: [domain] }
+          : null;
+      if (relaxScope) {
+        const r = await apolloPost(APOLLO_PEOPLE_URL, buildPeopleBody(relaxScope, { skipDepartments: true }));
+        if (r.ok && Array.isArray(r.data?.people) && r.data.people.length > 0) {
+          peopleData = r.data;
+          peopleStatus = r.status;
+          relaxedDepartments = true;
+        }
+      }
+    }
+
     if (peopleStatus !== 0 && peopleStatus >= 400 && peopleStatus !== 404) {
       return new Response(JSON.stringify({
         ok: false,
@@ -409,9 +467,11 @@ Deno.serve(async (req: Request) => {
         status: peopleStatus,
         provider: "apollo",
         capability: "company_contact_discovery",
+        // User-facing copy must stay provider-neutral (owner rule:
+        // provider names never appear in the UI).
         message: peopleStatus === 403
-          ? "Apollo contact discovery is blocked (403). Lemlist is still the primary enrichment provider for known contacts, but this company people-search requires a discovery provider such as Apollo."
-          : `Apollo contact discovery failed (${peopleStatus}).`,
+          ? "LIT contact discovery is temporarily unavailable for this data source. Retrying with the backup source…"
+          : `LIT contact discovery failed (${peopleStatus}).`,
       }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -424,7 +484,7 @@ Deno.serve(async (req: Request) => {
     const droppedCount = normalized.length - filtered.length;
 
     if (contacts.length === 0) {
-      return new Response(JSON.stringify({ ok: true, provider: "apollo", contacts: [], count: 0, match_mode: matchMode, apollo_organization: apolloOrg, plan: planCode, plan_cap: planCap, per_page: perPage, message: "No matching contacts found for this company and filter set." }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true, provider: "apollo", contacts: [], count: 0, match_mode: matchMode, apollo_organization: apolloOrg, plan: planCode, plan_cap: planCap, per_page: perPage, relaxed_departments: relaxedDepartments, message: "No matching contacts found for this company and filter set." }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     await supabase.from("lit_activity_events").insert({
@@ -447,7 +507,7 @@ Deno.serve(async (req: Request) => {
       },
     });
 
-    return new Response(JSON.stringify({ ok: true, provider: "apollo", contacts, count: contacts.length, match_mode: matchMode, apollo_organization: apolloOrg, plan: planCode, plan_cap: planCap, per_page: perPage, dropped_unrelated: droppedCount, pagination: peopleData?.pagination || null }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, provider: "apollo", contacts, count: contacts.length, match_mode: matchMode, apollo_organization: apolloOrg, plan: planCode, plan_cap: planCap, per_page: perPage, dropped_unrelated: droppedCount, relaxed_departments: relaxedDepartments, pagination: peopleData?.pagination || null }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error: any) {
     console.error(JSON.stringify({ fn: "apollo-contact-search", error: error?.message || String(error) }));
     return new Response(JSON.stringify({ ok: false, error: error?.message || "Internal server error", code: "INTERNAL_ERROR" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });

@@ -5121,6 +5121,8 @@ export async function searchApolloContacts(
   message?: string | null;
   error?: string;
   setupRequired?: boolean;
+  /** True when the server relaxed the department filter to find results. */
+  relaxedDepartments?: boolean;
 }> {
   // The edge function reads snake_case. Build the request envelope.
   const requestBody = {
@@ -5141,64 +5143,109 @@ export async function searchApolloContacts(
     page: payload.page ?? 1,
     per_page: payload.perPage ?? 25,
   };
-  const { data, error } = await supabase.functions.invoke(
-    "lemlist-contact-search",
-    { body: requestBody },
-  );
-  if (error) {
-    const msg = String(error.message || "");
-    // Try to read structured error body — supabase-js wraps non-2xx in a
-    // FunctionsHttpError whose `.context` is the underlying Response.
-    try {
-      const ctx: any = (error as any).context;
-      const cloned = ctx?.clone?.();
-      const parsed = await cloned?.json?.();
-      if (parsed && typeof parsed === "object") {
-        return {
-          ok: false,
-          contacts: [],
-          error: parsed.message || parsed.error || msg,
-          setupRequired:
-            parsed.code === "NOT_CONFIGURED" ||
-            parsed.code === "APOLLO_NOT_CONFIGURED" ||
-            parsed.code === "DOMAIN_REQUIRED" ||
-            parsed.code === "COMPANY_NOT_VERIFIED",
-        };
-      }
-    } catch {}
-    // Edge function not deployed yet — surface a friendly setup message.
-    if (/not\s+found|404|FunctionsHttpError|FunctionsRelay/i.test(msg)) {
+
+  const SETUP_CODES = new Set([
+    "NOT_CONFIGURED",
+    "APOLLO_NOT_CONFIGURED",
+    "PROVIDER_NOT_CONFIGURED",
+    "DOMAIN_REQUIRED",
+    "COMPANY_NOT_VERIFIED",
+  ]);
+
+  type SearchOutcome = {
+    ok: boolean;
+    data: any;
+    errorMessage?: string;
+  };
+
+  function extractList(data: any): any[] {
+    return Array.isArray(data?.contacts)
+      ? data.contacts
+      : Array.isArray(data?.people)
+        ? data.people
+        : Array.isArray(data)
+          ? data
+          : [];
+  }
+
+  async function invokeSearchFn(fnName: string): Promise<SearchOutcome> {
+    const { data, error } = await supabase.functions.invoke(fnName, {
+      body: requestBody,
+    });
+    if (error) {
+      const msg = String(error.message || "");
+      // Try to read the structured error body — supabase-js wraps non-2xx
+      // in a FunctionsHttpError whose `.context` is the underlying Response.
+      try {
+        const ctx: any = (error as any).context;
+        const cloned = ctx?.clone?.();
+        const parsed = await cloned?.json?.();
+        if (parsed && typeof parsed === "object") {
+          return {
+            ok: false,
+            data: parsed,
+            errorMessage: parsed.message || parsed.error || msg,
+          };
+        }
+      } catch {}
+      return { ok: false, data: null, errorMessage: msg };
+    }
+    if (data && data.ok === false) {
       return {
         ok: false,
-        contacts: [],
-        error: "Contact search is not configured yet.",
-        setupRequired: true,
+        data,
+        errorMessage: data.message || data.error || "Contact search failed.",
       };
     }
-    throw new Error(`contacts.search: ${msg}`);
+    return { ok: true, data };
   }
-  if (data && data.ok === false) {
+
+  // Apollo-primary discovery (restored 2026-08-12). The July-2026 Lemlist
+  // swap made lemlist-contact-search the only path because Apollo's
+  // people api_search was blocked at the time. Apollo access came back
+  // with the 2026-08-08 Apollo-primary enrichment restore, so discovery
+  // is Apollo-first again with Lemlist as the automatic fallback.
+  // Provider identity is never surfaced to users — everything reads "LIT".
+  let outcome = await invokeSearchFn("apollo-contact-search");
+  let rawList: any[] = outcome.ok ? extractList(outcome.data) : [];
+  if (!outcome.ok || rawList.length === 0) {
+    const fallback = await invokeSearchFn("lemlist-contact-search");
+    const fallbackList = fallback.ok ? extractList(fallback.data) : [];
+    // Prefer the fallback whenever it produced results, or when the
+    // primary hard-failed and the fallback at least ran cleanly.
+    if (fallback.ok && (fallbackList.length > 0 || !outcome.ok)) {
+      outcome = fallback;
+      rawList = fallbackList;
+    }
+  }
+
+  if (!outcome.ok) {
+    const parsed = outcome.data;
+    const msg = outcome.errorMessage || "Contact search failed.";
     return {
       ok: false,
       contacts: [],
-      error: data.message || data.error || "Contact search failed.",
+      error: /FunctionsHttpError|FunctionsRelay|not\s+found|404/i.test(msg) && !parsed
+        ? "Contact search is not configured yet."
+        : msg,
       setupRequired:
-        data.code === "NOT_CONFIGURED" ||
-        data.code === "APOLLO_NOT_CONFIGURED" ||
-        data.code === "DOMAIN_REQUIRED" ||
-        data.code === "COMPANY_NOT_VERIFIED",
+        SETUP_CODES.has(String(parsed?.code || "")) ||
+        (!parsed && /not\s+found|404|FunctionsHttpError|FunctionsRelay/i.test(msg)),
     };
   }
-  const rawList: any[] = Array.isArray(data?.contacts)
-    ? data.contacts
-    : Array.isArray(data?.people)
-      ? data.people
-      : Array.isArray(data)
-        ? data
-        : [];
+
+  const data = outcome.data;
   const contacts: ApolloContactPreview[] = rawList.map((p) => {
     const firstName = p.first_name ?? null;
     const lastName = p.last_name ?? null;
+    // Apollo search rows carry the full provider record in raw_payload —
+    // pull avatar/company facts from it when top-level fields are absent.
+    const rp =
+      p.raw_payload && typeof p.raw_payload === "object" ? p.raw_payload : {};
+    const rpOrg =
+      rp.organization && typeof rp.organization === "object"
+        ? rp.organization
+        : {};
     return {
       apollo_person_id: p.apollo_person_id ?? p.source_contact_key ?? p.id ?? null,
       source_contact_key: p.source_contact_key ?? p.apollo_person_id ?? p.id ?? null,
@@ -5230,10 +5277,20 @@ export async function searchApolloContacts(
       phone_status: p.phone_status ?? null,
       email: p.email ?? null,
       linkedin_url: p.linkedin_url ?? p.linkedin ?? null,
-      avatar_url: p.avatar_url ?? p.photo_url ?? p.picture ?? null,
-      company_size: p.company_size ?? null,
-      company_website: p.company_website ?? p.companyWebsite ?? null,
-      company_industry: p.company_industry ?? p.companyIndustry ?? p.industry ?? null,
+      avatar_url: p.avatar_url ?? p.photo_url ?? p.picture ?? rp.photo_url ?? null,
+      company_size:
+        p.company_size ??
+        (rpOrg.estimated_num_employees != null
+          ? String(rpOrg.estimated_num_employees)
+          : null),
+      company_website:
+        p.company_website ?? p.companyWebsite ?? rpOrg.website_url ?? null,
+      company_industry:
+        p.company_industry ??
+        p.companyIndustry ??
+        p.industry ??
+        rpOrg.industry ??
+        null,
       fit_score: typeof p.fit_score === "number" ? p.fit_score : null,
       fit_reasons: Array.isArray(p.fit_reasons) ? p.fit_reasons : null,
       recommended: p.recommended === true,
@@ -5242,6 +5299,12 @@ export async function searchApolloContacts(
       enrichment_status: "preview",
     };
   });
+  // Apollo responses carry a `pagination` block instead of `has_more`.
+  const pagination = data?.pagination ?? null;
+  const paginatedHasMore =
+    pagination &&
+    Number(pagination.page) > 0 &&
+    Number(pagination.total_pages) > Number(pagination.page);
   return {
     ok: true,
     contacts,
@@ -5249,10 +5312,16 @@ export async function searchApolloContacts(
     organization: (data?.apollo_organization as ApolloOrganizationMatch) ?? null,
     plan: data?.plan ?? null,
     planCap: typeof data?.plan_cap === "number" ? data.plan_cap : null,
-    total: typeof data?.total === "number" ? data.total : null,
-    hasMore: data?.has_more === true,
+    total:
+      typeof data?.total === "number"
+        ? data.total
+        : typeof pagination?.total_entries === "number"
+          ? pagination.total_entries
+          : null,
+    hasMore: data?.has_more === true || paginatedHasMore === true,
     recommendedCount: typeof data?.recommended_count === "number" ? data.recommended_count : null,
     message: data?.message ?? null,
+    relaxedDepartments: data?.relaxed_departments === true,
   };
 }
 
