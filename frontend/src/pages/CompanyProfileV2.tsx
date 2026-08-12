@@ -1241,15 +1241,19 @@ function ProfilePanel({ rawId }: { rawId: string }) {
     activeProfile?.lcl_count,
   ]);
 
-  // Phase 4 — refresh-proof market-rate writeback. Persists the lane-matched
-  // spend to `lit_companies.est_spend_12m` so Command Center / Dashboard list
-  // cards stop showing the IY total_shipping_cost. Runs once per company,
-  // gated on benchmarkLanes being loaded so we never write the broken value.
+  // Phase 4.1 — SERVER-SIDE market-rate writeback (CEO trust P0). The
+  // lane-matched est_spend_12m used to be computed in this component and
+  // written to `lit_companies` straight from the browser — a data-integrity
+  // liability (any client could persist any number). Both the computation
+  // and the write now live in the `profile-kpi-writeback` edge function
+  // (JWT-verified via _shared/auth.ts requireUser): it recomputes spend
+  // from the server-side snapshot (`lit_importyeti_company_snapshot`) +
+  // FBX benchmarks (`lit_freight_rate_benchmarks`) with the same tiered
+  // formula, then persists est_spend_12m. Fired once per company,
+  // fire-and-forget — the page never blocks on it and ignores failures.
   const marketSpendWrittenRef = useRef<string | null>(null);
   useEffect(() => {
     if (!profile || !companyId) return;
-    if (!benchmarkLanes.length) return;
-    if (marketSpendBreakdown == null || marketSpendBreakdown <= 0) return;
     const hasSnapshotData =
       Array.isArray(profile?.recentBols) && profile.recentBols.length > 0;
     if (!hasSnapshotData) return;
@@ -1260,28 +1264,18 @@ function ProfilePanel({ rawId }: { rawId: string }) {
       profile.key ||
       profile.companyId ||
       `company/${String(companyId).replace(/^company\//, "")}`;
-    const bareSlug = String(sourceKey).replace(/^company\//, "");
-    const candidates = Array.from(
-      new Set([sourceKey, `company/${bareSlug}`, bareSlug].filter(Boolean)),
-    );
 
-    (async () => {
-      try {
-        const { error } = await supabase
-          .from("lit_companies")
-          .update({ est_spend_12m: Math.round(marketSpendBreakdown) })
-          .in("source_company_key", candidates);
+    supabase.functions
+      .invoke("profile-kpi-writeback", { body: { companyKey: sourceKey } })
+      .then(({ error }) => {
         if (error) {
-          console.warn(
-            "[CompanyProfileV2] market-spend writeback failed",
-            error,
-          );
+          console.warn("[CompanyProfileV2] kpi writeback failed", error);
         }
-      } catch (err) {
-        console.warn("[CompanyProfileV2] market-spend writeback threw", err);
-      }
-    })();
-  }, [profile, companyId, benchmarkLanes.length, marketSpendBreakdown]);
+      })
+      .catch((err) => {
+        console.warn("[CompanyProfileV2] kpi writeback threw", err);
+      });
+  }, [profile, companyId]);
 
   // Year-aware EST. SPEND — founder directive:
   //   - selectedYear === currentYear → trailing 12M (`marketSpendBreakdown`)

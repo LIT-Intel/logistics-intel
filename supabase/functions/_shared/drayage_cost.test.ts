@@ -49,3 +49,26 @@ Deno.test("estimateDrayageCost — LCL factor reduces cost", () => {
   });
   assert(lcl.cost < fcl.cost, `lcl ${lcl.cost} should be < fcl ${fcl.cost}`);
 });
+
+Deno.test("estimateDrayageCost — diesel-indexed fuel surcharge (v2)", () => {
+  const base = {
+    pod_unloc: "USLGB", dest_city: "Chicago", dest_state: "IL",
+    container_count: 1, container_type: "40FT" as const, miles: 2015,
+  };
+  const v1 = estimateDrayageCost(base);
+  assertEquals(v1.formula_version, "v1"); // no diesel price → flat 22%
+
+  const v2 = estimateDrayageCost({ ...base, diesel_usd_gal: 5.257 });
+  assertEquals(v2.formula_version, "v2");
+  // At $5.257/gal: (5.257 − 1.20) / 6.0 ≈ $0.676/mi — close to the legacy
+  // 22% × $3.15/mi ≈ $0.693/mi, so v2 should land within ~10% of v1.
+  assert(
+    Math.abs(v2.cost - v1.cost) / v1.cost < 0.1,
+    `v2=${v2.cost} v1=${v1.cost} should be within 10%`,
+  );
+
+  // Diesel at/below the $1.20 peg → zero fuel surcharge, still v2.
+  const pegged = estimateDrayageCost({ ...base, diesel_usd_gal: 1.2 });
+  assertEquals(pegged.formula_version, "v2");
+  assert(pegged.cost < v2.cost, `pegged ${pegged.cost} should be < v2 ${v2.cost}`);
+});

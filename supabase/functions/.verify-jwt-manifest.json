@@ -30,6 +30,7 @@
     "firmographics-backfill-once",
     "freight-rate-fetcher",
     "freightos-benchmark-sync",
+    "fuel-index-refresh",
     "generate-signals",
     "get-billing-status",
     "lusha-contact-search",

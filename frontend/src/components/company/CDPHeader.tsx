@@ -161,7 +161,9 @@ export default function CDPHeader({
         kpis.spendAllTime != null && Number(kpis.spendAllTime) > 0
           ? formatSpend(Number(kpis.spendAllTime))
           : "—",
-      trend: "Cumulative · current rates",
+      // Honesty label (CEO trust P0): this is a modeled figure — TEU ×
+      // current FBX benchmark rates — not importer-reported spend.
+      trend: "modeled @ current FBX rates",
     },
     {
       // Annual / trailing-12M companion to ALL-TIME. Year-aware label
@@ -175,10 +177,9 @@ export default function CDPHeader({
         kpis.spend != null && Number(kpis.spend) > 0
           ? formatSpend(Number(kpis.spend))
           : "—",
-      trend:
-        kpis.spendLabel && kpis.spendLabel.includes("(20")
-          ? "Calendar year · current rates"
-          : "Trailing 12 months",
+      // Honesty label (CEO trust P0): modeled figure, not reported spend.
+      // Temporal scope already lives in the label ("(12M)" / "(2025)").
+      trend: "modeled @ current FBX rates",
     },
     {
       label: "SHIPMENTS (12M)",

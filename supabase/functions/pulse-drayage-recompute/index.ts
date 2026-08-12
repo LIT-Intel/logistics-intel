@@ -8,7 +8,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { verifyCronAuth } from "../_shared/cron_auth.ts";
-import { estimateDrayageCost, normalizeContainerType } from "../_shared/drayage_cost.ts";
+import { estimateDrayageCost, fetchLatestDieselPrice, normalizeContainerType } from "../_shared/drayage_cost.ts";
 import { routeMiles, normalizeCityKey, haversineMiles as haversineMilesFromCoords } from "../_shared/osrm_client.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -116,6 +116,11 @@ serve(async (req) => {
   });
   if (error) return json({ ok: false, error: error.message }, 500);
 
+  // Latest EIA weekly diesel price ($/gal) from lit_fuel_index — drives the
+  // diesel-indexed fuel surcharge (formula v2). Null → estimator falls back
+  // to the legacy flat 22% (v1). Fetched once per invocation.
+  const dieselUsdGal = await fetchLatestDieselPrice(supabase);
+
   let computed = 0, skipped = 0, missing_coords = 0, inferred_pod_count = 0, already_done = 0;
   for (const r of (rows as any[]) || []) {
     if (computed >= BATCH_CAP) break;
@@ -176,6 +181,7 @@ serve(async (req) => {
       container_count: r.container_count || 1,
       container_type: container_type as any,
       miles,
+      diesel_usd_gal: dieselUsdGal,
     });
     // Manual upsert: the unique index uses COALESCE expressions, which PostgREST
     // can't reference via onConflict. So we look up by key, then update or insert.

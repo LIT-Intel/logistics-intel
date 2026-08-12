@@ -530,6 +530,11 @@ function SummaryView({
         containerProfile={containerProfile}
         reducedMotion={reducedMotion}
         onOpenLanesTab={onOpenLanesTab}
+        shipments12mTotal={
+          Number(_profile?.routeKpis?.shipmentsLast12m) ||
+          Number(_profile?.shipments_last_12m) ||
+          null
+        }
       />
       <CadenceAndModalMix
         cadence={cadence}
@@ -2019,6 +2024,7 @@ function TopLanesCard({
   containerProfile,
   reducedMotion = false,
   onOpenLanesTab,
+  shipments12mTotal = null,
 }: {
   canonicalLanes: any[];
   globeLanes?: any[];
@@ -2026,6 +2032,12 @@ function TopLanesCard({
   containerProfile?: ContainerProfile;
   reducedMotion?: boolean;
   onOpenLanesTab?: () => void;
+  /**
+   * Snapshot's 12-mo shipment total (parsed_summary.shipments_last_12m →
+   * routeKpis.shipmentsLast12m). Drives the honesty caption's "~X% of
+   * 12-mo volume" share. Null/0 = unknown → the % is omitted.
+   */
+  shipments12mTotal?: number | null;
 }) {
   // Persisted globe / map preference — shared with the Dashboard's GlobeCard
   // so a user who picks Map view on one surface sees Map on the other.
@@ -2294,6 +2306,28 @@ function TopLanesCard({
             orderedKeys={orderedKeys as string[]}
             reducedMotion={reducedMotion}
           />
+        </div>
+      )}
+
+      {/* Honesty label (CEO trust P0) — lanes are derived from the snapshot's
+          recent-BOL sample, not the full 12-mo manifest. Disclose the sample
+          size, and its share of 12-mo volume when the snapshot reports a
+          12-mo total, so a 50-BOL sample is never mistaken for the book. */}
+      {recentBols.length > 0 && (
+        <div className="border-t border-slate-100 px-3 py-2 sm:px-4">
+          <p className="font-body m-0 text-[10.5px] leading-snug text-slate-400">
+            {(() => {
+              const n = recentBols.length;
+              const total = Number(shipments12mTotal);
+              const pct =
+                Number.isFinite(total) && total > 0
+                  ? Math.min(100, Math.max(1, Math.round((n / total) * 100)))
+                  : null;
+              return `Lanes derived from the ${n.toLocaleString()} most recent shipments${
+                pct != null ? ` (~${pct}% of 12-mo volume)` : ""
+              }`;
+            })()}
+          </p>
         </div>
       )}
     </LitSectionCard>
