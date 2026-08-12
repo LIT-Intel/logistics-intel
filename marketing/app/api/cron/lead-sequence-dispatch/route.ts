@@ -92,12 +92,14 @@ function checkAuth(req: NextRequest): Response | null {
   // Two accepted callers:
   //  1. Vercel Cron — CRON_SECRET in Authorization (Hobby plan caps this
   //     path at once daily; kept as the backstop schedule).
-  //  2. The marketing-cron-relay Supabase edge fn — sends the shared
-  //     service-role key in x-lit-cron. That's the pg_cron-driven path
-  //     that gives us sub-daily dispatch without a Vercel plan upgrade.
-  const internal = req.headers.get("x-lit-cron");
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const internalOk = Boolean(serviceKey && internal && internal === serviceKey);
+  //  2. The marketing-cron-relay Supabase edge fn — forwards the shared
+  //     LIT_CRON_SECRET in X-Internal-Cron. That's the pg_cron-driven
+  //     path giving sub-daily dispatch without a Vercel plan upgrade.
+  //     (Service-role-key comparison failed in practice: the two infra
+  //     sides hold different key FORMATS for the same project.)
+  const internal = req.headers.get("x-internal-cron");
+  const internalSecret = process.env.LIT_CRON_SECRET;
+  const internalOk = Boolean(internalSecret && internal && internal === internalSecret);
   if (auth !== `Bearer ${expected}` && !internalOk) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,

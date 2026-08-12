@@ -43,13 +43,12 @@ Deno.serve(async (req) => {
   }
   if (!ALLOWED_PATHS.has(path)) return json({ error: "unknown_path", path }, 400);
 
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!serviceKey) return json({ error: "service_key_unset" }, 503);
-
   try {
+    // Forward the already-verified LIT_CRON_SECRET — the marketing route
+    // compares it against its own LIT_CRON_SECRET env var.
     const res = await fetch(`${MARKETING_BASE}/${path}`, {
       method: "GET",
-      headers: { "x-lit-cron": serviceKey },
+      headers: { "X-Internal-Cron": cronSecret },
       signal: AbortSignal.timeout(55000),
     });
     const text = await res.text();
