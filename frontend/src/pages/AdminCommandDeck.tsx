@@ -42,6 +42,8 @@ type User360 = {
   activity_30d: number;
   enrichments_total: number;
   profile_views_total: number;
+  signup_source: string | null;
+  signup_landing: string | null;
 };
 
 const SECTIONS = [
@@ -391,7 +393,7 @@ export default function AdminCommandDeck() {
                 <table className="w-full min-w-[880px]">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/60">
-                      {["User", "Org / Role", "Plan", "Last seen", "Activity 30d", "Unlocks", "Enrichments"].map((h) => (
+                      {["User", "Org / Role", "Plan", "Source", "Last seen", "Activity 30d", "Unlocks", "Enrichments"].map((h) => (
                         <th key={h} className="font-display px-4 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
                           {h}
                         </th>
@@ -419,6 +421,12 @@ export default function AdminCommandDeck() {
                           <div className="font-body text-[10.5px] capitalize text-slate-400">{u.org_role || ""}</div>
                         </td>
                         <td className="px-4 py-2.5"><PlanPill plan={u.plan_code} status={u.sub_status} /></td>
+                        <td className="px-4 py-2.5">
+                          <div className="font-body text-[12px] text-slate-700">{u.signup_source || "—"}</div>
+                          {u.signup_landing && (
+                            <div className="font-mono max-w-[140px] truncate text-[10px] text-slate-400" title={u.signup_landing}>{u.signup_landing}</div>
+                          )}
+                        </td>
                         <td className="font-mono px-4 py-2.5 text-[11px] text-slate-500">
                           {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : "never"}
                         </td>

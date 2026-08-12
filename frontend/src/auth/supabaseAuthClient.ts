@@ -45,6 +45,8 @@ export async function signInWithEmailPassword(email: string, password: string) {
   return data.user;
 }
 
+import { readAttribution } from '@/lib/attribution';
+
 // Email/Password Registration
 // Returns the full data object so callers can check data.session:
 //   - data.session !== null  → email confirmation disabled; user is immediately signed in
@@ -63,6 +65,7 @@ export async function registerWithEmailPassword({
   if (!auth) throw new Error('Auth not configured');
   if (!email || !password) throw new Error('Email and password required');
 
+  const attribution = readAttribution();
   const { data, error } = await auth.auth.signUp({
     email,
     password,
@@ -73,6 +76,9 @@ export async function registerWithEmailPassword({
         // Wizard removed 2026-08-06 — DB triggers provision everything at
         // signup. Kept true (not dropped) so legacy onboarding checks pass.
         onboarding_completed: true,
+        // First-touch source (lit_attrib cookie). OAuth signups can't carry
+        // metadata here — AuthProvider backfills them post-first-session.
+        ...(attribution ? { attribution } : {}),
       },
       emailRedirectTo:
         emailRedirectTo || `${window.location.origin}/auth/callback`,

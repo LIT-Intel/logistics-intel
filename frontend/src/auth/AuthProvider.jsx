@@ -10,6 +10,32 @@ import {
 } from './supabaseAuthClient';
 import { getStoredRef, clearStoredRef } from '@/lib/affiliateRef';
 import { identifySentryUser, clearSentryUser } from '@/lib/sentry';
+import { captureAppAttribution, readAttribution } from '@/lib/attribution';
+
+// Record first-touch source (UTMs / referrer / landing) for visitors who
+// land directly on the app without passing through the marketing site.
+// No-op when the marketing middleware already set the lit_attrib cookie.
+captureAppAttribution();
+
+// OAuth signups (Google/Microsoft) can't carry metadata through the
+// redirect, so their first-touch source is stamped here on first session
+// instead. Guarded to genuinely-new accounts (48h) so a returning veteran
+// with a fresh cookie doesn't get retroactively "attributed".
+let attributionBackfillDone = false;
+async function backfillAttributionIfNew(user) {
+  if (attributionBackfillDone || !supabase || !user) return;
+  attributionBackfillDone = true;
+  try {
+    if (user.user_metadata?.attribution) return;
+    const attribution = readAttribution();
+    if (!attribution) return;
+    const ageMs = Date.now() - new Date(user.created_at || 0).getTime();
+    if (!Number.isFinite(ageMs) || ageMs > 48 * 3600 * 1000) return;
+    await supabase.auth.updateUser({ data: { attribution } });
+  } catch {
+    // best-effort — never block auth on attribution
+  }
+}
 
 // Fire-and-forget claim of any pending affiliate referral once the user
 // authenticates. The edge function is idempotent (a row in
@@ -175,6 +201,7 @@ export function AuthProvider({ children }) {
         // Best-effort affiliate referral claim — does nothing if no
         // ?ref= was captured before sign-up.
         void claimAffiliateReferralIfAny();
+        void backfillAttributionIfNew(merged);
 
         const membership = await fetchPrimaryOrgMembership(u.id);
 
