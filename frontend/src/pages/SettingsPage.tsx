@@ -617,7 +617,7 @@ export default function SettingsPage() {
     }));
   };
 
-  const onInviteMember = async (email: string, role: string) => {
+  const onInviteMember = async (email: string, role: string, title?: string) => {
     if (!orgId) return { error: "No organization found for this user" };
 
     // Seat capacity check — counts only confirmed members, not pending
@@ -644,7 +644,7 @@ export default function SettingsPage() {
     try {
       const { data: sendResult, error: sendError } = await supabase.functions.invoke(
         "send-org-invite",
-        { body: { org_id: orgId, email: email.trim().toLowerCase(), role } },
+        { body: { org_id: orgId, email: email.trim().toLowerCase(), role, title: (title || "").trim() || undefined } },
       );
       if (sendError) {
         inviteError = sendError.message || "Failed to send invite";

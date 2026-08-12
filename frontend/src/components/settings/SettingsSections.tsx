@@ -518,7 +518,7 @@ export function WorkspaceSection(props: {
   members?: any[];
   invites?: any[];
   seatLimit?: number;
-  onInvite?: (email: string, role: string) => Promise<{ error?: string } | void>;
+  onInvite?: (email: string, role: string, title?: string) => Promise<{ error?: string } | void>;
   onRevoke?: (memberId: string) => Promise<{ error?: string } | void>;
   onUpdateRole?: (memberId: string, role: string) => Promise<{ error?: string } | void>;
   onRevokeInvite?: (inviteId: string) => Promise<{ error?: string } | void>;
@@ -528,6 +528,7 @@ export function WorkspaceSection(props: {
   const [tab, setTab] = useState<"members" | "invites" | "roles">("members");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
+  const [inviteTitle, setInviteTitle] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // Per-member page permissions (2026-08-11). permOpenKey = member row whose
@@ -709,30 +710,51 @@ export function WorkspaceSection(props: {
           {tab === "members" && (
             <SCard>
               {props.isAdmin && (
-                <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                  <SInput
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="teammate@company.com"
-                    style={{ flex: 1 }}
-                  />
-                  <SSelect
-                    value={inviteRole}
-                    onChange={(e) => setInviteRole((e.target as HTMLSelectElement).value)}
-                    options={[{ value: "member", label: "Member" }, { value: "admin", label: "Admin" }]}
-                    style={{ width: 140 }}
-                  />
-                  <button
-                    style={sBtnPrimary}
-                    onClick={async () => {
-                      setErr(null); setMsg(null);
-                      const result = await props.onInvite?.(inviteEmail, inviteRole);
-                      if ((result as any)?.error) setErr((result as any).error);
-                      else { setMsg("Invite sent"); setInviteEmail(""); setInviteRole("member"); }
-                    }}
-                  >
-                    <Plus size={13} /> Invite
-                  </button>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <SInput
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      placeholder="teammate@company.com"
+                      style={{ flex: 2, minWidth: 200 }}
+                    />
+                    <SInput
+                      value={inviteTitle}
+                      onChange={(e) => setInviteTitle(e.target.value)}
+                      placeholder="Job title (e.g. VP of Business Development)"
+                      list="lit-title-presets"
+                      style={{ flex: 2, minWidth: 200 }}
+                    />
+                    <datalist id="lit-title-presets">
+                      <option value="VP of Business Development" />
+                      <option value="Sales Manager" />
+                      <option value="Account Executive" />
+                      <option value="SDR" />
+                      <option value="Operations Manager" />
+                      <option value="Pricing Analyst" />
+                      <option value="Branch Manager" />
+                    </datalist>
+                    <SSelect
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole((e.target as HTMLSelectElement).value)}
+                      options={[{ value: "member", label: "Member" }, { value: "admin", label: "Admin" }]}
+                      style={{ width: 140 }}
+                    />
+                    <button
+                      style={sBtnPrimary}
+                      onClick={async () => {
+                        setErr(null); setMsg(null);
+                        const result = await props.onInvite?.(inviteEmail, inviteRole, inviteTitle);
+                        if ((result as any)?.error) setErr((result as any).error);
+                        else { setMsg("Invite sent"); setInviteEmail(""); setInviteRole("member"); setInviteTitle(""); }
+                      }}
+                    >
+                      <Plus size={13} /> Invite
+                    </button>
+                  </div>
+                  <div style={{ marginTop: 6, fontFamily: "DM Sans,sans-serif", fontSize: 11.5, color: "#94a3b8" }}>
+                    Job title is their identity (shows on the roster); Member/Admin is their authority. Fine-grained page access is set per member after they join via the "Pages" panel below.
+                  </div>
                 </div>
               )}
               <div style={{ display: "flex", flexDirection: "column" }}>

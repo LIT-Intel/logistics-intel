@@ -75,7 +75,7 @@ serve(async (req) => {
   //    table's RLS policy.
   const { data: invite, error: inviteErr } = await admin
     .from("org_invites")
-    .select("id, org_id, email, role, status, token, expires_at")
+    .select("id, org_id, email, role, title, status, token, expires_at")
     .eq("token", token)
     .maybeSingle();
 
@@ -175,6 +175,7 @@ serve(async (req) => {
       org_id: invite.org_id,
       user_id: user.id,
       role: invite.role || "member",
+      title: invite.title || null,
     });
     if (insertErr) {
       console.error("[accept-workspace-invite] member insert failed", insertErr);

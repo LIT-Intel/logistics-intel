@@ -116,12 +116,17 @@ serve(async (req) => {
     const bodyOrgId = String(body?.org_id || "").trim();
     const bodyEmail = String(body?.email || "").trim().toLowerCase();
     const bodyRole = String(body?.role || "member").trim().toLowerCase() || "member";
+    // Optional job title (e.g. "VP of Business Development") — identity,
+    // not authority. Carried on the invite and copied to org_members.title
+    // by the accept flows.
+    const bodyTitle = String((body as any)?.title || "").trim().slice(0, 120) || null;
 
     const inviteCols = `
         id,
         org_id,
         email,
         role,
+        title,
         token,
         status,
         expires_at,
@@ -245,6 +250,7 @@ serve(async (req) => {
             org_id: targetOrgId,
             email: bodyEmail,
             role: bodyRole,
+            title: bodyTitle,
             token,
             status: "pending",
             expires_at: expiresAt,
@@ -336,7 +342,7 @@ serve(async (req) => {
                 </p>
 
                 <div style="margin:0 0 18px 0; display:inline-block; font-size:12px; line-height:18px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:#4338ca; background-color:#eef2ff; padding:8px 12px; border-radius:999px;">
-                  ${String(invite.role || "member").toUpperCase()} ACCESS
+                  ${invite.title ? `${String(invite.title).toUpperCase()} · ` : ""}${String(invite.role || "member").toUpperCase()} ACCESS
                 </div>
 
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:10px 0 22px 0;">

@@ -92,7 +92,7 @@ serve(async (req) => {
   // ---- 2. Look up the invite (service-role bypasses RLS) -------------------
   const { data: invite, error: inviteErr } = await admin
     .from("org_invites")
-    .select("id, org_id, email, role, status, token, expires_at")
+    .select("id, org_id, email, role, title, status, token, expires_at")
     .eq("token", token)
     .maybeSingle();
 
@@ -247,6 +247,7 @@ serve(async (req) => {
     org_id: invite.org_id,
     user_id: newUser.id,
     role: invite.role || "member",
+    title: invite.title || null,
     status: "active",
     email,
     full_name: fullName,
