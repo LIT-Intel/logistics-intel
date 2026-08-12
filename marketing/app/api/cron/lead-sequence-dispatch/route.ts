@@ -89,9 +89,16 @@ function checkAuth(req: NextRequest): Response | null {
     });
   }
   const auth = req.headers.get("authorization");
-  // Vercel Cron authenticates with CRON_SECRET in Authorization. It does
-  // not guarantee a separate x-vercel-cron header.
-  if (auth !== `Bearer ${expected}`) {
+  // Two accepted callers:
+  //  1. Vercel Cron — CRON_SECRET in Authorization (Hobby plan caps this
+  //     path at once daily; kept as the backstop schedule).
+  //  2. The marketing-cron-relay Supabase edge fn — sends the shared
+  //     service-role key in x-lit-cron. That's the pg_cron-driven path
+  //     that gives us sub-daily dispatch without a Vercel plan upgrade.
+  const internal = req.headers.get("x-lit-cron");
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const internalOk = Boolean(serviceKey && internal && internal === serviceKey);
+  if (auth !== `Bearer ${expected}` && !internalOk) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { "content-type": "application/json" },

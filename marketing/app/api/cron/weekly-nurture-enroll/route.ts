@@ -51,7 +51,12 @@ function checkAuth(req: NextRequest): Response | null {
   if (!expected) {
     return json({ error: "cron_secret_unset" }, 503);
   }
-  if (req.headers.get("authorization") !== `Bearer ${expected}`) {
+  // Vercel Cron (Authorization) or marketing-cron-relay edge fn
+  // (x-lit-cron = shared service-role key) — see lead-sequence-dispatch.
+  const internal = req.headers.get("x-lit-cron");
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const internalOk = Boolean(serviceKey && internal && internal === serviceKey);
+  if (req.headers.get("authorization") !== `Bearer ${expected}` && !internalOk) {
     return json({ error: "unauthorized" }, 401);
   }
   return null;
