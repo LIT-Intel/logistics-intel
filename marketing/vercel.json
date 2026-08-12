@@ -25,6 +25,10 @@
       "schedule": "30 13 * * *"
     },
     {
+      "path": "/api/cron/email-autogen",
+      "schedule": "0 14 * * 5"
+    },
+    {
       "path": "/api/cron/trade-lane-refresh",
       "schedule": "0 2 * * *"
     },

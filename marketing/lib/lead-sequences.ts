@@ -32,6 +32,7 @@ export type SequenceKey =
   | "cold-fmcsa-outbound"
   | "meeting-no-show"
   | "lit-weekly"
+  | "lit-weekly-gen"
   | "high-intent-offer";
 
 export type SequenceStep = {
@@ -322,6 +323,21 @@ export const SEQUENCES: Record<SequenceKey, SequenceStep[]> = {
       templateId: null,
       subject: "The quote that arrives first wins — usually",
       purpose: "Play: speed-to-quote via pre-built account snapshots",
+    },
+  ],
+  // Friday content engine (email-autogen cron): Claude writes one brand-new
+  // play per week, stored in lit_generated_emails; queue rows carry
+  // template_id 'gen:<id>' and the dispatcher renders the stored def
+  // through the house layout. Subject here is a placeholder — the real
+  // subject lives on the generated row.
+  "lit-weekly-gen": [
+    {
+      step: 1,
+      delayHours: 0,
+      envTemplateVar: "RESEND_TPL_WEEKLY_GEN",
+      templateId: null,
+      subject: "LIT Signals — this week's play",
+      purpose: "AI-generated weekly play (Friday touch)",
     },
   ],
   // Enqueued by the engagement-branch cron when a non-signed-up recipient

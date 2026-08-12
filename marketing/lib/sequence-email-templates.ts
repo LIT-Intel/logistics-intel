@@ -49,9 +49,9 @@ export type SequenceEmailVars = {
   preferencesUrl: string;
 };
 
-type BuiltEmail = { subject: string; html: string; text: string };
+export type BuiltEmail = { subject: string; html: string; text: string };
 
-type EmailDef = {
+export type EmailDef = {
   subject: string;
   previewText: string;
   headline: string;
@@ -522,4 +522,26 @@ export function renderSequenceEmail(
   const def = CONTENT[`${sequenceKey}:${step}`];
   if (!def) return null;
   return layout(def(vars), vars);
+}
+
+/**
+ * Render an arbitrary EmailDef (e.g. an AI-generated play stored in
+ * lit_generated_emails) through the same house layout, personalized
+ * per-recipient. Prepends the greeting so generated defs don't have to
+ * carry one.
+ */
+export function renderEmailDef(def: EmailDef, vars: SequenceEmailVars): BuiltEmail {
+  const withGreeting: EmailDef = {
+    ...def,
+    paragraphs: [hi(vars), ...def.paragraphs],
+  };
+  return layout(withGreeting, vars);
+}
+
+/** Subjects of the hand-written lit-weekly plays — fed to the generator
+ *  so new plays never repeat existing angles. */
+export function existingWeeklySubjects(): string[] {
+  return Object.keys(CONTENT)
+    .filter((k) => k.startsWith("lit-weekly:"))
+    .map((k) => CONTENT[k]({ firstName: "", competitor: "", offer: "", preferencesUrl: "" }).subject);
 }

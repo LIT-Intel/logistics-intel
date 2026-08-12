@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { SEQUENCES, type SequenceKey, type SequenceStep } from "@/lib/lead-sequences";
 import { signPreferencesToken } from "@/lib/preferences-token";
-import { renderSequenceEmail } from "@/lib/sequence-email-templates";
+import { renderSequenceEmail, renderEmailDef, type EmailDef } from "@/lib/sequence-email-templates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -166,6 +166,7 @@ type PickedVariant = { variantId: string; templateId: string } | null;
 async function sendOne(
   row: QueueRow,
   pickedVariant: PickedVariant,
+  generatedDef: EmailDef | null,
 ): Promise<{ ok: boolean; status: number; reason?: string }> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -206,16 +207,23 @@ async function sendOne(
   //   3. Queue row's template_id (snapshot at enqueue time).
   //   4. Sequence-step env-var lookup (the historical default).
   //   5. Inline HTML stub (renderFallbackHtml).
-  const coded = renderSequenceEmail(row.sequence_key, row.step, {
-    firstName,
-    competitor,
-    offer: row.offer ?? "",
-    preferencesUrl,
-  });
+  // AI-generated defs (queue template_id 'gen:<uuid>' → lit_generated_emails)
+  // outrank the static registry: they're week-specific content rendered
+  // through the identical house layout, personalized per recipient.
+  const coded = generatedDef
+    ? renderEmailDef(generatedDef, { firstName, competitor, offer: row.offer ?? "", preferencesUrl })
+    : renderSequenceEmail(row.sequence_key, row.step, {
+        firstName,
+        competitor,
+        offer: row.offer ?? "",
+        preferencesUrl,
+      });
 
+  // 'gen:' ids are lit_generated_emails keys, never Resend template ids.
+  const rowTemplateId = row.template_id?.startsWith("gen:") ? null : row.template_id;
   const resolvedTemplateId =
     pickedVariant?.templateId ||
-    row.template_id ||
+    rowTemplateId ||
     (seqStep?.envTemplateVar ? process.env[seqStep.envTemplateVar] || null : null);
 
   const fromAddress = getFromAddress();
@@ -306,6 +314,31 @@ export async function GET(req: NextRequest) {
   const queue: QueueRow[] = (rows ?? []) as QueueRow[];
   let succeeded = 0;
   let failed = 0;
+
+  // Batch-load AI-generated defs referenced by this batch ('gen:<uuid>'
+  // template ids → lit_generated_emails). One query, keyed lookup below.
+  const genIds = Array.from(
+    new Set(
+      queue
+        .map((r) => r.template_id)
+        .filter((t): t is string => Boolean(t && t.startsWith("gen:")))
+        .map((t) => t.slice(4)),
+    ),
+  );
+  const genDefs = new Map<string, EmailDef>();
+  if (genIds.length) {
+    const { data: genRows, error: genErr } = await supabase
+      .from("lit_generated_emails")
+      .select("id, def")
+      .in("id", genIds);
+    if (genErr) {
+      console.error("[lead-sequence-dispatch] generated-def load failed", genErr.message);
+    } else {
+      for (const g of genRows ?? []) {
+        if (g?.id && g?.def) genDefs.set(String(g.id), g.def as EmailDef);
+      }
+    }
+  }
 
   // Process sequentially. Resend's free/paid tiers cap around ~10 rps and
   // sequential processing keeps a single cron invocation well under the
@@ -410,7 +443,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const result = await sendOne(row, pickedVariant);
+    const generatedDef = row.template_id?.startsWith("gen:")
+      ? genDefs.get(row.template_id.slice(4)) ?? null
+      : null;
+    const result = await sendOne(row, pickedVariant, generatedDef);
     if (result.ok) {
       // Conditional update: only flip sent_at when it's still null. This
       // is our soft idempotency guard against concurrent invocations.
