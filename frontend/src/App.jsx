@@ -44,6 +44,7 @@ const AdminDashboard = lazy(() => import("@/pages/AdminDashboardV2"));
 const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
 const AdminDemoRequests = lazy(() => import("@/pages/AdminDemoRequests"));
 const DemoInvites = lazy(() => import("@/pages/DemoInvites"));
+const AdminCommandDeck = lazy(() => import("@/pages/AdminCommandDeck"));
 const AdminSubscribers = lazy(() => import("@/pages/AdminSubscribers"));
 const AdminFmcsaImport = lazy(() => import("@/pages/AdminFmcsaImport"));
 const AdminMarketingAnalytics = lazy(() => import("@/pages/AdminMarketingAnalytics"));
@@ -641,8 +642,22 @@ export default function App() {
             Forward them (preserving ?token=) to the new public flow. */}
         <Route path="/app/affiliate/invite" element={<AffiliateInviteRedirect />} />
 
+        {/* Admin Command Deck (Phase 3) — the consolidated control panel.
+            The previous dashboard stays reachable at /app/admin/legacy
+            during the transition. */}
         <Route
           path="/app/admin"
+          element={
+            <RequireAdmin>
+              <LITPage>
+                <AdminCommandDeck />
+              </LITPage>
+            </RequireAdmin>
+          }
+        />
+
+        <Route
+          path="/app/admin/legacy"
           element={
             <RequireAdmin>
               <LITPage>

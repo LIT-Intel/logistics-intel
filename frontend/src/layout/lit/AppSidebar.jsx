@@ -101,14 +101,13 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
           {
             title: "Admin",
             items: [
-              { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
-              { label: "Subscribers", href: "/app/admin/subscribers", icon: Users },
-              { label: "FMCSA Import", href: "/app/admin/fmcsa-import", icon: Users },
-              { label: "Demo requests", href: "/app/admin/demo-requests", icon: Inbox },
+              // Phase 3 consolidation (2026-08-11): the Command Deck is the
+              // single front door — Users & Orgs, Sales Funnel, Marketing,
+              // Revenue, and Operations all live inside it. Detail routes
+              // stay alive for deep links; only the deck + the two everyday
+              // outbound tools keep sidebar slots.
+              { label: "Admin Control Panel", href: "/app/admin", icon: Shield },
               { label: "Demo invites", href: "/app/demo-invites", icon: Send },
-              { label: "Partner program", href: "/app/admin/partner-program", icon: Users },
-              { label: "Marketing analytics", href: "/app/admin/marketing-analytics", icon: BarChart3 },
-              { label: "Marketing broadcasts", href: "/app/admin/marketing-broadcasts", icon: Send },
               { label: "Team", href: "/app/settings?tab=team", icon: Users },
             ],
           },
