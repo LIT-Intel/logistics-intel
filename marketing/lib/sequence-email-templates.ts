@@ -415,6 +415,98 @@ const CONTENT: Record<string, (v: SequenceEmailVars) => EmailDef> = {
     ctaUrl: "https://logisticintel.com/search",
     signoff: "Forward this to whoever runs your SDR cadence. — Gabriel",
   }),
+  "lit-weekly:5": (v) => ({
+    subject: "New importers: the accounts nobody's calling yet",
+    previewText: "First-shipment signals are the least crowded inbox in freight. Play #5.",
+    headline: "Catch importers in month one.",
+    subtitle: "LIT Signals Weekly — one field-tested play per week.",
+    paragraphs: [
+      hi(v),
+      "Every established importer has an incumbent and twenty reps circling. A company whose FIRST ocean shipment landed last month has neither — no contract, no loyalty, usually no idea what they should be paying. They're also the easiest meeting in logistics, because nobody else has noticed them yet.",
+      "The play: once a week, search your lane sorted by newest first activity and pull the companies with under six months of shipment history. Open with exactly that: “Saw your first containers land in Long Beach — most new importers overpay 20–30% in year one. Want a benchmark?”",
+    ],
+    tip: "New importers buy education, not capacity. The rep who explains demurrage wins the freight.",
+    ctaText: "Find this month's new importers",
+    ctaUrl: "https://logisticintel.com/search",
+    signoff: "— Gabriel",
+  }),
+  "lit-weekly:6": (v) => ({
+    subject: "Own one commodity before you own a lane",
+    previewText: "The vertical wedge beats the generalist pitch every time. Play #6.",
+    headline: "The vertical wedge.",
+    subtitle: "LIT Signals Weekly — one field-tested play per week.",
+    paragraphs: [
+      hi(v),
+      "“We move anything, anywhere” is the weakest sentence in freight sales. The rep who says “we move furniture out of Vietnam” closes faster, because every furniture importer instantly assumes they understand fumigation, seasonality, and the Ningbo consolidators — even before it's proven.",
+      "The play: pick ONE commodity you've actually shipped, pull every US importer of it, and work that list exclusively for a month. Your third call sounds like an insider. Your tenth call IS an insider — you'll know the shippers, the carriers they share, and who just switched.",
+    ],
+    tip: "Search by product keyword, not company name — the importers you've never heard of are the point.",
+    ctaText: "Pull your commodity list",
+    ctaUrl: "https://logisticintel.com/search",
+    signoff: "— Gabriel",
+  }),
+  "lit-weekly:7": (v) => ({
+    subject: "Turn one customer into twenty lookalikes",
+    previewText: "Your best prospect list is hiding inside your current book. Play #7.",
+    headline: "Clone your best customer.",
+    subtitle: "LIT Signals Weekly — one field-tested play per week.",
+    paragraphs: [
+      hi(v),
+      "The fastest-converting prospect is one who looks exactly like a customer you already serve well: same lane, same commodity, similar volume. You already know their pain points, their seasonality, their rate expectations — you've just never mailed them.",
+      "The play: take your #1 account, look up their lane and product in the import data, and pull every other shipper moving the same thing on the same water. That's a pre-qualified list with a built-in opener: “We handle this exact lane for a company your size — here's what good looks like.”",
+    ],
+    tip: "Reference the CATEGORY, never the customer's name. “A mid-size furniture importer we serve” builds credibility without burning trust.",
+    ctaText: "Build your lookalike list",
+    ctaUrl: "https://logisticintel.com/search",
+    signoff: "— Gabriel",
+  }),
+  "lit-weekly:8": (v) => ({
+    subject: "The quote that arrives first wins — usually",
+    previewText: "Speed-to-quote is a sales weapon disguised as an ops metric. Play #8.",
+    headline: "Sell the clock.",
+    subtitle: "LIT Signals Weekly — one field-tested play per week.",
+    paragraphs: [
+      hi(v),
+      "Studies across B2B keep finding the same thing: the first substantive response wins a disproportionate share of deals. In freight it's worse — a shipper with a booking problem calls three forwarders and rides with whoever answers like they've seen the problem before.",
+      "The play: pre-build a one-page snapshot for your top 20 targets BEFORE they ever ask — their lanes, volumes, carrier mix, and where you'd beat their current setup. When the inquiry comes, you're not starting a quote; you're finishing one. Answering in 10 minutes with specifics reads like magic. It's preparation.",
+    ],
+    bullets: [
+      "Pick your 20 must-win accounts",
+      "Snapshot each one's lanes + carriers now, while it's quiet",
+      "When they ask for anything, respond same-hour with their own data",
+    ],
+    ctaText: "Snapshot your top 20",
+    ctaUrl: "https://logisticintel.com/search",
+    signoff: "— Gabriel",
+  }),
+
+  /* ── high-intent-offer (engaged non-signups → aggressive convert) ─ */
+  "high-intent-offer:1": (v) => ({
+    subject: "You keep opening these — let's skip to the good part",
+    previewText: "A working session on your lanes, or just start free. Your pick.",
+    headline: "Let's skip to the good part.",
+    paragraphs: [
+      hi(v),
+      "You've opened enough of our emails that I'll be direct: reading about freight prospecting doesn't book meetings — a target list does. So here's the shortcut, no strings on either path.",
+      "Path one: create a free account and search every US importer on your lane right now, unlimited, no card. Path two: grab 15 minutes and I'll build your first prospect list with you live — you keep it even if you never log in again.",
+    ],
+    ctaText: "Start free now",
+    ctaUrl: "https://logisticintel.com/signup",
+    signoff: "Prefer the live session? Just reply “demo” and I'll send times. — Gabriel",
+  }),
+  "high-intent-offer:2": (v) => ({
+    subject: "Last nudge — a live prospect list, on us",
+    previewText: "15 minutes, your lane, a real target list you keep either way.",
+    headline: "One list. On us. Either way.",
+    paragraphs: [
+      hi(v),
+      "Last note on this from me. The offer stands: bring one lane or commodity you want to win, and in 15 minutes we'll pull the importers actually moving freight on it — with the people who buy logistics there. The list is yours whether or not you ever pay us a dollar.",
+      "If the timing's wrong, no harm — the emails keep coming weekly with one field play at a time, and the free search is there whenever you're ready.",
+    ],
+    ctaText: "Book the 15-min session",
+    ctaUrl: "https://logisticintel.com/book-a-demo",
+    signoff: "— Gabriel",
+  }),
 };
 
 /**

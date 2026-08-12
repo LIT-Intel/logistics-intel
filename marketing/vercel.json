@@ -21,6 +21,10 @@
       "schedule": "0 14 * * 2"
     },
     {
+      "path": "/api/cron/engagement-branch",
+      "schedule": "30 13 * * *"
+    },
+    {
       "path": "/api/cron/trade-lane-refresh",
       "schedule": "0 2 * * *"
     },

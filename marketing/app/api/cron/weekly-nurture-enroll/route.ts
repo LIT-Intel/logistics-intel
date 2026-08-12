@@ -31,7 +31,12 @@ const STEP_SUBJECTS: Record<number, string> = {
   2: "Why Q4 freight contracts are won in August",
   3: "Read a prospect's carrier mix like a P&L",
   4: "The follow-up cadence that doesn't burn lists",
+  5: "New importers: the accounts nobody's calling yet",
+  6: "Own one commodity before you own a lane",
+  7: "Turn one customer into twenty lookalikes",
+  8: "The quote that arrives first wins — usually",
 };
+const ROTATION = Object.keys(STEP_SUBJECTS).length;
 
 function isoWeek(d: Date): number {
   const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -70,7 +75,7 @@ export async function GET(req: NextRequest) {
     .filter(Boolean);
 
   const now = new Date();
-  const step = ((isoWeek(now) - 1) % 4) + 1;
+  const step = ((isoWeek(now) - 1) % ROTATION) + 1;
   const rows = emails.map((email) => ({
     email,
     sequence_key: "lit-weekly",

@@ -31,7 +31,8 @@ export type SequenceKey =
   | "post-signup-demo"
   | "cold-fmcsa-outbound"
   | "meeting-no-show"
-  | "lit-weekly";
+  | "lit-weekly"
+  | "high-intent-offer";
 
 export type SequenceStep = {
   /** 1-indexed step number, unique within a sequence. */
@@ -289,6 +290,61 @@ export const SEQUENCES: Record<SequenceKey, SequenceStep[]> = {
       templateId: null,
       subject: "The follow-up cadence that doesn't burn lists",
       purpose: "Play: 4-touch cadence with fresh data per touch",
+    },
+    {
+      step: 5,
+      delayHours: 0,
+      envTemplateVar: "RESEND_TPL_WEEKLY_5",
+      templateId: null,
+      subject: "New importers: the accounts nobody's calling yet",
+      purpose: "Play: first-shipment signals / uncontested accounts",
+    },
+    {
+      step: 6,
+      delayHours: 0,
+      envTemplateVar: "RESEND_TPL_WEEKLY_6",
+      templateId: null,
+      subject: "Own one commodity before you own a lane",
+      purpose: "Play: vertical wedge specialization",
+    },
+    {
+      step: 7,
+      delayHours: 0,
+      envTemplateVar: "RESEND_TPL_WEEKLY_7",
+      templateId: null,
+      subject: "Turn one customer into twenty lookalikes",
+      purpose: "Play: lookalike prospecting from current book",
+    },
+    {
+      step: 8,
+      delayHours: 0,
+      envTemplateVar: "RESEND_TPL_WEEKLY_8",
+      templateId: null,
+      subject: "The quote that arrives first wins — usually",
+      purpose: "Play: speed-to-quote via pre-built account snapshots",
+    },
+  ],
+  // Enqueued by the engagement-branch cron when a non-signed-up recipient
+  // shows buying intent (2+ clicks or 4+ opens in 14 days, per
+  // lit_high_intent_candidates()). Direct-convert pressure: free account
+  // now, or a live list-building session. 45-day re-enroll cooldown lives
+  // in the SQL function.
+  "high-intent-offer": [
+    {
+      step: 1,
+      delayHours: 0,
+      envTemplateVar: "RESEND_TPL_HIGH_INTENT_1",
+      templateId: null,
+      subject: "You keep opening these — let's skip to the good part",
+      purpose: "Direct ask: signup now or live working session",
+    },
+    {
+      step: 2,
+      delayHours: 72,
+      envTemplateVar: "RESEND_TPL_HIGH_INTENT_2",
+      templateId: null,
+      subject: "Last nudge — a live prospect list, on us",
+      purpose: "Closer: free list-building session, explicit last-touch",
     },
   ],
 };
