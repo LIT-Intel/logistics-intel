@@ -118,9 +118,15 @@ Deno.serve(async (req: Request) => {
       method: "POST",
       headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: FROM,
+        // Owner decision 2026-08-12: invites come FROM the inviter, not a
+        // generic sales@ — any @logisticintel.com sender is covered by the
+        // Resend domain verification. Others fall back to the sales identity;
+        // replies always route to the actual inviter.
+        from: String(user.email || "").toLowerCase().endsWith("@logisticintel.com")
+          ? `${senderName} <${String(user.email).toLowerCase()}>`
+          : FROM,
         to: [prospectEmail],
-        reply_to: REPLY_TO,
+        reply_to: user.email || REPLY_TO,
         subject,
         html,
         text,
