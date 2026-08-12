@@ -5,7 +5,8 @@ import { existingWeeklySubjects, type EmailDef } from "@/lib/sequence-email-temp
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+// Hobby-plan ceiling — generation + enrollment fits comfortably.
+export const maxDuration = 60;
 
 /**
  * GET /api/cron/email-autogen
