@@ -65,6 +65,7 @@ import { supabase } from "@/lib/supabase";
 
 import CDPHeader from "@/components/company/CDPHeader";
 import CompanySignalsStrip from "@/components/company/CompanySignalsStrip";
+import OrgSaveCollisionCard from "@/components/company/OrgSaveCollisionCard";
 import CDPDetailsPanel from "@/components/company/CDPDetailsPanel";
 import PulseCoachQuotaCard from "@/components/company/PulseCoachQuotaCard";
 import LockedAccountPreview from "@/components/company/LockedAccountPreview";
@@ -2204,6 +2205,15 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           (bundle?.identity as any)?.sourceCompanyKey ??
           undefined
         }
+      />
+
+      {/* Collision awareness — appears when an ORG-MATE saved this company.
+          The underlying rows are only visible while the workspace's
+          Account-sharing toggle is ON (RLS), so the card self-suppresses
+          for solo users and toggled-off orgs. */}
+      <OrgSaveCollisionCard
+        companyUuid={bundle?.identity?.id ?? null}
+        companyName={companyName}
       />
 
       {/* Tab bar — F5 trim: 5 visible + More overflow. The More dropdown

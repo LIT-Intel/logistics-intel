@@ -184,6 +184,9 @@ export type SettingsLayoutProps = {
   onUploadLogo?: (file: File) => Promise<{ error?: string } | void>;
   onSavePreferences?: (section: string, data: Record<string, unknown>) => Promise<{ error?: string } | void>;
   onInviteMember?: (email: string, role: string) => Promise<{ error?: string } | void>;
+  /** organizations.saved_sharing_enabled — workspace "Account sharing" toggle. */
+  sharingEnabled?: boolean;
+  onToggleSharing?: (enabled: boolean) => Promise<{ error?: string } | void>;
   onRevokeMember?: (memberId: string) => Promise<{ error?: string } | void>;
   onUpdateMemberRole?: (memberId: string, role: string) => Promise<{ error?: string } | void>;
   onRevokeInvite?: (inviteId: string) => Promise<{ error?: string } | void>;
@@ -496,6 +499,8 @@ function renderSection(
           onRevokeInvite={props.onRevokeInvite}
           isAdmin={props.isAdmin}
           onUpgrade={() => navigate("/app/billing")}
+          sharingEnabled={props.sharingEnabled}
+          onToggleSharing={props.onToggleSharing}
         />
       );
     case "Billing":

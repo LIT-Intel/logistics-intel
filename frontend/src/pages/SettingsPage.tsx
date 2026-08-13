@@ -617,6 +617,23 @@ export default function SettingsPage() {
     }));
   };
 
+  // Account sharing (organizations.saved_sharing_enabled) — owner/admin
+  // control in Settings → Workspace. ON: org members see each other's saved
+  // companies (shared Command Center rows, org-scoped SAVED badges, collision
+  // cards). OFF: saves are private per member. RLS on organizations already
+  // restricts this UPDATE to org owners/admins.
+  const onToggleSavedSharing = async (enabled: boolean) => {
+    if (!orgId) return { error: "No organization found for this user" };
+    const { error } = await supabase
+      .from("organizations")
+      .update({ saved_sharing_enabled: enabled })
+      .eq("id", orgId);
+    if (error) {
+      return { error: error.message || "Failed updating account sharing" };
+    }
+    setOrgProfile((prev) => ({ ...prev, saved_sharing_enabled: enabled }));
+  };
+
   const onInviteMember = async (email: string, role: string, title?: string) => {
     if (!orgId) return { error: "No organization found for this user" };
 
@@ -820,6 +837,8 @@ export default function SettingsPage() {
           onUploadLogo={onUploadLogo}
           onSavePreferences={onSavePreferences}
           onInviteMember={onInviteMember}
+          sharingEnabled={orgProfile?.saved_sharing_enabled !== false}
+          onToggleSharing={orgId ? onToggleSavedSharing : undefined}
           onRevokeMember={onRevokeMember}
           onUpdateMemberRole={onUpdateMemberRole}
           onRevokeInvite={onRevokeInvite}

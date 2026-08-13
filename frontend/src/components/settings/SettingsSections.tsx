@@ -524,6 +524,12 @@ export function WorkspaceSection(props: {
   onRevokeInvite?: (inviteId: string) => Promise<{ error?: string } | void>;
   isAdmin?: boolean;
   onUpgrade?: () => void;
+  /** organizations.saved_sharing_enabled — the workspace "Account sharing"
+   *  toggle. ON: members see each other's saved companies (shared lists,
+   *  SAVED badges, collision cards). OFF: saves are private per member.
+   *  Owner/admin only; solo workspaces are unaffected either way. */
+  sharingEnabled?: boolean;
+  onToggleSharing?: (enabled: boolean) => Promise<{ error?: string } | void>;
 }) {
   const [tab, setTab] = useState<"members" | "invites" | "roles">("members");
   const [inviteEmail, setInviteEmail] = useState("");
@@ -536,6 +542,11 @@ export function WorkspaceSection(props: {
   // save so the checkboxes reflect the write without a full settings reload.
   const [permOpenKey, setPermOpenKey] = useState<string | null>(null);
   const [permOverrides, setPermOverrides] = useState<Record<string, Record<string, boolean>>>({});
+  // Account-sharing toggle — optimistic local value after a save so the
+  // switch reflects the write without a full settings reload.
+  const [sharingLocal, setSharingLocal] = useState<boolean | null>(null);
+  const [sharingBusy, setSharingBusy] = useState(false);
+  const [sharingErr, setSharingErr] = useState<string | null>(null);
   // useTransition keeps the tab-button click responsive: the pressed state
   // commits synchronously, then the heavier members/invites/roles subtree
   // is rendered in a low-priority pass. Sentry flagged this click at 232ms
@@ -686,6 +697,47 @@ export function WorkspaceSection(props: {
           </div>
         </div>
       </SCard>
+
+      {/* Account sharing — org owner/admin control for
+          organizations.saved_sharing_enabled. ON: org members see each
+          other's saved companies (shared Command Center rows, org-scoped
+          SAVED badges, collision cards on company profiles). OFF: saves are
+          private per member (RLS hides org-mates' rows entirely). Solo
+          workspaces are unaffected either way. */}
+      {props.isAdmin && props.onToggleSharing ? (
+        <SCard
+          title="Account sharing"
+          subtitle="Let workspace members see each other's saved companies and coordinate on shared accounts."
+        >
+          <SToggle
+            checked={sharingLocal ?? props.sharingEnabled ?? true}
+            disabled={sharingBusy}
+            onChange={async (next: boolean) => {
+              setSharingErr(null);
+              setSharingBusy(true);
+              try {
+                const res = await props.onToggleSharing?.(next);
+                if (res && (res as any).error) {
+                  setSharingErr(String((res as any).error));
+                } else {
+                  setSharingLocal(next);
+                }
+              } catch (e: any) {
+                setSharingErr(e?.message || "Failed updating account sharing");
+              } finally {
+                setSharingBusy(false);
+              }
+            }}
+            label="Share saved companies with the workspace"
+            sub={
+              (sharingLocal ?? props.sharingEnabled ?? true)
+                ? "On — members see teammates' saved companies, and opening a company a teammate saved shows who has it and a Request-access action."
+                : "Off — every member's saved companies are private. Collision cards and shared lists are disabled."
+            }
+          />
+          {sharingErr ? <StatusMsg error={sharingErr} /> : null}
+        </SCard>
+      ) : null}
 
       {!allowed ? (
         <TeamUpgradeCard plan={props.plan} onUpgrade={props.onUpgrade} />

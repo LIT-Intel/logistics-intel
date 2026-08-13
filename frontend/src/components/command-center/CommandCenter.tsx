@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { listSavedCompanies, enrichCompaniesFromKpis } from "@/lib/api";
+import { listOrgSharedCompanyRecords } from "@/api/orgSaves";
 import { formatSafeShipmentDate } from "@/lib/dateUtils";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -55,6 +56,10 @@ type ListRow = {
   lastActivity: string | null;
   topRoute12m: string | null;
   recentRoute: string | null;
+  /** Name of the ORG-MATE who saved this company, when the row is a shared
+   *  save (not the viewer's own). Drives the "Saved by X" chip so shared
+   *  saves are distinguishable, never silently merged. */
+  sharedBy: string | null;
 };
 
 type SortableKey = keyof Pick<ListRow, 'companyName' | 'lastActivity' | 'shipments12m' | 'teu12m' | 'estSpend12m' | 'topRoute12m'>;
@@ -158,6 +163,7 @@ function buildListRow(record: CommandCenterRecord): ListRow {
     lastActivity: kpis?.last_activity || null,
     topRoute12m: kpis?.top_route_12m || null,
     recentRoute: kpis?.recent_route || null,
+    sharedBy: ((record as any)?.shared_by?.name as string | undefined) ?? null,
   };
 }
 
@@ -203,7 +209,25 @@ export default function CommandCenter() {
     setSavedError(null);
     try {
       const response = (await listSavedCompanies()) as SavedCompaniesResponse;
-      const rows = normalizeSavedCompaniesResponse(response);
+      const ownRows = normalizeSavedCompaniesResponse(response);
+      // Org-shared saves (org-mates' rows, visible only while the workspace's
+      // Account-sharing toggle is ON — RLS scopes the read). Appended after
+      // the viewer's own rows with `shared_by` set so they render a
+      // "Saved by X" chip. Companies the viewer ALSO saved keep the own row.
+      let rows = ownRows;
+      try {
+        const ownKeys = new Set(
+          ownRows
+            .map((r) => r.company?.company_id ?? (r as any)?.company?.source_company_key)
+            .filter(Boolean),
+        );
+        const sharedRecords = (await listOrgSharedCompanyRecords()).filter(
+          (r: any) => !ownKeys.has(r?.company?.company_id),
+        );
+        if (sharedRecords.length) rows = [...ownRows, ...sharedRecords];
+      } catch {
+        /* shared saves are additive — never block the viewer's own list */
+      }
       try {
         const companyIds = rows
           .map((r) => r.company?.company_id ?? (r as any)?.company?.source_company_key)
@@ -673,8 +697,24 @@ export default function CommandCenter() {
                           className="shrink-0"
                         />
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {row.companyName}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {row.companyName}
+                            </span>
+                            {row.sharedBy ? (
+                              <span
+                                title={`Saved by ${row.sharedBy} (workspace share)`}
+                                style={{
+                                  flexShrink: 0, fontSize: 9, fontWeight: 700,
+                                  fontFamily: "'Space Grotesk', sans-serif",
+                                  color: '#4338CA', background: '#EEF2FF',
+                                  border: '1px solid #C7D2FE', borderRadius: 9999,
+                                  padding: '1px 7px', whiteSpace: 'nowrap',
+                                }}
+                              >
+                                Saved by {row.sharedBy}
+                              </span>
+                            ) : null}
                           </div>
                           <div style={{ fontSize: 10, color: '#94A3B8', fontFamily: "'DM Sans', sans-serif", marginTop: 1 }}>
                             {row.address || row.countryCode || row.domain || '—'}
@@ -846,6 +886,14 @@ export default function CommandCenter() {
                       <div className="text-sm font-semibold text-slate-900 truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                         {row.companyName}
                       </div>
+                      {row.sharedBy ? (
+                        <span
+                          className="mt-0.5 inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-px text-[9px] font-bold text-indigo-700"
+                          style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                        >
+                          Saved by {row.sharedBy}
+                        </span>
+                      ) : null}
                       <div className="text-[11px] text-slate-500 truncate" style={{ fontFamily: "'DM Sans', sans-serif" }}>
                         {row.address || row.countryCode || row.domain || '—'}
                       </div>
