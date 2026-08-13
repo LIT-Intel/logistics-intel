@@ -31,6 +31,33 @@
   color: rgb(34, 211, 238);
 }
 
+/* Light variant (Company-Profile trade-lanes hero) — Explorer-style
+ * light basemap gets light chrome: white zoom buttons, quiet attribution.
+ */
+.lit-lane-map--light .leaflet-container {
+  background: #e8edf3;
+}
+
+.lit-lane-map--light .leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.8);
+  color: rgb(100, 116, 139);
+}
+
+.lit-lane-map--light .leaflet-control-attribution a {
+  color: rgb(37, 99, 235);
+}
+
+.lit-lane-map--light .leaflet-control-zoom a {
+  background: rgba(255, 255, 255, 0.92);
+  color: rgb(51, 65, 85);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+.lit-lane-map--light .leaflet-control-zoom a:hover {
+  background: #ffffff;
+  color: rgb(37, 99, 235);
+}
+
 /* Selection pulse — outer ring grows + fades on the active endpoint dots.
  * Uses SVG `r` animation so the ring expands from its own center; we keep
  * `interactive:false` on the pulse layer so the dot below stays clickable.

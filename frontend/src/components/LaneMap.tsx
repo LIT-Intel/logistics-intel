@@ -16,12 +16,23 @@ import "./LaneMap.css";
 /**
  * LIT trade-lane map (2-D companion to GlobeCanvas). Same `GlobeLane[]`
  * input contract, same `onSelectLane(id)` callback — drop-in compatible
- * with the globe but rendered on a CARTO Dark Matter basemap so the
- * brand colour story stays consistent.
+ * with the globe.
  *
- * The 4 lane states (idle / hover / selected / faded) and the
- * endpoint pulse ring are styled to mirror `GlobeCanvas`'s DARK_PALETTE
- * — indigo idle lanes, violet hover glow, cyan selection, cyan pulse.
+ * Two visual variants:
+ *  - `dark` (default, legacy): Esri satellite imagery + the GlobeCanvas
+ *    DARK_PALETTE (indigo idle / violet hover / cyan selected). Used by
+ *    the Dashboard GlobeCard and Coach lanes card.
+ *  - `light` (2026-08 Company-Profile hero): the SAME basemap style as
+ *    the Explorer page (Stadia "Alidade Smooth" when VITE_STADIA_API_KEY
+ *    is set — exactly what Explorer renders in production — falling back
+ *    to CARTO Voyager, a free medium-tone raster that reads close to
+ *    Alidade). Lane palette flips to indigo/violet/blue-600 tuned for a
+ *    light ground so the map matches the Company Profile's light card
+ *    language ("medium tone" per CEO — not the old navy).
+ *
+ * The 4 lane states (idle / hover / selected / faded), endpoint pulse
+ * ring, endpoint popovers and fly-to-selection behave identically in
+ * both variants.
  *
  * Popovers are rendered as React nodes (not Leaflet `bindPopup`) so we
  * can use `LitFlag` and the rest of our component primitives. Position
@@ -29,37 +40,119 @@ import "./LaneMap.css";
  * React state.
  */
 
+export type LaneMapVariant = "dark" | "light";
+
+export type LaneMapFitPadding = {
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
+};
+
 export type LaneMapProps = {
   lanes: GlobeLane[];
   selectedLane?: string | null;
   onSelectLane?: (laneId: string) => void;
-  /** Pixel height of the map container. Width is 100% of parent. */
-  height?: number;
+  /**
+   * Pixel height of the map container, or `"fill"` to stretch to 100% of
+   * the parent (parent must be sized). Width is always 100% of parent.
+   */
+  height?: number | "fill";
   className?: string;
+  /** Visual variant — see file header. Defaults to legacy `dark`. */
+  variant?: LaneMapVariant;
+  /**
+   * Scale lane line weight + endpoint marker radius by `lane.shipments`
+   * (log-scaled against the max in the set). Off by default so legacy
+   * consumers keep their uniform look.
+   */
+  volumeScale?: boolean;
+  /** Leaflet zoom-control corner. Defaults to `topleft` (legacy). */
+  zoomControlPosition?: "topleft" | "topright" | "bottomleft" | "bottomright";
+  /**
+   * Extra padding (px) applied to fitBounds/flyToBounds so lanes stay
+   * clear of floating overlay panels (e.g. the Company Profile lane
+   * cards docked top-right). Read live via a ref — safe to pass a fresh
+   * object every render.
+   */
+  fitPadding?: LaneMapFitPadding;
 };
 
-// Brand palette — mirrors `GlobeCanvas` DARK_PALETTE so the 2-D map and
-// 3-D globe read as siblings. Keep these in sync with the globe.
-const LANE_IDLE = "#818CF8"; // indigo-400
-const LANE_HOVER = "#A78BFA"; // violet-400
-const LANE_SELECTED = "#22D3EE"; // cyan-400
-const LANE_FADED = "#475569"; // slate-600
-const HOVER_GLOW = "rgba(167,139,250,0.40)"; // violet, alpha 0.4
-const SELECT_GLOW = "rgba(34,211,238,0.55)"; // cyan, alpha 0.55
-const PULSE_STROKE = "rgba(34,211,238,0.6)";
-const DOT_FILL = "#22D3EE";
-const DOT_STROKE = "#FFFFFF";
+// ── Palettes ──────────────────────────────────────────────────────────
+// dark — mirrors GlobeCanvas DARK_PALETTE so the 2-D map and 3-D globe
+// read as siblings. Keep in sync with the globe.
+// light — same hue story re-weighted for a light basemap: indigo idle,
+// violet hover, blue-600 selected (matches the profile card's selection
+// accent), slate faded.
+type LanePalette = {
+  idle: string;
+  hover: string;
+  selected: string;
+  faded: string;
+  hoverGlow: string;
+  selectGlow: string;
+  pulse: string;
+  dotFill: string;
+  dotStroke: string;
+  containerBg: string;
+};
 
-// Esri World Imagery — actual satellite photography. Free, no token. Picked
-// over CARTO Dark Matter after the latter shipped as a featureless dark void
-// (continents nearly invisible) AND its labels overlay leaked Arabic /
-// non-English place names. Satellite tiles are pure imagery — no labels at
-// all, no localization to worry about — and the deep ocean blue + visible
-// terrain reads as "real Earth" rather than a stylized map.
+const DARK_PALETTE: LanePalette = {
+  idle: "#818CF8", // indigo-400
+  hover: "#A78BFA", // violet-400
+  selected: "#22D3EE", // cyan-400
+  faded: "#475569", // slate-600
+  hoverGlow: "rgba(167,139,250,0.40)",
+  selectGlow: "rgba(34,211,238,0.55)",
+  pulse: "rgba(34,211,238,0.6)",
+  dotFill: "#22D3EE",
+  dotStroke: "#FFFFFF",
+  containerBg: "#0f1419",
+};
+
+const LIGHT_PALETTE: LanePalette = {
+  idle: "#6366F1", // indigo-500
+  hover: "#8B5CF6", // violet-500
+  selected: "#2563EB", // blue-600 — matches legend selection accent
+  faded: "#94A3B8", // slate-400
+  hoverGlow: "rgba(139,92,246,0.28)",
+  selectGlow: "rgba(37,99,235,0.28)",
+  pulse: "rgba(37,99,235,0.55)",
+  dotFill: "#2563EB",
+  dotStroke: "#FFFFFF",
+  containerBg: "#E8EDF3", // matches Alidade Smooth / Voyager ground tone
+};
+
+// ── Basemaps ──────────────────────────────────────────────────────────
+// dark: Esri World Imagery — actual satellite photography. Free, no
+// token. Picked over CARTO Dark Matter after the latter shipped as a
+// featureless dark void AND leaked non-English labels.
 const TILES_DARK =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-const TILES_ATTR =
+const TILES_DARK_ATTR =
   "Tiles &copy; Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community";
+
+// light: SAME source chain as the Explorer map (ExploreMapMaplibre) for
+// product unity — Stadia Alidade Smooth when a key is configured (what
+// production Explorer renders), else CARTO Voyager as the free
+// medium-tone fallback.
+const STADIA_KEY = import.meta.env.VITE_STADIA_API_KEY ?? "";
+const TILES_LIGHT_STADIA = `https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}.png?api_key=${STADIA_KEY}`;
+const TILES_LIGHT_STADIA_ATTR =
+  '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/about">OpenStreetMap</a>';
+const TILES_LIGHT_FALLBACK =
+  "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";
+const TILES_LIGHT_FALLBACK_ATTR =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+function tilesFor(variant: LaneMapVariant): { url: string; attr: string } {
+  if (variant === "light") {
+    return STADIA_KEY
+      ? { url: TILES_LIGHT_STADIA, attr: TILES_LIGHT_STADIA_ATTR }
+      : { url: TILES_LIGHT_FALLBACK, attr: TILES_LIGHT_FALLBACK_ATTR };
+  }
+  return { url: TILES_DARK, attr: TILES_DARK_ATTR };
+}
 
 const MOBILE_QUERY = "(max-width: 639px)";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
@@ -68,13 +161,22 @@ type LaneSide = "from" | "to";
 
 type LaneLayers = {
   baseLine: LeafletPolyline;
+  /** Invisible fat polyline — ≥44px-friendly touch/click target. */
+  hitLine: LeafletPolyline;
   casing: LeafletPolyline | null;
   fromDot: LeafletCircleMarker;
   toDot: LeafletCircleMarker;
+  /** Invisible oversized endpoint hit targets (mobile taps). */
+  fromHit: LeafletCircleMarker;
+  toHit: LeafletCircleMarker;
   fromPulse: LeafletCircleMarker | null;
   toPulse: LeafletCircleMarker | null;
   fromCoord: LatLngTuple;
   toCoord: LatLngTuple;
+  /** Volume-scaled idle line weight (equals 2 when volumeScale off). */
+  baseWeight: number;
+  /** Volume-scaled endpoint dot radius (equals 7 when volumeScale off). */
+  baseRadius: number;
 };
 
 type HoverState = {
@@ -168,12 +270,23 @@ function endpointMeta(
   };
 }
 
+/** log-scaled 0..1 volume ratio for a lane against the set max. */
+function volumeRatio(shipments: number | undefined, max: number): number {
+  const s = Math.max(0, Number(shipments) || 0);
+  if (max <= 0) return 0;
+  return Math.log(1 + s) / Math.log(1 + max);
+}
+
 export default function LaneMap({
   lanes,
   selectedLane,
   onSelectLane,
   height = 360,
   className = "",
+  variant = "dark",
+  volumeScale = false,
+  zoomControlPosition = "topleft",
+  fitPadding,
 }: LaneMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -188,6 +301,26 @@ export default function LaneMap({
 
   const isMobile = useMediaQuery(MOBILE_QUERY);
   const reducedMotion = useMediaQuery(REDUCED_MOTION_QUERY);
+
+  const palette = variant === "light" ? LIGHT_PALETTE : DARK_PALETTE;
+
+  // fitPadding is read through a ref so callers can pass a fresh object
+  // every render without retriggering rebuild/fly effects.
+  const fitPaddingRef = useRef<LaneMapFitPadding | undefined>(fitPadding);
+  fitPaddingRef.current = fitPadding;
+  const paddedFitOpts = () => {
+    const p = fitPaddingRef.current;
+    return {
+      paddingTopLeft: [Math.max(24, p?.left ?? 0), Math.max(24, p?.top ?? 0)] as [
+        number,
+        number,
+      ],
+      paddingBottomRight: [
+        Math.max(24, p?.right ?? 0),
+        Math.max(24, p?.bottom ?? 0),
+      ] as [number, number],
+    };
+  };
 
   // Stable key — used to skip the rebuild when only selection changes.
   const laneKey = useMemo(
@@ -210,7 +343,7 @@ export default function LaneMap({
 
     const map = L.map(el, {
       worldCopyJump: true,
-      zoomControl: true,
+      zoomControl: false,
       attributionControl: true,
       preferCanvas: false, // SVG renderer needed for CSS-driven pulse
       center: [20, 0],
@@ -218,9 +351,11 @@ export default function LaneMap({
       minZoom: 2,
       maxZoom: 8,
     });
+    L.control.zoom({ position: zoomControlPosition }).addTo(map);
 
-    const baseTiles: LeafletTileLayer = L.tileLayer(TILES_DARK, {
-      attribution: TILES_ATTR,
+    const { url, attr } = tilesFor(variant);
+    const baseTiles: LeafletTileLayer = L.tileLayer(url, {
+      attribution: attr,
       maxZoom: 8,
     });
     baseTiles.addTo(map);
@@ -241,19 +376,32 @@ export default function LaneMap({
       setShowSlowOverlay(false);
     });
     baseTiles.on("tileerror", () => {
-      // Silent — lanes still render usefully against the dark void.
+      // Silent — lanes still render usefully against the flat ground color.
       // Console-warn once to aid debugging without burning user-facing UI.
-      console.warn("[LaneMap] CARTO tile failed to load; rendering lanes against dark void.");
+      console.warn("[LaneMap] basemap tile failed to load; rendering lanes against flat ground.");
     });
+
+    // Keep Leaflet's internal size in sync with the container — the hero
+    // uses height="fill" inside responsive parents, and the fullscreen
+    // dialog resizes with the viewport.
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => {
+        map.invalidateSize({ animate: false });
+      });
+      ro.observe(el);
+    }
 
     mapRef.current = map;
 
     return () => {
       window.clearTimeout(slowTimer);
+      if (ro) ro.disconnect();
       map.remove();
       mapRef.current = null;
       laneLayersRef.current.clear();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Rebuild lane layers when the lane set changes. Selection-only changes
@@ -266,8 +414,11 @@ export default function LaneMap({
     for (const layers of laneLayersRef.current.values()) {
       if (layers.casing) map.removeLayer(layers.casing);
       map.removeLayer(layers.baseLine);
+      map.removeLayer(layers.hitLine);
       map.removeLayer(layers.fromDot);
       map.removeLayer(layers.toDot);
+      map.removeLayer(layers.fromHit);
+      map.removeLayer(layers.toHit);
       if (layers.fromPulse) map.removeLayer(layers.fromPulse);
       if (layers.toPulse) map.removeLayer(layers.toPulse);
     }
@@ -278,6 +429,10 @@ export default function LaneMap({
     if (lanes.length === 0) return;
 
     const allLatLngs: LatLngTuple[] = [];
+    const maxShipments = lanes.reduce(
+      (m, l) => Math.max(m, Number(l.shipments) || 0),
+      0,
+    );
 
     // First pass: render base lines (idle/faded). Hover/selected casings
     // come in a second pass so their glow sits on top of all idle layers.
@@ -286,59 +441,84 @@ export default function LaneMap({
       const fromCoord: LatLngTuple = [lane.coords[0][1], lane.coords[0][0]];
       const toCoord: LatLngTuple = [lane.coords[1][1], lane.coords[1][0]];
 
+      // Volume weighting — log-scaled so one mega-lane doesn't flatten
+      // the rest. Lines 1.5→4px, dots 5→10px.
+      const ratio = volumeScale ? volumeRatio(lane.shipments, maxShipments) : 0;
+      const baseWeight = volumeScale ? 1.5 + ratio * 2.5 : 2;
+      const baseRadius = volumeScale ? Math.round(5 + ratio * 5) : 7;
+
       const baseLine = L.polyline(points, {
-        color: LANE_IDLE,
-        weight: 2,
+        color: palette.idle,
+        weight: baseWeight,
         opacity: 0.85,
+        lineCap: "round",
+        lineJoin: "round",
+        interactive: false,
+      }).addTo(map);
+
+      // Invisible fat twin — the actual click/hover target. 26px stroke
+      // ≈ 44px effective touch target with finger slop.
+      const hitLine = L.polyline(points, {
+        color: "#000",
+        weight: 26,
+        opacity: 0.001,
         lineCap: "round",
         lineJoin: "round",
         interactive: true,
         bubblingMouseEvents: false,
       }).addTo(map);
 
-      const fromDot = L.circleMarker(fromCoord, {
-        radius: 7,
-        color: DOT_STROKE,
+      const dotStyle = {
+        radius: baseRadius,
+        color: palette.dotStroke,
         weight: 2,
-        fillColor: DOT_FILL,
+        fillColor: palette.dotFill,
         fillOpacity: 1,
+        interactive: false,
+      };
+      const fromDot = L.circleMarker(fromCoord, dotStyle).addTo(map);
+      const toDot = L.circleMarker(toCoord, dotStyle).addTo(map);
+
+      const hitStyle = {
+        radius: 18,
+        stroke: false,
+        fillColor: "#000",
+        fillOpacity: 0.001,
         interactive: true,
         bubblingMouseEvents: false,
-      }).addTo(map);
-      const toDot = L.circleMarker(toCoord, {
-        radius: 7,
-        color: DOT_STROKE,
-        weight: 2,
-        fillColor: DOT_FILL,
-        fillOpacity: 1,
-        interactive: true,
-        bubblingMouseEvents: false,
-      }).addTo(map);
+      };
+      const fromHit = L.circleMarker(fromCoord, hitStyle).addTo(map);
+      const toHit = L.circleMarker(toCoord, hitStyle).addTo(map);
 
       const layers: LaneLayers = {
         baseLine,
+        hitLine,
         casing: null,
         fromDot,
         toDot,
+        fromHit,
+        toHit,
         fromPulse: null,
         toPulse: null,
         fromCoord,
         toCoord,
+        baseWeight,
+        baseRadius,
       };
       laneLayersRef.current.set(lane.id, layers);
 
       // Lane line click → select.
-      baseLine.on("click", () => {
+      hitLine.on("click", () => {
         onSelectLane?.(lane.id);
       });
       // Lane hover → set this lane as hovered (triggers restyle below).
-      baseLine.on("mouseover", () => {
+      hitLine.on("mouseover", () => {
         if (hoveredLaneRef.current !== lane.id) {
           hoveredLaneRef.current = lane.id;
           applyStateStyles();
         }
       });
-      baseLine.on("mouseout", () => {
+      hitLine.on("mouseout", () => {
         if (hoveredLaneRef.current === lane.id) {
           hoveredLaneRef.current = null;
           applyStateStyles();
@@ -347,7 +527,7 @@ export default function LaneMap({
 
       // Endpoint hover/click → set popover + lane selection.
       const attachEndpoint = (
-        dot: LeafletCircleMarker,
+        hit: LeafletCircleMarker,
         side: LaneSide,
         coord: LatLngTuple,
       ) => {
@@ -370,7 +550,7 @@ export default function LaneMap({
         };
 
         // Mobile: tap to open; desktop: hover.
-        dot.on("mouseover", () => {
+        hit.on("mouseover", () => {
           if (isMobile) return;
           openPopover();
           if (hoveredLaneRef.current !== lane.id) {
@@ -378,7 +558,7 @@ export default function LaneMap({
             applyStateStyles();
           }
         });
-        dot.on("mouseout", () => {
+        hit.on("mouseout", () => {
           if (isMobile) return;
           scheduleClose();
           if (hoveredLaneRef.current === lane.id) {
@@ -386,22 +566,23 @@ export default function LaneMap({
             applyStateStyles();
           }
         });
-        dot.on("click", () => {
+        hit.on("click", () => {
           openPopover();
           onSelectLane?.(lane.id);
         });
       };
-      attachEndpoint(fromDot, "from", fromCoord);
-      attachEndpoint(toDot, "to", toCoord);
+      attachEndpoint(fromHit, "from", fromCoord);
+      attachEndpoint(toHit, "to", toCoord);
 
       allLatLngs.push(fromCoord, toCoord);
     }
 
-    // Initial fit so all lanes are visible without animating.
+    // Initial fit so all lanes are visible without animating. Padding
+    // keeps lanes clear of floating overlay panels.
     if (allLatLngs.length > 0) {
       const bounds = L.latLngBounds(allLatLngs);
       map.fitBounds(bounds, {
-        padding: [32, 32],
+        ...paddedFitOpts(),
         maxZoom: 5,
         animate: false,
       });
@@ -410,7 +591,7 @@ export default function LaneMap({
     // Apply selection/hover styling now that layers exist.
     applyStateStyles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [laneKey, onSelectLane, isMobile]);
+  }, [laneKey, onSelectLane, isMobile, volumeScale]);
 
   /**
    * Restyle pass. Walks every lane's layers and reconciles them with
@@ -430,21 +611,21 @@ export default function LaneMap({
       const isHovered = !isSelected && laneId === hovered;
       const isFaded = hasSelection && selectedExists && !isSelected;
 
-      // Base line styling.
-      let color = LANE_IDLE;
-      let weight = 2;
+      // Base line styling — weights ride on the lane's volume-scaled base.
+      let color = palette.idle;
+      let weight = layers.baseWeight;
       let opacity = 0.85;
       if (isSelected) {
-        color = LANE_SELECTED;
-        weight = 3.5;
+        color = palette.selected;
+        weight = Math.max(3.5, layers.baseWeight + 1.5);
         opacity = 1;
       } else if (isHovered) {
-        color = LANE_HOVER;
-        weight = 2.5;
+        color = palette.hover;
+        weight = layers.baseWeight + 0.5;
         opacity = 1;
       } else if (isFaded) {
-        color = LANE_FADED;
-        weight = 1.5;
+        color = palette.faded;
+        weight = Math.max(1.25, layers.baseWeight - 0.5);
         opacity = 0.35;
       }
       layers.baseLine.setStyle({ color, weight, opacity });
@@ -455,7 +636,7 @@ export default function LaneMap({
       // casing guarantees correct z-order.
       const needsCasing = isSelected || isHovered;
       if (needsCasing) {
-        const casingColor = isSelected ? SELECT_GLOW : HOVER_GLOW;
+        const casingColor = isSelected ? palette.selectGlow : palette.hoverGlow;
         const casingWeight = isSelected ? weight + 5 : weight + 4;
         if (!layers.casing) {
           const points = (layers.baseLine.getLatLngs() as L.LatLng[]).map(
@@ -483,18 +664,25 @@ export default function LaneMap({
         layers.casing = null;
       }
 
-      // Endpoint dots. Selected = radius 9 (with pulse). Otherwise radius 7.
-      const dotRadius = isSelected ? 9 : 7;
+      // Endpoint dots. Selected = +2px (with pulse). Faded shrink slightly.
+      const dotRadius = isSelected
+        ? layers.baseRadius + 2
+        : isFaded
+          ? Math.max(4, layers.baseRadius - 1)
+          : layers.baseRadius;
       for (const dot of [layers.fromDot, layers.toDot]) {
         dot.setStyle({
           radius: dotRadius,
-          color: DOT_STROKE,
+          color: palette.dotStroke,
           weight: 2,
-          fillColor: DOT_FILL,
-          fillOpacity: 1,
+          fillColor: palette.dotFill,
+          fillOpacity: isFaded ? 0.55 : 1,
         });
         dot.bringToFront();
       }
+      // Hit targets stay above their visual dots.
+      layers.fromHit.bringToFront();
+      layers.toHit.bringToFront();
 
       // Pulse rings — only on selected. Created/destroyed as selection moves.
       const ensurePulse = (
@@ -504,7 +692,7 @@ export default function LaneMap({
         if (existing) return existing;
         const ring = L.circleMarker(coord, {
           radius: 12,
-          color: PULSE_STROKE,
+          color: palette.pulse,
           weight: 2,
           fillOpacity: 0,
           opacity: 0.6,
@@ -538,6 +726,8 @@ export default function LaneMap({
         sel.toDot.bringToFront();
         if (sel.fromPulse) sel.fromPulse.bringToFront();
         if (sel.toPulse) sel.toPulse.bringToFront();
+        sel.fromHit.bringToFront();
+        sel.toHit.bringToFront();
       }
     }
   };
@@ -570,9 +760,9 @@ export default function LaneMap({
     flyDebounceRef.current = window.setTimeout(() => {
       const bounds = L.latLngBounds([layers.fromCoord, layers.toCoord]);
       if (reducedMotion) {
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 5, animate: false });
+        map.fitBounds(bounds, { ...paddedFitOpts(), maxZoom: 5, animate: false });
       } else {
-        map.flyToBounds(bounds, { padding: [40, 40], maxZoom: 5, duration: 0.8 });
+        map.flyToBounds(bounds, { ...paddedFitOpts(), maxZoom: 5, duration: 0.8 });
       }
       flyDebounceRef.current = null;
     }, 100);
@@ -635,22 +825,45 @@ export default function LaneMap({
       ? endpointMeta(hoverLane, "to")
       : null;
 
+  const shellClasses =
+    variant === "light"
+      ? "lit-lane-map lit-lane-map--light relative w-full overflow-hidden"
+      : "lit-lane-map relative w-full overflow-hidden rounded-lg border border-slate-800/70";
+
   return (
     <div
-      className={[
-        "lit-lane-map relative w-full overflow-hidden rounded-lg border border-slate-800/70 bg-[#0f1419]",
-        className,
-      ].join(" ")}
-      style={{ height }}
+      className={[shellClasses, className].join(" ")}
+      style={{
+        height: height === "fill" ? "100%" : height,
+        background: palette.containerBg,
+      }}
     >
       <div ref={containerRef} className="absolute inset-0" />
 
-      {/* Empty state — show inside the dark void. */}
+      {/* Empty state. */}
       {lanes.length === 0 && (
-        <div className="pointer-events-none absolute inset-0 z-[600] flex flex-col items-center justify-center gap-2 text-slate-400">
-          <MapPinOff className="h-8 w-8 text-slate-500" />
-          <div className="text-sm font-medium text-slate-200">No lanes to map</div>
-          <div className="text-xs text-slate-500">
+        <div className="pointer-events-none absolute inset-0 z-[600] flex flex-col items-center justify-center gap-2">
+          <MapPinOff
+            className={
+              variant === "light"
+                ? "h-8 w-8 text-slate-400"
+                : "h-8 w-8 text-slate-500"
+            }
+          />
+          <div
+            className={
+              variant === "light"
+                ? "text-sm font-medium text-slate-600"
+                : "text-sm font-medium text-slate-200"
+            }
+          >
+            No lanes to map
+          </div>
+          <div
+            className={
+              variant === "light" ? "text-xs text-slate-400" : "text-xs text-slate-500"
+            }
+          >
             Lanes appear as shipment data lands
           </div>
         </div>
@@ -658,8 +871,19 @@ export default function LaneMap({
 
       {/* Slow-tile overlay — only after >800 ms with nothing painted. */}
       {showSlowOverlay && tilesPending && lanes.length > 0 && (
-        <div className="pointer-events-none absolute inset-0 z-[650] flex items-center justify-center bg-slate-900/50">
-          <Loader2 className="h-6 w-6 animate-spin text-cyan-400" />
+        <div
+          className={[
+            "pointer-events-none absolute inset-0 z-[650] flex items-center justify-center",
+            variant === "light" ? "bg-white/40" : "bg-slate-900/50",
+          ].join(" ")}
+        >
+          <Loader2
+            className={
+              variant === "light"
+                ? "h-6 w-6 animate-spin text-blue-600"
+                : "h-6 w-6 animate-spin text-cyan-400"
+            }
+          />
         </div>
       )}
 

@@ -6,6 +6,8 @@ import {
   History,
   Info,
   Container,
+  Maximize2,
+  X,
 } from "lucide-react";
 import {
   Bar,
@@ -36,10 +38,8 @@ import {
   useMxImportActivity,
 } from "@/api/intel";
 import BuyingIntentTile from "@/components/intent/BuyingIntentTile";
-import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
+import { type GlobeLane } from "@/components/GlobeCanvas";
 import LaneMap from "@/components/LaneMap";
-import LaneViewToggle from "@/components/LaneViewToggle";
-import { useLaneViewMode } from "@/hooks/useLaneViewMode";
 import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
 import {
   aggregateSuppliers,
@@ -459,7 +459,7 @@ function SummaryView({
 
   // Consolidated Summary order (post-rebuild):
   //   1. BuyingIntentTile
-  //   2. TopLanesCard (globe + lane list + container mix)
+  //   2. TopLanesCard (full-bleed map hero + floating lane cards + container mix)
   //   3. CadenceAndModalMix (area chart + small donut)
   //   4. MxTransborderKpi + UsExportKpi (compact KPIs side-by-side, hide-on-empty)
   //   5. RecentActivityCards
@@ -1973,26 +1973,253 @@ function ContainerProfileCard({ profile }: { profile: ContainerProfile }) {
 }
 
 /**
- * TopLanesCard — CEO-approved P1 redesign (2026-08-12).
+ * TopLanesCard — CEO-approved map-hero redesign (2026-08-13).
  *
- * Light hero matching the dashboard card language (white surface,
- * slate-200 border — same idiom as LitSectionCard): a large interactive
- * globe sitting immediately left of the ranked lane legend (24px gutter)
- * so the two read as one composition, centered as a unit when the card
- * has surplus width. The hero is DENSITY-ADAPTIVE (CEO feedback
- * 2026-08-13): ≤4 country pairs → compact ~340px row with a ~300-330px
- * globe; 5-10 pairs → ~440px; >10 → the full 520px. A sparse 2-lane
- * account no longer renders a 600px white cavity. When the snapshot has
- * monthly_volumes, a compact 12-month shipment-trend strip renders under
- * the headline. The globe keeps its deep-ocean
- * "trade" sphere — that palette was designed for light cards — over a
- * soft radial slate backdrop. Granularity is unified: both the globe
- * arcs and the legend rows are country pairs (the exact lanes the arcs
- * draw), and each legend row expands in place to its city routes.
- * Selection highlights the same entity in both directions, and hovering
- * an arc shows a data flyout with real numbers
- * ("Vietnam → US · 41 shipments · 83 TEU · last: Jul 2026").
+ * The trade-lanes section is now a FULL-BLEED interactive map — the same
+ * basemap style as the Explorer page (LaneMap `variant="light"`: Stadia
+ * Alidade Smooth in production, CARTO Voyager fallback — medium tone per
+ * CEO, replacing both the 3-D globe and the old navy map). The ranked
+ * country-pair lane cards float OVER the map as a glass panel docked
+ * top-right on desktop; the strategic headline + 12-month trend ride in
+ * a slim glass strip top-left. Lane lines are volume-weighted and the
+ * endpoint markers volume-scaled; clicking a lane (on map or in the
+ * panel) selects it — the map flies to the lane, highlights it and dims
+ * the rest (same pairKey selection model as before).
+ *
+ * An expand control opens a full-screen dialog (TradeLanesMapDialog)
+ * with the maximized map, filter chips (origin country, min shipments,
+ * transport mode when the data carries it), a legend, zoom controls and
+ * a lane-detail popover (city route, shipments, TEU, last activity).
+ *
+ * MOBILE (<768px): the map renders full-width (~320px tall) with the
+ * lane list BELOW as a scrollable sheet — nothing overlays the map
+ * except the expand button. Taps highlight the lane and open the
+ * endpoint bottom-sheet popover; all tap targets are ≥44px.
+ *
+ * The old Globe/Map toggle is retired here — the globe composition
+ * (centered sphere + side legend) is incompatible with the full-bleed
+ * hero, so the Map view is now the only view. GlobeCanvas still powers
+ * the Dashboard GlobeCard.
+ *
+ * Density-adaptive height (CEO feedback 2026-08-13 preserved): ≤4 pairs
+ * → 380px, 5-10 → 460px, >10 → 520px (desktop; mobile is a fixed 320px).
+ * Container-mix strip and the honesty caption keep their spots below
+ * the hero.
  */
+
+/** md-and-up breakpoint hook — drives overlay-vs-stacked composition. */
+function useIsMdUp(): boolean {
+  const [isMdUp, setIsMdUp] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(min-width: 768px)").matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(min-width: 768px)");
+    const handler = (e: MediaQueryListEvent) => setIsMdUp(e.matches);
+    setIsMdUp(mql.matches);
+    if (mql.addEventListener) {
+      mql.addEventListener("change", handler);
+      return () => mql.removeEventListener("change", handler);
+    }
+    mql.addListener(handler);
+    return () => mql.removeListener(handler);
+  }, []);
+  return isMdUp;
+}
+
+function pairToHistoryFilter(p: any): LaneHistoryFilter {
+  return {
+    originKey: p?.fromMeta?.canonicalKey ?? null,
+    originLabel: p?.fromMeta?.countryName ?? "Origin",
+    destKey: p?.toMeta?.canonicalKey ?? null,
+    destLabel: p?.toMeta?.countryName ?? "Destination",
+  };
+}
+
+/** Glass-panel styling shared by every floating card over the map. */
+const GLASS_PANEL =
+  "rounded-xl border border-white/60 bg-white/85 shadow-[0_8px_30px_rgba(2,6,23,0.14)] backdrop-blur-md";
+
+/**
+ * LaneRankRows — the ranked country-pair rows (rank, flags, origin→dest,
+ * shipments, share bar, TEU, expand-in-place city routes + Lane-history
+ * jump). Shared by the hero's floating panel (desktop), the below-map
+ * sheet (mobile) and the full-screen dialog. Row click = select + fly.
+ */
+function LaneRankRows({
+  rankedPairs,
+  totalShipments,
+  selectedPair,
+  expandedPair,
+  onRowClick,
+  cityRoutesByPair,
+  onOpenLaneHistory,
+  reducedMotion = false,
+  registerRowRef,
+}: {
+  rankedPairs: any[];
+  totalShipments: number;
+  selectedPair: string | null;
+  expandedPair: string | null;
+  onRowClick: (pairKey: string) => void;
+  cityRoutesByPair: Map<string, any[]>;
+  onOpenLaneHistory?: (pair: LaneHistoryFilter | null) => void;
+  reducedMotion?: boolean;
+  registerRowRef?: (key: string, el: HTMLButtonElement | null) => void;
+}) {
+  return (
+    <>
+      {rankedPairs.map((pair: any, i: number) => {
+        const isSelected = pair.pairKey === selectedPair;
+        const isExpanded = pair.pairKey === expandedPair;
+        const shipments = Number(pair?.shipments) || 0;
+        const share = totalShipments > 0 ? shipments / totalShipments : 0;
+        const cityRoutes = cityRoutesByPair.get(pair.pairKey) || [];
+        return (
+          <div
+            key={pair.pairKey}
+            className="border-b border-slate-100/80 last:border-b-0"
+          >
+            <button
+              ref={(el) => registerRowRef?.(pair.pairKey, el)}
+              type="button"
+              onClick={() => onRowClick(pair.pairKey)}
+              className={[
+                "w-full min-h-[44px] px-3.5 py-2 text-left transition-colors",
+                isSelected
+                  ? "border-l-2 border-l-blue-600 bg-blue-50/80"
+                  : "border-l-2 border-l-transparent hover:bg-slate-50/80",
+              ].join(" ")}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={[
+                    "font-mono w-5 shrink-0 text-center text-[9px] font-bold",
+                    isSelected ? "text-blue-600" : "text-slate-400",
+                  ].join(" ")}
+                >
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <LitFlag
+                  code={pair.fromMeta?.countryCode}
+                  size={13}
+                  label={pair.fromMeta?.countryName}
+                />
+                <span
+                  className={[
+                    "font-mono truncate text-[11px] font-semibold",
+                    isSelected ? "text-slate-900" : "text-slate-700",
+                  ].join(" ")}
+                >
+                  {pair.fromMeta?.countryName}
+                </span>
+                <ArrowRight
+                  className="h-2 w-2 shrink-0 text-slate-400"
+                  aria-hidden
+                />
+                <LitFlag
+                  code={pair.toMeta?.countryCode}
+                  size={13}
+                  label={pair.toMeta?.countryName}
+                />
+                <span
+                  className={[
+                    "font-mono truncate text-[11px] font-semibold",
+                    isSelected ? "text-slate-900" : "text-slate-700",
+                  ].join(" ")}
+                >
+                  {pair.toMeta?.countryName}
+                </span>
+                <span className="font-mono ml-auto shrink-0 text-[11px] font-bold text-slate-900">
+                  {shipments.toLocaleString()}
+                </span>
+                <ChevronDown
+                  className={[
+                    "h-3 w-3 shrink-0 text-slate-400 transition-transform",
+                    isExpanded ? "rotate-180" : "",
+                  ].join(" ")}
+                  aria-hidden
+                />
+              </div>
+              <div className="mt-1.5 flex items-center gap-2 pl-7">
+                <div className="h-1 flex-1 overflow-hidden rounded bg-slate-200/70">
+                  <div
+                    className="h-full rounded"
+                    style={{
+                      width: `${Math.max(2, share * 100)}%`,
+                      // Amber ties unselected rows to the map's warm accents;
+                      // the selected row goes blue-600 to match the map's
+                      // selection color.
+                      background: isSelected ? "#2563EB" : "#F59E0B",
+                      transition: reducedMotion
+                        ? "none"
+                        : `width 1200ms ease-out ${i * 120}ms`,
+                    }}
+                  />
+                </div>
+                <span className="font-mono w-16 shrink-0 text-right text-[9.5px] text-slate-500">
+                  {Number(pair.teu) > 0
+                    ? `${Math.round(Number(pair.teu)).toLocaleString()} TEU`
+                    : `${Math.round(share * 100)}%`}
+                </span>
+              </div>
+            </button>
+            {/* Expand-in-place: the pair's city routes. */}
+            {isExpanded && (
+              <div className="bg-slate-50/90 px-3.5 py-1.5 pl-10">
+                {cityRoutes.length === 0 ? (
+                  <div className="font-body py-1 text-[10.5px] text-slate-400">
+                    No city-level routes resolved for this pair.
+                  </div>
+                ) : (
+                  cityRoutes.slice(0, 6).map((route: any, ri: number) => (
+                    <div
+                      key={route.displayLabel || ri}
+                      className="flex items-center gap-1.5 py-1"
+                    >
+                      <span className="h-1 w-1 shrink-0 rounded-full bg-blue-500/70" />
+                      <span className="font-mono min-w-0 flex-1 truncate text-[10.5px] text-slate-600">
+                        {laneEndpointLabel(
+                          route.fromMeta,
+                          route.rawFrom || undefined,
+                        )}{" "}
+                        →{" "}
+                        {laneEndpointLabel(
+                          route.toMeta,
+                          route.rawTo || undefined,
+                        )}
+                      </span>
+                      <span className="font-mono shrink-0 text-[10px] text-slate-500">
+                        {(Number(route.shipments) || 0).toLocaleString()}
+                      </span>
+                    </div>
+                  ))
+                )}
+                {cityRoutes.length > 6 && (
+                  <div className="font-body py-0.5 text-[10px] text-slate-400">
+                    +{cityRoutes.length - 6} more city routes
+                  </div>
+                )}
+                {onOpenLaneHistory && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenLaneHistory(pairToHistoryFilter(pair))}
+                    className="font-display mb-1 mt-1 inline-flex min-h-[32px] items-center gap-1 text-[10.5px] font-semibold text-blue-600 hover:text-blue-700"
+                  >
+                    <History className="h-3 w-3" />
+                    View monthly history →
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function TopLanesCard({
   canonicalLanes,
   globeLanes: countryPairLanes,
@@ -2019,8 +2246,7 @@ function TopLanesCard({
   /**
    * 12-month FCL/LCL cadence (parsed_summary.monthly_volumes — same series
    * the Cadence card renders). Drives the compact "12-month shipment trend"
-   * strip under the headline so the hero's left zone carries real data
-   * instead of white space on sparse accounts.
+   * strip in the top-left glass panel.
    */
   cadence?: CadencePoint[];
   /**
@@ -2030,10 +2256,9 @@ function TopLanesCard({
    */
   shipments12mTotal?: number | null;
 }) {
-  // Persisted globe / map preference — shared with the Dashboard's GlobeCard.
-  const { mode: viewMode, setMode: setViewMode } = useLaneViewMode();
+  const isMdUp = useIsMdUp();
 
-  // ── Country pairs (single granularity for globe + legend) ────────────
+  // ── Country pairs (single granularity for map + lane cards) ──────────
   // Prefer the canonicalized country-pair lanes; when absent (legacy
   // callers), group the granular rows by resolved country-pair key.
   const pairs = useMemo(() => {
@@ -2085,7 +2310,7 @@ function TopLanesCard({
     [rankedPairs],
   );
 
-  // GlobeLane[] for the canvas — id = pairKey so arc ids and legend row ids
+  // GlobeLane[] for the map — id = pairKey so map ids and lane-card ids
   // are literally the same key (selection can't desync).
   const heroLanes: GlobeLane[] = useMemo(
     () =>
@@ -2103,7 +2328,7 @@ function TopLanesCard({
 
   // City routes per pair — the granular rows whose resolved endpoints
   // collapse into this country pair. Rendered in the expand-in-place
-  // drawer under a legend row.
+  // drawer under a lane-card row.
   const cityRoutesByPair = useMemo(() => {
     const m = new Map<string, any[]>();
     for (const l of canonicalLanes) {
@@ -2137,7 +2362,7 @@ function TopLanesCard({
 
   // Last-activity month per pair from the recent-BOL sample (origin-country
   // match — destination is ~always US in this feed so origin is the
-  // discriminator). Powers the arc flyout's "last: Jul 2026".
+  // discriminator). Powers the expanded dialog's lane-detail popover.
   const lastActivityByPair = useMemo(() => {
     const m = new Map<string, Date>();
     for (const p of rankedPairs) {
@@ -2170,14 +2395,10 @@ function TopLanesCard({
     setSelectedPair(rankedPairs[0].pairKey);
   }, [rankedPairs]);
   const [expandedPair, setExpandedPair] = useState<string | null>(null);
-  const [hoverInfo, setHoverInfo] = useState<{
-    id: string;
-    x: number;
-    y: number;
-  } | null>(null);
+  const [mapDialogOpen, setMapDialogOpen] = useState(false);
 
-  // Track whether the latest selection came from the globe/map so we only
-  // auto-scroll the legend when selection originates there.
+  // Track whether the latest selection came from the map so we only
+  // auto-scroll the lane cards when selection originates there.
   const lastSelectionSourceRef = useRef<"row" | "map" | null>(null);
   const rowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   useEffect(() => {
@@ -2189,72 +2410,50 @@ function TopLanesCard({
     }
   }, [selectedPair]);
 
-  // ── Density-adaptive composition (CEO feedback 2026-08-13) ───────────
-  // Card height is driven by lane count, not a fixed 520px: a 2-lane
-  // account gets a compact ~340px hero with a ~300-330px globe instead of
-  // a 600px cavity; 5-10 lanes get a mid hero; >10 keep the full 520px.
+  const handleSelectFromMap = useCallback((id: string) => {
+    lastSelectionSourceRef.current = "map";
+    setSelectedPair(id);
+    if (id) setExpandedPair(id);
+  }, []);
+
+  const handleRowClick = useCallback(
+    (pairKey: string) => {
+      lastSelectionSourceRef.current = "row";
+      if (pairKey === selectedPair && pairKey === expandedPair) {
+        setExpandedPair(null);
+      } else {
+        setSelectedPair(pairKey);
+        setExpandedPair(pairKey);
+      }
+    },
+    [selectedPair, expandedPair],
+  );
+
+  const registerRowRef = useCallback(
+    (key: string, el: HTMLButtonElement | null) => {
+      rowRefs.current[key] = el;
+    },
+    [],
+  );
+
+  // ── Density-adaptive height (CEO feedback 2026-08-13, preserved) ─────
+  // Sparse accounts get a ~380px map, mid 460px, rich the full 520px.
+  // Mobile is a fixed 320px with the lane sheet below.
   const laneCount = pairs.length;
   const density: "compact" | "medium" | "rich" =
     laneCount <= 4 ? "compact" : laneCount <= 10 ? "medium" : "rich";
   const heroHeightClass =
     density === "compact"
-      ? "lg:h-[340px]"
+      ? "h-[320px] md:h-[380px]"
       : density === "medium"
-        ? "lg:h-[440px]"
-        : "lg:h-[520px]";
-  const heroHeightPx =
-    density === "compact" ? 340 : density === "medium" ? 440 : 520;
-  const globeMin = density === "compact" ? 260 : 300;
-  const globeMax =
-    density === "compact" ? 330 : density === "medium" ? 410 : 520;
+        ? "h-[320px] md:h-[460px]"
+        : "h-[320px] md:h-[520px]";
 
-  // Responsive globe sizing — measure the hero composition row (stable,
-  // full card width — never the globe's own wrapper, which would be
-  // circular) and render the largest square that fits next to the 380px
-  // legend rail, clamped to the density band above.
-  const heroAreaRef = useRef<HTMLDivElement | null>(null);
-  const [globeSize, setGlobeSize] = useState(globeMax);
-  useEffect(() => {
-    const el = heroAreaRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const w = entry.contentRect.width;
-        // Side-by-side (globe + 380px legend + ~24px gutter) needs ~700px
-        // of row width; below that the pair stacks and the globe can use
-        // the full row width.
-        const sideBySide = w >= 700;
-        const availW = sideBySide ? w - 380 - 24 - 16 : w - 24;
-        const next = Math.round(
-          Math.max(
-            globeMin,
-            Math.min(globeMax, Math.min(availW, heroHeightPx - 24)),
-          ),
-        );
-        setGlobeSize((prev) => (Math.abs(prev - next) > 8 ? next : prev));
-      }
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [viewMode, globeMin, globeMax, heroHeightPx]);
-
-  const handleGlobeHover = useCallback(
-    (id: string | null, x: number, y: number) => {
-      setHoverInfo((prev) => {
-        if (!id) return prev ? null : prev;
-        if (
-          prev &&
-          prev.id === id &&
-          Math.abs(prev.x - x) < 4 &&
-          Math.abs(prev.y - y) < 4
-        ) {
-          return prev;
-        }
-        return { id, x, y };
-      });
-    },
-    [],
-  );
+  // Keep lanes clear of the floating panels: on ≥md the lane cards dock
+  // top-right (340px + gutters) and the headline strip sits top-left.
+  const fitPadding = isMdUp
+    ? { top: 56, right: 380, bottom: 48, left: 40 }
+    : { top: 20, right: 20, bottom: 56, left: 20 };
 
   // Container-mix bar data (merged from former EquipmentAndLaneFootprint).
   const mix = useMemo(() => {
@@ -2302,416 +2501,241 @@ function TopLanesCard({
     );
   }
 
-  const hoveredPair = hoverInfo
-    ? rankedPairs.find((p: any) => p.pairKey === hoverInfo.id)
-    : null;
-  const hoveredLast = hoverInfo ? lastActivityByPair.get(hoverInfo.id) : null;
+  // Shared headline block — glass strip top-left on desktop, regular
+  // header block above the map on mobile.
+  const headlineBlock = (
+    <>
+      <div className="flex items-center gap-2">
+        <span className="font-display text-[9px] font-bold uppercase tracking-[0.14em] text-blue-600">
+          Global trade lanes
+        </span>
+        <span className="h-px w-8 bg-blue-200" />
+        <span className="font-display text-[9px] font-semibold text-slate-400">
+          Recent activity
+        </span>
+      </div>
+      <div className="font-display mt-1 max-w-[420px] text-[13.5px] font-semibold leading-snug tracking-tight text-slate-900 md:text-[14.5px]">
+        {headline ||
+          `${rankedPairs.length} active country ${
+            rankedPairs.length === 1 ? "lane" : "lanes"
+          } across this account's recent import history.`}
+      </div>
+      {/* 12-month shipment trend — real parsed_summary.monthly_volumes
+          data as a quiet bar strip. Hover a bar for month + count. */}
+      {cadence.length > 0 && (
+        <div className="mt-2">
+          <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+            12-month shipment trend
+          </div>
+          <div className="mt-1 flex h-6 max-w-[240px] items-end gap-[3px]">
+            {(() => {
+              const maxTotal = Math.max(
+                1,
+                ...cadence.map((c) => Number(c.total) || 0),
+              );
+              return cadence.map((c, ci) => (
+                <div
+                  key={`${c.label}-${ci}`}
+                  title={`${c.label} · ${(Number(c.total) || 0).toLocaleString()} shipment${
+                    (Number(c.total) || 0) === 1 ? "" : "s"
+                  }`}
+                  className="w-[13px] shrink-0 rounded-[2px] bg-slate-300 transition-colors hover:bg-blue-400"
+                  style={{
+                    height: `${Math.max(
+                      10,
+                      Math.round(((Number(c.total) || 0) / maxTotal) * 100),
+                    )}%`,
+                  }}
+                />
+              ));
+            })()}
+          </div>
+        </div>
+      )}
+    </>
+  );
 
-  const pairToHistoryFilter = (p: any): LaneHistoryFilter => ({
-    originKey: p?.fromMeta?.canonicalKey ?? null,
-    originLabel: p?.fromMeta?.countryName ?? "Origin",
-    destKey: p?.toMeta?.canonicalKey ?? null,
-    destLabel: p?.toMeta?.countryName ?? "Destination",
-  });
+  const honestyCaption =
+    recentBols.length > 0
+      ? (() => {
+          const n = recentBols.length;
+          const total = Number(shipments12mTotal);
+          const pct =
+            Number.isFinite(total) && total > 0
+              ? Math.min(100, Math.max(1, Math.round((n / total) * 100)))
+              : null;
+          return `Lanes derived from the ${n.toLocaleString()} most recent shipments${
+            pct != null ? ` (~${pct}% of 12-mo volume)` : ""
+          }`;
+        })()
+      : null;
+
+  const laneListFooter = (
+    <>
+      {unresolvedRoutes.length > 0 && (
+        <div className="flex items-center gap-2 px-3.5 py-2">
+          <span className="font-mono w-5 shrink-0 text-center text-[9px] font-bold text-slate-300">
+            ··
+          </span>
+          <span className="font-body min-w-0 flex-1 truncate text-[10.5px] text-slate-400">
+            {unresolvedRoutes.length} unresolved route
+            {unresolvedRoutes.length === 1 ? "" : "s"}
+          </span>
+          <span className="font-mono shrink-0 text-[10px] text-slate-400">
+            {unresolvedRoutes
+              .reduce(
+                (s: number, l: any) => s + (Number(l.shipments) || 0),
+                0,
+              )
+              .toLocaleString()}
+          </span>
+        </div>
+      )}
+      {onOpenLanesTab && canonicalLanes.length > 0 && (
+        <div className="px-3.5 py-2">
+          <button
+            type="button"
+            onClick={onOpenLanesTab}
+            className="font-body inline-flex min-h-[32px] items-center gap-1 text-[11.5px] font-medium text-blue-600 hover:text-blue-700"
+          >
+            View all {canonicalLanes.length.toLocaleString()} routes →
+          </button>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-      {/* ── Light hero: globe + legend on one white surface ───────────── */}
-      <div className="relative bg-white">
-        {/* Hero header — eyebrow + folded strategic headline + controls */}
-        <div className="relative flex flex-wrap items-start justify-between gap-2 px-4 pt-3.5 sm:px-5">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-display text-[9px] font-bold uppercase tracking-[0.14em] text-blue-600">
-                Global trade lanes
-              </span>
-              <span className="h-px w-8 bg-blue-200" />
-              <span className="font-display text-[9px] font-semibold text-slate-400">
-                Recent activity
-              </span>
-            </div>
-            <div className="font-display mt-1 max-w-[620px] text-[15px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-[16px]">
-              {headline ||
-                `${rankedPairs.length} active country ${
-                  rankedPairs.length === 1 ? "lane" : "lanes"
-                } across this account's recent import history.`}
-            </div>
-            {/* 12-month shipment trend — real parsed_summary.monthly_volumes
-                data rendered as a quiet bar strip so the hero's left zone
-                carries signal instead of white space on sparse accounts.
-                No axes, slate styling; hover a bar for the month + count. */}
-            {cadence.length > 0 && (
-              <div className="mt-2.5">
-                <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
-                  12-month shipment trend
-                </div>
-                <div className="mt-1 flex h-7 max-w-[260px] items-end gap-[3px]">
-                  {(() => {
-                    const maxTotal = Math.max(
-                      1,
-                      ...cadence.map((c) => Number(c.total) || 0),
-                    );
-                    return cadence.map((c, ci) => (
-                      <div
-                        key={`${c.label}-${ci}`}
-                        title={`${c.label} · ${(Number(c.total) || 0).toLocaleString()} shipment${
-                          (Number(c.total) || 0) === 1 ? "" : "s"
-                        }`}
-                        className="w-[14px] shrink-0 rounded-[2px] bg-slate-300 transition-colors hover:bg-blue-400"
-                        style={{
-                          height: `${Math.max(
-                            10,
-                            Math.round(((Number(c.total) || 0) / maxTotal) * 100),
-                          )}%`,
-                        }}
-                      />
-                    ));
-                  })()}
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {onOpenLaneHistory && (
-              <button
-                type="button"
-                onClick={() => onOpenLaneHistory(null)}
-                className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              >
-                <History className="h-3 w-3" />
-                Lane history
-              </button>
-            )}
-            <LaneViewToggle mode={viewMode} onChange={setViewMode} />
+      {/* Mobile header — regular block above the map so the small map
+          stays fully visible (nothing overlays it except Expand). */}
+      <div className="px-4 pb-3 pt-3.5 md:hidden">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">{headlineBlock}</div>
+          {onOpenLaneHistory && (
+            <button
+              type="button"
+              onClick={() => onOpenLaneHistory(null)}
+              className="font-display inline-flex min-h-[44px] shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 text-[10.5px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+            >
+              <History className="h-3 w-3" />
+              Lane history
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Full-bleed interactive map hero ───────────────────────────── */}
+      <div className={["relative w-full", heroHeightClass].join(" ")}>
+        <LaneMap
+          lanes={heroLanes}
+          selectedLane={selectedPair}
+          onSelectLane={handleSelectFromMap}
+          height="fill"
+          variant="light"
+          volumeScale
+          zoomControlPosition="bottomleft"
+          fitPadding={fitPadding}
+        />
+
+        {/* Desktop: slim glass strip top-left — headline + 12-mo trend. */}
+        <div className="pointer-events-none absolute left-4 top-4 z-[700] hidden max-w-[calc(100%-400px)] md:block">
+          <div className={["pointer-events-auto px-4 py-3", GLASS_PANEL].join(" ")}>
+            {headlineBlock}
           </div>
         </div>
 
-        {/* Globe + legend as ONE tight composition at every density: the
-            pair (globe + 24px gutter + 380px legend) is centered
-            horizontally as a unit when there's surplus width, and both are
-            vertically centered. Row height comes from lane count (density),
-            not a fixed 520px — no min-height void under sparse accounts.
-            Below lg they stack (globe on top). */}
+        {/* Desktop: floating lane cards top-right. */}
         <div
-          ref={heroAreaRef}
           className={[
-            "relative flex flex-col lg:flex-row lg:items-center lg:justify-center lg:gap-6 lg:px-5",
-            heroHeightClass,
+            "absolute right-4 top-4 z-[700] hidden max-h-[calc(100%-32px)] w-[340px] flex-col overflow-hidden md:flex",
+            GLASS_PANEL,
           ].join(" ")}
         >
-          {/* Left — the globe (or 2-D map), sized to its density band. */}
-          <div
-            className={[
-              "relative flex items-center justify-center overflow-hidden py-3 lg:py-0",
-              viewMode === "globe" ? "lg:shrink-0" : "w-full min-w-0 lg:flex-1 lg:self-stretch",
-            ].join(" ")}
-          >
-            {viewMode === "globe" ? (
-              /* Wrapper shares the canvas' coordinate frame so the hover
-                 flyout (positioned from canvas-relative px) lands on the
-                 arc regardless of how the globe is anchored in the cell. */
-              <div
-                className="relative"
-                style={{ width: globeSize, height: globeSize }}
-              >
-                {/* Soft radial backdrop so the ocean-blue sphere sits
-                    intentionally on the light card instead of floating. */}
-                <div
-                  className="pointer-events-none absolute -inset-8 rounded-full"
-                  style={{
-                    background:
-                      "radial-gradient(circle, #F8FAFC 0%, rgba(248,250,252,0) 70%)",
-                  }}
-                  aria-hidden
-                />
-                <GlobeCanvas
-                  lanes={heroLanes}
-                  selectedLane={selectedPair}
-                  size={globeSize}
-                  theme="trade"
-                  dropShadow="rgba(15, 23, 42, 0.08)"
-                  showFlagPins
-                  onSelectLane={(id) => {
-                    lastSelectionSourceRef.current = "map";
-                    setSelectedPair(id);
-                    if (id) setExpandedPair(id);
-                  }}
-                  onHoverLane={handleGlobeHover}
-                />
-                {/* Arc hover flyout — real numbers, anchored to cursor. */}
-                {hoveredPair && hoverInfo && (
-                  <div
-                    className="pointer-events-none absolute z-[5]"
-                    style={{
-                      left: Math.max(
-                        96,
-                        Math.min(hoverInfo.x + 16, globeSize - 40),
-                      ),
-                      top: Math.max(40, hoverInfo.y - 8),
-                      transform: "translate(-50%, -100%)",
-                    }}
-                  >
-                    <div className="rounded-lg border border-slate-700 bg-slate-900/95 px-3 py-2 shadow-[0_8px_24px_rgba(2,6,23,0.35)]">
-                      <div className="font-display flex items-center gap-1.5 whitespace-nowrap text-[11.5px] font-bold text-white">
-                        <LitFlag
-                          code={hoveredPair.fromMeta?.countryCode}
-                          size={12}
-                          label={hoveredPair.fromMeta?.countryName}
-                        />
-                        {hoveredPair.fromMeta?.countryName}
-                        <ArrowRight className="h-2.5 w-2.5 text-blue-300" aria-hidden />
-                        <LitFlag
-                          code={hoveredPair.toMeta?.countryCode}
-                          size={12}
-                          label={hoveredPair.toMeta?.countryName}
-                        />
-                        {hoveredPair.toMeta?.countryName}
-                      </div>
-                      <div className="font-mono mt-0.5 whitespace-nowrap text-[10.5px] text-blue-200">
-                        {(Number(hoveredPair.shipments) || 0).toLocaleString()}{" "}
-                        shipments
-                        {Number(hoveredPair.teu) > 0 && (
-                          <>
-                            {" "}· {Math.round(Number(hoveredPair.teu)).toLocaleString()}{" "}
-                            TEU
-                          </>
-                        )}
-                        {hoveredLast && (
-                          <>
-                            {" "}· last:{" "}
-                            {hoveredLast.toLocaleDateString("en-US", {
-                              month: "short",
-                              year: "numeric",
-                            })}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="w-full self-stretch p-3 sm:p-4">
-                <LaneMap
-                  lanes={heroLanes}
-                  selectedLane={selectedPair}
-                  onSelectLane={(id) => {
-                    lastSelectionSourceRef.current = "map";
-                    setSelectedPair(id);
-                    if (id) setExpandedPair(id);
-                  }}
-                  height={Math.max(280, heroHeightPx - 60)}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Right — ranked lane legend on the SAME light surface, sitting
-              immediately right of the globe (24px gutter) and vertically
-              centered with it so the two read as one unit. */}
-          <div className="relative max-h-[380px] w-full overflow-y-auto border-t border-slate-100 lg:max-h-[calc(100%-24px)] lg:w-[380px] lg:shrink-0 lg:self-center lg:rounded-lg lg:border lg:border-slate-100">
-            <div className="flex items-center justify-between px-4 pb-1 pt-3">
-              <span className="font-display text-[10px] font-bold uppercase tracking-wide text-slate-500">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 px-3.5 pb-2 pt-2.5">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="font-display truncate text-[10px] font-bold uppercase tracking-wide text-slate-500">
                 Top lanes · country pairs
               </span>
-              <span className="font-mono text-[10px] font-semibold text-slate-400">
+              <span className="font-mono shrink-0 text-[10px] font-semibold text-slate-400">
                 {rankedPairs.length}
               </span>
             </div>
-            {rankedPairs.map((pair: any, i: number) => {
-              const isSelected = pair.pairKey === selectedPair;
-              const isExpanded = pair.pairKey === expandedPair;
-              const isHovered = hoverInfo?.id === pair.pairKey;
-              const shipments = Number(pair?.shipments) || 0;
-              const share =
-                totalPairShipments > 0 ? shipments / totalPairShipments : 0;
-              const cityRoutes = cityRoutesByPair.get(pair.pairKey) || [];
-              return (
-                <div
-                  key={pair.pairKey}
-                  className="border-b border-slate-100 last:border-b-0"
-                >
-                  <button
-                    ref={(el) => {
-                      rowRefs.current[pair.pairKey] = el;
-                    }}
-                    type="button"
-                    onClick={() => {
-                      lastSelectionSourceRef.current = "row";
-                      if (isSelected && isExpanded) {
-                        setExpandedPair(null);
-                      } else {
-                        setSelectedPair(pair.pairKey);
-                        setExpandedPair(pair.pairKey);
-                      }
-                    }}
-                    className={[
-                      "w-full px-4 py-2 text-left transition-colors",
-                      isSelected
-                        ? "border-l-2 border-l-blue-600 bg-blue-50/70"
-                        : isHovered
-                          ? "border-l-2 border-l-transparent bg-slate-50"
-                          : "border-l-2 border-l-transparent hover:bg-slate-50",
-                    ].join(" ")}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={[
-                          "font-mono w-5 shrink-0 text-center text-[9px] font-bold",
-                          isSelected ? "text-blue-600" : "text-slate-400",
-                        ].join(" ")}
-                      >
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <LitFlag
-                        code={pair.fromMeta?.countryCode}
-                        size={13}
-                        label={pair.fromMeta?.countryName}
-                      />
-                      <span
-                        className={[
-                          "font-mono truncate text-[11px] font-semibold",
-                          isSelected ? "text-slate-900" : "text-slate-700",
-                        ].join(" ")}
-                      >
-                        {pair.fromMeta?.countryName}
-                      </span>
-                      <ArrowRight
-                        className="h-2 w-2 shrink-0 text-slate-400"
-                        aria-hidden
-                      />
-                      <LitFlag
-                        code={pair.toMeta?.countryCode}
-                        size={13}
-                        label={pair.toMeta?.countryName}
-                      />
-                      <span
-                        className={[
-                          "font-mono truncate text-[11px] font-semibold",
-                          isSelected ? "text-slate-900" : "text-slate-700",
-                        ].join(" ")}
-                      >
-                        {pair.toMeta?.countryName}
-                      </span>
-                      <span className="font-mono ml-auto shrink-0 text-[11px] font-bold text-slate-900">
-                        {shipments.toLocaleString()}
-                      </span>
-                      <ChevronDown
-                        className={[
-                          "h-3 w-3 shrink-0 text-slate-400 transition-transform",
-                          isExpanded ? "rotate-180" : "",
-                        ].join(" ")}
-                        aria-hidden
-                      />
-                    </div>
-                    <div className="mt-1.5 flex items-center gap-2 pl-7">
-                      <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100">
-                        <div
-                          className="h-full rounded"
-                          style={{
-                            width: `${Math.max(2, share * 100)}%`,
-                            // Amber ties unselected rows to the globe's amber
-                            // arcs; the selected row goes blue-600 to match
-                            // the light theme's selection accent.
-                            background: isSelected ? "#2563EB" : "#F59E0B",
-                            transition: reducedMotion
-                              ? "none"
-                              : `width 1200ms ease-out ${i * 120}ms`,
-                          }}
-                        />
-                      </div>
-                      <span className="font-mono w-16 shrink-0 text-right text-[9.5px] text-slate-500">
-                        {Number(pair.teu) > 0
-                          ? `${Math.round(Number(pair.teu)).toLocaleString()} TEU`
-                          : `${Math.round(share * 100)}%`}
-                      </span>
-                    </div>
-                  </button>
-                  {/* Expand-in-place: the pair's city routes. */}
-                  {isExpanded && (
-                    <div className="bg-slate-50/80 px-4 py-1.5 pl-11">
-                      {cityRoutes.length === 0 ? (
-                        <div className="font-body py-1 text-[10.5px] text-slate-400">
-                          No city-level routes resolved for this pair.
-                        </div>
-                      ) : (
-                        cityRoutes.slice(0, 6).map((route: any, ri: number) => (
-                          <div
-                            key={route.displayLabel || ri}
-                            className="flex items-center gap-1.5 py-1"
-                          >
-                            <span className="h-1 w-1 shrink-0 rounded-full bg-blue-500/70" />
-                            <span className="font-mono min-w-0 flex-1 truncate text-[10.5px] text-slate-600">
-                              {laneEndpointLabel(
-                                route.fromMeta,
-                                route.rawFrom || undefined,
-                              )}{" "}
-                              →{" "}
-                              {laneEndpointLabel(
-                                route.toMeta,
-                                route.rawTo || undefined,
-                              )}
-                            </span>
-                            <span className="font-mono shrink-0 text-[10px] text-slate-500">
-                              {(Number(route.shipments) || 0).toLocaleString()}
-                            </span>
-                          </div>
-                        ))
-                      )}
-                      {cityRoutes.length > 6 && (
-                        <div className="font-body py-0.5 text-[10px] text-slate-400">
-                          +{cityRoutes.length - 6} more city routes
-                        </div>
-                      )}
-                      {onOpenLaneHistory && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onOpenLaneHistory(pairToHistoryFilter(pair))
-                          }
-                          className="font-display mb-1 mt-1 inline-flex items-center gap-1 text-[10.5px] font-semibold text-blue-600 hover:text-blue-700"
-                        >
-                          <History className="h-3 w-3" />
-                          View monthly history →
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {unresolvedRoutes.length > 0 && (
-              <div className="flex items-center gap-2 px-4 py-2">
-                <span className="font-mono w-5 shrink-0 text-center text-[9px] font-bold text-slate-300">
-                  ··
-                </span>
-                <span className="font-body min-w-0 flex-1 truncate text-[10.5px] text-slate-400">
-                  {unresolvedRoutes.length} unresolved route
-                  {unresolvedRoutes.length === 1 ? "" : "s"}
-                </span>
-                <span className="font-mono shrink-0 text-[10px] text-slate-400">
-                  {unresolvedRoutes
-                    .reduce(
-                      (s: number, l: any) => s + (Number(l.shipments) || 0),
-                      0,
-                    )
-                    .toLocaleString()}
-                </span>
-              </div>
-            )}
-            {onOpenLanesTab && canonicalLanes.length > 0 && (
-              <div className="px-4 py-2">
+            <div className="flex shrink-0 items-center gap-1">
+              {onOpenLaneHistory && (
                 <button
                   type="button"
-                  onClick={onOpenLanesTab}
-                  className="font-body inline-flex items-center gap-1 text-[11.5px] font-medium text-blue-600 hover:text-blue-700"
+                  onClick={() => onOpenLaneHistory(null)}
+                  title="Lane history"
+                  className="font-display inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 bg-white/80 px-2 text-[10px] font-semibold text-slate-600 hover:bg-white hover:text-slate-900"
                 >
-                  View all {canonicalLanes.length.toLocaleString()} routes →
+                  <History className="h-3 w-3" />
+                  History
                 </button>
-              </div>
-            )}
+              )}
+              <button
+                type="button"
+                onClick={() => setMapDialogOpen(true)}
+                title="Expand map"
+                aria-label="Expand map to full screen"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white/80 text-slate-600 hover:bg-white hover:text-blue-600"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <LaneRankRows
+              rankedPairs={rankedPairs}
+              totalShipments={totalPairShipments}
+              selectedPair={selectedPair}
+              expandedPair={expandedPair}
+              onRowClick={handleRowClick}
+              cityRoutesByPair={cityRoutesByPair}
+              onOpenLaneHistory={onOpenLaneHistory}
+              reducedMotion={reducedMotion}
+              registerRowRef={registerRowRef}
+            />
+            {laneListFooter}
           </div>
         </div>
+
+        {/* Mobile: expand button floats top-right over the map. */}
+        <button
+          type="button"
+          onClick={() => setMapDialogOpen(true)}
+          aria-label="Expand map to full screen"
+          className={[
+            "absolute right-3 top-3 z-[700] inline-flex h-11 w-11 items-center justify-center text-slate-600 md:hidden",
+            GLASS_PANEL,
+          ].join(" ")}
+        >
+          <Maximize2 className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Mobile: lane cards BELOW the map as a scrollable sheet. */}
+      <div className="max-h-[340px] overflow-y-auto border-t border-slate-100 md:hidden">
+        <div className="flex items-center justify-between px-3.5 pb-1 pt-3">
+          <span className="font-display text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            Top lanes · country pairs
+          </span>
+          <span className="font-mono text-[10px] font-semibold text-slate-400">
+            {rankedPairs.length}
+          </span>
+        </div>
+        <LaneRankRows
+          rankedPairs={rankedPairs}
+          totalShipments={totalPairShipments}
+          selectedPair={selectedPair}
+          expandedPair={expandedPair}
+          onRowClick={handleRowClick}
+          cityRoutesByPair={cityRoutesByPair}
+          onOpenLaneHistory={onOpenLaneHistory}
+          reducedMotion={reducedMotion}
+          registerRowRef={registerRowRef}
+        />
+        {laneListFooter}
       </div>
 
       {/* Container-mix bar — white strip below the hero. */}
@@ -2731,27 +2755,521 @@ function TopLanesCard({
 
       {/* Honesty label (CEO trust P0, f8dbf067) — lanes derive from the
           snapshot's recent-BOL sample, not the full 12-mo manifest. */}
-      {recentBols.length > 0 && (
+      {honestyCaption && (
         <div className="border-t border-slate-100 px-3 py-2 sm:px-4">
           <p className="font-body m-0 text-[10.5px] leading-snug text-slate-400">
-            {(() => {
-              const n = recentBols.length;
-              const total = Number(shipments12mTotal);
-              const pct =
-                Number.isFinite(total) && total > 0
-                  ? Math.min(100, Math.max(1, Math.round((n / total) * 100)))
-                  : null;
-              return `Lanes derived from the ${n.toLocaleString()} most recent shipments${
-                pct != null ? ` (~${pct}% of 12-mo volume)` : ""
-              }`;
-            })()}
+            {honestyCaption}
           </p>
         </div>
+      )}
+
+      {/* Full-screen map dialog. */}
+      {mapDialogOpen && (
+        <TradeLanesMapDialog
+          pairs={pairs}
+          cityRoutesByPair={cityRoutesByPair}
+          lastActivityByPair={lastActivityByPair}
+          initialSelected={selectedPair}
+          reducedMotion={reducedMotion}
+          onClose={() => setMapDialogOpen(false)}
+          onOpenLaneHistory={
+            onOpenLaneHistory
+              ? (f: LaneHistoryFilter | null) => {
+                  setMapDialogOpen(false);
+                  onOpenLaneHistory(f);
+                }
+              : undefined
+          }
+        />
       )}
     </div>
   );
 }
 
+/**
+ * TradeLanesMapDialog — full-screen expansion of the trade-lanes map.
+ *
+ * Maximized map (same Explorer-style light basemap) + richer tooling:
+ * filter chips (origin country, min shipments, transport mode when the
+ * lane data carries a `mode` field), a volume legend, Leaflet zoom
+ * controls, the floating lane cards, and a lane-detail popover for the
+ * selected lane (top city route, shipments, TEU, last activity, jump to
+ * monthly history).
+ *
+ * Desktop: lane cards dock right, filters ride top-left over the map,
+ * legend bottom-left, detail popover bottom-center. Mobile: filters are
+ * a horizontal chip row above the map, the lane list is a bottom sheet
+ * below it, and the detail card renders at the top of that sheet.
+ */
+function TradeLanesMapDialog({
+  pairs,
+  cityRoutesByPair,
+  lastActivityByPair,
+  initialSelected,
+  reducedMotion = false,
+  onClose,
+  onOpenLaneHistory,
+}: {
+  pairs: any[];
+  cityRoutesByPair: Map<string, any[]>;
+  lastActivityByPair: Map<string, Date>;
+  initialSelected: string | null;
+  reducedMotion?: boolean;
+  onClose: () => void;
+  onOpenLaneHistory?: (pair: LaneHistoryFilter | null) => void;
+}) {
+  const isMdUp = useIsMdUp();
+  const [selected, setSelected] = useState<string | null>(initialSelected);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState<boolean>(!!initialSelected);
+  const [originFilter, setOriginFilter] = useState<string | null>(null);
+  const [modeFilter, setModeFilter] = useState<string | null>(null);
+  const [minShipments, setMinShipments] = useState<number>(0);
+
+  // Escape closes; lock body scroll while open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  const ranked = useMemo(
+    () =>
+      pairs
+        .slice()
+        .sort(
+          (a: any, b: any) =>
+            (Number(b?.shipments) || 0) - (Number(a?.shipments) || 0),
+        ),
+    [pairs],
+  );
+
+  // Origin-country chips — top origins by shipments.
+  const originChips = useMemo(() => {
+    const m = new Map<
+      string,
+      { key: string; name: string; code: string; shipments: number }
+    >();
+    for (const p of ranked) {
+      const key = p?.fromMeta?.canonicalKey;
+      if (!key) continue;
+      const cur = m.get(key) || {
+        key,
+        name: p?.fromMeta?.countryName || key,
+        code: p?.fromMeta?.countryCode || "",
+        shipments: 0,
+      };
+      cur.shipments += Number(p?.shipments) || 0;
+      m.set(key, cur);
+    }
+    return [...m.values()]
+      .sort((a, b) => b.shipments - a.shipments)
+      .slice(0, 8);
+  }, [ranked]);
+
+  // Transport-mode chips — only when the lane data actually carries a
+  // mode field (honest: no fake "Ocean/Air" toggles on mode-less data).
+  const modeChips = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of ranked) {
+      const mode = String(p?.mode || "").trim();
+      if (mode) s.add(mode);
+    }
+    return [...s].sort();
+  }, [ranked]);
+
+  const filtered = useMemo(
+    () =>
+      ranked.filter(
+        (p: any) =>
+          (!originFilter || p?.fromMeta?.canonicalKey === originFilter) &&
+          (!modeFilter || String(p?.mode || "") === modeFilter) &&
+          (Number(p?.shipments) || 0) >= minShipments,
+      ),
+    [ranked, originFilter, modeFilter, minShipments],
+  );
+
+  const totalShipments = useMemo(
+    () =>
+      filtered.reduce((s: number, p: any) => s + (Number(p?.shipments) || 0), 0),
+    [filtered],
+  );
+
+  // Map lanes — every filtered pair (capped at 30 for render sanity;
+  // the hero only shows 10, this is the "richer tools" view).
+  const lanes: GlobeLane[] = useMemo(
+    () =>
+      filtered.slice(0, 30).map((p: any) => ({
+        id: p.pairKey,
+        from: p.fromMeta.canonicalKey,
+        to: p.toMeta.canonicalKey,
+        coords: [p.fromMeta.coords, p.toMeta.coords],
+        fromMeta: p.fromMeta,
+        toMeta: p.toMeta,
+        shipments: Number(p.shipments) || 0,
+      })),
+    [filtered],
+  );
+
+  // Drop the selection when a filter removes its lane.
+  useEffect(() => {
+    if (selected && !filtered.some((p: any) => p.pairKey === selected)) {
+      setSelected(null);
+      setDetailOpen(false);
+    }
+  }, [filtered, selected]);
+
+  const handleSelect = useCallback((id: string) => {
+    setSelected(id);
+    setExpandedRow(id);
+    setDetailOpen(true);
+  }, []);
+
+  const handleRowClick = useCallback(
+    (pairKey: string) => {
+      if (pairKey === selected && pairKey === expandedRow) {
+        setExpandedRow(null);
+      } else {
+        setSelected(pairKey);
+        setExpandedRow(pairKey);
+        setDetailOpen(true);
+      }
+    },
+    [selected, expandedRow],
+  );
+
+  const selPair = selected
+    ? ranked.find((p: any) => p.pairKey === selected)
+    : null;
+  const selRoutes = selPair ? cityRoutesByPair.get(selPair.pairKey) || [] : [];
+  const selLast = selPair ? lastActivityByPair.get(selPair.pairKey) : null;
+
+  const fitPadding = isMdUp
+    ? { top: 24, right: 380, bottom: 96, left: 40 }
+    : { top: 20, right: 20, bottom: 40, left: 20 };
+
+  const chipClass = (active: boolean) =>
+    [
+      "inline-flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[11px] font-semibold transition-colors md:h-7",
+      active
+        ? "border-blue-600 bg-blue-600 text-white"
+        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900",
+    ].join(" ");
+
+  // Lane-detail card — shared by desktop popover + mobile sheet header.
+  const detailCard =
+    selPair && detailOpen ? (
+      <div className="px-3.5 py-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="font-display flex min-w-0 items-center gap-1.5 text-[12.5px] font-bold text-slate-900">
+            <LitFlag
+              code={selPair.fromMeta?.countryCode}
+              size={14}
+              label={selPair.fromMeta?.countryName}
+            />
+            <span className="truncate">{selPair.fromMeta?.countryName}</span>
+            <ArrowRight className="h-3 w-3 shrink-0 text-blue-500" aria-hidden />
+            <LitFlag
+              code={selPair.toMeta?.countryCode}
+              size={14}
+              label={selPair.toMeta?.countryName}
+            />
+            <span className="truncate">{selPair.toMeta?.countryName}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDetailOpen(false)}
+            aria-label="Close lane details"
+            className="-mr-1 -mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="font-mono mt-1 text-[11px] text-slate-600">
+          {(Number(selPair.shipments) || 0).toLocaleString()} shipments
+          {Number(selPair.teu) > 0 && (
+            <> · {Math.round(Number(selPair.teu)).toLocaleString()} TEU</>
+          )}
+          {selLast && (
+            <>
+              {" "}· last:{" "}
+              {selLast.toLocaleDateString("en-US", {
+                month: "short",
+                year: "numeric",
+              })}
+            </>
+          )}
+        </div>
+        {selRoutes.length > 0 && (
+          <div className="mt-1.5 space-y-0.5">
+            {selRoutes.slice(0, 3).map((route: any, ri: number) => (
+              <div
+                key={route.displayLabel || ri}
+                className="flex items-center gap-1.5"
+              >
+                <span className="h-1 w-1 shrink-0 rounded-full bg-blue-500/70" />
+                <span className="font-mono min-w-0 flex-1 truncate text-[10.5px] text-slate-600">
+                  {laneEndpointLabel(route.fromMeta, route.rawFrom || undefined)}{" "}
+                  → {laneEndpointLabel(route.toMeta, route.rawTo || undefined)}
+                </span>
+                <span className="font-mono shrink-0 text-[10px] text-slate-500">
+                  {(Number(route.shipments) || 0).toLocaleString()}
+                </span>
+              </div>
+            ))}
+            {selRoutes.length > 3 && (
+              <div className="font-body text-[10px] text-slate-400">
+                +{selRoutes.length - 3} more city routes
+              </div>
+            )}
+          </div>
+        )}
+        {onOpenLaneHistory && (
+          <button
+            type="button"
+            onClick={() => onOpenLaneHistory(pairToHistoryFilter(selPair))}
+            className="font-display mt-1.5 inline-flex min-h-[32px] items-center gap-1 text-[10.5px] font-semibold text-blue-600 hover:text-blue-700"
+          >
+            <History className="h-3 w-3" />
+            View monthly history →
+          </button>
+        )}
+      </div>
+    ) : null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex flex-col bg-white"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Trade lanes map — expanded"
+    >
+      {/* Header bar */}
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-4">
+        <div className="min-w-0">
+          <div className="font-display text-[13px] font-bold text-slate-900">
+            Trade lanes map
+          </div>
+          <div className="font-mono text-[10.5px] text-slate-500">
+            {filtered.length.toLocaleString()} of {ranked.length.toLocaleString()}{" "}
+            country {ranked.length === 1 ? "pair" : "pairs"} ·{" "}
+            {totalShipments.toLocaleString()} shipments
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close expanded map"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Filter chips — origin country, min shipments, mode (when data
+          carries it). Horizontal-scroll row on mobile. */}
+      <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-slate-100 px-4 py-2">
+        <span className="font-display shrink-0 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
+          Origin
+        </span>
+        <button
+          type="button"
+          className={chipClass(originFilter === null)}
+          onClick={() => setOriginFilter(null)}
+        >
+          All
+        </button>
+        {originChips.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            className={chipClass(originFilter === o.key)}
+            onClick={() =>
+              setOriginFilter((prev) => (prev === o.key ? null : o.key))
+            }
+          >
+            <LitFlag code={o.code} size={12} label={o.name} />
+            {o.name}
+          </button>
+        ))}
+        <span className="mx-1 h-4 w-px shrink-0 bg-slate-200" />
+        <span className="font-display shrink-0 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
+          Min shipments
+        </span>
+        {[0, 5, 25, 100].map((n) => (
+          <button
+            key={n}
+            type="button"
+            className={chipClass(minShipments === n)}
+            onClick={() => setMinShipments(n)}
+          >
+            {n === 0 ? "All" : `${n}+`}
+          </button>
+        ))}
+        {modeChips.length > 0 && (
+          <>
+            <span className="mx-1 h-4 w-px shrink-0 bg-slate-200" />
+            <span className="font-display shrink-0 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
+              Mode
+            </span>
+            <button
+              type="button"
+              className={chipClass(modeFilter === null)}
+              onClick={() => setModeFilter(null)}
+            >
+              All
+            </button>
+            {modeChips.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={chipClass(modeFilter === mode)}
+                onClick={() =>
+                  setModeFilter((prev) => (prev === mode ? null : mode))
+                }
+              >
+                {mode}
+              </button>
+            ))}
+          </>
+        )}
+      </div>
+
+      {/* Body — maximized map with floating tools; mobile stacks the
+          lane sheet below the map. */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="relative min-h-[240px] flex-1">
+          <LaneMap
+            lanes={lanes}
+            selectedLane={selected}
+            onSelectLane={handleSelect}
+            height="fill"
+            variant="light"
+            volumeScale
+            zoomControlPosition="bottomleft"
+            fitPadding={fitPadding}
+          />
+
+          {/* Desktop: floating lane cards, right side. */}
+          <div
+            className={[
+              "absolute bottom-4 right-4 top-4 z-[700] hidden w-[340px] flex-col overflow-hidden md:flex",
+              GLASS_PANEL,
+            ].join(" ")}
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-3.5 pb-2 pt-2.5">
+              <span className="font-display text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                Lanes · ranked by shipments
+              </span>
+              <span className="font-mono text-[10px] font-semibold text-slate-400">
+                {filtered.length}
+              </span>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {filtered.length === 0 ? (
+                <div className="font-body px-3.5 py-4 text-[11px] text-slate-400">
+                  No lanes match the current filters.
+                </div>
+              ) : (
+                <LaneRankRows
+                  rankedPairs={filtered}
+                  totalShipments={totalShipments}
+                  selectedPair={selected}
+                  expandedPair={expandedRow}
+                  onRowClick={handleRowClick}
+                  cityRoutesByPair={cityRoutesByPair}
+                  onOpenLaneHistory={onOpenLaneHistory}
+                  reducedMotion={reducedMotion}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Desktop: volume legend, bottom-left above the zoom control. */}
+          <div
+            className={[
+              "pointer-events-none absolute bottom-4 left-16 z-[700] hidden px-3 py-2.5 md:block",
+              GLASS_PANEL,
+            ].join(" ")}
+          >
+            <div className="font-display text-[9px] font-bold uppercase tracking-wide text-slate-500">
+              Legend
+            </div>
+            <div className="mt-1.5 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="flex w-9 flex-col justify-between gap-[3px]">
+                  <span className="h-[1.5px] w-full rounded bg-indigo-500/80" />
+                  <span className="h-[2.5px] w-full rounded bg-indigo-500/80" />
+                  <span className="h-[4px] w-full rounded bg-indigo-500/80" />
+                </span>
+                <span className="font-body text-[10px] text-slate-600">
+                  Line weight = shipment volume
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="flex w-9 items-center justify-center">
+                  <span className="h-2.5 w-2.5 rounded-full border-2 border-white bg-blue-600 shadow" />
+                </span>
+                <span className="font-body text-[10px] text-slate-600">
+                  Marker size = market volume
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="flex w-9 items-center">
+                  <span className="h-[3px] w-full rounded bg-blue-600" />
+                </span>
+                <span className="font-body text-[10px] text-slate-600">
+                  Selected lane
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop: lane-detail popover, bottom-center. */}
+          {detailCard && (
+            <div className="pointer-events-none absolute bottom-4 left-1/2 z-[700] hidden w-[360px] max-w-[calc(100%-420px)] -translate-x-1/2 md:block">
+              <div className={["pointer-events-auto", GLASS_PANEL].join(" ")}>
+                {detailCard}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Mobile: detail card + lane sheet below the map. */}
+        <div className="max-h-[45%] shrink-0 overflow-y-auto border-t border-slate-200 md:hidden">
+          {detailCard && (
+            <div className="border-b border-slate-100 bg-blue-50/40">
+              {detailCard}
+            </div>
+          )}
+          {filtered.length === 0 ? (
+            <div className="font-body px-3.5 py-4 text-[11px] text-slate-400">
+              No lanes match the current filters.
+            </div>
+          ) : (
+            <LaneRankRows
+              rankedPairs={filtered}
+              totalShipments={totalShipments}
+              selectedPair={selected}
+              expandedPair={expandedRow}
+              onRowClick={handleRowClick}
+              cityRoutesByPair={cityRoutesByPair}
+              onOpenLaneHistory={onOpenLaneHistory}
+              reducedMotion={reducedMotion}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function CombinedLaneIntelligenceTable({
   canonicalLanes,
