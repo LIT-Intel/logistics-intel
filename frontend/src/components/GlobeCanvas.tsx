@@ -172,6 +172,14 @@ type Props = {
    * pauses while the pointer is over the canvas.
    */
   onSelectLane?: (laneId: string | null) => void;
+  /**
+   * P1 trade-lanes hero (2026-08): fires on pointer move with the hovered
+   * lane id (null when the pointer leaves every arc / leaves the canvas)
+   * plus canvas-relative pixel coords. Lets the parent render a data
+   * flyout ("Vietnam → US · 41 shipments · 83 TEU · last: Jul 2026")
+   * anchored to the cursor without the canvas knowing about lane stats.
+   */
+  onHoverLane?: (laneId: string | null, x: number, y: number) => void;
 };
 
 type FlagPin = {
@@ -228,6 +236,7 @@ export default function GlobeCanvas({
   theme = "light",
   showFlagPins = false,
   onSelectLane,
+  onHoverLane,
 }: Props) {
   const palette: GlobePalette =
     theme === "dark"
@@ -252,6 +261,8 @@ export default function GlobeCanvas({
   const pointerInsideRef = useRef(false);
   const onSelectRef = useRef(onSelectLane);
   useEffect(() => { onSelectRef.current = onSelectLane; }, [onSelectLane]);
+  const onHoverRef = useRef(onHoverLane);
+  useEffect(() => { onHoverRef.current = onHoverLane; }, [onHoverLane]);
   const [loaded, setLoaded] = useState(false);
   // Flag-pin overlay state — populated by the rAF tick when showFlagPins is
   // true. Throttled to one update every 3 frames so React doesn't thrash.
@@ -752,12 +763,17 @@ export default function GlobeCanvas({
           hoveredRef.current = null;
           const c = canvasRef.current;
           if (c) c.style.cursor = "default";
+          onHoverRef.current?.(null, 0, 0);
         }}
         onPointerMove={(e) => {
           const id = hitTestLane(e.clientX, e.clientY);
           hoveredRef.current = id;
           const c = canvasRef.current;
           if (c) c.style.cursor = id ? "pointer" : "default";
+          if (onHoverRef.current && c) {
+            const r = c.getBoundingClientRect();
+            onHoverRef.current(id, e.clientX - r.left, e.clientY - r.top);
+          }
         }}
         onClick={(e) => {
           if (!onSelectRef.current) return;

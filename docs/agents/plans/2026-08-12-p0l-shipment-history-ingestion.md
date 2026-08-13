@@ -2,7 +2,17 @@
 
 CEO-approved P0-L. Saved companies now accrete full BOL history beyond the
 50-row `recent_bols` snapshot, and a per-company **lane × month** rollup table
-exists for the Company Profile Lane Matrix UI (P1, next agent).
+exists for the Company Profile Lane Matrix UI.
+
+> **P1 Lane Matrix UI SHIPPED 2026-08-12 (same day).** The Company Profile's
+> Supply Chain tab now has a "Lane History" sub-tab rendering this rollup:
+> `frontend/src/components/company/LaneHistoryMatrix.tsx` (pivot, filters,
+> CSV export, freshness chip from `refreshed_at`, graceful "history builds
+> automatically for saved companies" state with the 50-BOL sample labeled) +
+> `frontend/src/api/laneHistory.ts` (24-month windowed query, authenticated
+> RLS read). The trade-lanes globe was also rebuilt as a full-bleed dark hero
+> (country-pair granularity unified between arcs and legend, arc hover flyout
+> with real numbers, lane selection wired into the matrix filter).
 
 ## What exists now
 

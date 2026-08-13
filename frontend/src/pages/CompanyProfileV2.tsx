@@ -2255,6 +2255,20 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 onSelectYear={setSelectedYear}
                 onOpenPulseLive={() => setTab("live")}
                 companyName={companyName}
+                // Same fallback chain as PulseLIVETab — any available key
+                // (source_company_key / slug / route id) resolves the
+                // lit_company_lane_months rollup for the Lane History matrix.
+                sourceCompanyKey={
+                  (bundle?.identity as any)?.source_company_key ??
+                  (bundle?.identity as any)?.sourceCompanyKey ??
+                  bundle?.identity?.key ??
+                  (activeProfile as any)?.identity?.key ??
+                  (activeProfile as any)?.source_company_key ??
+                  (activeProfile as any)?.sourceCompanyKey ??
+                  (activeProfile as any)?.key ??
+                  companyId ??
+                  null
+                }
               />
             )
           )}
