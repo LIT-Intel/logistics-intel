@@ -180,6 +180,13 @@ type Props = {
    * anchored to the cursor without the canvas knowing about lane stats.
    */
   onHoverLane?: (laneId: string | null, x: number, y: number) => void;
+  /**
+   * Optional override for the floating drop-shadow ellipse color under the
+   * sphere. Lets light-surface consumers (trade-lanes hero) soften the
+   * default palette shadow so the globe doesn't read as "floating" with a
+   * heavy blob beneath it.
+   */
+  dropShadow?: string;
 };
 
 type FlagPin = {
@@ -237,6 +244,7 @@ export default function GlobeCanvas({
   showFlagPins = false,
   onSelectLane,
   onHoverLane,
+  dropShadow,
 }: Props) {
   const palette: GlobePalette =
     theme === "dark"
@@ -244,6 +252,7 @@ export default function GlobeCanvas({
       : theme === "trade"
       ? TRADE_PALETTE
       : LIGHT_PALETTE;
+  const dropShadowColor = dropShadow ?? palette.dropShadow;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<GlobeState>({
     world: null,
@@ -366,7 +375,7 @@ export default function GlobeCanvas({
       ctx.save();
       ctx.beginPath();
       ctx.ellipse(cx, cy + sphereRadius - 4, sphereRadius * 0.78, sphereRadius * 0.16, 0, 0, Math.PI * 2);
-      ctx.fillStyle = palette.dropShadow;
+      ctx.fillStyle = dropShadowColor;
       ctx.filter = "blur(6px)";
       ctx.fill();
       ctx.restore();

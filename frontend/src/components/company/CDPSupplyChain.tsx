@@ -477,6 +477,7 @@ function SummaryView({
         onOpenLanesTab={onOpenLanesTab}
         onOpenLaneHistory={onOpenLaneHistory}
         headline={headline}
+        cadence={cadence}
         shipments12mTotal={
           Number(_profile?.routeKpis?.shipmentsLast12m) ||
           Number(_profile?.shipments_last_12m) ||
@@ -823,19 +824,26 @@ function ContainerMixBar({
           );
         })}
       </div>
-      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+      {/* Legend chips — flex-wrap inside the card with truncation + title
+          tooltips so long type/carrier labels never clip at the card edge
+          (CEO feedback 2026-08-13). */}
+      <div className="mt-2 flex min-w-0 max-w-full flex-wrap gap-x-3 gap-y-1">
         {present.map((seg) => {
           const pct = total > 0 ? Math.round((seg.count / total) * 100) : 0;
           return (
-            <div key={seg.key} className="flex items-center gap-1.5">
+            <div
+              key={seg.key}
+              className="flex min-w-0 items-center gap-1.5"
+              title={`${seg.key} · ${seg.count} (${pct}%)`}
+            >
               <span
-                className="inline-block h-2 w-2 rounded-sm"
+                className="inline-block h-2 w-2 shrink-0 rounded-sm"
                 style={{ background: CONTAINER_TYPE_COLORS[seg.key] }}
               />
-              <span className="font-display text-[10px] font-semibold text-slate-700">
+              <span className="font-display max-w-[110px] truncate text-[10px] font-semibold text-slate-700">
                 {seg.key}
               </span>
-              <span className="font-mono text-[10px] text-slate-500">
+              <span className="font-mono whitespace-nowrap text-[10px] text-slate-500">
                 {seg.count} · {pct}%
               </span>
             </div>
@@ -1969,9 +1977,14 @@ function ContainerProfileCard({ profile }: { profile: ContainerProfile }) {
  *
  * Light hero matching the dashboard card language (white surface,
  * slate-200 border — same idiom as LitSectionCard): a large interactive
- * globe anchored directly against the ranked lane legend so the two read
- * as one composition (~520px tall on lg), replacing the old 260px
- * thumbnail floating in gray space. The globe keeps its deep-ocean
+ * globe sitting immediately left of the ranked lane legend (24px gutter)
+ * so the two read as one composition, centered as a unit when the card
+ * has surplus width. The hero is DENSITY-ADAPTIVE (CEO feedback
+ * 2026-08-13): ≤4 country pairs → compact ~340px row with a ~300-330px
+ * globe; 5-10 pairs → ~440px; >10 → the full 520px. A sparse 2-lane
+ * account no longer renders a 600px white cavity. When the snapshot has
+ * monthly_volumes, a compact 12-month shipment-trend strip renders under
+ * the headline. The globe keeps its deep-ocean
  * "trade" sphere — that palette was designed for light cards — over a
  * soft radial slate backdrop. Granularity is unified: both the globe
  * arcs and the legend rows are country pairs (the exact lanes the arcs
@@ -1989,6 +2002,7 @@ function TopLanesCard({
   onOpenLanesTab,
   onOpenLaneHistory,
   headline = null,
+  cadence = [],
   shipments12mTotal = null,
 }: {
   /** Granular per-route rows (city-level) from the snapshot. */
@@ -2002,6 +2016,13 @@ function TopLanesCard({
   onOpenLaneHistory?: (pair: LaneHistoryFilter | null) => void;
   /** Strategic-brief headline folded into the hero (ex-banner). */
   headline?: string | null;
+  /**
+   * 12-month FCL/LCL cadence (parsed_summary.monthly_volumes — same series
+   * the Cadence card renders). Drives the compact "12-month shipment trend"
+   * strip under the headline so the hero's left zone carries real data
+   * instead of white space on sparse accounts.
+   */
+  cadence?: CadencePoint[];
   /**
    * Snapshot's 12-mo shipment total (parsed_summary.shipments_last_12m →
    * routeKpis.shipmentsLast12m). Drives the honesty caption's "~X% of
@@ -2168,27 +2189,54 @@ function TopLanesCard({
     }
   }, [selectedPair]);
 
-  // Responsive globe sizing — measure the hero's left cell and render the
-  // largest square that fits (clamped 300–520px). This is what makes the
-  // globe a hero instead of a 260px thumbnail.
-  const globeAreaRef = useRef<HTMLDivElement | null>(null);
-  const [globeSize, setGlobeSize] = useState(420);
+  // ── Density-adaptive composition (CEO feedback 2026-08-13) ───────────
+  // Card height is driven by lane count, not a fixed 520px: a 2-lane
+  // account gets a compact ~340px hero with a ~300-330px globe instead of
+  // a 600px cavity; 5-10 lanes get a mid hero; >10 keep the full 520px.
+  const laneCount = pairs.length;
+  const density: "compact" | "medium" | "rich" =
+    laneCount <= 4 ? "compact" : laneCount <= 10 ? "medium" : "rich";
+  const heroHeightClass =
+    density === "compact"
+      ? "lg:h-[340px]"
+      : density === "medium"
+        ? "lg:h-[440px]"
+        : "lg:h-[520px]";
+  const heroHeightPx =
+    density === "compact" ? 340 : density === "medium" ? 440 : 520;
+  const globeMin = density === "compact" ? 260 : 300;
+  const globeMax =
+    density === "compact" ? 330 : density === "medium" ? 410 : 520;
+
+  // Responsive globe sizing — measure the hero composition row (stable,
+  // full card width — never the globe's own wrapper, which would be
+  // circular) and render the largest square that fits next to the 380px
+  // legend rail, clamped to the density band above.
+  const heroAreaRef = useRef<HTMLDivElement | null>(null);
+  const [globeSize, setGlobeSize] = useState(globeMax);
   useEffect(() => {
-    const el = globeAreaRef.current;
+    const el = heroAreaRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const w = entry.contentRect.width;
-        const h = entry.contentRect.height;
+        // Side-by-side (globe + 380px legend + ~24px gutter) needs ~700px
+        // of row width; below that the pair stacks and the globe can use
+        // the full row width.
+        const sideBySide = w >= 700;
+        const availW = sideBySide ? w - 380 - 24 - 16 : w - 24;
         const next = Math.round(
-          Math.max(300, Math.min(520, Math.min(w - 24, h - 16))),
+          Math.max(
+            globeMin,
+            Math.min(globeMax, Math.min(availW, heroHeightPx - 24)),
+          ),
         );
         setGlobeSize((prev) => (Math.abs(prev - next) > 8 ? next : prev));
       }
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [viewMode]);
+  }, [viewMode, globeMin, globeMax, heroHeightPx]);
 
   const handleGlobeHover = useCallback(
     (id: string | null, x: number, y: number) => {
@@ -2288,6 +2336,40 @@ function TopLanesCard({
                   rankedPairs.length === 1 ? "lane" : "lanes"
                 } across this account's recent import history.`}
             </div>
+            {/* 12-month shipment trend — real parsed_summary.monthly_volumes
+                data rendered as a quiet bar strip so the hero's left zone
+                carries signal instead of white space on sparse accounts.
+                No axes, slate styling; hover a bar for the month + count. */}
+            {cadence.length > 0 && (
+              <div className="mt-2.5">
+                <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                  12-month shipment trend
+                </div>
+                <div className="mt-1 flex h-7 max-w-[260px] items-end gap-[3px]">
+                  {(() => {
+                    const maxTotal = Math.max(
+                      1,
+                      ...cadence.map((c) => Number(c.total) || 0),
+                    );
+                    return cadence.map((c, ci) => (
+                      <div
+                        key={`${c.label}-${ci}`}
+                        title={`${c.label} · ${(Number(c.total) || 0).toLocaleString()} shipment${
+                          (Number(c.total) || 0) === 1 ? "" : "s"
+                        }`}
+                        className="w-[14px] shrink-0 rounded-[2px] bg-slate-300 transition-colors hover:bg-blue-400"
+                        style={{
+                          height: `${Math.max(
+                            10,
+                            Math.round(((Number(c.total) || 0) / maxTotal) * 100),
+                          )}%`,
+                        }}
+                      />
+                    ));
+                  })()}
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {onOpenLaneHistory && (
@@ -2304,14 +2386,25 @@ function TopLanesCard({
           </div>
         </div>
 
-        {/* Globe + legend as one composition: on lg the two share a grid
-            with the globe right-anchored against the legend rail, so there
-            is no void between them. Below lg they stack (globe on top). */}
-        <div className="relative flex flex-col lg:grid lg:h-[520px] lg:grid-cols-[minmax(0,1fr)_380px]">
-          {/* Left — the globe (or 2-D map), large and anchored to the rail. */}
+        {/* Globe + legend as ONE tight composition at every density: the
+            pair (globe + 24px gutter + 380px legend) is centered
+            horizontally as a unit when there's surplus width, and both are
+            vertically centered. Row height comes from lane count (density),
+            not a fixed 520px — no min-height void under sparse accounts.
+            Below lg they stack (globe on top). */}
+        <div
+          ref={heroAreaRef}
+          className={[
+            "relative flex flex-col lg:flex-row lg:items-center lg:justify-center lg:gap-6 lg:px-5",
+            heroHeightClass,
+          ].join(" ")}
+        >
+          {/* Left — the globe (or 2-D map), sized to its density band. */}
           <div
-            ref={globeAreaRef}
-            className="relative flex min-h-[340px] items-center justify-center overflow-hidden sm:min-h-[400px] lg:justify-end lg:pr-2"
+            className={[
+              "relative flex items-center justify-center overflow-hidden py-3 lg:py-0",
+              viewMode === "globe" ? "lg:shrink-0" : "w-full min-w-0 lg:flex-1 lg:self-stretch",
+            ].join(" ")}
           >
             {viewMode === "globe" ? (
               /* Wrapper shares the canvas' coordinate frame so the hover
@@ -2324,10 +2417,10 @@ function TopLanesCard({
                 {/* Soft radial backdrop so the ocean-blue sphere sits
                     intentionally on the light card instead of floating. */}
                 <div
-                  className="pointer-events-none absolute -inset-10 rounded-full"
+                  className="pointer-events-none absolute -inset-8 rounded-full"
                   style={{
                     background:
-                      "radial-gradient(circle, #F1F5F9 0%, rgba(241,245,249,0) 70%)",
+                      "radial-gradient(circle, #F8FAFC 0%, rgba(248,250,252,0) 70%)",
                   }}
                   aria-hidden
                 />
@@ -2336,6 +2429,7 @@ function TopLanesCard({
                   selectedLane={selectedPair}
                   size={globeSize}
                   theme="trade"
+                  dropShadow="rgba(15, 23, 42, 0.08)"
                   showFlagPins
                   onSelectLane={(id) => {
                     lastSelectionSourceRef.current = "map";
@@ -2406,14 +2500,16 @@ function TopLanesCard({
                     setSelectedPair(id);
                     if (id) setExpandedPair(id);
                   }}
-                  height={460}
+                  height={Math.max(280, heroHeightPx - 60)}
                 />
               </div>
             )}
           </div>
 
-          {/* Right — ranked lane legend on the SAME light surface. */}
-          <div className="relative w-full overflow-y-auto border-t border-slate-100 lg:border-l lg:border-t-0">
+          {/* Right — ranked lane legend on the SAME light surface, sitting
+              immediately right of the globe (24px gutter) and vertically
+              centered with it so the two read as one unit. */}
+          <div className="relative max-h-[380px] w-full overflow-y-auto border-t border-slate-100 lg:max-h-[calc(100%-24px)] lg:w-[380px] lg:shrink-0 lg:self-center lg:rounded-lg lg:border lg:border-slate-100">
             <div className="flex items-center justify-between px-4 pb-1 pt-3">
               <span className="font-display text-[10px] font-bold uppercase tracking-wide text-slate-500">
                 Top lanes · country pairs
