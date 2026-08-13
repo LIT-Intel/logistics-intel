@@ -1967,13 +1967,17 @@ function ContainerProfileCard({ profile }: { profile: ContainerProfile }) {
 /**
  * TopLanesCard — CEO-approved P1 redesign (2026-08-12).
  *
- * Full-bleed dark hero: a large left-anchored interactive globe and the
- * ranked lane legend share ONE dark surface (~520px tall on lg), replacing
- * the old 260px thumbnail floating in gray space. Granularity is unified:
- * both the globe arcs and the legend rows are country pairs (the exact
- * lanes the arcs draw), and each legend row expands in place to its city
- * routes. Selection highlights the same entity in both directions, and
- * hovering an arc shows a data flyout with real numbers
+ * Light hero matching the dashboard card language (white surface,
+ * slate-200 border — same idiom as LitSectionCard): a large interactive
+ * globe anchored directly against the ranked lane legend so the two read
+ * as one composition (~520px tall on lg), replacing the old 260px
+ * thumbnail floating in gray space. The globe keeps its deep-ocean
+ * "trade" sphere — that palette was designed for light cards — over a
+ * soft radial slate backdrop. Granularity is unified: both the globe
+ * arcs and the legend rows are country pairs (the exact lanes the arcs
+ * draw), and each legend row expands in place to its city routes.
+ * Selection highlights the same entity in both directions, and hovering
+ * an arc shows a data flyout with real numbers
  * ("Vietnam → US · 41 shipments · 83 TEU · last: Jul 2026").
  */
 function TopLanesCard({
@@ -2264,44 +2268,21 @@ function TopLanesCard({
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-      {/* ── Dark hero: globe + legend on one surface ──────────────────── */}
-      <div
-        className="relative"
-        style={{
-          background:
-            "linear-gradient(135deg, #0B1736 0%, #0F1D38 55%, #102240 100%)",
-        }}
-      >
-        <div
-          className="pointer-events-none absolute -right-16 -top-16 h-72 w-72"
-          style={{
-            background:
-              "radial-gradient(circle, rgba(0,240,255,0.12) 0%, transparent 60%)",
-          }}
-          aria-hidden
-        />
+      {/* ── Light hero: globe + legend on one white surface ───────────── */}
+      <div className="relative bg-white">
         {/* Hero header — eyebrow + folded strategic headline + controls */}
-        <div className="relative flex flex-wrap items-start justify-between gap-2 px-4 pt-4 sm:px-5">
+        <div className="relative flex flex-wrap items-start justify-between gap-2 px-4 pt-3.5 sm:px-5">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span
-                className="font-display text-[9px] font-bold uppercase tracking-[0.14em]"
-                style={{ color: "#00F0FF" }}
-              >
+              <span className="font-display text-[9px] font-bold uppercase tracking-[0.14em] text-blue-600">
                 Global trade lanes
               </span>
-              <span
-                className="h-px w-8"
-                style={{ background: "rgba(0,240,255,0.3)" }}
-              />
+              <span className="h-px w-8 bg-blue-200" />
               <span className="font-display text-[9px] font-semibold text-slate-400">
                 Recent activity
               </span>
             </div>
-            <div
-              className="font-display mt-1 max-w-[620px] text-[15px] font-semibold leading-snug tracking-tight sm:text-[16px]"
-              style={{ color: "#F8FAFC" }}
-            >
+            <div className="font-display mt-1 max-w-[620px] text-[15px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-[16px]">
               {headline ||
                 `${rankedPairs.length} active country ${
                   rankedPairs.length === 1 ? "lane" : "lanes"
@@ -2313,7 +2294,7 @@ function TopLanesCard({
               <button
                 type="button"
                 onClick={() => onOpenLaneHistory(null)}
-                className="font-display inline-flex items-center gap-1 rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[10.5px] font-semibold text-slate-200 hover:bg-white/10 hover:text-white"
+                className="font-display inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               >
                 <History className="h-3 w-3" />
                 Lane history
@@ -2323,11 +2304,14 @@ function TopLanesCard({
           </div>
         </div>
 
-        <div className="relative flex flex-col lg:h-[520px] lg:flex-row">
-          {/* Left — the globe (or 2-D map), large and left-anchored. */}
+        {/* Globe + legend as one composition: on lg the two share a grid
+            with the globe right-anchored against the legend rail, so there
+            is no void between them. Below lg they stack (globe on top). */}
+        <div className="relative flex flex-col lg:grid lg:h-[520px] lg:grid-cols-[minmax(0,1fr)_380px]">
+          {/* Left — the globe (or 2-D map), large and anchored to the rail. */}
           <div
             ref={globeAreaRef}
-            className="relative flex min-h-[340px] flex-1 items-center justify-center overflow-hidden sm:min-h-[400px] lg:justify-start lg:pl-4"
+            className="relative flex min-h-[340px] items-center justify-center overflow-hidden sm:min-h-[400px] lg:justify-end lg:pr-2"
           >
             {viewMode === "globe" ? (
               /* Wrapper shares the canvas' coordinate frame so the hover
@@ -2337,6 +2321,16 @@ function TopLanesCard({
                 className="relative"
                 style={{ width: globeSize, height: globeSize }}
               >
+                {/* Soft radial backdrop so the ocean-blue sphere sits
+                    intentionally on the light card instead of floating. */}
+                <div
+                  className="pointer-events-none absolute -inset-10 rounded-full"
+                  style={{
+                    background:
+                      "radial-gradient(circle, #F1F5F9 0%, rgba(241,245,249,0) 70%)",
+                  }}
+                  aria-hidden
+                />
                 <GlobeCanvas
                   lanes={heroLanes}
                   selectedLane={selectedPair}
@@ -2363,7 +2357,7 @@ function TopLanesCard({
                       transform: "translate(-50%, -100%)",
                     }}
                   >
-                    <div className="rounded-lg border border-cyan-400/30 bg-slate-900/95 px-3 py-2 shadow-[0_8px_24px_rgba(2,6,23,0.55)]">
+                    <div className="rounded-lg border border-slate-700 bg-slate-900/95 px-3 py-2 shadow-[0_8px_24px_rgba(2,6,23,0.35)]">
                       <div className="font-display flex items-center gap-1.5 whitespace-nowrap text-[11.5px] font-bold text-white">
                         <LitFlag
                           code={hoveredPair.fromMeta?.countryCode}
@@ -2371,7 +2365,7 @@ function TopLanesCard({
                           label={hoveredPair.fromMeta?.countryName}
                         />
                         {hoveredPair.fromMeta?.countryName}
-                        <ArrowRight className="h-2.5 w-2.5 text-cyan-300" aria-hidden />
+                        <ArrowRight className="h-2.5 w-2.5 text-blue-300" aria-hidden />
                         <LitFlag
                           code={hoveredPair.toMeta?.countryCode}
                           size={12}
@@ -2379,7 +2373,7 @@ function TopLanesCard({
                         />
                         {hoveredPair.toMeta?.countryName}
                       </div>
-                      <div className="font-mono mt-0.5 whitespace-nowrap text-[10.5px] text-cyan-200">
+                      <div className="font-mono mt-0.5 whitespace-nowrap text-[10.5px] text-blue-200">
                         {(Number(hoveredPair.shipments) || 0).toLocaleString()}{" "}
                         shipments
                         {Number(hoveredPair.teu) > 0 && (
@@ -2418,13 +2412,13 @@ function TopLanesCard({
             )}
           </div>
 
-          {/* Right — ranked lane legend on the SAME dark surface. */}
-          <div className="relative w-full overflow-y-auto border-t border-white/10 lg:w-[380px] lg:border-l lg:border-t-0">
+          {/* Right — ranked lane legend on the SAME light surface. */}
+          <div className="relative w-full overflow-y-auto border-t border-slate-100 lg:border-l lg:border-t-0">
             <div className="flex items-center justify-between px-4 pb-1 pt-3">
-              <span className="font-display text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              <span className="font-display text-[10px] font-bold uppercase tracking-wide text-slate-500">
                 Top lanes · country pairs
               </span>
-              <span className="font-mono text-[10px] font-semibold text-slate-500">
+              <span className="font-mono text-[10px] font-semibold text-slate-400">
                 {rankedPairs.length}
               </span>
             </div>
@@ -2439,7 +2433,7 @@ function TopLanesCard({
               return (
                 <div
                   key={pair.pairKey}
-                  className="border-b border-white/[0.06] last:border-b-0"
+                  className="border-b border-slate-100 last:border-b-0"
                 >
                   <button
                     ref={(el) => {
@@ -2458,17 +2452,17 @@ function TopLanesCard({
                     className={[
                       "w-full px-4 py-2 text-left transition-colors",
                       isSelected
-                        ? "border-l-2 border-l-cyan-400 bg-white/10"
+                        ? "border-l-2 border-l-blue-600 bg-blue-50/70"
                         : isHovered
-                          ? "border-l-2 border-l-transparent bg-white/5"
-                          : "border-l-2 border-l-transparent hover:bg-white/5",
+                          ? "border-l-2 border-l-transparent bg-slate-50"
+                          : "border-l-2 border-l-transparent hover:bg-slate-50",
                     ].join(" ")}
                   >
                     <div className="flex items-center gap-2">
                       <span
                         className={[
                           "font-mono w-5 shrink-0 text-center text-[9px] font-bold",
-                          isSelected ? "text-cyan-300" : "text-slate-500",
+                          isSelected ? "text-blue-600" : "text-slate-400",
                         ].join(" ")}
                       >
                         {String(i + 1).padStart(2, "0")}
@@ -2481,13 +2475,13 @@ function TopLanesCard({
                       <span
                         className={[
                           "font-mono truncate text-[11px] font-semibold",
-                          isSelected ? "text-white" : "text-slate-200",
+                          isSelected ? "text-slate-900" : "text-slate-700",
                         ].join(" ")}
                       >
                         {pair.fromMeta?.countryName}
                       </span>
                       <ArrowRight
-                        className="h-2 w-2 shrink-0 text-slate-500"
+                        className="h-2 w-2 shrink-0 text-slate-400"
                         aria-hidden
                       />
                       <LitFlag
@@ -2498,36 +2492,39 @@ function TopLanesCard({
                       <span
                         className={[
                           "font-mono truncate text-[11px] font-semibold",
-                          isSelected ? "text-white" : "text-slate-200",
+                          isSelected ? "text-slate-900" : "text-slate-700",
                         ].join(" ")}
                       >
                         {pair.toMeta?.countryName}
                       </span>
-                      <span className="font-mono ml-auto shrink-0 text-[11px] font-bold text-slate-100">
+                      <span className="font-mono ml-auto shrink-0 text-[11px] font-bold text-slate-900">
                         {shipments.toLocaleString()}
                       </span>
                       <ChevronDown
                         className={[
-                          "h-3 w-3 shrink-0 text-slate-500 transition-transform",
+                          "h-3 w-3 shrink-0 text-slate-400 transition-transform",
                           isExpanded ? "rotate-180" : "",
                         ].join(" ")}
                         aria-hidden
                       />
                     </div>
                     <div className="mt-1.5 flex items-center gap-2 pl-7">
-                      <div className="h-1 flex-1 overflow-hidden rounded bg-white/10">
+                      <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100">
                         <div
                           className="h-full rounded"
                           style={{
                             width: `${Math.max(2, share * 100)}%`,
-                            background: isSelected ? "#22D3EE" : "#FBBF24",
+                            // Amber ties unselected rows to the globe's amber
+                            // arcs; the selected row goes blue-600 to match
+                            // the light theme's selection accent.
+                            background: isSelected ? "#2563EB" : "#F59E0B",
                             transition: reducedMotion
                               ? "none"
                               : `width 1200ms ease-out ${i * 120}ms`,
                           }}
                         />
                       </div>
-                      <span className="font-mono w-16 shrink-0 text-right text-[9.5px] text-slate-400">
+                      <span className="font-mono w-16 shrink-0 text-right text-[9.5px] text-slate-500">
                         {Number(pair.teu) > 0
                           ? `${Math.round(Number(pair.teu)).toLocaleString()} TEU`
                           : `${Math.round(share * 100)}%`}
@@ -2536,9 +2533,9 @@ function TopLanesCard({
                   </button>
                   {/* Expand-in-place: the pair's city routes. */}
                   {isExpanded && (
-                    <div className="bg-black/20 px-4 py-1.5 pl-11">
+                    <div className="bg-slate-50/80 px-4 py-1.5 pl-11">
                       {cityRoutes.length === 0 ? (
-                        <div className="font-body py-1 text-[10.5px] text-slate-500">
+                        <div className="font-body py-1 text-[10.5px] text-slate-400">
                           No city-level routes resolved for this pair.
                         </div>
                       ) : (
@@ -2547,8 +2544,8 @@ function TopLanesCard({
                             key={route.displayLabel || ri}
                             className="flex items-center gap-1.5 py-1"
                           >
-                            <span className="h-1 w-1 shrink-0 rounded-full bg-cyan-400/60" />
-                            <span className="font-mono min-w-0 flex-1 truncate text-[10.5px] text-slate-300">
+                            <span className="h-1 w-1 shrink-0 rounded-full bg-blue-500/70" />
+                            <span className="font-mono min-w-0 flex-1 truncate text-[10.5px] text-slate-600">
                               {laneEndpointLabel(
                                 route.fromMeta,
                                 route.rawFrom || undefined,
@@ -2559,14 +2556,14 @@ function TopLanesCard({
                                 route.rawTo || undefined,
                               )}
                             </span>
-                            <span className="font-mono shrink-0 text-[10px] text-slate-400">
+                            <span className="font-mono shrink-0 text-[10px] text-slate-500">
                               {(Number(route.shipments) || 0).toLocaleString()}
                             </span>
                           </div>
                         ))
                       )}
                       {cityRoutes.length > 6 && (
-                        <div className="font-body py-0.5 text-[10px] text-slate-500">
+                        <div className="font-body py-0.5 text-[10px] text-slate-400">
                           +{cityRoutes.length - 6} more city routes
                         </div>
                       )}
@@ -2576,7 +2573,7 @@ function TopLanesCard({
                           onClick={() =>
                             onOpenLaneHistory(pairToHistoryFilter(pair))
                           }
-                          className="font-display mb-1 mt-1 inline-flex items-center gap-1 text-[10.5px] font-semibold text-cyan-300 hover:text-cyan-200"
+                          className="font-display mb-1 mt-1 inline-flex items-center gap-1 text-[10.5px] font-semibold text-blue-600 hover:text-blue-700"
                         >
                           <History className="h-3 w-3" />
                           View monthly history →
@@ -2589,14 +2586,14 @@ function TopLanesCard({
             })}
             {unresolvedRoutes.length > 0 && (
               <div className="flex items-center gap-2 px-4 py-2">
-                <span className="font-mono w-5 shrink-0 text-center text-[9px] font-bold text-slate-600">
+                <span className="font-mono w-5 shrink-0 text-center text-[9px] font-bold text-slate-300">
                   ··
                 </span>
-                <span className="font-body min-w-0 flex-1 truncate text-[10.5px] text-slate-500">
+                <span className="font-body min-w-0 flex-1 truncate text-[10.5px] text-slate-400">
                   {unresolvedRoutes.length} unresolved route
                   {unresolvedRoutes.length === 1 ? "" : "s"}
                 </span>
-                <span className="font-mono shrink-0 text-[10px] text-slate-500">
+                <span className="font-mono shrink-0 text-[10px] text-slate-400">
                   {unresolvedRoutes
                     .reduce(
                       (s: number, l: any) => s + (Number(l.shipments) || 0),
@@ -2611,7 +2608,7 @@ function TopLanesCard({
                 <button
                   type="button"
                   onClick={onOpenLanesTab}
-                  className="font-body inline-flex items-center gap-1 text-[11.5px] font-medium text-cyan-300 hover:text-cyan-200"
+                  className="font-body inline-flex items-center gap-1 text-[11.5px] font-medium text-blue-600 hover:text-blue-700"
                 >
                   View all {canonicalLanes.length.toLocaleString()} routes →
                 </button>
