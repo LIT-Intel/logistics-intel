@@ -553,6 +553,28 @@ function UsageBanner({ usage }: { usage: UsageState | null }) {
 
 const FLOATING_COLLAPSED_KEY = "lit.pulse_coach.floating.collapsed";
 
+/* ── Coach-first onboarding (auto-open, once, ever) ──────────────────
+ *
+ * Brand-new users land on /app/search with no idea what to type. On
+ * their FIRST session there, the floating coach auto-opens once —
+ * leading with the "watch how search works" video (pre-expanded) and
+ * follow-up-oriented quick prompts. Dismissing it (or just seeing it)
+ * writes a flag to auth user_metadata via supabase.auth.updateUser so
+ * it never auto-opens again on ANY device. localStorage (keyed by user
+ * id) is the synchronous fallback for the same session / offline case.
+ * One auto-open, ever. */
+const FIRST_AUTO_OPEN_META_KEY = "lit_coach_first_auto_open_at";
+const firstAutoOpenLocalKey = (userId: string) =>
+  `lit.pulse_coach.first_auto_open.${userId}`;
+// Only accounts younger than this ever qualify — prevents the auto-open
+// from firing for every pre-existing user the day this ships.
+const FIRST_AUTO_OPEN_MAX_ACCOUNT_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+const FIRST_RUN_PROMPTS = [
+  "Who should I follow up with this week?",
+  "Help me find freight leads",
+  "Find companies shipping from Vietnam to the US",
+];
+
 /** Returns true when the page-aware tutorial card should be visible
  *  for the current route. While true, the floating coach hides the
  *  top nudge so the user sees the tutorial first; once the user
@@ -581,6 +603,8 @@ export function PulseCoachFloating() {
   const handleAction = useNudgeActionHandler();
   const usage = usePulseUsage();
   const tut = useTutorialActive();
+  const { user } = useAuth();
+  const { pathname } = useLocation();
   // Default collapsed so the widget greets the user as a quiet pill
   // rather than a popped-open card every page load.
   const [open, setOpen] = useState(() => {
@@ -589,6 +613,51 @@ export function PulseCoachFloating() {
   });
   const [tipIdx, setTipIdx] = useState(0);
   const [hovering, setHovering] = useState(false);
+  // Coach-first onboarding mode — true only during the single-ever
+  // auto-open for a brand-new user's first session on /app/search.
+  const [firstRun, setFirstRun] = useState(false);
+  const firstRunEvaluated = useRef(false);
+
+  useEffect(() => {
+    if (firstRunEvaluated.current) return;
+    if (typeof window === "undefined") return;
+    if (!user?.id) return; // wait for auth to resolve
+    const onSearch =
+      pathname === "/app/search" || pathname.startsWith("/app/search/");
+    if (!onSearch) return; // keep waiting until they reach the landing page
+    firstRunEvaluated.current = true;
+    // Brand-new accounts only.
+    const createdAtMs = user.created_at ? Date.parse(user.created_at) : NaN;
+    if (
+      !Number.isFinite(createdAtMs) ||
+      Date.now() - createdAtMs > FIRST_AUTO_OPEN_MAX_ACCOUNT_AGE_MS
+    ) {
+      return;
+    }
+    // One auto-open, ever: cross-device flag in user metadata, plus a
+    // per-user localStorage fallback in case the metadata write failed.
+    if (user.user_metadata?.[FIRST_AUTO_OPEN_META_KEY]) return;
+    try {
+      if (window.localStorage.getItem(firstAutoOpenLocalKey(user.id))) return;
+    } catch (_) {
+      // ignore
+    }
+    const nowIso = new Date().toISOString();
+    setFirstRun(true);
+    setOpen(true);
+    try {
+      window.localStorage.setItem(firstAutoOpenLocalKey(user.id), nowIso);
+    } catch (_) {
+      // ignore quota / private mode
+    }
+    // Persist immediately (not on dismiss) so a refresh mid-session or a
+    // second device can never trigger a second auto-open.
+    supabase.auth
+      .updateUser({ data: { [FIRST_AUTO_OPEN_META_KEY]: nowIso } })
+      .catch(() => {
+        // localStorage fallback above still guards this browser.
+      });
+  }, [user?.id, user?.user_metadata, user?.created_at, pathname]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -597,13 +666,16 @@ export function PulseCoachFloating() {
 
   // Auto-collapse after 8 seconds of no interaction. Resets when the
   // user paginates, hovers, refreshes, or any open-state change kicks
-  // the timer over. Skipped while hovering so reading isn't cut off.
+  // the timer over. Skipped while hovering so reading isn't cut off,
+  // and skipped entirely during the coach-first auto-open so a new
+  // user can watch the walkthrough video without the card vanishing.
   useEffect(() => {
     if (!open) return;
     if (hovering) return;
+    if (firstRun) return;
     const timer = setTimeout(() => setOpen(false), 8000);
     return () => clearTimeout(timer);
-  }, [open, tipIdx, hovering, loading]);
+  }, [open, tipIdx, hovering, loading, firstRun]);
 
   const nudges = result?.nudges || [];
   const safeIdx = Math.min(tipIdx, Math.max(0, nudges.length - 1));
@@ -704,7 +776,13 @@ export function PulseCoachFloating() {
           </button>
           <button
             type="button"
-            onClick={() => setOpen(false)}
+            onClick={() => {
+              // Dismissing the coach-first auto-open is permanent — the
+              // metadata/localStorage flag was already written when it
+              // opened, so this simply exits first-run mode for good.
+              setFirstRun(false);
+              setOpen(false);
+            }}
             className="flex h-[22px] w-[22px] items-center justify-center rounded-md text-slate-400 hover:bg-white/5"
             aria-label="Close"
           >
@@ -715,7 +793,24 @@ export function PulseCoachFloating() {
 
       <UsageBanner usage={usage} />
 
-      {!tut.visible ? (
+      {firstRun ? (
+        <>
+          {/* Coach-first onboarding: video leads, prompts follow. */}
+          <div className="border-b border-white/5 px-3.5 py-3">
+            <div className="font-display text-[13px] font-semibold text-white">
+              Welcome to LIT — start here.
+            </div>
+            <div className="font-body mt-1 text-[11.5px] leading-relaxed text-slate-300">
+              60-second start: watch how search works below, then tap a
+              prompt like &ldquo;Who should I follow up with?&rdquo; and Coach
+              will do the digging.
+            </div>
+          </div>
+          <CoachVideoGuide defaultExpanded />
+        </>
+      ) : null}
+
+      {!tut.visible && !firstRun ? (
         <div className="relative p-4">
           {!t ? (
             <div className="font-body text-[11px] text-slate-400">
@@ -733,9 +828,11 @@ export function PulseCoachFloating() {
         </div>
       ) : null}
 
-      <TutorialCard />
-      <CoachVideoGuide />
-      <CoachComposer />
+      {/* Tutorial card is redundant while the coach-first welcome +
+          video are showing — it resurfaces on later opens. */}
+      {!firstRun ? <TutorialCard /> : null}
+      {!firstRun ? <CoachVideoGuide /> : null}
+      <CoachComposer extraPrompts={firstRun ? FIRST_RUN_PROMPTS : undefined} />
     </div>
   );
 }
@@ -843,8 +940,14 @@ function TutorialCard() {
 }
 
 /* ── Coach Composer — ask Pulse Coach anything ───────────────────── */
-function CoachVideoGuide() {
-  const [expanded, setExpanded] = useState(false);
+function CoachVideoGuide({
+  defaultExpanded = false,
+}: {
+  /** Coach-first onboarding pre-expands the video so the walkthrough
+   *  is the first thing a brand-new user sees. */
+  defaultExpanded?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
   return (
     <section className="border-b border-slate-700/80 bg-slate-950/30 px-5 py-4">
@@ -889,7 +992,13 @@ function CoachVideoGuide() {
   );
 }
 
-function CoachComposer() {
+function CoachComposer({
+  extraPrompts,
+}: {
+  /** Prompts prepended ahead of the page-aware set. Used by the
+   *  coach-first onboarding to lead with follow-up-oriented asks. */
+  extraPrompts?: string[];
+}) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [q, setQ] = useState("");
@@ -905,7 +1014,12 @@ function CoachComposer() {
   // map (active or not) so quick prompts surface even when the
   // tutorial card is suppressed.
   const tutorial = useMemo(() => findTutorialForPath(pathname), [pathname]);
-  const quickPrompts = tutorial?.quick_prompts ?? [];
+  const quickPrompts = useMemo(() => {
+    const pageAware = tutorial?.quick_prompts ?? [];
+    if (!extraPrompts?.length) return pageAware;
+    // Prepend + dedupe so the coach-first prompts lead the chip row.
+    return [...new Set([...extraPrompts, ...pageAware])];
+  }, [tutorial, extraPrompts]);
 
   const submit = useCallback(async (e?: React.FormEvent, override?: string) => {
     e?.preventDefault();
