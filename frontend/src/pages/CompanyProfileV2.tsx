@@ -411,34 +411,41 @@ function CompanyTabsRow({
   }, [moreOpen]);
 
   return (
-    <div
-      role="tablist"
-      aria-label="Company sections"
-      className="relative flex shrink-0 items-center gap-0 border-b border-slate-200 bg-white px-3 sm:px-6"
-    >
-      {VISIBLE_TABS.map((t) => {
-        const Icon = t.Icon;
-        const active = tab === t.id;
-        return (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onSelect(t.id)}
-            className={[
-              "font-display -mb-px inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-[12.5px] font-semibold transition-colors sm:px-3.5",
-              active
-                ? "border-blue-500 text-blue-700"
-                : "border-transparent text-slate-500 hover:text-slate-700",
-            ].join(" ")}
-          >
-            <Icon className="h-3 w-3" />
-            {t.label}
-          </button>
-        );
-      })}
-      <div ref={moreRef} className="relative ml-auto sm:ml-1">
+    <div className="relative flex shrink-0 items-center border-b border-slate-200 bg-white px-3 sm:px-6">
+      {/* Scrollable tab strip (phones): the 6 visible tabs overflowed a
+          360-414px viewport, pushing "Inbox"/"More" off-screen with no
+          affordance. The strip now scrolls horizontally with snap points
+          and a hidden scrollbar; the "More" trigger stays OUTSIDE the
+          scroller so its dropdown is never clipped by overflow-x. */}
+      <div
+        role="tablist"
+        aria-label="Company sections"
+        className="-mb-px flex min-w-0 snap-x items-center gap-0 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {VISIBLE_TABS.map((t) => {
+          const Icon = t.Icon;
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onSelect(t.id)}
+              className={[
+                "font-display inline-flex shrink-0 snap-start items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-[12.5px] font-semibold transition-colors sm:px-3.5",
+                active
+                  ? "border-blue-500 text-blue-700"
+                  : "border-transparent text-slate-500 hover:text-slate-700",
+              ].join(" ")}
+            >
+              <Icon className="h-3 w-3" />
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+      <div ref={moreRef} className="relative ml-auto shrink-0 sm:ml-1">
         <button
           type="button"
           aria-haspopup="menu"
@@ -2238,7 +2245,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
 
       {/* Body */}
       <div className="flex flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
-        <div className="min-w-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
+        <div className="min-w-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 md:px-6">
           {tab === "supply" && (
             isDirectoryOnly ? (
               <DirectoryOnlyEmptyState

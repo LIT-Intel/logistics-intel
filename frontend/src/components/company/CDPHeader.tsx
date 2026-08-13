@@ -224,7 +224,7 @@ export default function CDPHeader({
     <div className="shrink-0 border-b border-slate-200 bg-white">
       {/* Breadcrumb / meta row. Mobile-first padding so the breadcrumb +
           meta strip never hugs the screen edge on phones. */}
-      <div className="flex items-center justify-between gap-3 px-3 pt-3 sm:px-6">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 pt-3 sm:px-6">
         <div className="font-body flex min-w-0 items-center gap-1.5 text-[12px] text-slate-500">
           <button
             type="button"
@@ -237,7 +237,10 @@ export default function CDPHeader({
           <span className="text-slate-300">/</span>
           <span className="truncate font-semibold text-slate-900">{company.name}</span>
         </div>
-        <div className="font-mono flex items-center gap-2 whitespace-nowrap text-[11px] text-slate-400">
+        {/* Meta cluster: wraps under the breadcrumb on phones instead of
+            squeezing the company name to zero width. The truncated ID is
+            desktop-only chrome — hidden below sm to save row width. */}
+        <div className="font-mono flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 whitespace-nowrap text-[11px] text-slate-400">
           {Array.isArray(availableYears) &&
             availableYears.length > 1 &&
             typeof selectedYear === "number" &&
@@ -253,8 +256,10 @@ export default function CDPHeader({
             )}
           {company.id && (
             <>
-              <span>ID · {String(company.id).slice(0, 8)}</span>
-              <span className="text-slate-200">·</span>
+              <span className="hidden sm:inline">
+                ID · {String(company.id).slice(0, 8)}
+              </span>
+              <span className="hidden text-slate-200 sm:inline">·</span>
             </>
           )}
           {refreshing || manualRefreshing ? (
@@ -472,8 +477,16 @@ export default function CDPHeader({
         </div>
       </div>
 
-      {/* KPI strip */}
-      <LitKpiStrip cells={kpiCells} />
+      {/* KPI strip. Breakpoint override (2026-08-13): the shared strip's
+          default forces all 8 tiles into a single row from sm (640px) up,
+          which crushed each cell to ~85px on tablets — labels truncated to
+          uselessness. Profile header reflows 2-up on phones, 4-up on
+          tablets (768-1279px), and back to the single 8-across row at xl.
+          twMerge in LitKpiStrip lets these classes win per-breakpoint. */}
+      <LitKpiStrip
+        cells={kpiCells}
+        className="sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-[var(--kpi-cols)]"
+      />
     </div>
   );
 }

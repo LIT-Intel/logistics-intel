@@ -388,7 +388,13 @@ export default function CDPDetailsPanel({
   );
 
   return (
-    <aside className="hidden w-[300px] shrink-0 flex-col overflow-hidden border-l border-slate-200 bg-white lg:flex">
+    // Responsive rail (2026-08-13): below lg the 300px side rail used to be
+    // `hidden`, throwing away Account Details / firmographics / CRM stage on
+    // phones and tablets. It now stacks full-width BELOW the tab body (the
+    // parent switches flex-col → lg:flex-row) with a top border; at lg+ it
+    // returns to the fixed 300px right rail. Sections stay collapsible in
+    // both modes.
+    <aside className="flex w-full shrink-0 flex-col overflow-hidden border-t border-slate-200 bg-white lg:w-[300px] lg:border-l lg:border-t-0">
       <div className="flex-1 overflow-y-auto">
         {/* Account Details */}
         <Section

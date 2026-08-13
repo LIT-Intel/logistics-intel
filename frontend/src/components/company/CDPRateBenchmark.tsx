@@ -337,7 +337,7 @@ export default function CDPRateBenchmark({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Market-rate estimate (2 cols) */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
             <Sparkles className="h-4 w-4 text-blue-600" />
             <div className="text-[13px] font-bold text-[#0F172A]">
               Market-Rate Estimate (12M)

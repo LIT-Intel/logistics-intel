@@ -421,7 +421,7 @@ export default function LaneHistoryMatrix({
         <div className="flex items-center gap-2">
           {refreshedRel && (
             <span
-              className="font-display inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
+              className="font-display hidden items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 sm:inline-flex"
               title={`Rollup last rebuilt ${new Date(refreshedAt as string).toLocaleString()}`}
             >
               <Clock3 className="h-2.5 w-2.5" />
@@ -449,7 +449,7 @@ export default function LaneHistoryMatrix({
             setOriginCountry(e.target.value);
             setOriginCity("");
           }}
-          className="font-display rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-700 focus:outline-none"
+          className="font-display max-w-[45vw] rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-700 focus:outline-none sm:max-w-none"
         >
           <option value="">Origin country</option>
           {distinct.originCountries.map((c) => (
@@ -461,7 +461,7 @@ export default function LaneHistoryMatrix({
         <select
           value={originCity}
           onChange={(e) => setOriginCity(e.target.value)}
-          className="font-display rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-700 focus:outline-none"
+          className="font-display max-w-[45vw] rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-700 focus:outline-none sm:max-w-none"
         >
           <option value="">Origin city</option>
           {distinct.originCities.map((c) => (
@@ -476,7 +476,7 @@ export default function LaneHistoryMatrix({
             setDestState(e.target.value);
             setDestCity("");
           }}
-          className="font-display rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-700 focus:outline-none"
+          className="font-display max-w-[45vw] rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-700 focus:outline-none sm:max-w-none"
         >
           <option value="">Dest state</option>
           {distinct.destStates.map((s) => (
@@ -488,7 +488,7 @@ export default function LaneHistoryMatrix({
         <select
           value={destCity}
           onChange={(e) => setDestCity(e.target.value)}
-          className="font-display rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-700 focus:outline-none"
+          className="font-display max-w-[45vw] rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-700 focus:outline-none sm:max-w-none"
         >
           <option value="">Dest city</option>
           {distinct.destCities.map((c) => (
@@ -556,9 +556,14 @@ export default function LaneHistoryMatrix({
         </span>
       </div>
 
-      {/* Matrix table */}
-      <div className="max-h-[560px] overflow-auto">
-        <table className="w-full border-collapse">
+      {/* Matrix table. Mobile affordance (2026-08-13): month columns extend
+          well past a phone viewport with no visual cue — a right-edge fade
+          (phones only) signals the horizontal scroll, and overscroll-x-contain
+          keeps the swipe from bouncing the page. The lane column stays
+          sticky in both modes. */}
+      <div className="relative">
+        <div className="max-h-[560px] overflow-auto overscroll-x-contain">
+          <table className="w-full border-collapse">
           <thead className="sticky top-0 z-[3]">
             <tr className="bg-[#FAFBFC]">
               <th className="font-display sticky left-0 z-[2] border-b border-slate-100 bg-[#FAFBFC] px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500 sm:px-4">
@@ -580,7 +585,10 @@ export default function LaneHistoryMatrix({
           <tbody>
             {filteredLanes.map((l) => (
               <tr key={l.key} className="group hover:bg-blue-50/40">
-                <td className="sticky left-0 z-[1] max-w-[260px] border-b border-slate-50 bg-white px-3 py-1.5 group-hover:bg-blue-50/40 sm:px-4">
+                {/* 45vw cap on phones: the old fixed max-w-[260px] sticky
+                    column ate ~72% of a 360px viewport, leaving one month
+                    visible. */}
+                <td className="sticky left-0 z-[1] max-w-[45vw] border-b border-slate-50 bg-white px-3 py-1.5 group-hover:bg-blue-50/40 sm:max-w-[260px] sm:px-4">
                   <div className="flex items-center gap-1.5 whitespace-nowrap">
                     <LitFlag code={l.originCode} size={12} label={l.originCountry} />
                     <span className="font-mono truncate text-[11px] font-semibold text-slate-700">
@@ -644,7 +652,12 @@ export default function LaneHistoryMatrix({
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-0 z-[4] w-6 bg-gradient-to-l from-white to-transparent sm:hidden"
+        />
       </div>
 
       {/* Coverage footnote — history accretes gradually via the 30-min cron */}
@@ -653,6 +666,7 @@ export default function LaneHistoryMatrix({
           Exact counts from {totalLaneMonths.toLocaleString()} lane-month records
           ingested from this company's BOL archive. Coverage deepens
           automatically as background ingestion pages further back in time.
+          <span className="sm:hidden"> Swipe the table sideways to see more months.</span>
         </p>
       </div>
     </LitSectionCard>

@@ -1319,7 +1319,14 @@ export default function CDPContacts({
         </div>
       ) : view === "list" ? (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full border-collapse">
+          {/* Mobile (2026-08-13): the 8-column list table used to squeeze
+              inside the viewport (overflow-hidden wrapper, no min width) —
+              every cell collapsed to a sliver at 360-768px. The table now
+              keeps a sane min width and scrolls horizontally inside the
+              rounded card; the card-grid view remains the phone-friendly
+              alternative via the view toggle. */}
+          <div className="overflow-x-auto overscroll-x-contain">
+            <table className="w-full min-w-[860px] border-collapse">
             <thead>
               <tr className="border-b border-slate-200 bg-[#FAFBFC]">
                 {[
@@ -1360,7 +1367,8 @@ export default function CDPContacts({
                 />
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

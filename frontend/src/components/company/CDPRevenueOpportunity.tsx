@@ -358,7 +358,10 @@ export default function CDPRevenueOpportunity(props: Props) {
     report;
 
   return (
-    <div className="px-6 py-5 space-y-5">
+    // Mobile gutter (2026-08-13): px-6 here stacked on top of the page
+    // body's own padding, starving 360px phones. Tight on phones, original
+    // rhythm from sm up.
+    <div className="px-2 py-5 sm:px-6 space-y-5">
       {/* Hero — total addressable spend + win-rate scenarios */}
       <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-700 text-white overflow-hidden">
         <div className="px-5 py-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-5 items-center">
@@ -373,11 +376,11 @@ export default function CDPRevenueOpportunity(props: Props) {
               Sum of every service line below. {props.companyName ? `${props.companyName}'s` : "This account's"} entire freight wallet — what you could win if you displaced the whole stack.
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 lg:gap-3">
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2 lg:gap-3">
             {scenarios.map((s) => (
               <div
                 key={s.label}
-                className="rounded-lg bg-white/10 backdrop-blur px-3 py-2 text-center min-w-[88px]"
+                className="rounded-lg bg-white/10 backdrop-blur px-2 sm:px-3 py-2 text-center min-w-0 sm:min-w-[88px]"
               >
                 <div className="text-[9.5px] uppercase tracking-wide font-semibold text-blue-200">
                   {s.label.split(" ")[0]}

@@ -59,7 +59,7 @@ export default function CompanySignalsStrip({
   if (!rows || visible.length === 0) return null;
 
   return (
-    <div className="px-6 py-2 bg-cyan-50/40 border-b border-cyan-100">
+    <div className="px-3 sm:px-6 py-2 bg-cyan-50/40 border-b border-cyan-100">
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex items-center gap-1.5 mr-1">
           <Sparkles className="w-3.5 h-3.5 text-cyan-600" />

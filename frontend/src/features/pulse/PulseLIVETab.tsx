@@ -42,13 +42,16 @@ export function PulseLIVETab({ sourceCompanyKey, companyName }: { sourceCompanyK
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900">
         Live container tracking is currently available for Maersk and Hapag-Lloyd shipments. We're working on expanding coverage to additional carriers.
       </div>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 text-sm w-fit">
+      {/* Responsive controls (2026-08-13): segmented view switch + export
+          buttons overflowed a 360px viewport on one rigid row — both
+          clusters now wrap independently. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex w-fit flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1 text-sm">
           <Btn active={view === 'all'} onClick={() => setView('all')}>All Shipments</Btn>
           <Btn active={view === 'drayage'} onClick={() => setView('drayage')}>Drayage Opportunity</Btn>
           <Btn active={view === 'carrier'} onClick={() => setView('carrier')}>Carrier Mix</Btn>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button onClick={downloadPdf} className="text-xs rounded-md border border-slate-200 bg-white px-3 py-1.5 hover:bg-slate-50">Download PDF</button>
           <button onClick={downloadXlsx} className="text-xs rounded-md border border-slate-200 bg-white px-3 py-1.5 hover:bg-slate-50">Download Excel</button>
         </div>
