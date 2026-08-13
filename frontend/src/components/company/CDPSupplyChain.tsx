@@ -1339,7 +1339,9 @@ function SupplierDrawer({
     const ts = supplierBols
       .map(getBolDate)
       .filter(Boolean)
-      .map((d: any) => new Date(d).getTime())
+      // parseBolDate — snapshot BOL dates are DD/MM/YYYY; native Date()
+      // would read "05/08/2026" as May 8 instead of Aug 5.
+      .map((d: any) => parseBolDate(d)?.getTime() ?? NaN)
       .filter((t) => Number.isFinite(t)) as number[];
     if (!ts.length) return null;
     const fmt = (n: number) =>
@@ -5499,8 +5501,16 @@ function deriveForwarders(profile: any, recentBols: any[]): ForwarderRow[] {
       existing.teu += Number(bol?.teu) || 0;
       existing.roles.add(r.role);
       if (country) existing.countries.add(String(country));
-      if (date && (!existing.last || new Date(date) > new Date(existing.last))) {
-        existing.last = date;
+      if (date) {
+        // parseBolDate — DD/MM/YYYY snapshot dates misparse under native
+        // Date() ("05/08/2026" → May 8 instead of Aug 5).
+        const dNew = parseBolDate(String(date))?.getTime();
+        const dOld = existing.last
+          ? parseBolDate(String(existing.last))?.getTime()
+          : null;
+        if (dNew != null && (dOld == null || dNew > dOld)) {
+          existing.last = date;
+        }
       }
       counts.set(name, existing);
     }
@@ -5639,7 +5649,11 @@ function formatMonthLabel(month: any, _year: any) {
 
 function formatRelativeShort(value: any) {
   if (!value) return "—";
-  const t = new Date(value).getTime();
+  // parseBolDate first — BOL date strings are DD/MM/YYYY and native
+  // Date() would flip day/month; falls through to native parse for ISO.
+  const parsed =
+    typeof value === "string" ? parseBolDate(value) : new Date(value);
+  const t = parsed ? parsed.getTime() : NaN;
   if (!Number.isFinite(t)) return "—";
   const delta = Date.now() - t;
   if (delta < 0) return "—";
@@ -5647,7 +5661,7 @@ function formatRelativeShort(value: any) {
   if (delta < day) return "today";
   if (delta < 2 * day) return "yesterday";
   if (delta < 30 * day) return `${Math.round(delta / day)} days ago`;
-  return new Date(value).toLocaleDateString("en-US", {
+  return new Date(t).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
   });

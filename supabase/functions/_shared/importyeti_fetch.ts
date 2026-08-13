@@ -67,7 +67,30 @@ export async function fetchAndUpsertSnapshot(
     };
   }
   if (!resp.ok) {
-    throw new Error(`importyeti_upstream_${resp.status}`);
+    // Read the body so callers can distinguish "Not enough credits" (the
+    // DMA's 403 when the account balance is exhausted — verified live
+    // 2026-08-13: {"message":"Not enough credits","error":"Forbidden",
+    // "statusCode":403}) from a real auth failure. Callers surface an
+    // honest "provider credits exhausted" state instead of a generic 5xx.
+    let bodyText = "";
+    try {
+      bodyText = await resp.text();
+    } catch {
+      /* body unreadable — fall through with status only */
+    }
+    const creditsExhausted =
+      resp.status === 402 ||
+      /not enough credits|insufficient credits/i.test(bodyText);
+    const err = new Error(
+      creditsExhausted
+        ? `importyeti_credits_exhausted (upstream ${resp.status})`
+        : `importyeti_upstream_${resp.status}${bodyText ? `: ${bodyText.slice(0, 300)}` : ""}`,
+    ) as Error & { code?: string; upstreamStatus?: number };
+    err.code = creditsExhausted
+      ? "PROVIDER_CREDITS_EXHAUSTED"
+      : `IMPORTYETI_UPSTREAM_${resp.status}`;
+    err.upstreamStatus = resp.status;
+    throw err;
   }
 
   const text = await resp.text();

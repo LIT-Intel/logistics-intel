@@ -1,6 +1,12 @@
 // pulse-refresh-tick — rolling refresh of saved companies via ImportYeti.
 // Triggered every 15 min by pg_cron. Processes up to 20 companies per tick.
 // Auth: X-Internal-Cron header against LIT_CRON_SECRET env.
+//
+// Comment bump 2026-08-13: rebundle with the updated
+// _shared/importyeti_fetch.ts (captures the upstream 403 body and tags
+// "Not enough credits" as PROVIDER_CREDITS_EXHAUSTED so refresh failures
+// are honestly attributable). The auto-deploy workflow skips _shared-only
+// diffs, so this touch forces the redeploy.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";

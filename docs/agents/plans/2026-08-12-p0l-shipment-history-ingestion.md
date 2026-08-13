@@ -96,6 +96,26 @@ Kyle TX ×6 (11 TEU); Kendal (ID) → Kyle TX ×5; Tilburg (NL) → Austin TX ×
 Delete-guard verified (plain DELETE skips history rows; set_config escape hatch
 deletes them).
 
+## Post-ship fixes (2026-08-13)
+
+- **Rollup key mismatch (CEO map-v2 bug):** `lit_company_lane_months.company_id`
+  is the BARE slug (`tesla`), but `lit_companies.source_company_key` is often
+  the PREFIXED form (`company/tesla`) — which is what CompanyProfileV2's
+  sourceCompanyKey fallback chain passes down. `useCompanyLaneMonths`
+  (frontend/src/api/laneHistory.ts) now normalizes any key shape (bare slug /
+  `company/<slug>` / lit_companies UUID) to the bare slug before querying, so
+  companies WITH rollups stop silently falling back to the 50-BOL sample path.
+- **IY credits exhausted 2026-08-13:** upstream DMA returns
+  `403 {"message":"Not enough credits"}` on every paid call (probed live via
+  probe_path — a 403 costs nothing). ~26 credits were burned by the ingest
+  cron Aug 12–13 (12 pages/day cap) against the ~46-credit balance, plus
+  manual refreshes. `_shared/importyeti_fetch.ts` now tags this as
+  `PROVIDER_CREDITS_EXHAUSTED`; importyeti-proxy returns 402 with an honest
+  message; CompanyProfileV2 shows "Data refresh paused — provider credits
+  exhausted" instead of "try again in a few minutes". **Owner action: top up
+  ImportYeti credits, then consider raising `daily_page_budget`.** The ingest
+  cron self-resumes once credits exist (each 403'd attempt costs nothing).
+
 ## Gotchas for future agents
 
 - The GitHub auto-deploy workflow **skips `_shared/`-only diffs** — if you edit

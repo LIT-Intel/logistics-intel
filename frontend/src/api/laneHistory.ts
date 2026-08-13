@@ -24,6 +24,40 @@ import { supabase } from "@/lib/supabase";
 
 const FIVE_MIN = 5 * 60 * 1000;
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Resolve whatever company key the page has (bare IY slug, "company/<slug>"
+ * identity key, or a lit_companies UUID) to the BARE slug the rollup table
+ * stores in `company_id`.
+ *
+ * CEO bug 2026-08-13: CompanyProfileV2's fallback chain passes
+ * `bundle.identity.source_company_key`, which in `lit_companies` is often
+ * the PREFIXED form ("company/tesla") — while `lit_company_lane_months`
+ * (and `lit_saved_companies.source_company_key`) store the bare slug
+ * ("tesla"). The old exact `.eq()` silently missed, so companies WITH
+ * rollups fell back to the 50-BOL sample path and month filters showed
+ * "no lane activity" for months the rollup actually covers.
+ */
+async function resolveRollupCompanyId(raw: string): Promise<string | null> {
+  let key = String(raw).trim();
+  if (!key) return null;
+  if (UUID_RE.test(key)) {
+    // Route param was a lit_companies UUID — look up its source key.
+    const { data } = await supabase
+      .from("lit_companies")
+      .select("source_company_key")
+      .eq("id", key)
+      .maybeSingle();
+    const sck = (data as any)?.source_company_key;
+    if (!sck) return null;
+    key = String(sck);
+  }
+  const bare = key.replace(/^company\//i, "").trim().toLowerCase();
+  return bare || null;
+}
+
 export interface CompanyLaneMonthRow {
   origin_country: string;
   origin_city: string | null;
@@ -51,16 +85,23 @@ export function useCompanyLaneMonths(
     staleTime: FIVE_MIN,
     queryFn: async (): Promise<CompanyLaneMonthRow[]> => {
       if (!companyId) return [];
+      const rollupId = await resolveRollupCompanyId(companyId);
+      if (!rollupId) return [];
       // month >= date_trunc('month', now()) - 23 months (24-month window).
       const now = new Date();
       const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 23, 1));
       const startIso = start.toISOString().slice(0, 10);
+      // `.in()` with both the bare slug and the raw key — the rollup table
+      // stores bare slugs today, but tolerate prefixed rows defensively.
+      const candidates = Array.from(
+        new Set([rollupId, String(companyId).trim()].filter(Boolean)),
+      );
       const { data, error } = await supabase
         .from("lit_company_lane_months")
         .select(
           "origin_country, origin_city, dest_country, dest_state, dest_city, month, shipments, teu, refreshed_at",
         )
-        .eq("company_id", companyId)
+        .in("company_id", candidates)
         .gte("month", startIso)
         .order("month", { ascending: true });
       if (error) {

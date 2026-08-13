@@ -1877,6 +1877,14 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           upgrade_url: gate.upgrade_url || "/app/billing",
         });
         setRefreshError(null);
+      } else if (code === "PROVIDER_CREDITS_EXHAUSTED") {
+        // Honest state (CEO 2026-08-13): ImportYeti returns 403 "Not enough
+        // credits" when the account balance is exhausted. Retrying cannot
+        // help, so never show "try again in a few minutes" for this.
+        const friendly =
+          "Data refresh paused — shipment-data provider credits are exhausted. Saved intelligence stays available; refresh resumes once credits are topped up.";
+        setRefreshError(friendly);
+        showShareToast(friendly, "error");
       } else if (
         code === "COMPANY_PROFILE_FAILED" ||
         code === "IY_API_KEY_MISSING"

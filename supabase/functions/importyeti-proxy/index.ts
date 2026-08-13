@@ -580,6 +580,36 @@ async function checkAndIncrementPulseQuota(
   return { ok: true };
 }
 
+/**
+ * Structured response for the "ImportYeti account is out of credits" state
+ * (upstream 403 body: {"message":"Not enough credits"}). Returned as 402 —
+ * NOT 5xx — so the frontend can show an honest "refresh paused — provider
+ * credits exhausted" banner instead of the generic "temporarily
+ * unavailable, try again in a few minutes" (which is a lie: retrying
+ * cannot succeed until credits are topped up).
+ */
+function providerCreditsResponse(): Response {
+  return jsonResponse(
+    {
+      ok: false,
+      error: "provider_credits_exhausted",
+      code: "PROVIDER_CREDITS_EXHAUSTED",
+      message:
+        "Data refresh is paused — the shipment-data provider's credits are exhausted. Existing intelligence stays available; refresh resumes once credits are topped up.",
+    },
+    402,
+  );
+}
+
+function isProviderCreditsError(error: any): boolean {
+  return (
+    error?.code === "PROVIDER_CREDITS_EXHAUSTED" ||
+    /importyeti_credits_exhausted|not enough credits/i.test(
+      String(error?.message || ""),
+    )
+  );
+}
+
 async function handlePulseRefreshAction(
   supabase: any,
   companyId: string,
@@ -665,6 +695,7 @@ async function handlePulseRefreshAction(
     });
   } catch (error: any) {
     console.error("❌ Pulse refresh failed", { requestId, error: error?.message || error });
+    if (isProviderCreditsError(error)) return providerCreditsResponse();
     return jsonResponse(
       { ok: false, error: error?.message || "Pulse refresh failed", code: "PULSE_REFRESH_FAILED" },
       500,
@@ -1015,6 +1046,7 @@ async function handleCompanyBolsAction(supabase: any, companyId: string, request
     return jsonResponse(bolsBody);
   } catch (error: any) {
     console.error("❌ companyBols failed:", { requestId, error: error?.message || error });
+    if (isProviderCreditsError(error)) return providerCreditsResponse();
     return jsonResponse(
       {
         ok: false,
@@ -1503,6 +1535,7 @@ async function handleCompanyProfileAction(
     });
   } catch (error: any) {
     console.error("❌ Company profile failed:", { requestId, error: error?.message || error });
+    if (isProviderCreditsError(error)) return providerCreditsResponse();
     return jsonResponse(
       {
         ok: false,
