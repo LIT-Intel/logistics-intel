@@ -39,8 +39,13 @@ import {
 } from "@/api/intel";
 import BuyingIntentTile from "@/components/intent/BuyingIntentTile";
 import { type GlobeLane } from "@/components/GlobeCanvas";
-import LaneMap from "@/components/LaneMap";
+import LaneMap, { type LaneMapLaneColor } from "@/components/LaneMap";
 import { canonicalizeLanes, resolveEndpoint } from "@/lib/laneGlobe";
+import { laneRegionColor } from "@/lib/laneRegions";
+import {
+  useCompanyLaneMonths,
+  type CompanyLaneMonthRow,
+} from "@/api/laneHistory";
 import {
   aggregateSuppliers,
   supplierNameToSlug,
@@ -348,6 +353,10 @@ function CDPSupplyChainBody({
           onOpenLaneHistory={openLaneHistory}
           headline={briefHeadline}
           companyName={companyName}
+          sourceCompanyKey={sourceCompanyKey ?? null}
+          selectedYear={selectedYear}
+          years={years}
+          onSelectYear={onSelectYear}
         />
       )}
       {sub === "history" && (
@@ -402,6 +411,10 @@ function SummaryView({
   onOpenLaneHistory,
   headline,
   companyName,
+  sourceCompanyKey,
+  selectedYear,
+  years,
+  onSelectYear,
 }: {
   profile: any;
   cadence: CadencePoint[];
@@ -417,6 +430,10 @@ function SummaryView({
   onOpenLaneHistory?: (pair: LaneHistoryFilter | null) => void;
   headline?: string | null;
   companyName: string;
+  sourceCompanyKey?: string | null;
+  selectedYear?: number;
+  years?: number[];
+  onSelectYear?: (year: number) => void;
 }) {
   const reducedMotion = usePrefersReducedMotion();
 
@@ -483,6 +500,10 @@ function SummaryView({
           Number(_profile?.shipments_last_12m) ||
           null
         }
+        sourceCompanyKey={sourceCompanyKey}
+        selectedYear={selectedYear}
+        years={years}
+        onSelectYear={onSelectYear}
       />
       <CadenceAndModalMix
         cadence={cadence}
@@ -2041,6 +2062,409 @@ function pairToHistoryFilter(p: any): LaneHistoryFilter {
 const GLASS_PANEL =
   "rounded-xl border border-white/60 bg-white/85 shadow-[0_8px_30px_rgba(2,6,23,0.14)] backdrop-blur-md";
 
+/* ── Year/month lane scope (CEO 2026-08-13: filtering inside the map) ── */
+
+const MONTH_ABBR = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/** "2026-07" → "Jul 2026". */
+function laneMonthLabel(mk: string): string {
+  const y = mk.slice(0, 4);
+  const m = Number(mk.slice(5, 7));
+  const abbr = MONTH_ABBR[m - 1];
+  return abbr ? `${abbr} ${y}` : mk;
+}
+
+/**
+ * 12 sequential YYYY-MM keys for the per-lane mini month bars: Jan–Dec of
+ * `year` when a year is scoped, otherwise the 12 months ending at `endKey`
+ * (the latest month with data).
+ */
+function laneMonthWindowKeys(year: number | null, endKey: string | null): string[] {
+  if (year != null) {
+    return Array.from(
+      { length: 12 },
+      (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`,
+    );
+  }
+  let ey: number;
+  let em: number;
+  if (endKey && /^\d{4}-\d{2}/.test(endKey)) {
+    ey = Number(endKey.slice(0, 4));
+    em = Number(endKey.slice(5, 7));
+  } else {
+    const now = new Date();
+    ey = now.getUTCFullYear();
+    em = now.getUTCMonth() + 1;
+  }
+  const out: string[] = [];
+  for (let i = 11; i >= 0; i--) {
+    let m = em - i;
+    let y = ey;
+    while (m <= 0) {
+      m += 12;
+      y -= 1;
+    }
+    out.push(`${y}-${String(m).padStart(2, "0")}`);
+  }
+  return out;
+}
+
+/**
+ * Rollup city fields sometimes carry the country name itself ("China",
+ * "United States of America") instead of a real city — treat those as null
+ * so we don't render "China → United States of America" as a city route.
+ */
+function cleanRollupCity(raw: string | null | undefined, meta: any): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const lc = s.toLowerCase();
+  const country = String(meta?.countryName || "").toLowerCase();
+  const code = String(meta?.countryCode || "").toLowerCase();
+  if (
+    lc === country ||
+    (code && lc === code) ||
+    lc === "unknown" ||
+    lc === "united states" ||
+    lc === "united states of america" ||
+    lc === "usa"
+  ) {
+    return null;
+  }
+  return s;
+}
+
+type ScopedLaneData = {
+  /** Country-pair lanes shaped like canonicalizeLanes() output. */
+  pairs: any[];
+  cityRoutesByPair: Map<string, any[]>;
+  lastActivityByPair: Map<string, Date>;
+  unresolvedCount: number;
+  unresolvedShipments: number;
+  /** Source-record count (lane-months or BOLs) for the honesty caption. */
+  sourceRecords: number;
+};
+
+/**
+ * Build country-pair lanes + city routes + last-activity from (already
+ * scope-filtered) `lit_company_lane_months` rollup rows. `dest_country`
+ * is null on some early rollup rows — this is the US-import BOL feed, so
+ * null destination resolves to the United States.
+ */
+function buildPairsFromRollup(rows: CompanyLaneMonthRow[]): ScopedLaneData {
+  const pairMap = new Map<string, any>();
+  const routeMap = new Map<string, Map<string, any>>();
+  const lastMap = new Map<string, string>();
+  let unresolvedCount = 0;
+  let unresolvedShipments = 0;
+  for (const r of rows) {
+    const from = resolveEndpoint(r.origin_country);
+    const to = resolveEndpoint(r.dest_country || "United States");
+    if (!from?.coords || !to?.coords) {
+      unresolvedCount += 1;
+      unresolvedShipments += Number(r.shipments) || 0;
+      continue;
+    }
+    const pairKey = `${from.canonicalKey}::${to.canonicalKey}`;
+    const draft = pairMap.get(pairKey) || {
+      pairKey,
+      displayLabel: `${from.flag} ${from.countryName} → ${to.flag} ${to.countryName}`,
+      fromMeta: from,
+      toMeta: to,
+      shipments: 0,
+      teu: 0,
+    };
+    draft.shipments += Number(r.shipments) || 0;
+    draft.teu += Number(r.teu) || 0;
+    pairMap.set(pairKey, draft);
+
+    const mk = String(r.month).slice(0, 7);
+    const prev = lastMap.get(pairKey);
+    if (!prev || mk > prev) lastMap.set(pairKey, mk);
+
+    const oCity = cleanRollupCity(r.origin_city, from);
+    const dCityRaw = cleanRollupCity(r.dest_city, to);
+    const dCity = dCityRaw
+      ? r.dest_state
+        ? `${dCityRaw}, ${r.dest_state}`
+        : dCityRaw
+      : null;
+    if (oCity || dCity) {
+      const rk = `${oCity ?? ""}>${dCity ?? ""}`;
+      const perPair = routeMap.get(pairKey) || new Map<string, any>();
+      const route = perPair.get(rk) || {
+        displayLabel: `${oCity ?? from.countryName} → ${dCity ?? to.countryName}`,
+        fromMeta: { ...from, label: oCity ?? from.countryName },
+        toMeta: { ...to, label: dCity ?? to.countryName },
+        rawFrom: oCity,
+        rawTo: dCity,
+        shipments: 0,
+        teu: 0,
+      };
+      route.shipments += Number(r.shipments) || 0;
+      route.teu += Number(r.teu) || 0;
+      perPair.set(rk, route);
+      routeMap.set(pairKey, perPair);
+    }
+  }
+  const pairs = [...pairMap.values()].sort(
+    (a, b) => b.shipments - a.shipments || b.teu - a.teu,
+  );
+  const cityRoutesByPair = new Map<string, any[]>();
+  for (const [k, perPair] of routeMap.entries()) {
+    cityRoutesByPair.set(
+      k,
+      [...perPair.values()].sort((a, b) => b.shipments - a.shipments),
+    );
+  }
+  const lastActivityByPair = new Map<string, Date>();
+  for (const [k, mk] of lastMap.entries()) {
+    const d = new Date(`${mk}-01T00:00:00Z`);
+    if (!Number.isNaN(d.getTime())) lastActivityByPair.set(k, d);
+  }
+  return {
+    pairs,
+    cityRoutesByPair,
+    lastActivityByPair,
+    unresolvedCount,
+    unresolvedShipments,
+    sourceRecords: rows.length,
+  };
+}
+
+/**
+ * Sample-mode equivalent: build country-pair lanes from (already
+ * date-filtered) recent BOLs. Used when a company has no rollup rows yet —
+ * counts derive from the ~50-BOL snapshot sample, labeled "(sample)".
+ */
+function buildPairsFromSampleBols(
+  dated: Array<{ bol: any; d: Date }>,
+): ScopedLaneData {
+  const pairMap = new Map<string, any>();
+  const routeMap = new Map<string, Map<string, any>>();
+  const lastMap = new Map<string, number>();
+  let unresolvedCount = 0;
+  for (const { bol, d } of dated) {
+    const originRaw = getBolOrigin(bol);
+    const destRaw = getBolDestination(bol);
+    const from = resolveEndpoint(originRaw === "—" ? null : originRaw);
+    const to = resolveEndpoint(destRaw === "—" ? null : destRaw);
+    if (!from?.coords || !to?.coords) {
+      unresolvedCount += 1;
+      continue;
+    }
+    const pairKey = `${from.canonicalKey}::${to.canonicalKey}`;
+    const draft = pairMap.get(pairKey) || {
+      pairKey,
+      displayLabel: `${from.flag} ${from.countryName} → ${to.flag} ${to.countryName}`,
+      fromMeta: from,
+      toMeta: to,
+      shipments: 0,
+      teu: 0,
+    };
+    draft.shipments += 1;
+    draft.teu += Number(bol?.teu) || Number(bol?.containers_teu) || 0;
+    pairMap.set(pairKey, draft);
+
+    const prev = lastMap.get(pairKey);
+    if (!prev || d.getTime() > prev) lastMap.set(pairKey, d.getTime());
+
+    const oCity = cleanRollupCity(String(originRaw).split(",")[0], from);
+    const dCity = cleanRollupCity(String(destRaw).split(",")[0], to);
+    if (oCity || dCity) {
+      const rk = `${oCity ?? ""}>${dCity ?? ""}`;
+      const perPair = routeMap.get(pairKey) || new Map<string, any>();
+      const route = perPair.get(rk) || {
+        displayLabel: `${oCity ?? from.countryName} → ${dCity ?? to.countryName}`,
+        fromMeta: { ...from, label: oCity ?? from.countryName },
+        toMeta: { ...to, label: dCity ?? to.countryName },
+        rawFrom: oCity,
+        rawTo: dCity,
+        shipments: 0,
+        teu: 0,
+      };
+      route.shipments += 1;
+      perPair.set(rk, route);
+      routeMap.set(pairKey, perPair);
+    }
+  }
+  const pairs = [...pairMap.values()].sort(
+    (a, b) => b.shipments - a.shipments || b.teu - a.teu,
+  );
+  const cityRoutesByPair = new Map<string, any[]>();
+  for (const [k, perPair] of routeMap.entries()) {
+    cityRoutesByPair.set(
+      k,
+      [...perPair.values()].sort((a, b) => b.shipments - a.shipments),
+    );
+  }
+  const lastActivityByPair = new Map<string, Date>();
+  for (const [k, t] of lastMap.entries()) lastActivityByPair.set(k, new Date(t));
+  return {
+    pairs,
+    cityRoutesByPair,
+    lastActivityByPair,
+    unresolvedCount,
+    unresolvedShipments: unresolvedCount,
+    sourceRecords: dated.length,
+  };
+}
+
+/** pairKey → { "YYYY-MM": shipments } from the full rollup window. */
+function buildLaneMonthsFromRollup(
+  rows: CompanyLaneMonthRow[],
+): Map<string, Record<string, number>> {
+  const m = new Map<string, Record<string, number>>();
+  for (const r of rows) {
+    const from = resolveEndpoint(r.origin_country);
+    const to = resolveEndpoint(r.dest_country || "United States");
+    if (!from || !to) continue;
+    const pairKey = `${from.canonicalKey}::${to.canonicalKey}`;
+    const mk = String(r.month).slice(0, 7);
+    const rec = m.get(pairKey) || {};
+    rec[mk] = (rec[mk] || 0) + (Number(r.shipments) || 0);
+    m.set(pairKey, rec);
+  }
+  return m;
+}
+
+/** Sample-mode month series from dated BOLs (labelled "(sample)" in UI). */
+function buildLaneMonthsFromBols(
+  dated: Array<{ bol: any; d: Date }>,
+): Map<string, Record<string, number>> {
+  const m = new Map<string, Record<string, number>>();
+  for (const { bol, d } of dated) {
+    const from = resolveEndpoint(getBolOrigin(bol));
+    const to = resolveEndpoint(getBolDestination(bol));
+    if (!from || !to) continue;
+    const pairKey = `${from.canonicalKey}::${to.canonicalKey}`;
+    const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const rec = m.get(pairKey) || {};
+    rec[mk] = (rec[mk] || 0) + 1;
+    m.set(pairKey, rec);
+  }
+  return m;
+}
+
+/**
+ * MapScopeControls — the focus toggle + year/month filter chips that live
+ * INSIDE the map view (glass strip over the hero on desktop, a row under
+ * the map on mobile, and the expand-dialog's filter bar). One component,
+ * three mounts — same state, so the views can't drift.
+ */
+function MapScopeControls({
+  yearFilter,
+  monthFilter,
+  availableYears,
+  availableMonths,
+  onYear,
+  onMonth,
+  showAllLanes,
+  onToggleShowAllLanes,
+  sampleMode = false,
+}: {
+  yearFilter: number | null;
+  monthFilter: number | null;
+  availableYears: number[];
+  availableMonths: Set<number>;
+  onYear: (y: number | null) => void;
+  onMonth: (m: number | null) => void;
+  showAllLanes: boolean;
+  onToggleShowAllLanes: () => void;
+  sampleMode?: boolean;
+}) {
+  const chip = (active: boolean, disabled = false) =>
+    [
+      "font-display inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-full border px-2 text-[10px] font-semibold transition-colors",
+      disabled
+        ? "cursor-default border-slate-100 bg-slate-50 text-slate-300"
+        : active
+          ? "border-blue-600 bg-blue-600 text-white"
+          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900",
+    ].join(" ");
+
+  return (
+    <div className="flex items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* Focus / full-network toggle. */}
+      <button
+        type="button"
+        onClick={onToggleShowAllLanes}
+        title={
+          showAllLanes
+            ? "Focus the selected lane — other lanes fade to thin ghost lines"
+            : "Show all lanes at full strength"
+        }
+        className={chip(showAllLanes)}
+      >
+        {showAllLanes ? "Showing all" : "Show all"}
+      </button>
+      {availableYears.length > 0 && (
+        <>
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-200" aria-hidden />
+          <span className="font-display shrink-0 text-[9px] font-bold uppercase tracking-wide text-slate-400">
+            Year
+          </span>
+          <button
+            type="button"
+            className={chip(yearFilter === null)}
+            onClick={() => onYear(null)}
+          >
+            All
+          </button>
+          {availableYears.map((y) => (
+            <button
+              key={y}
+              type="button"
+              className={chip(yearFilter === y)}
+              onClick={() => onYear(yearFilter === y ? null : y)}
+            >
+              {y}
+            </button>
+          ))}
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-200" aria-hidden />
+          <span className="font-display shrink-0 text-[9px] font-bold uppercase tracking-wide text-slate-400">
+            Month
+          </span>
+          <button
+            type="button"
+            className={chip(monthFilter === null)}
+            onClick={() => onMonth(null)}
+          >
+            All
+          </button>
+          {MONTH_ABBR.map((label, i) => {
+            const m = i + 1;
+            const has = availableMonths.has(m);
+            return (
+              <button
+                key={label}
+                type="button"
+                disabled={!has}
+                title={
+                  has
+                    ? undefined
+                    : `No shipments recorded in ${label} for this scope`
+                }
+                className={chip(monthFilter === m, !has)}
+                onClick={() => has && onMonth(monthFilter === m ? null : m)}
+              >
+                {label}
+              </button>
+            );
+          })}
+          {sampleMode && (yearFilter != null || monthFilter != null) && (
+            <span className="font-display ml-0.5 shrink-0 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-[1px] text-[9px] font-bold text-amber-700">
+              sample
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /**
  * LaneRankRows — the ranked country-pair rows (rank, flags, origin→dest,
  * shipments, share bar, TEU, expand-in-place city routes + Lane-history
@@ -2057,6 +2481,10 @@ function LaneRankRows({
   onOpenLaneHistory,
   reducedMotion = false,
   registerRowRef,
+  laneColors,
+  laneMonthsByPair,
+  monthWindow,
+  sampleMode = false,
 }: {
   rankedPairs: any[];
   totalShipments: number;
@@ -2067,6 +2495,15 @@ function LaneRankRows({
   onOpenLaneHistory?: (pair: LaneHistoryFilter | null) => void;
   reducedMotion?: boolean;
   registerRowRef?: (key: string, el: HTMLButtonElement | null) => void;
+  /** Origin-region palette keyed by pairKey — rank chips + share bars use
+   *  the SAME color as the lane's map line (card ↔ line mapping). */
+  laneColors?: Record<string, LaneMapLaneColor>;
+  /** pairKey → { "YYYY-MM": shipments } for the expand-in-place mini bars. */
+  laneMonthsByPair?: Map<string, Record<string, number>>;
+  /** 12 sequential YYYY-MM keys rendered by the mini bars. */
+  monthWindow?: string[];
+  /** True when month data derives from the recent-BOL sample, not rollup. */
+  sampleMode?: boolean;
 }) {
   return (
     <>
@@ -2076,6 +2513,7 @@ function LaneRankRows({
         const shipments = Number(pair?.shipments) || 0;
         const share = totalShipments > 0 ? shipments / totalShipments : 0;
         const cityRoutes = cityRoutesByPair.get(pair.pairKey) || [];
+        const lc = laneColors?.[pair.pairKey];
         return (
           <div
             key={pair.pairKey}
@@ -2094,10 +2532,18 @@ function LaneRankRows({
             >
               <div className="flex items-center gap-2">
                 <span
-                  className={[
-                    "font-mono w-5 shrink-0 text-center text-[9px] font-bold",
-                    isSelected ? "text-blue-600" : "text-slate-400",
-                  ].join(" ")}
+                  className="font-mono w-5 shrink-0 text-center text-[9px] font-bold"
+                  style={{
+                    // Rank chip carries the lane's map-line color so the
+                    // card ↔ line mapping is instant (CEO 2026-08-13).
+                    color: lc
+                      ? isSelected
+                        ? lc.selected
+                        : lc.base
+                      : isSelected
+                        ? "#2563EB"
+                        : "#94A3B8",
+                  }}
                 >
                   {String(i + 1).padStart(2, "0")}
                 </span>
@@ -2148,10 +2594,16 @@ function LaneRankRows({
                     className="h-full rounded"
                     style={{
                       width: `${Math.max(2, share * 100)}%`,
-                      // Amber ties unselected rows to the map's warm accents;
-                      // the selected row goes blue-600 to match the map's
-                      // selection color.
-                      background: isSelected ? "#2563EB" : "#F59E0B",
+                      // Share bar rides the lane's origin-region color —
+                      // exactly what the map line paints — so scanning the
+                      // cards against the map takes zero translation.
+                      background: lc
+                        ? isSelected
+                          ? lc.selected
+                          : lc.base
+                        : isSelected
+                          ? "#2563EB"
+                          : "#F59E0B",
                       transition: reducedMotion
                         ? "none"
                         : `width 1200ms ease-out ${i * 120}ms`,
@@ -2165,9 +2617,59 @@ function LaneRankRows({
                 </span>
               </div>
             </button>
-            {/* Expand-in-place: the pair's city routes. */}
+            {/* Expand-in-place: per-lane month detail + city routes. */}
             {isExpanded && (
               <div className="bg-slate-50/90 px-3.5 py-1.5 pl-10">
+                {/* Slate-style per-lane detail (CEO 2026-08-13): a mini
+                    month-by-month shipment bar row for THIS lane, from the
+                    lane-month rollup (or the dated BOL sample). Hover a
+                    bar for the month + exact count. */}
+                {monthWindow &&
+                  monthWindow.length > 0 &&
+                  (() => {
+                    const series = laneMonthsByPair?.get(pair.pairKey);
+                    if (
+                      !series ||
+                      !monthWindow.some((mk) => (series[mk] || 0) > 0)
+                    ) {
+                      return null;
+                    }
+                    const max = Math.max(
+                      1,
+                      ...monthWindow.map((mk) => series[mk] || 0),
+                    );
+                    const barColor = lc?.base ?? "#3B82F6";
+                    return (
+                      <div className="pb-1.5 pt-1">
+                        <div className="font-display text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                          Monthly shipments{sampleMode ? " (sample)" : ""}
+                        </div>
+                        <div className="mt-1 flex h-7 max-w-[250px] items-end gap-[2px]">
+                          {monthWindow.map((mk) => {
+                            const v = series[mk] || 0;
+                            return (
+                              <div
+                                key={mk}
+                                title={`${laneMonthLabel(mk)} · ${v.toLocaleString()} shipment${v === 1 ? "" : "s"}`}
+                                className="min-w-0 flex-1 rounded-[2px]"
+                                style={{
+                                  height:
+                                    v === 0
+                                      ? "8%"
+                                      : `${Math.max(14, Math.round((v / max) * 100))}%`,
+                                  background: v === 0 ? "#E2E8F0" : barColor,
+                                  opacity: v === 0 ? 0.8 : 0.9,
+                                  transition: reducedMotion
+                                    ? "none"
+                                    : "height 500ms ease-out",
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 {cityRoutes.length === 0 ? (
                   <div className="font-body py-1 text-[10.5px] text-slate-400">
                     No city-level routes resolved for this pair.
@@ -2231,6 +2733,10 @@ function TopLanesCard({
   headline = null,
   cadence = [],
   shipments12mTotal = null,
+  sourceCompanyKey = null,
+  selectedYear,
+  years,
+  onSelectYear,
 }: {
   /** Granular per-route rows (city-level) from the snapshot. */
   canonicalLanes: any[];
@@ -2241,6 +2747,14 @@ function TopLanesCard({
   reducedMotion?: boolean;
   onOpenLanesTab?: () => void;
   onOpenLaneHistory?: (pair: LaneHistoryFilter | null) => void;
+  /** ImportYeti slug — resolves the lit_company_lane_months rollup that
+   *  powers exact year/month filtering + per-lane month bars. */
+  sourceCompanyKey?: string | null;
+  /** Page-level Year selector state — wired into the in-map scope so the
+   *  existing dropdown is no longer decorative for this card. */
+  selectedYear?: number;
+  years?: number[];
+  onSelectYear?: (year: number) => void;
   /** Strategic-brief headline folded into the hero (ex-banner). */
   headline?: string | null;
   /**
@@ -2290,17 +2804,156 @@ function TopLanesCard({
     );
   }, [countryPairLanes, canonicalLanes]);
 
+  // ── Year/month scope (CEO 2026-08-13) ────────────────────────────────
+  // When the company has lit_company_lane_months rollup rows, an active
+  // year/month filter recomputes lanes/counts/TEU/share bars AND the map
+  // lines from that exact data. Companies with only the ~50-BOL snapshot
+  // filter by the BOLs' dates instead, labeled "(sample)". No filter →
+  // the snapshot lanes render exactly as before.
+  const laneMonthsQuery = useCompanyLaneMonths(sourceCompanyKey ?? null);
+  const rollupRows = laneMonthsQuery.data;
+  const hasRollup = Array.isArray(rollupRows) && rollupRows.length > 0;
+
+  const [yearFilter, setYearFilter] = useState<number | null>(null);
+  const [monthFilter, setMonthFilter] = useState<number | null>(null);
+  const [showAllLanes, setShowAllLanes] = useState(false);
+  const scopeActive = yearFilter != null || monthFilter != null;
+
+  // Page-level Year selector wiring: respond to CHANGES of the dropdown
+  // (initial mount keeps the unfiltered "All" view). Nothing decorative —
+  // picking a year up top scopes this card exactly like the in-map chips.
+  const prevSelectedYearRef = useRef(selectedYear);
+  useEffect(() => {
+    if (prevSelectedYearRef.current === selectedYear) return;
+    prevSelectedYearRef.current = selectedYear;
+    if (typeof selectedYear === "number" && Number.isFinite(selectedYear)) {
+      setYearFilter(selectedYear);
+      setMonthFilter(null);
+    }
+  }, [selectedYear]);
+
+  const handleYearScope = useCallback(
+    (y: number | null) => {
+      setYearFilter(y);
+      setMonthFilter(null);
+      // Keep the page-level dropdown in sync when it can represent the pick.
+      if (y != null && onSelectYear && Array.isArray(years) && years.includes(y)) {
+        onSelectYear(y);
+      }
+    },
+    [onSelectYear, years],
+  );
+  const handleMonthScope = useCallback((m: number | null) => {
+    setMonthFilter(m);
+  }, []);
+
+  const sampleDatedBols = useMemo(
+    () =>
+      recentBols
+        .map((bol: any) => ({ bol, d: parseBolDate(getBolDate(bol)) }))
+        .filter((x: any): x is { bol: any; d: Date } => Boolean(x.d)),
+    [recentBols],
+  );
+
+  const availableYears = useMemo(() => {
+    const s = new Set<number>();
+    if (hasRollup) {
+      for (const r of rollupRows!) s.add(Number(String(r.month).slice(0, 4)));
+    } else {
+      for (const { d } of sampleDatedBols) s.add(d.getUTCFullYear());
+    }
+    return [...s].filter((y) => Number.isFinite(y)).sort((a, b) => b - a);
+  }, [hasRollup, rollupRows, sampleDatedBols]);
+
+  const availableMonths = useMemo(() => {
+    const s = new Set<number>();
+    if (hasRollup) {
+      for (const r of rollupRows!) {
+        const y = Number(String(r.month).slice(0, 4));
+        if (yearFilter != null && y !== yearFilter) continue;
+        s.add(Number(String(r.month).slice(5, 7)));
+      }
+    } else {
+      for (const { d } of sampleDatedBols) {
+        if (yearFilter != null && d.getUTCFullYear() !== yearFilter) continue;
+        s.add(d.getUTCMonth() + 1);
+      }
+    }
+    return s;
+  }, [hasRollup, rollupRows, sampleDatedBols, yearFilter]);
+
+  const scoped = useMemo<ScopedLaneData | null>(() => {
+    if (!scopeActive) return null;
+    if (hasRollup) {
+      const rows = rollupRows!.filter((r) => {
+        const y = Number(String(r.month).slice(0, 4));
+        const m = Number(String(r.month).slice(5, 7));
+        return (
+          (yearFilter == null || y === yearFilter) &&
+          (monthFilter == null || m === monthFilter)
+        );
+      });
+      return buildPairsFromRollup(rows);
+    }
+    const dated = sampleDatedBols.filter(
+      ({ d }: { d: Date }) =>
+        (yearFilter == null || d.getUTCFullYear() === yearFilter) &&
+        (monthFilter == null || d.getUTCMonth() + 1 === monthFilter),
+    );
+    return buildPairsFromSampleBols(dated);
+  }, [scopeActive, hasRollup, rollupRows, sampleDatedBols, yearFilter, monthFilter]);
+
+  /** Pairs the hero + dialog actually render: scoped when filtering. */
+  const viewPairs = scoped ? scoped.pairs : pairs;
+
+  const scopeLabel = scopeActive
+    ? monthFilter != null && yearFilter != null
+      ? `${MONTH_ABBR[monthFilter - 1]} ${yearFilter}`
+      : monthFilter != null
+        ? `${MONTH_ABBR[monthFilter - 1]} (all years)`
+        : String(yearFilter)
+    : null;
+
   const rankedPairs = useMemo(
     () =>
-      pairs
+      viewPairs
         .slice()
         .sort(
           (a: any, b: any) =>
             (Number(b?.shipments) || 0) - (Number(a?.shipments) || 0),
         )
         .slice(0, 10),
-    [pairs],
+    [viewPairs],
   );
+
+  // Origin-region lane colors — same record drives the map lines, the
+  // rank chips and the share bars (deterministic, keyed by pairKey).
+  const laneColors = useMemo(() => {
+    const out: Record<string, LaneMapLaneColor> = {};
+    for (const p of viewPairs) {
+      const c = laneRegionColor(p?.fromMeta?.countryCode);
+      out[p.pairKey] = { base: c.base, selected: c.selected, glow: c.glow };
+    }
+    return out;
+  }, [viewPairs]);
+
+  // Per-lane month series for the expand-in-place mini bars (Slate-style
+  // per-load detail). Rollup when it exists; dated-BOL sample otherwise.
+  const laneMonthsByPair = useMemo(() => {
+    if (hasRollup) return buildLaneMonthsFromRollup(rollupRows!);
+    return buildLaneMonthsFromBols(sampleDatedBols);
+  }, [hasRollup, rollupRows, sampleDatedBols]);
+
+  const monthWindow = useMemo(() => {
+    let endKey: string | null = null;
+    for (const rec of laneMonthsByPair.values()) {
+      for (const mk of Object.keys(rec)) {
+        if (!endKey || mk > endKey) endKey = mk;
+      }
+    }
+    if (!endKey) return [] as string[];
+    return laneMonthWindowKeys(yearFilter, endKey);
+  }, [laneMonthsByPair, yearFilter]);
   const totalPairShipments = useMemo(
     () =>
       rankedPairs.reduce(
@@ -2383,18 +3036,29 @@ function TopLanesCard({
     return m;
   }, [rankedPairs, recentBols]);
 
+  // Scoped views override the snapshot-derived maps while filtering.
+  const cityRoutesEffective = scoped ? scoped.cityRoutesByPair : cityRoutesByPair;
+  const lastActivityEffective = scoped
+    ? scoped.lastActivityByPair
+    : lastActivityByPair;
+
   const [selectedPair, setSelectedPair] = useState<string | null>(
     rankedPairs[0]?.pairKey ?? null,
   );
-  // If lane data arrives after mount (async profile), promote the top pair
-  // to selected once — without fighting a deliberate user deselection.
-  const didInitSelectionRef = useRef(rankedPairs.length > 0);
-  useEffect(() => {
-    if (didInitSelectionRef.current || rankedPairs.length === 0) return;
-    didInitSelectionRef.current = true;
-    setSelectedPair(rankedPairs[0].pairKey);
-  }, [rankedPairs]);
   const [expandedPair, setExpandedPair] = useState<string | null>(null);
+  // Keep selection valid as data arrives / scope changes: default to the
+  // #1 lane (focused view opens on the top lane), and re-anchor to the new
+  // top lane whenever the current selection drops out of the ranked set.
+  useEffect(() => {
+    if (rankedPairs.length === 0) return;
+    if (
+      !selectedPair ||
+      !rankedPairs.some((p: any) => p.pairKey === selectedPair)
+    ) {
+      setSelectedPair(rankedPairs[0].pairKey);
+      setExpandedPair(null);
+    }
+  }, [rankedPairs, selectedPair]);
   const [mapDialogOpen, setMapDialogOpen] = useState(false);
 
   // Track whether the latest selection came from the map so we only
@@ -2439,7 +3103,7 @@ function TopLanesCard({
   // ── Density-adaptive height (CEO feedback 2026-08-13, preserved) ─────
   // Sparse accounts get a ~380px map, mid 460px, rich the full 520px.
   // Mobile is a fixed 320px with the lane sheet below.
-  const laneCount = pairs.length;
+  const laneCount = viewPairs.length;
   const density: "compact" | "medium" | "rich" =
     laneCount <= 4 ? "compact" : laneCount <= 10 ? "medium" : "rich";
   const heroHeightClass =
@@ -2555,43 +3219,57 @@ function TopLanesCard({
     </>
   );
 
-  const honestyCaption =
-    recentBols.length > 0
-      ? (() => {
-          const n = recentBols.length;
-          const total = Number(shipments12mTotal);
-          const pct =
-            Number.isFinite(total) && total > 0
-              ? Math.min(100, Math.max(1, Math.round((n / total) * 100)))
-              : null;
-          return `Lanes derived from the ${n.toLocaleString()} most recent shipments${
-            pct != null ? ` (~${pct}% of 12-mo volume)` : ""
-          }`;
-        })()
-      : null;
+  const honestyCaption = (() => {
+    // Scoped views state their exact source — rollup records vs the dated
+    // BOL sample — so filtered counts are never mistaken for full-manifest
+    // numbers (honesty label discipline, f8dbf067).
+    if (scoped && scopeLabel) {
+      if (hasRollup) {
+        return `Filtered to ${scopeLabel} — exact counts from ${scoped.sourceRecords.toLocaleString()} lane-month rollup record${
+          scoped.sourceRecords === 1 ? "" : "s"
+        }.`;
+      }
+      return `Filtered to ${scopeLabel} using the dates on the ${recentBols.length.toLocaleString()} most recent shipments (sample — not the full manifest).`;
+    }
+    if (recentBols.length === 0) return null;
+    const n = recentBols.length;
+    const total = Number(shipments12mTotal);
+    const pct =
+      Number.isFinite(total) && total > 0
+        ? Math.min(100, Math.max(1, Math.round((n / total) * 100)))
+        : null;
+    return `Lanes derived from the ${n.toLocaleString()} most recent shipments${
+      pct != null ? ` (~${pct}% of 12-mo volume)` : ""
+    }`;
+  })();
+
+  const unresolvedInfo = scoped
+    ? { count: scoped.unresolvedCount, shipments: scoped.unresolvedShipments }
+    : {
+        count: unresolvedRoutes.length,
+        shipments: unresolvedRoutes.reduce(
+          (s: number, l: any) => s + (Number(l.shipments) || 0),
+          0,
+        ),
+      };
 
   const laneListFooter = (
     <>
-      {unresolvedRoutes.length > 0 && (
+      {unresolvedInfo.count > 0 && (
         <div className="flex items-center gap-2 px-3.5 py-2">
           <span className="font-mono w-5 shrink-0 text-center text-[9px] font-bold text-slate-300">
             ··
           </span>
           <span className="font-body min-w-0 flex-1 truncate text-[10.5px] text-slate-400">
-            {unresolvedRoutes.length} unresolved route
-            {unresolvedRoutes.length === 1 ? "" : "s"}
+            {unresolvedInfo.count} unresolved route
+            {unresolvedInfo.count === 1 ? "" : "s"}
           </span>
           <span className="font-mono shrink-0 text-[10px] text-slate-400">
-            {unresolvedRoutes
-              .reduce(
-                (s: number, l: any) => s + (Number(l.shipments) || 0),
-                0,
-              )
-              .toLocaleString()}
+            {unresolvedInfo.shipments.toLocaleString()}
           </span>
         </div>
       )}
-      {onOpenLanesTab && canonicalLanes.length > 0 && (
+      {!scoped && onOpenLanesTab && canonicalLanes.length > 0 && (
         <div className="px-3.5 py-2">
           <button
             type="button"
@@ -2636,7 +3314,34 @@ function TopLanesCard({
           volumeScale
           zoomControlPosition="bottomleft"
           fitPadding={fitPadding}
+          laneColors={laneColors}
+          unselectedStyle={showAllLanes ? "fade" : "ghost"}
+          flow
         />
+
+        {/* Desktop: scope controls (focus toggle + year/month chips) in a
+            glass strip along the bottom, clear of the zoom control (left)
+            and the lane cards (right). */}
+        <div className="pointer-events-none absolute bottom-4 left-14 right-[372px] z-[700] hidden md:block">
+          <div
+            className={[
+              "pointer-events-auto inline-block max-w-full px-2.5 py-1.5",
+              GLASS_PANEL,
+            ].join(" ")}
+          >
+            <MapScopeControls
+              yearFilter={yearFilter}
+              monthFilter={monthFilter}
+              availableYears={availableYears}
+              availableMonths={availableMonths}
+              onYear={handleYearScope}
+              onMonth={handleMonthScope}
+              showAllLanes={showAllLanes}
+              onToggleShowAllLanes={() => setShowAllLanes((v) => !v)}
+              sampleMode={!hasRollup}
+            />
+          </div>
+        </div>
 
         {/* Desktop: slim glass strip top-left — headline + 12-mo trend. */}
         <div className="pointer-events-none absolute left-4 top-4 z-[700] hidden max-w-[calc(100%-400px)] md:block">
@@ -2660,6 +3365,11 @@ function TopLanesCard({
               <span className="font-mono shrink-0 text-[10px] font-semibold text-slate-400">
                 {rankedPairs.length}
               </span>
+              {scopeActive && scopeLabel && (
+                <span className="font-display shrink-0 rounded-full border border-blue-200 bg-blue-50 px-1.5 py-[1px] text-[9px] font-bold text-blue-700">
+                  {scopeLabel}
+                </span>
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-1">
               {onOpenLaneHistory && (
@@ -2685,17 +3395,28 @@ function TopLanesCard({
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <LaneRankRows
-              rankedPairs={rankedPairs}
-              totalShipments={totalPairShipments}
-              selectedPair={selectedPair}
-              expandedPair={expandedPair}
-              onRowClick={handleRowClick}
-              cityRoutesByPair={cityRoutesByPair}
-              onOpenLaneHistory={onOpenLaneHistory}
-              reducedMotion={reducedMotion}
-              registerRowRef={registerRowRef}
-            />
+            {scopeActive && rankedPairs.length === 0 ? (
+              <ScopedEmptyState
+                scopeLabel={scopeLabel}
+                onReset={() => handleYearScope(null)}
+              />
+            ) : (
+              <LaneRankRows
+                rankedPairs={rankedPairs}
+                totalShipments={totalPairShipments}
+                selectedPair={selectedPair}
+                expandedPair={expandedPair}
+                onRowClick={handleRowClick}
+                cityRoutesByPair={cityRoutesEffective}
+                onOpenLaneHistory={onOpenLaneHistory}
+                reducedMotion={reducedMotion}
+                registerRowRef={registerRowRef}
+                laneColors={laneColors}
+                laneMonthsByPair={laneMonthsByPair}
+                monthWindow={monthWindow}
+                sampleMode={!hasRollup}
+              />
+            )}
             {laneListFooter}
           </div>
         </div>
@@ -2714,27 +3435,58 @@ function TopLanesCard({
         </button>
       </div>
 
+      {/* Mobile: scope controls as a scrollable row under the map. */}
+      <div className="border-t border-slate-100 px-3 py-2 md:hidden">
+        <MapScopeControls
+          yearFilter={yearFilter}
+          monthFilter={monthFilter}
+          availableYears={availableYears}
+          availableMonths={availableMonths}
+          onYear={handleYearScope}
+          onMonth={handleMonthScope}
+          showAllLanes={showAllLanes}
+          onToggleShowAllLanes={() => setShowAllLanes((v) => !v)}
+          sampleMode={!hasRollup}
+        />
+      </div>
+
       {/* Mobile: lane cards BELOW the map as a scrollable sheet. */}
       <div className="max-h-[340px] overflow-y-auto border-t border-slate-100 md:hidden">
-        <div className="flex items-center justify-between px-3.5 pb-1 pt-3">
+        <div className="flex items-center gap-1.5 px-3.5 pb-1 pt-3">
           <span className="font-display text-[10px] font-bold uppercase tracking-wide text-slate-500">
             Top lanes · country pairs
           </span>
-          <span className="font-mono text-[10px] font-semibold text-slate-400">
+          {scopeActive && scopeLabel && (
+            <span className="font-display rounded-full border border-blue-200 bg-blue-50 px-1.5 py-[1px] text-[9px] font-bold text-blue-700">
+              {scopeLabel}
+            </span>
+          )}
+          <span className="font-mono ml-auto text-[10px] font-semibold text-slate-400">
             {rankedPairs.length}
           </span>
         </div>
-        <LaneRankRows
-          rankedPairs={rankedPairs}
-          totalShipments={totalPairShipments}
-          selectedPair={selectedPair}
-          expandedPair={expandedPair}
-          onRowClick={handleRowClick}
-          cityRoutesByPair={cityRoutesByPair}
-          onOpenLaneHistory={onOpenLaneHistory}
-          reducedMotion={reducedMotion}
-          registerRowRef={registerRowRef}
-        />
+        {scopeActive && rankedPairs.length === 0 ? (
+          <ScopedEmptyState
+            scopeLabel={scopeLabel}
+            onReset={() => handleYearScope(null)}
+          />
+        ) : (
+          <LaneRankRows
+            rankedPairs={rankedPairs}
+            totalShipments={totalPairShipments}
+            selectedPair={selectedPair}
+            expandedPair={expandedPair}
+            onRowClick={handleRowClick}
+            cityRoutesByPair={cityRoutesEffective}
+            onOpenLaneHistory={onOpenLaneHistory}
+            reducedMotion={reducedMotion}
+            registerRowRef={registerRowRef}
+            laneColors={laneColors}
+            laneMonthsByPair={laneMonthsByPair}
+            monthWindow={monthWindow}
+            sampleMode={!hasRollup}
+          />
+        )}
         {laneListFooter}
       </div>
 
@@ -2763,12 +3515,13 @@ function TopLanesCard({
         </div>
       )}
 
-      {/* Full-screen map dialog. */}
+      {/* Full-screen map dialog — shares the SAME scope state as the hero
+          so year/month filtering stays consistent between the two views. */}
       {mapDialogOpen && (
         <TradeLanesMapDialog
-          pairs={pairs}
-          cityRoutesByPair={cityRoutesByPair}
-          lastActivityByPair={lastActivityByPair}
+          pairs={viewPairs}
+          cityRoutesByPair={cityRoutesEffective}
+          lastActivityByPair={lastActivityEffective}
           initialSelected={selectedPair}
           reducedMotion={reducedMotion}
           onClose={() => setMapDialogOpen(false)}
@@ -2780,8 +3533,50 @@ function TopLanesCard({
                 }
               : undefined
           }
+          laneColors={laneColors}
+          laneMonthsByPair={laneMonthsByPair}
+          monthWindow={monthWindow}
+          sampleMode={!hasRollup}
+          showAllLanes={showAllLanes}
+          onToggleShowAllLanes={() => setShowAllLanes((v) => !v)}
+          scope={{
+            yearFilter,
+            monthFilter,
+            availableYears,
+            availableMonths,
+            onYear: handleYearScope,
+            onMonth: handleMonthScope,
+            label: scopeLabel,
+          }}
         />
       )}
+    </div>
+  );
+}
+
+/** Honest empty state when an active year/month scope has zero lanes. */
+function ScopedEmptyState({
+  scopeLabel,
+  onReset,
+}: {
+  scopeLabel: string | null;
+  onReset: () => void;
+}) {
+  return (
+    <div className="px-3.5 py-4">
+      <p className="font-display m-0 text-[11.5px] font-semibold text-slate-700">
+        No lane activity in {scopeLabel || "this scope"}
+      </p>
+      <p className="font-body mt-0.5 text-[10.5px] leading-snug text-slate-400">
+        Shipment records don't cover this period yet.
+      </p>
+      <button
+        type="button"
+        onClick={onReset}
+        className="font-display mt-1.5 inline-flex min-h-[32px] items-center text-[10.5px] font-semibold text-blue-600 hover:text-blue-700"
+      >
+        Reset filters →
+      </button>
     </div>
   );
 }
@@ -2809,6 +3604,13 @@ function TradeLanesMapDialog({
   reducedMotion = false,
   onClose,
   onOpenLaneHistory,
+  laneColors,
+  laneMonthsByPair,
+  monthWindow,
+  sampleMode = false,
+  showAllLanes = false,
+  onToggleShowAllLanes,
+  scope,
 }: {
   pairs: any[];
   cityRoutesByPair: Map<string, any[]>;
@@ -2817,6 +3619,24 @@ function TradeLanesMapDialog({
   reducedMotion?: boolean;
   onClose: () => void;
   onOpenLaneHistory?: (pair: LaneHistoryFilter | null) => void;
+  /** Origin-region palette keyed by pairKey (shared with the hero). */
+  laneColors?: Record<string, LaneMapLaneColor>;
+  laneMonthsByPair?: Map<string, Record<string, number>>;
+  monthWindow?: string[];
+  sampleMode?: boolean;
+  showAllLanes?: boolean;
+  onToggleShowAllLanes?: () => void;
+  /** Shared year/month scope state — lives in TopLanesCard so the hero
+   *  and this dialog can never disagree. */
+  scope?: {
+    yearFilter: number | null;
+    monthFilter: number | null;
+    availableYears: number[];
+    availableMonths: Set<number>;
+    onYear: (y: number | null) => void;
+    onMonth: (m: number | null) => void;
+    label: string | null;
+  };
 }) {
   const isMdUp = useIsMdUp();
   const [selected, setSelected] = useState<string | null>(initialSelected);
@@ -3073,9 +3893,26 @@ function TradeLanesMapDialog({
         </button>
       </div>
 
-      {/* Filter chips — origin country, min shipments, mode (when data
+      {/* Filter chips — year/month scope + focus toggle (shared with the
+          hero), then origin country, min shipments, mode (when data
           carries it). Horizontal-scroll row on mobile. */}
       <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-slate-100 px-4 py-2">
+        {scope && onToggleShowAllLanes && (
+          <>
+            <MapScopeControls
+              yearFilter={scope.yearFilter}
+              monthFilter={scope.monthFilter}
+              availableYears={scope.availableYears}
+              availableMonths={scope.availableMonths}
+              onYear={scope.onYear}
+              onMonth={scope.onMonth}
+              showAllLanes={showAllLanes}
+              onToggleShowAllLanes={onToggleShowAllLanes}
+              sampleMode={sampleMode}
+            />
+            <span className="mx-1 h-4 w-px shrink-0 bg-slate-200" />
+          </>
+        )}
         <span className="font-display shrink-0 text-[9.5px] font-bold uppercase tracking-wide text-slate-400">
           Origin
         </span>
@@ -3155,6 +3992,9 @@ function TradeLanesMapDialog({
             volumeScale
             zoomControlPosition="bottomleft"
             fitPadding={fitPadding}
+            laneColors={laneColors}
+            unselectedStyle={showAllLanes ? "fade" : "ghost"}
+            flow
           />
 
           {/* Desktop: floating lane cards, right side. */}
@@ -3187,6 +4027,10 @@ function TradeLanesMapDialog({
                   cityRoutesByPair={cityRoutesByPair}
                   onOpenLaneHistory={onOpenLaneHistory}
                   reducedMotion={reducedMotion}
+                  laneColors={laneColors}
+                  laneMonthsByPair={laneMonthsByPair}
+                  monthWindow={monthWindow}
+                  sampleMode={sampleMode}
                 />
               )}
             </div>
@@ -3230,6 +4074,38 @@ function TradeLanesMapDialog({
                 </span>
               </div>
             </div>
+            {/* Origin-region color key — one swatch per region present in
+                the filtered lane set (deterministic laneRegions palette). */}
+            {(() => {
+              const seen = new Map<string, { label: string; base: string }>();
+              for (const p of filtered) {
+                const c = laneRegionColor(p?.fromMeta?.countryCode);
+                if (!seen.has(c.region)) {
+                  seen.set(c.region, { label: c.label, base: c.base });
+                }
+              }
+              if (seen.size === 0) return null;
+              return (
+                <div className="mt-2 border-t border-slate-100 pt-1.5">
+                  <div className="font-display text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                    Origin region
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    {[...seen.values()].map((r) => (
+                      <div key={r.label} className="flex items-center gap-2">
+                        <span
+                          className="h-[3px] w-9 rounded"
+                          style={{ background: r.base }}
+                        />
+                        <span className="font-body text-[10px] text-slate-600">
+                          {r.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Desktop: lane-detail popover, bottom-center. */}
@@ -3263,6 +4139,10 @@ function TradeLanesMapDialog({
               cityRoutesByPair={cityRoutesByPair}
               onOpenLaneHistory={onOpenLaneHistory}
               reducedMotion={reducedMotion}
+              laneColors={laneColors}
+              laneMonthsByPair={laneMonthsByPair}
+              monthWindow={monthWindow}
+              sampleMode={sampleMode}
             />
           )}
         </div>

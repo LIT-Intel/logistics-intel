@@ -85,6 +85,31 @@
   }
 }
 
+/* Supply-chain flow — the selected lane's white dash overlay marches from
+ * origin to destination (dash period = 1 + 12 = 13px; offset animates two
+ * periods per loop so the motion is seamless). Reads as cargo stepping
+ * along the supply chain. Disabled under prefers-reduced-motion — the
+ * static dotted overlay + step dots remain.
+ */
+@keyframes lit-flow-dash {
+  from {
+    stroke-dashoffset: 26;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.lit-lane-map path.lit-lane-flow {
+  animation: lit-flow-dash 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lit-lane-map path.lit-lane-flow {
+    animation: none;
+  }
+}
+
 /* Hover popover — absolutely-positioned React node sitting above the map.
  * Pointer events stay enabled so hovering INTO the popover doesn't trip
  * the endpoint's mouseout (the 200 ms close delay handles handoff anyway).

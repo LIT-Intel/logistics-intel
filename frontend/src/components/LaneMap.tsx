@@ -49,6 +49,17 @@ export type LaneMapFitPadding = {
   left?: number;
 };
 
+/**
+ * Per-lane color override (regional palette). `base` paints the idle
+ * stroke, `selected` the brighter selected/hover stroke, `glow` the
+ * rgba casing behind hover/selected lines.
+ */
+export type LaneMapLaneColor = {
+  base: string;
+  selected: string;
+  glow: string;
+};
+
 export type LaneMapProps = {
   lanes: GlobeLane[];
   selectedLane?: string | null;
@@ -76,6 +87,27 @@ export type LaneMapProps = {
    * object every render.
    */
   fitPadding?: LaneMapFitPadding;
+  /**
+   * Per-lane colors keyed by lane id (e.g. the origin-region palette from
+   * `@/lib/laneRegions`). Lanes without an entry fall back to the variant
+   * palette. Lane cards can reuse the same colors so card ↔ line mapping
+   * is instant.
+   */
+  laneColors?: Record<string, LaneMapLaneColor>;
+  /**
+   * How non-selected lanes render while a lane IS selected:
+   *  - `fade` (legacy): slate, 0.35 opacity, near-full weight.
+   *  - `ghost` (2026-08 focused mode): faint 1px lines in their own lane
+   *    color — context without noise. Ghost lines stay fully clickable.
+   */
+  unselectedStyle?: "fade" | "ghost";
+  /**
+   * Supply-chain motion on the selected lane: an animated directional
+   * dash-flow overlay (origin → destination) plus small step dots along
+   * the arc. Animation is CSS-driven and disabled under
+   * prefers-reduced-motion (static dots remain).
+   */
+  flow?: boolean;
 };
 
 // ── Palettes ──────────────────────────────────────────────────────────
@@ -171,6 +203,12 @@ type LaneLayers = {
   toHit: LeafletCircleMarker;
   fromPulse: LeafletCircleMarker | null;
   toPulse: LeafletCircleMarker | null;
+  /** Animated dash-flow overlay on the selected lane (flow prop). */
+  flowLine: LeafletPolyline | null;
+  /** Small supply-chain step dots along the selected arc (flow prop). */
+  stepDots: LeafletCircleMarker[];
+  /** Great-circle points — kept for flow overlay + step-dot placement. */
+  points: LatLngExpression[];
   fromCoord: LatLngTuple;
   toCoord: LatLngTuple;
   /** Volume-scaled idle line weight (equals 2 when volumeScale off). */
@@ -287,6 +325,9 @@ export default function LaneMap({
   volumeScale = false,
   zoomControlPosition = "topleft",
   fitPadding,
+  laneColors,
+  unselectedStyle = "fade",
+  flow = false,
 }: LaneMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -421,6 +462,8 @@ export default function LaneMap({
       map.removeLayer(layers.toHit);
       if (layers.fromPulse) map.removeLayer(layers.fromPulse);
       if (layers.toPulse) map.removeLayer(layers.toPulse);
+      if (layers.flowLine) map.removeLayer(layers.flowLine);
+      for (const dot of layers.stepDots) map.removeLayer(dot);
     }
     laneLayersRef.current.clear();
     hoveredLaneRef.current = null;
@@ -447,8 +490,9 @@ export default function LaneMap({
       const baseWeight = volumeScale ? 1.5 + ratio * 2.5 : 2;
       const baseRadius = volumeScale ? Math.round(5 + ratio * 5) : 7;
 
+      const laneColor = laneColors?.[lane.id];
       const baseLine = L.polyline(points, {
-        color: palette.idle,
+        color: laneColor?.base ?? palette.idle,
         weight: baseWeight,
         opacity: 0.85,
         lineCap: "round",
@@ -472,7 +516,7 @@ export default function LaneMap({
         radius: baseRadius,
         color: palette.dotStroke,
         weight: 2,
-        fillColor: palette.dotFill,
+        fillColor: laneColor?.base ?? palette.dotFill,
         fillOpacity: 1,
         interactive: false,
       };
@@ -500,6 +544,9 @@ export default function LaneMap({
         toHit,
         fromPulse: null,
         toPulse: null,
+        flowLine: null,
+        stepDots: [],
+        points,
         fromCoord,
         toCoord,
         baseWeight,
@@ -606,27 +653,39 @@ export default function LaneMap({
     const hasSelection = !!selectedLane;
     const selectedExists = !!selectedLane && laneLayersRef.current.has(selectedLane);
 
+    const ghost = unselectedStyle === "ghost";
+
     for (const [laneId, layers] of laneLayersRef.current.entries()) {
       const isSelected = selectedExists && laneId === selectedLane;
       const isHovered = !isSelected && laneId === hovered;
       const isFaded = hasSelection && selectedExists && !isSelected;
+      const lc = laneColors?.[laneId];
 
       // Base line styling — weights ride on the lane's volume-scaled base.
-      let color = palette.idle;
+      // Per-lane regional colors (laneColors) override the variant palette.
+      let color = lc?.base ?? palette.idle;
       let weight = layers.baseWeight;
       let opacity = 0.85;
       if (isSelected) {
-        color = palette.selected;
+        color = lc?.selected ?? palette.selected;
         weight = Math.max(3.5, layers.baseWeight + 1.5);
         opacity = 1;
       } else if (isHovered) {
-        color = palette.hover;
+        color = lc?.selected ?? palette.hover;
         weight = layers.baseWeight + 0.5;
         opacity = 1;
       } else if (isFaded) {
-        color = palette.faded;
-        weight = Math.max(1.25, layers.baseWeight - 0.5);
-        opacity = 0.35;
+        if (ghost) {
+          // Focused mode: non-selected lanes are faint 1px ghost lines in
+          // their own lane color — context without noise, still clickable.
+          color = lc?.base ?? palette.faded;
+          weight = 1;
+          opacity = 0.3;
+        } else {
+          color = palette.faded;
+          weight = Math.max(1.25, layers.baseWeight - 0.5);
+          opacity = 0.35;
+        }
       }
       layers.baseLine.setStyle({ color, weight, opacity });
 
@@ -636,7 +695,9 @@ export default function LaneMap({
       // casing guarantees correct z-order.
       const needsCasing = isSelected || isHovered;
       if (needsCasing) {
-        const casingColor = isSelected ? palette.selectGlow : palette.hoverGlow;
+        const casingColor = isSelected
+          ? (lc?.glow ?? palette.selectGlow)
+          : (lc?.glow ?? palette.hoverGlow);
         const casingWeight = isSelected ? weight + 5 : weight + 4;
         if (!layers.casing) {
           const points = (layers.baseLine.getLatLngs() as L.LatLng[]).map(
@@ -664,19 +725,24 @@ export default function LaneMap({
         layers.casing = null;
       }
 
-      // Endpoint dots. Selected = +2px (with pulse). Faded shrink slightly.
+      // Endpoint dots. Selected = +2px (with pulse). Faded shrink slightly;
+      // ghost mode shrinks them to small 3px context dots.
       const dotRadius = isSelected
         ? layers.baseRadius + 2
         : isFaded
-          ? Math.max(4, layers.baseRadius - 1)
+          ? ghost
+            ? 3
+            : Math.max(4, layers.baseRadius - 1)
           : layers.baseRadius;
       for (const dot of [layers.fromDot, layers.toDot]) {
         dot.setStyle({
           radius: dotRadius,
           color: palette.dotStroke,
-          weight: 2,
-          fillColor: palette.dotFill,
-          fillOpacity: isFaded ? 0.55 : 1,
+          weight: ghost && isFaded ? 1 : 2,
+          fillColor: isSelected
+            ? (lc?.selected ?? palette.dotFill)
+            : (lc?.base ?? palette.dotFill),
+          fillOpacity: isFaded ? (ghost ? 0.45 : 0.55) : 1,
         });
         dot.bringToFront();
       }
@@ -692,7 +758,7 @@ export default function LaneMap({
         if (existing) return existing;
         const ring = L.circleMarker(coord, {
           radius: 12,
-          color: palette.pulse,
+          color: lc?.glow ?? palette.pulse,
           weight: 2,
           fillOpacity: 0,
           opacity: 0.6,
@@ -714,6 +780,57 @@ export default function LaneMap({
           layers.toPulse = null;
         }
       }
+
+      // Supply-chain flow — animated directional dash overlay (origin →
+      // destination) + small step dots along the arc, selected lane only.
+      // The dash pattern is round-capped 1×12 → reads as dots marching
+      // along the supply chain. CSS drives the motion (lit-lane-flow) and
+      // shuts it off under prefers-reduced-motion; the static dotted
+      // overlay + step dots remain as the "steps" affordance.
+      if (isSelected && flow) {
+        const flowWeight = Math.max(1.5, weight - 2);
+        if (!layers.flowLine) {
+          layers.flowLine = L.polyline(layers.points, {
+            color: "#FFFFFF",
+            weight: flowWeight,
+            opacity: 0.95,
+            dashArray: "1 12",
+            lineCap: "round",
+            lineJoin: "round",
+            interactive: false,
+            className: "lit-lane-flow",
+          }).addTo(map);
+        } else {
+          layers.flowLine.setStyle({ weight: flowWeight });
+        }
+        if (layers.stepDots.length === 0) {
+          const pts = layers.points;
+          for (const f of [0.25, 0.5, 0.75]) {
+            const idx = Math.round(f * (pts.length - 1));
+            const p = pts[idx] as LatLngTuple;
+            if (!p) continue;
+            layers.stepDots.push(
+              L.circleMarker(p, {
+                radius: 3,
+                color: palette.dotStroke,
+                weight: 1.5,
+                fillColor: lc?.selected ?? palette.dotFill,
+                fillOpacity: 1,
+                interactive: false,
+              }).addTo(map),
+            );
+          }
+        }
+      } else {
+        if (layers.flowLine) {
+          map.removeLayer(layers.flowLine);
+          layers.flowLine = null;
+        }
+        if (layers.stepDots.length > 0) {
+          for (const dot of layers.stepDots) map.removeLayer(dot);
+          layers.stepDots = [];
+        }
+      }
     }
 
     // Selected lane elements should sit on top of everything else.
@@ -722,6 +839,8 @@ export default function LaneMap({
       if (sel) {
         if (sel.casing) sel.casing.bringToBack(); // casing behind base
         sel.baseLine.bringToFront();
+        if (sel.flowLine) sel.flowLine.bringToFront();
+        for (const dot of sel.stepDots) dot.bringToFront();
         sel.fromDot.bringToFront();
         sel.toDot.bringToFront();
         if (sel.fromPulse) sel.fromPulse.bringToFront();
@@ -731,6 +850,13 @@ export default function LaneMap({
       }
     }
   };
+
+  // Restyle when the visual-treatment props change (focus toggle flips
+  // unselectedStyle between ghost/fade; laneColors swap with the lane set).
+  useEffect(() => {
+    applyStateStyles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unselectedStyle, laneColors, flow]);
 
   // Selection-only restyle + flyTo. Cheaper than rebuilding the layer set.
   useEffect(() => {
