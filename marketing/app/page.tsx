@@ -33,7 +33,7 @@ const FALLBACK_HERO = {
   badges: [
     { label: "60+ countries tracked", tone: "cyan", icon: "MapPin" },
     { label: "Refreshed daily", tone: "blue", icon: "RefreshCcw" },
-    { label: "SOC 2 · GDPR · CCPA", tone: "emerald", icon: "ShieldCheck" },
+    { label: "SOC 2 readiness in progress · GDPR · CCPA", tone: "emerald", icon: "ShieldCheck" },
   ],
   /** 4-card hero stats strip — design-pack treatment. `trend` is rendered
    *  as the freshness indicator under the value+label pair. */
@@ -43,13 +43,13 @@ const FALLBACK_HERO = {
     { value: "42M+", label: "Verified contacts", trend: "95%+ deliverability" },
     { value: "60+", label: "Countries tracked", trend: "Customs sources" },
   ],
-  trialNote: "7-day free trial · Full feature access · Cancel anytime",
+  trialNote: "7-day trial · 10 searches + 10 verified contacts · No credit card",
 };
 
 /** Static trust badges shown in the slim strip below the hero. Brand
  *  claims, not Sanity-driven (they don't change without a redeploy). */
 const TRUST_BADGES = [
-  { abbr: "SOC", label: "SOC 2 Type II" },
+  { abbr: "SOC", label: "SOC 2 readiness in progress" },
   { abbr: "GDR", label: "GDPR compliant" },
   { abbr: "CCP", label: "CCPA compliant" },
   { abbr: "256", label: "AES-256 encryption" },
@@ -76,9 +76,9 @@ const HERO_BADGE_ICONS: Record<string, LucideIcon> = {
 export const metadata: Metadata = buildMetadata({
   path: "/",
   title:
-    "Freight Prospecting Software for Brokers, Forwarders & 3PLs | Logistic Intel",
+    "Freight Prospecting Software for Brokers, Forwarders & 3PLs | Logistics Intel",
   description:
-    "Logistic Intel turns live shipment data, verified contacts, and Pulse AI into pipeline — the freight prospecting platform for brokers, forwarders, and 3PLs.",
+    "Logistics Intel turns live shipment data, verified contacts, and Pulse AI into pipeline — the freight prospecting platform for brokers, forwarders, and 3PLs.",
   eyebrow: "Freight prospecting platform",
 });
 
@@ -104,7 +104,7 @@ export default async function HomePage() {
       <main>
         <Hero hero={hero} />
         <CustomerLogosRail
-          eyebrow="Built for the revenue teams running freight at companies like"
+          eyebrow="Trusted by freight teams at"
           logos={[
             { domain: "chrobinson.com", name: "C.H. Robinson" },
             { domain: "rxo.com", name: "RXO" },
@@ -135,7 +135,7 @@ export default async function HomePage() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "SoftwareApplication",
-            name: "LIT — Logistic Intel",
+            name: "LIT — Logistics Intel",
             applicationCategory: "BusinessApplication",
             operatingSystem: "Web",
             description:
@@ -166,7 +166,7 @@ function Hero({ hero }: { hero: any }) {
         lede={hero.subhead}
         ctaLabel="Start Prospecting →"
         formSource="home-hero"
-        formNote={hero.trialNote || "7-day free trial · Full feature access · Cancel anytime"}
+        formNote={hero.trialNote || "7-day trial · 10 searches + 10 verified contacts · No credit card"}
       >
         <HeroSearchDemo />
       </LeadMagnetHero>
@@ -449,4 +449,3 @@ function SignalToPipelineSection() {
     </section>
   );
 }
-

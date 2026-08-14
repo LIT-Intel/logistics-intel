@@ -161,7 +161,7 @@ export default async function GlossaryTermPage({ params }: { params: { slug: str
             description: term.shortDefinition,
             inDefinedTermSet: {
               "@type": "DefinedTermSet",
-              name: "Logistic Intel Glossary",
+              name: "Logistics Intel Glossary",
               url: siteUrl("/glossary"),
             },
             url: siteUrl(`/glossary/${params.slug}`),

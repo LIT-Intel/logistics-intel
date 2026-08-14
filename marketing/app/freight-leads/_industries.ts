@@ -70,7 +70,7 @@ export const INDUSTRIES: FreightLeadsIndustry[] = [
     ],
     faq: [
       {
-        q: "How does Logistic Intel surface new automotive importers?",
+        q: "How does Logistics Intel surface new automotive importers?",
         a: "Every active automotive importer is built from ocean and air manifest filings refreshed daily, joined to verified buyer-side contacts in supply chain, logistics, and procurement roles. You filter by HS code, origin country, port pair, or carrier and get back live shippers — not stale company lists.",
       },
       {
@@ -140,7 +140,7 @@ export const INDUSTRIES: FreightLeadsIndustry[] = [
     ],
     faq: [
       {
-        q: "How does Logistic Intel surface new apparel importers?",
+        q: "How does Logistics Intel surface new apparel importers?",
         a: "Manifest-level filings feed the importer index daily. You filter on HS code, origin country, port, or carrier and get back live brands and private-label buyers actively moving freight — joined to verified contacts in sourcing, supply chain, and logistics roles.",
       },
       {
@@ -206,7 +206,7 @@ export const INDUSTRIES: FreightLeadsIndustry[] = [
     ],
     faq: [
       {
-        q: "How does Logistic Intel surface new electronics importers?",
+        q: "How does Logistics Intel surface new electronics importers?",
         a: "Manifest filings refresh daily. You filter on HS code, origin country, port, or carrier and get back live electronics importers — joined to verified contacts in supply chain, sourcing, and logistics roles.",
       },
       {
@@ -272,7 +272,7 @@ export const INDUSTRIES: FreightLeadsIndustry[] = [
     ],
     faq: [
       {
-        q: "How does Logistic Intel surface new furniture importers?",
+        q: "How does Logistics Intel surface new furniture importers?",
         a: "Manifest filings flow in daily. You filter on HS 9401-9404 plus origin, port, or carrier and get back active furniture and home-goods importers — joined to verified buyer-side contacts in supply chain, sourcing, and logistics roles.",
       },
       {
@@ -338,7 +338,7 @@ export const INDUSTRIES: FreightLeadsIndustry[] = [
     ],
     faq: [
       {
-        q: "How does Logistic Intel surface new food & beverage importers?",
+        q: "How does Logistics Intel surface new food & beverage importers?",
         a: "Manifest filings refresh daily. You filter on HS code, origin, port, or carrier and get back live food and beverage importers — joined to verified buyer-side contacts in supply chain, procurement, and logistics roles.",
       },
       {
@@ -404,7 +404,7 @@ export const INDUSTRIES: FreightLeadsIndustry[] = [
     ],
     faq: [
       {
-        q: "How does Logistic Intel surface new industrial machinery importers?",
+        q: "How does Logistics Intel surface new industrial machinery importers?",
         a: "Manifest filings flow in daily. You filter on HS code, origin country, port, or carrier and get back live industrial OEMs, distributors, and MRO importers — joined to verified contacts in engineering, procurement, and supply chain roles.",
       },
       {

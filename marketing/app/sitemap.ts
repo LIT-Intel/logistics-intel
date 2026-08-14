@@ -220,5 +220,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       ]
     : [];
 
-  return [...STATIC, ...dynamicItems];
+  // Static routes do not all change whenever this function runs. Remove the
+  // synthetic `now` timestamps so crawlers can trust the real CMS dates on
+  // dynamic content. Also exclude noindex conversion utilities and dedupe
+  // overlapping hand-coded/Sanity URLs before emitting the sitemap.
+  const excluded = new Set([`${SITE_URL}/book-a-demo`]);
+  const seen = new Set<string>();
+  return [...STATIC, ...dynamicItems].flatMap((entry) => {
+    if (excluded.has(entry.url) || seen.has(entry.url)) return [];
+    seen.add(entry.url);
+    if (STATIC.some((staticEntry) => staticEntry.url === entry.url)) {
+      const { lastModified: _lastModified, ...stableEntry } = entry;
+      return [stableEntry];
+    }
+    return [entry];
+  });
 }

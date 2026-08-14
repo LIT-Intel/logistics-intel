@@ -15,7 +15,7 @@ export const revalidate = 1800;
 export const metadata: Metadata = buildMetadata({
   title: "Use cases — what teams actually do with LIT",
   description:
-    "Outbound prospecting, account expansion, supplier discovery, lane intelligence, market sizing — the real workflows revenue teams run on LIT.",
+    "Outbound prospecting, account expansion, supplier discovery, lane intelligence, market sizing — the real workflows freight sales teams run on LIT.",
   path: "/use-cases",
   eyebrow: "Use Cases",
 });

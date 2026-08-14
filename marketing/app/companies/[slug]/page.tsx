@@ -13,7 +13,7 @@ import {
   formatHeadquarters,
   formatNumber,
   formatUsdShort,
-  MIN_SHIPMENTS_FOR_INDEX,
+  isIndexableCompanyProfile,
 } from "@/lib/companies";
 import { buildMetadata, siteUrl } from "@/lib/seo";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
@@ -61,7 +61,7 @@ export async function generateMetadata({
     });
   }
   const hq = formatHeadquarters(company);
-  const isThin = !company.shipments || Number(company.shipments) < MIN_SHIPMENTS_FOR_INDEX;
+  const isThin = !isIndexableCompanyProfile(company);
   return buildMetadata({
     title: `${company.company_name} — US import profile, BOL data, top trade lanes`,
     description:

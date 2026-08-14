@@ -58,7 +58,7 @@ export function BrandTile({
   tone: "brand" | "neutral";
   /**
    * Optional override for the visible name. Defaults to the `name`
-   * passed in. For LIT we render "Logistic Intel" with the brand mark.
+   * passed in. For LIT we render "Logistics Intel" with the brand mark.
    */
   display?: React.ReactNode;
 }) {

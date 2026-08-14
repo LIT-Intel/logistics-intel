@@ -8,7 +8,7 @@ import { buildMetadata } from "@/lib/seo";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Freight CRM and Command Center | Logistic Intel",
+  title: "Freight CRM and Command Center | Logistics Intel",
   description:
     "Manage saved shippers, prospects, contacts, campaign activity, notes, and pipeline stages in a freight-focused CRM workspace.",
   path: "/command-center",

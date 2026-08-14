@@ -21,7 +21,7 @@ export function AlternativePageTemplate({ data }: { data: AlternativePage }) {
       <PageHero
         eyebrow={`${data.competitor} alternative`}
         title={`The ${data.competitor} alternative for`}
-        titleHighlight="freight revenue teams."
+        titleHighlight="freight sales teams."
         subtitle={data.lede}
         primaryCta={{ label: "Try free", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "See full comparison", href: `/vs/${data.fullComparisonSlug}` }}

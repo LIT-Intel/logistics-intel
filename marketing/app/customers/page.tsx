@@ -133,7 +133,7 @@ export default async function CustomersPage() {
         lede="Real revenue stories from freight forwarders, brokers, NVOCCs, and 3PLs that switched their prospecting stack to LIT. No paid testimonials. No vendor-spun puff pieces. Just outcomes."
         ctaLabel="Try it free →"
         formSource="customers-hero"
-        formNote="Free forever for the first 10 searches. SOC 2 · GDPR · CCPA."
+        formNote="7-day trial with 10 searches and 10 verified contacts. SOC 2 readiness in progress · GDPR · CCPA."
       >
         <LiveProductPreview
           urlBarText={
@@ -199,7 +199,7 @@ export default async function CustomersPage() {
           {
             eyebrow: "02 · Week 2–3",
             title: "Full team activated",
-            body: "Onboarding loops in the whole revenue team — reps, SDRs, managers. 80% rep activation within 14 days is the target.",
+            body: "Onboarding loops in the whole freight sales team — reps, SDRs, managers. 80% rep activation within 14 days is the target.",
             meta: "Week 2 · 80% activation",
           },
           {
@@ -286,7 +286,7 @@ export default async function CustomersPage() {
             See if LIT works on your lanes — in 30 seconds.
           </h2>
           <p className="mt-4 text-white/70">
-            Free forever for the first 10 searches. No credit card.
+            7-day trial with 10 searches and 10 verified contacts. No credit card.
           </p>
           <FinalEmailForm />
         </div>
@@ -309,7 +309,7 @@ export default async function CustomersPage() {
             buildCollectionPage({
               name: "LIT customer stories",
               description:
-                "How real revenue teams use LIT to outpace competitors. Case studies, results, and the playbooks behind them.",
+                "How real freight sales teams use LIT to outpace competitors. Case studies, results, and the playbooks behind them.",
               path: "/customers",
               items: stories.map((s) => ({
                 name: s.customer,

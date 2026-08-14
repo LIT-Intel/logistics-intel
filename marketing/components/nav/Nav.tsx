@@ -22,7 +22,7 @@ export function Nav() {
       <div className="mx-auto flex h-[64px] max-w-container items-center gap-4 px-5 sm:gap-10 sm:px-8 md:h-[68px]">
         <Link
           href="/"
-          aria-label="Logistic Intel home"
+          aria-label="Logistics Intel home"
           className="flex shrink-0 items-center gap-2.5 text-ink-900"
         >
           <LitLogoMark size={30} alive />

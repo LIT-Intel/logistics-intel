@@ -469,7 +469,7 @@ export default async function TradeLanePage({ params }: { params: { slug: string
             keywords: ["trade lane", lane.originPort?.name, lane.destinationPort?.name, "TEU", "shipping"]
               .filter(Boolean)
               .join(", "),
-            creator: { "@type": "Organization", name: "Logistic Intel" },
+            creator: { "@type": "Organization", name: "Logistics Intel" },
             dateModified: lane.lastRefreshedAt,
           }),
         }}

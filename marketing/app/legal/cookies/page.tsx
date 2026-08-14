@@ -5,9 +5,9 @@ import { PageHero } from "@/components/sections/PageHero";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Cookie policy | Logistic Intel",
+  title: "Cookie policy | Logistics Intel",
   description:
-    "How Logistic Intel uses cookies and similar technologies. Essential, functional, analytics, and advertising cookies — and how you control them.",
+    "How Logistics Intel uses cookies and similar technologies. Essential, functional, analytics, and advertising cookies — and how you control them.",
   path: "/legal/cookies",
   eyebrow: "Legal",
 });
@@ -69,7 +69,7 @@ export default function CookiePolicyPage() {
       <section className="px-5 sm:px-8 pb-12">
         <article className="mx-auto max-w-[760px] space-y-6 font-body text-[16px] leading-[1.7] text-ink-700">
           <p>
-            This policy explains how Logistic Intel, Inc. ("LIT", "we") uses cookies and similar
+            This policy explains how Logistics Intel, Inc. ("LIT", "we") uses cookies and similar
             technologies on logisticintel.com and app.logisticintel.com. It sits alongside our{" "}
             <a href="/legal/privacy" className="text-brand-blue underline">
               privacy policy

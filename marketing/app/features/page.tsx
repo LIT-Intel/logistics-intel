@@ -186,7 +186,7 @@ export default function FeaturesHubPage() {
             buildCollectionPage({
               name: "LIT features",
               description:
-                "Every capability inside the LIT freight revenue intelligence platform — search, intelligence, CRM, outbound, and tools.",
+                "Every capability inside the LIT freight sales intelligence platform — search, intelligence, CRM, outbound, and tools.",
               path: "/features",
               items: FEATURE_PAGES.map((f) => ({
                 name: f.title.replace(/—\s*$/, "").trim(),

@@ -39,11 +39,11 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Logistics Intel — Freight Prospecting Software for Brokers, Forwarders, and 3PLs",
-    template: "%s · Logistics Intel",
+    default: "Freight Prospecting Software for Brokers, Forwarders, and 3PLs | Logistics Intel",
+    template: "%s | Logistics Intel",
   },
   description:
-    "Logistics Intel helps freight brokers, forwarders, and 3PLs find active shippers, analyze trade lanes, enrich contacts, and turn shipment intelligence into revenue.",
+    "Logistics Intel helps freight brokers, forwarders, and 3PL sales teams find active shippers, research trade lanes, reach verified contacts, and build qualified pipeline.",
   keywords: [
     "freight prospecting software",
     "freight broker leads",
@@ -145,6 +145,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             __html: JSON.stringify({
               "@context": "https://schema.org",
               "@type": "Organization",
+              "@id": `${SITE_URL}/#organization`,
               name: "Logistics Intel",
               alternateName: "LIT",
               url: SITE_URL,
@@ -171,14 +172,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             __html: JSON.stringify({
               "@context": "https://schema.org",
               "@type": "WebSite",
+              "@id": `${SITE_URL}/#website`,
               name: "Logistics Intel",
               alternateName: "LIT",
               url: SITE_URL,
-              potentialAction: {
-                "@type": "SearchAction",
-                target: `${SITE_URL}/search?q={search_term_string}`,
-                "query-input": "required name=search_term_string",
-              },
+              publisher: { "@id": `${SITE_URL}/#organization` },
             }),
           }}
         />

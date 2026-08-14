@@ -38,7 +38,7 @@ export default function FeatureDetailPage({ params }: { params: { slug: string }
     isPartOf: { "@type": "WebSite", url: siteUrl("/") },
     about: {
       "@type": "SoftwareApplication",
-      name: "LIT — Logistic Intel",
+      name: "LIT — Logistics Intel",
       applicationCategory: "BusinessApplication",
       operatingSystem: "Web",
     },

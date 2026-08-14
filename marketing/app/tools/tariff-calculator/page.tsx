@@ -127,7 +127,7 @@ export default function TariffCalculatorPage() {
             },
             publisher: {
               "@type": "Organization",
-              name: "Logistic Intel",
+              name: "Logistics Intel",
               url: siteUrl("/"),
             },
             potentialAction: {

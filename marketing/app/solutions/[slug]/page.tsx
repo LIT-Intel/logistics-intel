@@ -358,12 +358,12 @@ export default async function SolutionDetailPage({
     isPartOf: { "@type": "WebSite", url: siteUrl("/") },
     about: {
       "@type": "SoftwareApplication",
-      name: "LIT — Logistic Intel",
+      name: "LIT — Logistics Intel",
       applicationCategory: "BusinessApplication",
       operatingSystem: "Web",
       offers: {
         "@type": "Offer",
-        category: "SaaS · freight revenue platform",
+        category: "SaaS · freight sales platform",
         url: siteUrl("/pricing"),
       },
     },

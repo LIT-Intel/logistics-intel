@@ -8,7 +8,7 @@ import { buildMetadata } from "@/lib/seo";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Outbound Campaigns for Freight Sales Teams | Logistic Intel",
+  title: "Outbound Campaigns for Freight Sales Teams | Logistics Intel",
   description:
     "Create freight-specific outreach campaigns using company intelligence, enriched contacts, Pulse AI insights, and connected Gmail or Outlook accounts.",
   path: "/outbound-engine",
@@ -49,13 +49,13 @@ export default function OutboundEnginePage() {
         eyebrow="Outbound Engine"
         title="Send outreach with"
         titleHighlight="a reason to reach out."
-        subtitle="Logistic Intel helps logistics teams build campaigns around real account context. Use shipment activity, trade lanes, buying signals, and enriched contacts to create outreach that feels relevant from the first message."
+        subtitle="Logistics Intel helps logistics teams build campaigns around real account context. Use shipment activity, trade lanes, buying signals, and enriched contacts to create outreach that feels relevant from the first message."
         visual={<SequenceBuilderMock />}
       />
 
       <FeatureGrid
         eyebrow="What the Outbound Engine does"
-        title="Four reasons freight outbound from Logistic Intel converts higher."
+        title="Four reasons freight outbound from Logistics Intel converts higher."
         features={SECTIONS}
         cols={2}
       />
@@ -82,7 +82,7 @@ export default function OutboundEnginePage() {
                 Cold list reply rates: 1–2%. Signal-triggered freight outbound: 25–35%.
               </h2>
               <p className="font-body mx-auto mt-3 max-w-[560px] text-[15px] leading-relaxed text-ink-150">
-                The single biggest variable in B2B outbound is timing. Logistic Intel helps you
+                The single biggest variable in B2B outbound is timing. Logistics Intel helps you
                 reach buyers the week their carrier mix shifts, their volume jumps, or their lane
                 strategy changes — not three months later when the contract is already signed.
               </p>

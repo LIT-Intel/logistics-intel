@@ -6,7 +6,7 @@ import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
   title: "Data processing addendum (DPA) + sub-processors",
-  description: "Logistic Intel DPA and current list of sub-processors.",
+  description: "Logistics Intel DPA and current list of sub-processors.",
   path: "/legal/dpa",
   eyebrow: "Legal",
 });
@@ -82,7 +82,7 @@ export default function DpaPage() {
       <CtaBanner
         eyebrow="Vendor security"
         title="Need our security packet?"
-        subtitle="DPA, SOC 2 Type I, security questionnaire — we'll send the bundle within one business day."
+        subtitle="DPA, security questionnaire, and current SOC 2 readiness documentation — sent within one business day."
         primaryCta={{ label: "Email security@", href: "mailto:security@logisticintel.com", icon: "arrow" }}
         secondaryCta={{ label: "Read security page", href: "/security" }}
       />

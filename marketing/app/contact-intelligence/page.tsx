@@ -8,7 +8,7 @@ import { buildMetadata } from "@/lib/seo";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Contact Intelligence for Logistics Sales | Logistic Intel",
+  title: "Contact Intelligence for Logistics Sales | Logistics Intel",
   description:
     "Find and enrich logistics, procurement, supply chain, import, and operations contacts tied to active shipping companies.",
   path: "/contact-intelligence",
@@ -49,7 +49,7 @@ export default function ContactIntelligencePage() {
         eyebrow="Contact Intelligence"
         title="Find the people"
         titleHighlight="behind the freight."
-        subtitle="Logistic Intel helps your team move from company intelligence to the right decision makers. Search by title, department, seniority, and location. Enrich only the contacts your team is ready to work — not every name in the database."
+        subtitle="Logistics Intel helps your team move from company intelligence to the right decision makers. Search by title, department, seniority, and location. Enrich only the contacts your team is ready to work — not every name in the database."
         visual={<ContactDiscoveryMock />}
       />
 

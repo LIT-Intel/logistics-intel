@@ -34,7 +34,7 @@ export function MoneyPageShell({
         <div className="mx-auto flex h-[64px] max-w-container items-center gap-4 px-5 sm:px-8 md:h-[68px]">
           <Link
             href="/"
-            aria-label="Logistic Intel home"
+            aria-label="Logistics Intel home"
             className="flex shrink-0 items-center gap-2.5 text-slate-900"
           >
             <LitLogoMark size={30} alive />
@@ -86,7 +86,7 @@ export function MoneyPageShell({
             </Link>
           </nav>
           <p className="font-mono text-[11.5px] text-slate-400">
-            © 2026 Logistic Intel, Inc.
+            © 2026 Logistics Intel, Inc.
           </p>
         </div>
       </footer>

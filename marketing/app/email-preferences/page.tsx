@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Email preferences · LIT",
-  description: "Manage which marketing emails you receive from Logistic Intel.",
+  description: "Manage which marketing emails you receive from Logistics Intel.",
   robots: { index: false, follow: false },
 };
 
@@ -87,7 +87,7 @@ export default async function EmailPreferencesPage({
             </h1>
             <p className="mt-3 text-sm text-slate-600">
               The link in your email may have expired (links are valid for 90
-              days) or been mistyped. Open the latest Logistic Intel email and
+              days) or been mistyped. Open the latest Logistics Intel email and
               click "manage preferences" again, or email{" "}
               <a
                 className="text-[#1d4ed8] underline underline-offset-2"
@@ -146,13 +146,13 @@ function Header() {
               swapped out — preference center should never break. */}
           <img
             src="/lit-icon-master.svg"
-            alt="Logistic Intel"
+            alt="Logistics Intel"
             width={28}
             height={28}
             className="h-7 w-7"
           />
           <span className="text-sm font-semibold tracking-tight">
-            Logistic Intel
+            Logistics Intel
           </span>
         </Link>
         <span className="text-xs font-medium uppercase tracking-wide text-slate-500">

@@ -102,7 +102,7 @@ export async function GET() {
   // ── Top matter ──────────────────────────────────────────────
   sections.push(
     [
-      `# Logistic Intel (LIT) — llms-full.txt`,
+      `# Logistics Intel (LIT) — llms-full.txt`,
       ``,
       `> Full-text content bundle for AI ingestion. This file concatenates the public marketing surface — blog, glossary, features, solutions, comparisons, and alternatives — into one markdown document so language models can ingest the site in a single fetch.`,
       ``,
@@ -110,7 +110,9 @@ export async function GET() {
       `**Canonical site:** ${SITE_URL}`,
       `**llms.txt index:** ${SITE_URL}/llms.txt`,
       ``,
-      `LIT is a freight revenue intelligence platform for logistics sales teams, freight forwarders, freight brokers, 3PLs, customs brokers, and import/export sales teams. The platform combines live Bill of Lading data (124M+ filings), verified buyer-side contacts (42M+, deliverability >95%), a freight-native CRM (Command Center), Pulse AI for natural-language search and account briefs, and an outbound engine that grounds every sequence step in real shipment context.`,
+      `Logistics Intel (LIT) is freight prospecting and sales intelligence software for freight forwarders, freight brokers, 3PLs, NVOCCs, customs brokers, and logistics sales teams. It helps freight sellers find active shippers, research shipment activity, identify relevant decision-makers, organize accounts, and send outreach through connected Gmail or Microsoft Outlook mailboxes. LIT is not a TMS, dispatch platform, load board, or freight marketplace.`,
+      ``,
+      `**Product status:** 7-day trial; no credit card required; 10 searches and 10 verified-contact enrichments. Gmail and Outlook sending are available. Other connectors must be described according to the status shown on the integrations page. SOC 2 readiness work is in progress and LIT must not be described as SOC 2 certified until an independent examination is complete.`,
       ``,
     ].join("\n"),
   );

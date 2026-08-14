@@ -10,8 +10,8 @@ import type { OfferGridCard } from "@/components/lead-magnet/MoneyPageOfferGrid"
  *  - FAQs are unique per page (they feed FAQPage JSON-LD — duplicated answers
  *    across URLs read as doorway pages).
  *  - Trial framing matches the 2026-08-06 billing model: searching is
- *    unlimited and free; the metered actions are deep account unlocks (10)
- *    and contact enrichments (10).
+ *    limited to 10 searches and 10 verified-contact enrichments during
+ *    the 7-day trial.
  */
 
 type OfferCard = OfferGridCard;
@@ -40,7 +40,7 @@ export type BofuPage = {
 };
 
 const TRIAL_NOTE =
-  "Unlimited searches + 10 account unlocks + 10 verified contacts free. No credit card.";
+  "7-day trial: 10 searches + 10 verified contacts. No credit card.";
 
 /** The core offer cards, parameterized by who the page speaks to. Two to
  *  three cards per page are swapped for intent-specific ones below. */
@@ -48,8 +48,8 @@ function coreCards(audience: string): OfferCard[] {
   return [
     {
       check: "Includes",
-      title: "Unlimited active-shipper search",
-      body: `Search 524K+ live US importers by lane, port, carrier, HS code, mode, or industry — free, as many times as ${audience} need.`,
+      title: "Active-shipper search",
+      body: `Use the trial searches to filter active US importers by lane, port, carrier, HS code, mode, or industry.`,
       span: 2,
       tone: "dark",
     },
@@ -115,7 +115,7 @@ export const BOFU_PAGES: BofuPage[] = [
     offer: {
       eyebrow: "What's in the free trial",
       heading: "An importer database that proves activity — not a stale contact list.",
-      body: "Unlimited importer searches. 10 deep account unlocks with full shipment history. 10 verified contact enrichments. No credit card required.",
+      body: "The 7-day trial includes 10 importer searches and 10 verified contact enrichments. No credit card required.",
     },
     offerCards: coreCards("your team"),
     outcomes: [
@@ -173,7 +173,7 @@ export const BOFU_PAGES: BofuPage[] = [
     ],
     finalCta: {
       heading: "Search every active US importer — free.",
-      body: "Unlimited searches. 10 account unlocks with full shipment history. 10 verified contacts. No credit card.",
+      body: "10 searches. 10 verified contacts. No credit card.",
     },
   },
 
@@ -204,7 +204,7 @@ export const BOFU_PAGES: BofuPage[] = [
     offer: {
       eyebrow: "What's in the free trial",
       heading: "A logistics-specific lead engine — not a generic B2B database.",
-      body: "Unlimited searches across 524K+ active shippers. 10 deep account unlocks. 10 verified logistics contacts. No credit card required.",
+      body: "10 searches across active shippers. 10 verified contacts. No credit card required.",
     },
     offerCards: coreCards("logistics sales teams"),
     outcomes: [
@@ -262,7 +262,7 @@ export const BOFU_PAGES: BofuPage[] = [
     ],
     finalCta: {
       heading: "Put live shipment data behind your pipeline.",
-      body: "Unlimited searches. 10 account unlocks. 10 verified logistics contacts. No credit card.",
+      body: "10 searches. 10 verified contacts. No credit card.",
     },
   },
 
@@ -293,7 +293,7 @@ export const BOFU_PAGES: BofuPage[] = [
     offer: {
       eyebrow: "What's in the free trial",
       heading: "Displacement-grade intelligence on every prospective shipper.",
-      body: "Unlimited searches. 10 deep account unlocks showing lanes, volumes, and provider mix. 10 verified contacts. No credit card required.",
+      body: "10 searches. 10 verified contacts. No credit card required.",
     },
     offerCards: [
       ...coreCards("forwarding sales teams").slice(0, 1),
@@ -349,7 +349,7 @@ export const BOFU_PAGES: BofuPage[] = [
       {
         question: "How fast can a new BDR get productive?",
         answer:
-          "Same day. Unlimited search is free, so a new rep can explore their territory immediately; the 10 trial unlocks are enough to build a first target list with full shipment evidence before you commit to a plan.",
+          "Same day. The 7-day trial includes 10 searches and 10 verified-contact enrichments, enough for a new rep to test a focused target list before choosing a plan.",
       },
     ],
     relatedHeading: "Built for forwarding growth teams.",
@@ -360,7 +360,7 @@ export const BOFU_PAGES: BofuPage[] = [
     ],
     finalCta: {
       heading: "Pitch your next shipper with their own data.",
-      body: "Unlimited searches. 10 account unlocks with provider mix and lane history. 10 verified contacts. No credit card.",
+      body: "10 searches. 10 verified contacts. No credit card.",
     },
   },
 
@@ -391,7 +391,7 @@ export const BOFU_PAGES: BofuPage[] = [
     offer: {
       eyebrow: "What's in the free trial",
       heading: "Everything you need to open direct shipper relationships.",
-      body: "Unlimited shipper searches. 10 deep account unlocks. 10 verified logistics contacts. No credit card required.",
+      body: "The 7-day trial includes 10 shipper searches and 10 verified logistics contacts. No credit card required.",
     },
     offerCards: coreCards("brokers and carriers"),
     outcomes: [
@@ -449,7 +449,7 @@ export const BOFU_PAGES: BofuPage[] = [
     ],
     finalCta: {
       heading: "Open your first direct shipper conversation this week.",
-      body: "Unlimited searches. 10 account unlocks. 10 verified contacts. No credit card.",
+      body: "10 searches. 10 verified contacts. No credit card.",
     },
   },
 
@@ -480,7 +480,7 @@ export const BOFU_PAGES: BofuPage[] = [
     offer: {
       eyebrow: "What's in the free trial",
       heading: "Growth-signal prospecting for warehousing, fulfillment, and managed transportation.",
-      body: "Unlimited searches with velocity and complexity filters. 10 deep account unlocks. 10 verified ops contacts. No credit card required.",
+      body: "10 searches with velocity and complexity filters. 10 verified contacts. No credit card required.",
     },
     offerCards: [
       ...coreCards("3PL business development teams").slice(0, 1),
@@ -536,7 +536,7 @@ export const BOFU_PAGES: BofuPage[] = [
       {
         question: "How does the free trial work for a BD team?",
         answer:
-          "Searching is unlimited and free for everyone, so the whole team can explore territories immediately. The trial's 10 account unlocks and 10 contact enrichments let you validate data quality on real targets before upgrading.",
+          "The 7-day trial includes 10 searches and 10 contact enrichments so your team can validate LIT against real target accounts before upgrading.",
       },
     ],
     relatedHeading: "More for 3PL growth teams.",
@@ -547,7 +547,7 @@ export const BOFU_PAGES: BofuPage[] = [
     ],
     finalCta: {
       heading: "Catch the next breakout brand in its growth window.",
-      body: "Unlimited searches with growth filters. 10 account unlocks. 10 verified contacts. No credit card.",
+      body: "10 searches with growth filters. 10 verified contacts. No credit card.",
     },
   },
 
@@ -578,7 +578,7 @@ export const BOFU_PAGES: BofuPage[] = [
     offer: {
       eyebrow: "What's in the free trial",
       heading: "Target importers by port, commodity, and entry complexity.",
-      body: "Unlimited importer searches. 10 deep account unlocks with HS-code and port detail. 10 verified contacts. No credit card required.",
+      body: "The 7-day trial includes 10 importer searches and 10 verified contacts. No credit card required.",
     },
     offerCards: [
       ...coreCards("customs brokerage teams").slice(0, 1),
@@ -645,7 +645,7 @@ export const BOFU_PAGES: BofuPage[] = [
     ],
     finalCta: {
       heading: "Find the importers your practice was built for.",
-      body: "Unlimited searches by port and commodity. 10 account unlocks. 10 verified contacts. No credit card.",
+      body: "10 searches by port and commodity. 10 verified contacts. No credit card.",
     },
   },
 
@@ -773,7 +773,7 @@ export const BOFU_PAGES: BofuPage[] = [
     ],
     finalCta: {
       heading: "See your territory the way the data sees it.",
-      body: "Unlimited searches. 10 account unlocks. 10 verified contacts. No credit card.",
+      body: "10 searches. 10 verified contacts. No credit card.",
     },
   },
 ];

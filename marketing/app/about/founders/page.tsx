@@ -11,7 +11,7 @@ import { buildMetadata } from "@/lib/seo";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://logisticintel.com";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Our founders | Logistic Intel",
+  title: "Our founders | Logistics Intel",
   description:
     "Twenty years of combined logistics experience — international and domestic freight forwarding, freight brokerage sales and ownership — shaped into a freight prospecting platform.",
   path: "/about/founders",
@@ -50,7 +50,7 @@ type RationaleCard = {
 const RATIONALE: RationaleCard[] = [
   {
     title: "Lane economics that survive contact with reality.",
-    body: "The team has booked enough freight to know when a quote will hold and when it will not. That shows up in how Logistic Intel ranks shippers, lanes, and timing.",
+    body: "The team has booked enough freight to know when a quote will hold and when it will not. That shows up in how Logistics Intel ranks shippers, lanes, and timing.",
   },
   {
     title: "A workflow built around how forwarders and brokers actually sell.",
@@ -73,18 +73,18 @@ export default function FoundersPage() {
   const webPageLd = {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    name: "Our founders | Logistic Intel",
+    name: "Our founders | Logistics Intel",
     description:
       "Twenty years of combined logistics experience — international and domestic freight forwarding, freight brokerage sales and ownership — shaped into a freight prospecting platform.",
     url: `${SITE_URL}/about/founders`,
     isPartOf: {
       "@type": "WebSite",
-      name: "Logistic Intel",
+      name: "Logistics Intel",
       url: SITE_URL,
     },
     about: {
       "@type": "Organization",
-      name: "Logistic Intel",
+      name: "Logistics Intel",
       url: SITE_URL,
     },
   };
@@ -188,7 +188,7 @@ export default function FoundersPage() {
           </h2>
           <div className="font-body mt-6 space-y-5 text-[17px] leading-[1.7] text-ink-700">
             <p>
-              The founding team built Logistic Intel because of an itch they could not
+              The founding team built Logistics Intel because of an itch they could not
               scratch from inside a forwarder or brokerage seat — the gap between knowing
               a shipment moved and being able to act on it before a competitor did.
             </p>
@@ -201,7 +201,7 @@ export default function FoundersPage() {
               rep — and the rep is busy quoting.
             </p>
             <p>
-              Logistic Intel is built differently because the people building it have
+              Logistics Intel is built differently because the people building it have
               done the work. Real shipment data sits next to verified contacts, which
               sits next to outreach, which sits next to a CRM that already knows the
               account. The path from a signal to a meeting is short on purpose.
@@ -258,7 +258,7 @@ export default function FoundersPage() {
                 More about us
               </div>
               <p className="font-body mt-2 text-[14px] leading-relaxed text-ink-500">
-                The company story, principles, and where Logistic Intel is going.
+                The company story, principles, and where Logistics Intel is going.
               </p>
               <span className="font-display mt-3 inline-flex items-center gap-2 text-[13px] font-semibold text-brand-blue group-hover:text-brand-blue-700">
                 Visit the about page

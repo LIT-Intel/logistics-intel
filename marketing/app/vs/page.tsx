@@ -227,7 +227,7 @@ export default async function VsHubPage() {
             eyebrow: "01 · Trial",
             title: "10 free searches + 10 contacts",
             body: "No credit card. Run real account searches and pull verified contacts. See if the data lines up with your lanes.",
-            meta: "Day 0 · Free forever tier",
+            meta: "Day 0 · 7-day trial",
           },
           {
             eyebrow: "02 · Pilot",

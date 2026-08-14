@@ -98,7 +98,7 @@ export default function ContactPage() {
               Headquarters
             </div>
             <div className="font-display mt-2 text-[20px] font-semibold tracking-[-0.015em]">
-              Logistic Intel, Inc.
+              Logistics Intel, Inc.
             </div>
             <p className="font-body mt-1 text-[15px] leading-relaxed text-ink-150">
               United States · Remote-first · Customers in 14 countries

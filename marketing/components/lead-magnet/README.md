@@ -81,7 +81,7 @@ Google favicon fallback). Greyscale styling lives on the wrapper.
 
 | Prop      | Type              | Notes                                         |
 | --------- | ----------------- | --------------------------------------------- |
-| `label`   | `string` (opt)    | Default: "Trusted by freight revenue teams at". |
+| `label`   | `string` (opt)    | Default: "Trusted by freight sales teams at". |
 | `domains` | `string[]` (opt)  | Default: C.H. Robinson, RXO, Echo, DHL, DSV, Expeditors. |
 
 ---
@@ -146,7 +146,7 @@ export default function FreightLeadsPage() {
         lede="10 free searches and 10 verified contacts. Sourced from US CBP filings and verified weekly. No credit card."
         ctaLabel="Start free"
         formSource="freight-leads-hero"
-        formNote="Free forever for the first 10 searches. SOC 2 · GDPR · CCPA."
+        formNote="7-day trial with 10 searches and 10 verified contacts. SOC 2 readiness in progress · GDPR · CCPA."
       >
         <LiveProductPreview urlBarText="app.logisticintel.com/search" pulseLabel="LIVE">
           {/* drop a search-result mock here */}
@@ -159,7 +159,7 @@ export default function FreightLeadsPage() {
         items={[
           { num: "10x", label: "More qualified meetings", body: "Replace cold list buys with verified, in-market shippers.", cite: "Avg. customer, 90 days" },
           { num: "48hr", label: "From signup to first meeting", body: "Outreach drafts auto-built from the most recent shipment activity." },
-          { num: "$480K", label: "Avg. pipeline lift / rep / qtr", body: "Tracked across 80+ freight revenue teams using LIT Pulse weekly briefs." },
+          { num: "$480K", label: "Avg. pipeline lift / rep / qtr", body: "Tracked across 80+ freight sales teams using LIT Pulse weekly briefs." },
         ]}
       />
 
@@ -173,7 +173,7 @@ export default function FreightLeadsPage() {
       <MoneyPageFAQ
         items={[
           { question: "Where does the shipment data come from?", answer: "US Customs and Border Protection (CBP) bill-of-lading filings, refreshed weekly." },
-          { question: "Do I need a credit card?", answer: "No. The free tier includes 10 searches and 10 verified contacts. Upgrade only when you're ready." },
+          { question: "Do I need a credit card?", answer: "No. The 7-day trial includes 10 searches and 10 verified contacts. Upgrade only when you're ready." },
         ]}
       />
 

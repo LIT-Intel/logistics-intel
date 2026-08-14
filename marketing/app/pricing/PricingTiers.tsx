@@ -69,7 +69,7 @@ const TIERS: Tier[] = [
   {
     id: "growth",
     name: "Growth",
-    tagline: "For revenue teams running multi-channel outbound across a real book of accounts.",
+    tagline: "For freight sales teams running multi-channel outbound across a real book of accounts.",
     // Supabase plans.code = "growth": price_monthly $499.00, price_yearly $4491.00
     // Annual per-month equivalent: 4491 / 12 = $374.25 ≈ $374
     monthly: 499,

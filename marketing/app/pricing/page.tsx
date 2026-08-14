@@ -6,16 +6,15 @@ import { PageHero } from "@/components/sections/PageHero";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { FaqSection } from "@/components/sections/FaqSection";
 import { CustomerLogosRail } from "@/components/sections/CustomerLogosRail";
-import { G2Chip } from "@/components/proof/G2Chip";
 import { buildMetadata, siteUrl } from "@/lib/seo";
 import { PricingTiers } from "./PricingTiers";
 import { PricingComparison } from "./PricingComparison";
 
 export const metadata: Metadata = buildMetadata({
   title:
-    "Pricing — Freight Prospecting Plans for Brokers, Forwarders & 3PLs | Logistic Intel",
+    "Pricing — Freight Prospecting Plans for Brokers, Forwarders & 3PLs | Logistics Intel",
   description:
-    "Logistic Intel pricing for solo freight prospectors, scaling teams, and enterprise programs. Live shipment data, verified contacts, and Pulse AI from one platform.",
+    "Logistics Intel pricing for solo freight prospectors, scaling teams, and enterprise programs. Live shipment data, verified contacts, and Pulse AI from one platform.",
   path: "/pricing",
   eyebrow: "Pricing",
 });
@@ -77,10 +76,10 @@ export default function PricingPage() {
   const productJsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
-    name: "Logistic Intel",
+    name: "Logistics Intel",
     description:
       "Freight prospecting platform with live shipment data, verified contacts, and Pulse AI briefs for brokers, freight forwarders, and 3PLs.",
-    brand: { "@type": "Brand", name: "Logistic Intel" },
+    brand: { "@type": "Brand", name: "Logistics Intel" },
     url: siteUrl(path),
     offers: {
       "@type": "AggregateOffer",
@@ -105,7 +104,7 @@ export default function PricingPage() {
           "@type": "Offer",
           name: "Growth",
           description:
-            "For revenue teams. 350 shipment searches, 150 verified contact reveals, 100 Pulse AI briefs per month, multi-channel outbound, Command Center CRM, HubSpot and Salesforce sync.",
+            "For freight sales teams. 350 shipment searches, 150 verified contact reveals, 100 Pulse AI briefs per month, multi-channel outbound, and Command Center CRM.",
           price: "499",
           priceCurrency: "USD",
           availability: "https://schema.org/InStock",
@@ -170,9 +169,8 @@ export default function PricingPage() {
       <section className="px-5 sm:px-8 py-16">
         <div className="mx-auto max-w-container">
           <div className="flex flex-col items-center gap-6 text-center">
-            <G2Chip rating={4.8} variant="light" category="G2 Verified" />
             <div className="flex flex-wrap items-center justify-center gap-2">
-              {["SOC 2", "GDPR", "CCPA"].map((badge) => (
+              {["SOC 2 readiness in progress", "GDPR", "CCPA"].map((badge) => (
                 <span
                   key={badge}
                   className="font-display inline-flex items-center rounded-full border border-ink-100 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-700 shadow-sm"

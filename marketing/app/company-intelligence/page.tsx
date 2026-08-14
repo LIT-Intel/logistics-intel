@@ -34,7 +34,7 @@ const LEARNING_BULLETS = [
 
 const INTERNAL_LINKS = [
   { href: "/features", label: "freight prospecting software features" },
-  { href: "/products", label: "freight revenue intelligence platform" },
+  { href: "/products", label: "freight sales intelligence platform" },
   { href: "/best/best-freight-prospecting-tools", label: "best freight prospecting tools" },
   { href: "/resources", label: "freight sales playbooks" },
   { href: "/glossary", label: "freight and logistics glossary" },
