@@ -23,10 +23,12 @@ import {
   LayoutGrid,
   KanbanSquare,
   CheckSquare,
+  BarChart3,
 } from "lucide-react";
 import AddToCampaignModal from "./AddToCampaignModal";
 import PipelineBoard from "@/features/crm/PipelineBoard";
 import TasksView from "@/features/crm/TasksView";
+import PipelineReports from "@/features/crm/PipelineReports";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
 import { listStages, type DealStage, myOverdueTaskCount } from "@/api/crm";
 // AddCompanyModal import removed — manual company entry no longer offered.
@@ -190,7 +192,7 @@ function buildListRow(record: CommandCenterRecord): ListRow {
   };
 }
 
-type CrmView = "accounts" | "pipeline" | "tasks";
+type CrmView = "accounts" | "pipeline" | "tasks" | "reports";
 
 /**
  * Command Center shell — view switcher across the CRM surfaces. The
@@ -224,9 +226,10 @@ export default function CommandCenter() {
         <ViewTab active={view === "accounts"} onClick={() => setView("accounts")} icon={<LayoutGrid style={{ width: 14, height: 14 }} />} label="Accounts" />
         <ViewTab active={view === "pipeline"} onClick={() => setView("pipeline")} icon={<KanbanSquare style={{ width: 14, height: 14 }} />} label="Pipeline" />
         <ViewTab active={view === "tasks"} onClick={() => setView("tasks")} icon={<CheckSquare style={{ width: 14, height: 14 }} />} label="Tasks" badge={overdueCount || undefined} />
+        <ViewTab active={view === "reports"} onClick={() => setView("reports")} icon={<BarChart3 style={{ width: 14, height: 14 }} />} label="Reports" />
       </div>
 
-      {view === "accounts" ? <AccountsView /> : view === "pipeline" ? <PipelineBoard /> : <TasksView onCountChange={setOverdueCount} />}
+      {view === "accounts" ? <AccountsView /> : view === "pipeline" ? <PipelineBoard /> : view === "tasks" ? <TasksView onCountChange={setOverdueCount} /> : <PipelineReports />}
     </div>
   );
 }

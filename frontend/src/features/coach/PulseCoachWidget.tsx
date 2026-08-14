@@ -26,6 +26,11 @@ import {
   type WorkspaceLane,
 } from "@/lib/api";
 import type { CoachCompanyHit } from "@/api/pulse";
+import {
+  PIPELINE_PROMPTS,
+  isPipelineQuestion,
+  answerPipelineQuestion,
+} from "@/features/coach/pipelinePrompts";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useLocation } from "react-router-dom";
@@ -909,12 +914,16 @@ function CoachComposer({
   // map (active or not) so quick prompts surface even when the
   // tutorial card is suppressed.
   const tutorial = useMemo(() => findTutorialForPath(pathname), [pathname]);
+  // On the Command Center / CRM surfaces, lead with pipeline-aware prompt
+  // chips. These are answered client-side against the org-scoped
+  // lit_pipeline_summary() RPC (no LLM edge-fn change) — see submit() below.
+  const onCrmSurface = pathname.startsWith("/app/command-center");
   const quickPrompts = useMemo(() => {
     const pageAware = tutorial?.quick_prompts ?? [];
-    if (!extraPrompts?.length) return pageAware;
-    // Prepend + dedupe so the coach-first prompts lead the chip row.
-    return [...new Set([...extraPrompts, ...pageAware])];
-  }, [tutorial, extraPrompts]);
+    const crm = onCrmSurface ? [...PIPELINE_PROMPTS] : [];
+    // Prepend + dedupe so the CRM / coach-first prompts lead the chip row.
+    return [...new Set([...(extraPrompts ?? []), ...crm, ...pageAware])];
+  }, [tutorial, extraPrompts, onCrmSurface]);
 
   const submit = useCallback(async (e?: React.FormEvent, override?: string) => {
     e?.preventDefault();
@@ -925,6 +934,16 @@ function CoachComposer({
     setErr(null);
     setAnswer(null);
     try {
+      // Pipeline questions are answered locally from the org-scoped
+      // lit_pipeline_summary() RPC — real deal data, no LLM, no edge-fn
+      // change. Falls through to the normal coach path if the RPC fails.
+      if (isPipelineQuestion(trimmed)) {
+        const pipe = await answerPipelineQuestion(trimmed);
+        if (pipe) {
+          setAnswer({ md: pipe.md, cta: pipe.cta, companies: undefined });
+          return;
+        }
+      }
       const resp = await askPulseCoach(trimmed);
       if (!resp.ok) {
         setErr(resp.error || resp.answer_md || "Coach couldn't answer that.");
