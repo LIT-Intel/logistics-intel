@@ -19,9 +19,14 @@ const corsHeaders = {
 
 const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
-  // Gmail reply detection disabled — see email-oauth-start for the
-  // scope-incompatibility explanation. gmail.metadata is mutually
-  // exclusive with gmail.send; restricted scopes require CASA review.
+  // gmail.readonly powers the inbox two-way sync engine (sync-inbox):
+  // users.messages.list / users.history / users.messages.get. It is a
+  // RESTRICTED scope — Google will only grant it in production after the
+  // OAuth app passes CASA security review. Until then this scope is present
+  // in the request but Google shows an "unverified app" screen and blocks it
+  // for external users. gmail.metadata (the metadata-only alternative) is
+  // mutually exclusive with gmail.send, so readonly is the correct choice.
+  "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ];
