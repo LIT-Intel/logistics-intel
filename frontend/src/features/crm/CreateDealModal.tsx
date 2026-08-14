@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -61,6 +62,21 @@ export default function CreateDealModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Close on Escape + lock body scroll while the dialog is open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleCreate() {
     if (!title.trim()) {
       toast({ title: "Title required", variant: "destructive" });
@@ -92,21 +108,26 @@ export default function CreateDealModal({
     }
   }
 
-  return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
-      <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.45)" }} />
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="New deal"
+    >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ position: "relative", width: "min(460px, 100%)", background: "#FFFFFF", borderRadius: 16, boxShadow: "0 20px 50px rgba(15,23,42,0.25)", overflow: "hidden" }}
+        className="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
       >
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>New deal</div>
           <button onClick={onClose} style={iconBtn} title="Close">
             <X style={{ width: 16, height: 16 }} />
           </button>
         </div>
 
-        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", flex: 1, minHeight: 0 }}>
           {prefill?.companyName ? (
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: "#64748b" }}>
               For <b style={{ color: "#0F172A" }}>{prefill.companyName}</b>
@@ -162,7 +183,7 @@ export default function CreateDealModal({
           ) : null}
         </div>
 
-        <div style={{ padding: "14px 20px", borderTop: "1px solid #E5E7EB", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div style={{ padding: "14px 20px", borderTop: "1px solid #E5E7EB", display: "flex", justifyContent: "flex-end", gap: 8, flexShrink: 0 }}>
           <button onClick={onClose} style={secondaryBtn}>
             Cancel
           </button>
@@ -172,7 +193,8 @@ export default function CreateDealModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
