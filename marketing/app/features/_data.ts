@@ -224,16 +224,18 @@ export const FEATURE_PAGES: FeaturePage[] = [
     lede:
       "Run your entire freight sales motion in one place. Accounts and contacts are pre-enriched with shipment data; deals carry lane, carrier, and volume context automatically.",
     shortAnswer:
-      "LIT CRM is a freight-native sales CRM with accounts, contacts, deals, sequences, and tasks. Every record is joined to live BOL data, so a customer record shows shipment cadence, lanes, and carrier mix — no separate enrichment tool required.",
+      "LIT CRM is a full freight-native sales CRM with shipment-aware accounts, contacts, deals, visual pipeline stages, tasks, activity timelines, weighted forecasting, win/loss tracking, and performance reports. Every record stays joined to live BOL data.",
     problem:
       "HubSpot and Salesforce are built for SaaS, not freight. Reps spend hours pasting BOL data into notes and re-enriching contacts from a third tool.",
     solution:
-      "LIT CRM treats shipments as a first-class field. Every account auto-displays its TTM TEU, top lanes, dominant carriers, last shipment date, and HS mix. Contacts are pre-enriched and continuously refreshed.",
+      "LIT CRM treats shipments as a first-class field and carries that context through the entire deal cycle. Every account displays shipment activity, lanes, carriers, contacts, tasks, campaigns, quotes, deals, and revenue activity in one workspace.",
     capabilities: [
       { title: "Shipment-aware accounts", body: "Each company shows TTM volume, lane mix, and carrier share automatically." },
-      { title: "Deal pipeline", body: "Stages, weighted forecasting, activity tracking — the basics, done well." },
+      { title: "Full deal pipeline", body: "New, Qualified, Quoted, Negotiation, Won, and Lost stages with deal values, owners, contacts, close dates, and drag-and-drop movement." },
+      { title: "Forecasting + reports", body: "Open pipeline, weighted forecast, won revenue, stage conversion, deal velocity, win/loss results, and owner performance." },
+      { title: "Tasks + activity", body: "Assigned follow-ups, due dates, deal timelines, reply and meeting activity, and stale-opportunity alerts." },
       { title: "Sequences in CRM", body: "Step-based outbound sequences with Pulse-AI personalization, no separate engagement tool needed." },
-      { title: "Two-way sync", body: "Optional bi-directional sync to HubSpot or Salesforce if you're not ready to migrate." },
+      { title: "Built-in CRM workflow", body: "Run account research, outreach, deals, tasks, forecasting, and reporting in LIT without maintaining a parallel generic CRM." },
       { title: "Watchlists + alerts", body: "Save lanes, ports, or accounts; get pinged when a meaningful change happens." },
     ],
     whoItsFor: [
@@ -249,7 +251,7 @@ export const FEATURE_PAGES: FeaturePage[] = [
       { label: "LIT vs Salesforce", href: "/vs/salesforce" },
     ],
     faqs: [
-      { q: "Can I run LIT alongside HubSpot?", a: "Yes — many teams do. Use LIT for prospecting + sequences and sync closed-won accounts back to HubSpot for finance/CS workflows." },
+      { q: "Can I run LIT alongside HubSpot or Salesforce?", a: "Yes. LIT can operate as your primary freight sales CRM today. HubSpot and Salesforce synchronization is shown on our integrations roadmap and should not be treated as a live connector until it is marked available." },
       { q: "Does it have a mobile app?", a: "Mobile web is fully responsive. A native app is on the 2026 roadmap." },
     ],
   },
