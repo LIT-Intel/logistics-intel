@@ -51,7 +51,9 @@ import {
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import AddToListPicker from "@/features/pulse/AddToListPicker";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
-import { listStages, type DealStage } from "@/api/crm";
+import DealDetailDrawer from "@/features/crm/DealDetailDrawer";
+import CompanyCrmPanel from "@/components/company/CompanyCrmPanel";
+import { listStages, type DealStage, type DealCard } from "@/api/crm";
 import { PulseLIVETab } from "@/features/pulse/PulseLIVETab";
 import {
   getSavedCompanyDetail,
@@ -700,6 +702,10 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   // CRM Phase 1 — "Add to pipeline" create-deal modal + the org's stages.
   const [dealStages, setDealStages] = useState<DealStage[]>([]);
   const [createDealOpen, setCreateDealOpen] = useState(false);
+  // CRM 360 panel — open a specific deal in the DealDetailDrawer + a refresh
+  // key bumped on any deal mutation so the summary panel re-reads.
+  const [activeDeal, setActiveDeal] = useState<DealCard | null>(null);
+  const [crmRefreshKey, setCrmRefreshKey] = useState(0);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -2259,6 +2265,39 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         </div>
       ) : null}
 
+      {/* CRM / Revenue 360 panel — this company's deals, quotes, open tasks,
+          campaign membership, email threads, and quick actions. Everything is
+          real + org-scoped via @/api/companyCrm; deal rows open the
+          DealDetailDrawer in-place. */}
+      <CompanyCrmPanel
+        identity={{
+          companyUuid: bundle?.identity?.id ?? null,
+          savedCompanyId: bundle?.identity?.id ?? null,
+          sourceCompanyKey:
+            (bundle?.identity as any)?.source_company_key ??
+            (bundle?.identity as any)?.sourceCompanyKey ??
+            companyId ??
+            null,
+          companyName,
+          companyDomain,
+        }}
+        stages={dealStages}
+        onOpenDeal={(d) => setActiveDeal(d)}
+        onAddToPipeline={() => setCreateDealOpen(true)}
+        canAddToPipeline={dealStages.length > 0}
+        onOpenQuotesTab={() => setTab("quotes")}
+        onOpenInboxTab={() => setTab("inbox")}
+        onOpenContactsTab={() => setTab("contacts")}
+        onStartOutreach={() => setCampaignModalOpen(true)}
+        onOpenQuote={(id) => navigate(`/app/quoting/${id}`)}
+        onNewQuote={() =>
+          navigate(
+            `/app/quoting/new${companyId ? `?company_id=${companyId}` : ""}`,
+          )
+        }
+        refreshKey={crmRefreshKey}
+      />
+
       {/* Tab bar — F5 trim: 5 visible + More overflow. The More dropdown
           surfaces Pulse AI / Rate Benchmark / Revenue Opportunity without
           horizontal scroll on mobile. */}
@@ -2712,7 +2751,19 @@ function ProfilePanel({ rawId }: { rawId: string }) {
             companyName,
           } as CreateDealPrefill}
           onClose={() => setCreateDealOpen(false)}
-          onCreated={() => setCreateDealOpen(false)}
+          onCreated={() => {
+            setCreateDealOpen(false);
+            setCrmRefreshKey((k) => k + 1);
+          }}
+        />
+      ) : null}
+
+      {activeDeal ? (
+        <DealDetailDrawer
+          deal={activeDeal}
+          stages={dealStages}
+          onClose={() => setActiveDeal(null)}
+          onChanged={() => setCrmRefreshKey((k) => k + 1)}
         />
       ) : null}
 
