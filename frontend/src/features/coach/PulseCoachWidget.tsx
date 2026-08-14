@@ -44,19 +44,18 @@ import {
 
 /**
  * Pulse Coach widget — proactive AI nudges grounded in the user's
- * workspace state. Two render modes share a single data source:
+ * workspace state.
  *
- *   "floating"  — bottom-right pill that expands into a card. Mounted
- *                 globally in AppShell so it follows the user across
- *                 every page.
- *   "inline"    — full hero panel rendered on the Dashboard.
+ * The floating bottom-right pill (mounted globally in AppLayout /
+ * AppShell) is THE coach surface — it follows the user across every
+ * page and hovers over the dashboard's trade-lane map. The old
+ * "inline" dashboard hero panel was removed 2026-08-13 (CEO: the
+ * dashboard showed Coach twice).
  *
  * The widget hits the `pulse-coach` edge function which returns LLM-
  * generated nudges + an aggregated workspace_lanes envelope used by
  * the WorkspaceLanesGlobe. Cached for 30 minutes per session.
  */
-
-type Mode = "floating" | "inline";
 
 type PulseCoachContextValue = {
   result: PulseCoachResult | null;
@@ -321,122 +320,6 @@ function useNudgeActionHandler() {
   );
 }
 
-/* ── Inline (dashboard hero) ─────────────────────────────────────── */
-
-export function PulseCoachInline() {
-  const { result, loading, error, refresh, highlightLane, highlightedLane } =
-    usePulseCoach();
-  const handleAction = useNudgeActionHandler();
-  const nudges = result?.nudges || [];
-
-  return (
-    <div
-      className="relative flex h-full flex-col overflow-hidden rounded-xl border p-4 shadow-sm"
-      style={{
-        background:
-          "linear-gradient(160deg, #0F172A 0%, #1E293B 60%, #102240 100%)",
-        borderColor: "#1E293B",
-        // Match the globe card's intrinsic height on lg+. The globe
-        // renders ~404px tall (300 canvas + 88 header + 16 padding);
-        // setting min-h here keeps the grid row stable when nudge
-        // count changes.
-        minHeight: 404,
-      }}
-    >
-      {/* glow */}
-      <div
-        className="pointer-events-none absolute -right-12 -top-12 h-48 w-48 rounded-full"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(0,240,255,0.18) 0%, transparent 65%)",
-        }}
-        aria-hidden
-      />
-
-      {/* header */}
-      <div className="relative mb-3 flex items-center gap-2">
-        <div
-          className="flex h-7 w-7 items-center justify-center rounded-md border"
-          style={{
-            background: "rgba(0,240,255,0.1)",
-            borderColor: "rgba(0,240,255,0.3)",
-          }}
-        >
-          <Sparkles className="h-3.5 w-3.5" style={{ color: "#00F0FF" }} />
-        </div>
-        <div>
-          <div
-            className="font-display text-[11px] font-bold uppercase tracking-[0.12em]"
-            style={{ color: "#00F0FF" }}
-          >
-            Pulse Coach
-          </div>
-          <div className="font-body text-[11px] text-slate-400">
-            What's on your plate today
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => refresh(true)}
-          disabled={loading}
-          className="font-display ml-auto inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold text-slate-300 hover:bg-white/10 disabled:opacity-50"
-          aria-label="Refresh Pulse Coach"
-          title="Refresh"
-        >
-          <RefreshCw className={["h-3 w-3", loading ? "animate-spin" : ""].join(" ")} />
-          Refresh
-        </button>
-      </div>
-
-      {/* body */}
-      {loading && nudges.length === 0 ? (
-        <div className="font-body relative px-1 py-6 text-center text-[12px] text-slate-400">
-          Reading your workspace…
-        </div>
-      ) : error && nudges.length === 0 ? (
-        <div className="font-body relative px-1 py-4 text-[12px] text-amber-300">
-          Coach is offline — {error}
-        </div>
-      ) : nudges.length === 0 ? (
-        <div className="font-body relative px-1 py-4 text-[12px] text-slate-400">
-          No nudges right now. Try saving a company or enriching a contact —
-          Coach lights up once there's signal to work with.
-        </div>
-      ) : (
-        <>
-          <div className="relative grid grid-cols-1 gap-2">
-            {nudges.slice(0, 3).map((n) => (
-              <NudgeCard
-                key={n.id}
-                nudge={n}
-                variant="dark"
-                onAction={() => handleAction(n)}
-                isHighlighted={
-                  highlightedLane != null &&
-                  n.lane_focus != null &&
-                  n.lane_focus.from === highlightedLane.from &&
-                  n.lane_focus.to === highlightedLane.to
-                }
-                onHover={() => {
-                  if (n.lane_focus) highlightLane(n.lane_focus);
-                }}
-                onLeave={() => highlightLane(null)}
-              />
-            ))}
-          </div>
-          {nudges.length > 3 && (
-            <div className="relative mt-2 text-center">
-              <span className="font-body text-[10.5px] text-slate-400">
-                + {nudges.length - 3} more in the floating Coach pill (bottom-right)
-              </span>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 /* ── Plan + usage warning ───────────────────────────────────────── */
 
 const PLAN_PULSE_LIMITS: Record<string, number> = {
@@ -555,14 +438,16 @@ const FLOATING_COLLAPSED_KEY = "lit.pulse_coach.floating.collapsed";
 
 /* ── Coach-first onboarding (auto-open, once, ever) ──────────────────
  *
- * Brand-new users land on /app/search with no idea what to type. On
- * their FIRST session there, the floating coach auto-opens once —
- * leading with the "watch how search works" video (pre-expanded) and
- * follow-up-oriented quick prompts. Dismissing it (or just seeing it)
- * writes a flag to auth user_metadata via supabase.auth.updateUser so
- * it never auto-opens again on ANY device. localStorage (keyed by user
- * id) is the synchronous fallback for the same session / offline case.
- * One auto-open, ever. */
+ * Brand-new users land on /app/search or /app/dashboard with no idea
+ * where to start. On their FIRST session on either surface, the
+ * floating coach auto-opens once — welcome copy, first-step guidance,
+ * the "watch how search works" video (pre-expanded), and a note that
+ * it can always be closed. Whichever qualifying page they hit first
+ * wins; the shared flag guarantees it can never fire twice. Dismissing
+ * it (or just seeing it) writes the flag to auth user_metadata via
+ * supabase.auth.updateUser so it never auto-opens again on ANY device.
+ * localStorage (keyed by user id) is the synchronous fallback for the
+ * same session / offline case. One auto-open, ever. */
 const FIRST_AUTO_OPEN_META_KEY = "lit_coach_first_auto_open_at";
 const firstAutoOpenLocalKey = (userId: string) =>
   `lit.pulse_coach.first_auto_open.${userId}`;
@@ -622,9 +507,14 @@ export function PulseCoachFloating() {
     if (firstRunEvaluated.current) return;
     if (typeof window === "undefined") return;
     if (!user?.id) return; // wait for auth to resolve
-    const onSearch =
-      pathname === "/app/search" || pathname.startsWith("/app/search/");
-    if (!onSearch) return; // keep waiting until they reach the landing page
+    // First qualifying surface wins — search OR dashboard. The shared
+    // metadata/localStorage flag below makes a second trigger impossible.
+    const onLandingSurface =
+      pathname === "/app/search" ||
+      pathname.startsWith("/app/search/") ||
+      pathname === "/app/dashboard" ||
+      pathname.startsWith("/app/dashboard/");
+    if (!onLandingSurface) return; // keep waiting until they reach one
     firstRunEvaluated.current = true;
     // Brand-new accounts only.
     const createdAtMs = user.created_at ? Date.parse(user.created_at) : NaN;
@@ -803,7 +693,12 @@ export function PulseCoachFloating() {
             <div className="font-body mt-1 text-[11.5px] leading-relaxed text-slate-300">
               60-second start: watch how search works below, then tap a
               prompt like &ldquo;Who should I follow up with?&rdquo; and Coach
-              will do the digging.
+              will do the digging. Save the companies you like and your
+              dashboard map lights up with their trade lanes.
+            </div>
+            <div className="font-body mt-1.5 text-[10.5px] leading-relaxed text-slate-400">
+              You can close this anytime — I&rsquo;ll stay in the corner
+              whenever you need me.
             </div>
           </div>
           <CoachVideoGuide defaultExpanded />

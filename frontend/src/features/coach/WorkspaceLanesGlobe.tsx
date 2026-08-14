@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Globe2, Layers, X } from "lucide-react";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
-import LaneMap from "@/components/LaneMap";
+import LaneMap, { type LaneMapLaneColor } from "@/components/LaneMap";
 import LaneViewToggle from "@/components/LaneViewToggle";
 import { useLaneViewMode } from "@/hooks/useLaneViewMode";
 import { formatLaneShort, resolveEndpoint } from "@/lib/laneGlobe";
+import { laneRegionColor } from "@/lib/laneRegions";
 import LitFlag from "@/components/ui/LitFlag";
 import { usePulseCoach, useWorkspaceLanes } from "./PulseCoachWidget";
 
@@ -16,18 +17,21 @@ const GLOBE_MIN = 220;
 const GLOBE_MAX = 460;
 
 /**
- * Workspace Lanes Globe — aggregated trade-lane view across every
- * saved company in the user's org. Replaces the "single company"
- * globe pattern from the Company Profile.
+ * Workspace Lanes — aggregated trade-lane view across every saved
+ * company visible in the user's workspace.
  *
- *  - Arc width = total shipments across all accounts on that lane
- *  - Multi-account lanes get visual emphasis (cyan accent)
- *  - Click an arc → asks Coach to focus that lane (highlight + brief)
- *  - Coach nudges with `lane_focus` highlight the matching arc
+ * CEO overhaul 2026-08-13: the interactive 2-D LaneMap is now the
+ * primary view (light variant, origin-region lane colors, volume-
+ * weighted lines, selected-lane focus + supply-chain flow — mirrors
+ * the Company Profile map hero at eb33ef20). The legacy 3-D globe
+ * remains available behind the existing Globe/Map toggle.
  *
- * The hero is split: globe on the left, ranked-lane list on the right
- * (mirrors Company Profile's TopLanesCard so the design language is
- * consistent across pages).
+ *  - Line weight = total shipments across all accounts on that lane
+ *  - Lane color = origin region (lib/laneRegions), and the ranked-lane
+ *    list's rank chips ride the SAME color so card ↔ line mapping is
+ *    instant
+ *  - Click a line → asks Coach to focus that lane (highlight + brief)
+ *  - Coach nudges with `lane_focus` highlight the matching lane
  */
 
 type Mode = "volume" | "concentration";
@@ -102,6 +106,18 @@ export default function WorkspaceLanesGlobe() {
     }
     return out;
   }, [sorted]);
+
+  // Origin-region lane colors — one record drives the map lines AND the
+  // lane list's rank chips (deterministic, keyed by lane key). Mirrors
+  // the Company Profile map idiom (CDPSupplyChain @ eb33ef20).
+  const laneColors = useMemo(() => {
+    const out: Record<string, LaneMapLaneColor> = {};
+    for (const l of globeLanes) {
+      const c = laneRegionColor(l.fromMeta?.countryCode);
+      out[l.id] = { base: c.base, selected: c.selected, glow: c.glow };
+    }
+    return out;
+  }, [globeLanes]);
 
   const highlightId = useMemo(() => {
     if (!highlightedLane?.from || !highlightedLane?.to) return null;
@@ -225,10 +241,19 @@ export default function WorkspaceLanesGlobe() {
                 selectedLane={effectiveHighlightId}
                 onSelectLane={(laneId) => {
                   const lane = sorted.find((l) => l.key === laneId);
-                  if (lane) highlightLane({ from: lane.from_label, to: lane.to_label });
+                  setStickyKey(lane ? lane.key : null);
+                  highlightLane(
+                    lane ? { from: lane.from_label, to: lane.to_label } : null,
+                  );
                 }}
-                height={Math.min(globeSize, 380)}
-                className="w-full"
+                height={Math.min(Math.max(globeSize, 320), 440)}
+                className="w-full overflow-hidden rounded-lg"
+                variant="light"
+                volumeScale
+                zoomControlPosition="bottomleft"
+                laneColors={laneColors}
+                unselectedStyle="ghost"
+                flow
               />
             )}
           </div>
@@ -263,11 +288,20 @@ export default function WorkspaceLanesGlobe() {
                   ].join(" ")}
                   style={{
                     gridTemplateColumns:
-                      "20px minmax(0,1fr) 14px minmax(0,1fr) 70px",
+                      "24px minmax(0,1fr) 14px minmax(0,1fr) 70px",
                   }}
                 >
-                  <span className="font-mono shrink-0 text-[10px] text-slate-400">
-                    #{i + 1}
+                  {/* Rank chip rides the lane's origin-region color so the
+                      list ↔ map-line mapping is instant. */}
+                  <span
+                    className="font-mono inline-flex h-[18px] w-[22px] shrink-0 items-center justify-center rounded text-[9.5px] font-bold text-white"
+                    style={{
+                      background:
+                        laneColors[l.key]?.[isActive ? "selected" : "base"] ??
+                        "#94A3B8",
+                    }}
+                  >
+                    {i + 1}
                   </span>
                   {(() => {
                     // Short labels: "Shanghai, CN → Savannah, US"

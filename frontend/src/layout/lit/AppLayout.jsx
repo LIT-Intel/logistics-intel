@@ -85,9 +85,10 @@ export default function AppLayout({ children }) {
           </main>
         </div>
       </div>
-      {/* Floating Pulse Coach pill — follows the user across every
-          AppLayout-wrapped page. Inline render still happens on the
-          Dashboard via PulseCoachInline; both share the same provider. */}
+      {/* Floating Pulse Coach pill — the single Coach surface. Follows
+          the user across every AppLayout-wrapped page and hovers over
+          the dashboard's trade-lane map. (The old inline dashboard
+          panel was removed 2026-08-13 — CEO: Coach appeared twice.) */}
       <PulseCoachFloating />
     </PulseCoachProvider>
   );

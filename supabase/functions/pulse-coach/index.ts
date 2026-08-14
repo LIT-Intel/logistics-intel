@@ -16,9 +16,11 @@ const log = createLogger("pulse-coach");
  * render with deterministic action buttons + lane-focus references.
  *
  * Auth: requires a Supabase JWT bearer.
- * Data scope: server-side query is filtered to the user's saved
- * companies (lit_saved_companies.user_id = auth.uid()), so a session
- * never sees another user's accounts.
+ * Data scope: server-side query is filtered to the user's WORKSPACE —
+ * their own saved companies plus their org's saves when the org has
+ * saved_sharing_enabled (mirrors lit_saved_companies RLS; org id is
+ * derived from the JWT user's active org_members row). A session never
+ * sees accounts outside that scope.
  */
 
 const corsHeaders = {
@@ -343,7 +345,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const pageContext: string = String(body?.page_context || "dashboard");
 
-    // ── Fetch context (scoped to this user's saved companies) ─────────
+    // ── Fetch context (scoped to this user's WORKSPACE) ───────────────
     // KPI fields live on lit_companies (shipments_12m, teu_12m,
     // top_route_12m, most_recent_shipment_date) — lit_saved_companies
     // is just the membership table.
@@ -356,16 +358,47 @@ Deno.serve(async (req: Request) => {
     // workspace_lanes aggregation returns empty and the globe goes
     // blank even when the workspace has hundreds of shipment-bearing
     // accounts.
+    //
+    // 2026-08-13 (Evan bug): scope widened user → workspace. An org
+    // member with zero personal saves saw an empty lane map + nudges
+    // built on nothing. Mirrors lit_saved_companies RLS: own rows
+    // always, plus the org's rows when the org (via the caller's active
+    // org_members row) has saved_sharing_enabled. Service-role client,
+    // so the org id is derived strictly from the JWT user's membership.
+    let savedScopeOr = `user_id.eq.${user.id}`;
+    try {
+      const { data: memberRow } = await supabase
+        .from("org_members")
+        .select("org_id, organizations!inner(saved_sharing_enabled)")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .order("joined_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      const orgId = (memberRow as any)?.org_id;
+      const sharing = Boolean(
+        (memberRow as any)?.organizations?.saved_sharing_enabled,
+      );
+      if (orgId && sharing) {
+        savedScopeOr = `user_id.eq.${user.id},org_id.eq.${orgId}`;
+      }
+    } catch (_) {
+      // Fall back to user-only scope on any membership lookup failure.
+    }
     const { data: savedRows } = await supabase
       .from("lit_saved_companies")
       .select(
         "id, company_id, created_at, last_viewed_at, lit_companies!inner (id, source_company_key, name, domain, website, shipments_12m, teu_12m, top_route_12m, most_recent_shipment_date)",
       )
-      .eq("user_id", user.id)
+      .or(savedScopeOr)
       .not("lit_companies.top_route_12m", "is", null)
       .order("last_viewed_at", { ascending: false, nullsFirst: false })
       .limit(200);
 
+    // Workspace dedupe: the same company can be saved by several org
+    // members — keep one row per company so lane shipment totals aren't
+    // double-counted.
+    const seenCompanyIds = new Set<string>();
     const saved: SavedCompanyLite[] = (savedRows || [])
       .map((r: any) => {
         const co = r?.lit_companies || {};
@@ -381,7 +414,11 @@ Deno.serve(async (req: Request) => {
           saved_at: r.created_at ?? null,
         };
       })
-      .filter((c) => c.id);
+      .filter((c) => {
+        if (!c.id || seenCompanyIds.has(c.id)) return false;
+        seenCompanyIds.add(c.id);
+        return true;
+      });
 
     const workspaceLanes = aggregateLanes(saved);
 

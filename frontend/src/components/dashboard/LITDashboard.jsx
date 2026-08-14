@@ -1,43 +1,94 @@
-// Phase 3 — Dashboard rebuild against the Pulse Coach + Workspace Lanes
-// pairing. Replaces the prior layout's GlobeCard + StrategicBriefCard
-// hero with a paired surface: the AI Pulse Coach (LLM-driven nudges)
-// drives lane-focus events into the Workspace Lanes Globe, and the
-// globe drives lane-context back into the Coach. Same design language
-// as the Company Profile (LitSectionCard, LitKpiStrip, LitFlag,
-// font-display / font-body / font-mono).
+// Dashboard — Workspace Overview (CEO overhaul 2026-08-13).
 //
-// Sections:
 //   1. Hero / breadcrumb / welcome / actions
-//   2. Cross-page workspace KPI strip (6 cells)
-//   3. Globe + Coach paired hero (2-column on lg, stacked on mobile)
-//   4. Hot Accounts ("What Matters Now" table) + Activity timeline rail
-//   5. Recent Enrichments (with inline Add-to-Campaign action)
-//   6. Floating Pulse Coach widget for cross-page persistence
+//   2. Workspace KPI row — Admin-deck treatment: colored icon chips,
+//      bold numbers, subtle context tails. One row on xl, 2-up phones.
+//   3. Workspace trade lanes hero — interactive LaneMap (light variant,
+//      origin-region lane colors, volume-weighted lines, selected-lane
+//      focus). Full-width now that the big Coach panel is gone; the
+//      floating Pulse Coach pill (mounted by AppLayout) is the single
+//      coach surface and hovers over the map.
+//   4. Hot Accounts ("What Matters Now" table)
+//   5. Recent Enrichments (inline Add-to-Campaign action)
+//
+// Removed per CEO: the large dark "PULSE COACH" panel (duplicate of the
+// floating coach), the "Arriving this week" card, and the "Recent
+// Changes" activity card (overbloated).
+//
+// Data scoping (the "Evan bug"): every KPI + the saved-accounts table
+// now reads WORKSPACE-wide via frontend/src/api/workspace.ts —
+// RLS-scoped saved companies (own + org when saved sharing is on) and
+// the get_workspace_kpis RPC. Org members see org numbers; solo users
+// see exactly what they saw before.
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Download, Filter, Search, Send } from "lucide-react";
+import {
+  Bell,
+  Bookmark,
+  Download,
+  Filter,
+  Mail,
+  Search,
+  Send,
+  Ship,
+  Sparkles,
+  Users,
+} from "lucide-react";
 
 import AppLayout from "@/layout/lit/AppLayout.jsx";
 import { useAuth } from "@/auth/AuthProvider";
 import { useEntitlements } from "@/hooks/useEntitlements";
 import { useAdminScope } from "@/hooks/useAdminScope";
-import { getSavedCompanies } from "@/lib/api";
-import { getCampaignsFromSupabase, supabase } from "@/lib/supabase";
+import { getCampaignsFromSupabase } from "@/lib/supabase";
+import {
+  getWorkspaceKpis,
+  getWorkspaceSavedCompanies,
+} from "@/api/workspace";
 
-import LitKpiStrip from "@/components/ui/LitKpiStrip";
 import LitHeaderIconBtn from "@/components/ui/LitHeaderIconBtn";
 
 import ActivityCard from "@/components/dashboard/sections/ActivityCard";
-import TimelineCard from "@/components/dashboard/sections/TimelineCard";
-
-import { PulseCoachInline } from "@/features/coach/PulseCoachWidget";
 import WorkspaceLanesGlobe from "@/features/coach/WorkspaceLanesGlobe";
-import ArrivingThisWeekTile from "@/components/dashboard/ArrivingThisWeekTile";
 import RecentEnrichmentsCard from "@/components/dashboard/sections/RecentEnrichmentsCard";
 
-// Provider + floating pill are mounted by AppLayout so Pulse Coach
-// follows the user across pages. Here we only render the inline
-// (large-format) version + the workspace lanes globe, which subscribe
-// to the same provider state.
+// ── KPI row — AdminCommandDeck idiom (colored icon chip + bold number).
+const KPI_TONES = {
+  blue: "bg-blue-50 text-blue-600",
+  cyan: "bg-cyan-50 text-cyan-600",
+  emerald: "bg-emerald-50 text-emerald-600",
+  violet: "bg-violet-50 text-violet-600",
+  amber: "bg-amber-50 text-amber-600",
+  rose: "bg-rose-50 text-rose-600",
+  slate: "bg-slate-100 text-slate-500",
+};
+
+function KpiChip({ label, value, hint, icon: Icon, tone = "blue" }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+      <span
+        className={[
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+          KPI_TONES[tone] || KPI_TONES.blue,
+        ].join(" ")}
+      >
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <div className="font-mono truncate text-[18px] font-bold leading-none tracking-tight text-slate-900">
+          {value}
+        </div>
+        <div className="font-display mt-1 truncate text-[9.5px] font-semibold uppercase tracking-[0.07em] text-slate-400">
+          {label}
+        </div>
+        {hint ? (
+          <div className="font-body mt-0.5 truncate text-[10px] text-slate-400">
+            {hint}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function LITDashboard() {
   const { user, fullName } = useAuth();
   const { entitlements } = useEntitlements();
@@ -46,93 +97,35 @@ export default function LITDashboard() {
 
   const [savedCompaniesLive, setSavedCompaniesLive] = useState([]);
   const [campaignsLive, setCampaignsLive] = useState([]);
-  const [activityEvents, setActivityEvents] = useState([]);
-  const [pulseBriefsMtd, setPulseBriefsMtd] = useState(0);
-  const [verifiedContacts, setVerifiedContacts] = useState(0);
-  const [savedContactsTotal, setSavedContactsTotal] = useState(0);
-  const [outreachSentMtd, setOutreachSentMtd] = useState(0);
+  const [workspaceKpis, setWorkspaceKpis] = useState(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     async function loadDashboardData() {
       try {
-        const monthStartIso = (() => {
-          const d = new Date();
-          return new Date(
-            Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1),
-          ).toISOString();
-        })();
-
-        const promises = [
-          getSavedCompanies().catch((err) => {
-            console.error("getSavedCompanies failed:", err);
+        const [savedRes, campaignsRes, kpisRes] = await Promise.all([
+          getWorkspaceSavedCompanies().catch((err) => {
+            console.error("getWorkspaceSavedCompanies failed:", err);
             return null;
           }),
           getCampaignsFromSupabase({ orgId, adminScope }).catch((err) => {
             console.error("getCampaignsFromSupabase failed:", err);
             return [];
           }),
-        ];
-        if (user?.id) {
-          promises.push(
-            supabase
-              .from("lit_activity_events")
-              .select("id, event_type, company_id, metadata, created_at")
-              .eq("user_id", user.id)
-              .order("created_at", { ascending: false })
-              .limit(15),
-          );
-          promises.push(
-            supabase
-              .from("lit_pulse_ai_reports")
-              .select("id", { count: "exact", head: true })
-              .eq("generated_by_user_id", user.id)
-              .gte("created_at", monthStartIso),
-          );
-          promises.push(
-            supabase.functions.invoke("dashboard-contact-metrics"),
-          );
-          // Outreach Sent MTD reads from lit_outreach_history — that's
-          // where the dispatcher writes one row per actual email delivery.
-          // (lit_activity_events is generic activity, not send events.)
-          promises.push(
-            supabase
-              .from("lit_outreach_history")
-              .select("id", { count: "exact", head: true })
-              .eq("user_id", user.id)
-              .eq("event_type", "sent")
-              .gte("occurred_at", monthStartIso),
-          );
-        } else {
-          promises.push(Promise.resolve({ data: [], error: null }));
-          promises.push(Promise.resolve({ count: 0 }));
-          promises.push(Promise.resolve({ count: 0 }));
-          promises.push(Promise.resolve({ count: 0 }));
-          promises.push(Promise.resolve({ count: 0 }));
-        }
-
-        const [
-          savedRes,
-          campaignsRes,
-          activityRes,
-          pulseRes,
-          contactMetricsRes,
-          outreachRes,
-        ] = await Promise.all(promises);
+          user?.id
+            ? getWorkspaceKpis().catch((err) => {
+                console.error("getWorkspaceKpis failed:", err);
+                return null;
+              })
+            : Promise.resolve(null),
+        ]);
 
         if (cancelled) return;
 
         setSavedCompaniesLive(Array.isArray(savedRes?.rows) ? savedRes.rows : []);
         setCampaignsLive(Array.isArray(campaignsRes) ? campaignsRes : []);
-        if (activityRes && !activityRes.error) {
-          setActivityEvents(activityRes.data || []);
-        }
-        setPulseBriefsMtd(Number(pulseRes?.count) || 0);
-        const contactMetrics = contactMetricsRes?.data || {};
-        setSavedContactsTotal(Number(contactMetrics.contacts) || 0);
-        setVerifiedContacts(Number(contactMetrics.verifiedEmails) || 0);
-        setOutreachSentMtd(Number(outreachRes?.count) || 0);
+        setWorkspaceKpis(kpisRes);
       } catch (err) {
         console.error("Dashboard load error:", err);
       } finally {
@@ -188,36 +181,53 @@ export default function LITDashboard() {
     [campaignsLive],
   );
 
+  const savedContactsTotal = Number(workspaceKpis?.contacts) || 0;
+  const verifiedContacts = Number(workspaceKpis?.verified_emails) || 0;
+  const pulseBriefsMtd = Number(workspaceKpis?.pulse_briefs_mtd) || 0;
+  const outreachSentMtd = Number(workspaceKpis?.outreach_sent_mtd) || 0;
+
   const kpiCells = useMemo(
     () => [
       {
-        label: "SAVED ACCOUNTS",
+        label: "Saved accounts",
         value: realSavedCompanies.length.toLocaleString(),
+        icon: Bookmark,
+        tone: "blue",
       },
       {
-        label: "ACTIVE CAMPAIGNS",
+        label: "Active campaigns",
         value: activeCampaigns.toLocaleString(),
-        trend: draftCampaigns > 0 ? `${draftCampaigns} draft` : null,
+        hint: draftCampaigns > 0 ? `${draftCampaigns} in draft` : null,
+        icon: Send,
+        tone: "violet",
       },
       {
-        label: "CONTACTS DISCOVERED",
+        label: "Contacts discovered",
         value: savedContactsTotal.toLocaleString(),
-        trend:
+        hint:
           savedContactsTotal > 0
-            ? `${verifiedContacts.toLocaleString()} verified emails`
+            ? `${verifiedContacts.toLocaleString()} verified`
             : null,
+        icon: Users,
+        tone: "cyan",
       },
       {
-        label: "PULSE BRIEFS MTD",
+        label: "Pulse briefs MTD",
         value: pulseBriefsMtd.toLocaleString(),
+        icon: Sparkles,
+        tone: "amber",
       },
       {
-        label: "OUTREACH SENT MTD",
+        label: "Outreach sent MTD",
         value: outreachSentMtd > 0 ? outreachSentMtd.toLocaleString() : "—",
+        icon: Mail,
+        tone: "emerald",
       },
       {
-        label: "SHIPMENTS 12M",
+        label: "Shipments 12m",
         value: totalShipments > 0 ? formatNum(totalShipments) : "—",
+        icon: Ship,
+        tone: "rose",
       },
     ],
     [
@@ -323,32 +333,24 @@ export default function LITDashboard() {
             </div>
           </div>
 
-          <LitKpiStrip cells={kpiCells} />
+          {/* KPI row — colored icon chips, one row on xl, 2-up phones. */}
+          <div className="grid grid-cols-2 gap-2 border-t border-slate-100 bg-[#FAFBFC] px-4 py-3 sm:grid-cols-3 md:px-6 xl:grid-cols-6">
+            {kpiCells.map((cell) => (
+              <KpiChip key={cell.label} {...cell} />
+            ))}
+          </div>
         </div>
 
         {/* ── Body ────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto flex max-w-[1600px] flex-col gap-4 p-3 md:p-6">
-            {/* Globe + Coach paired hero */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] lg:items-stretch">
-              <WorkspaceLanesGlobe />
-              <PulseCoachInline />
-            </div>
+            {/* Workspace trade lanes — full-width interactive map hero.
+                The floating Pulse Coach pill (AppLayout) hovers over it
+                as the single coach surface. */}
+            <WorkspaceLanesGlobe />
 
-            {/* Arriving this week — F3 closure for pulse-arrival-alerts.
-                Auto-hides nothing; the tile owns its own empty + loading
-                states. Single-column at every breakpoint to keep
-                ETA-by-day legible. */}
-            <ArrivingThisWeekTile />
-
-            {/* Hot Accounts + Activity rail */}
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
-              <ActivityCard rows={whatMattersRows} loading={dashboardLoading} />
-              <TimelineCard
-                events={activityEvents}
-                loading={dashboardLoading}
-              />
-            </div>
+            {/* Hot Accounts */}
+            <ActivityCard rows={whatMattersRows} loading={dashboardLoading} />
 
             {/* Recent enrichments — inline add-to-campaign */}
             <RecentEnrichmentsCard />

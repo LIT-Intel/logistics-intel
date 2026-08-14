@@ -14,14 +14,17 @@ export type LaneViewMode = "globe" | "map";
 const STORAGE_KEY = "lit:laneViewMode";
 
 function readStored(scope: string): LaneViewMode {
-  if (typeof window === "undefined") return "globe";
+  // Default flipped globe → map (CEO dashboard overhaul 2026-08-13): the
+  // interactive LaneMap is now the primary trade-lane surface. Users who
+  // explicitly picked the globe keep their stored preference.
+  if (typeof window === "undefined") return "map";
   try {
     const raw = window.localStorage.getItem(`${STORAGE_KEY}:${scope}`);
     if (raw === "globe" || raw === "map") return raw;
   } catch {
     // ignore — sandbox or storage disabled
   }
-  return "globe";
+  return "map";
 }
 
 export function useLaneViewMode(scope = "default"): {
