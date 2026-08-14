@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L, {
-  type LatLngExpression,
   type LatLngTuple,
   type Map as LeafletMap,
   type Polyline as LeafletPolyline,
@@ -52,7 +51,8 @@ export type LaneMapFitPadding = {
 /**
  * Per-lane color override (regional palette). `base` paints the idle
  * stroke, `selected` the brighter selected/hover stroke, `glow` the
- * rgba casing behind hover/selected lines.
+ * rgba tint of the selected-endpoint pulse rings. (The old hover/selected
+ * "casing" polyline is gone — one visible stroke per lane, period.)
  */
 export type LaneMapLaneColor = {
   base: string;
@@ -103,9 +103,9 @@ export type LaneMapProps = {
   unselectedStyle?: "fade" | "ghost";
   /**
    * Supply-chain motion on the selected lane: an animated directional
-   * dash-flow overlay (origin → destination) plus small step dots along
-   * the arc. Animation is CSS-driven and disabled under
-   * prefers-reduced-motion (static dots remain).
+   * dash-flow overlay (origin → destination) drawn on the exact same
+   * points as the lane's stroke. Animation is CSS-driven and disabled
+   * under prefers-reduced-motion (static dotted overlay remains).
    */
   flow?: boolean;
 };
@@ -192,10 +192,13 @@ const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 type LaneSide = "from" | "to";
 
 type LaneLayers = {
+  /** The ONE visible stroke per lane. Hover/selected restyle THIS line
+   *  (brighten + widen) — no separate glow/casing layer, so a lane can
+   *  never read as multiple parallel lines. */
   baseLine: LeafletPolyline;
-  /** Invisible fat polyline — ≥44px-friendly touch/click target. */
+  /** The ONE invisible fat polyline — ≥44px-friendly touch/click target.
+   *  Shares the exact same latlngs array as baseLine. */
   hitLine: LeafletPolyline;
-  casing: LeafletPolyline | null;
   fromDot: LeafletCircleMarker;
   toDot: LeafletCircleMarker;
   /** Invisible oversized endpoint hit targets (mobile taps). */
@@ -203,12 +206,12 @@ type LaneLayers = {
   toHit: LeafletCircleMarker;
   fromPulse: LeafletCircleMarker | null;
   toPulse: LeafletCircleMarker | null;
-  /** Animated dash-flow overlay on the selected lane (flow prop). */
+  /** Animated dash-flow overlay — SELECTED lane only (flow prop). Built
+   *  from the same `points` array as baseLine so it overlays perfectly. */
   flowLine: LeafletPolyline | null;
-  /** Small supply-chain step dots along the selected arc (flow prop). */
-  stepDots: LeafletCircleMarker[];
-  /** Great-circle points — kept for flow overlay + step-dot placement. */
-  points: LatLngExpression[];
+  /** Great-circle points (antimeridian-unwrapped) — the single source of
+   *  latlngs for baseLine, hitLine and flowLine. */
+  points: LatLngTuple[];
   fromCoord: LatLngTuple;
   toCoord: LatLngTuple;
   /** Volume-scaled idle line weight (equals 2 when volumeScale off). */
@@ -228,12 +231,22 @@ type HoverState = {
  * Great-circle interpolation. Inputs are [lon, lat]; output is [lat, lon]
  * pairs (Leaflet's order). Returns `steps + 1` points so we always
  * include both endpoints.
+ *
+ * ANTIMERIDIAN: the 3-D slerp below always follows the SHORT arc, but
+ * `atan2` clamps each sampled longitude back into [-180, 180], so a
+ * Pacific-crossing lane (e.g. Vietnam → Atlanta) used to jump from
+ * lon ≈ +179 to lon ≈ -179 mid-polyline — Leaflet drew that jump as a
+ * line spanning the entire world the long way. Fix: unwrap longitudes
+ * into a continuous sequence, walking BACKWARD from the destination so
+ * the destination keeps its canonical longitude (US destinations shared
+ * by several lanes stay in one place; Pacific origins shift onto the
+ * western world copy, which Leaflet tiles render seamlessly).
  */
 function greatCirclePoints(
   from: [number, number],
   to: [number, number],
   steps = 48,
-): LatLngExpression[] {
+): LatLngTuple[] {
   const [lon1, lat1] = from.map((v) => (v * Math.PI) / 180) as [number, number];
   const [lon2, lat2] = to.map((v) => (v * Math.PI) / 180) as [number, number];
 
@@ -250,7 +263,7 @@ function greatCirclePoints(
     return [[from[1], from[0]]];
   }
 
-  const out: LatLngExpression[] = [];
+  const out: LatLngTuple[] = [];
   for (let i = 0; i <= steps; i++) {
     const f = i / steps;
     const a = Math.sin((1 - f) * d) / Math.sin(d);
@@ -263,6 +276,21 @@ function greatCirclePoints(
     const lat = Math.atan2(z, Math.sqrt(x * x + y * y));
     const lon = Math.atan2(y, x);
     out.push([(lat * 180) / Math.PI, (lon * 180) / Math.PI]);
+  }
+
+  // Per-segment longitude unwrap, anchored at the destination: pin the
+  // last point to the destination's canonical longitude, then walk back
+  // toward the origin shifting each sample by ±360° until it sits within
+  // 180° of its successor. Result: one continuous polyline, no
+  // edge-to-edge jumps, short path preserved (Asia→US crosses the
+  // Pacific; Atlantic lanes are untouched because they never wrap).
+  out[out.length - 1] = [out[out.length - 1][0], to[0]];
+  for (let i = out.length - 2; i >= 0; i--) {
+    const nextLon = out[i + 1][1];
+    let lon = out[i][1];
+    while (lon - nextLon > 180) lon -= 360;
+    while (lon - nextLon < -180) lon += 360;
+    out[i] = [out[i][0], lon];
   }
   return out;
 }
@@ -453,7 +481,6 @@ export default function LaneMap({
 
     // Tear down existing lane layers.
     for (const layers of laneLayersRef.current.values()) {
-      if (layers.casing) map.removeLayer(layers.casing);
       map.removeLayer(layers.baseLine);
       map.removeLayer(layers.hitLine);
       map.removeLayer(layers.fromDot);
@@ -463,7 +490,6 @@ export default function LaneMap({
       if (layers.fromPulse) map.removeLayer(layers.fromPulse);
       if (layers.toPulse) map.removeLayer(layers.toPulse);
       if (layers.flowLine) map.removeLayer(layers.flowLine);
-      for (const dot of layers.stepDots) map.removeLayer(dot);
     }
     laneLayersRef.current.clear();
     hoveredLaneRef.current = null;
@@ -477,12 +503,14 @@ export default function LaneMap({
       0,
     );
 
-    // First pass: render base lines (idle/faded). Hover/selected casings
-    // come in a second pass so their glow sits on top of all idle layers.
+    // One visible stroke + one invisible hit line per lane. Endpoint
+    // coords come from the unwrapped polyline ends (NOT the raw lane
+    // coords) so dots/pulses/popovers sit exactly on the line even when
+    // the origin was shifted across the antimeridian.
     for (const lane of lanes) {
       const points = greatCirclePoints(lane.coords[0], lane.coords[1]);
-      const fromCoord: LatLngTuple = [lane.coords[0][1], lane.coords[0][0]];
-      const toCoord: LatLngTuple = [lane.coords[1][1], lane.coords[1][0]];
+      const fromCoord: LatLngTuple = points[0];
+      const toCoord: LatLngTuple = points[points.length - 1];
 
       // Volume weighting — log-scaled so one mega-lane doesn't flatten
       // the rest. Lines 1.5→4px, dots 5→10px.
@@ -537,7 +565,6 @@ export default function LaneMap({
       const layers: LaneLayers = {
         baseLine,
         hitLine,
-        casing: null,
         fromDot,
         toDot,
         fromHit,
@@ -545,7 +572,6 @@ export default function LaneMap({
         fromPulse: null,
         toPulse: null,
         flowLine: null,
-        stepDots: [],
         points,
         fromCoord,
         toCoord,
@@ -642,9 +668,10 @@ export default function LaneMap({
 
   /**
    * Restyle pass. Walks every lane's layers and reconciles them with
-   * the current `selectedLane` and `hoveredLaneRef`. Adds/removes the
-   * casing polyline and pulse rings as needed. Pulled out so both
-   * effects (rebuild + selection change) can call it.
+   * the current `selectedLane` and `hoveredLaneRef` — restyling the ONE
+   * visible stroke in place and adding/removing pulse rings + the flow
+   * overlay as needed. Pulled out so both effects (rebuild + selection
+   * change) can call it.
    */
   const applyStateStyles = () => {
     const map = mapRef.current;
@@ -661,18 +688,20 @@ export default function LaneMap({
       const isFaded = hasSelection && selectedExists && !isSelected;
       const lc = laneColors?.[laneId];
 
-      // Base line styling — weights ride on the lane's volume-scaled base.
-      // Per-lane regional colors (laneColors) override the variant palette.
+      // Single-stroke styling — hover/selected brighten + widen the SAME
+      // polyline (no separate glow layer, so a lane never reads as
+      // multiple parallel lines). Weights ride on the volume-scaled base;
+      // per-lane regional colors (laneColors) override the variant palette.
       let color = lc?.base ?? palette.idle;
       let weight = layers.baseWeight;
       let opacity = 0.85;
       if (isSelected) {
         color = lc?.selected ?? palette.selected;
-        weight = Math.max(3.5, layers.baseWeight + 1.5);
+        weight = Math.max(4, layers.baseWeight + 2);
         opacity = 1;
       } else if (isHovered) {
         color = lc?.selected ?? palette.hover;
-        weight = layers.baseWeight + 0.5;
+        weight = layers.baseWeight + 1;
         opacity = 1;
       } else if (isFaded) {
         if (ghost) {
@@ -688,42 +717,8 @@ export default function LaneMap({
         }
       }
       layers.baseLine.setStyle({ color, weight, opacity });
-
-      // Casing — only for hover/selected. Drawn BEFORE the base line so it
-      // sits behind. Leaflet doesn't expose a z-index per layer in the SVG
-      // renderer, but removing and re-adding the base line after the
-      // casing guarantees correct z-order.
-      const needsCasing = isSelected || isHovered;
-      if (needsCasing) {
-        const casingColor = isSelected
-          ? (lc?.glow ?? palette.selectGlow)
-          : (lc?.glow ?? palette.hoverGlow);
-        const casingWeight = isSelected ? weight + 5 : weight + 4;
-        if (!layers.casing) {
-          const points = (layers.baseLine.getLatLngs() as L.LatLng[]).map(
-            (p) => [p.lat, p.lng] as LatLngTuple,
-          );
-          layers.casing = L.polyline(points, {
-            color: casingColor,
-            weight: casingWeight,
-            opacity: 1,
-            lineCap: "round",
-            lineJoin: "round",
-            interactive: false,
-          }).addTo(map);
-        } else {
-          layers.casing.setStyle({
-            color: casingColor,
-            weight: casingWeight,
-            opacity: 1,
-          });
-        }
-        // Ensure base line paints above casing.
-        layers.baseLine.bringToFront();
-      } else if (layers.casing) {
-        map.removeLayer(layers.casing);
-        layers.casing = null;
-      }
+      // Emphasized lanes paint above their idle siblings.
+      if (isSelected || isHovered) layers.baseLine.bringToFront();
 
       // Endpoint dots. Selected = +2px (with pulse). Faded shrink slightly;
       // ghost mode shrinks them to small 3px context dots.
@@ -782,11 +777,12 @@ export default function LaneMap({
       }
 
       // Supply-chain flow — animated directional dash overlay (origin →
-      // destination) + small step dots along the arc, selected lane only.
-      // The dash pattern is round-capped 1×12 → reads as dots marching
-      // along the supply chain. CSS drives the motion (lit-lane-flow) and
-      // shuts it off under prefers-reduced-motion; the static dotted
-      // overlay + step dots remain as the "steps" affordance.
+      // destination), SELECTED lane only. Built from the exact same
+      // `points` array as the base line so it overlays perfectly — it
+      // reads as motion ON the line, never as a second line. The dash
+      // pattern is round-capped 1×12 → dots marching along the supply
+      // chain. CSS drives the motion (lit-lane-flow) and shuts it off
+      // under prefers-reduced-motion (static dotted overlay remains).
       if (isSelected && flow) {
         const flowWeight = Math.max(1.5, weight - 2);
         if (!layers.flowLine) {
@@ -803,33 +799,9 @@ export default function LaneMap({
         } else {
           layers.flowLine.setStyle({ weight: flowWeight });
         }
-        if (layers.stepDots.length === 0) {
-          const pts = layers.points;
-          for (const f of [0.25, 0.5, 0.75]) {
-            const idx = Math.round(f * (pts.length - 1));
-            const p = pts[idx] as LatLngTuple;
-            if (!p) continue;
-            layers.stepDots.push(
-              L.circleMarker(p, {
-                radius: 3,
-                color: palette.dotStroke,
-                weight: 1.5,
-                fillColor: lc?.selected ?? palette.dotFill,
-                fillOpacity: 1,
-                interactive: false,
-              }).addTo(map),
-            );
-          }
-        }
-      } else {
-        if (layers.flowLine) {
-          map.removeLayer(layers.flowLine);
-          layers.flowLine = null;
-        }
-        if (layers.stepDots.length > 0) {
-          for (const dot of layers.stepDots) map.removeLayer(dot);
-          layers.stepDots = [];
-        }
+      } else if (layers.flowLine) {
+        map.removeLayer(layers.flowLine);
+        layers.flowLine = null;
       }
     }
 
@@ -837,10 +809,8 @@ export default function LaneMap({
     if (selectedExists) {
       const sel = laneLayersRef.current.get(selectedLane!);
       if (sel) {
-        if (sel.casing) sel.casing.bringToBack(); // casing behind base
         sel.baseLine.bringToFront();
         if (sel.flowLine) sel.flowLine.bringToFront();
-        for (const dot of sel.stepDots) dot.bringToFront();
         sel.fromDot.bringToFront();
         sel.toDot.bringToFront();
         if (sel.fromPulse) sel.fromPulse.bringToFront();

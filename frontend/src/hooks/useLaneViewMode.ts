@@ -11,12 +11,16 @@ import { useCallback, useEffect, useState } from "react";
  */
 export type LaneViewMode = "globe" | "map";
 
-const STORAGE_KEY = "lit:laneViewMode";
+// v2 (CEO map-default migration 2026-08-13): the key is version-bumped so
+// EVERY existing user flips to the map view once — any "globe" stored under
+// the old un-versioned key ("lit:laneViewMode:<scope>") is deliberately
+// ignored. Toggling after the flip writes to the v2 key, so the user's new
+// choice (including going back to globe) persists normally from then on.
+const STORAGE_KEY = "lit:laneViewMode:v2";
 
 function readStored(scope: string): LaneViewMode {
-  // Default flipped globe → map (CEO dashboard overhaul 2026-08-13): the
-  // interactive LaneMap is now the primary trade-lane surface. Users who
-  // explicitly picked the globe keep their stored preference.
+  // Default is map — the interactive LaneMap is the primary trade-lane
+  // surface (CEO dashboard overhaul 2026-08-13).
   if (typeof window === "undefined") return "map";
   try {
     const raw = window.localStorage.getItem(`${STORAGE_KEY}:${scope}`);
