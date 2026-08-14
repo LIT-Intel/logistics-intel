@@ -7,7 +7,7 @@
  *
  * Worked example for the api.ts domain split. See _client.ts and CLAUDE.md.
  */
-import { invokeEdge } from "./_client";
+import { invokeEdge, EdgeFunctionError } from "./_client";
 import { supabase } from "@/lib/supabase";
 import type { FeatureKey, UsageLimitKey } from "@/lib/planLimits";
 import { parseLimitExceeded, type LimitExceeded } from "@/lib/usage";
@@ -111,6 +111,67 @@ export async function fetchEntitlementsSnapshot(): Promise<EntitlementsSnapshot 
     snap.org_id = res.org_id ?? null;
   }
   return snap;
+}
+
+/**
+ * CRM add-on checkout.
+ *
+ * Calls the crm-checkout edge fn (JWT-verified) to create an embedded Stripe
+ * Checkout Session for the caller's org + plan tier. Returns the session
+ * client_secret (mount with Stripe EmbeddedCheckout) plus the tier/seat info.
+ *
+ * On a Stripe price/mode mismatch the edge fn returns ok:false with
+ * code:'billing_not_configured'; invokeEdge surfaces that as an
+ * EdgeFunctionError we re-map to a typed { notConfigured: true } result so the
+ * modal can render a friendly "billing not configured for this environment"
+ * message instead of a generic error.
+ */
+/**
+ * Per-seat CRM add-on price for a plan tier (for the "Unlock CRM — $X/seat"
+ * banner). Read directly from lit_crm_addon_pricing via RLS (authenticated
+ * SELECT is allowed; it's non-sensitive catalog data). Returns null if the
+ * tier has no pricing row.
+ */
+export interface CrmAddonPricing {
+  plan_code: string;
+  per_seat_cents: number;
+  forced_seats: number | null;
+}
+
+export async function fetchCrmAddonPricing(planCode: string): Promise<CrmAddonPricing | null> {
+  const { data, error } = await supabase
+    .from("lit_crm_addon_pricing")
+    .select("plan_code, per_seat_cents, forced_seats")
+    .eq("plan_code", planCode)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as CrmAddonPricing;
+}
+
+export type CrmCheckoutResult =
+  | { ok: true; client_secret: string; plan_code: string; seats: number }
+  | { ok: false; notConfigured: true; message: string };
+
+export async function startCrmCheckout(returnUrl?: string): Promise<CrmCheckoutResult> {
+  try {
+    const res = await invokeEdge<{
+      ok: true;
+      client_secret: string;
+      plan_code: string;
+      seats: number;
+    }>("crm-checkout", returnUrl ? { return_url: returnUrl } : {});
+    return {
+      ok: true,
+      client_secret: res.client_secret,
+      plan_code: res.plan_code,
+      seats: res.seats,
+    };
+  } catch (e) {
+    if (e instanceof EdgeFunctionError && e.code === "billing_not_configured") {
+      return { ok: false, notConfigured: true, message: e.message };
+    }
+    throw e;
+  }
 }
 
 /**

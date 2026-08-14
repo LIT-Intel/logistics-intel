@@ -30,7 +30,7 @@ import {
   Trophy,
 } from "lucide-react";
 import AddToCampaignModal from "./AddToCampaignModal";
-import PipelineBoard from "@/features/crm/PipelineBoard";
+import PipelineGate from "@/features/crm/PipelineGate";
 import TasksView from "@/features/crm/TasksView";
 import PipelineReports from "@/features/crm/PipelineReports";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
@@ -278,7 +278,7 @@ export default function CommandCenter() {
       {view === "accounts" ? (
         <AccountsView />
       ) : view === "pipeline" ? (
-        <PipelineBoard viewAsUserId={viewAsUserId} />
+        <PipelineGate viewAsUserId={viewAsUserId} />
       ) : view === "tasks" ? (
         <TasksView onCountChange={setOverdueCount} viewAsUserId={viewAsUserId} />
       ) : (
