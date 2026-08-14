@@ -219,6 +219,13 @@ export default function CDPContacts({
   const [apolloSelected, setApolloSelected] = useState<Set<string>>(new Set());
   const [apolloEnriching, setApolloEnriching] = useState(false);
   const [apolloEnrichError, setApolloEnrichError] = useState<string | null>(null);
+  // Per-row single-contact enrich state for the search-results preview
+  // table. Holds the preview keys (apolloKey) currently running a
+  // single-contact enrich so each preview row renders its own spinner
+  // without blocking the bulk button or the rest of the table.
+  const [apolloEnrichingKeys, setApolloEnrichingKeys] = useState<Set<string>>(
+    new Set(),
+  );
 
   // R3 — "Save corrections" persists name/domain edits back to lit_companies
   // and auto-retries Apollo search if the user landed in this panel because
@@ -688,6 +695,160 @@ export default function CDPContacts({
     setApolloSelected(new Set());
   }
 
+  /**
+   * Enrich exactly one preview contact through the REAL enrich path —
+   * the same `saveContact` → `enrichKnownContact` (→ enrich-contact-
+   * orchestrator edge fn) → `updateContactEnrichmentState` sequence the
+   * bulk loop uses. No bypass, no stub, 1 credit consumed per call.
+   * Returns the saved Contact row and whether it should be flagged
+   * failed for the preview table so both the bulk and single-row
+   * callers share identical behaviour.
+   */
+  async function enrichOnePreview(
+    p: ApolloContactPreview,
+  ): Promise<{ row: Contact; failed: boolean; message: string | null }> {
+    const fullName =
+      p.full_name ||
+      [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+    const nameParts = fullName.split(/\s+/).filter(Boolean);
+    const saved = await saveContact(companyId as string, {
+      first_name: p.first_name || nameParts[0] || "",
+      last_name: p.last_name || nameParts.slice(1).join(" ") || "",
+      title: p.title || "",
+      email: p.email || "",
+      phone: "",
+      linkedin_url: p.linkedin_url || "",
+      department: p.department || "",
+      source_contact_key: p.source_contact_key || p.apollo_person_id || null,
+      source: "lit",
+      source_provider: "lit",
+      enrichment_status: "pending",
+    });
+    const enrichmentResult = await enrichKnownContact({
+      contactId: saved.id ? String(saved.id) : undefined,
+      // Apollo matches most reliably on its own person id — name-only
+      // matching returns stub people with no email.
+      apolloPersonId: p.apollo_person_id || undefined,
+      sourceContactKey:
+        p.source_contact_key || (saved as any)?.source_contact_key || undefined,
+      fullName: saved.full_name || fullName || undefined,
+      companyName: companyName || p.company || undefined,
+      companyDomain: companyDomain || undefined,
+      linkedinUrl: p.linkedin_url || undefined,
+      title: p.title || undefined,
+      revealPhoneNumber: false,
+    });
+    if (!enrichmentResult.success) {
+      const failed = await updateContactEnrichmentState(String(saved.id), {
+        enrichment_status: "failed",
+        enrichment_result: {
+          error: enrichmentResult.error || "LIT enrichment failed",
+          jobs: enrichmentResult.jobs || [],
+        },
+      });
+      return {
+        row: failed as Contact,
+        failed: true,
+        message: enrichmentResult.error || "LIT enrichment failed",
+      };
+    }
+    const jobId = enrichmentResult.jobs?.find((job) => job?.id)?.id || null;
+    if (enrichmentResult.pending && jobId) {
+      await updateContactEnrichmentState(String(saved.id), {
+        enrichment_status: "pending",
+        enrichment_job_id: jobId,
+        enrichment_result: {
+          jobs: enrichmentResult.jobs,
+        },
+      });
+    }
+    const row: Contact = {
+      ...(saved as Contact),
+      ...(enrichmentResult.contact || {}),
+      enrichment_status: enrichmentResult.contact
+        ? ((enrichmentResult.contact as any).enrichment_status ||
+          ((enrichmentResult.contact as any).email ? "enriched" : "no_email"))
+        : enrichmentResult.pending
+          ? "pending"
+          : saved.enrichment_status || "pending",
+      enrichment_job_id: jobId,
+    } as Contact;
+    const noEmail =
+      !!enrichmentResult.contact && !(enrichmentResult.contact as any).email;
+    return {
+      row,
+      failed: false,
+      message: noEmail
+        ? `No email available for ${fullName || "this contact"}.`
+        : null,
+    };
+  }
+
+  /**
+   * Single-row enrich for the search-results preview table. Reuses the
+   * exact bulk enrich path (`enrichOnePreview`) for one preview contact
+   * so the user can enrich without checkboxes. Tracks in-flight state
+   * per preview key so rows enrich independently and double-clicks are
+   * guarded.
+   */
+  async function handleApolloEnrichOne(previewKey: string) {
+    if (apolloEnrichingKeys.has(previewKey)) return;
+    if (!companyId) {
+      setApolloEnrichError("Save this company before enriching contacts.");
+      return;
+    }
+    const idx = apolloResults.findIndex(
+      (p, i) => apolloKey(p, i) === previewKey,
+    );
+    if (idx < 0) return;
+    const p = apolloResults[idx];
+    // Skip already-enriched / already-pending rows so we never burn a
+    // second credit for the same preview.
+    if (p.enrichment_status === "enriched" || p.enrichment_status === "pending") {
+      return;
+    }
+    setApolloEnrichingKeys((prev) => {
+      const next = new Set(prev);
+      next.add(previewKey);
+      return next;
+    });
+    setApolloEnrichError(null);
+    try {
+      const { row, failed, message } = await enrichOnePreview(p);
+      setContacts((prev) => {
+        const next = [row, ...prev];
+        onContactsChanged?.(next);
+        return next;
+      });
+      setApolloResults((prev) =>
+        prev.map((cur, i) =>
+          apolloKey(cur, i) === previewKey
+            ? {
+                ...cur,
+                enrichment_status: failed
+                  ? ("failed" as const)
+                  : ("pending" as const),
+              }
+            : cur,
+        ),
+      );
+      if (message) {
+        setApolloEnrichError(message);
+      } else {
+        setEnrichToast("Submitted 1 contact for LIT enrichment");
+        setTimeout(() => setEnrichToast(null), 3500);
+      }
+    } catch (err: any) {
+      setApolloEnrichError(err?.message || "Contact enrichment failed.");
+    } finally {
+      setApolloEnrichingKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(previewKey);
+        return next;
+      });
+    }
+  }
+
   async function handleApolloEnrichSelected() {
     if (apolloEnriching) return;
     if (apolloSelected.size === 0) {
@@ -709,79 +870,14 @@ export default function CDPContacts({
       const failedKeys = new Set<string>();
       for (const p of picked) {
         const previewKey = apolloKey(p, apolloResults.indexOf(p));
-        const fullName =
-          p.full_name ||
-          [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
-        const nameParts = fullName.split(/\s+/).filter(Boolean);
-        const saved = await saveContact(companyId, {
-          first_name: p.first_name || nameParts[0] || "",
-          last_name: p.last_name || nameParts.slice(1).join(" ") || "",
-          title: p.title || "",
-          email: p.email || "",
-          phone: "",
-          linkedin_url: p.linkedin_url || "",
-          department: p.department || "",
-          source_contact_key: p.source_contact_key || p.apollo_person_id || null,
-          source: "lit",
-          source_provider: "lit",
-          enrichment_status: "pending",
-        });
-        const enrichmentResult = await enrichKnownContact({
-          contactId: saved.id ? String(saved.id) : undefined,
-          // Apollo matches most reliably on its own person id — name-only
-          // matching returns stub people with no email.
-          apolloPersonId: p.apollo_person_id || undefined,
-          sourceContactKey:
-            p.source_contact_key || (saved as any)?.source_contact_key || undefined,
-          fullName: saved.full_name || fullName || undefined,
-          companyName: companyName || p.company || undefined,
-          companyDomain: companyDomain || undefined,
-          linkedinUrl: p.linkedin_url || undefined,
-          title: p.title || undefined,
-          revealPhoneNumber: false,
-        });
-        if (!enrichmentResult.success) {
-          const failed = await updateContactEnrichmentState(String(saved.id), {
-            enrichment_status: "failed",
-            enrichment_result: {
-              error: enrichmentResult.error || "LIT enrichment failed",
-              jobs: enrichmentResult.jobs || [],
-            },
-          });
-          failedMessages.push(enrichmentResult.error || "LIT enrichment failed");
+        const { row, failed, message } = await enrichOnePreview(p);
+        if (failed) {
           failedKeys.add(previewKey);
-          savedRows.push(failed as Contact);
-          continue;
+          if (message) failedMessages.push(message);
+        } else if (message) {
+          failedMessages.push(message);
         }
-        const jobId = enrichmentResult.jobs?.find((job) => job?.id)?.id || null;
-        if (enrichmentResult.pending && jobId) {
-          await updateContactEnrichmentState(String(saved.id), {
-            enrichment_status: "pending",
-            enrichment_job_id: jobId,
-            enrichment_result: {
-              jobs: enrichmentResult.jobs,
-            },
-          });
-        }
-        savedRows.push({
-          ...(saved as Contact),
-          ...(enrichmentResult.contact || {}),
-          enrichment_status: enrichmentResult.contact
-            ? ((enrichmentResult.contact as any).enrichment_status ||
-              ((enrichmentResult.contact as any).email ? "enriched" : "no_email"))
-            : enrichmentResult.pending
-              ? "pending"
-              : saved.enrichment_status || "pending",
-          enrichment_job_id: jobId,
-        });
-        if (
-          enrichmentResult.contact &&
-          !(enrichmentResult.contact as any).email
-        ) {
-          failedMessages.push(
-            `No email available for ${fullName || "this contact"}.`,
-          );
-        }
+        savedRows.push(row);
       }
       setContacts((prev) => {
         const next = [...savedRows, ...prev];
@@ -1128,6 +1224,8 @@ export default function CDPContacts({
           onSelectVisible={selectApolloKeys}
           onClearSelection={clearApolloSelection}
           onEnrichSelected={handleApolloEnrichSelected}
+          onEnrichOne={handleApolloEnrichOne}
+          enrichingKeys={apolloEnrichingKeys}
           keyOf={apolloKey}
           onLoadMore={handleApolloLoadMore}
           loadingMore={apolloLoadingMore}
@@ -1184,6 +1282,8 @@ export default function CDPContacts({
         onSelectVisible={selectApolloKeys}
         onClearSelection={clearApolloSelection}
         onEnrichSelected={handleApolloEnrichSelected}
+        onEnrichOne={handleApolloEnrichOne}
+        enrichingKeys={apolloEnrichingKeys}
         keyOf={apolloKey}
         onLoadMore={handleApolloLoadMore}
         loadingMore={apolloLoadingMore}
@@ -2159,6 +2259,12 @@ type ApolloResultsPanelProps = {
   onSelectVisible: (keys: string[]) => void;
   onClearSelection: () => void;
   onEnrichSelected: () => void;
+  /** Single-row enrich for the preview table — enriches exactly one
+   *  preview contact (1 credit) via the same real enrich path as bulk. */
+  onEnrichOne: (previewKey: string) => void;
+  /** Preview keys currently running a single-row enrich, for per-row
+   *  spinner state. */
+  enrichingKeys: Set<string>;
   keyOf: (p: ApolloContactPreview, i: number) => string;
   onLoadMore: () => void;
   loadingMore: boolean;
@@ -2221,6 +2327,8 @@ function ApolloResultsPanel({
   onSelectVisible,
   onClearSelection,
   onEnrichSelected,
+  onEnrichOne,
+  enrichingKeys,
   keyOf,
   onLoadMore,
   loadingMore,
@@ -2716,7 +2824,7 @@ function ApolloResultsPanel({
               <thead className="sticky top-0 z-[1] bg-[#FAFBFC]">
                 <tr className="border-b border-slate-200">
                   <th className="w-8 px-3 py-2" />
-                  {["Contact", "Title", "Location", "Company", "Company size", "Website", "Industry", "Email", "Phone", "LinkedIn"].map(
+                  {["Contact", "Title", "Location", "Company", "Company size", "Website", "Industry", "Email", "Phone", "LinkedIn", "Enrich"].map(
                     (h) => (
                       <th
                         key={h}
@@ -2732,7 +2840,7 @@ function ApolloResultsPanel({
                 {visibleRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={11}
+                      colSpan={12}
                       className="font-body px-6 py-8 text-center text-[12px] text-slate-500"
                     >
                       No contacts match the current result filter.
@@ -2751,6 +2859,7 @@ function ApolloResultsPanel({
                   const isEnriched = p.enrichment_status === "enriched";
                   const isPending = p.enrichment_status === "pending";
                   const isFailed = p.enrichment_status === "failed";
+                  const rowEnriching = enrichingKeys.has(k);
                   return (
                     <tr
                       key={k}
@@ -2908,6 +3017,33 @@ function ApolloResultsPanel({
                           </a>
                         ) : (
                           <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {isEnriched ? (
+                          <span
+                            className="font-display inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700"
+                            title="This contact is already enriched"
+                          >
+                            <CheckCircle2 className="h-3 w-3" />
+                            Enriched
+                          </span>
+                        ) : isPending || rowEnriching ? (
+                          <span className="font-display inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Enriching…
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => onEnrichOne(k)}
+                            disabled={rowEnriching}
+                            title="Enrich this contact — uses 1 credit"
+                            className="font-display inline-flex items-center gap-1 rounded-full bg-gradient-to-b from-violet-500 to-violet-600 px-2.5 py-1 text-[10px] font-semibold text-white shadow-sm hover:from-violet-600 hover:to-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <Zap className="h-3 w-3" />
+                            Enrich
+                          </button>
                         )}
                       </td>
                     </tr>
