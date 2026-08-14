@@ -23,8 +23,8 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   const item = await sanityClient.fetch<any>(INDUSTRY_QUERY, { slug: params.slug }).catch(() => null);
   if (!item) return buildMetadata({ title: "Industry not found", path: `/industries/${params.slug}` });
   return buildMetadata({
-    title: `${item.name} — outbound playbook for revenue teams`,
-    description: item.tagline || `How LIT works for ${item.name.toLowerCase()} revenue teams.`,
+    title: `${item.name} — outbound playbook for freight sales teams`,
+    description: item.tagline || `How LIT works for ${item.name.toLowerCase()} freight sales teams.`,
     path: `/industries/${params.slug}`,
     eyebrow: "Industry",
     seo: item.seo,
@@ -49,7 +49,7 @@ export default async function IndustryPage({ params }: { params: { slug: string 
         eyebrow={`Industry · ${item.name}`}
         title={`Outbound playbook for`}
         titleHighlight={item.name.toLowerCase()}
-        titleSuffix="revenue teams."
+        titleSuffix="freight sales teams."
         subtitle={item.tagline}
         primaryCta={{ label: "Book a demo", href: "/demo", icon: "calendar" }}
         secondaryCta={{ label: "Try free", href: APP_SIGNUP_URL }}
@@ -122,7 +122,7 @@ export default async function IndustryPage({ params }: { params: { slug: string 
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "WebPage",
-            name: `${item.name} outbound playbook — Logistic Intel`,
+            name: `${item.name} outbound playbook — Logistics Intel`,
             url: siteUrl(`/industries/${params.slug}`),
             about: item.name,
           }),

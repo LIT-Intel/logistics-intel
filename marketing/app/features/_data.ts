@@ -89,7 +89,7 @@ export const FEATURE_PAGES: FeaturePage[] = [
     faqs: [
       { q: "How fresh is the data?", a: "US BOL records refresh weekly, typically within 7-10 days of the filing being released by Customs. Air, Mexico, and select country feeds vary — see /lanes for per-corridor freshness." },
       { q: "Can I search exporters, not just importers?", a: "Yes. Every BOL has both shipper and consignee. Filter on either, or combine — e.g. ‘exporter contains \"Samsung\" AND port = LAX.’" },
-      { q: "Is there a free version?", a: "Yes. Free plans get unlimited search and the first 10 saved companies. Paid plans unlock contact reveal at scale, sequences, and API access." },
+      { q: "Is there a trial?", a: "Yes. The 7-day trial includes 10 searches and 10 verified-contact enrichments with no credit card required. Paid plans add higher limits, campaigns, and team workflows." },
       { q: "Does LIT replace ImportYeti?", a: "For most teams, yes. See the side-by-side at /vs/importyeti — the headline difference is contacts + CRM + sequences in one place vs. CSV-only output." },
     ],
   },

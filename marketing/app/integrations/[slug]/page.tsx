@@ -64,10 +64,9 @@ export async function generateMetadata({
     });
   }
   return buildMetadata({
-    title: `Logistic Intel + ${doc.name} integration | LIT`,
+    title: `${doc.name} integration for Logistics Intel — planned connector`,
     description:
-      doc.tagline ||
-      `Connect ${doc.name} to Logistic Intel and push freight-grade accounts, contacts, and shipment signals into your workflow.`,
+      `See the planned ${doc.name} integration for Logistics Intel. Join the integration waitlist and tell us which freight sales workflow matters most to your team.`,
     path: `/integrations/${doc.slug}`,
     eyebrow: `${doc.name} integration`,
     seo: doc.seo,
@@ -92,7 +91,7 @@ const DEFAULT_COPY: CategoryCopy = {
   whatItDoes: [
     {
       title: "Sync direction",
-      body: "Push verified freight accounts and contacts from Logistic Intel into your workflow.",
+      body: "Push verified freight accounts and contacts from Logistics Intel into your workflow.",
       icon: RefreshCw,
     },
     {
@@ -132,7 +131,7 @@ const DEFAULT_COPY: CategoryCopy = {
         "Most teams are connected and pushing their first records within 10 minutes. OAuth handles the auth flow; default field mappings cover the standard case.",
     },
     {
-      question: "Do I need a paid Logistic Intel plan to use this?",
+      question: "Do I need a paid Logistics Intel plan to use this?",
       answer:
         "Free-trial accounts can connect and test the integration. Production-scale syncing and team-wide access are included on Growth and Scale plans.",
     },
@@ -154,7 +153,7 @@ const CATEGORY_COPY: Record<string, Partial<CategoryCopy>> = {
     whatItDoes: [
       {
         title: "Two-way sync",
-        body: "Accounts, contacts, and pipeline stages stay in lockstep between Logistic Intel and your CRM.",
+        body: "Accounts, contacts, and pipeline stages stay in lockstep between Logistics Intel and your CRM.",
         icon: RefreshCw,
       },
       {
@@ -171,7 +170,7 @@ const CATEGORY_COPY: Record<string, Partial<CategoryCopy>> = {
     useCases: [
       "Freight forwarders keeping their CRM as single source of truth while LIT enriches it",
       "Brokers pushing newly qualified shippers straight into open deals",
-      "3PL revenue teams matching shipment signals to the right account owner",
+      "3PL freight sales teams matching shipment signals to the right account owner",
     ],
   },
   "Email + Sequencer": {
@@ -308,19 +307,58 @@ export default async function IntegrationDetailPage({
 
   const copy = getCopy(doc.category);
   const logoSrc = resolveLogoUrl({ logo: doc.logo, domain: doc.domain }, 128);
+  const isMailboxIntegration = /gmail|outlook|microsoft 365/i.test(doc.name);
   const subhead =
-    doc.tagline ||
-    `Push verified freight accounts, contacts, and shipment signals from Logistic Intel into ${doc.name} — no manual exports, no re-keying.`;
+    isMailboxIntegration
+      ? `Connect ${doc.name} and send freight outreach from your real mailbox inside Logistics Intel.`
+      : `${doc.name} is a planned Logistics Intel connector. It is not presented as generally available until the production integration is complete.`;
+
+  if (!isMailboxIntegration) {
+    return (
+      <PageShell>
+        <BreadcrumbBar
+          crumbs={[
+            { label: "Home", href: "/" },
+            { label: "Integrations", href: "/integrations" },
+            { label: doc.name },
+          ]}
+        />
+        <PageHero
+          eyebrow="Planned integration"
+          title={`${doc.name} + Logistics Intel`}
+          titleHighlight="planned connector"
+          subtitle={subhead}
+          primaryCta={{ label: "Request this integration", href: "/contact", icon: "arrow" }}
+          secondaryCta={{ label: "View available integrations", href: "/integrations" }}
+        >
+          <div className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-sm">
+            {logoSrc ? (
+              <Image src={logoSrc} alt={`${doc.name} logo`} fill sizes="80px" className="object-contain p-3" unoptimized={logoSrc.includes("img.logo.dev")} />
+            ) : (
+              <span className="font-display text-[24px] font-bold text-ink-700">{doc.name[0]}</span>
+            )}
+          </div>
+        </PageHero>
+        <CtaBanner
+          eyebrow="Integration roadmap"
+          title={`Help us prioritize ${doc.name}.`}
+          subtitle="Tell us what should sync, which direction the data should move, and how your freight sales team would use it."
+          primaryCta={{ label: "Request this integration", href: "/contact", icon: "arrow" }}
+          secondaryCta={{ label: "See Gmail and Outlook", href: "/integrations" }}
+        />
+      </PageShell>
+    );
+  }
 
   const softwareApplicationLd = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    name: `Logistic Intel + ${doc.name} integration`,
+    name: `Logistics Intel + ${doc.name} integration`,
     applicationCategory: "BusinessApplication",
     description: subhead,
     url: siteUrl(`/integrations/${doc.slug}`),
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    isPartOf: { "@type": "WebSite", name: "Logistic Intel", url: siteUrl("/") },
+    isPartOf: { "@type": "WebSite", name: "Logistics Intel", url: siteUrl("/") },
   };
 
   const faqLd = {
@@ -345,7 +383,7 @@ export default async function IntegrationDetailPage({
 
       <PageHero
         eyebrow={`Integration · ${doc.category || "Connector"}`}
-        title={`Logistic Intel + ${doc.name}`}
+        title={`Logistics Intel + ${doc.name}`}
         titleHighlight="integration"
         subtitle={subhead}
         primaryCta={{ label: "Start free trial", href: APP_SIGNUP_URL, icon: "arrow" }}
@@ -513,7 +551,7 @@ export default async function IntegrationDetailPage({
 
       <CtaBanner
         eyebrow="Connect it in minutes"
-        title={`Connect ${doc.name} to Logistic Intel.`}
+        title={`Connect ${doc.name} to Logistics Intel.`}
         subtitle="Spin up a free trial, authenticate in two clicks, and watch verified freight intelligence land in your stack."
         primaryCta={{ label: "Start free trial", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a Demo", href: "/demo" }}

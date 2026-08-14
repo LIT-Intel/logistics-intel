@@ -32,10 +32,10 @@ export default function ProductsPage() {
   return (
     <PageShell>
       <ProductHero
-        eyebrow="The Logistic Intel platform"
+        eyebrow="The Logistics Intel platform"
         title="The connected revenue workspace"
         titleHighlight="for logistics sales."
-        subtitle="Logistic Intel brings the core tools your sales team needs into one platform: company discovery, shipment intelligence, contact enrichment, CRM workflows, and outbound campaigns. From search to outreach in one clean workflow."
+        subtitle="Logistics Intel brings the core tools your sales team needs into one platform: company discovery, shipment intelligence, contact enrichment, CRM workflows, and outbound campaigns. From search to outreach in one clean workflow."
         visual={<DashboardMock />}
       />
 

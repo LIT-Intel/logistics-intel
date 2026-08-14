@@ -27,7 +27,7 @@ export const revalidate = 86400;
 export const dynamicParams = true;
 
 export const metadata: Metadata = buildMetadata({
-  title: "Solutions — LIT for every freight revenue role",
+  title: "Solutions — LIT for every freight sales role",
   description:
     "Freight forwarders, brokers, NVOCCs, 3PLs, sales leaders — LIT is configured differently for each role. Pick your motion and see the playbook.",
   path: "/solutions",
@@ -117,16 +117,16 @@ export default async function SolutionsHubPage() {
       <MoneyPageShell>
 
       <LeadMagnetHero
-        eyebrow="Built for every freight revenue role"
+        eyebrow="Built for every freight sales role"
         headline={
           <>
-            One platform. <em>Five revenue motions.</em>
+            One platform. <em>Five freight sales motions.</em>
           </>
         }
         lede="Freight forwarders, brokers, 3PLs, NVOCCs, sales leaders — LIT is configured differently for each role. Pick yours and see the playbook."
         ctaLabel="See LIT for my role"
         formSource="solutions-hero"
-        formNote="No credit card. Free tier includes 10 searches + 10 verified contacts."
+        formNote="7-day trial. 10 searches + 10 verified contacts. No credit card."
       >
         <LiveProductPreview
           urlBarText="solutions / pick your motion"
@@ -378,7 +378,7 @@ export default async function SolutionsHubPage() {
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(
             buildCollectionPage({
-              name: "LIT solutions by freight revenue role",
+              name: "LIT solutions by freight sales role",
               description:
                 "Forwarders, brokers, NVOCCs, 3PLs, sales leaders — each on a configured LIT workspace.",
               path: "/solutions",

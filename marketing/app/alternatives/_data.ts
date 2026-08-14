@@ -93,7 +93,7 @@ export const ALTERNATIVE_PAGES: AlternativePage[] = [
     metaDescription:
       "Looking for a Panjiva alternative? LIT delivers global trade intelligence with verified contacts and outbound — at startup-friendly pricing.",
     lede:
-      "Panjiva (S&P) is enterprise trade intel — comprehensive but expensive and slow to onboard. LIT brings the same trade graph to revenue teams that need to act on it this week.",
+      "Panjiva (S&P) is enterprise trade intel — comprehensive but expensive and slow to onboard. LIT brings the same trade graph to freight sales teams that need to act on it this week.",
     shortAnswer:
       "LIT is the action-oriented Panjiva alternative. Where Panjiva sells deep enterprise trade analytics, LIT joins the same trade graph to a freight-native CRM and outbound engine — built for sales teams, not just analysts.",
     switchReasons: [

@@ -18,9 +18,9 @@ import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Press & media kit | Logistic Intel",
+  title: "Press & media kit | Logistics Intel",
   description:
-    "Press kit, brand assets, fact sheet, and contact information for Logistic Intel — freight prospecting software for brokers, forwarders, and 3PLs.",
+    "Press kit, brand assets, fact sheet, and contact information for Logistics Intel — freight prospecting software for brokers, forwarders, and 3PLs.",
   path: "/press",
   eyebrow: "Press",
 });
@@ -82,7 +82,7 @@ const BRAND_ASSETS: BrandAsset[] = [
   {
     name: "Wordmark — light",
     format: "SVG",
-    description: "Logistic Intel wordmark for use on light backgrounds.",
+    description: "Logistics Intel wordmark for use on light backgrounds.",
     href: "/brand/wordmark-light.svg",
     preview: "wordmark-light",
     available: true,
@@ -90,7 +90,7 @@ const BRAND_ASSETS: BrandAsset[] = [
   {
     name: "Wordmark — dark",
     format: "SVG",
-    description: "Logistic Intel wordmark for use on dark backgrounds.",
+    description: "Logistics Intel wordmark for use on dark backgrounds.",
     href: "/brand/wordmark-dark.svg",
     preview: "wordmark-dark",
     available: true,
@@ -243,11 +243,11 @@ export default function PressPage() {
   const orgLd = {
     "@context": "https://schema.org",
     "@type": "Organization",
-    name: "Logistic Intel",
+    name: "Logistics Intel",
     url: SITE_URL,
     logo: `${SITE_URL}/lit-icon-glow.svg`,
     description:
-      "Logistic Intel is a freight revenue intelligence platform for brokers, forwarders, 3PLs, and NVOCCs — combining shipment data, company intelligence, and CRM workflows in one system.",
+      "Logistics Intel is a freight sales intelligence platform for brokers, forwarders, 3PLs, and NVOCCs — combining shipment data, company intelligence, and CRM workflows in one system.",
     sameAs: [
       "https://www.linkedin.com/company/logistic-intel",
       "https://www.youtube.com/@logisticsintel",
@@ -317,13 +317,13 @@ export default function PressPage() {
       {/* Elevator pitch */}
       <Section top="md" bottom="md">
         <div className="mx-auto max-w-[820px]">
-          <div className="eyebrow">About Logistic Intel</div>
+          <div className="eyebrow">About Logistics Intel</div>
           <h2 className="display-lg space-eyebrow-h1">
             What we do, in one paragraph.
           </h2>
           <div className="font-body mt-6 space-y-5 text-[17px] leading-[1.7] text-ink-700">
             <p>
-              Logistic Intel is a revenue intelligence platform built for global trade.
+              Logistics Intel is a revenue intelligence platform built for global trade.
               We combine shipment data, company intelligence, and CRM workflows into one
               system so freight brokers, forwarders, 3PLs, and NVOCCs can find the right
               accounts, reach the right people, and run outbound on real signal — not
@@ -453,7 +453,7 @@ export default function PressPage() {
                 Press inquiries
               </div>
               <div className="font-display mt-2 text-[18px] font-semibold tracking-[-0.015em] text-ink-900">
-                Logistic Intel press team
+                Logistics Intel press team
               </div>
               <a
                 href="mailto:press@logisticintel.com"

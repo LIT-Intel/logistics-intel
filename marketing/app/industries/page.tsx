@@ -12,7 +12,7 @@ import { buildCollectionPage } from "@/lib/jsonLd";
 export const revalidate = 1800;
 
 export const metadata: Metadata = buildMetadata({
-  title: "Industries — playbooks for vertical revenue teams",
+  title: "Industries — playbooks for vertical freight sales teams",
   description:
     "How LIT works for furniture importers, machinery, automotive, apparel, electronics, and more. Each industry has its own ICP, lanes, and outbound playbook.",
   path: "/industries",
@@ -37,7 +37,7 @@ export default async function IndustriesPage() {
       <PageHero
         eyebrow="Industries"
         title="Vertical-specific playbooks"
-        titleHighlight="for revenue teams"
+        titleHighlight="for freight sales teams"
         titleSuffix="that don't sell to everyone."
         subtitle="Pick your vertical. We'll show you the ICP, the lanes, the personas, and the outbound playbook that actually moves pipeline."
         align="center"

@@ -34,7 +34,7 @@ export async function CustomerStoriesSection() {
             Real results from <span className="grad-text">freight teams</span> on LIT.
           </h2>
           <p className="lead mx-auto mt-4 max-w-[560px]">
-            Three teams using freight revenue intelligence to outpace incumbents — pipeline built,
+            Three teams using freight sales intelligence to outpace incumbents — pipeline built,
             reply rates lifted, capacity unlocked.
           </p>
         </div>

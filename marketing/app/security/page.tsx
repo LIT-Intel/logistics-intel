@@ -9,9 +9,9 @@ import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Security at LIT — encryption, SSO, SOC 2",
+  title: "Security at LIT — encryption, access controls, and compliance",
   description:
-    "How LIT protects customer data. Encryption in transit and at rest, SSO + SCIM provisioning, role-based access, audit logs, and SOC 2 Type II program in flight.",
+    "How LIT protects customer data through encryption, access controls, tenant isolation, audit logs, and an active SOC 2 readiness program.",
   path: "/security",
   eyebrow: "Security",
 });
@@ -44,8 +44,8 @@ const PILLARS = [
   {
     icon: "FileCheck",
     tag: "Compliance",
-    title: "SOC 2 Type II in flight",
-    body: "We are mid-audit for SOC 2 Type II. Type I report available under NDA today. GDPR + CCPA compliant — DPA available on request.",
+    title: "SOC 2 readiness in progress",
+    body: "We are formalizing the controls, evidence collection, and operating procedures required for a future SOC 2 examination. We do not currently represent LIT as SOC 2 certified.",
   },
   {
     icon: "Server",
@@ -86,7 +86,7 @@ const FAQS = [
   {
     question: "Can I get our SOC 2 report?",
     answer:
-      "SOC 2 Type I is available under NDA today. Type II will be available Q3. Contact sales for the latest report.",
+      "LIT is currently completing SOC 2 readiness work and is not yet represented as SOC 2 certified. Contact us for the current security documentation and readiness status.",
   },
   {
     question: "Do you have a status page?",
@@ -101,9 +101,9 @@ export default function SecurityPage() {
       <PageHero
         eyebrow="Security"
         title="Enterprise security,"
-        titleHighlight="for revenue teams"
+        titleHighlight="for freight sales teams"
         titleSuffix="that move fast."
-        subtitle="Encryption everywhere. Identity that fits your stack. SOC 2 Type II in flight. Built so security review isn't the thing that blocks the deal."
+        subtitle="Encryption, access controls, tenant isolation, and SOC 2 readiness work documented clearly for freight sales teams."
         primaryCta={{ label: "Read our docs", href: "/contact", icon: "arrow" }}
         secondaryCta={{ label: "Talk to security", href: "mailto:security@logisticintel.com" }}
         align="center"
@@ -117,7 +117,7 @@ export default function SecurityPage() {
           <div className="rounded-2xl border border-ink-100 bg-white px-5 py-4 shadow-sm sm:px-7">
             <div className="flex flex-wrap items-center justify-center gap-x-7 gap-y-3 sm:justify-between">
               {[
-                { abbr: "SOC", label: "SOC 2 Type II program" },
+                { abbr: "SOC", label: "SOC 2 readiness program" },
                 { abbr: "GDR", label: "GDPR compliant" },
                 { abbr: "CCP", label: "CCPA compliant" },
                 { abbr: "256", label: "AES-256 encryption" },

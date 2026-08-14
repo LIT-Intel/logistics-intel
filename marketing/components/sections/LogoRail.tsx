@@ -9,7 +9,7 @@ type Logo = { _id?: string; name: string; domain?: string | null; logo?: any; ur
  * customers can be added with just a domain.
  */
 export function LogoRail({
-  eyebrow = "Trusted by revenue teams at",
+  eyebrow = "Trusted by freight sales teams at",
   logos,
 }: {
   eyebrow?: string;

@@ -193,7 +193,7 @@ function CustomerStoryView({
     dateModified: doc.lastReviewedAt || doc._updatedAt,
     publisher: {
       "@type": "Organization",
-      name: "Logistic Intel",
+      name: "Logistics Intel",
       logo: {
         "@type": "ImageObject",
         url: siteUrl("/lit-icon-master.svg"),
@@ -394,7 +394,7 @@ function CaseStudyView({
     datePublished: doc.publishedAt,
     publisher: {
       "@type": "Organization",
-      name: "Logistic Intel",
+      name: "Logistics Intel",
       logo: {
         "@type": "ImageObject",
         url: siteUrl("/lit-icon-master.svg"),

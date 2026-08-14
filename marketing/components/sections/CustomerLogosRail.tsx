@@ -25,7 +25,7 @@ const PLACEHOLDERS: Logo[] = [
 ];
 
 export function CustomerLogosRail({
-  eyebrow = "Built for the revenue teams running freight at companies like",
+  eyebrow = "Built for the freight sales teams running freight at companies like",
   logos,
   className = "",
 }: {

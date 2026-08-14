@@ -11,7 +11,7 @@ import { buildMetadata } from "@/lib/seo";
 export const metadata: Metadata = buildMetadata({
   title: "Careers — join the team building LIT",
   description:
-    "We're a small, operator-grade team building Logistic Intel — the freight revenue intelligence platform for sales teams running outbound on real shipment data.",
+    "We're a small, operator-grade team building Logistics Intel — the freight sales intelligence platform for sales teams running outbound on real shipment data.",
   path: "/careers",
   eyebrow: "Careers",
 });
@@ -46,7 +46,7 @@ const HIRING_AREAS: { area: string; body: string }[] = [
   },
   {
     area: "Customer engineering",
-    body: "Land + expand with revenue teams at forwarders, brokers, and 3PLs. You'll write playbooks, run onboarding, and feed product roadmap signals back from real customers.",
+    body: "Land + expand with freight sales teams at forwarders, brokers, and 3PLs. You'll write playbooks, run onboarding, and feed product roadmap signals back from real customers.",
   },
 ];
 

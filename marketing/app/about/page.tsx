@@ -6,7 +6,7 @@ import { CtaBanner } from "@/components/sections/CtaBanner";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
-  title: "About LIT — built for the next generation of revenue teams",
+  title: "About LIT — built for the next generation of freight sales teams",
   description:
     "We started LIT because data tools, CRMs, and outbound platforms all assumed the work was someone else's problem. We built one system that makes the whole motion faster.",
   path: "/about",
@@ -43,8 +43,8 @@ export default function AboutPage() {
         eyebrow="About"
         title="We're building the platform"
         titleHighlight="we wanted"
-        titleSuffix="when we were running revenue teams."
-        subtitle="LIT brings together company intelligence, trade signals, CRM, and execution into one platform — so revenue teams can move from signal to action without switching tools."
+        titleSuffix="when we were running freight sales teams."
+        subtitle="LIT brings together company intelligence, trade signals, CRM, and execution into one platform — so freight sales teams can move from signal to action without switching tools."
         align="center"
       />
 
@@ -109,7 +109,7 @@ export default function AboutPage() {
           <div className="font-body mt-6 space-y-5 text-[17px] leading-[1.7] text-ink-700">
             <p>
               We aren't here to be the next consumer-AI moonshot. We are here to build durable software that makes
-              every revenue team that uses it materially faster than the one across the street. That looks like
+              every freight sales team that uses it materially faster than the one across the street. That looks like
               tighter signal coverage, faster CRM workflows, and AI that understands your specific accounts.
             </p>
             <p>

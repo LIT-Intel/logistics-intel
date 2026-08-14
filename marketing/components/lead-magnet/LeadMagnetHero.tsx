@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import { ShieldCheck } from "lucide-react";
 import { useLeadMagnetForm } from "./useLeadMagnetForm";
-import { G2Chip } from "@/components/proof/G2Chip";
 
 type Props = {
   eyebrow: string;
@@ -97,20 +96,10 @@ export function LeadMagnetHero({
             <p className="mt-3 text-xs text-white/50">{formNote}</p>
           )}
 
-          {/* Primary trust signal — G2 rating as a discrete chip. We
-           *  intentionally omit reviewCount; we don't have a verified
-           *  number marketing has cleared. */}
-          <div className="mt-8">
-            <G2Chip rating={4.8} category="G2 Verified" variant="dark" />
-          </div>
-
-          {/* Secondary trust — compliance badges, smaller + uppercase
-           *  so they read as metadata under the G2 chip, not as
-           *  parallel claims. */}
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] uppercase tracking-[0.08em] text-white/55">
+          <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] uppercase tracking-[0.08em] text-white/55">
             <span className="inline-flex items-center gap-1.5">
               <ShieldCheck className="h-3.5 w-3.5 text-brand-cyan" aria-hidden />
-              SOC&nbsp;2
+              SOC&nbsp;2 Type II audit in progress
             </span>
             <span className="inline-flex items-center gap-1.5">
               <ShieldCheck className="h-3.5 w-3.5 text-brand-cyan" aria-hidden />

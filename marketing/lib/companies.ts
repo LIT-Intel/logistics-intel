@@ -167,7 +167,18 @@ export async function getFeaturedBrandCompanies(
  *
  * Kept in this lib so the page, sitemap, and cron stay in sync.
  */
-export const MIN_SHIPMENTS_FOR_INDEX = 10;
+export const MIN_SHIPMENTS_FOR_INDEX = 25;
+
+export function isIndexableCompanyProfile(company: PublicCompany): boolean {
+  const slug = String(company.seo_slug || "").toLowerCase();
+  const hasCompleteLocation = Boolean(company.city && company.state && company.country);
+  return (
+    Number(company.shipments || 0) >= MIN_SHIPMENTS_FOR_INDEX &&
+    Boolean(company.company_name?.trim()) &&
+    hasCompleteLocation &&
+    !slug.includes("unknown-")
+  );
+}
 
 /**
  * Slugs of substantive importer profiles — the only set we submit to
@@ -199,6 +210,10 @@ export async function listCompanySlugs(opts: {
     .eq("is_active", true)
     .not("seo_slug", "is", null)
     .not("company_name", "is", null)
+    .not("city", "is", null)
+    .not("state", "is", null)
+    .not("country", "is", null)
+    .not("seo_slug", "ilike", "%unknown%")
     .gte("shipments", minShipments)
     .order("teu", { ascending: false, nullsFirst: false })
     .range(offset, offset + limit - 1);
@@ -252,12 +267,22 @@ export async function listAllCompanySlugs(
 export async function countActiveCompanies(opts: { substantiveOnly?: boolean } = {}): Promise<number> {
   const c = client();
   if (!c) return 0;
-  let q = c
+  // Supabase's generated fluent-query type grows recursively when the
+  // optional quality filters are appended. Keep the runtime builder while
+  // avoiding an excessively deep compile-time instantiation.
+  let q: any = c
     .from("lit_company_directory")
     .select("seo_slug", { count: "exact", head: true })
     .eq("is_active", true)
     .not("seo_slug", "is", null);
-  if (opts.substantiveOnly) q = q.gte("shipments", MIN_SHIPMENTS_FOR_INDEX);
+  if (opts.substantiveOnly) {
+    q = q
+      .gte("shipments", MIN_SHIPMENTS_FOR_INDEX)
+      .not("city", "is", null)
+      .not("state", "is", null)
+      .not("country", "is", null)
+      .not("seo_slug", "ilike", "%unknown%");
+  }
   const { count, error } = await q;
   if (error) {
     console.error("[companies.countActiveCompanies]", error.message);

@@ -187,7 +187,7 @@ export function Footer() {
         {/* Bottom band: copyright + legal + social */}
         <div className="mt-14 flex flex-col items-start gap-4 border-t border-white/10 py-6 text-[13px] text-ink-200/70 md:flex-row md:items-center md:justify-between">
           <div className="font-body">
-            © {new Date().getFullYear()} Logistic Intel, Inc. All rights reserved.
+            © {new Date().getFullYear()} Logistics Intel, Inc. All rights reserved.
           </div>
 
           <ul className="flex flex-wrap items-center gap-x-5 gap-y-2">

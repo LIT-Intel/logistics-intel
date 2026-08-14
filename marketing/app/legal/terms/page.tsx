@@ -5,7 +5,7 @@ import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
   title: "Terms of service",
-  description: "The terms governing use of Logistic Intel.",
+  description: "The terms governing use of Logistics Intel.",
   path: "/legal/terms",
   eyebrow: "Legal",
 });

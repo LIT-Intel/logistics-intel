@@ -105,7 +105,7 @@ export const BEST_LIST_PAGES: BestListPage[] = [
     lede:
       "Every freight team needs BOL data — but the right tool depends on whether you just need to search filings or you need to act on them.",
     shortAnswer:
-      "The best BOL data tools in 2026 are LIT (best for teams that need to act — contacts + outbound + CRM included), ImportGenius (deepest historic coverage), ImportYeti (best free tier), Panjiva (best enterprise global trade data), and Datamyne (heavy enterprise, global). LIT wins for revenue teams; Panjiva wins for enterprise analytics.",
+      "The best BOL data tools in 2026 are LIT (best for teams that need to act — contacts + outbound + CRM included), ImportGenius (deepest historic coverage), ImportYeti (best free tier), Panjiva (best enterprise global trade data), and Datamyne (heavy enterprise, global). LIT wins for freight sales teams; Panjiva wins for enterprise analytics.",
     methodology:
       "Ranked on US BOL coverage depth, refresh cadence, contact enrichment, action layer (sequences/CRM), and pricing for a 5-rep team.",
     entries: [
@@ -295,7 +295,7 @@ export const BEST_LIST_PAGES: BestListPage[] = [
     lede:
       "Trade data platforms range from research-grade enterprise feeds to operator-grade lead-gen tools. The right one depends on what you do with the data.",
     shortAnswer:
-      "The best trade data platforms in 2026 are LIT (US-deep, contact-attached, action layer), Panjiva (deepest global graph), Datamyne (enterprise global), ImportGenius (US historical depth), and TradeAtlas (global breadth). LIT wins for revenue teams; Panjiva for enterprise analytics.",
+      "The best trade data platforms in 2026 are LIT (US-deep, contact-attached, action layer), Panjiva (deepest global graph), Datamyne (enterprise global), ImportGenius (US historical depth), and TradeAtlas (global breadth). LIT wins for freight sales teams; Panjiva for enterprise analytics.",
     methodology:
       "Ranked on coverage, freshness, action layer, and per-seat economics for a 5-rep team.",
     entries: [

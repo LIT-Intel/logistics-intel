@@ -38,7 +38,7 @@ const RESOURCES_QUERY = groq`{
 export const metadata: Metadata = buildMetadata({
   title: "Resources — playbooks, lanes, and freight glossary | LIT",
   description:
-    "Operator playbooks, live trade-lane intelligence, customer stories, and a freight glossary — every page built for the questions revenue teams actually ask.",
+    "Operator playbooks, live trade-lane intelligence, customer stories, and a freight glossary — every page built for the questions freight sales teams actually ask.",
   path: "/resources",
   eyebrow: "Resources",
 });
@@ -96,7 +96,7 @@ export default async function ResourcesPage() {
             buildCollectionPage({
               name: "Resources hub",
               description:
-                "Operator playbooks, live trade-lane intelligence, customer stories, and a freight glossary — every page built for the questions revenue teams actually ask.",
+                "Operator playbooks, live trade-lane intelligence, customer stories, and a freight glossary — every page built for the questions freight sales teams actually ask.",
               path: "/resources",
             }),
           ),

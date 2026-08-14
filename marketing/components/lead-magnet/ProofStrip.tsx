@@ -34,7 +34,7 @@ const LABELS: Record<string, string> = {
  * shared LogoTile component — no inline img.logo.dev URLs.
  */
 export function ProofStrip({
-  label = "Trusted by freight revenue teams at",
+  label = "Trusted by freight sales teams at",
   domains = DEFAULT_DOMAINS,
 }: Props) {
   return (

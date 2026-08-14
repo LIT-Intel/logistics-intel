@@ -5,7 +5,7 @@ import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
   title: "Privacy policy",
-  description: "How Logistic Intel collects, uses, and protects your data.",
+  description: "How Logistics Intel collects, uses, and protects your data.",
   path: "/legal/privacy",
   eyebrow: "Legal",
 });
@@ -25,7 +25,7 @@ export default function PrivacyPage() {
             that any privacy policy in 2026 should cover.
           </p>
           <Section title="1. Who we are">
-            Logistic Intel, Inc. ("LIT") provides market intelligence and revenue execution software at
+            Logistics Intel, Inc. ("LIT") provides market intelligence and revenue execution software at
             logisticintel.com and app.logisticintel.com. Contact: privacy@logisticintel.com.
           </Section>
           <Section title="2. Data we collect">

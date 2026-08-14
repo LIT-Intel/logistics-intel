@@ -19,9 +19,9 @@ const CAL_LINK = (
 ).trim();
 
 export const metadata: Metadata = {
-  title: "Book a 15-min demo · Logistic Intel",
+  title: "Book a 15-min demo · Logistics Intel",
   description:
-    "Walk through Logistic Intel with the team. We'll show you the lanes, the verified contacts, and the integrations on your real data — 15 minutes, no pitch.",
+    "Walk through Logistics Intel with the team. We'll show you the lanes, the verified contacts, and the integrations on your real data — 15 minutes, no pitch.",
   alternates: { canonical: "https://logisticintel.com/book-a-demo" },
   robots: { index: false, follow: true },
 };

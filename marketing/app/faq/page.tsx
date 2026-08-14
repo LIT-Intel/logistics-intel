@@ -38,9 +38,9 @@ const CATEGORY_ORDER = [
 ];
 
 export const metadata: Metadata = buildMetadata({
-  title: "Frequently asked questions | LIT — Logistic Intel",
+  title: "Frequently asked questions | LIT — Logistics Intel",
   description:
-    "Answers to the most common questions about LIT — the freight revenue intelligence platform. Coverage, integrations, pricing, security, and how we compare.",
+    "Answers to the most common questions about LIT — the freight sales intelligence platform. Coverage, integrations, pricing, security, and how we compare.",
   path: "/faq",
   eyebrow: "FAQ",
 });

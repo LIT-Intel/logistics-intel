@@ -42,7 +42,7 @@ export async function generateMetadata({
   const hard = getAlternativeBySlug(params.slug);
   if (hard) {
     return buildMetadata({
-      title: `${hard.competitor} alternative — LIT vs ${hard.competitor} | Logistic Intel`,
+      title: `${hard.competitor} alternative — LIT vs ${hard.competitor} | Logistics Intel`,
       description: hard.metaDescription,
       path: `/alternatives/${params.slug}`,
       eyebrow: `${hard.competitor} alternative`,
@@ -80,7 +80,7 @@ export default async function AlternativeDetailPage({
       url: siteUrl(`/alternatives/${params.slug}`),
       isPartOf: { "@type": "WebSite", url: siteUrl("/") },
       about: [
-        { "@type": "SoftwareApplication", name: "LIT — Logistic Intel" },
+        { "@type": "SoftwareApplication", name: "LIT — Logistics Intel" },
         { "@type": "SoftwareApplication", name: hard.competitor },
       ],
     };

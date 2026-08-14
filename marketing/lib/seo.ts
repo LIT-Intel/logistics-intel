@@ -28,7 +28,12 @@ export function buildMetadata(opts: {
   authors?: string[];
 }): Metadata {
   const seo = opts.seo || {};
-  const title = seo.title || opts.title;
+  // Page authors often include a brand suffix while the root metadata
+  // template also appends one. Normalize here so search titles contain the
+  // brand exactly once and consistently use the approved name.
+  const title = (seo.title || opts.title)
+    .replace(/\s*(?:\||·)\s*(?:LIT(?:\s*[—-]\s*Logistics Intel)?|Logistics Intel)\s*$/i, "")
+    .trim();
   const description =
     seo.description ||
     opts.description ||
@@ -48,7 +53,7 @@ export function buildMetadata(opts: {
     keywords: seo.keywords,
     alternates: { canonical },
     robots: seo.noIndex
-      ? { index: false, follow: false }
+      ? { index: false, follow: true }
       : { index: true, follow: true, googleBot: { index: true, follow: true, "max-snippet": -1, "max-image-preview": "large", "max-video-preview": -1 } },
     openGraph: {
       type: opts.type || "website",
