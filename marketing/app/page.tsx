@@ -1,151 +1,76 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { sanityClient } from "@/sanity/lib/client";
-import { HOMEPAGE_QUERY } from "@/sanity/lib/queries";
-import { buildMetadata } from "@/lib/seo";
+import { ArrowRight, BarChart3, Check, PackageSearch, Users2 } from "lucide-react";
 import { Nav } from "@/components/nav/Nav";
 import { Footer } from "@/components/nav/Footer";
-import { ArrowRight, Calendar, CheckCircle2, MapPin, RefreshCcw, ShieldCheck, type LucideIcon } from "lucide-react";
-import { APP_SIGNUP_URL } from "@/lib/app-urls";
-import { HeroSearchDemo } from "@/components/sections/HeroSearchDemo";
-import { LeadMagnetHero } from "@/components/lead-magnet/LeadMagnetHero";
-import { StickyCTABar } from "@/components/lead-magnet/StickyCTABar";
 import { CompanyIntelMock } from "@/components/sections/CompanyIntelMock";
-import { PulseBriefMock } from "@/components/sections/PulseBriefMock";
-import { ContactDiscoveryMock } from "@/components/sections/ContactDiscoveryMock";
-import { SequenceBuilderMock } from "@/components/sections/SequenceBuilderMock";
+import { CrmPipelinePreview } from "@/components/sections/CrmPipelinePreview";
 import { CustomerLogosRail } from "@/components/sections/CustomerLogosRail";
-import { WorkflowMotion } from "@/components/sections/WorkflowMotion";
-import { BigNumberStrip, HOME_BIG_NUMBER_DEFAULTS } from "@/components/sections/BigNumberStrip";
 import { HomeShowcaseTabs, type ShowcaseTab } from "@/components/sections/HomeShowcaseTabs";
+import { PulseExplorerMock } from "@/components/sections/pulse-explorer/PulseExplorerMock";
+import { SignalJourney } from "@/components/sections/SignalJourney";
+import { APP_SIGNUP_URL } from "@/lib/app-urls";
+import { buildMetadata } from "@/lib/seo";
 
-export const revalidate = 600; // ISR — refresh every 10 min
-
-const FALLBACK_HERO = {
-  pillText: "Pulse AI · Global Supply Chain Research Intelligence",
-  headline: "Freight Prospecting & CRM Software for Brokers,",
-  headlineHighlight: "Forwarders & 3PLs.",
-  headlineSuffix: "",
-  subhead:
-    "LIT helps freight forwarders, brokers, and logistics sales teams find active shippers, understand their trade activity, reach verified contacts, and manage deals in a full freight-native CRM — from one connected workspace built on 124M+ live Bill of Lading records.",
-  noteBelow:
-    "Built for logistics teams that need better prospects, better timing, and better context before the first email goes out.",
-  badges: [
-    { label: "60+ countries tracked", tone: "cyan", icon: "MapPin" },
-    { label: "Refreshed daily", tone: "blue", icon: "RefreshCcw" },
-    { label: "SOC 2 readiness in progress · GDPR · CCPA", tone: "emerald", icon: "ShieldCheck" },
-  ],
-  /** 4-card hero stats strip — design-pack treatment. `trend` is rendered
-   *  as the freshness indicator under the value+label pair. */
-  kpis: [
-    { value: "124M+", label: "Bills of Lading", trend: "Updated today" },
-    { value: "524K+", label: "Active importers", trend: "Refreshed daily" },
-    { value: "42M+", label: "Verified contacts", trend: "95%+ deliverability" },
-    { value: "60+", label: "Countries tracked", trend: "Customs sources" },
-  ],
-  trialNote: "7-day trial · 10 searches + 10 verified contacts · No credit card",
-};
-
-/** Static trust badges shown in the slim strip below the hero. Brand
- *  claims, not Sanity-driven (they don't change without a redeploy). */
-const TRUST_BADGES = [
-  { abbr: "SOC", label: "SOC 2 readiness in progress" },
-  { abbr: "GDR", label: "GDPR compliant" },
-  { abbr: "CCP", label: "CCPA compliant" },
-  { abbr: "256", label: "AES-256 encryption" },
-];
-
-/** Badge tone → Tailwind utility group. Keep in sync with the homepageHero
- *  Sanity schema's tone option list. */
-const HERO_BADGE_TONES: Record<string, string> = {
-  cyan: "border-cyan-200 bg-cyan-50 text-cyan-700",
-  blue: "border-blue-200 bg-blue-50 text-brand-blue-700",
-  emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  violet: "border-violet-200 bg-violet-50 text-violet-700",
-  amber: "border-amber-200 bg-amber-50 text-amber-700",
-};
-
-/** Lucide icon name → component. Whitelist what hero badges can render. */
-const HERO_BADGE_ICONS: Record<string, LucideIcon> = {
-  MapPin,
-  RefreshCcw,
-  ShieldCheck,
-  CheckCircle2,
-};
+export const revalidate = 600;
 
 export const metadata: Metadata = buildMetadata({
   path: "/",
-  title:
-    "Freight Prospecting & CRM Software for Logistics Sales | Logistics Intel",
+  title: "Freight Sales Intelligence & CRM | Logistics Intel",
   description:
-    "Find active shippers, reach verified contacts, manage deals, forecast pipeline, and track tasks in a freight-native CRM for brokers, forwarders, and 3PLs.",
-  eyebrow: "Freight prospecting and CRM platform",
+    "Find active shippers, research shipment activity, reach verified contacts, and manage every opportunity in a freight-native CRM.",
+  eyebrow: "Logistics sales intelligence",
 });
 
-export default async function HomePage() {
-  // NOTE — temporary Sanity bypass for the home hero. The bootstrapped
-  // siteSettings doc has the old "Turn shipment data into…" headline +
-  // text KPIs, and the schema patch is blocked locally on a sanity CLI
-  // dep resolution issue. We still call sanityClient (so the request is
-  // hot when we need it) but render from FALLBACK_HERO so the redesign
-  // ships. Once the Studio doc is updated to match the new design, swap
-  // back to: `const hero = data?.settings?.homepageHero ?? FALLBACK_HERO;`
-  await sanityClient.fetch(HOMEPAGE_QUERY).catch(() => null);
-  const hero = FALLBACK_HERO;
+const customerLogos = [
+  { domain: "chrobinson.com", name: "C.H. Robinson" },
+  { domain: "rxo.com", name: "RXO" },
+  { domain: "tql.com", name: "TQL" },
+  { domain: "echo.com", name: "Echo Global Logistics" },
+  { domain: "landstar.com", name: "Landstar" },
+  { domain: "kuehne-nagel.com", name: "Kuehne + Nagel" },
+  { domain: "dhl.com", name: "DHL" },
+  { domain: "dsv.com", name: "DSV" },
+  { domain: "expeditors.com", name: "Expeditors" },
+];
 
+const capabilities = [
+  { icon: PackageSearch, title: "Live shipment activity", body: "See what is moving, where it is moving, and which accounts are gaining momentum.", tone: "bg-cyan-500" },
+  { icon: Users2, title: "Verified decision-makers", body: "Move from the shipment signal to the people responsible for logistics and supply chain.", tone: "bg-blue-600" },
+  { icon: BarChart3, title: "Freight-native CRM", body: "Manage accounts, deals, tasks, forecasts, and follow-up without losing the freight context.", tone: "bg-indigo-600" },
+];
+
+const audiences = [
+  { title: "Freight brokers", body: "Find active shippers, identify relevant lanes, and build a better-qualified pipeline.", href: "/solutions/freight-brokers" },
+  { title: "Freight forwarders", body: "Research importers and exporters, understand trade patterns, and prioritize global accounts.", href: "/solutions/freight-forwarders" },
+  { title: "3PL sales teams", body: "Turn shipment activity into account plans, assigned opportunities, and measurable follow-up.", href: "/solutions/3pls" },
+];
+
+export default function HomePage() {
   return (
     <>
-      <StickyCTABar
-        source="home-sticky"
-        heroFormSelector="#lit-hero-email"
-        hideOnVisibleSelector="#home-sticky-end"
-      />
       <Nav />
       <main>
-        <Hero hero={hero} />
-        <CustomerLogosRail
-          eyebrow="Trusted by freight teams at"
-          logos={[
-            { domain: "chrobinson.com", name: "C.H. Robinson" },
-            { domain: "rxo.com", name: "RXO" },
-            { domain: "tql.com", name: "TQL" },
-            { domain: "echo.com", name: "Echo Global Logistics" },
-            { domain: "landstar.com", name: "Landstar" },
-            { domain: "kuehne-nagel.com", name: "Kuehne + Nagel" },
-            { domain: "dhl.com", name: "DHL" },
-            { domain: "dsv.com", name: "DSV" },
-            { domain: "expeditors.com", name: "Expeditors" },
-            { domain: "dbschenker.com", name: "DB Schenker" },
-          ]}
-        />
-        <HomeProductShowcaseTabs />
-        <ProblemSection />
-        {/* End-of-middle-band marker — when this scrolls into view the
-            sticky CTA bar slides away (per home-page glide spec). */}
-        <div id="home-sticky-end" aria-hidden className="h-px" />
-        <SignalToPipelineSection />
+        <HomeHero />
+        <CustomerLogosRail eyebrow="Trusted by freight teams at" logos={customerLogos} className="border-b border-ink-100/70 bg-white/35" />
+        <SignalJourney />
+        <ProductTour />
+        <CapabilityBand />
+        <AudienceSection />
+        <FinalCta />
       </main>
       <Footer />
-
-      {/* Schema markup — Organization sits in root layout. Add Product
-          schema here so Google understands LIT as a SaaS product. */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "SoftwareApplication",
-            name: "LIT — Logistics Intel",
+            name: "Logistics Intel",
             applicationCategory: "BusinessApplication",
             operatingSystem: "Web",
-            description:
-              "Freight prospecting and CRM platform combining shipment intelligence, verified contacts, deal pipelines, weighted forecasting, tasks, reporting, and outbound campaigns.",
-            offers: {
-              "@type": "Offer",
-              price: "0",
-              priceCurrency: "USD",
-              description: "Free trial available. Paid plans from $125/mo.",
-            },
+            description: "Logistics sales intelligence and freight-native CRM for freight brokers, freight forwarders, and 3PL sales teams.",
+            offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "7-day trial available." },
           }),
         }}
       />
@@ -153,273 +78,69 @@ export default async function HomePage() {
   );
 }
 
-function Hero({ hero }: { hero: any }) {
+function HomeHero() {
   return (
-    <section className="relative">
-      <LeadMagnetHero
-        eyebrow={hero.pillText}
-        headline={
-          <>
-            Freight Prospecting &amp; CRM Software for <em>Brokers, Forwarders &amp; 3PLs</em>.
-          </>
-        }
-        lede={hero.subhead}
-        ctaLabel="Start Prospecting →"
-        formSource="home-hero"
-        formNote={hero.trialNote || "7-day trial · 10 searches + 10 verified contacts · No credit card"}
-      >
-        <HeroSearchDemo />
-      </LeadMagnetHero>
-
-      {/* Big-number proof strip — three typographic anchors between the
-          dark hero and the light KPI/showcase band. Honest directional
-          numbers, not fabricated product claims. */}
-      <BigNumberStrip stats={HOME_BIG_NUMBER_DEFAULTS} />
-
-      {/* 4-card stats strip — design-pack hero-stats treatment. */}
-      {hero.kpis?.length ? (
-        <div className="mx-auto mt-10 max-w-container">
-          <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-ink-100 bg-white/80 shadow-sm backdrop-blur md:grid-cols-4">
-            {hero.kpis.map((k: any, i: number) => (
-              <div
-                key={k.label}
-                className={`px-5 py-5 sm:px-6 ${
-                  i % 2 === 0
-                    ? "border-b border-ink-100 md:border-b-0"
-                    : "border-b border-ink-100 md:border-b-0"
-                } ${i < hero.kpis.length - 1 ? "md:border-r md:border-ink-100" : ""}`}
-              >
-                <div className="font-mono text-[22px] font-bold leading-none tracking-[-0.02em] text-ink-900 sm:text-[26px]">
-                  {k.value}
-                </div>
-                <div className="font-display mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-200">
-                  {k.label}
-                </div>
-                {k.trend && (
-                  <div className="font-mono mt-1.5 inline-flex items-center gap-1.5 text-[10px] text-emerald-600">
-                    <span
-                      className="h-1.5 w-1.5 rounded-full bg-emerald-500"
-                      aria-hidden
-                      style={{ boxShadow: "0 0 0 3px rgba(16,185,129,0.18)" }}
-                    />
-                    {k.trend}
-                  </div>
-                )}
-              </div>
-            ))}
+    <section className="relative overflow-hidden px-5 pb-12 pt-16 sm:px-8 sm:pb-16 sm:pt-20 lg:pb-20 lg:pt-24">
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(900px_520px_at_80%_12%,rgba(34,211,238,0.14),transparent_62%),radial-gradient(720px_440px_at_58%_0%,rgba(59,130,246,0.10),transparent_68%)]" />
+      <div className="pointer-events-none absolute right-[-8%] top-10 -z-10 h-[520px] w-[760px] opacity-40 [background-image:linear-gradient(rgba(59,130,246,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(59,130,246,.08)_1px,transparent_1px)] [background-size:44px_44px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_72%)]" />
+      <div className="mx-auto grid max-w-container items-center gap-12 lg:grid-cols-[minmax(0,.78fr)_minmax(0,1.22fr)] lg:gap-14">
+        <div className="max-w-[610px]">
+          <div className="eyebrow">Logistics sales intelligence</div>
+          <h1 className="display-xl mt-5">Find the shippers worth pursuing. Work every opportunity in one place.</h1>
+          <p className="lead mt-6 max-w-[590px]">Logistics Intel connects live shipment activity, verified contacts, Pulse AI, and a freight-native CRM so brokers, forwarders, and 3PLs can move from account research to pipeline without stitching together four tools.</p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link href={APP_SIGNUP_URL} className="font-display inline-flex h-12 items-center gap-2 rounded-xl bg-blue-600 px-6 text-[14px] font-semibold text-white shadow-glow-blue transition hover:-translate-y-0.5 hover:bg-blue-700">Start 7-day trial <ArrowRight className="h-4 w-4" aria-hidden /></Link>
+            <Link href="#product-tour" className="font-display inline-flex h-12 items-center gap-2 rounded-xl border border-ink-100 bg-white/75 px-6 text-[14px] font-semibold text-ink-900 shadow-sm backdrop-blur transition hover:border-blue-200 hover:bg-white">See the product</Link>
           </div>
+          <div className="font-body mt-4 flex items-center gap-2 text-[13px] text-ink-500"><Check className="h-4 w-4 text-blue-600" aria-hidden /> No credit card required.</div>
         </div>
-      ) : null}
-    </section>
-  );
-}
-
-/** Slim compliance + uptime strip directly below the hero. Static — these
- *  brand claims don't change without a redeploy. */
-function TrustStrip() {
-  return (
-    <section
-      aria-label="Compliance and security"
-      className="border-y border-ink-100 bg-white/60 backdrop-blur"
-    >
-      <div className="mx-auto flex max-w-container flex-wrap items-center justify-center gap-x-7 gap-y-3 px-5 py-3.5 sm:px-8">
-        {TRUST_BADGES.map((b) => (
-          <span
-            key={b.abbr}
-            className="font-display inline-flex items-center gap-2 text-[12px] font-medium text-ink-500"
-          >
-            <span
-              className="font-mono inline-flex h-5 w-5 items-center justify-center rounded-md text-[8.5px] font-bold tracking-tighter"
-              style={{
-                background: "linear-gradient(180deg, #0f172a, #020617)",
-                color: "#00F0FF",
-                boxShadow:
-                  "0 0 0 1px rgba(0,240,255,0.22), 0 0 8px rgba(0,240,255,0.18)",
-              }}
-            >
-              {b.abbr}
-            </span>
-            {b.label}
-          </span>
-        ))}
-        <span className="font-display inline-flex items-center gap-1.5 text-[12px] font-medium text-emerald-700">
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-emerald-500"
-            aria-hidden
-            style={{
-              boxShadow: "0 0 0 3px rgba(16,185,129,0.18)",
-              animation: "pulse-dot 2.4s infinite",
-            }}
-          />
-          99.98% uptime · last 90 days
-        </span>
+        <div className="relative min-w-0">
+          <div className="absolute -inset-5 -z-10 rounded-[38px] bg-gradient-to-br from-cyan-200/35 via-blue-200/25 to-transparent blur-2xl" />
+          <CompanyIntelMock className="home-hero-product" />
+        </div>
       </div>
     </section>
   );
 }
 
-/**
- * Home-page product capability shell. Collapses the four prior alternating
- * showcase rows (CompanyIntel / PulseBrief / ContactDiscovery / Sequence)
- * into a single tabbed module to reclaim ~1,700px of phone scroll. Copy
- * preserved verbatim from the original showcase functions defined below
- * (now unused but retained as fallbacks). */
-function HomeProductShowcaseTabs() {
+function ProductTour() {
   const tabs: [ShowcaseTab, ...ShowcaseTab[]] = [
-    {
-      id: "company-intel",
-      label: "Company Intel",
-      eyebrow: "Company Intelligence",
-      headline: (
-        <>
-          Every account, with the <span className="grad-text-cyan">trade picture</span> built in.
-        </>
-      ),
-      description:
-        "Live trailing-12m volume, top lane, carrier mix, container types — joined to the people you'd actually pitch.",
-      bullets: [
-        "Pulse Coach tells you what changed this week, in one sentence.",
-        "Live T-12m volume, top lane, carrier mix, container types.",
-        "One click to start outbound, save to a campaign, or push to your CRM.",
-      ],
-      mock: <CompanyIntelMock />,
-    },
-    {
-      id: "pulse-brief",
-      label: "Pulse AI Brief",
-      eyebrow: "Pulse AI Brief",
-      headline: (
-        <>
-          The first 30 seconds of <span className="grad-text-cyan">account research</span>, done.
-        </>
-      ),
-      description:
-        "One click on any account and Pulse generates a full intel brief — exec summary, opportunity signals, risk flags, ready-to-send hooks. Cited sources. 95% confidence. Refreshed weekly.",
-      bullets: [
-        "Buying / forwarder / carrier / supplier signal classification.",
-        "Email + LinkedIn opener variants you can copy and send today.",
-        "Every claim cited to a public source — no hallucinated facts.",
-      ],
-      mock: <PulseBriefMock />,
-    },
-    {
-      id: "contact-discovery",
-      label: "Contact Discovery",
-      eyebrow: "Contact Discovery",
-      headline: (
-        <>
-          The right buyers, <span className="grad-text-cyan">not just any buyers.</span>
-        </>
-      ),
-      description:
-        "Filtered by title, seniority, department, and location — then joined to who actually owns shipments at that company. Verified emails, LinkedIn URLs, and direct dials revealed on enrich.",
-      bullets: [
-        "Email-verified contacts — no spam-trap-rate roulette.",
-        "One-click bulk enrichment, plan-aware credit usage.",
-        "Native push to HubSpot, Salesforce, Outreach, Apollo.",
-      ],
-      mock: <ContactDiscoveryMock />,
-    },
-    {
-      id: "campaign-builder",
-      label: "Campaign Builder",
-      eyebrow: "Campaign Builder",
-      headline: (
-        <>
-          Sequences seeded by <span className="grad-text-cyan">the signal that started them.</span>
-        </>
-      ),
-      description:
-        "Lane-launch, carrier-pivot, RFP follow-up, win-back — six starter plays that bake the signal into the message. Multichannel by default. Send forecast before you launch.",
-      bullets: [
-        "Email + LinkedIn + call-task in one timeline.",
-        "Predicted opens / replies / meetings before launch.",
-        "Auto-personalization with the recipient's lane, top HS, top carrier.",
-      ],
-      mock: <SequenceBuilderMock />,
-    },
+    { id: "explore", label: "Explore", eyebrow: "Discover the market", headline: "Find active shippers before the opportunity becomes obvious.", description: "Search by industry, geography, shipment behavior, and trade activity. Pulse Explorer turns a broad territory into a focused account list.", bullets: ["Search natural-language freight criteria", "See geographic concentrations and shipment signals", "Save qualified accounts for deeper research"], ctaLabel: "Explore Pulse", ctaHref: "/pulse", mock: <PulseExplorerMock /> },
+    { id: "research", label: "Research", eyebrow: "Understand the opportunity", headline: "Deep freight visibility, built for sales.", description: "Research the account’s shipment cadence, lanes, suppliers, products, contacts, and recent changes before your first conversation.", bullets: ["Live shipment activity and lane history", "Supplier, product, and carrier intelligence", "Verified contacts and account context"], ctaLabel: "See company intelligence", ctaHref: "/company-intelligence", mock: <CompanyIntelMock /> },
+    { id: "pipeline", label: "Pipeline", eyebrow: "Work the account", headline: "Keep the freight context attached to every opportunity.", description: "Move researched accounts directly into a CRM built around freight sales, with deals, tasks, ownership, forecasting, and reporting in one workspace.", bullets: ["Account and contact management", "Drag-and-drop deal stages and tasks", "Weighted forecasting and owner reporting"], ctaLabel: "Explore the CRM", ctaHref: "/freight-broker-crm", mock: <CrmPipelinePreview /> },
   ];
-
   return (
-    <HomeShowcaseTabs
-      eyebrow="Product capabilities"
-      headline={
-        <>
-          One workspace for <span className="grad-text-cyan">every step</span> of the freight sale.
-        </>
-      }
-      intro="Company intel, AI briefs, verified contacts, multichannel campaigns — all built on the same live shipment graph."
-      tabs={tabs}
-    />
+    <div id="product-tour" className="scroll-mt-24">
+      <HomeShowcaseTabs eyebrow="One connected workflow" headline="See how a shipment signal becomes a sales opportunity." intro="The product tour advances automatically, or choose a stage to explore the workflow at your own pace." tabs={tabs} autoPlay autoPlayMs={7000} />
+    </div>
   );
 }
 
-function PillarsTrustBar() {
-  const pillars: { label: string; dot: string }[] = [
-    { label: "Company Intelligence", dot: "bg-brand-blue" },
-    { label: "Contact Intelligence", dot: "bg-brand-cyan-dim" },
-    { label: "Shipment Intelligence", dot: "bg-brand-violet" },
-    { label: "Trade Lane Signals", dot: "bg-emerald-500" },
-    { label: "Campaign Execution", dot: "bg-amber-500" },
-    { label: "CRM Workflows", dot: "bg-brand-blue" },
-  ];
+function CapabilityBand() {
   return (
-    <section className="px-5 py-12 sm:px-8">
-      <div className="mx-auto max-w-container">
-        <div
-          className="rounded-2xl border border-ink-100 bg-white/70 px-7 py-6 backdrop-blur shadow-sm"
-        >
-          <div className="font-display mb-4 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-200">
-            One platform · Six pillars
-          </div>
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
-            {pillars.map((p) => (
-              <div
-                key={p.label}
-                className="font-display flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-center text-[13px] font-semibold text-ink-900"
-              >
-                <span
-                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.dot}`}
-                  aria-hidden
-                />
-                {p.label}
-              </div>
-            ))}
-          </div>
-        </div>
+    <section className="px-5 py-8 sm:px-8 sm:py-10">
+      <div className="mx-auto grid max-w-container overflow-hidden rounded-2xl border border-ink-100 bg-white/80 shadow-sm backdrop-blur md:grid-cols-3">
+        {capabilities.map(({ icon: Icon, title, body, tone }, index) => (
+          <article key={title} className={`flex gap-4 p-6 sm:p-7 ${index < capabilities.length - 1 ? "border-b border-ink-100 md:border-b-0 md:border-r" : ""}`}>
+            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white shadow-sm ${tone}`}><Icon className="h-5 w-5" aria-hidden /></div>
+            <div><h2 className="font-display text-[16px] font-semibold text-ink-900">{title}</h2><p className="font-body mt-1.5 text-[13px] leading-relaxed text-ink-500">{body}</p></div>
+          </article>
+        ))}
       </div>
     </section>
   );
 }
 
-function ProblemSection() {
-  const pains = [
-    { title: "Teams jump between 5+ tools", body: "Data tools, enrichment, CRM, dialers, campaigns — context is lost at every handoff." },
-    { title: "Company data is incomplete", body: "Firmographic tools miss what matters: lanes, volume, carriers, activity." },
-    { title: "Trade signals are unusable", body: "BOL data exists, but no one has built the layer that turns it into revenue." },
-    { title: "CRM ≠ intelligence", body: "Yours should tell you when to act, not just where to log it." },
-    { title: "Outreach has no timing", body: "Generic sequences waste trust. Without real signals, every email feels like spray-and-pray." },
-    { title: "No single source of truth", body: "Market intel, account data, and pipeline live in different tabs — and none of them talk." },
-  ];
+function AudienceSection() {
   return (
     <section className="px-5 py-16 sm:px-8 sm:py-24">
       <div className="mx-auto max-w-container">
-        <div className="mx-auto max-w-[780px] text-center">
-          <div className="eyebrow">The problem</div>
-          <h2 className="display-lg mt-3">Freight sales teams are flying blind in a data-rich world.</h2>
-          <p className="lead mx-auto mt-3 max-w-[640px]">
-            Every go-to-market stack has holes. LIT closes them — from first signal to closed deal.
-          </p>
-        </div>
-        <div className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {pains.map((p) => (
-            <div
-              key={p.title}
-              className="rounded-2xl border border-ink-100 bg-white p-7 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg"
-            >
-              <h3 className="display-sm">{p.title}</h3>
-              <p className="font-body mt-2 text-[14px] leading-relaxed text-ink-500">{p.body}</p>
-            </div>
+        <div className="mx-auto max-w-[720px] text-center"><div className="eyebrow">Built for freight sales</div><h2 className="display-md mt-4">One platform. Three ways freight teams grow.</h2></div>
+        <div className="mt-10 grid gap-5 md:grid-cols-3">
+          {audiences.map((audience, index) => (
+            <Link key={audience.title} href={audience.href} className="group rounded-2xl border border-ink-100 bg-white/75 p-7 shadow-sm backdrop-blur transition hover:-translate-y-1 hover:border-blue-200 hover:shadow-xl">
+              <div className="font-mono text-[11px] font-semibold text-blue-600">0{index + 1}</div><h3 className="font-display mt-7 text-[21px] font-semibold text-ink-900">{audience.title}</h3><p className="font-body mt-3 text-[14px] leading-relaxed text-ink-500">{audience.body}</p><span className="font-display mt-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-blue-700">Learn more <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden /></span>
+            </Link>
           ))}
         </div>
       </div>
@@ -427,24 +148,13 @@ function ProblemSection() {
   );
 }
 
-function SignalToPipelineSection() {
+function FinalCta() {
   return (
-    <section className="relative overflow-hidden bg-section-soft-blue px-5 py-16 sm:px-8 sm:py-24">
-      <div className="relative mx-auto max-w-container">
-        <div className="mx-auto max-w-[780px] text-center">
-          <span className="lit-pill">
-            <span className="dot" aria-hidden />
-            Signal to Pipeline
-          </span>
-          <h2 className="display-lg mt-4">Five steps from question to closed deal.</h2>
-          <p className="lead mx-auto mt-3 max-w-[640px]">
-            LIT collapses what was a five-tool, five-day workflow into a single board you finish in 20
-            minutes.
-          </p>
-        </div>
-        <div className="mt-14">
-          <WorkflowMotion variant="light" />
-        </div>
+    <section className="px-5 pb-12 sm:px-8 sm:pb-20">
+      <div className="relative mx-auto flex max-w-container flex-col gap-7 overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-r from-blue-50 via-cyan-50 to-slate-50 px-7 py-10 sm:px-10 lg:flex-row lg:items-center lg:justify-between lg:px-12">
+        <div className="pointer-events-none absolute -right-20 -top-32 h-80 w-80 rounded-full bg-cyan-300/20 blur-3xl" />
+        <div className="relative max-w-[650px]"><h2 className="font-display text-[30px] font-semibold leading-tight tracking-[-0.025em] text-ink-900 sm:text-[38px]">Turn shipment activity into your next sales opportunity.</h2><p className="font-body mt-3 text-[15px] text-ink-500">Start with your market, your accounts, and a seven-day trial.</p></div>
+        <div className="relative flex shrink-0 flex-wrap gap-3"><Link href={APP_SIGNUP_URL} className="font-display inline-flex h-12 items-center rounded-xl bg-blue-600 px-6 text-[14px] font-semibold text-white shadow-glow-blue transition hover:bg-blue-700">Start 7-day trial</Link><Link href="/demo" className="font-display inline-flex h-12 items-center rounded-xl border border-ink-100 bg-white px-6 text-[14px] font-semibold text-ink-900 shadow-sm transition hover:border-blue-200">Book a demo</Link></div>
       </div>
     </section>
   );
