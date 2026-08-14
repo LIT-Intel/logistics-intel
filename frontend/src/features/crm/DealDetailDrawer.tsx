@@ -8,8 +8,11 @@ import { useToast } from "@/components/ui/use-toast";
 import {
   type DealCard,
   type DealStage,
+  type DealServiceType,
   type Task,
   type DealActivity,
+  DEAL_SERVICE_TYPES,
+  DEAL_SERVICE_TYPE_LABELS,
   updateDeal,
   deleteDeal,
   listDealActivity,
@@ -53,6 +56,9 @@ export default function DealDetailDrawer({
   const [ownerId, setOwnerId] = useState(deal.owner_user_id);
   const [contactId, setContactId] = useState<string>(deal.primary_contact_id ?? "");
   const [notes, setNotes] = useState<string>(deal.notes ?? "");
+  const [serviceType, setServiceType] = useState<DealServiceType | "">(deal.service_type ?? "");
+  const [origin, setOrigin] = useState<string>(deal.origin ?? "");
+  const [destination, setDestination] = useState<string>(deal.destination ?? "");
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -145,6 +151,9 @@ export default function DealDetailDrawer({
         owner_user_id: ownerId,
         primary_contact_id: contactId || null,
         notes: notes.trim() || null,
+        service_type: serviceType || null,
+        origin: origin.trim() || null,
+        destination: destination.trim() || null,
       });
       toast({ title: "Deal saved" });
       onChanged();
@@ -246,6 +255,33 @@ export default function DealDetailDrawer({
             <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#64748b" }}>
               {currentStage?.name ?? "—"} · {formatMoney(value === "" ? null : Number(value), deal.currency)}
             </div>
+            {(serviceType || origin || destination) ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                {serviceType ? (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "2px 9px",
+                      borderRadius: 999,
+                      border: "1px solid #BFDBFE",
+                      background: "#EFF6FF",
+                      color: "#1D4ED8",
+                      fontFamily: FONT_HEAD,
+                      fontSize: 11,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {DEAL_SERVICE_TYPE_LABELS[serviceType]}
+                  </span>
+                ) : null}
+                {(origin || destination) ? (
+                  <span style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: "#475569" }}>
+                    Lane: <b style={{ color: "#0F172A" }}>{origin || "—"}</b> → <b style={{ color: "#0F172A" }}>{destination || "—"}</b>
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <button onClick={onClose} style={iconBtn} title="Close">
             <X style={{ width: 16, height: 16 }} />
@@ -310,6 +346,41 @@ export default function DealDetailDrawer({
                     </option>
                   ))}
                 </select>
+              </Field>
+            </div>
+            <Field label="Service type">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {DEAL_SERVICE_TYPES.map((m) => {
+                  const active = serviceType === m;
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setServiceType(active ? "" : m)}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        border: active ? "1.5px solid #3B82F6" : "1.5px solid #CBD5E1",
+                        background: active ? "#EFF6FF" : "#FFFFFF",
+                        color: active ? "#1D4ED8" : "#475569",
+                        fontFamily: FONT_HEAD,
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {DEAL_SERVICE_TYPE_LABELS[m]}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Field label="From (origin)">
+                <input value={origin} onChange={(e) => setOrigin(e.target.value)} placeholder="Origin" style={inputStyle} />
+              </Field>
+              <Field label="To (destination)">
+                <input value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Destination" style={inputStyle} />
               </Field>
             </div>
             <Field label="Primary contact">

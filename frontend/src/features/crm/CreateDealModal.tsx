@@ -6,9 +6,13 @@ import { X, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import {
   type DealStage,
+  type DealServiceType,
+  DEAL_SERVICE_TYPES,
+  DEAL_SERVICE_TYPE_LABELS,
   createDeal,
   listOrgMembers,
   listCompanyContacts,
+  companyLaneSuggestions,
   currentUserId,
 } from "@/api/crm";
 
@@ -44,20 +48,28 @@ export default function CreateDealModal({
   const [closeDate, setCloseDate] = useState("");
   const [contactId, setContactId] = useState("");
   const [ownerId, setOwnerId] = useState("");
+  const [serviceType, setServiceType] = useState<DealServiceType | "">("");
+  const [origin, setOrigin] = useState("");
+  const [destination, setDestination] = useState("");
   const [members, setMembers] = useState<Array<{ user_id: string; name: string }>>([]);
   const [contacts, setContacts] = useState<Array<{ id: string; full_name: string; title: string | null }>>([]);
+  // Datalist hints sourced from the company's shipment-history lane rollup
+  // (companyKey → lit_company_lane_months). Empty when unknown → free text.
+  const [laneHints, setLaneHints] = useState<{ origins: string[]; destinations: string[] }>({ origins: [], destinations: [] });
 
   useEffect(() => {
     (async () => {
-      const [m, uid, c] = await Promise.all([
+      const [m, uid, c, lanes] = await Promise.all([
         listOrgMembers(),
         currentUserId(),
         prefill?.companyUuid ? listCompanyContacts(prefill.companyUuid) : Promise.resolve([]),
+        prefill?.companyKey ? companyLaneSuggestions(prefill.companyKey) : Promise.resolve({ origins: [], destinations: [] }),
       ]);
       setMembers(m);
       if (uid) setOwnerId(uid);
       setContacts(c as any);
       if ((c as any[])?.length === 1) setContactId((c as any[])[0].id);
+      setLaneHints(lanes);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -97,6 +109,9 @@ export default function CreateDealModal({
         expected_close_date: closeDate || null,
         primary_contact_id: contactId || null,
         owner_user_id: ownerId || null,
+        service_type: serviceType || null,
+        origin: origin.trim() || null,
+        destination: destination.trim() || null,
       });
       toast({ title: "Deal created" });
       onCreated();
@@ -165,6 +180,65 @@ export default function CreateDealModal({
                   </option>
                 ))}
               </select>
+            </Field>
+          </div>
+
+          <Field label="Service type">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {DEAL_SERVICE_TYPES.map((m) => {
+                const active = serviceType === m;
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setServiceType(active ? "" : m)}
+                    style={{
+                      padding: "5px 11px",
+                      borderRadius: 999,
+                      border: active ? "1.5px solid #3B82F6" : "1.5px solid #CBD5E1",
+                      background: active ? "#EFF6FF" : "#FFFFFF",
+                      color: active ? "#1D4ED8" : "#475569",
+                      fontFamily: FONT_HEAD,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {DEAL_SERVICE_TYPE_LABELS[m]}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+
+          <datalist id="deal-origin-hints">
+            {laneHints.origins.map((o) => (
+              <option key={o} value={o} />
+            ))}
+          </datalist>
+          <datalist id="deal-destination-hints">
+            {laneHints.destinations.map((d) => (
+              <option key={d} value={d} />
+            ))}
+          </datalist>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <Field label="From (origin)">
+              <input
+                value={origin}
+                onChange={(e) => setOrigin(e.target.value)}
+                placeholder="Origin"
+                list="deal-origin-hints"
+                style={inputStyle}
+              />
+            </Field>
+            <Field label="To (destination)">
+              <input
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+                placeholder="Destination"
+                list="deal-destination-hints"
+                style={inputStyle}
+              />
             </Field>
           </div>
 
