@@ -1,6 +1,14 @@
 # Inbox Sync Engine — build spec (2026-08-14)
 
-**Status:** NOT BUILT. Diagnosed and scoped; ready for a focused session.
+**Status:** BUILT & DEPLOYED 2026-08-14 (commits d62903a1, dd75c0c1, 057c51f5,
+f5e59940 on main). sync-inbox edge fn deployed (v41); migrations 20260814120000
++ 20260814130000 applied; pg_cron repointed to sync-inbox @ */15 with cron auth;
+Sync-now buttons + conversation-type chips shipped. Verified end to end: cron
+auth OK, token refresh OK. **Remaining OWNER ACTION:** Gmail read is blocked —
+connected Gmail accounts only hold `gmail.send`; reading messages needs the
+RESTRICTED `gmail.readonly` scope (added to oauth-gmail-start), which Google
+grants only after CASA security review. Until then Gmail sync returns 403.
+Outlook already has Mail.Read and works once an Outlook account reconnects.
 
 ## Root cause (verified)
 The company-profile Inbox tab and `/app/inbox` read `public.lit_email_threads`
