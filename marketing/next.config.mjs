@@ -165,6 +165,10 @@ const nextConfig = {
       // onto the page that already targets the keyword.
       { source: "/freight-prospecting-software", destination: "/", permanent: true },
       { source: "/freight-sales-crm", destination: "/features/freight-sales-crm", permanent: true },
+      { source: "/freight-crm", destination: "/features/freight-sales-crm", permanent: true },
+      { source: "/logistics-sales-software", destination: "/solutions/logistics-sales-teams", permanent: true },
+      { source: "/import-data-for-sales", destination: "/trade-intelligence", permanent: true },
+      { source: "/shipper-lead-generation", destination: "/features/shipper-lead-generation", permanent: true },
       { source: "/importer-database", destination: "/features/importer-database", permanent: true },
       { source: "/bill-of-lading-data", destination: "/features/bill-of-lading-search", permanent: true },
       { source: "/trade-lane-intelligence", destination: "/features/trade-lane-intelligence", permanent: true },
