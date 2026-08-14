@@ -209,8 +209,8 @@ type LaneLayers = {
   /** Animated dash-flow overlay — SELECTED lane only (flow prop). Built
    *  from the same `points` array as baseLine so it overlays perfectly. */
   flowLine: LeafletPolyline | null;
-  /** Great-circle points (antimeridian-unwrapped) — the single source of
-   *  latlngs for baseLine, hitLine and flowLine. */
+  /** Lane arc points (quadratic bezier, antimeridian-unwrapped) — the
+   *  single source of latlngs for baseLine, hitLine and flowLine. */
   points: LatLngTuple[];
   fromCoord: LatLngTuple;
   toCoord: LatLngTuple;
@@ -228,69 +228,79 @@ type HoverState = {
 };
 
 /**
- * Great-circle interpolation. Inputs are [lon, lat]; output is [lat, lon]
- * pairs (Leaflet's order). Returns `steps + 1` points so we always
- * include both endpoints.
+ * Lane arc geometry — quadratic bezier in unwrapped lon/lat space.
+ * Inputs are [lon, lat]; output is [lat, lon] pairs (Leaflet's order).
+ * Returns `steps + 1` points so we always include both endpoints.
  *
- * ANTIMERIDIAN: the 3-D slerp below always follows the SHORT arc, but
- * `atan2` clamps each sampled longitude back into [-180, 180], so a
- * Pacific-crossing lane (e.g. Vietnam → Atlanta) used to jump from
- * lon ≈ +179 to lon ≈ -179 mid-polyline — Leaflet drew that jump as a
- * line spanning the entire world the long way. Fix: unwrap longitudes
- * into a continuous sequence, walking BACKWARD from the destination so
- * the destination keeps its canonical longitude (US destinations shared
- * by several lanes stay in one place; Pacific origins shift onto the
- * western world copy, which Leaflet tiles render seamlessly).
+ * 2026-08-14 (CEO): the previous great-circle slerp is geodesically
+ * correct on a sphere, but on the Mercator map it projected long east-
+ * west lanes as huge loops over Alaska/Greenland — reads as wrong to
+ * users. Lanes now render like flight-map infographics: straight or
+ * SLIGHTLY curved connectors.
+ *
+ *  - CHORD: drawn in unwrapped lon/lat space between the endpoints.
+ *  - CURVATURE: control point sits perpendicular to the chord midpoint
+ *    at up to ~0.15 of chord length, always bowed TOWARD the equator
+ *    (never poleward — poleward bows are exactly the old Alaska loops).
+ *    Short lanes (< ~10° chord) stay effectively straight; curvature
+ *    ramps in with chord length (full bow by ~60°).
+ *
+ * ANTIMERIDIAN (kept from the previous implementation): the destination
+ * keeps its canonical longitude (US destinations shared by several
+ * lanes stay in one place); the origin is unwrapped onto the nearest
+ * world copy (±360°) so a Pacific lane (e.g. Vietnam → Atlanta) crosses
+ * the Pacific the short way. Leaflet (worldCopyJump) renders adjacent
+ * world copies seamlessly. The polyline never wraps the world edge-to-
+ * edge.
  */
-function greatCirclePoints(
+function laneArcPoints(
   from: [number, number],
   to: [number, number],
   steps = 48,
 ): LatLngTuple[] {
-  const [lon1, lat1] = from.map((v) => (v * Math.PI) / 180) as [number, number];
-  const [lon2, lat2] = to.map((v) => (v * Math.PI) / 180) as [number, number];
+  const [lonRaw, lat1] = from;
+  const [lon2, lat2] = to;
 
-  const d =
-    2 *
-    Math.asin(
-      Math.sqrt(
-        Math.sin((lat2 - lat1) / 2) ** 2 +
-          Math.cos(lat1) * Math.cos(lat2) * Math.sin((lon2 - lon1) / 2) ** 2,
-      ),
-    );
+  // Unwrap the origin longitude onto the world copy nearest the
+  // destination so the chord takes the short way around.
+  let dLon = lonRaw - lon2;
+  while (dLon > 180) dLon -= 360;
+  while (dLon < -180) dLon += 360;
+  const lon1 = lon2 + dLon;
 
-  if (d === 0) {
-    return [[from[1], from[0]]];
+  const dx = lon2 - lon1;
+  const dy = lat2 - lat1;
+  const len = Math.hypot(dx, dy);
+  if (len === 0) {
+    return [[lat1, lon2]];
   }
+
+  // Curvature ramp: 0 below a 10° chord (Chicago→Denver stays straight),
+  // scaling to 0.15 × chord length by ~60° (transpacific lanes get a
+  // gentle, deliberate bow).
+  const ramp = Math.min(1, Math.max(0, (len - 10) / 50));
+  const bow = 0.15 * ramp * len;
+
+  // Perpendicular unit vector at the chord midpoint, sign-flipped so the
+  // control point always moves toward the equator.
+  let px = -dy / len;
+  let py = dx / len;
+  const midLat = (lat1 + lat2) / 2;
+  if ((midLat >= 0 && py > 0) || (midLat < 0 && py < 0)) {
+    px = -px;
+    py = -py;
+  }
+  const cx = (lon1 + lon2) / 2 + px * bow;
+  // Clamp so the control point can never push samples past the poles.
+  const cy = Math.max(-80, Math.min(80, midLat + py * bow));
 
   const out: LatLngTuple[] = [];
   for (let i = 0; i <= steps; i++) {
     const f = i / steps;
-    const a = Math.sin((1 - f) * d) / Math.sin(d);
-    const b = Math.sin(f * d) / Math.sin(d);
-    const x =
-      a * Math.cos(lat1) * Math.cos(lon1) + b * Math.cos(lat2) * Math.cos(lon2);
-    const y =
-      a * Math.cos(lat1) * Math.sin(lon1) + b * Math.cos(lat2) * Math.sin(lon2);
-    const z = a * Math.sin(lat1) + b * Math.sin(lat2);
-    const lat = Math.atan2(z, Math.sqrt(x * x + y * y));
-    const lon = Math.atan2(y, x);
-    out.push([(lat * 180) / Math.PI, (lon * 180) / Math.PI]);
-  }
-
-  // Per-segment longitude unwrap, anchored at the destination: pin the
-  // last point to the destination's canonical longitude, then walk back
-  // toward the origin shifting each sample by ±360° until it sits within
-  // 180° of its successor. Result: one continuous polyline, no
-  // edge-to-edge jumps, short path preserved (Asia→US crosses the
-  // Pacific; Atlantic lanes are untouched because they never wrap).
-  out[out.length - 1] = [out[out.length - 1][0], to[0]];
-  for (let i = out.length - 2; i >= 0; i--) {
-    const nextLon = out[i + 1][1];
-    let lon = out[i][1];
-    while (lon - nextLon > 180) lon -= 360;
-    while (lon - nextLon < -180) lon += 360;
-    out[i] = [out[i][0], lon];
+    const g = 1 - f;
+    const lon = g * g * lon1 + 2 * g * f * cx + f * f * lon2;
+    const lat = g * g * lat1 + 2 * g * f * cy + f * f * lat2;
+    out.push([lat, lon]);
   }
   return out;
 }
@@ -508,7 +518,7 @@ export default function LaneMap({
     // coords) so dots/pulses/popovers sit exactly on the line even when
     // the origin was shifted across the antimeridian.
     for (const lane of lanes) {
-      const points = greatCirclePoints(lane.coords[0], lane.coords[1]);
+      const points = laneArcPoints(lane.coords[0], lane.coords[1]);
       const fromCoord: LatLngTuple = points[0];
       const toCoord: LatLngTuple = points[points.length - 1];
 
