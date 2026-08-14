@@ -216,8 +216,8 @@ export const FEATURE_PAGES: FeaturePage[] = [
   },
   {
     slug: "freight-sales-crm",
-    title: "Freight sales CRM —",
-    titleHighlight: "built around shipments, not stages.",
+    title: "Freight sales CRM",
+    titleHighlight: "built for logistics teams.",
     eyebrow: "CRM",
     metaDescription:
       "Freight CRM software for brokers, forwarders, and 3PLs. Manage accounts, contacts, deals, tasks, pipeline, forecasts, and reporting with shipment context attached.",
