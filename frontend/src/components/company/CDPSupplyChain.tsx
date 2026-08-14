@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -3306,7 +3307,19 @@ function TopLanesCard({
       </div>
 
       {/* ── Full-bleed interactive map hero ───────────────────────────── */}
+      {/* While the full-screen dialog is open the hero map + its floating
+          glass overlays UNMOUNT entirely (CEO bug 2026-08-13: the dialog
+          stacked on top of the still-rendered hero, producing a
+          double-layer view — two copies of the same map). The sized
+          container div stays so the page layout doesn't jump on close.
+          All selection/filter state lives up here in TopLanesCard, so
+          closing the dialog remounts the hero with selection, year/month
+          scope and focus toggle intact; LaneMap re-creates its Leaflet
+          instance fresh on remount (its own ResizeObserver handles
+          sizing), so no manual invalidateSize is needed. */}
       <div className={["relative w-full", heroHeightClass].join(" ")}>
+        {!mapDialogOpen && (
+          <>
         <LaneMap
           lanes={heroLanes}
           selectedLane={selectedPair}
@@ -3435,6 +3448,8 @@ function TopLanesCard({
         >
           <Maximize2 className="h-4 w-4" />
         </button>
+          </>
+        )}
       </div>
 
       {/* Mobile: scope controls as a scrollable row under the map. */}
@@ -3866,9 +3881,15 @@ function TradeLanesMapDialog({
       </div>
     ) : null;
 
-  return (
+  // Portal to document.body (app dialog idiom — see CDPDetailsPanel /
+  // EmailComposerModal) so the dialog escapes the card's stacking context
+  // entirely. z-[1000] clears the app shell (z-40), the supplier drawer
+  // (z-[610]) and Leaflet's internal panes (400–700); bg-white is the
+  // opaque backdrop — nothing behind it can bleed through.
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex flex-col bg-white"
+      className="fixed inset-0 z-[1000] flex flex-col bg-white"
       role="dialog"
       aria-modal="true"
       aria-label="Trade lanes map — expanded"
@@ -4149,7 +4170,8 @@ function TradeLanesMapDialog({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
