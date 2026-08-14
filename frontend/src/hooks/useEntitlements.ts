@@ -125,6 +125,12 @@ export function useEntitlements() {
   // yet (older edge-fn version still deployed), so callers can always render.
   const credits = entitlements?.credits ?? null;
 
+  // CRM per-seat add-on gate (server-derived). Defaults to false/0 so the
+  // Pipeline demo + purchase popup show for anyone without an active add-on,
+  // including older edge-fn versions that don't emit these keys yet.
+  const crmEnabled = Boolean(entitlements?.crm_enabled);
+  const crmSeats = entitlements?.crm_seats ?? 0;
+
   return {
     canAccessFeature,
     checkUsageLimit,
@@ -135,5 +141,7 @@ export function useEntitlements() {
     isPlatformAdmin,
     entitlements,
     credits,
+    crmEnabled,
+    crmSeats,
   };
 }

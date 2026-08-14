@@ -70,6 +70,13 @@ export interface EntitlementsSnapshot {
    */
   credits?: CreditUsageSnapshot | null;
   /**
+   * CRM per-seat add-on gate (derived server-side from lit_crm_subscriptions).
+   * crm_enabled = the org has an active/trialing CRM subscription; crm_seats =
+   * the paid seat count. Absent on older edge-fn versions — treat as false/0.
+   */
+  crm_enabled?: boolean;
+  crm_seats?: number;
+  /**
    * Folded from the top-level `org_id` on the get-entitlements response so
    * consumers (e.g. campaign query, save-company gating) have a single
    * place to read the user's primary org.

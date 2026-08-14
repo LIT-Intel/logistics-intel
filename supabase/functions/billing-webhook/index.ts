@@ -56,6 +56,10 @@ if (!supabaseServiceRoleKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY"
 
 const stripe = new Stripe(stripeSecretKey, { apiVersion: "2024-06-20" });
 
+// Stripe product id for the CRM per-seat add-on ("LIT CRM"). Subscription
+// items on this product drive lit_crm_subscriptions, NOT the main plan.
+const CRM_ADDON_PRODUCT_ID = "prod_V4aTX3Q8s58UwQ";
+
 // Service-role Supabase client used ONLY by the additive affiliate-commission
 // path (creditAffiliateForInvoice / voidAffiliateCommissionsForInvoice). The
 // core subscription writes above still go through raw PostgREST fetch and are
@@ -361,6 +365,98 @@ async function handleSubscriptionEvent(sub: Stripe.Subscription, eventLabel: str
   moduleLog.info("subscription_event_handled", { event_label: eventLabel, user_id: userId, plan_code: planCode ?? "(unchanged)", status: sub.status });
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// CRM per-seat add-on (product prod_V4aTX3Q8s58UwQ). These events are
+// independent of the main plan subscription: they upsert lit_crm_subscriptions
+// keyed by org_id (from subscription/session metadata). Idempotent (upsert on
+// org_id primary key) and service-role (bypasses RLS).
+// ─────────────────────────────────────────────────────────────────────
+
+/** True iff any item on the subscription is the CRM add-on product. */
+function subscriptionHasCrmAddon(sub: Stripe.Subscription): boolean {
+  const items = (sub as any).items?.data;
+  if (!Array.isArray(items)) return false;
+  return items.some((it: any) => {
+    const prod = it?.price?.product;
+    return typeof prod === "string" && prod === CRM_ADDON_PRODUCT_ID;
+  });
+}
+
+/** Sum quantities of the CRM add-on line items (seats). */
+function crmSeatQuantity(sub: Stripe.Subscription): number {
+  const items = (sub as any).items?.data;
+  if (!Array.isArray(items)) return 0;
+  return items.reduce((acc: number, it: any) => {
+    const prod = it?.price?.product;
+    if (typeof prod === "string" && prod === CRM_ADDON_PRODUCT_ID) {
+      return acc + (it?.quantity ?? 1);
+    }
+    return acc;
+  }, 0);
+}
+
+async function upsertCrmSubscription(orgId: string, data: Record<string, unknown>) {
+  // Upsert on the org_id primary key via PostgREST merge-duplicates.
+  await fetch(`${supabaseUrl}/rest/v1/lit_crm_subscriptions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: supabaseServiceRoleKey!,
+      Authorization: `Bearer ${supabaseServiceRoleKey}`,
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify({
+      org_id: orgId,
+      ...data,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+}
+
+/**
+ * Resolve org_id for a CRM add-on subscription. Prefers subscription metadata
+ * (org_id / supabase_org_id), then falls back to the customer's earliest org
+ * membership via the subscriptions table's stripe_customer_id link.
+ */
+async function resolveCrmOrgId(sub: Stripe.Subscription): Promise<string | null> {
+  const meta = (sub as any).metadata ?? {};
+  const metaOrg = meta.org_id ?? meta.supabase_org_id ?? meta.supabase_organization_id;
+  if (metaOrg) return String(metaOrg);
+  const customerId = sub.customer as string | undefined;
+  if (!customerId) return null;
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/subscriptions?stripe_customer_id=eq.${customerId}&select=organization_id&not.organization_id=is.null&limit=1`,
+    {
+      headers: {
+        apikey: supabaseServiceRoleKey!,
+        Authorization: `Bearer ${supabaseServiceRoleKey}`,
+      },
+    },
+  );
+  const rows: Array<{ organization_id: string }> = await res.json().catch(() => []);
+  return rows[0]?.organization_id ?? null;
+}
+
+/** Handle a CRM add-on subscription create/update. Writes lit_crm_subscriptions. */
+async function handleCrmSubscriptionEvent(sub: Stripe.Subscription, eventLabel: string) {
+  const orgId = await resolveCrmOrgId(sub);
+  if (!orgId) {
+    moduleLog.warn("crm_org_unresolved", { err: "no org_id", event_label: eventLabel, stripe_sub_id: sub.id });
+    return;
+  }
+  const seats = crmSeatQuantity(sub) || 1;
+  const update: Record<string, unknown> = {
+    status: sub.status,
+    stripe_subscription_id: sub.id,
+    stripe_customer_id: sub.customer as string,
+    seats,
+  };
+  const periodEnd = (sub as any).current_period_end;
+  if (periodEnd) update.current_period_end = new Date(periodEnd * 1000).toISOString();
+  await upsertCrmSubscription(orgId, update);
+  moduleLog.info("crm_subscription_event_handled", { event_label: eventLabel, org_id: orgId, status: sub.status, seats });
+}
+
 serve(async (req) => {
   if (req.method !== "POST") {
     return json({ error: "Method not allowed" }, 405);
@@ -401,6 +497,30 @@ serve(async (req) => {
       // ── Initial activation: checkout completed ──
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
+
+        // ── CRM add-on checkout ──
+        // Embedded CRM checkout carries metadata.kind='crm_addon'. Retrieve the
+        // resulting subscription (expanded for price.product) and upsert
+        // lit_crm_subscriptions. Separate from the main-plan path below.
+        if (session.metadata?.kind === "crm_addon") {
+          const orgId = session.metadata?.org_id ?? null;
+          const subId = session.subscription as string | null;
+          if (!subId) {
+            log.warn("crm_checkout_no_subscription", { err: "no subscription on session", org_id: orgId });
+            break;
+          }
+          const sub = await stripe.subscriptions.retrieve(subId, {
+            expand: ["items.data.price.product"],
+          });
+          // Prefer the org_id from the session metadata; handler falls back to
+          // sub metadata / customer link.
+          if (orgId && !(sub as any).metadata?.org_id) {
+            (sub as any).metadata = { ...((sub as any).metadata ?? {}), org_id: orgId };
+          }
+          await handleCrmSubscriptionEvent(sub, "crm_checkout.completed");
+          break;
+        }
+
         const userId =
           session.metadata?.supabase_user_id ||
           session.client_reference_id;
@@ -480,17 +600,46 @@ serve(async (req) => {
         break;
       }
 
-      case "customer.subscription.created":
-        await handleSubscriptionEvent(event.data.object as Stripe.Subscription, "subscription.created");
+      case "customer.subscription.created": {
+        const sub = event.data.object as Stripe.Subscription;
+        if (subscriptionHasCrmAddon(sub)) {
+          await handleCrmSubscriptionEvent(sub, "subscription.created");
+          break;
+        }
+        await handleSubscriptionEvent(sub, "subscription.created");
         break;
+      }
 
-      case "customer.subscription.updated":
-        await handleSubscriptionEvent(event.data.object as Stripe.Subscription, "subscription.updated");
+      case "customer.subscription.updated": {
+        const sub = event.data.object as Stripe.Subscription;
+        if (subscriptionHasCrmAddon(sub)) {
+          await handleCrmSubscriptionEvent(sub, "subscription.updated");
+          break;
+        }
+        await handleSubscriptionEvent(sub, "subscription.updated");
         break;
+      }
 
-      // ── Subscription cancelled / expired: revert to free_trial ──
+      // ── Subscription cancelled / expired ──
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
+
+        // CRM add-on cancellation: mark the org's CRM subscription cancelled
+        // (crm_enabled -> false) rather than touching the main plan.
+        if (subscriptionHasCrmAddon(sub)) {
+          const orgId = await resolveCrmOrgId(sub);
+          if (orgId) {
+            await upsertCrmSubscription(orgId, {
+              status: "canceled",
+              stripe_subscription_id: sub.id,
+            });
+            log.info("crm_subscription_deleted", { org_id: orgId });
+          } else {
+            log.warn("crm_subscription_deleted_no_org", { err: "no org_id", stripe_sub_id: sub.id });
+          }
+          break;
+        }
+
         const userId = await resolveUserId(sub);
         if (!userId) {
           log.warn("subscription_deleted_no_user_id", { err: "no user_id", stripe_sub_id: sub.id });
@@ -514,6 +663,13 @@ serve(async (req) => {
         const subId = invoice.subscription as string;
         if (!subId) break;
         const sub = await stripe.subscriptions.retrieve(subId);
+        // CRM add-on invoice failure: reflect status on the org's CRM row.
+        if (subscriptionHasCrmAddon(sub)) {
+          const orgId = await resolveCrmOrgId(sub);
+          if (orgId) await upsertCrmSubscription(orgId, { status: sub.status, stripe_subscription_id: sub.id });
+          log.warn("crm_invoice_payment_failed", { err: "payment_failed", org_id: orgId, status: sub.status });
+          break;
+        }
         const userId = await resolveUserId(sub);
         if (!userId) break;
         await upsertSubscription(userId, { status: "past_due" });
@@ -527,6 +683,12 @@ serve(async (req) => {
         const subId = invoice.subscription as string;
         if (!subId) break;
         const sub = await stripe.subscriptions.retrieve(subId);
+        // CRM add-on renewal: refresh the org's CRM row (period end + status)
+        // and skip the main-plan path entirely.
+        if (subscriptionHasCrmAddon(sub)) {
+          await handleCrmSubscriptionEvent(sub, "invoice.payment_succeeded");
+          break;
+        }
         const userId = await resolveUserId(sub);
         if (!userId) break;
 

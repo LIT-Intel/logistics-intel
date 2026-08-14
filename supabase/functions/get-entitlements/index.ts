@@ -146,9 +146,35 @@ serve(async (req) => {
     // RPC unavailable in this env — leave the key absent.
   }
 
+  // CRM per-seat add-on entitlement. Org-level: read the org's row in
+  // lit_crm_subscriptions (written by billing-webhook). crm_enabled is true
+  // for an active/trialing subscription; crm_seats is the paid seat count.
+  // Soft-fail (disabled) when the org has no row or the table is absent so
+  // rollout/rollback never breaks the snapshot.
+  let crmEnabled = false;
+  let crmSeats = 0;
+  if (orgId) {
+    try {
+      const { data: crmRow } = await adminClient
+        .from("lit_crm_subscriptions")
+        .select("status, seats")
+        .eq("org_id", orgId)
+        .maybeSingle();
+      if (crmRow) {
+        const status = String((crmRow as Record<string, unknown>).status ?? "");
+        crmEnabled = status === "active" || status === "trialing";
+        crmSeats = crmEnabled
+          ? Number((crmRow as Record<string, unknown>).seats ?? 0) || 0
+          : 0;
+      }
+    } catch (_) {
+      // Table not present in this env — leave CRM disabled.
+    }
+  }
+
   const entitlements =
     data && typeof data === "object"
-      ? { ...(data as Record<string, unknown>), credits }
+      ? { ...(data as Record<string, unknown>), credits, crm_enabled: crmEnabled, crm_seats: crmSeats }
       : data;
 
   // Fold saved_map_view into the limits/used maps so the UI gate + Billing
