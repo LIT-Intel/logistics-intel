@@ -95,6 +95,12 @@ type CDPSupplyChainProps = {
    *  lit_company_lane_months.company_id) — drives the Lane History matrix.
    *  Null when the profile has no resolvable source key. */
   sourceCompanyKey?: string | null;
+  /** UNSCOPED month-keyed timeSeries (every month back to 2015). The
+   *  `profile` prop is year-scoped by buildYearScopedProfile, which truncates
+   *  the cadence chart and kills YoY / past-year reconciliation — so the page
+   *  passes the full series here. Cadence, the monthly reconciliation series
+   *  and the map's year/month scope options all read this. (CEO P0 2026-08-14) */
+  fullTimeSeries?: any[] | null;
 };
 
 /**
@@ -136,6 +142,7 @@ function CDPSupplyChainBody({
   onOpenPulseLive,
   companyName: companyNameProp,
   sourceCompanyKey,
+  fullTimeSeries,
 }: CDPSupplyChainProps) {
   const [sub, setSub] = useState<SubTabId>("summary");
   // Globe → Lane-History wiring: selecting "View monthly history" on a lane
@@ -236,11 +243,26 @@ function CDPSupplyChainBody({
     [profile, recentBols],
   );
   const containerProfile = useMemo(() => deriveContainerProfile(profile), [profile]);
-  const cadence = useMemo(() => deriveCadence(profile), [profile]);
+  // UNSCOPED month-keyed series (every month back to 2015). Prefer the
+  // explicit fullTimeSeries prop; fall back to profile.timeSeries so this
+  // stays correct even for callers that don't thread the full series.
+  const fullSeries = useMemo(
+    () => deriveFullTimeSeries(fullTimeSeries, profile),
+    [fullTimeSeries, profile],
+  );
+  // Cadence renders the SELECTED year's full 12 real months (zero-filled for
+  // any month with no snapshot row) — no longer a truncated trailing window,
+  // so picking 2025 shows the true 2025 cadence instead of going sparse.
+  const cadence = useMemo(
+    () => deriveCadence(fullSeries, selectedYear ?? null),
+    [fullSeries, selectedYear],
+  );
   // Full month-keyed REAL volume series (source of truth for reconciliation +
-  // YoY) — same monthly_volumes the Cadence chart renders, but every month
-  // back to 2015, not just the trailing 12.
-  const monthlySeries = useMemo(() => deriveMonthlySeries(profile), [profile]);
+  // YoY) — every month back to 2015, not just the selected/trailing window.
+  const monthlySeries = useMemo(
+    () => deriveMonthlySeries(fullSeries),
+    [fullSeries],
+  );
 
   const briefHeadline = useMemo(() => {
     if (allLanes.length === 0) return null;
@@ -516,10 +538,12 @@ function SummaryView({
       />
       <CadenceAndModalMix
         cadence={cadence}
+        monthlySeries={monthlySeries}
         containerProfile={containerProfile}
         reducedMotion={reducedMotion}
         companyName={companyName || null}
         donutCounts={donutCounts}
+        selectedYear={selectedYear}
       />
       {companyName && (
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-2">
@@ -560,12 +584,16 @@ function usePrefersReducedMotion(): boolean {
 
 function CadenceAndModalMix({
   cadence,
+  monthlySeries = [],
   containerProfile,
   reducedMotion,
   companyName,
   donutCounts,
+  selectedYear,
 }: {
   cadence: CadencePoint[];
+  /** Full month-keyed REAL series — drives the per-month YoY overlay. */
+  monthlySeries?: MonthlyVolumePoint[];
   containerProfile: ContainerProfile;
   reducedMotion: boolean;
   companyName: string | null;
@@ -578,6 +606,9 @@ function CadenceAndModalMix({
     broker: number;
     domestic: number;
   };
+  /** Selected calendar year — when set, the cadence shows that year and the
+   *  YoY overlay compares against the prior year (real monthly_volumes). */
+  selectedYear?: number;
 }) {
   // Air count: derived from MX customs import declarations where
   // transport_type = 'Air'. ImportYeti's US-import feed does NOT track air
@@ -616,15 +647,69 @@ function CadenceAndModalMix({
     return modes;
   }, [containerProfile.fcl, containerProfile.lcl, hasMxAir, mxRows, hasDomestic]);
 
+  // ── Year-over-year overlay (CEO priority, 2026-08-14) ────────────────
+  // When a calendar year is selected, the user can flip on a per-month
+  // "vs prior year" overlay + read an overall YoY chip — all from the REAL
+  // monthly_volumes series (never fabricated). Prior-year totals are keyed
+  // by month number so they line up 1:1 with the selected year's cadence.
+  const [yoyMode, setYoyMode] = useState(false);
+  const priorYear =
+    typeof selectedYear === "number" && Number.isFinite(selectedYear)
+      ? selectedYear - 1
+      : null;
+  const priorByMonth = useMemo(() => {
+    const m = new Map<number, number>();
+    if (priorYear == null) return m;
+    for (const p of monthlySeries) {
+      if (!/^\d{4}-\d{2}$/.test(p.month)) continue;
+      if (Number(p.month.slice(0, 4)) !== priorYear) continue;
+      m.set(Number(p.month.slice(5, 7)), p.shipments);
+    }
+    return m;
+  }, [monthlySeries, priorYear]);
+  const yoyAvailable = priorByMonth.size > 0;
+  // Which month numbers the SELECTED year actually has real data for. Used to
+  // align the overall YoY chip like-for-like: for the current (incomplete)
+  // year we compare YTD vs the same Jan–<latest> window last year, not a
+  // partial year against a full one (which would misread as a fake decline).
+  const currentMonthsWithData = useMemo(() => {
+    const s = new Set<number>();
+    if (priorYear == null) return s;
+    const cy = priorYear + 1;
+    for (const p of monthlySeries) {
+      if (!/^\d{4}-\d{2}$/.test(p.month)) continue;
+      if (Number(p.month.slice(0, 4)) !== cy) continue;
+      if (p.shipments > 0) s.add(Number(p.month.slice(5, 7)));
+    }
+    return s;
+  }, [monthlySeries, priorYear]);
+  const overallYoy = useMemo(() => {
+    if (selectedYear == null || currentMonthsWithData.size === 0) return null;
+    // Current = the selected year's real months.
+    let cur = 0;
+    for (const c of cadence) cur += Number(c.total) || 0;
+    // Prior = the SAME months last year (period-aligned YTD comparison).
+    let prior = 0;
+    for (const [mnum, v] of priorByMonth) {
+      if (currentMonthsWithData.has(mnum)) prior += v;
+    }
+    if (prior <= 0) return null;
+    const delta = cur - prior;
+    return { current: cur, prior, deltaShip: delta, pct: (delta / prior) * 100 };
+  }, [cadence, priorByMonth, currentMonthsWithData, selectedYear]);
+
   // Stacked area data: FCL/LCL come from cadence; Air is the per-row
   // average from MX air rows, spread across the cadence buckets. We don't
   // pretend to know the time distribution — when MX rows lack a per-month
   // breakdown, we leave each bucket's air bar at 0 and let the disclosure
-  // carry the air signal.
-  const chartData = cadence.map((c) => ({
+  // carry the air signal. When YoY overlay is on, each bucket also carries
+  // that month's prior-year total as a ghost bar.
+  const showYoy = yoyMode && yoyAvailable && selectedYear != null;
+  const chartData = cadence.map((c, i) => ({
     label: c.label,
     fcl: c.fcl,
     lcl: c.lcl,
+    priorTotal: showYoy ? priorByMonth.get(i + 1) ?? 0 : 0,
   }));
   const serviceBars = [
     { key: "fcl", label: "FCL", color: "#0EA5E9" },
@@ -640,16 +725,43 @@ function CadenceAndModalMix({
   // chip renders below the chart explaining the ImportYeti coverage gap.
   const air = mxAirCount;
   const total = fcl + lcl + air;
+  const cadenceSub =
+    selectedYear != null
+      ? `${selectedYear} monthly cadence - hover a month to inspect service totals`
+      : "Trailing 12 months - hover a month to inspect service totals";
   if (cadence.length === 0 && total === 0) {
     return (
-      <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months - hover a month to inspect service totals">
+      <LitSectionCard title="Cadence & Modal Mix" sub={cadenceSub}>
         <EmptyMessage text="No cadence data on file yet - try Refresh Intel to pull the latest shipments." />
       </LitSectionCard>
     );
   }
 
   return (
-    <LitSectionCard title="Cadence & Modal Mix" sub="Trailing 12 months - hover a month to inspect service totals">
+    <LitSectionCard
+      title="Cadence & Modal Mix"
+      sub={cadenceSub}
+      action={
+        yoyAvailable && selectedYear != null ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setYoyMode((v) => !v)}
+              title={`Overlay ${priorYear} volumes and show the year-over-year change`}
+              className={[
+                "font-display inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-full border px-2 text-[10px] font-semibold transition-colors",
+                yoyMode
+                  ? "border-blue-600 bg-blue-600 text-white"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900",
+              ].join(" ")}
+            >
+              YoY vs {priorYear}
+            </button>
+            {overallYoy && <YoyChip delta={overallYoy} />}
+          </div>
+        ) : undefined
+      }
+    >
       {/* Service modes covered — derived from real signal in this account.
           Replaces the prior implicit FCL/LCL-only framing so the user can
           see at a glance which legs LIT has coverage for on this shipper. */}
@@ -689,12 +801,28 @@ function CadenceAndModalMix({
                   cursor={{ fill: "#EEF2FF", opacity: 0.65 }}
                   content={<CadenceBarTooltip />}
                 />
+                {/* Prior-year ghost bar (YoY overlay) — rendered first so the
+                    current-year FCL/LCL bars sit in front of it. Real prior-
+                    year totals from monthly_volumes; never fabricated. */}
+                {showYoy && (
+                  <Bar
+                    key="priorTotal"
+                    dataKey="priorTotal"
+                    name={`${priorYear} total`}
+                    fill="#CBD5E1"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={26}
+                    isAnimationActive={!reducedMotion}
+                    animationDuration={reducedMotion ? 0 : 700}
+                  />
+                )}
                 {serviceBars.map((bar, index) => (
                   <Bar
                     key={bar.key}
                     dataKey={bar.key}
                     name={bar.label}
                     fill={bar.color}
+                    stackId={showYoy ? "current" : undefined}
                     radius={[4, 4, 0, 0]}
                     maxBarSize={26}
                     isAnimationActive={!reducedMotion}
@@ -709,6 +837,7 @@ function CadenceAndModalMix({
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <LegendDot color="#0EA5E9" label="FCL" />
             <LegendDot color="#F59E0B" label="LCL" />
+            {showYoy && <LegendDot color="#CBD5E1" label={`${priorYear} total`} />}
             {hasMxAir ? (
               <LegendDot color="#8B5CF6" label={`Air - ${mxAirCount} MX`} />
             ) : (
@@ -738,15 +867,21 @@ function CadenceAndModalMix({
 
 function CadenceBarTooltip({ active, payload, label }: any) {
   if (!active || !Array.isArray(payload) || payload.length === 0) return null;
+  // Prior-year ghost bar is a YoY reference, not part of this month's total —
+  // split it out so the "N shipments this month" line stays honest.
+  const priorEntry = payload.find((e: any) => e?.dataKey === "priorTotal");
+  const priorTotal = priorEntry ? Number(priorEntry.value || 0) : 0;
   const rows = payload
-    .filter((entry) => Number(entry?.value || 0) > 0)
+    .filter((entry) => entry?.dataKey !== "priorTotal" && Number(entry?.value || 0) > 0)
     .map((entry) => ({
       name: entry.name,
       value: Number(entry.value || 0),
       color: entry.color || entry.fill,
     }));
-  if (!rows.length) return null;
+  if (!rows.length && priorTotal <= 0) return null;
   const total = rows.reduce((sum, row) => sum + row.value, 0);
+  const yoyPct =
+    priorTotal > 0 ? Math.round(((total - priorTotal) / priorTotal) * 100) : null;
   return (
     <div className="rounded-md border border-slate-200 bg-white px-2.5 py-2 text-[11px] shadow-sm">
       <div className="font-display mb-1 font-semibold text-slate-900">{label}</div>
@@ -764,6 +899,25 @@ function CadenceBarTooltip({ active, payload, label }: any) {
       <div className="mt-1 border-t border-slate-100 pt-1 font-mono text-[10px] text-slate-500">
         {total} shipments this month
       </div>
+      {priorTotal > 0 && (
+        <div className="mt-1 border-t border-slate-100 pt-1 font-mono text-[10px] text-slate-500">
+          {priorTotal.toLocaleString()} prior year
+          {yoyPct != null && (
+            <span
+              className={
+                yoyPct > 0
+                  ? "ml-1 text-emerald-600"
+                  : yoyPct < 0
+                    ? "ml-1 text-rose-500"
+                    : "ml-1 text-slate-400"
+              }
+            >
+              ({yoyPct > 0 ? "+" : ""}
+              {yoyPct}% YoY)
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2973,6 +3127,15 @@ function TopLanesCard({
     [recentBols],
   );
 
+  // Years/months the scope selector exposes. The lane-split SOURCE (rollup or
+  // BOL sample) is narrow, but the REAL monthly_volumes series spans every
+  // month back to 2015 — and every one of those months has a real total we
+  // can reconcile lanes against. So union both: the sample tells us where
+  // exact lane manifests exist; monthly_volumes tells us where real TOTAL
+  // volume exists (CEO P0 2026-08-14: 2025 was un-scopable + missing months
+  // because the selector only saw the ~50-BOL sample). A month present in
+  // monthly_volumes but not the sample still reconciles lanes to its real
+  // total (modeled distribution), never an empty "no lane activity" state.
   const availableYears = useMemo(() => {
     const s = new Set<number>();
     if (hasRollup) {
@@ -2980,8 +3143,13 @@ function TopLanesCard({
     } else {
       for (const { d } of sampleDatedBols) s.add(d.getUTCFullYear());
     }
+    for (const p of monthlySeries) {
+      if (/^\d{4}-\d{2}$/.test(p.month) && p.shipments > 0) {
+        s.add(Number(p.month.slice(0, 4)));
+      }
+    }
     return [...s].filter((y) => Number.isFinite(y)).sort((a, b) => b - a);
-  }, [hasRollup, rollupRows, sampleDatedBols]);
+  }, [hasRollup, rollupRows, sampleDatedBols, monthlySeries]);
 
   const availableMonths = useMemo(() => {
     const s = new Set<number>();
@@ -2997,8 +3165,15 @@ function TopLanesCard({
         s.add(d.getUTCMonth() + 1);
       }
     }
+    // Every month with a real total in the selected year is scopable.
+    for (const p of monthlySeries) {
+      if (!/^\d{4}-\d{2}$/.test(p.month) || p.shipments <= 0) continue;
+      const y = Number(p.month.slice(0, 4));
+      if (yearFilter != null && y !== yearFilter) continue;
+      s.add(Number(p.month.slice(5, 7)));
+    }
     return s;
-  }, [hasRollup, rollupRows, sampleDatedBols, yearFilter]);
+  }, [hasRollup, rollupRows, sampleDatedBols, yearFilter, monthlySeries]);
 
   const scoped = useMemo<ScopedLaneData | null>(() => {
     if (!scopeActive) return null;
@@ -3050,10 +3225,58 @@ function TopLanesCard({
       }
       return shipments > 0 || teu > 0 ? { shipments, teu, months: priorKeys.size } : null;
     }
-    return realScopeTotal(monthlySeries, yearFilter - 1, monthFilter);
+    // Year scoped. When a single month is picked, compare that month LY.
+    if (monthFilter != null) {
+      return realScopeTotal(monthlySeries, yearFilter - 1, monthFilter);
+    }
+    // Whole year scoped: align the prior year to only the months the CURRENT
+    // year actually has data for, so a partial current year (e.g. 2026 Jan–
+    // Jul) compares YTD vs the same window LY instead of a full prior year
+    // (which would misread as a decline). For a complete past year this is
+    // simply all 12 months.
+    const curMonths = new Set<number>();
+    for (const p of monthlySeries) {
+      if (!/^\d{4}-\d{2}$/.test(p.month)) continue;
+      if (Number(p.month.slice(0, 4)) !== yearFilter) continue;
+      if (p.shipments > 0) curMonths.add(Number(p.month.slice(5, 7)));
+    }
+    if (curMonths.size === 0) return null;
+    let shipments = 0;
+    let teu = 0;
+    for (const p of monthlySeries) {
+      if (!/^\d{4}-\d{2}$/.test(p.month)) continue;
+      if (Number(p.month.slice(0, 4)) !== yearFilter - 1) continue;
+      if (!curMonths.has(Number(p.month.slice(5, 7)))) continue;
+      shipments += p.shipments;
+      teu += p.teu;
+    }
+    return shipments > 0 || teu > 0
+      ? { shipments, teu, months: curMonths.size }
+      : null;
   }, [monthlySeries, yearFilter, monthFilter]);
 
-  const rawViewPairs = scoped ? scoped.pairs : pairs;
+  // Lane-split source for the scoped view. Prefer the scoped sample (exact
+  // rollup rows or dated BOLs for the period). But when a period is scoped
+  // and the sample carries NO lanes for it (common for past years — the
+  // ~50-BOL sample is recent-only) YET monthly_volumes has a real total for
+  // that period, fall back to the all-time lane distribution so we can still
+  // reconcile it to the real total. This is the CEO P0 fix: a scoped year
+  // with real volume must show reconciled lanes, never "no lane activity".
+  const rawViewPairs = useMemo(() => {
+    if (!scoped) return pairs;
+    if (scoped.pairs.length > 0) return scoped.pairs;
+    // Scoped but empty sample → if the period has real total volume, model
+    // the split from the all-time snapshot lanes; else stay honestly empty.
+    if (scopeTotal && scopeTotal.shipments > 0 && pairs.length > 0) return pairs;
+    return scoped.pairs;
+  }, [scoped, pairs, scopeTotal]);
+  /** True when lanes are modeled off the all-time distribution because the
+   *  scoped period's own sample was empty (drives an honest caption). */
+  const usedAllTimeSplit =
+    scopeActive &&
+    !!scoped &&
+    scoped.pairs.length === 0 &&
+    rawViewPairs.length > 0;
   const { pairs: reconciledPairs, reconciled: isReconciled } = useMemo(
     () => reconcilePairsToTotal(rawViewPairs, scopeTotal),
     [rawViewPairs, scopeTotal],
@@ -3234,11 +3457,14 @@ function TopLanesCard({
     return m;
   }, [rankedPairs, recentBols]);
 
-  // Scoped views override the snapshot-derived maps while filtering.
-  const cityRoutesEffective = scoped ? scoped.cityRoutesByPair : cityRoutesByPair;
-  const lastActivityEffective = scoped
-    ? scoped.lastActivityByPair
-    : lastActivityByPair;
+  // Scoped views override the snapshot-derived maps while filtering. When the
+  // scoped sample was empty and we modeled lanes off the all-time split, keep
+  // the all-time city-route / last-activity maps so the expand drawer still
+  // has route detail (the reconciled pairs share the same pairKeys).
+  const cityRoutesEffective =
+    scoped && !usedAllTimeSplit ? scoped.cityRoutesByPair : cityRoutesByPair;
+  const lastActivityEffective =
+    scoped && !usedAllTimeSplit ? scoped.lastActivityByPair : lastActivityByPair;
 
   const [selectedPair, setSelectedPair] = useState<string | null>(
     rankedPairs[0]?.pairKey ?? null,
@@ -3428,8 +3654,9 @@ function TopLanesCard({
         ? "the trailing 12 months"
         : String(yearFilter);
     if (isReconciled && scopeTotal) {
-      const src =
-        scoped && hasRollup
+      const src = usedAllTimeSplit
+        ? "this account's all-time lane distribution"
+        : scoped && hasRollup
           ? `${scoped.sourceRecords.toLocaleString()} lane-month rollup record${
               scoped.sourceRecords === 1 ? "" : "s"
             }`
@@ -5532,21 +5759,72 @@ function readTopRoutes(profile: any, routeKpis: any) {
   return [];
 }
 
-function deriveCadence(profile: any): CadencePoint[] {
-  const series = Array.isArray(profile?.timeSeries) ? profile.timeSeries : [];
-  if (!series.length) return [];
-  const points: CadencePoint[] = series
-    .map((p: any) => {
-      const label = formatMonthLabel(p?.month, p?.year);
-      const fcl = Number(p?.fclShipments) || 0;
-      const lcl = Number(p?.lclShipments) || 0;
-      let total = fcl + lcl;
-      if (total === 0) total = Number(p?.shipments) || 0;
-      const teu = Number(p?.teu) || null;
-      return { label, fcl, lcl, total, teu };
-    })
+/**
+ * Cadence points for the Cadence & Modal Mix chart + the hero's 12-mo trend
+ * strip. `series` is the FULL month-keyed timeSeries (every month back to
+ * 2015 — see deriveFullTimeSeries), NOT a trailing window, so a selected year
+ * renders that year's full 12 months of REAL data.
+ *
+ *  - year set → all 12 months of that calendar year (Jan..Dec), with any
+ *    month that has no snapshot row zero-filled so the chart never goes
+ *    sparse/empty (CEO bug 2026-08-14: 2025 rendered mostly-empty because
+ *    the series was pre-scoped upstream and .slice(-12) dropped real months).
+ *  - no year → trailing 12 months (rolling window, legacy default).
+ */
+function deriveCadence(series: any[], year?: number | null): CadencePoint[] {
+  const list = Array.isArray(series) ? series : [];
+  if (!list.length) return [];
+  const toPoint = (p: any): CadencePoint => {
+    const fcl = Number(p?.fclShipments) || 0;
+    const lcl = Number(p?.lclShipments) || 0;
+    let total = fcl + lcl;
+    if (total === 0) total = Number(p?.shipments) || 0;
+    const teu = Number(p?.teu) || null;
+    return { label: formatMonthLabel(p?.month, p?.year), fcl, lcl, total, teu };
+  };
+
+  if (typeof year === "number" && Number.isFinite(year)) {
+    // Index the year's real rows by month number so we can render all 12
+    // calendar months in order, zero-filling gaps.
+    const byMonth = new Map<number, any>();
+    for (const p of list) {
+      const mk = String(p?.month || "");
+      const py = Number(p?.year) || (/^\d{4}-\d{2}$/.test(mk) ? Number(mk.slice(0, 4)) : NaN);
+      if (py !== year) continue;
+      const mnum = /^\d{4}-\d{2}$/.test(mk)
+        ? Number(mk.slice(5, 7))
+        : Number(p?.month);
+      if (mnum >= 1 && mnum <= 12) byMonth.set(mnum, p);
+    }
+    if (byMonth.size === 0) return [];
+    return Array.from({ length: 12 }, (_, i) => {
+      const mnum = i + 1;
+      const row = byMonth.get(mnum);
+      if (row) return toPoint(row);
+      // Zero-fill: label from a synthesized YYYY-MM so the axis stays aligned.
+      const mk = `${year}-${String(mnum).padStart(2, "0")}`;
+      return { label: formatMonthLabel(mk, year), fcl: 0, lcl: 0, total: 0, teu: null };
+    });
+  }
+
+  const points: CadencePoint[] = list
+    .map(toPoint)
     .filter((p: CadencePoint) => p.label);
   return points.slice(-12);
+}
+
+/**
+ * Full month-keyed timeSeries (every month back to 2015). The `profile`
+ * prop CompanyProfileV2 hands down is YEAR-SCOPED (buildYearScopedProfile
+ * filters timeSeries to the selected year), which truncated the cadence
+ * chart, killed year-over-year (no prior-year rows), and made past years
+ * reconcile to an empty sample. So the page also passes the UNSCOPED series
+ * as `fullTimeSeries`; prefer it, falling back to profile.timeSeries for any
+ * caller that doesn't thread it. (CEO P0, 2026-08-14)
+ */
+function deriveFullTimeSeries(fullTimeSeries: any, profile: any): any[] {
+  if (Array.isArray(fullTimeSeries) && fullTimeSeries.length) return fullTimeSeries;
+  return Array.isArray(profile?.timeSeries) ? profile.timeSeries : [];
 }
 
 /* ── Volume reconciliation (CEO P0, 2026-08-14) ───────────────────────────
@@ -5572,10 +5850,10 @@ export type MonthlyVolumePoint = {
  * uses). Spans every month on file (back to 2015), NOT just the trailing 12,
  * so it can drive per-year scope totals AND year-over-year deltas.
  */
-function deriveMonthlySeries(profile: any): MonthlyVolumePoint[] {
-  const series = Array.isArray(profile?.timeSeries) ? profile.timeSeries : [];
+function deriveMonthlySeries(series: any[]): MonthlyVolumePoint[] {
+  const list = Array.isArray(series) ? series : [];
   const out: MonthlyVolumePoint[] = [];
-  for (const p of series) {
+  for (const p of list) {
     const month = String(p?.month || "");
     if (!/^\d{4}-\d{2}$/.test(month)) continue;
     const fcl = Number(p?.fclShipments) || 0;

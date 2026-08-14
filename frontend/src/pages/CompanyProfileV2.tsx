@@ -2188,16 +2188,14 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         manualRefreshing={manualRefreshing}
         snapshotUpdatedAt={snapshotUpdatedAt}
         availableYears={(() => {
-          // 3-year window: current + 2 prior. Union with any years the
-          // snapshot's timeSeries actually has (so older history surfaces
-          // when available, but the selector is never hidden just because
-          // the snapshot lacks a 2025 row).
+          // Every year the snapshot's monthly_volumes actually has (back to
+          // 2015 for large shippers), unioned with the current + 2 prior so
+          // the selector is never hidden just because the snapshot lacks a
+          // recent row. CEO P0 2026-08-14: the prior 3-year cap hid real
+          // history the user needs for growth research — no cap now.
           const cy = currentYearForSpend;
           const base = [cy, cy - 1, cy - 2];
-          const merged = Array.from(new Set([...base, ...years])).sort(
-            (a, b) => b - a,
-          );
-          return merged.slice(0, 3);
+          return Array.from(new Set([...base, ...years])).sort((a, b) => b - a);
         })()}
         selectedYear={selectedYear}
         onSelectYear={setSelectedYear}
@@ -2280,6 +2278,11 @@ function ProfilePanel({ rawId }: { rawId: string }) {
                 onSelectYear={setSelectedYear}
                 onOpenPulseLive={() => setTab("live")}
                 companyName={companyName}
+                // UNSCOPED month-keyed series (every month back to 2015).
+                // `activeProfile` is year-scoped by buildYearScopedProfile,
+                // which truncated the cadence chart + killed YoY / past-year
+                // lane reconciliation — so pass the full series explicitly.
+                fullTimeSeries={(profile as any)?.timeSeries ?? null}
                 // Same fallback chain as PulseLIVETab — any available key
                 // (source_company_key / slug / route id) resolves the
                 // lit_company_lane_months rollup for the Lane History matrix.
