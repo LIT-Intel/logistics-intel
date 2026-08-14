@@ -1,20 +1,27 @@
 import { useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeft,
+  ArrowRightLeft,
   Bell,
-  Building2,
+  Box,
+  CalendarClock,
+  DollarSign,
   Download,
   ExternalLink,
   FolderPlus,
+  GitBranch,
   Globe,
   Loader2,
   MapPin,
   MoreHorizontal,
+  Package,
   PanelRightClose,
   PanelRightOpen,
   Pencil,
   Send,
   Share2,
+  Ship,
   Sparkles,
   Star,
   TrendingUp,
@@ -23,9 +30,64 @@ import { CompanyAvatar } from "@/components/CompanyAvatar";
 import LitCategoryChip from "@/components/ui/LitCategoryChip";
 import LitFlag from "@/components/ui/LitFlag";
 import LitHeaderIconBtn from "@/components/ui/LitHeaderIconBtn";
-import LitKpiStrip from "@/components/ui/LitKpiStrip";
 import LitPill from "@/components/ui/LitPill";
 import { resolveEndpoint } from "@/lib/laneGlobe";
+import { cn } from "@/lib/utils";
+
+// KPI chip idiom — matches the Dashboard / AdminCommandDeck treatment shipped
+// in commit 8909f352 (colored icon square + bold value + label + subtle
+// sub-line). Kept local to the profile header so LitKpiStrip's shared default
+// (used by other pages) is untouched.
+const KPI_TONES: Record<string, string> = {
+  blue: "bg-blue-50 text-blue-600",
+  cyan: "bg-cyan-50 text-cyan-600",
+  emerald: "bg-emerald-50 text-emerald-600",
+  violet: "bg-violet-50 text-violet-600",
+  amber: "bg-amber-50 text-amber-600",
+  indigo: "bg-indigo-50 text-indigo-600",
+  rose: "bg-rose-50 text-rose-600",
+  slate: "bg-slate-100 text-slate-500",
+};
+
+function CdpKpiChip({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  tone = "blue",
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: React.ReactNode;
+  icon: LucideIcon;
+  tone?: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+      <span
+        className={cn(
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+          KPI_TONES[tone] || KPI_TONES.blue,
+        )}
+      >
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <div className="font-mono truncate text-[18px] font-bold leading-none tracking-tight text-slate-900">
+          {value}
+        </div>
+        <div className="font-display mt-1 truncate text-[9.5px] font-semibold uppercase tracking-[0.07em] text-slate-400">
+          {label}
+        </div>
+        {hint != null && hint !== "" ? (
+          <div className="font-body mt-0.5 truncate text-[10px] text-slate-400">
+            {hint}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 type CompanyShape = {
   id: string | null;
@@ -147,7 +209,13 @@ export default function CDPHeader({
   const primaryLane = derivePrimaryLane(kpis.topRoute);
   const updatedLabel = formatUpdated(snapshotUpdatedAt);
 
-  const kpiCells = [
+  const kpiCells: {
+    label: string;
+    value: React.ReactNode;
+    hint?: React.ReactNode;
+    icon: LucideIcon;
+    tone: string;
+  }[] = [
     {
       // Lead KPI (header v8) — total importer freight spend across all
       // available history. Founder directive: brokers need to see the
@@ -163,7 +231,9 @@ export default function CDPHeader({
           : "—",
       // Honesty label (CEO trust P0): this is a modeled figure — TEU ×
       // current FBX benchmark rates — not importer-reported spend.
-      trend: "modeled @ current FBX rates",
+      hint: "modeled @ current FBX rates",
+      icon: DollarSign,
+      tone: "emerald",
     },
     {
       // Annual / trailing-12M companion to ALL-TIME. Year-aware label
@@ -179,7 +249,9 @@ export default function CDPHeader({
           : "—",
       // Honesty label (CEO trust P0): modeled figure, not reported spend.
       // Temporal scope already lives in the label ("(12M)" / "(2025)").
-      trend: "modeled @ current FBX rates",
+      hint: "modeled @ current FBX rates",
+      icon: TrendingUp,
+      tone: "emerald",
     },
     {
       label: "SHIPMENTS (12M)",
@@ -187,6 +259,8 @@ export default function CDPHeader({
         kpis.shipments != null && kpis.shipments > 0
           ? Number(kpis.shipments).toLocaleString()
           : "—",
+      icon: Ship,
+      tone: "blue",
     },
     {
       label: "TEU (12M)",
@@ -194,6 +268,8 @@ export default function CDPHeader({
         kpis.teu != null && Number(kpis.teu) > 0
           ? formatTeu(Number(kpis.teu))
           : "—",
+      icon: Box,
+      tone: "cyan",
     },
     {
       label: "TOTAL SHIPMENTS",
@@ -201,10 +277,14 @@ export default function CDPHeader({
         kpis.shipmentsAllTime != null && kpis.shipmentsAllTime > 0
           ? Number(kpis.shipmentsAllTime).toLocaleString()
           : "—",
+      icon: Package,
+      tone: "violet",
     },
     {
       label: "PRIMARY TRADE LANE",
       value: primaryLane || "—",
+      icon: ArrowRightLeft,
+      tone: "amber",
     },
     {
       label: "TRADE LANES",
@@ -212,11 +292,15 @@ export default function CDPHeader({
         kpis.tradeLanes != null && kpis.tradeLanes > 0
           ? String(kpis.tradeLanes)
           : "—",
+      icon: GitBranch,
+      tone: "indigo",
     },
     {
       label: "LAST SHIPMENT",
       value: kpis.lastShipment ? formatRelativeShort(kpis.lastShipment) : "—",
-      trend: kpis.lastShipment ? formatAbsoluteShort(kpis.lastShipment) : null,
+      hint: kpis.lastShipment ? formatAbsoluteShort(kpis.lastShipment) : null,
+      icon: CalendarClock,
+      tone: "rose",
     },
   ];
 
@@ -477,16 +561,24 @@ export default function CDPHeader({
         </div>
       </div>
 
-      {/* KPI strip. Breakpoint override (2026-08-13): the shared strip's
-          default forces all 8 tiles into a single row from sm (640px) up,
-          which crushed each cell to ~85px on tablets — labels truncated to
-          uselessness. Profile header reflows 2-up on phones, 4-up on
-          tablets (768-1279px), and back to the single 8-across row at xl.
-          twMerge in LitKpiStrip lets these classes win per-breakpoint. */}
-      <LitKpiStrip
-        cells={kpiCells}
-        className="sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-[var(--kpi-cols)]"
-      />
+      {/* KPI chip row — Dashboard / AdminCommandDeck idiom (colored icon
+          square + bold number + label + subtle sub-line), shipped locally
+          here so LitKpiStrip's shared default (used by other pages) is
+          untouched. Responsive reflow preserved from the prior LitKpiStrip
+          override (commit 4499a1ec): 2-up on phones, 4-up on tablets
+          (768–1279px), and all 8 across on xl. */}
+      <div className="grid grid-cols-2 gap-2 border-t border-slate-100 bg-[#FAFBFC] px-3 py-3 sm:px-6 md:grid-cols-4 xl:grid-cols-8">
+        {kpiCells.map((cell) => (
+          <CdpKpiChip
+            key={cell.label}
+            label={cell.label}
+            value={cell.value}
+            hint={cell.hint}
+            icon={cell.icon}
+            tone={cell.tone}
+          />
+        ))}
+      </div>
     </div>
   );
 }
