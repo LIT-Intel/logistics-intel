@@ -138,43 +138,74 @@ export default function EmbeddedCheckoutModal({
           maxHeight: "90vh",
           overflowY: "auto",
           background: "#FFFFFF",
-          borderRadius: 16,
+          borderRadius: 18,
           boxShadow: "0 24px 64px rgba(15,23,42,0.28)",
           display: "flex",
           flexDirection: "column",
         }}
       >
+        {/* LIT house-style hero header (navy + wordmark) so the checkout
+            popup reads as part of the app, not a generic Stripe box. */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "16px 20px",
-            borderBottom: "1px solid #E5E7EB",
+            gap: 12,
+            padding: "18px 22px",
+            background: "#0A1024",
+            borderTopLeftRadius: 18,
+            borderTopRightRadius: 18,
           }}
         >
-          <div>
-            <div
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              minWidth: 0,
+            }}
+          >
+            <img
+              src="https://raw.githubusercontent.com/LIT-Intel/logistics-intel/main/frontend/public/icon_256.png"
+              width={36}
+              height={36}
+              alt="LIT"
               style={{
-                fontFamily: FONT_HEAD,
-                fontSize: 10,
-                fontWeight: 700,
-                color: "#6366F1",
-                letterSpacing: "0.22em",
-                textTransform: "uppercase",
+                display: "block",
+                width: 36,
+                height: 36,
+                borderRadius: 9,
+                flexShrink: 0,
               }}
-            >
-              {eyebrow}
-            </div>
-            <div
-              style={{
-                fontFamily: FONT_HEAD,
-                fontSize: 18,
-                fontWeight: 700,
-                color: "#0F172A",
-              }}
-            >
-              {title}
+            />
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontFamily: FONT_HEAD,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: "#7DD3FC",
+                  letterSpacing: "0.22em",
+                  textTransform: "uppercase",
+                }}
+              >
+                {eyebrow}
+              </div>
+              <div
+                style={{
+                  fontFamily: FONT_HEAD,
+                  fontSize: 17,
+                  fontWeight: 800,
+                  color: "#FFFFFF",
+                  letterSpacing: "-0.01em",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {title}
+              </div>
             </div>
           </div>
           <button
@@ -182,11 +213,13 @@ export default function EmbeddedCheckoutModal({
             aria-label="Close"
             style={{
               border: "none",
-              background: "transparent",
+              background: "rgba(255,255,255,0.08)",
               cursor: "pointer",
-              color: "#64748b",
-              padding: 6,
+              color: "#CBD5E1",
+              padding: 7,
               borderRadius: 8,
+              flexShrink: 0,
+              lineHeight: 0,
             }}
           >
             <X style={{ width: 18, height: 18 }} />
@@ -279,6 +312,19 @@ export default function EmbeddedCheckoutModal({
             ref={containerRef}
             style={{ display: status === "ready" ? "block" : "none" }}
           />
+          {status === "ready" ? (
+            <div
+              style={{
+                marginTop: 12,
+                textAlign: "center",
+                fontFamily: FONT_BODY,
+                fontSize: 11.5,
+                color: "#94A3B8",
+              }}
+            >
+              🔒 Secured by Stripe · Cancel anytime
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
