@@ -4,6 +4,7 @@ import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import { siteUrl } from "@/lib/seo";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { CtaBanner } from "./CtaBanner";
+import { CrmPipelinePreview } from "./CrmPipelinePreview";
 import { PageShell } from "./PageShell";
 
 export type SearchDemandPageData = {
@@ -16,6 +17,7 @@ export type SearchDemandPageData = {
   workflow: { title: string; body: string }[];
   faqs: { question: string; answer: string }[];
   related: { href: string; label: string; body: string }[];
+  productPreview?: "crm";
 };
 
 export function SearchDemandPage({ page }: { page: SearchDemandPageData }) {
@@ -59,16 +61,22 @@ export function SearchDemandPage({ page }: { page: SearchDemandPageData }) {
         </div>
       </section>
 
+      {page.productPreview === "crm" && (
+        <section className="pb-10 sm:pb-16">
+          <CrmPipelinePreview />
+        </section>
+      )}
+
       <section className="px-5 py-14 sm:px-8">
         <div className="mx-auto grid max-w-content gap-7 rounded-3xl border border-ink-100 bg-white p-7 shadow-sm md:grid-cols-[0.8fr_1.2fr] md:p-10">
-          <div><div className="eyebrow">Plain-English definition</div><h2 className="display-md mt-3">What this category should actually do.</h2></div>
+          <div><div className="eyebrow">The practical definition</div><h2 className="display-md mt-3">What the software should help your team accomplish.</h2></div>
           <p className="font-body text-[17px] leading-[1.75] text-ink-700">{page.definition}</p>
         </div>
       </section>
 
       <section className="px-5 py-16 sm:px-8">
         <div className="mx-auto max-w-content">
-          <div className="max-w-[680px]"><div className="eyebrow">Core capabilities</div><h2 className="display-lg mt-3">Useful data, tied to the sales decision.</h2></div>
+          <div className="max-w-[680px]"><div className="eyebrow">Core capabilities</div><h2 className="display-lg mt-3">The context and controls to move an opportunity forward.</h2></div>
           <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {page.capabilities.map((item, index) => {
               const icons = [Database, Search, Workflow];
@@ -81,7 +89,7 @@ export function SearchDemandPage({ page }: { page: SearchDemandPageData }) {
 
       <section className="bg-slate-950 px-5 py-16 text-white sm:px-8 sm:py-20">
         <div className="mx-auto max-w-content">
-          <div className="eyebrow text-cyan-300">From signal to action</div><h2 className="font-display mt-3 max-w-[720px] text-[34px] font-semibold leading-tight tracking-[-0.03em] sm:text-[46px]">A workflow a freight salesperson can use before the next call block.</h2>
+          <div className="eyebrow text-cyan-300">From signal to action</div><h2 className="font-display mt-3 max-w-[720px] text-[34px] font-semibold leading-tight tracking-[-0.03em] sm:text-[46px]">A workflow built around the way freight sales teams actually work.</h2>
           <ol className="mt-10 grid gap-4 md:grid-cols-3">
             {page.workflow.map((item, index) => <li key={item.title} className="rounded-2xl border border-white/10 bg-white/[0.05] p-6"><div className="font-mono text-[11px] font-semibold text-cyan-300">0{index + 1}</div><h3 className="font-display mt-3 text-[18px] font-semibold">{item.title}</h3><p className="font-body mt-3 text-[13.5px] leading-relaxed text-slate-300">{item.body}</p></li>)}
           </ol>
@@ -92,7 +100,7 @@ export function SearchDemandPage({ page }: { page: SearchDemandPageData }) {
         <div className="mx-auto max-w-[900px]"><div className="text-center"><div className="eyebrow">Frequently asked</div><h2 className="display-lg mt-3">Questions freight teams ask.</h2></div><div className="mt-9 space-y-3">{page.faqs.map((faq) => <details key={faq.question} className="group rounded-2xl border border-ink-100 bg-white p-5 shadow-sm"><summary className="font-display cursor-pointer list-none pr-6 text-[15px] font-semibold text-ink-900">{faq.question}</summary><p className="font-body mt-3 text-[14px] leading-relaxed text-ink-500">{faq.answer}</p></details>)}</div></div>
       </section>
 
-      <section className="px-5 pb-16 sm:px-8"><div className="mx-auto max-w-content"><div className="eyebrow">Continue researching</div><div className="mt-5 grid gap-4 md:grid-cols-3">{page.related.map((item) => <Link key={item.href} href={item.href} className="group rounded-2xl border border-ink-100 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"><div className="flex items-center justify-between"><h3 className="font-display text-[15px] font-semibold text-ink-900">{item.label}</h3><ArrowRight className="h-4 w-4 text-blue-600 transition group-hover:translate-x-1" /></div><p className="font-body mt-2 text-[13px] leading-relaxed text-ink-500">{item.body}</p></Link>)}</div></div></section>
+      <section className="px-5 pb-16 sm:px-8"><div className="mx-auto max-w-content"><div className="eyebrow">Explore the platform</div><div className="mt-5 grid gap-4 md:grid-cols-3">{page.related.map((item) => <Link key={item.href} href={item.href} className="group rounded-2xl border border-ink-100 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"><div className="flex items-center justify-between"><h3 className="font-display text-[15px] font-semibold text-ink-900">{item.label}</h3><ArrowRight className="h-4 w-4 text-blue-600 transition group-hover:translate-x-1" /></div><p className="font-body mt-2 text-[13px] leading-relaxed text-ink-500">{item.body}</p></Link>)}</div></div></section>
 
       <CtaBanner eyebrow="See it on your accounts" title="Start with ten real searches, not a sales deck." subtitle="Use the 7-day trial to research accounts your team already knows. No credit card required." primaryCta={{ label: "Start 7-day trial", href: APP_SIGNUP_URL, icon: "arrow" }} secondaryCta={{ label: "Book a demo", href: "/demo" }} />
     </PageShell>
