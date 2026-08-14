@@ -10,7 +10,7 @@ import { APP_SIGNUP_URL } from "@/lib/app-urls";
 export const metadata: Metadata = buildMetadata({
   title: "Freight CRM and Command Center | Logistics Intel",
   description:
-    "Manage saved shippers, prospects, contacts, campaign activity, notes, and pipeline stages in a freight-focused CRM workspace.",
+    "Manage freight accounts, contacts, deals, pipeline stages, weighted forecasts, tasks, reports, campaigns, and activity in one freight-native CRM.",
   path: "/command-center",
   eyebrow: "Command Center",
 });
@@ -18,36 +18,37 @@ export const metadata: Metadata = buildMetadata({
 const SECTIONS = [
   {
     icon: "Save",
-    tag: "Save the right companies",
-    title: "Turn searches into organized prospect lists",
-    body: "Build saved-company lists from any Pulse search, lane, industry, or HS code. Lists are the unit of outbound coordination — sales, BD, and ops can all work the same list.",
+    tag: "Shipment-aware accounts",
+    title: "Work every account with freight context attached",
+    body: "Save companies from Search or Pulse and keep shipment cadence, TEU, estimated spend, top routes, contacts, notes, tasks, campaigns, and deals on one shared account record.",
   },
   {
     icon: "GitMerge",
-    tag: "Pipeline stages",
-    title: "Move accounts through the freight buying cycle",
-    body: "Prospecting → Contacted → Engaged → Quoting → Won → Lost. Custom stages on Scale and Enterprise. Drag-and-drop board view + table view.",
+    tag: "Full deal pipeline",
+    title: "Move opportunities from new to won",
+    body: "Create deals, assign owners and contacts, set values and expected close dates, and move work through New, Qualified, Quoted, Negotiation, Won, and Lost on a visual pipeline board.",
   },
   {
     icon: "FileText",
-    tag: "Context attached",
-    title: "Notes, tasks, activity, and intelligence in one place",
-    body: "Every saved company holds shipment intelligence, contacts, notes, tasks, campaigns, and activity. Open the company, see everything that's happened on it.",
+    tag: "Tasks + activity",
+    title: "Keep the next action visible",
+    body: "Create and assign follow-up tasks, track due dates, capture deal activity, connect replies and meetings, and flag stale opportunities before they disappear from the forecast.",
   },
   {
     icon: "UsersRound",
-    tag: "Team workspace",
-    title: "Assign owners, manage lists, share visibility",
-    body: "Assign accounts to reps, manage shared lists, keep sales activity visible across the org. Role-based permissions on Scale and Enterprise.",
+    tag: "Forecasting + reports",
+    title: "See pipeline health without rebuilding a spreadsheet",
+    body: "Track open pipeline, active deals, weighted forecast, won revenue, tasks due, stage conversion, deal velocity, win/loss results, and owner performance from the same CRM workspace.",
   },
 ];
 
 const PIPELINE_STAGES = [
-  { name: "Prospecting", count: 28, tint: "#94a3b8" },
-  { name: "Contacted", count: 14, tint: "#3b82f6" },
-  { name: "Engaged", count: 9, tint: "#06b6d4" },
-  { name: "Quoting", count: 4, tint: "#f59e0b" },
-  { name: "Won", count: 2, tint: "#10b981" },
+  { name: "New", count: 18, tint: "#6366f1" },
+  { name: "Qualified", count: 11, tint: "#0ea5e9" },
+  { name: "Quoted", count: 7, tint: "#f59e0b" },
+  { name: "Negotiation", count: 4, tint: "#8b5cf6" },
+  { name: "Won", count: 3, tint: "#10b981" },
+  { name: "Lost", count: 2, tint: "#94a3b8" },
 ];
 
 export default function CommandCenterPage() {
@@ -55,31 +56,31 @@ export default function CommandCenterPage() {
     <PageShell>
       <ProductHero
         eyebrow="Command Center · Freight CRM"
-        title="A CRM workspace built around"
+        title="A full CRM built around"
         titleHighlight="freight opportunities."
-        subtitle="Command Center gives your team one place to manage saved companies, contacts, notes, tasks, campaigns, and pipeline movement. It is the bridge between intelligence and action — so reps stop maintaining a separate CRM that doesn't know what your buyers are shipping."
+        subtitle="Command Center connects shipment-aware accounts, contacts, deals, tasks, campaigns, pipeline forecasting, and performance reporting. Your reps can prospect, qualify, quote, follow up, and manage revenue without moving freight context into a generic CRM."
         visual={<PipelineMock />}
       />
 
       <FeatureGrid
         eyebrow="What's inside Command Center"
-        title="The CRM layer freight teams actually use."
+        title="The complete CRM workflow freight teams actually need."
         features={SECTIONS}
         cols={2}
       />
 
       <CtaBanner
-        eyebrow="Stop running two CRMs"
-        title="Move your freight pipeline into the same workspace as your intelligence."
-        subtitle="Free trial includes Command Center, saved-company lists, and pipeline tracking."
-        primaryCta={{ label: "Start free", href: APP_SIGNUP_URL, icon: "arrow" }}
+        eyebrow="From first signal to closed deal"
+        title="Run your freight pipeline in the same workspace as your intelligence."
+        subtitle="The 7-day trial includes Command Center accounts, deals, pipeline stages, tasks, forecasting, and reports."
+        primaryCta={{ label: "Start your 7-day trial", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
       />
     </PageShell>
   );
 }
 
-/** Right-side hero visual — 5-stage pipeline board mock. */
+/** Right-side hero visual — six-stage pipeline board mock. */
 function PipelineMock() {
   return (
     <div className="rounded-2xl border border-ink-100 bg-white p-5 shadow-[0_30px_80px_-20px_rgba(15,23,42,0.18)]">
@@ -89,7 +90,7 @@ function PipelineMock() {
         </span>
         <span className="font-mono text-[10.5px] text-ink-200">Owner: Gabriel K.</span>
       </div>
-      <div className="mt-4 grid grid-cols-5 gap-1.5">
+      <div className="mt-4 grid grid-cols-3 gap-1.5 sm:grid-cols-6">
         {PIPELINE_STAGES.map((s) => (
           <div key={s.name} className="rounded-lg border border-ink-100 bg-white p-2.5 shadow-xs">
             <div className="font-display flex items-center justify-between gap-2">
@@ -118,7 +119,7 @@ function PipelineMock() {
         ))}
       </div>
       <div className="font-display mt-4 flex items-center justify-between rounded-lg bg-ink-25 px-3 py-2">
-        <span className="text-[11px] font-semibold text-ink-700">Pipeline value · $8.4M</span>
+        <span className="text-[11px] font-semibold text-ink-700">Open pipeline · $8.4M · Weighted forecast · $3.7M</span>
         <span
           className="font-mono inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider"
           style={{
