@@ -293,6 +293,13 @@ export default function CDPContacts({
   // Per-row "More" dropdown state — keyed by row id.
   const [openMenuId, setOpenMenuId] = useState<string | number | null>(null);
 
+  // Per-row enrichment in-progress state — holds the row ids currently
+  // running a single-contact enrich so each row can render its own
+  // spinner/"Enriching…" state without blocking the rest of the table.
+  const [enrichingRowIds, setEnrichingRowIds] = useState<Set<string>>(
+    new Set(),
+  );
+
   // Include-similar-titles search filter (default OFF). When ON the
   // edge function relaxes its title strictness; we forward this hint
   // to Apollo people-search.
@@ -826,6 +833,15 @@ export default function CDPContacts({
       setTimeout(() => setEnrichToast(null), 3000);
       return;
     }
+    // Guard against a double-click launching two credit-consuming jobs
+    // for the same row.
+    const rowKey = String(c.id ?? c.email ?? c.full_name ?? c.name ?? "");
+    if (enrichingRowIds.has(rowKey)) return;
+    setEnrichingRowIds((prev) => {
+      const next = new Set(prev);
+      next.add(rowKey);
+      return next;
+    });
     try {
       const lemlistResult = await enrichKnownContact({
         contactId: c.id ? String(c.id) : undefined,
@@ -886,6 +902,12 @@ export default function CDPContacts({
     } catch (err: any) {
       setEnrichToast(err?.message || "Enrichment failed.");
       setTimeout(() => setEnrichToast(null), 3000);
+    } finally {
+      setEnrichingRowIds((prev) => {
+        const next = new Set(prev);
+        next.delete(rowKey);
+        return next;
+      });
     }
   }
 
@@ -1353,6 +1375,9 @@ export default function CDPContacts({
                 <ContactRow
                   key={c.id || c.email || c.full_name}
                   contact={c}
+                  enriching={enrichingRowIds.has(
+                    String(c.id ?? c.email ?? c.full_name ?? c.name ?? ""),
+                  )}
                   handlers={{
                     onOpenDetail: setDetailContact,
                     onOutreach: setOutreachContact,
@@ -1428,9 +1453,12 @@ type RowHandlers = {
 function ContactRow({
   contact,
   handlers,
+  enriching,
 }: {
   contact: Contact;
   handlers: RowHandlers;
+  /** True while a single-contact enrich for THIS row is in flight. */
+  enriching?: boolean;
 }) {
   const name =
     contact.full_name ||
@@ -1567,10 +1595,9 @@ function ContactRow({
             primary
             onClick={() => handlers.onOutreach(contact)}
           />
-          <ActionButton
-            icon={<Zap className="h-3 w-3" />}
-            label={enriched ? "Already enriched" : "Enrich"}
-            disabled={enriched}
+          <RowEnrichButton
+            enriched={enriched}
+            enriching={Boolean(enriching)}
             onClick={() => handlers.onEnrich(contact)}
           />
           <ActionButton
@@ -1929,6 +1956,65 @@ function ContactCard({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Inline per-row enrich control (owner request 2026-08-14). Sits in the
+ * row's actions cell so a single contact can be enriched directly from
+ * its row — reuses the same `enrichContact` → enrich-contact-orchestrator
+ * path as the bulk "enrich selected" flow, so the server-side
+ * "1 credit per enrichment" gate is respected (no bypass).
+ *
+ * States:
+ *   idle       → blue "Enrich" pill (1-credit tooltip)
+ *   enriching  → spinner + "Enriching…" (disabled)
+ *   enriched   → subtle "Enriched" pill (no action; the revealed email /
+ *                phone already render in their own columns)
+ */
+function RowEnrichButton({
+  enriched,
+  enriching,
+  onClick,
+}: {
+  enriched: boolean;
+  enriching: boolean;
+  onClick: () => void;
+}) {
+  if (enriched) {
+    return (
+      <span
+        title="This contact has been enriched with LIT."
+        className="font-display inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-2 text-[10px] font-semibold text-emerald-700"
+      >
+        <CheckCircle2 className="h-3 w-3" />
+        Enriched
+      </span>
+    );
+  }
+  if (enriching) {
+    return (
+      <span
+        title="Enriching this contact with LIT…"
+        aria-live="polite"
+        className="font-display inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full border border-blue-200 bg-blue-50 px-2 text-[10px] font-semibold text-blue-700"
+      >
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Enriching…
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Enrich this contact with LIT (uses 1 credit)."
+      aria-label="Enrich this contact"
+      className="font-display inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full border border-blue-200 bg-blue-50 px-2 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+    >
+      <Zap className="h-3 w-3" />
+      Enrich
+    </button>
   );
 }
 
