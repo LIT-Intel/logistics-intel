@@ -220,28 +220,28 @@ export const FEATURE_PAGES: FeaturePage[] = [
     titleHighlight: "built around shipments, not stages.",
     eyebrow: "CRM",
     metaDescription:
-      "A CRM for freight sales teams. Accounts, contacts, deals, and sequences — all attached to live shipment intelligence. No re-keying, no enrichment add-ons.",
+      "Freight CRM software for brokers, forwarders, and 3PLs. Manage accounts, contacts, deals, tasks, pipeline, forecasts, and reporting with shipment context attached.",
     lede:
-      "Run your entire freight sales motion in one place. Accounts and contacts are pre-enriched with shipment data; deals carry lane, carrier, and volume context automatically.",
+      "Manage the full freight sales process in one place. Accounts and contacts stay connected to shipment activity, while deals carry the lane, service, quote, owner, value, and follow-up context the team needs to move them forward.",
     shortAnswer:
       "LIT CRM is a full freight-native sales CRM with shipment-aware accounts, contacts, deals, visual pipeline stages, tasks, activity timelines, weighted forecasting, win/loss tracking, and performance reports. Every record stays joined to live BOL data.",
     problem:
-      "HubSpot and Salesforce are built for SaaS, not freight. Reps spend hours pasting BOL data into notes and re-enriching contacts from a third tool.",
+      "Most CRMs can store an account and a deal, but they do not explain why a shipper is worth pursuing. Freight reps end up rebuilding that context in notes, spreadsheets, and separate research tools before they can make the next call.",
     solution:
-      "LIT CRM treats shipments as a first-class field and carries that context through the entire deal cycle. Every account displays shipment activity, lanes, carriers, contacts, tasks, campaigns, quotes, deals, and revenue activity in one workspace.",
+      "LIT carries freight context through the entire deal cycle. Each account brings shipment activity, lanes, carriers, contacts, tasks, campaigns, quotes, deals, and revenue activity into the same workspace, so the record remains useful after prospecting ends.",
     capabilities: [
       { title: "Shipment-aware accounts", body: "Each company shows TTM volume, lane mix, and carrier share automatically." },
       { title: "Full deal pipeline", body: "New, Qualified, Quoted, Negotiation, Won, and Lost stages with deal values, owners, contacts, close dates, and drag-and-drop movement." },
       { title: "Forecasting + reports", body: "Open pipeline, weighted forecast, won revenue, stage conversion, deal velocity, win/loss results, and owner performance." },
       { title: "Tasks + activity", body: "Assigned follow-ups, due dates, deal timelines, reply and meeting activity, and stale-opportunity alerts." },
-      { title: "Sequences in CRM", body: "Step-based outbound sequences with Pulse-AI personalization, no separate engagement tool needed." },
+      { title: "Connected outreach", body: "Build step-based campaigns, send through connected Gmail or Microsoft Outlook mailboxes, and keep engagement tied to the account." },
       { title: "Built-in CRM workflow", body: "Run account research, outreach, deals, tasks, forecasting, and reporting in LIT without maintaining a parallel generic CRM." },
       { title: "Watchlists + alerts", body: "Save lanes, ports, or accounts; get pinged when a meaningful change happens." },
     ],
     whoItsFor: [
-      "Freight forwarders running a full outbound + AE motion.",
-      "3PL sales teams replacing spreadsheets with a real pipeline.",
-      "Customs brokers tracking active importers across HS chapters.",
+      "Freight forwarders managing shipper accounts across ocean, air, customs, and domestic services.",
+      "Freight brokers moving qualified shippers from first conversation through quote, negotiation, and close.",
+      "3PL and customs brokerage sales teams replacing disconnected spreadsheets with an accountable pipeline.",
     ],
     related: [
       { label: "Outbound campaigns", href: "/features/outbound-campaigns" },
