@@ -23,11 +23,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Bookmark,
+  CircleDollarSign,
   Mail,
   Search,
   Send,
-  Ship,
-  Sparkles,
+  Target,
+  Trophy,
   Users,
 } from "lucide-react";
 
@@ -45,6 +46,8 @@ import {
 import ActivityCard from "@/components/dashboard/sections/ActivityCard";
 import WorkspaceLanesGlobe from "@/features/coach/WorkspaceLanesGlobe";
 import RecentEnrichmentsCard from "@/components/dashboard/sections/RecentEnrichmentsCard";
+import PipelineRevenueCard from "@/components/dashboard/PipelineRevenueCard";
+import { loadDashboardCrm } from "@/api/dashboardCrm";
 
 // ── KPI row — AdminCommandDeck idiom (colored icon chip + bold number).
 const KPI_TONES = {
@@ -54,8 +57,18 @@ const KPI_TONES = {
   violet: "bg-violet-50 text-violet-600",
   amber: "bg-amber-50 text-amber-600",
   rose: "bg-rose-50 text-rose-600",
+  indigo: "bg-indigo-50 text-indigo-600",
   slate: "bg-slate-100 text-slate-500",
 };
+
+// Money formatter for the Closed Won KPI (compact $).
+function formatMoney(value) {
+  const n = Number(value) || 0;
+  if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(n) >= 1_000)
+    return `$${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return `$${Math.round(n).toLocaleString()}`;
+}
 
 function KpiChip({ label, value, hint, icon: Icon, tone = "blue" }) {
   return (
@@ -94,13 +107,14 @@ export default function LITDashboard() {
   const [savedCompaniesLive, setSavedCompaniesLive] = useState([]);
   const [campaignsLive, setCampaignsLive] = useState([]);
   const [workspaceKpis, setWorkspaceKpis] = useState(null);
+  const [crmSnapshot, setCrmSnapshot] = useState(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     async function loadDashboardData() {
       try {
-        const [savedRes, campaignsRes, kpisRes] = await Promise.all([
+        const [savedRes, campaignsRes, kpisRes, crmRes] = await Promise.all([
           getWorkspaceSavedCompanies().catch((err) => {
             console.error("getWorkspaceSavedCompanies failed:", err);
             return null;
@@ -115,6 +129,12 @@ export default function LITDashboard() {
                 return null;
               })
             : Promise.resolve(null),
+          user?.id
+            ? loadDashboardCrm().catch((err) => {
+                console.error("loadDashboardCrm failed:", err);
+                return null;
+              })
+            : Promise.resolve(null),
         ]);
 
         if (cancelled) return;
@@ -122,6 +142,7 @@ export default function LITDashboard() {
         setSavedCompaniesLive(Array.isArray(savedRes?.rows) ? savedRes.rows : []);
         setCampaignsLive(Array.isArray(campaignsRes) ? campaignsRes : []);
         setWorkspaceKpis(kpisRes);
+        setCrmSnapshot(crmRes);
       } catch (err) {
         console.error("Dashboard load error:", err);
       } finally {
@@ -151,15 +172,6 @@ export default function LITDashboard() {
       .slice(0, 8);
   }, [realSavedCompanies]);
 
-  const totalShipments = useMemo(
-    () =>
-      realSavedCompanies.reduce(
-        (sum, r) => sum + (Number(r?.company?.kpis?.shipments_12m) || 0),
-        0,
-      ),
-    [realSavedCompanies],
-  );
-
   const activeCampaigns = useMemo(
     () =>
       campaignsLive.filter((c) => {
@@ -179,8 +191,12 @@ export default function LITDashboard() {
 
   const savedContactsTotal = Number(workspaceKpis?.contacts) || 0;
   const verifiedContacts = Number(workspaceKpis?.verified_emails) || 0;
-  const pulseBriefsMtd = Number(workspaceKpis?.pulse_briefs_mtd) || 0;
   const outreachSentMtd = Number(workspaceKpis?.outreach_sent_mtd) || 0;
+
+  // CEO KPI swap: Active Opportunities (open deals) + Closed Won ($).
+  const activeOpportunities = Number(crmSnapshot?.openDealCount) || 0;
+  const closedWonMtd = Number(crmSnapshot?.wonMtdValue) || 0;
+  const closedWonAllTime = Number(crmSnapshot?.wonAllTimeValue) || 0;
 
   const kpiCells = useMemo(
     () => [
@@ -208,10 +224,11 @@ export default function LITDashboard() {
         tone: "cyan",
       },
       {
-        label: "Pulse briefs MTD",
-        value: pulseBriefsMtd.toLocaleString(),
-        icon: Sparkles,
-        tone: "amber",
+        label: "Active opportunities",
+        value: activeOpportunities.toLocaleString(),
+        hint: activeOpportunities > 0 ? "open deals in pipeline" : null,
+        icon: Target,
+        tone: "indigo",
       },
       {
         label: "Outreach sent MTD",
@@ -220,10 +237,14 @@ export default function LITDashboard() {
         tone: "emerald",
       },
       {
-        label: "Shipments 12m",
-        value: totalShipments > 0 ? formatNum(totalShipments) : "—",
-        icon: Ship,
-        tone: "rose",
+        label: "Closed won",
+        value: closedWonMtd > 0 ? formatMoney(closedWonMtd) : "—",
+        hint:
+          closedWonAllTime > 0
+            ? `${formatMoney(closedWonAllTime)} all-time`
+            : "won this month",
+        icon: Trophy,
+        tone: "emerald",
       },
     ],
     [
@@ -232,9 +253,10 @@ export default function LITDashboard() {
       draftCampaigns,
       verifiedContacts,
       savedContactsTotal,
-      pulseBriefsMtd,
       outreachSentMtd,
-      totalShipments,
+      activeOpportunities,
+      closedWonMtd,
+      closedWonAllTime,
     ],
   );
 
@@ -333,6 +355,9 @@ export default function LITDashboard() {
                 as the single coach surface. */}
             <WorkspaceLanesGlobe />
 
+            {/* Pipeline & Revenue — dashboard CRM snapshot */}
+            <PipelineRevenueCard />
+
             {/* Hot Accounts */}
             <ActivityCard rows={whatMattersRows} loading={dashboardLoading} />
 
@@ -343,11 +368,4 @@ export default function LITDashboard() {
       </div>
     </AppLayout>
   );
-}
-
-function formatNum(value) {
-  const n = Number(value) || 0;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
-  return Math.round(n).toLocaleString();
 }
