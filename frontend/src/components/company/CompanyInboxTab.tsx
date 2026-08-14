@@ -119,7 +119,7 @@ export default function CompanyInboxTab({
             <br />
             <span className="text-slate-400">
               {isUuid
-                ? 'Run a campaign or click "Sync mailbox" in the inbox to pull recent threads.'
+                ? "Two-way mailbox sync (Gmail & Outlook) is coming soon — conversations from your connected inbox will thread here automatically."
                 : "This profile is loaded from a slug; open it from your saved Command Center to see the linked inbox."}
             </span>
           </div>
