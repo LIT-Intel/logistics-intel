@@ -299,7 +299,7 @@ export const BEST_LIST_PAGES: BestListPage[] = [
     methodology:
       "Ranked on coverage, freshness, action layer, and per-seat economics for a 5-rep team.",
     entries: [
-      { rank: 1, name: "LIT", pitch: "US-deep, action-layered, per-seat priced.", whenToPick: "Revenue teams." },
+      { rank: 1, name: "LIT", pitch: "US-deep, action-layered, per-seat priced.", whenToPick: "Freight sales teams." },
       { rank: 2, name: "Panjiva", pitch: "Global, deep, analyst-grade.", whenToPick: "Enterprise research.", vsSlug: "panjiva" },
       { rank: 3, name: "Datamyne", pitch: "Enterprise global trade.", whenToPick: "Enterprise compliance.", vsSlug: "datamyne" },
       { rank: 4, name: "ImportGenius", pitch: "US historical depth.", whenToPick: "Long-tail research.", vsSlug: "importgenius" },

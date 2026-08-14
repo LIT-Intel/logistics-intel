@@ -31,7 +31,7 @@ const FACTS: { label: string; value: string; sub?: string }[] = [
   {
     label: "Founded",
     value: "2024",
-    sub: "Operator-grade revenue intelligence for global trade.",
+    sub: "Operator-grade freight sales intelligence for global trade.",
   },
   {
     label: "Headquarters",
@@ -281,7 +281,7 @@ export default function PressPage() {
         eyebrow="Press & media"
         title="Press kit, brand assets, and"
         titleHighlight="recent coverage."
-        subtitle="Writing about freight tech, trade data, or revenue intelligence? We're happy to help with quotes, demos, screenshots, and background — usually within one business day."
+        subtitle="Writing about freight technology, trade data, or freight sales software? We're happy to help with quotes, demos, screenshots, and background — usually within one business day."
         primaryCta={{
           label: "Contact press",
           href: "mailto:press@logisticintel.com",
@@ -323,7 +323,7 @@ export default function PressPage() {
           </h2>
           <div className="font-body mt-6 space-y-5 text-[17px] leading-[1.7] text-ink-700">
             <p>
-              Logistics Intel is a revenue intelligence platform built for global trade.
+              Logistics Intel is a freight prospecting and sales intelligence platform built for global trade.
               We combine shipment data, company intelligence, and CRM workflows into one
               system so freight brokers, forwarders, 3PLs, and NVOCCs can find the right
               accounts, reach the right people, and run outbound on real signal — not
@@ -332,7 +332,7 @@ export default function PressPage() {
             <p>
               The product pairs a customs and trade-flow dataset with Pulse Coach, an
               AI layer that watches accounts and surfaces what changed and what to do
-              about it. Revenue teams use LIT to move from signal to action without
+              about it. Freight sales teams use LIT to move from signal to action without
               leaving the page.
             </p>
           </div>

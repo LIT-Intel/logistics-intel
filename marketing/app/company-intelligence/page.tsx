@@ -21,6 +21,9 @@ const DIRECT_DEMO_URL = "https://cal.com/logisticintel/15min";
 const PLAYBOOK_URL = "/freight-leads";
 const VIDEO_URL = "https://www.youtube.com/watch?v=a9FhnCW89wY";
 const VIDEO_THUMBNAIL_URL = "https://i.ytimg.com/vi/a9FhnCW89wY/maxresdefault.jpg";
+// The tutorial was published with the first video SEO release on June 30, 2026.
+// Google requires uploadDate for VideoObject rich-result eligibility.
+const VIDEO_UPLOAD_DATE = "2026-06-30T13:32:51-04:00";
 
 const LEARNING_BULLETS = [
   "Search active shippers by company name, region, city, state, or ZIP code",
@@ -107,6 +110,7 @@ const VIDEO_OBJECT_JSONLD = {
   description:
     "See how Logistics Intel helps freight teams search active shippers, analyze trade lanes, enrich contacts, save views, and generate freight intelligence reports from one workspace.",
   thumbnailUrl: [VIDEO_THUMBNAIL_URL],
+  uploadDate: VIDEO_UPLOAD_DATE,
   embedUrl: "https://www.youtube.com/embed/a9FhnCW89wY",
   contentUrl: VIDEO_URL,
   publisher: {
