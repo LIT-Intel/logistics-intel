@@ -44,7 +44,7 @@ export default function PipelineReports({ viewAsUserId = "" }: { viewAsUserId?: 
   const [report, setReport] = useState<PipelineReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Service-type filter (All + the 9 profile modes). Narrows every aggregate
+  // Service-type filter (All + the freight-broker mode set). Narrows every aggregate
   // on the report EXCEPT the "pipeline by service type" breakdown, which
   // always shows the full mix. Works alongside the view-as-user filter.
   const [serviceType, setServiceType] = useState<DealServiceType | "">("");

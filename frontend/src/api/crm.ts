@@ -16,42 +16,48 @@ import { supabase } from "@/lib/supabase";
 
 // ── Service type (lane mode) ────────────────────────────────────────────
 // CEO ask (2026-08-14): deals capture a SERVICE TYPE so opportunities are
-// segmented + reportable by mode. Reuses the profile's mode set. Kept as a
-// local canonical list (rather than importing the intel ServiceMode, which
-// omits rail/intermodal/other) so CRM owns its own contract; values match the
-// lit_deals CHECK constraint (migration 20260814200000).
+// segmented + reportable by mode. This is the freight-broker mode set that
+// REPLACES the earlier ocean/air/truck/rail/... list. Kept as a local
+// canonical list so CRM owns its own contract; values match the lit_deals
+// CHECK constraint (migration 20260814230000).
 export type DealServiceType =
+  | "dry_van"
+  | "flat_bed"
+  | "reefer"
+  | "straight_truck"
+  | "hot_shot"
+  | "sprinter_van"
+  | "drayage"
+  | "intermodal"
   | "ocean"
   | "air"
-  | "truck"
-  | "rail"
-  | "drayage"
-  | "broker"
-  | "domestic"
-  | "intermodal"
   | "other";
 
 export const DEAL_SERVICE_TYPES: DealServiceType[] = [
+  "dry_van",
+  "flat_bed",
+  "reefer",
+  "straight_truck",
+  "hot_shot",
+  "sprinter_van",
+  "drayage",
+  "intermodal",
   "ocean",
   "air",
-  "truck",
-  "rail",
-  "drayage",
-  "broker",
-  "domestic",
-  "intermodal",
   "other",
 ];
 
 export const DEAL_SERVICE_TYPE_LABELS: Record<DealServiceType, string> = {
+  dry_van: "Dry Van",
+  flat_bed: "Flat Bed",
+  reefer: "Reefer",
+  straight_truck: "Straight Truck",
+  hot_shot: "Hot Shot",
+  sprinter_van: "Sprinter Van",
+  drayage: "Drayage",
+  intermodal: "Intermodal",
   ocean: "Ocean",
   air: "Air",
-  truck: "Truck",
-  rail: "Rail",
-  drayage: "Drayage",
-  broker: "Broker",
-  domestic: "Domestic",
-  intermodal: "Intermodal",
   other: "Other",
 };
 
