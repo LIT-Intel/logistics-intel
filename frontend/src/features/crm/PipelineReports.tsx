@@ -8,6 +8,11 @@ import {
 } from "recharts";
 import { Loader2, TrendingUp, DollarSign, Trophy, Percent, Gauge, RefreshCw } from "lucide-react";
 import { loadPipelineReport, type PipelineReport, type StageBucket } from "@/api/crmReports";
+import {
+  DEAL_SERVICE_TYPES,
+  DEAL_SERVICE_TYPE_LABELS,
+  type DealServiceType,
+} from "@/api/crm";
 import { formatMoney, initials, avatarColor } from "@/features/crm/crmFormat";
 
 /**
@@ -39,6 +44,10 @@ export default function PipelineReports({ viewAsUserId = "" }: { viewAsUserId?: 
   const [report, setReport] = useState<PipelineReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Service-type filter (All + the 9 profile modes). Narrows every aggregate
+  // on the report EXCEPT the "pipeline by service type" breakdown, which
+  // always shows the full mix. Works alongside the view-as-user filter.
+  const [serviceType, setServiceType] = useState<DealServiceType | "">("");
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -46,13 +55,13 @@ export default function PipelineReports({ viewAsUserId = "" }: { viewAsUserId?: 
     try {
       // viewAsUserId (owner/admin "view as [member]") narrows the report to one
       // member; "" = All members. RLS still scopes members to their own rows.
-      setReport(await loadPipelineReport(90, viewAsUserId || null));
+      setReport(await loadPipelineReport(90, viewAsUserId || null, serviceType || null));
     } catch (e: any) {
       setError(e?.message ?? "Failed to load reports");
     } finally {
       setLoading(false);
     }
-  }, [viewAsUserId]);
+  }, [viewAsUserId, serviceType]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -98,15 +107,34 @@ export default function PipelineReports({ viewAsUserId = "" }: { viewAsUserId?: 
             Forecast + performance across your workspace pipeline
           </div>
         </div>
-        <button
-          type="button"
-          onClick={load}
-          disabled={loading}
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
-        >
-          <RefreshCw style={{ width: 13, height: 13, animation: loading ? "spin 1s linear infinite" : undefined }} />
-          Refresh
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#94A3B8" }}>
+              Service type
+            </span>
+            <select
+              value={serviceType}
+              onChange={(e) => setServiceType(e.target.value as DealServiceType | "")}
+              style={{ padding: "7px 10px", borderRadius: 10, border: "1.5px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+            >
+              <option value="">All types</option>
+              {DEAL_SERVICE_TYPES.map((m) => (
+                <option key={m} value={m}>
+                  {DEAL_SERVICE_TYPE_LABELS[m]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={load}
+            disabled={loading}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+          >
+            <RefreshCw style={{ width: 13, height: 13, animation: loading ? "spin 1s linear infinite" : undefined }} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* KPI chips */}
@@ -138,10 +166,15 @@ export default function PipelineReports({ viewAsUserId = "" }: { viewAsUserId?: 
         </Card>
       </div>
 
-      {/* Row 3: owner leaderboard */}
-      <Card title="Owner leaderboard" subtitle="Open + won by deal owner">
-        <OwnerLeaderboard report={r} />
-      </Card>
+      {/* Row 3: pipeline by service type + owner leaderboard */}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
+        <Card title="Pipeline by service type" subtitle="Count + open $ per mode">
+          <ServiceTypeBreakdown report={r} />
+        </Card>
+        <Card title="Owner leaderboard" subtitle="Open + won by deal owner">
+          <OwnerLeaderboard report={r} />
+        </Card>
+      </div>
     </div>
   );
 }
@@ -278,6 +311,35 @@ function OwnerLeaderboard({ report }: { report: PipelineReport }) {
               </div>
               <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94A3B8", marginTop: 3 }}>
                 {o.openCount} open · {o.wonCount} won
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ServiceTypeBreakdown({ report }: { report: PipelineReport }) {
+  const rows = report.serviceTypes;
+  if (!rows.length) return <Empty label="No deals yet" />;
+  const max = Math.max(1, ...rows.map((s) => s.openValue + s.wonValue));
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {rows.map((s) => {
+        const total = s.openValue + s.wonValue;
+        return (
+          <div key={s.serviceType} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12.5, fontWeight: 600, color: s.serviceType === "unspecified" ? "#94A3B8" : "#0F172A" }}>{s.label}</span>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: "#475569", flexShrink: 0 }}>{formatMoney(s.openValue)}</span>
+              </div>
+              <div style={{ position: "relative", height: 6, borderRadius: 3, background: "#F1F5F9", marginTop: 4, overflow: "hidden" }}>
+                <div style={{ position: "absolute", inset: 0, width: `${(total / max) * 100}%`, background: "linear-gradient(90deg,#0EA5E9,#6366F1)", borderRadius: 3 }} />
+              </div>
+              <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94A3B8", marginTop: 3 }}>
+                {s.totalCount} deals · {s.openCount} open · {s.wonCount} won
               </div>
             </div>
           </div>

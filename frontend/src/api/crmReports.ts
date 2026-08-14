@@ -20,7 +20,14 @@
  */
 
 import { supabase } from "@/lib/supabase";
-import { resolveActiveOrgId, loadMemberNames, type Deal, type DealStage } from "@/api/crm";
+import {
+  resolveActiveOrgId,
+  loadMemberNames,
+  DEAL_SERVICE_TYPE_LABELS,
+  type Deal,
+  type DealServiceType,
+  type DealStage,
+} from "@/api/crm";
 
 const DAY_MS = 86_400_000;
 
@@ -43,6 +50,16 @@ export type WeeklyPoint = {
   label: string;     // e.g. "Aug 4"
   created: number;
   won: number;
+};
+
+export type ServiceTypeRow = {
+  serviceType: DealServiceType | "unspecified";
+  label: string;
+  openCount: number;
+  openValue: number;
+  wonCount: number;
+  wonValue: number;
+  totalCount: number; // all statuses — for the "pipeline by service type" mix
 };
 
 export type OwnerRow = {
@@ -70,6 +87,7 @@ export type PipelineReport = {
   weekly: WeeklyPoint[];        // last 8 weeks: created vs won
   winLoss: { won: number; lost: number };
   owners: OwnerRow[];
+  serviceTypes: ServiceTypeRow[]; // "pipeline by service type" breakdown
   waterfall: { created: number; advanced: number; won: number; lost: number };
   hasData: boolean;
 };
@@ -92,6 +110,7 @@ function weekLabel(d: Date): string {
 export async function loadPipelineReport(
   windowDays = 90,
   ownerUserId?: string | null,
+  serviceType?: DealServiceType | null,
 ): Promise<PipelineReport> {
   const empty: PipelineReport = {
     openValue: 0, weightedForecast: 0, openDealCount: 0,
@@ -99,6 +118,7 @@ export async function loadPipelineReport(
     winRate: null, winRateSampleSize: 0,
     avgDaysInStage: null, velocityDaysToClose: null,
     stageBuckets: [], weekly: [], winLoss: { won: 0, lost: 0 }, owners: [],
+    serviceTypes: [],
     waterfall: { created: 0, advanced: 0, won: 0, lost: 0 }, hasData: false,
   };
 
@@ -115,8 +135,42 @@ export async function loadPipelineReport(
   ]);
 
   const stages = (stagesRaw ?? []) as DealStage[];
-  const deals = (dealsRaw ?? []) as Deal[];
-  if (!stages.length && !deals.length) return { ...empty };
+  const allDeals = (dealsRaw ?? []) as Deal[];
+  if (!stages.length && !allDeals.length) return { ...empty };
+
+  // ── "Pipeline by service type" breakdown ──────────────────────────────
+  // Computed over the FULL (owner-scoped) deal set BEFORE any service-type
+  // narrowing, so the breakdown always shows the whole mix even while a
+  // single-type filter is active on the rest of the report.
+  const svcMap = new Map<string, ServiceTypeRow>();
+  const svcRow = (key: DealServiceType | "unspecified"): ServiceTypeRow => {
+    let r = svcMap.get(key);
+    if (!r) {
+      r = {
+        serviceType: key,
+        label: key === "unspecified" ? "Unspecified" : DEAL_SERVICE_TYPE_LABELS[key],
+        openCount: 0, openValue: 0, wonCount: 0, wonValue: 0, totalCount: 0,
+      };
+      svcMap.set(key, r);
+    }
+    return r;
+  };
+  for (const d of allDeals) {
+    const key = (d.service_type ?? "unspecified") as DealServiceType | "unspecified";
+    const row = svcRow(key);
+    const v = Number(d.value_amount) || 0;
+    row.totalCount += 1;
+    if (d.status === "open") { row.openCount += 1; row.openValue += v; }
+    else if (d.status === "won") { row.wonCount += 1; row.wonValue += v; }
+  }
+  const serviceTypes = Array.from(svcMap.values()).sort(
+    (a, b) => b.openValue + b.wonValue - (a.openValue + a.wonValue) || b.totalCount - a.totalCount,
+  );
+
+  // Optional service-type narrowing for every other aggregate on the report.
+  const deals = serviceType
+    ? allDeals.filter((d) => (d.service_type ?? null) === serviceType)
+    : allDeals;
 
   const stageById = new Map<string, DealStage>();
   for (const s of stages) stageById.set(s.id, s);
@@ -263,8 +317,12 @@ export async function loadPipelineReport(
     weekly: weekKeys.map((k) => weekMap.get(k)!),
     winLoss,
     owners: ownerRows,
+    serviceTypes,
     waterfall: { created: createdInWindow, advanced: advancedInWindow, won: winLoss.won, lost: winLoss.lost },
-    hasData: deals.length > 0,
+    // hasData reflects the FULL owner-scoped set (pre service-type narrowing)
+    // so the Reports view — with its service-type filter + breakdown — still
+    // renders when a filter narrows the other aggregates to zero.
+    hasData: allDeals.length > 0,
   };
 }
 
