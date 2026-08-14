@@ -37,7 +37,7 @@ export function buildMetadata(opts: {
   const description =
     seo.description ||
     opts.description ||
-    "LIT — market intelligence + revenue execution for modern growth teams.";
+    "Logistics Intel helps freight sales teams find active shippers, research trade lanes, reach relevant contacts, and organize qualified pipeline.";
   const url = `${SITE_URL}${opts.path}`;
   const canonical = seo.canonicalUrl || url;
 

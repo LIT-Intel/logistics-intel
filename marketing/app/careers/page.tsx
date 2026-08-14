@@ -63,7 +63,7 @@ export default function CareersPage() {
         eyebrow="Careers"
         title="Build the platform"
         titleHighlight="freight sales actually wants."
-        subtitle="LIT is a small, operator-grade team building the revenue intelligence layer for global trade. Remote-first, async-default, ship-bias on."
+        subtitle="LIT is a small, operator-grade team building freight sales intelligence software for global trade. Remote-first, async-default, ship-bias on."
       />
 
       <Section top="md" bottom="md">

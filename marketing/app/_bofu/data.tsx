@@ -757,12 +757,12 @@ export const BOFU_PAGES: BofuPage[] = [
       {
         question: "Can my whole team use it?",
         answer:
-          "Yes — shared watchlists, territories, and a built-in Command Center CRM, plus native push to HubSpot, Salesforce, Outreach, Apollo, Salesloft, and SmartLead on team plans. Searching is free for every seat.",
+          "Yes. Team plans include shared account workflows, Command Center CRM, and connected Gmail or Microsoft Outlook sending. Other integrations are listed as planned until they are released. The 7-day trial includes 10 searches and 10 verified contacts; searching is not presented as free forever.",
       },
       {
         question: "How do I evaluate it against our current stack?",
         answer:
-          "Run your live pipeline through it: search ten current opportunities, unlock the accounts, and compare LIT's shipment evidence and contacts against what your stack shows. The free trial's 10 unlocks and 10 enrichments exist exactly for that test.",
+          "Run your live pipeline through it: search ten current opportunities and compare LIT's shipment evidence and contacts against what your stack shows. The 7-day trial's 10 searches and 10 verified contacts exist exactly for that test.",
       },
     ],
     relatedHeading: "Explore the intelligence layers.",

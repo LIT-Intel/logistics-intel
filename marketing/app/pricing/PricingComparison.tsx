@@ -56,11 +56,12 @@ const GROUPS: Group[] = [
   {
     category: "Integrations",
     rows: [
-      { label: "HubSpot sync", starter: false, growth: true, scale: true, enterprise: true },
-      { label: "Salesforce sync", starter: false, growth: true, scale: true, enterprise: true },
-      { label: "Snowflake / warehouse sync", starter: false, growth: false, scale: false, enterprise: true },
-      { label: "API access", starter: false, growth: true, scale: true, enterprise: true },
-      { label: "Custom integrations", starter: false, growth: false, scale: false, enterprise: true },
+      { label: "Gmail connected-mailbox sending", starter: true, growth: true, scale: true, enterprise: true },
+      { label: "Microsoft Outlook connected-mailbox sending", starter: true, growth: true, scale: true, enterprise: true },
+      { label: "HubSpot connector", starter: "Planned", growth: "Planned", scale: "Planned", enterprise: "Custom" },
+      { label: "Salesforce connector", starter: "Planned", growth: "Planned", scale: "Planned", enterprise: "Custom" },
+      { label: "Data warehouse synchronization", starter: false, growth: false, scale: false, enterprise: "Custom" },
+      { label: "Custom integrations", starter: false, growth: false, scale: false, enterprise: "Available" },
     ],
   },
   {
@@ -107,7 +108,11 @@ export function PricingComparison() {
       <div className="mx-auto max-w-container">
         <div className="mx-auto max-w-[680px] text-center">
           <div className="eyebrow">Compare plans</div>
-          <h2 className="display-lg mt-3">Every capability, side by side.</h2>
+          <h2 className="display-lg mt-3">Compare the details when you need them.</h2>
+          <p className="font-body mt-4 text-[15px] leading-relaxed text-ink-500">
+            Start with team fit above. Use this table only to confirm quotas, governance,
+            and support requirements before you choose.
+          </p>
         </div>
 
         <div className="mt-10 overflow-x-auto rounded-3xl border border-ink-100 bg-white shadow-sm">

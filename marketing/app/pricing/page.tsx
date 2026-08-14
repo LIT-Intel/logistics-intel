@@ -23,7 +23,7 @@ const PRICING_FAQS = [
   {
     question: "Is there a free trial?",
     answer:
-      "Yes. Every account starts with a free trial — no credit card required. You get hands-on time with shipment search, contact reveals, and Pulse AI briefs so you can see whether LIT pays for itself before you pick a plan.",
+      "Yes. Every account starts with a 7-day trial with 10 searches and 10 verified-contact enrichments. No credit card is required. The trial is designed to let freight sales teams test real accounts before selecting a paid plan.",
   },
   {
     question: "Can I cancel anytime?",
@@ -46,9 +46,9 @@ const PRICING_FAQS = [
       "We'll notify you in-app before you hit your cap. You can either wait until the next billing cycle (caps reset automatically) or upgrade to the next tier — your reveal budget rebases instantly and we prorate the difference.",
   },
   {
-    question: "Do you offer a startup or non-profit discount?",
+    question: "Which integrations are available today?",
     answer:
-      "Yes. Early-stage startups (Series A and below) and registered non-profits qualify for discounted pricing on Starter and Growth. Talk to sales and we'll send you the application form.",
+      "Connected Gmail and Microsoft Outlook mailbox sending are available today. Other connectors are shown as planned on the integrations page until they are released; we do not present planned integrations as currently available.",
   },
   {
     question: "How does billing work for additional seats?",
@@ -86,7 +86,7 @@ export default function PricingPage() {
       priceCurrency: "USD",
       lowPrice: "125",
       highPrice: "999",
-      offerCount: 4,
+      offerCount: 3,
       availability: "https://schema.org/InStock",
       url: siteUrl(path),
       offers: [
@@ -120,16 +120,6 @@ export default function PricingPage() {
           availability: "https://schema.org/InStock",
           url: siteUrl(path),
         },
-        {
-          "@type": "Offer",
-          name: "Enterprise",
-          description:
-            "Custom pricing for multi-org programs. Unlimited usage, SSO + SCIM, Snowflake sync, custom data feeds, market benchmark analytics, named TAM, custom SLAs.",
-          price: "0",
-          priceCurrency: "USD",
-          availability: "https://schema.org/InStock",
-          url: siteUrl("/demo"),
-        },
       ],
     },
   };
@@ -155,9 +145,10 @@ export default function PricingPage() {
 
       <PageHero
         eyebrow="Pricing"
-        title="Freight prospecting that pays for itself in one booked lane."
-        subtitle="Start free. Pick a plan when you're ready. Cancel anytime."
-        primaryCta={{ label: "Start free trial", href: APP_SIGNUP_URL, icon: "arrow" }}
+        title="Plans built around"
+        titleHighlight="how freight sales teams work."
+        subtitle="Start with 7 days, 10 searches, and 10 verified contacts. Then choose the research capacity, contacts, and seats your team actually needs."
+        primaryCta={{ label: "Start 7-day trial", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Talk to sales", href: "/demo" }}
       />
 

@@ -53,6 +53,8 @@ const FOOTER_COLUMNS: FooterColumn[] = [
       { label: "Blog", href: "/blog" },
       { label: "Customer stories", href: "/customers" },
       { label: "Trade intelligence", href: "/trade-intelligence" },
+      { label: "Bill of lading database", href: "/bill-of-lading-database" },
+      { label: "Freight forwarder CRM", href: "/freight-forwarder-crm" },
       { label: "Tariff calculator", href: "/tools/tariff-calculator" },
       { label: "All tools", href: "/tools" },
       { label: "Glossary", href: "/glossary" },
@@ -112,7 +114,7 @@ export function Footer() {
             <Link href="/" className="inline-flex items-center gap-2.5">
               <LitLogoMark size={28} />
               <span className="font-display text-[18px] font-bold tracking-[-0.02em] text-white">
-                Logistic{" "}
+                Logistics{" "}
                 <span className="font-extrabold" style={{ color: "#00F0FF" }}>
                   Intel
                 </span>

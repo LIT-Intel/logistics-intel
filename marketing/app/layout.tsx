@@ -79,7 +79,7 @@ export const metadata: Metadata = {
     url: SITE_URL,
     title: "Logistics Intel — Freight Prospecting Software for Logistics Sales Teams",
     description:
-      "Find active shippers, logistics contacts, shipment activity, trade lanes, and freight sales signals in one revenue intelligence platform.",
+      "Find active shippers, logistics contacts, shipment activity, trade lanes, and freight sales signals in one freight sales intelligence platform.",
     images: [
       { url: "/api/og", width: 1200, height: 630, alt: "Logistics Intel" },
     ],
@@ -147,7 +147,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               "@type": "Organization",
               "@id": `${SITE_URL}/#organization`,
               name: "Logistics Intel",
+              legalName: "Logistics Intel, Inc.",
               alternateName: "LIT",
+              description:
+                "Freight prospecting and sales intelligence software for freight forwarders, freight brokers, 3PLs, NVOCCs, customs brokers, and logistics sales teams.",
               url: SITE_URL,
               logo: `${SITE_URL}/icon-512.png`,
               sameAs: [
@@ -159,7 +162,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 {
                   "@type": "ContactPoint",
                   contactType: "sales",
-                  email: "support@logisticintel.com",
+                  email: "sales@logisticintel.com",
                   availableLanguage: ["English"],
                 },
               ],

@@ -406,7 +406,7 @@ function ProblemSection() {
       <div className="mx-auto max-w-container">
         <div className="mx-auto max-w-[780px] text-center">
           <div className="eyebrow">The problem</div>
-          <h2 className="display-lg mt-3">Revenue teams are flying blind in a data-rich world.</h2>
+          <h2 className="display-lg mt-3">Freight sales teams are flying blind in a data-rich world.</h2>
           <p className="lead mx-auto mt-3 max-w-[640px]">
             Every go-to-market stack has holes. LIT closes them — from first signal to closed deal.
           </p>
