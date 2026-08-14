@@ -9,7 +9,7 @@
  * Direct queries against the `subscriptions` table from frontend code are
  * forbidden — see CLAUDE.md.
  */
-import { invokeEdge } from "./_client";
+import { invokeEdge, EdgeFunctionError } from "./_client";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Types
@@ -147,6 +147,53 @@ export async function createStripeCheckout(
   req: CheckoutRequest,
 ): Promise<CheckoutResponse> {
   return invokeEdge<CheckoutResponse>("billing-checkout", req);
+}
+
+/**
+ * Result of the in-app (embedded) main-plan checkout. Mirrors the CRM add-on's
+ * CrmCheckoutResult so the shared EmbeddedCheckoutModal can consume either.
+ */
+export type EmbeddedPlanCheckoutResult =
+  | { ok: true; client_secret: string; plan_code: string; interval: string }
+  | { ok: false; notConfigured: true; message: string };
+
+/**
+ * Start an EMBEDDED main-plan checkout via billing-checkout (ui_mode:'embedded').
+ * Returns a Stripe Checkout Session client_secret to mount in-app with
+ * EmbeddedCheckout. On a Stripe price/mode mismatch the edge fn returns
+ * ok:false with code:'billing_not_configured'; we re-map that to a typed
+ * { notConfigured:true } result so the modal renders a friendly message instead
+ * of a generic error. Any other failure re-throws.
+ */
+export async function startEmbeddedPlanCheckout(args: {
+  plan_code: string;
+  interval: "month" | "year";
+  return_url?: string;
+}): Promise<EmbeddedPlanCheckoutResult> {
+  try {
+    const res = await invokeEdge<{
+      ok: true;
+      client_secret: string;
+      plan_code: string;
+      interval: string;
+    }>("billing-checkout", {
+      plan_code: args.plan_code,
+      interval: args.interval,
+      ui_mode: "embedded",
+      ...(args.return_url ? { return_url: args.return_url } : {}),
+    });
+    return {
+      ok: true,
+      client_secret: res.client_secret,
+      plan_code: res.plan_code,
+      interval: res.interval,
+    };
+  } catch (e) {
+    if (e instanceof EdgeFunctionError && e.code === "billing_not_configured") {
+      return { ok: false, notConfigured: true, message: e.message };
+    }
+    throw e;
+  }
 }
 
 /** Create a Stripe Customer Portal session. */

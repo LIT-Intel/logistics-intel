@@ -14,6 +14,12 @@ type CheckoutRequest = {
   interval?: "month" | "year";
   success_url?: string;
   cancel_url?: string;
+  // When "embedded", create an EMBEDDED Checkout Session and return
+  // { client_secret } for in-app mounting (Stripe EmbeddedCheckout), instead
+  // of a hosted redirect URL. Mirrors crm-checkout. Any other value keeps the
+  // legacy hosted-redirect behavior.
+  ui_mode?: "hosted" | "embedded";
+  return_url?: string;
 };
 
 const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
@@ -203,6 +209,116 @@ serve(async (req) => {
       });
 
       stripeCustomerId = customer.id;
+    }
+
+    // 3b) EMBEDDED mode — mirror crm-checkout. Return a client_secret the
+    //     in-app EmbeddedCheckoutModal mounts, instead of a hosted redirect.
+    //     We intentionally do NOT touch the subscriptions table here (plan_code
+    //     / status stay webhook-owned); we only reused/created the customer id
+    //     above, same as the hosted path. On a Stripe price/mode mismatch we
+    //     return a clean `billing_not_configured` code (200) so the modal shows
+    //     a friendly "billing isn't configured yet" state.
+    if (body.ui_mode === "embedded") {
+      const returnUrl =
+        body.return_url || `${fallbackBase}/app/billing?checkout=success`;
+      try {
+        const embeddedSession = await stripe.checkout.sessions.create({
+          ui_mode: "embedded",
+          mode: "subscription",
+          customer: stripeCustomerId,
+          line_items: [{ price: priceId, quantity: 1 }],
+          return_url: returnUrl,
+          allow_promotion_codes: true,
+          client_reference_id: userId,
+          metadata: {
+            supabase_user_id: userId,
+            plan_code: requestedPlan,
+            interval,
+          },
+          subscription_data: {
+            metadata: {
+              supabase_user_id: userId,
+              plan_code: requestedPlan,
+              interval,
+            },
+          },
+        });
+
+        // Persist ONLY the stripe_customer_id link (same contract as the hosted
+        // path — the webhook owns plan_code/status). Best-effort; non-fatal.
+        if (existingSub) {
+          if (existingSub.stripe_customer_id !== stripeCustomerId) {
+            await fetch(
+              `${supabaseUrl}/rest/v1/subscriptions?user_id=eq.${userId}`,
+              {
+                method: "PATCH",
+                headers: {
+                  Authorization: authHeader,
+                  apikey: supabaseAnonKey,
+                  "Content-Type": "application/json",
+                  Prefer: "return=minimal",
+                },
+                body: JSON.stringify({
+                  stripe_customer_id: stripeCustomerId,
+                  updated_at: new Date().toISOString(),
+                }),
+              },
+            ).catch(() => {});
+          }
+        } else {
+          await fetch(`${supabaseUrl}/rest/v1/subscriptions`, {
+            method: "POST",
+            headers: {
+              Authorization: authHeader,
+              apikey: supabaseAnonKey,
+              "Content-Type": "application/json",
+              Prefer: "return=minimal",
+            },
+            body: JSON.stringify({
+              user_id: userId,
+              plan_code: "free_trial",
+              stripe_customer_id: stripeCustomerId,
+              status: "incomplete",
+              updated_at: new Date().toISOString(),
+            }),
+          }).catch(() => {});
+        }
+
+        return json({
+          ok: true,
+          client_secret: embeddedSession.client_secret,
+          plan_code: requestedPlan,
+          interval,
+          stripe_customer_id: stripeCustomerId,
+        });
+      } catch (embedErr) {
+        const msg =
+          embedErr instanceof Error ? embedErr.message : String(embedErr);
+        // "No such price" / test-vs-live mismatch => surface a config-mismatch
+        // the UI can render gracefully, rather than a 500.
+        if (
+          /No such price|a similar object exists in (test|live) mode|does not exist/i.test(
+            msg,
+          )
+        ) {
+          console.warn("[billing-checkout] embedded price_mismatch", msg);
+          return json(
+            {
+              ok: false,
+              error:
+                "Billing is not configured for this environment (Stripe price not found).",
+              code: "billing_not_configured",
+              detail: msg,
+            },
+            200,
+          );
+        }
+        console.error("[billing-checkout] embedded fatal", msg);
+        return json(
+          { ok: false, error: "Could not start checkout.", detail: msg },
+          500,
+        );
+      }
     }
 
     // 4) Create checkout session.
