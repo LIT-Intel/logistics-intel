@@ -74,6 +74,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/logistics-sales-intelligence`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${SITE_URL}/bill-of-lading-database`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${SITE_URL}/freight-forwarder-crm`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${SITE_URL}/freight-broker-crm`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     // /freight-leads industry sub-pages — previously missing from the sitemap.
     ...FREIGHT_LEAD_INDUSTRIES.map((ind) => ({
       url: `${SITE_URL}/freight-leads/${ind.slug}`,
