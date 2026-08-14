@@ -90,6 +90,16 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Canonical company key: ImportYeti keys arrive in two shapes for the
+    // SAME company — `tesla` and the legacy URL-path form `company/tesla`.
+    // Treating them as distinct created duplicate lit_companies rows AND
+    // duplicate saved rows (Command Center dupes, cleaned 2026-08-13).
+    // Everything below resolves through the canonical (bare) form.
+    const canonicalKey =
+      typeof source_company_key === 'string' && source_company_key
+        ? source_company_key.replace(/^company\//, '')
+        : null;
+
     let companyRecord;
 
     if (company_id) {
@@ -101,15 +111,18 @@ Deno.serve(async (req: Request) => {
 
       if (error) throw error;
       companyRecord = data;
-    } else if (source_company_key) {
+    } else if (canonicalKey) {
       const { data, error } = await supabase
         .from('lit_companies')
         .select('*')
-        .eq('source_company_key', source_company_key)
-        .maybeSingle();
+        .in('source_company_key', [canonicalKey, `company/${canonicalKey}`]);
 
       if (error) throw error;
-      companyRecord = data;
+      // Prefer the canonical (bare-key) row when both variants exist.
+      companyRecord =
+        (data ?? []).find((c: any) => c.source_company_key === canonicalKey) ??
+        (data ?? [])[0] ??
+        null;
     }
 
     if (!companyRecord && company_data) {
@@ -117,7 +130,10 @@ Deno.serve(async (req: Request) => {
         .from('lit_companies')
         .insert({
           source: company_data.source || 'importyeti',
-          source_company_key: company_data.source_company_key || source_company_key,
+          // Always store the canonical (bare) key form — never `company/x`.
+          source_company_key:
+            (company_data.source_company_key || source_company_key || '')
+              .replace(/^company\//, '') || null,
           name: company_data.name,
           normalized_name: company_data.name?.toLowerCase(),
           domain: company_data.domain,
@@ -164,12 +180,35 @@ Deno.serve(async (req: Request) => {
     // saved_company is a TOTAL-mode quota. The gate is skipped for
     // re-saves (same user_id + company_id already exists) so updating
     // the stage/notes of an already-saved company doesn't burn a slot.
-    const { data: existingSave } = await supabase
+    //
+    // Duplicate guard (2026-08-13): the re-save check is variant-aware.
+    // If the user already saved this company under a key variant
+    // (`company/tesla` vs `tesla` → a DIFFERENT lit_companies row), we
+    // treat this as a re-save of the EXISTING row instead of inserting a
+    // visual duplicate into the Command Center.
+    const variantCompanyIds: string[] = [companyRecord.id];
+    const resolvedCanonicalKey =
+      typeof companyRecord.source_company_key === 'string' && companyRecord.source_company_key
+        ? companyRecord.source_company_key.replace(/^company\//, '')
+        : null;
+    if (resolvedCanonicalKey) {
+      const { data: variants } = await supabase
+        .from('lit_companies')
+        .select('id')
+        .in('source_company_key', [resolvedCanonicalKey, `company/${resolvedCanonicalKey}`]);
+      for (const v of variants ?? []) {
+        if (v?.id && !variantCompanyIds.includes(v.id)) variantCompanyIds.push(v.id);
+      }
+    }
+
+    const { data: existingSaves } = await supabase
       .from('lit_saved_companies')
-      .select('id')
+      .select('id, company_id')
       .eq('user_id', user.id)
-      .eq('company_id', companyRecord.id)
-      .maybeSingle();
+      .in('company_id', variantCompanyIds)
+      .order('created_at', { ascending: true })
+      .limit(1);
+    const existingSave = existingSaves?.[0] ?? null;
 
     // Resolve org once for the whole request — needed for the usage gate,
     // for lit_saved_companies.org_id (added 2026-06-16 for multi-tenant),
@@ -206,15 +245,21 @@ Deno.serve(async (req: Request) => {
     // set it on the INSERT path. Re-saves (Refresh enrichment, save
     // again from search) update activity timestamps but never overwrite
     // the user's pipeline stage.
+    // If the user already saved a key-variant of this company, upsert onto
+    // THAT row (its company_id) — never create a second saved row for the
+    // same real-world company.
     const upsertPayload: Record<string, unknown> = {
       user_id: user.id,
-      company_id: companyRecord.id,
+      company_id: existingSave?.company_id ?? companyRecord.id,
       org_id: orgId,
       last_activity_at: now,
       last_viewed_at: now,
     };
     if (!existingSave) {
       upsertPayload.stage = stage;
+      // Written on INSERT only — backs the canonical-key unique index
+      // (lit_saved_companies_user_canonical_key_uniq).
+      upsertPayload.source_company_key = companyRecord.source_company_key ?? null;
     }
 
     const { data: savedCompany, error: saveError } = await supabase

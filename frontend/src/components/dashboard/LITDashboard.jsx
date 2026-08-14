@@ -22,10 +22,7 @@
 // see exactly what they saw before.
 import { useEffect, useMemo, useState } from "react";
 import {
-  Bell,
   Bookmark,
-  Download,
-  Filter,
   Mail,
   Search,
   Send,
@@ -44,7 +41,6 @@ import {
   getWorkspaceSavedCompanies,
 } from "@/api/workspace";
 
-import LitHeaderIconBtn from "@/components/ui/LitHeaderIconBtn";
 
 import ActivityCard from "@/components/dashboard/sections/ActivityCard";
 import WorkspaceLanesGlobe from "@/features/coach/WorkspaceLanesGlobe";
@@ -304,18 +300,6 @@ export default function LITDashboard() {
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-              <LitHeaderIconBtn
-                icon={<Bell className="h-3.5 w-3.5" />}
-                label="Notifications"
-              />
-              <LitHeaderIconBtn
-                icon={<Filter className="h-3.5 w-3.5" />}
-                label="Filters"
-              />
-              <LitHeaderIconBtn
-                icon={<Download className="h-3.5 w-3.5" />}
-                label="Export"
-              />
               <a
                 href="/app/search"
                 className="font-display inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-900 hover:bg-slate-50"

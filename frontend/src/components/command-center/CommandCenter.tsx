@@ -111,6 +111,15 @@ function recordKey(record: CommandCenterRecord) {
   );
 }
 
+// Canonical company key: ImportYeti keys arrive as both `tesla` and the
+// legacy URL-path form `company/tesla` for the SAME company. Comparing raw
+// keys made the org-shared merge (and historical duplicate saved rows)
+// render the same company twice. Always compare canonical forms.
+function canonicalCompanyKey(key: string | null | undefined): string {
+  if (!key || typeof key !== "string") return "";
+  return key.toLowerCase().replace(/^company\//, "");
+}
+
 function formatNumber(value: number | null | undefined, digits = 0) {
   if (value == null || Number.isNaN(Number(value))) return "—";
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -216,13 +225,20 @@ export default function CommandCenter() {
       // "Saved by X" chip. Companies the viewer ALSO saved keep the own row.
       let rows = ownRows;
       try {
+        // Canonical-key comparison — `company/tesla` and `tesla` are the
+        // same company; raw-key comparison used to let an org-mate's
+        // variant-key save through as a visual duplicate.
         const ownKeys = new Set(
           ownRows
-            .map((r) => r.company?.company_id ?? (r as any)?.company?.source_company_key)
+            .map((r) =>
+              canonicalCompanyKey(
+                r.company?.company_id ?? (r as any)?.company?.source_company_key,
+              ),
+            )
             .filter(Boolean),
         );
         const sharedRecords = (await listOrgSharedCompanyRecords()).filter(
-          (r: any) => !ownKeys.has(r?.company?.company_id),
+          (r: any) => !ownKeys.has(canonicalCompanyKey(r?.company?.company_id)),
         );
         if (sharedRecords.length) rows = [...ownRows, ...sharedRecords];
       } catch {
@@ -318,7 +334,20 @@ export default function CommandCenter() {
     };
   }, [savedCompanies]);
 
-  const listRows = useMemo(() => savedCompanies.map(buildListRow).filter((r) => r.key), [savedCompanies]);
+  // Belt-and-braces display dedupe: one row per canonical company key.
+  // The DB now has a canonical-key unique index + the save-company edge fn
+  // is variant-aware, but any residual key-variant rows (or a shared row
+  // slipping past the merge filter) must still never render twice.
+  const listRows = useMemo(() => {
+    const rows = savedCompanies.map(buildListRow).filter((r) => r.key);
+    const seen = new Set<string>();
+    return rows.filter((r) => {
+      const ck = canonicalCompanyKey(r.key) || r.key;
+      if (seen.has(ck)) return false;
+      seen.add(ck);
+      return true;
+    });
+  }, [savedCompanies]);
 
   // Country options derived from the loaded list. Sorted, deduped,
   // empty values filtered out.
