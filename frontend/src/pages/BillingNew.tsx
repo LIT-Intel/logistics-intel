@@ -9,15 +9,20 @@
 // the orchestrator — it owns state, calls the existing handlers, and
 // hands real data to dumb presentational components.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import {
   createStripeCheckout,
+  startEmbeddedPlanCheckout,
   createStripePortalSession,
   listStripeInvoices,
   getBillingStatus,
 } from '@/api/billing';
+import EmbeddedCheckoutModal, {
+  type EmbeddedCheckoutResult,
+} from '@/components/billing/EmbeddedCheckoutModal';
+import { STRIPE_PUBLISHABLE_KEY } from '@/components/billing/stripeLoader';
 import type { InvoiceRow } from '@/components/billing/sections/BillingInvoices';
 import { supabase } from '@/lib/supabase';
 import {
@@ -128,14 +133,19 @@ export default function Billing() {
     loadInvoices();
     loadBillingStatus();
     if (checkoutSuccess) {
+      // Refetch entitlements immediately so the new plan reflects, then again
+      // after a short delay to catch the webhook landing.
+      refreshEntitlements();
       const t = setTimeout(() => {
         loadSubscription();
         loadOrgSeatCount();
         loadInvoices();
         loadBillingStatus();
+        refreshEntitlements();
       }, 3500);
       return () => clearTimeout(t);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, checkoutSuccess]);
 
   async function loadBillingStatus() {
@@ -258,6 +268,11 @@ export default function Billing() {
   // for active subs.
   const [pendingPlan, setPendingPlan] = useState<PlanCode | null>(null);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  // In-app embedded checkout target. When set, the EmbeddedCheckoutModal is
+  // mounted for the main-plan upgrade (Starter/Growth/Scale) instead of
+  // redirecting to Stripe's hosted page. Falls back to hosted redirect when
+  // VITE_STRIPE_PUBLISHABLE_KEY is missing (see handleCheckout).
+  const [embeddedPlan, setEmbeddedPlan] = useState<PlanCode | null>(null);
 
   // Wrap the user's plan-pick click. Free trial activations + enterprise
   // contact-sales skip the modal (no proration math). Anything else opens
@@ -278,7 +293,10 @@ export default function Billing() {
     handleCheckout(code);
   }
 
-  // PRESERVED VERBATIM. Calls billing-checkout edge function.
+  // Plan upgrade entrypoint. When VITE_STRIPE_PUBLISHABLE_KEY is present we open
+  // the in-app EmbeddedCheckoutModal (mirrors the CRM add-on). When it's missing
+  // we gracefully fall back to the legacy HOSTED redirect via billing-checkout.
+  // Enterprise → contact sales; free_trial → no-op (unchanged).
   async function handleCheckout(planCode: PlanCode) {
     if (planCode === 'enterprise') {
       window.location.href = SALES_MAILTO;
@@ -286,6 +304,15 @@ export default function Billing() {
     }
     if (planCode === 'free_trial') return;
 
+    // In-app embedded checkout (preferred). The modal calls
+    // startEmbeddedPlanCheckout → billing-checkout (ui_mode:'embedded').
+    if (STRIPE_PUBLISHABLE_KEY) {
+      setErr('');
+      setEmbeddedPlan(planCode);
+      return;
+    }
+
+    // Fallback: hosted redirect (no publishable key configured).
     // 2026-04-29: every paid plan is a flat package price. We send seats:1
     // to Stripe Checkout for every plan; the package's included seat count
     // (Starter 1, Growth 3, Scale 5) lives in Stripe product metadata, not
@@ -310,8 +337,34 @@ export default function Billing() {
     }
   }
 
+  // Client-secret provider for the embedded main-plan checkout modal. The
+  // return_url carries ?checkout=success so the existing checkoutSuccess effect
+  // refetches subscription + billing status after Stripe's redirect.
+  const fetchEmbeddedPlanSecret = useCallback(async (): Promise<EmbeddedCheckoutResult> => {
+    if (!embeddedPlan) {
+      return { ok: false, notConfigured: true, message: 'No plan selected.' };
+    }
+    const returnUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${window.location.pathname}?checkout=success`
+        : undefined;
+    const result = await startEmbeddedPlanCheckout({
+      plan_code: embeddedPlan,
+      interval: billingInterval === 'yearly' ? 'year' : 'month',
+      return_url: returnUrl,
+    });
+    if (result.ok) {
+      return { ok: true, client_secret: result.client_secret };
+    }
+    return {
+      ok: false,
+      notConfigured: true,
+      message: result.message || 'Billing is not configured for this environment.',
+    };
+  }, [embeddedPlan, billingInterval]);
+
   // ── Real entitlements (single source of truth) ─────────────────────
-  const { entitlements } = useEntitlements();
+  const { entitlements, refresh: refreshEntitlements } = useEntitlements();
 
   // Pulse Explorer search is tracked separately in lit_usage_ledger
   // (feature_key='pulse_search', written by the pulse-search edge fn).
@@ -824,6 +877,25 @@ export default function Billing() {
           loadSubscription();
         }}
       />
+
+      {/* In-app (embedded) main-plan checkout. On completion Stripe redirects to
+          return_url (?checkout=success), which the checkoutSuccess effect uses
+          to refetch subscription + entitlements. */}
+      {embeddedPlan && (
+        <EmbeddedCheckoutModal
+          onClose={() => setEmbeddedPlan(null)}
+          onComplete={() => {
+            setEmbeddedPlan(null);
+            refreshEntitlements();
+            loadSubscription();
+            loadBillingStatus();
+          }}
+          fetchClientSecret={fetchEmbeddedPlanSecret}
+          title={`Upgrade to ${planLabelFor(embeddedPlan)}`}
+          eyebrow="LIT BILLING"
+          ariaLabel="Upgrade plan"
+        />
+      )}
     </div>
   );
 }
