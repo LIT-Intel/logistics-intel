@@ -10,7 +10,10 @@ const stages = [
   { icon: Users2, number: "03", title: "Work the account", body: "Move the account into a freight-native CRM and keep every next step visible." },
 ];
 
-/** Viewport-gated story motion; reduced-motion visitors receive the completed path. */
+/**
+ * Viewport-gated story motion. Reduced-motion visitors receive the completed
+ * path without the repeating runner or stage pulse.
+ */
 export function SignalJourney() {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { amount: 0.35, once: false });
