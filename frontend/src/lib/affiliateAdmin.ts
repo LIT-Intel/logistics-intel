@@ -253,6 +253,25 @@ export async function updatePartnerCommission(body: UpdatePartnerCommissionBody)
   });
 }
 
+export interface AssignAffiliateBody {
+  partner_id: string;
+  /** Provide user_id OR email (user_id preferred). */
+  user_id?: string;
+  email?: string;
+}
+
+/**
+ * Manually attribute an existing subscriber to a partner (CEO ask: subscribers
+ * who signed up without the ?ref= link still need to credit the partner). Writes
+ * the SAME affiliate_referrals row the ref-link claim flow does, tagged
+ * source='manual_admin', so the existing commission path credits the partner.
+ * Idempotent server-side — a user already attributed returns status='duplicate'.
+ * Gated to platform_admins in the edge function.
+ */
+export async function assignAffiliate(body: AssignAffiliateBody) {
+  return callFn('admin-assign-affiliate', body);
+}
+
 export interface PartnerReferralRow {
   id: string;
   referred_user_id: string | null;

@@ -47,6 +47,7 @@ import {
   resendStripeOnboarding,
   updatePartnerCommission,
   listPartnerReferrals,
+  assignAffiliate,
 } from '@/lib/affiliateAdmin';
 import { T, Btn } from '@/components/affiliate/tokens';
 import { Badge, Card, StatCell } from '@/components/affiliate/primitives';
@@ -1045,6 +1046,8 @@ function AdminPartners() {
   const [copiedId, setCopiedId] = useState(null);
   // Drawer state for the "click the referrals count to see who" UX.
   const [referralsDrawer, setReferralsDrawer] = useState(null);
+  // Manual "attribute an existing subscriber to a partner" modal.
+  const [showAssign, setShowAssign] = useState(false);
 
   const baseUrl = useMemo(
     () => (import.meta.env.VITE_PUBLIC_APP_URL || 'https://logisticintel.com').replace(/\/$/, ''),
@@ -1146,10 +1149,21 @@ function AdminPartners() {
           style={{
             padding: '16px 20px',
             borderBottom: `1px solid ${T.borderSoft}`,
-            fontFamily: T.ffDisplay, fontSize: 13, fontWeight: 700, color: T.ink,
+            display: 'flex', alignItems: 'center', gap: 10,
           }}
         >
-          {loading ? 'Partners' : `Partners · ${rows.length}`}
+          <div style={{ fontFamily: T.ffDisplay, fontSize: 13, fontWeight: 700, color: T.ink, flex: 1 }}>
+            {loading ? 'Partners' : `Partners · ${rows.length}`}
+          </div>
+          <button
+            type="button"
+            style={{ ...Btn.primary, padding: '7px 12px', fontSize: 12 }}
+            onClick={() => setShowAssign(true)}
+            disabled={loading || rows.length === 0}
+            title="Attribute an existing subscriber to a partner (for signups that missed the referral link)"
+          >
+            <UserPlus size={13} /> Assign subscriber
+          </button>
         </div>
         {loading ? (
           <Spinner />
@@ -1279,6 +1293,139 @@ function AdminPartners() {
           onClose={() => setReferralsDrawer(null)}
         />
       ) : null}
+
+      {showAssign ? (
+        <AssignAffiliateModal
+          partners={rows.filter((p) => p.status === 'active' && !p.deleted_at)}
+          onCancel={() => setShowAssign(false)}
+          onSuccess={async (msg) => {
+            setShowAssign(false);
+            setNotice({ tone: 'success', text: msg });
+            await load();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/* ── Manual assignment modal ─────────────────────────────────
+   Attribute an existing subscriber to a partner when they signed up without
+   the ?ref= link. Writes the same affiliate_referrals row the ref-link claim
+   flow does (source='manual_admin' server-side) so the commission path credits
+   the partner. Server is idempotent + platform-admin gated. */
+function AssignAffiliateModal({ partners, onCancel, onSuccess }) {
+  const [partnerId, setPartnerId] = useState(partners[0]?.id ?? '');
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function submit(e) {
+    e?.preventDefault?.();
+    setError(null);
+    const em = email.trim().toLowerCase();
+    if (!partnerId) { setError('Select a partner.'); return; }
+    if (!em || !em.includes('@')) { setError('Enter the subscriber’s email.'); return; }
+    setBusy(true);
+    const result = await assignAffiliate({ partner_id: partnerId, email: em });
+    setBusy(false);
+    if (result.ok && result.status === 'assigned') {
+      onSuccess?.(`Attributed ${result.referred_email || em} to partner ${result.ref_code}. Commissions will credit on their next paid invoice.`);
+    } else if (result.ok && result.status === 'duplicate') {
+      if (result.same_partner) {
+        setError('This subscriber is already attributed to this partner — nothing to do.');
+      } else {
+        setError(`This subscriber is already attributed to another partner (ref ${result.current_ref_code || '—'}). Re-pointing an existing attribution is intentionally not allowed here.`);
+      }
+    } else if (result.status === 'user_not_found') {
+      setError('No user found with that email. They must have an account before they can be attributed.');
+    } else if (result.status === 'self_referral') {
+      setError('That account belongs to the partner — a partner can’t be credited for their own signup.');
+    } else if (result.status === 'invalid_partner') {
+      setError(`Partner is not eligible (${result.reason || 'inactive'}).`);
+    } else if (result.status === 'forbidden') {
+      setError('You do not have permission to do this (platform admin required).');
+    } else {
+      setError(result.error || result.detail || `Failed to assign (${result.status || 'error'}).`);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 50,
+        background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24, fontFamily: T.ffBody,
+      }}
+      onClick={onCancel}
+    >
+      <Card style={{ width: '100%', maxWidth: 480, padding: 24 }} onClick={(e) => e.stopPropagation?.()}>
+        <form onSubmit={submit} onClick={(e) => e.stopPropagation()}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <Badge tone="brand">Manual attribution</Badge>
+          </div>
+          <div style={{ fontFamily: T.ffDisplay, fontSize: 18, fontWeight: 700, color: T.ink, letterSpacing: '-0.01em' }}>
+            Assign a subscriber to a partner
+          </div>
+          <div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6, lineHeight: 1.55 }}>
+            Use this when a subscriber signed up without the partner’s referral link. It records the
+            same attribution the link would have, so the partner earns commission on their paid
+            invoices. A subscriber can only be attributed once.
+          </div>
+
+          <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Field label="Partner" required>
+              <select
+                value={partnerId}
+                onChange={(e) => setPartnerId(e.target.value)}
+                disabled={busy}
+                style={inputStyle}
+              >
+                {partners.length === 0 && <option value="">No active partners</option>}
+                {partners.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {(p.email || p.user_id)} · {p.ref_code} · {p.commission_pct}% / {p.commission_months}mo
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Subscriber email" required>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={busy}
+                placeholder="subscriber@example.com"
+                style={inputStyle}
+                autoFocus
+              />
+            </Field>
+          </div>
+
+          {error && (
+            <div
+              style={{
+                background: T.redBg, border: `1px solid ${T.redBorder}`, borderRadius: 8,
+                padding: '10px 12px', marginTop: 12, fontSize: 12.5, color: T.inkMuted, lineHeight: 1.5,
+              }}
+            >
+              <strong style={{ color: T.red, fontFamily: T.ffDisplay }}>Error:</strong> {error}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+            <button type="button" style={Btn.ghost} onClick={onCancel} disabled={busy}>Cancel</button>
+            <button
+              type="submit"
+              style={{ ...Btn.primary, opacity: busy ? 0.7 : 1 }}
+              disabled={busy || partners.length === 0}
+            >
+              <UserPlus size={13} /> {busy ? 'Assigning…' : 'Assign to partner'}
+            </button>
+          </div>
+        </form>
+      </Card>
     </div>
   );
 }
