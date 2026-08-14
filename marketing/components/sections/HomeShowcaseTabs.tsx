@@ -4,13 +4,14 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useCallback,
+  useEffect,
   useId,
   useRef,
   useState,
 } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Pause, Play } from "lucide-react";
 
 /**
  * One product capability surfaced by the tabbed home showcase. Each tab
@@ -44,6 +45,10 @@ export type HomeShowcaseTabsProps = {
   intro?: ReactNode;
   /** Non-empty list of tabs. First entry is active on mount. */
   tabs: [ShowcaseTab, ...ShowcaseTab[]];
+  /** Advance through the tabs until the visitor takes control. */
+  autoPlay?: boolean;
+  /** Milliseconds each product stage remains visible. */
+  autoPlayMs?: number;
 };
 
 /**
@@ -58,14 +63,27 @@ export function HomeShowcaseTabs({
   headline,
   intro,
   tabs,
+  autoPlay = false,
+  autoPlayMs = 7000,
 }: HomeShowcaseTabsProps) {
   const [activeId, setActiveId] = useState<string>(tabs[0].id);
+  const [playing, setPlaying] = useState(autoPlay);
+  const [temporarilyPaused, setTemporarilyPaused] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const baseId = useId();
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const activeIndex = tabs.findIndex((t) => t.id === activeId);
   const active = tabs[activeIndex] ?? tabs[0];
+
+  useEffect(() => {
+    if (!playing || temporarilyPaused || prefersReducedMotion) return;
+    const timer = window.setTimeout(() => {
+      const next = tabs[(activeIndex + 1) % tabs.length];
+      setActiveId(next.id);
+    }, autoPlayMs);
+    return () => window.clearTimeout(timer);
+  }, [activeIndex, autoPlayMs, playing, prefersReducedMotion, tabs, temporarilyPaused]);
 
   const focusTab = useCallback(
     (id: string) => {
@@ -97,8 +115,14 @@ export function HomeShowcaseTabs({
 
   return (
     <section
-      className="relative bg-section-tint py-20 sm:py-24"
+      className="relative bg-section-soft-blue py-20 sm:py-24"
       aria-labelledby={`${baseId}-section-heading`}
+      onMouseEnter={() => setTemporarilyPaused(true)}
+      onMouseLeave={() => setTemporarilyPaused(false)}
+      onFocusCapture={() => setTemporarilyPaused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setTemporarilyPaused(false);
+      }}
     >
       <div className="mx-auto max-w-container px-5 sm:px-8">
         <div className="mx-auto max-w-[760px] text-center">
@@ -138,7 +162,10 @@ export function HomeShowcaseTabs({
                 aria-selected={selected}
                 aria-controls={`${baseId}-panel-${t.id}`}
                 tabIndex={selected ? 0 : -1}
-                onClick={() => setActiveId(t.id)}
+                onClick={() => {
+                  setActiveId(t.id);
+                  setPlaying(false);
+                }}
                 onKeyDown={handleKey}
                 className={[
                   "shrink-0 h-10 px-5 rounded-full text-[14px] font-medium font-display transition-all",
@@ -153,6 +180,31 @@ export function HomeShowcaseTabs({
             );
           })}
         </div>
+
+        {autoPlay ? (
+          <div className="mx-auto mt-4 flex max-w-[560px] items-center gap-3" aria-live="polite">
+            <button
+              type="button"
+              onClick={() => setPlaying((value) => !value)}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-ink-100 bg-white text-ink-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/35"
+              aria-label={playing ? "Pause product tour" : "Play product tour"}
+            >
+              {playing ? <Pause className="h-3.5 w-3.5" aria-hidden /> : <Play className="h-3.5 w-3.5" aria-hidden />}
+            </button>
+            <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-200">
+              <motion.div
+                key={`${active.id}-${playing}-${temporarilyPaused}`}
+                className="h-full origin-left rounded-full bg-gradient-to-r from-cyan-500 to-blue-600"
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: playing && !temporarilyPaused && !prefersReducedMotion ? 1 : 0 }}
+                transition={{ duration: playing && !temporarilyPaused ? autoPlayMs / 1000 : 0.2, ease: "linear" }}
+              />
+            </div>
+            <span className="font-mono shrink-0 text-[10px] font-medium uppercase tracking-[0.1em] text-ink-500">
+              {playing ? "Auto-playing" : "Paused"}
+            </span>
+          </div>
+        ) : null}
 
         {/* Stage — left content column + right mock column. Single
             tabpanel that swaps on activeId via AnimatePresence. */}
