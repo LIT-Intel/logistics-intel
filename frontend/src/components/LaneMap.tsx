@@ -108,6 +108,16 @@ export type LaneMapProps = {
    * under prefers-reduced-motion (static dotted overlay remains).
    */
   flow?: boolean;
+  /**
+   * How lane LINES render (endpoint dots always show for context):
+   *  - `always` (default): every lane draws its stroke; selection/hover
+   *    restyle per `unselectedStyle`. The Company-Profile hero uses this.
+   *  - `onDemand` (2026-08-14 dashboard): NO lines by default — a stroke is
+   *    drawn ONLY for the hovered or selected lane. Kills the default "line
+   *    spaghetti" on the workspace map while keeping endpoint dots as
+   *    geographic context. Lines still appear on hover/click.
+   */
+  linesMode?: "always" | "onDemand";
 };
 
 // ── Palettes ──────────────────────────────────────────────────────────
@@ -366,6 +376,7 @@ export default function LaneMap({
   laneColors,
   unselectedStyle = "fade",
   flow = false,
+  linesMode = "always",
 }: LaneMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -691,12 +702,46 @@ export default function LaneMap({
     const selectedExists = !!selectedLane && laneLayersRef.current.has(selectedLane);
 
     const ghost = unselectedStyle === "ghost";
+    const onDemand = linesMode === "onDemand";
 
     for (const [laneId, layers] of laneLayersRef.current.entries()) {
       const isSelected = selectedExists && laneId === selectedLane;
       const isHovered = !isSelected && laneId === hovered;
       const isFaded = hasSelection && selectedExists && !isSelected;
       const lc = laneColors?.[laneId];
+
+      // On-demand lines (dashboard): draw a stroke ONLY for the hovered or
+      // selected lane — every other lane's line is hidden (endpoint dots
+      // stay for geographic context). No default line spaghetti.
+      if (onDemand && !isSelected && !isHovered) {
+        layers.baseLine.setStyle({ opacity: 0, weight: 1 });
+        if (layers.flowLine) {
+          map.removeLayer(layers.flowLine);
+          layers.flowLine = null;
+        }
+        // Endpoint dots stay visible as context.
+        for (const dot of [layers.fromDot, layers.toDot]) {
+          dot.setStyle({
+            radius: layers.baseRadius,
+            color: palette.dotStroke,
+            weight: 2,
+            fillColor: lc?.base ?? palette.dotFill,
+            fillOpacity: 1,
+          });
+          dot.bringToFront();
+        }
+        layers.fromHit.bringToFront();
+        layers.toHit.bringToFront();
+        if (layers.fromPulse) {
+          map.removeLayer(layers.fromPulse);
+          layers.fromPulse = null;
+        }
+        if (layers.toPulse) {
+          map.removeLayer(layers.toPulse);
+          layers.toPulse = null;
+        }
+        continue;
+      }
 
       // Single-stroke styling — hover/selected brighten + widen the SAME
       // polyline (no separate glow layer, so a lane never reads as
@@ -836,7 +881,7 @@ export default function LaneMap({
   useEffect(() => {
     applyStateStyles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unselectedStyle, laneColors, flow]);
+  }, [unselectedStyle, laneColors, flow, linesMode]);
 
   // Selection-only restyle + flyTo. Cheaper than rebuilding the layer set.
   useEffect(() => {

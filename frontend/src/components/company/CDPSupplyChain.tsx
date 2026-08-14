@@ -237,6 +237,10 @@ function CDPSupplyChainBody({
   );
   const containerProfile = useMemo(() => deriveContainerProfile(profile), [profile]);
   const cadence = useMemo(() => deriveCadence(profile), [profile]);
+  // Full month-keyed REAL volume series (source of truth for reconciliation +
+  // YoY) — same monthly_volumes the Cadence chart renders, but every month
+  // back to 2015, not just the trailing 12.
+  const monthlySeries = useMemo(() => deriveMonthlySeries(profile), [profile]);
 
   const briefHeadline = useMemo(() => {
     if (allLanes.length === 0) return null;
@@ -342,6 +346,7 @@ function CDPSupplyChainBody({
         <SummaryView
           profile={profile}
           cadence={cadence}
+          monthlySeries={monthlySeries}
           modes={modes}
           containerProfile={containerProfile}
           recentBols={recentBols}
@@ -400,6 +405,7 @@ function CDPSupplyChainBody({
 function SummaryView({
   profile: _profile,
   cadence,
+  monthlySeries,
   modes: _modes,
   containerProfile,
   recentBols,
@@ -419,6 +425,7 @@ function SummaryView({
 }: {
   profile: any;
   cadence: CadencePoint[];
+  monthlySeries: MonthlyVolumePoint[];
   modes: ModeSlice[];
   containerProfile: ContainerProfile;
   recentBols: any[];
@@ -496,6 +503,7 @@ function SummaryView({
         onOpenLaneHistory={onOpenLaneHistory}
         headline={headline}
         cadence={cadence}
+        monthlySeries={monthlySeries}
         shipments12mTotal={
           Number(_profile?.routeKpis?.shipmentsLast12m) ||
           Number(_profile?.shipments_last_12m) ||
@@ -2072,6 +2080,52 @@ const MONTH_ABBR = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
+/** Year-over-year delta shared by the overall chip + per-lane annotations. */
+type YoyDelta = {
+  current: number;
+  prior: number;
+  deltaShip: number;
+  pct: number;
+};
+
+/**
+ * Small ▲/▼ YoY chip: "+18% YoY" green up / red down. Flat (0) reads neutral.
+ * `compact` drops the "YoY" suffix for the tight per-lane row slot.
+ */
+function YoyChip({
+  delta,
+  compact = false,
+}: {
+  delta: YoyDelta;
+  compact?: boolean;
+}) {
+  const up = delta.deltaShip > 0;
+  const flat = delta.deltaShip === 0;
+  const rounded = Math.round(Math.abs(delta.pct));
+  const sign = up ? "+" : flat ? "" : "-";
+  const tone = flat
+    ? "border-slate-200 bg-slate-50 text-slate-500"
+    : up
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : "border-rose-200 bg-rose-50 text-rose-600";
+  const arrow = flat ? "" : up ? "▲" : "▼";
+  return (
+    <span
+      title={`${delta.current.toLocaleString()} vs ${delta.prior.toLocaleString()} prior year (${
+        up ? "+" : flat ? "" : "-"
+      }${Math.abs(delta.deltaShip).toLocaleString()})`}
+      className={[
+        "font-mono inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full border px-1.5 py-[1px] text-[9px] font-bold",
+        tone,
+      ].join(" ")}
+    >
+      {arrow && <span aria-hidden>{arrow}</span>}
+      {sign}
+      {rounded}%{compact ? "" : " YoY"}
+    </span>
+  );
+}
+
 /** "2026-07" → "Jul 2026". */
 function laneMonthLabel(mk: string): string {
   const y = mk.slice(0, 4);
@@ -2367,6 +2421,10 @@ function MapScopeControls({
   showAllLanes,
   onToggleShowAllLanes,
   sampleMode = false,
+  yoyMode = false,
+  onToggleYoy,
+  overallYoy = null,
+  yoyAvailable = false,
 }: {
   yearFilter: number | null;
   monthFilter: number | null;
@@ -2377,6 +2435,12 @@ function MapScopeControls({
   showAllLanes: boolean;
   onToggleShowAllLanes: () => void;
   sampleMode?: boolean;
+  /** YoY delta mode — annotates lanes + shows the overall chip. */
+  yoyMode?: boolean;
+  onToggleYoy?: () => void;
+  overallYoy?: YoyDelta | null;
+  /** True when a prior-period real total exists to diff against. */
+  yoyAvailable?: boolean;
 }) {
   const chip = (active: boolean, disabled = false) =>
     [
@@ -2403,6 +2467,20 @@ function MapScopeControls({
       >
         {showAllLanes ? "Showing all" : "Show all"}
       </button>
+      {/* YoY delta toggle — real overall delta from monthly_volumes. */}
+      {onToggleYoy && yoyAvailable && (
+        <>
+          <button
+            type="button"
+            onClick={onToggleYoy}
+            title="Year-over-year: show each lane's and the overall volume change vs the prior year"
+            className={chip(yoyMode)}
+          >
+            YoY
+          </button>
+          {yoyMode && overallYoy && <YoyChip delta={overallYoy} />}
+        </>
+      )}
       {availableYears.length > 0 && (
         <>
           <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-200" aria-hidden />
@@ -2488,6 +2566,8 @@ function LaneRankRows({
   laneMonthsByPair,
   monthWindow,
   sampleMode = false,
+  yoyMode = false,
+  perLaneYoy = null,
 }: {
   rankedPairs: any[];
   totalShipments: number;
@@ -2507,6 +2587,11 @@ function LaneRankRows({
   monthWindow?: string[];
   /** True when month data derives from the recent-BOL sample, not rollup. */
   sampleMode?: boolean;
+  /** YoY mode — annotate each lane with its prior-year delta chip. */
+  yoyMode?: boolean;
+  /** pairKey → prior-year reconciled shipments (real, rollup path only).
+   *  Null when per-lane YoY isn't real for this scope (see TopLanesCard). */
+  perLaneYoy?: Map<string, number> | null;
 }) {
   return (
     <>
@@ -2517,6 +2602,18 @@ function LaneRankRows({
         const share = totalShipments > 0 ? shipments / totalShipments : 0;
         const cityRoutes = cityRoutesByPair.get(pair.pairKey) || [];
         const lc = laneColors?.[pair.pairKey];
+        // Per-lane YoY (real, rollup path only). Prior value present but 0 →
+        // treat as a new lane; prior missing → no reliable diff (skip chip).
+        const priorShip = perLaneYoy?.get(pair.pairKey);
+        const laneYoy: YoyDelta | null =
+          yoyMode && perLaneYoy && priorShip != null && priorShip > 0
+            ? {
+                current: shipments,
+                prior: priorShip,
+                deltaShip: shipments - priorShip,
+                pct: ((shipments - priorShip) / priorShip) * 100,
+              }
+            : null;
         return (
           <div
             key={pair.pairKey}
@@ -2580,7 +2677,17 @@ function LaneRankRows({
                 >
                   {pair.toMeta?.countryName}
                 </span>
-                <span className="font-mono ml-auto shrink-0 text-[11px] font-bold text-slate-900">
+                {laneYoy && (
+                  <span className="ml-auto shrink-0">
+                    <YoyChip delta={laneYoy} compact />
+                  </span>
+                )}
+                <span
+                  className={[
+                    "font-mono shrink-0 text-[11px] font-bold text-slate-900",
+                    laneYoy ? "" : "ml-auto",
+                  ].join(" ")}
+                >
                   {shipments.toLocaleString()}
                 </span>
                 <ChevronDown
@@ -2735,6 +2842,7 @@ function TopLanesCard({
   onOpenLaneHistory,
   headline = null,
   cadence = [],
+  monthlySeries = [],
   shipments12mTotal = null,
   sourceCompanyKey = null,
   selectedYear,
@@ -2766,6 +2874,13 @@ function TopLanesCard({
    * strip in the top-left glass panel.
    */
   cadence?: CadencePoint[];
+  /**
+   * Full month-keyed REAL volume series (parsed_summary.monthly_volumes) —
+   * the SAME source the Cadence chart totals. Drives volume reconciliation
+   * (lane share × real scope total) + year-over-year deltas so lane cards,
+   * map lines and the cadence chart can never disagree.
+   */
+  monthlySeries?: MonthlyVolumePoint[];
   /**
    * Snapshot's 12-mo shipment total (parsed_summary.shipments_last_12m →
    * routeKpis.shipmentsLast12m). Drives the honesty caption's "~X% of
@@ -2906,8 +3021,88 @@ function TopLanesCard({
     return buildPairsFromSampleBols(dated);
   }, [scopeActive, hasRollup, rollupRows, sampleDatedBols, yearFilter, monthFilter]);
 
-  /** Pairs the hero + dialog actually render: scoped when filtering. */
-  const viewPairs = scoped ? scoped.pairs : pairs;
+  // ── Volume reconciliation (CEO P0, 2026-08-14) ───────────────────────
+  // The pairs above carry raw ~50-BOL SAMPLE counts (rollup rows are the
+  // same sample re-shaped). Reconcile them to the REAL scope total from
+  // monthly_volumes (the exact series the Cadence chart totals) so lane
+  // volumes + map line weights SUM to the verified total instead of the
+  // sample. Each lane's share (shipments AND TEU, independently) is applied
+  // to the real total. When the real series is unknown, pairs pass through
+  // as raw sample (honest fallback).
+  const scopeTotal = useMemo(
+    () => realScopeTotal(monthlySeries, yearFilter, monthFilter),
+    [monthlySeries, yearFilter, monthFilter],
+  );
+  /** Prior-period real total for the overall YoY chip (real, spans years). */
+  const priorScopeTotal = useMemo(() => {
+    if (yearFilter == null) {
+      // Trailing-12 default: prior-year window is the 12 months before it.
+      const all = monthlySeries.map((p) => p.month);
+      if (all.length < 13) return null;
+      const priorKeys = new Set(all.slice(-24, -12));
+      if (priorKeys.size === 0) return null;
+      let shipments = 0;
+      let teu = 0;
+      for (const p of monthlySeries) {
+        if (!priorKeys.has(p.month)) continue;
+        shipments += p.shipments;
+        teu += p.teu;
+      }
+      return shipments > 0 || teu > 0 ? { shipments, teu, months: priorKeys.size } : null;
+    }
+    return realScopeTotal(monthlySeries, yearFilter - 1, monthFilter);
+  }, [monthlySeries, yearFilter, monthFilter]);
+
+  const rawViewPairs = scoped ? scoped.pairs : pairs;
+  const { pairs: reconciledPairs, reconciled: isReconciled } = useMemo(
+    () => reconcilePairsToTotal(rawViewPairs, scopeTotal),
+    [rawViewPairs, scopeTotal],
+  );
+  /** Pairs the hero + dialog actually render: reconciled to the real total. */
+  const viewPairs = reconciledPairs;
+
+  // ── Year-over-year toggle (CEO new, 2026-08-14) ──────────────────────
+  const [yoyMode, setYoyMode] = useState(false);
+  /** Overall YoY delta from the REAL monthly series (source of truth). */
+  const overallYoy = useMemo(() => {
+    if (!scopeTotal || !priorScopeTotal || priorScopeTotal.shipments <= 0) {
+      return null;
+    }
+    const deltaShip = scopeTotal.shipments - priorScopeTotal.shipments;
+    const pct = (deltaShip / priorScopeTotal.shipments) * 100;
+    return {
+      current: scopeTotal.shipments,
+      prior: priorScopeTotal.shipments,
+      deltaShip,
+      pct,
+    };
+  }, [scopeTotal, priorScopeTotal]);
+  /**
+   * Per-lane YoY. REAL only when a year is scoped: reconcile the prior year's
+   * lanes to the prior year's real total and diff by pairKey. On the
+   * trailing-12 default (no year) we can't cleanly split lanes across the
+   * year boundary from the sample, so per-lane YoY is omitted (overall YoY
+   * still shows — it's real). Never fabricated.
+   */
+  const perLaneYoy = useMemo(() => {
+    if (!yoyMode || yearFilter == null || !hasRollup) return null;
+    const priorTotal = realScopeTotal(monthlySeries, yearFilter - 1, monthFilter);
+    if (!priorTotal || priorTotal.shipments <= 0) return null;
+    const priorRows = rollupRows!.filter((r) => {
+      const y = Number(String(r.month).slice(0, 4));
+      const m = Number(String(r.month).slice(5, 7));
+      return y === yearFilter - 1 && (monthFilter == null || m === monthFilter);
+    });
+    if (priorRows.length === 0) return null;
+    const priorBuilt = buildPairsFromRollup(priorRows);
+    const { pairs: priorReconciled } = reconcilePairsToTotal(
+      priorBuilt.pairs,
+      priorTotal,
+    );
+    const map = new Map<string, number>();
+    for (const p of priorReconciled) map.set(p.pairKey, Number(p.shipments) || 0);
+    return map;
+  }, [yoyMode, yearFilter, monthFilter, hasRollup, rollupRows, monthlySeries]);
 
   const scopeLabel = scopeActive
     ? monthFilter != null && yearFilter != null
@@ -3223,9 +3418,27 @@ function TopLanesCard({
   );
 
   const honestyCaption = (() => {
-    // Scoped views state their exact source — rollup records vs the dated
-    // BOL sample — so filtered counts are never mistaken for full-manifest
-    // numbers (honesty label discipline, f8dbf067).
+    // Reconciled path (CEO P0, 2026-08-14): lane volumes are the lane's
+    // SAMPLE share applied to the REAL scope total from monthly_volumes, so
+    // they SUM to the verified total the Cadence chart shows. Label it as
+    // modeled — a share applied to a verified volume, never a raw manifest.
+    const scopeWord = scopeLabel
+      ? scopeLabel
+      : yearFilter == null
+        ? "the trailing 12 months"
+        : String(yearFilter);
+    if (isReconciled && scopeTotal) {
+      const src =
+        scoped && hasRollup
+          ? `${scoped.sourceRecords.toLocaleString()} lane-month rollup record${
+              scoped.sourceRecords === 1 ? "" : "s"
+            }`
+          : `the ${recentBols.length.toLocaleString()}-shipment lane sample`;
+      return `Modeled — each lane's share (from ${src}) applied to the verified ${scopeWord} volume of ${scopeTotal.shipments.toLocaleString()} shipments${
+        scopeTotal.teu > 0 ? ` / ${scopeTotal.teu.toLocaleString()} TEU` : ""
+      }. Lane totals reconcile to the Cadence chart.`;
+    }
+    // Real series unknown → honest raw-sample fallback (legacy behavior).
     if (scoped && scopeLabel) {
       if (hasRollup) {
         return `Filtered to ${scopeLabel} — exact counts from ${scoped.sourceRecords.toLocaleString()} lane-month rollup record${
@@ -3354,6 +3567,10 @@ function TopLanesCard({
               showAllLanes={showAllLanes}
               onToggleShowAllLanes={() => setShowAllLanes((v) => !v)}
               sampleMode={!hasRollup}
+              yoyMode={yoyMode}
+              onToggleYoy={() => setYoyMode((v) => !v)}
+              overallYoy={overallYoy}
+              yoyAvailable={overallYoy != null}
             />
           </div>
         </div>
@@ -3430,6 +3647,8 @@ function TopLanesCard({
                 laneMonthsByPair={laneMonthsByPair}
                 monthWindow={monthWindow}
                 sampleMode={!hasRollup}
+                yoyMode={yoyMode}
+                perLaneYoy={perLaneYoy}
               />
             )}
             {laneListFooter}
@@ -3464,6 +3683,10 @@ function TopLanesCard({
           showAllLanes={showAllLanes}
           onToggleShowAllLanes={() => setShowAllLanes((v) => !v)}
           sampleMode={!hasRollup}
+          yoyMode={yoyMode}
+          onToggleYoy={() => setYoyMode((v) => !v)}
+          overallYoy={overallYoy}
+          yoyAvailable={overallYoy != null}
         />
       </div>
 
@@ -3502,6 +3725,8 @@ function TopLanesCard({
             laneMonthsByPair={laneMonthsByPair}
             monthWindow={monthWindow}
             sampleMode={!hasRollup}
+            yoyMode={yoyMode}
+            perLaneYoy={perLaneYoy}
           />
         )}
         {laneListFooter}
@@ -3556,6 +3781,10 @@ function TopLanesCard({
           sampleMode={!hasRollup}
           showAllLanes={showAllLanes}
           onToggleShowAllLanes={() => setShowAllLanes((v) => !v)}
+          yoyMode={yoyMode}
+          onToggleYoy={() => setYoyMode((v) => !v)}
+          overallYoy={overallYoy}
+          perLaneYoy={perLaneYoy}
           scope={{
             yearFilter,
             monthFilter,
@@ -3627,6 +3856,10 @@ function TradeLanesMapDialog({
   sampleMode = false,
   showAllLanes = false,
   onToggleShowAllLanes,
+  yoyMode = false,
+  onToggleYoy,
+  overallYoy = null,
+  perLaneYoy = null,
   scope,
 }: {
   pairs: any[];
@@ -3643,6 +3876,10 @@ function TradeLanesMapDialog({
   sampleMode?: boolean;
   showAllLanes?: boolean;
   onToggleShowAllLanes?: () => void;
+  yoyMode?: boolean;
+  onToggleYoy?: () => void;
+  overallYoy?: YoyDelta | null;
+  perLaneYoy?: Map<string, number> | null;
   /** Shared year/month scope state — lives in TopLanesCard so the hero
    *  and this dialog can never disagree. */
   scope?: {
@@ -3930,8 +4167,12 @@ function TradeLanesMapDialog({
               onYear={scope.onYear}
               onMonth={scope.onMonth}
               showAllLanes={showAllLanes}
-              onToggleShowAllLanes={onToggleShowAllLanes}
+              onToggleShowAllLanes={onToggleShowAllLanes ?? (() => {})}
               sampleMode={sampleMode}
+              yoyMode={yoyMode}
+              onToggleYoy={onToggleYoy}
+              overallYoy={overallYoy}
+              yoyAvailable={overallYoy != null}
             />
             <span className="mx-1 h-4 w-px shrink-0 bg-slate-200" />
           </>
@@ -4054,6 +4295,8 @@ function TradeLanesMapDialog({
                   laneMonthsByPair={laneMonthsByPair}
                   monthWindow={monthWindow}
                   sampleMode={sampleMode}
+                  yoyMode={yoyMode}
+                  perLaneYoy={perLaneYoy}
                 />
               )}
             </div>
@@ -4166,6 +4409,8 @@ function TradeLanesMapDialog({
               laneMonthsByPair={laneMonthsByPair}
               monthWindow={monthWindow}
               sampleMode={sampleMode}
+              yoyMode={yoyMode}
+              perLaneYoy={perLaneYoy}
             />
           )}
         </div>
@@ -5302,6 +5547,128 @@ function deriveCadence(profile: any): CadencePoint[] {
     })
     .filter((p: CadencePoint) => p.label);
   return points.slice(-12);
+}
+
+/* ── Volume reconciliation (CEO P0, 2026-08-14) ───────────────────────────
+ *
+ * The lane cards / map lines used to show raw ~50-BOL SAMPLE counts while the
+ * Cadence chart showed the REAL month-keyed total from monthly_volumes — the
+ * two disagreed and destroyed trust. `MonthlyVolumeSeries` is the single
+ * source of truth for the REAL totals (the exact series the Cadence chart
+ * renders): one entry per month keyed "YYYY-MM" with real shipments + TEU
+ * back to 2015. Lane volumes are RECONCILED to this series by applying each
+ * lane's SAMPLE share to the real scope total (see reconcilePairsToTotal).
+ */
+export type MonthlyVolumePoint = {
+  /** "YYYY-MM" */
+  month: string;
+  shipments: number;
+  teu: number;
+};
+
+/**
+ * Full month-keyed real-volume series from parsed_summary.monthly_volumes
+ * (via the normalized profile.timeSeries — same source the Cadence chart
+ * uses). Spans every month on file (back to 2015), NOT just the trailing 12,
+ * so it can drive per-year scope totals AND year-over-year deltas.
+ */
+function deriveMonthlySeries(profile: any): MonthlyVolumePoint[] {
+  const series = Array.isArray(profile?.timeSeries) ? profile.timeSeries : [];
+  const out: MonthlyVolumePoint[] = [];
+  for (const p of series) {
+    const month = String(p?.month || "");
+    if (!/^\d{4}-\d{2}$/.test(month)) continue;
+    const fcl = Number(p?.fclShipments) || 0;
+    const lcl = Number(p?.lclShipments) || 0;
+    let shipments = Number(p?.shipments);
+    if (!Number.isFinite(shipments) || shipments === 0) shipments = fcl + lcl;
+    out.push({
+      month,
+      shipments: Number.isFinite(shipments) ? shipments : 0,
+      teu: Number(p?.teu) || 0,
+    });
+  }
+  return out.sort((a, b) => a.month.localeCompare(b.month));
+}
+
+/** Real shipment + TEU total over a scope, summed from the monthly series. */
+type ScopeTotal = { shipments: number; teu: number; months: number };
+
+/**
+ * Real scope total from the monthly series (source of truth):
+ *  - no year → trailing 12 months (matches the Cadence card window)
+ *  - year set → Jan–Dec of that year
+ *  - month set → that single month (within the year if one is set)
+ * Returns null when the series is empty (unknown → callers fall back to raw
+ * sample counts rather than fabricating a total).
+ */
+function realScopeTotal(
+  series: MonthlyVolumePoint[],
+  yearFilter: number | null,
+  monthFilter: number | null,
+): ScopeTotal | null {
+  if (!series.length) return null;
+  let keys: string[];
+  if (yearFilter == null && monthFilter == null) {
+    keys = series.slice(-12).map((p) => p.month);
+  } else {
+    keys = series
+      .map((p) => p.month)
+      .filter((mk) => {
+        const y = Number(mk.slice(0, 4));
+        const m = Number(mk.slice(5, 7));
+        return (
+          (yearFilter == null || y === yearFilter) &&
+          (monthFilter == null || m === monthFilter)
+        );
+      });
+  }
+  const set = new Set(keys);
+  let shipments = 0;
+  let teu = 0;
+  for (const p of series) {
+    if (!set.has(p.month)) continue;
+    shipments += p.shipments;
+    teu += p.teu;
+  }
+  return { shipments, teu, months: set.size };
+}
+
+/**
+ * Reconcile a set of country-pair lanes to a REAL scope total by applying
+ * each lane's SAMPLE share (of shipments and TEU independently) to the real
+ * total. So the displayed lane volumes SUM to the verified scope total the
+ * Cadence chart shows, instead of the raw ~50-BOL sample counts.
+ *
+ * When `total` is null (no real series) the pairs pass through untouched
+ * (honest raw-sample fallback). Mutates copies — never the inputs.
+ */
+function reconcilePairsToTotal<T extends { shipments?: number; teu?: number }>(
+  pairs: T[],
+  total: ScopeTotal | null,
+): { pairs: T[]; reconciled: boolean } {
+  if (!total || total.shipments <= 0 || pairs.length === 0) {
+    return { pairs, reconciled: false };
+  }
+  const sampleShip = pairs.reduce((s, p) => s + (Number(p.shipments) || 0), 0);
+  const sampleTeu = pairs.reduce((s, p) => s + (Number(p.teu) || 0), 0);
+  if (sampleShip <= 0) return { pairs, reconciled: false };
+  const out = pairs.map((p) => {
+    const shipShare = (Number(p.shipments) || 0) / sampleShip;
+    // TEU share falls back to the shipment share when the sample carries no
+    // TEU (some snapshots have null TEU) so TEU still reconciles sensibly.
+    const teuShare =
+      sampleTeu > 0 ? (Number(p.teu) || 0) / sampleTeu : shipShare;
+    return {
+      ...p,
+      shipments: Math.round(shipShare * total.shipments),
+      teu:
+        total.teu > 0
+          ? Math.round(teuShare * total.teu)
+          : Number(p.teu) || 0,
+    };
+  });
+  return { pairs: out, reconciled: true };
 }
 
 function deriveModes(profile: any): ModeSlice[] {
