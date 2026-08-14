@@ -366,8 +366,9 @@ Deno.serve(async (req: Request) => {
     // org_members row) has saved_sharing_enabled. Service-role client,
     // so the org id is derived strictly from the JWT user's membership.
     let savedScopeOr = `user_id.eq.${user.id}`;
+    let scopeKind: "user" | "org" = "user";
     try {
-      const { data: memberRow } = await supabase
+      const { data: memberRow, error: memberErr } = await supabase
         .from("org_members")
         .select("org_id, organizations!inner(saved_sharing_enabled)")
         .eq("user_id", user.id)
@@ -375,25 +376,64 @@ Deno.serve(async (req: Request) => {
         .order("joined_at", { ascending: true })
         .limit(1)
         .maybeSingle();
+      if (memberErr) {
+        // Non-fatal: fall back to user-only scope, but SAY SO — a silent
+        // fallback here hides org-wide regressions (2026-08-14 lesson).
+        log.warn("org_membership_lookup_failed", {
+          user_id: user.id,
+          err: memberErr.message,
+        });
+      }
       const orgId = (memberRow as any)?.org_id;
       const sharing = Boolean(
         (memberRow as any)?.organizations?.saved_sharing_enabled,
       );
       if (orgId && sharing) {
         savedScopeOr = `user_id.eq.${user.id},org_id.eq.${orgId}`;
+        scopeKind = "org";
       }
     } catch (_) {
       // Fall back to user-only scope on any membership lookup failure.
     }
-    const { data: savedRows } = await supabase
+    const savedSelect =
+      "id, company_id, created_at, last_viewed_at, lit_companies!inner (id, source_company_key, name, domain, website, shipments_12m, teu_12m, top_route_12m, most_recent_shipment_date)";
+    let { data: savedRows, error: savedError } = await supabase
       .from("lit_saved_companies")
-      .select(
-        "id, company_id, created_at, last_viewed_at, lit_companies!inner (id, source_company_key, name, domain, website, shipments_12m, teu_12m, top_route_12m, most_recent_shipment_date)",
-      )
+      .select(savedSelect)
       .or(savedScopeOr)
       .not("lit_companies.top_route_12m", "is", null)
       .order("last_viewed_at", { ascending: false, nullsFirst: false })
       .limit(200);
+    if (savedError) {
+      // The old code destructured `data` only, so a failed query silently
+      // became "you have no saved companies" → empty lane map + nudges
+      // built on nothing. Log loudly, and if the failure happened on the
+      // org-widened scope, degrade to the user's own saves (pre-2026-08-13
+      // behavior) rather than to an empty workspace.
+      log.error("saved_companies_query_failed", {
+        user_id: user.id,
+        scope: scopeKind,
+        err: savedError.message,
+        code: (savedError as any)?.code ?? null,
+        details: (savedError as any)?.details ?? null,
+      });
+      if (scopeKind === "org") {
+        const retry = await supabase
+          .from("lit_saved_companies")
+          .select(savedSelect)
+          .eq("user_id", user.id)
+          .not("lit_companies.top_route_12m", "is", null)
+          .order("last_viewed_at", { ascending: false, nullsFirst: false })
+          .limit(200);
+        savedRows = retry.data;
+        if (retry.error) {
+          log.error("saved_companies_user_retry_failed", {
+            user_id: user.id,
+            err: retry.error.message,
+          });
+        }
+      }
+    }
 
     // Workspace dedupe: the same company can be saved by several org
     // members — keep one row per company so lane shipment totals aren't
@@ -421,6 +461,17 @@ Deno.serve(async (req: Request) => {
       });
 
     const workspaceLanes = aggregateLanes(saved);
+
+    // Per-request observability (2026-08-14): one structured line that
+    // answers "why is this user's lane map empty?" without a redeploy —
+    // scope chosen, raw rows fetched, unique companies, lanes produced.
+    log.info("workspace_scope", {
+      user_id: user.id,
+      scope: scopeKind,
+      saved_rows: (savedRows || []).length,
+      saved_unique: saved.length,
+      lanes: workspaceLanes.length,
+    });
 
     // Recent enriched contacts (last 7d, scoped to user's saved cos)
     const savedCompanyIds = saved.map((s) => s.id);
