@@ -25,6 +25,8 @@ import { canAccessFeature } from "@/lib/planLimits";
 import { logout } from "@/auth/supabaseAuthClient";
 import { LockoutBanner } from "@/components/subscription/LockoutBanner";
 import NotificationBell from "@/components/layout/NotificationBell";
+import HeaderSearch from "@/components/layout/HeaderSearch";
+import { LitAppIcon } from "@/components/shared/AppIcons";
 
 function SideLink({ to, icon: Icon, label, locked = false, lockHint = false, onClick = null }) {
   const baseClass =
@@ -175,24 +177,30 @@ export default function AppShell({ currentPageName, children }) {
             collapsed ? "w-16" : "w-64"
           } transition-all duration-200 shrink-0 bg-gradient-to-b from-slate-800 via-slate-700 to-slate-900 shadow-2xl hidden md:flex md:flex-col`}
         >
+          {/* Brand header — CEO rule (2026-08-13): icon ONLY when the
+              menu is minimized; expanded shows the "Logistics Intel"
+              wordmark (Space Grotesk). The old "LIT" badge + two-line
+              subtitle read as cheap and are retired. */}
           <div
             className={`flex items-center ${
-              collapsed ? "justify-center" : ""
-            } px-3 py-4 border-b border-white/10`}
+              collapsed ? "justify-center px-2" : "justify-between px-4"
+            } py-4 border-b border-white/10`}
           >
-            <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center mr-0">
-              <span className="text-white font-bold text-sm">LIT</span>
-            </div>
-
-            {!collapsed && (
+            {collapsed ? (
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 ring-1 ring-white/10">
+                <LitAppIcon className="h-6 w-6" style={{ color: "#00F0FF" }} />
+              </div>
+            ) : (
               <>
-                <div className="ml-3">
-                  <div className="text-white font-bold text-lg">Trade Intelligence</div>
-                  <div className="text-gray-300 text-xs">Logistic Intel</div>
+                <div
+                  className="whitespace-nowrap text-[19px] font-bold leading-none tracking-[-0.02em] text-white"
+                  style={{ fontFamily: "Space Grotesk,sans-serif" }}
+                >
+                  Logistics Intel
                 </div>
 
                 <button
-                  className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-white/80 hover:bg-white/5 hover:text-white"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 text-white/80 hover:bg-white/5 hover:text-white"
                   onClick={() => setCollapsed(true)}
                   aria-label="Collapse menu"
                 >
@@ -342,6 +350,10 @@ export default function AppShell({ currentPageName, children }) {
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Global search — same live component as the lit AppHeader:
+                  Enter → Explorer ?q= search, saved-company typeahead. */}
+              <HeaderSearch className="hidden w-64 lg:block" />
+
               <NotificationBell />
 
               <button
@@ -387,7 +399,12 @@ export default function AppShell({ currentPageName, children }) {
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
           <div className="absolute top-0 left-0 h-full w-72 bg-gradient-to-b from-slate-800 via-slate-700 to-slate-900 shadow-2xl p-4 text-white flex flex-col">
             <div className="flex items-center justify-between mb-4">
-              <span className="font-semibold">Menu</span>
+              <span
+                className="whitespace-nowrap text-[19px] font-bold leading-none tracking-[-0.02em] text-white"
+                style={{ fontFamily: "Space Grotesk,sans-serif" }}
+              >
+                Logistics Intel
+              </span>
               <button
                 className="p-2 rounded-lg border border-white/20"
                 onClick={() => setMobileOpen(false)}

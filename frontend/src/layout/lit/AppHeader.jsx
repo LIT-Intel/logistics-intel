@@ -17,10 +17,11 @@ import {
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { usePartnerStatus } from "@/lib/affiliate";
-import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
+import { PulseIcon } from "@/components/shared/AppIcons";
 import SidebarUsageChip from "@/components/shared/SidebarUsageChip";
 import "@/layout/lit/litLogo.css";
 import NotificationBell from "@/components/layout/NotificationBell";
+import HeaderSearch from "@/components/layout/HeaderSearch";
 import { AdminScopeToggle } from "@/components/layout/AdminScopeToggle";
 
 const BASE_MOBILE_SECTIONS = [
@@ -215,17 +216,10 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
           </div>
 
           <div className="flex items-center gap-2 md:gap-3">
-            {/* Header search — neutralized white pill with a single
-                slate ring so it stops competing with the sidebar's
-                cyan accent. Same idea as the Profile-page chrome. */}
-            <div className="hidden min-w-[280px] items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm md:flex">
-              <Search size={16} className="text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search companies, campaigns..."
-                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-              />
-            </div>
+            {/* Header search — live global search (was a dead input).
+                Enter → Explorer ?q= search; typeahead surfaces the
+                user's saved companies. Shared with AppShell's header. */}
+            <HeaderSearch className="hidden w-[280px] md:block" />
 
             <AdminScopeToggle currentOrgName={null} />
 
@@ -355,20 +349,16 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
               boxShadow: "inset 1px 0 0 rgba(0,240,255,0.18)",
             }}
           >
-            {/* Header — exactly mirrors the desktop sidebar: 64px tall,
-                LIT wordmark + cyan icon with the breathing glow, no
-                two-liner subtitle. Single canonical brand mark. */}
+            {/* Header — mirrors the desktop sidebar's expanded state:
+                64px tall, "Logistics Intel" wordmark (CEO 2026-08-13:
+                the "LIT" text read as cheap; icon is reserved for the
+                minimized rail). Single canonical brand mark. */}
             <div className="flex h-16 items-center justify-between border-b border-white/10 px-4">
-              <div className="flex items-center gap-2.5">
-                <div className="lit-logo-alive flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 ring-1 ring-white/10">
-                  <LitAppIcon className="h-6 w-6" style={{ color: "#00F0FF" }} />
-                </div>
-                <div
-                  className="text-[22px] font-extrabold tracking-[-0.03em] text-white"
-                  style={{ fontFamily: "Space Grotesk,sans-serif" }}
-                >
-                  LIT
-                </div>
+              <div
+                className="whitespace-nowrap text-[20px] font-bold leading-none tracking-[-0.02em] text-white"
+                style={{ fontFamily: "Space Grotesk,sans-serif" }}
+              >
+                Logistics Intel
               </div>
 
               <button

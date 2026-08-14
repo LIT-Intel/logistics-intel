@@ -135,32 +135,28 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
         boxShadow: "inset -1px 0 0 rgba(0,240,255,0.18)",
       }}
     >
-      {/* Header — h-16 (64px) tighter than the previous h-20 since we
-          dropped the two-line subtitle. Logo lockup is icon (36px) +
-          gap (10px) + "LIT" (22px Space Grotesk extrabold). 1.6× ratio
-          between icon-box and wordmark feels balanced. */}
+      {/* Header — h-16 (64px). CEO branding rule (2026-08-13): the icon
+          appears ONLY when the sidebar is minimized; expanded shows the
+          full "Logistics Intel" wordmark (Space Grotesk) with no icon —
+          the old "LIT" abbreviation read as cheap and is retired. */}
       <div
         className={[
           "flex h-16 shrink-0 items-center border-b border-white/10",
           sidebarOpen ? "justify-start px-4" : "justify-center px-2",
         ].join(" ")}
       >
-        <div className="flex items-center gap-2.5 overflow-hidden">
+        {sidebarOpen ? (
           <div
-            className="lit-logo-alive flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 ring-1 ring-white/10"
+            className="whitespace-nowrap text-[20px] font-bold leading-none tracking-[-0.02em] text-white"
+            style={{ fontFamily: "Space Grotesk,sans-serif" }}
           >
+            Logistics Intel
+          </div>
+        ) : (
+          <div className="lit-logo-alive flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 ring-1 ring-white/10">
             <LitAppIcon className="h-6 w-6" style={{ color: "#00F0FF" }} />
           </div>
-
-          {sidebarOpen && (
-            <div
-              className="text-[22px] font-extrabold tracking-[-0.03em] text-white"
-              style={{ fontFamily: "Space Grotesk,sans-serif" }}
-            >
-              LIT
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Floating boundary toggle — anchored to the bottom edge of the
