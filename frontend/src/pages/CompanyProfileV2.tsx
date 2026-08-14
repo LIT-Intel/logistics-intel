@@ -46,9 +46,12 @@ import {
   ChevronDown,
   ChevronRight,
   FileText,
+  Plus,
 } from "lucide-react";
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import AddToListPicker from "@/features/pulse/AddToListPicker";
+import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
+import { listStages, type DealStage } from "@/api/crm";
 import { PulseLIVETab } from "@/features/pulse/PulseLIVETab";
 import {
   getSavedCompanyDetail,
@@ -694,6 +697,23 @@ function ProfilePanel({ rawId }: { rawId: string }) {
   const [savingStar, setSavingStar] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [campaignModalOpen, setCampaignModalOpen] = useState(false);
+  // CRM Phase 1 — "Add to pipeline" create-deal modal + the org's stages.
+  const [dealStages, setDealStages] = useState<DealStage[]>([]);
+  const [createDealOpen, setCreateDealOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const s = await listStages();
+        if (alive) setDealStages(s);
+      } catch {
+        /* pipeline optional */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
   // Universal Saved Lists picker — shared with Pulse / Pulse Library / Campaigns.
   // Distinct from the campaign modal (which is for outreach send), so users can
   // organize companies into lists without committing to a campaign.
@@ -2222,6 +2242,23 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         companyName={companyName}
       />
 
+      {/* CRM Phase 1 — Add to pipeline. Creates a deal prefilled with this
+          company + its enriched contacts. Disabled until the workspace has a
+          pipeline (auto-seeded on first use elsewhere). */}
+      {dealStages.length > 0 ? (
+        <div className="px-4 md:px-6 pt-2">
+          <button
+            type="button"
+            onClick={() => setCreateDealOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-indigo-700 hover:bg-indigo-50"
+            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add to pipeline
+          </button>
+        </div>
+      ) : null}
+
       {/* Tab bar — F5 trim: 5 visible + More overflow. The More dropdown
           surfaces Pulse AI / Rate Benchmark / Revenue Opportunity without
           horizontal scroll on mobile. */}
@@ -2661,6 +2698,23 @@ function ProfilePanel({ rawId }: { rawId: string }) {
           name: companyName,
         }}
       />
+
+      {createDealOpen ? (
+        <CreateDealModal
+          stages={dealStages}
+          prefill={{
+            companyUuid: bundle?.identity?.id ?? null,
+            companyKey:
+              (bundle?.identity as any)?.source_company_key ??
+              (bundle?.identity as any)?.sourceCompanyKey ??
+              companyId ??
+              null,
+            companyName,
+          } as CreateDealPrefill}
+          onClose={() => setCreateDealOpen(false)}
+          onCreated={() => setCreateDealOpen(false)}
+        />
+      ) : null}
 
       <AddToListPicker
         open={addToListOpen}

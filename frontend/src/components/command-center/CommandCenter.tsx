@@ -20,8 +20,15 @@ import {
   Search,
   Send,
   Upload,
+  LayoutGrid,
+  KanbanSquare,
+  CheckSquare,
 } from "lucide-react";
 import AddToCampaignModal from "./AddToCampaignModal";
+import PipelineBoard from "@/features/crm/PipelineBoard";
+import TasksView from "@/features/crm/TasksView";
+import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
+import { listStages, type DealStage, myOverdueTaskCount } from "@/api/crm";
 // AddCompanyModal import removed — manual company entry no longer offered.
 
 type SavedCompaniesResponse =
@@ -60,6 +67,8 @@ type ListRow = {
    *  save (not the viewer's own). Drives the "Saved by X" chip so shared
    *  saves are distinguishable, never silently merged. */
   sharedBy: string | null;
+  /** lit_saved_companies.id for the row — links a new deal to the account. */
+  savedId: string | null;
 };
 
 type SortableKey = keyof Pick<ListRow, 'companyName' | 'lastActivity' | 'shipments12m' | 'teu12m' | 'estSpend12m' | 'topRoute12m'>;
@@ -173,14 +182,92 @@ function buildListRow(record: CommandCenterRecord): ListRow {
     topRoute12m: kpis?.top_route_12m || null,
     recentRoute: kpis?.recent_route || null,
     sharedBy: ((record as any)?.shared_by?.name as string | undefined) ?? null,
+    savedId:
+      ((record as any)?.saved_id as string | undefined) ??
+      ((record as any)?.saved_company_id as string | undefined) ??
+      ((record as any)?.id as string | undefined) ??
+      null,
   };
 }
 
+type CrmView = "accounts" | "pipeline" | "tasks";
+
+/**
+ * Command Center shell — view switcher across the CRM surfaces. The
+ * original saved-accounts list becomes the "Accounts" tab; "Pipeline" is
+ * the Kanban deals board and "Tasks" is the My-tasks list (CRM Phase 1).
+ */
 export default function CommandCenter() {
+  const [view, setView] = useState<CrmView>("accounts");
+  const [overdueCount, setOverdueCount] = useState(0);
+
+  // Load the viewer's overdue-task count for the Tasks tab badge.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const n = await myOverdueTaskCount();
+        if (alive) setOverdueCount(n);
+      } catch {
+        /* badge is cosmetic */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [view]);
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC" }}>
+      {/* View switcher */}
+      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "10px 24px 0", background: "#FFFFFF", borderBottom: "1px solid #E5E7EB", flexShrink: 0 }}>
+        <ViewTab active={view === "accounts"} onClick={() => setView("accounts")} icon={<LayoutGrid style={{ width: 14, height: 14 }} />} label="Accounts" />
+        <ViewTab active={view === "pipeline"} onClick={() => setView("pipeline")} icon={<KanbanSquare style={{ width: 14, height: 14 }} />} label="Pipeline" />
+        <ViewTab active={view === "tasks"} onClick={() => setView("tasks")} icon={<CheckSquare style={{ width: 14, height: 14 }} />} label="Tasks" badge={overdueCount || undefined} />
+      </div>
+
+      {view === "accounts" ? <AccountsView /> : view === "pipeline" ? <PipelineBoard /> : <TasksView onCountChange={setOverdueCount} />}
+    </div>
+  );
+}
+
+function ViewTab({ active, onClick, icon, label, badge }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; badge?: number }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "8px 14px",
+        border: "none",
+        borderBottom: `2px solid ${active ? "#3B82F6" : "transparent"}`,
+        background: "transparent",
+        color: active ? "#1D4ED8" : "#64748b",
+        fontFamily: "'Space Grotesk', sans-serif",
+        fontSize: 13,
+        fontWeight: 700,
+        cursor: "pointer",
+        marginBottom: -1,
+      }}
+    >
+      {icon}
+      {label}
+      {badge ? (
+        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: "#dc2626", color: "#FFFFFF", fontSize: 10, fontWeight: 700 }}>{badge}</span>
+      ) : null}
+    </button>
+  );
+}
+
+function AccountsView() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const [savedCompanies, setSavedCompanies] = useState<CommandCenterRecord[]>([]);
+  const [dealStages, setDealStages] = useState<DealStage[]>([]);
+  const [pipelineRow, setPipelineRow] = useState<CreateDealPrefill | null>(null);
   const [savedLoading, setSavedLoading] = useState(true);
   const [savedError, setSavedError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -288,6 +375,21 @@ export default function CommandCenter() {
     })();
     return () => { isMounted = false; };
   }, [reloadSavedCompanies]);
+
+  // Load the org's pipeline stages once so the per-row "Add to pipeline"
+  // action can prefill a new deal. Silent-fail — the button just disables.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const s = await listStages();
+        if (alive) setDealStages(s);
+      } catch {
+        /* pipeline optional on the accounts view */
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   // Bulk-load contact counts once saved companies arrive. One query
   // (`.select("company_id").in("company_id", [...])`), counted client-side
@@ -460,6 +562,22 @@ export default function CommandCenter() {
       }));
     } catch { /* ignore */ }
     navigate(`/app/companies/${encodeURIComponent(row.companyId)}`);
+  }
+
+  // "Add to pipeline" — open the Create Deal modal prefilled with this
+  // account (+ its enriched contacts). companyUuid is the lit_companies.id
+  // used to resolve contacts; companyId is the source_company_key.
+  function handleAddToPipeline(row: ListRow) {
+    if (!dealStages.length) {
+      toast({ title: "Pipeline unavailable", description: "No workspace pipeline yet — open the Pipeline tab to create your first deal.", variant: "destructive" });
+      return;
+    }
+    setPipelineRow({
+      savedCompanyId: row.savedId,
+      companyKey: row.companyId,
+      companyUuid: row.companyUuid,
+      companyName: row.companyName,
+    });
   }
 
   return (
@@ -878,6 +996,28 @@ export default function CommandCenter() {
                             Add
                           </button>
                         ) : null}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleAddToPipeline(row); }}
+                          title="Add to pipeline"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            background: '#FFFFFF',
+                            color: '#4338CA',
+                            border: '1px solid #C7D2FE',
+                            borderRadius: 6,
+                            padding: '4px 8px',
+                            cursor: 'pointer',
+                            fontFamily: "'Space Grotesk', sans-serif",
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <Plus style={{ width: 11, height: 11 }} />
+                          Deal
+                        </button>
                       </div>
                     </td>
                   </motion.tr>
@@ -959,18 +1099,30 @@ export default function CommandCenter() {
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <span className="text-[11px] font-semibold text-blue-600">View →</span>
-                    {row.companyId ? (
+                    <div className="flex items-center gap-1.5">
+                      {row.companyId ? (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setCampaignModalRow(row); }}
+                          title="Add to Campaign"
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                          style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                        >
+                          <Send className="h-3 w-3" />
+                          Add
+                        </button>
+                      ) : null}
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); setCampaignModalRow(row); }}
-                        title="Add to Campaign"
-                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                        onClick={(e) => { e.stopPropagation(); handleAddToPipeline(row); }}
+                        title="Add to pipeline"
+                        className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-white px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
                         style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                       >
-                        <Send className="h-3 w-3" />
-                        Add
+                        <Plus className="h-3 w-3" />
+                        Deal
                       </button>
-                    ) : null}
+                    </div>
                   </div>
                 </div>
               );
@@ -989,6 +1141,19 @@ export default function CommandCenter() {
           company={{
             company_id: campaignModalRow.companyUuid,
             name: campaignModalRow.companyName,
+          }}
+        />
+      ) : null}
+
+      {/* Create-deal modal — prefilled from the saved company row. */}
+      {pipelineRow ? (
+        <CreateDealModal
+          stages={dealStages}
+          prefill={pipelineRow}
+          onClose={() => setPipelineRow(null)}
+          onCreated={() => {
+            setPipelineRow(null);
+            toast({ title: "Deal added to pipeline", description: "Open the Pipeline tab to see it." });
           }}
         />
       ) : null}
