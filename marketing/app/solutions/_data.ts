@@ -52,7 +52,7 @@ export const SOLUTION_PAGES: SolutionPage[] = [
     faqs: [
       { q: "Is this only for US-inbound forwarders?", a: "Today, BOL coverage is strongest on US-inbound. Outbound corridors are growing — see /lanes for current coverage. International-only forwarders use LIT primarily for prospecting US importer accounts." },
       { q: "How fast can a 5-rep team ramp?", a: "Most teams send their first sequence within 2 weeks. Onboarding includes ICP setup, contact validation, and a first-campaign review." },
-      { q: "Can we keep using HubSpot or Salesforce?", a: "Yes — LIT syncs bi-directionally. Many teams use LIT for prospecting and sequencing, then sync closed-won accounts to their existing CRM." },
+      { q: "Can we keep using HubSpot or Salesforce?", a: "Yes. LIT can run as your primary freight sales CRM, while HubSpot and Salesforce synchronization remains on the integrations roadmap until those connectors are marked available." },
     ],
   },
   {
