@@ -87,6 +87,8 @@ export type CompanyCrmPanelProps = {
   onOpenContactsTab: () => void;
   /** Open the Add-to-campaign / Start-outreach modal. */
   onStartOutreach: () => void;
+  /** Deep-link an existing campaign this company's contacts belong to. */
+  onOpenCampaign: (campaignId: string) => void;
   /** Deep-link a single quote (id). */
   onOpenQuote: (quoteId: string) => void;
   /** Start a new quote for this company. */
@@ -105,6 +107,7 @@ export default function CompanyCrmPanel(props: CompanyCrmPanelProps) {
     onOpenInboxTab,
     onOpenContactsTab,
     onStartOutreach,
+    onOpenCampaign,
     onOpenQuote,
     onNewQuote,
     refreshKey,
@@ -326,7 +329,7 @@ export default function CompanyCrmPanel(props: CompanyCrmPanelProps) {
             {campaigns && campaigns.campaigns.length > 0 ? (
               <button
                 type="button"
-                onClick={onStartOutreach}
+                onClick={() => onOpenCampaign(campaigns.campaigns[0].id)}
                 className="mt-1 flex items-center justify-between gap-2 rounded-lg px-1.5 py-1 text-left hover:bg-slate-50"
               >
                 <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-slate-700">

@@ -2289,6 +2289,7 @@ function ProfilePanel({ rawId }: { rawId: string }) {
         onOpenInboxTab={() => setTab("inbox")}
         onOpenContactsTab={() => setTab("contacts")}
         onStartOutreach={() => setCampaignModalOpen(true)}
+        onOpenCampaign={(id) => navigate(`/app/campaigns/new?edit=${id}`)}
         onOpenQuote={(id) => navigate(`/app/quoting/${id}`)}
         onNewQuote={() =>
           navigate(
