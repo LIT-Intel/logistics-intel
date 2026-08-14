@@ -1619,6 +1619,8 @@ function IntegrationCard({
   onDisconnect?: (id: string) => Promise<void> | void;
 }) {
   const [disconnecting, setDisconnecting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   async function handleDisconnect() {
     if (!onDisconnect || !accountId || disconnecting) return;
     setDisconnecting(true);
@@ -1626,6 +1628,31 @@ function IntegrationCard({
       await onDisconnect(accountId);
     } finally {
       setDisconnecting(false);
+    }
+  }
+  async function handleSyncNow() {
+    if (!accountId || syncing) return;
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      // Invoke sync-inbox with the caller's user JWT, scoped to this mailbox.
+      const { data, error } = await supabase.functions.invoke("sync-inbox", {
+        body: { email_account_id: accountId },
+      });
+      if (error) throw error;
+      const r = (data as any)?.results?.[0];
+      if (r && r.ok === false) {
+        throw new Error(
+          r.needsReconnect ? "Mailbox needs reconnect" : (r.error || "sync_failed"),
+        );
+      }
+      const n = r?.upserted ?? 0;
+      setSyncMsg({ kind: "ok", text: n ? `Synced ${n} message${n === 1 ? "" : "s"}` : "Up to date" });
+      onRefresh();
+    } catch (e: any) {
+      setSyncMsg({ kind: "error", text: e?.message || "Sync failed" });
+    } finally {
+      setSyncing(false);
     }
   }
   return (
@@ -1687,19 +1714,39 @@ function IntegrationCard({
         </div>
       )}
 
+      {/* Sync status message */}
+      {connected && syncMsg && (
+        <div style={{
+          borderRadius: 8,
+          border: `1px solid ${syncMsg.kind === "ok" ? "#BBF7D0" : "#FECACA"}`,
+          background: syncMsg.kind === "ok" ? "#F0FDF4" : "#FEF2F2",
+          padding: "8px 10px", fontFamily: "DM Sans,sans-serif", fontSize: 11.5,
+          color: syncMsg.kind === "ok" ? "#15803d" : "#b91c1c",
+        }}>
+          {syncMsg.text}
+        </div>
+      )}
+
       {/* Actions */}
       <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
         {connected ? (
           <>
-            <button style={{ ...sBtnGhost, flex: 1, justifyContent: "center" }} onClick={onConnect} disabled={connecting || disconnecting}>
-              {connecting ? <><RefreshCw size={12} /> Reconnecting…</> : <><RefreshCw size={12} /> Reconnect</>}
+            <button
+              style={{ ...sBtnPrimary, flex: 1, justifyContent: "center", opacity: syncing ? 0.7 : 1 }}
+              onClick={handleSyncNow}
+              disabled={syncing || !accountId}
+            >
+              {syncing ? <><RefreshCw size={12} /> Syncing…</> : <><RefreshCw size={12} /> Sync now</>}
+            </button>
+            <button style={{ ...sBtnGhost, justifyContent: "center", padding: "7px 10px" }} onClick={onConnect} disabled={connecting || disconnecting} title="Reconnect">
+              {connecting ? <RefreshCw size={12} /> : "Reconnect"}
             </button>
             <button
-              style={{ ...sBtnDanger, flex: 1, justifyContent: "center", opacity: disconnecting ? 0.6 : 1 }}
+              style={{ ...sBtnDanger, justifyContent: "center", padding: "7px 10px", opacity: disconnecting ? 0.6 : 1 }}
               onClick={handleDisconnect}
               disabled={disconnecting || connecting || !onDisconnect || !accountId}
             >
-              {disconnecting ? <><RefreshCw size={12} /> Disconnecting…</> : "Disconnect"}
+              {disconnecting ? <RefreshCw size={12} /> : "Disconnect"}
             </button>
           </>
         ) : localSetupRequired ? (

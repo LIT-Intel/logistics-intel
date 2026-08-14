@@ -10,9 +10,11 @@
  * Clicking a row opens the full inbox page focused on that thread.
  */
 
-import { useEffect, useState } from "react";
-import { Inbox } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { Inbox, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+
+type ConversationType = "direct" | "campaign" | "reply";
 
 type Thread = {
   id: string;
@@ -21,7 +23,25 @@ type Thread = {
   last_message_at: string | null;
   message_count: number | null;
   unread_count: number | null;
+  conversation_type: ConversationType | null;
 };
+
+const CONV_CHIP: Record<ConversationType, { label: string; cls: string }> = {
+  direct: { label: "Direct", cls: "bg-slate-100 text-slate-600" },
+  campaign: { label: "Campaign", cls: "bg-violet-100 text-violet-700" },
+  reply: { label: "Reply", cls: "bg-emerald-100 text-emerald-700" },
+};
+
+function ConversationTypeChip({ type }: { type: ConversationType | null }) {
+  const meta = CONV_CHIP[type ?? "direct"];
+  return (
+    <span
+      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${meta.cls}`}
+    >
+      {meta.label}
+    </span>
+  );
+}
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -36,45 +56,67 @@ export default function CompanyInboxTab({
   const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   // lit_email_threads.company_id is a UUID column — when the route id is
   // a slug like "company/foo" the query crashes with
   // "invalid input syntax for type uuid". Skip the query in that case.
   const isUuid = typeof companyId === "string" && UUID_RE.test(companyId);
 
-  useEffect(() => {
+  const loadThreads = useCallback(async () => {
     if (!companyId || !isUuid) {
       setLoading(false);
       setThreads([]);
       setErr(null);
       return;
     }
+    setLoading(true);
+    setErr(null);
+    try {
+      const { data, error } = await supabase
+        .from("lit_email_threads")
+        .select(
+          "id, subject, participants, last_message_at, message_count, unread_count, conversation_type",
+        )
+        .eq("company_id", companyId)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .limit(50);
+      if (error) throw error;
+      setThreads((data ?? []) as Thread[]);
+    } catch (e: any) {
+      setErr(e?.message || "Couldn't load conversations");
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId, isUuid]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
-      setLoading(true);
-      setErr(null);
-      try {
-        const { data, error } = await supabase
-          .from("lit_email_threads")
-          .select(
-            "id, subject, participants, last_message_at, message_count, unread_count",
-          )
-          .eq("company_id", companyId)
-          .order("last_message_at", { ascending: false, nullsFirst: false })
-          .limit(50);
-        if (cancelled) return;
-        if (error) throw error;
-        setThreads((data ?? []) as Thread[]);
-      } catch (e: any) {
-        if (!cancelled) setErr(e?.message || "Couldn't load conversations");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      if (!cancelled) await loadThreads();
     })();
     return () => {
       cancelled = true;
     };
-  }, [companyId, isUuid]);
+  }, [loadThreads]);
+
+  // "Sync now" — invoke the sync-inbox edge fn with the caller's user JWT.
+  // The function syncs the caller's own connected mailboxes, then we reload.
+  const syncNow = useCallback(async () => {
+    setSyncing(true);
+    setErr(null);
+    try {
+      const { error } = await supabase.functions.invoke("sync-inbox", {
+        body: {},
+      });
+      if (error) throw error;
+      await loadThreads();
+    } catch (e: any) {
+      setErr(e?.message || "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }, [loadThreads]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
@@ -91,12 +133,21 @@ export default function CompanyInboxTab({
         </div>
         <button
           type="button"
+          onClick={syncNow}
+          disabled={syncing}
+          className="ml-auto inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
+          {syncing ? "Syncing…" : "Sync now"}
+        </button>
+        <button
+          type="button"
           onClick={() =>
             navigate(
               `/app/inbox?company_id=${encodeURIComponent(companyId || "")}`,
             )
           }
-          className="ml-auto rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+          className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
         >
           Open full inbox →
         </button>
@@ -119,7 +170,7 @@ export default function CompanyInboxTab({
             <br />
             <span className="text-slate-400">
               {isUuid
-                ? "Two-way mailbox sync (Gmail & Outlook) is coming soon — conversations from your connected inbox will thread here automatically."
+                ? "Conversations from your connected mailbox thread here automatically. Use “Sync now” to pull the latest."
                 : "This profile is loaded from a slug; open it from your saved Command Center to see the linked inbox."}
             </span>
           </div>
@@ -152,10 +203,13 @@ export default function CompanyInboxTab({
                         : "—"}
                     </div>
                   </div>
-                  <div
-                    className={`truncate text-[11.5px] ${isUnread ? "font-semibold text-[#0F172A]" : "text-slate-500"}`}
-                  >
-                    {t.subject || "(no subject)"}
+                  <div className="flex items-center gap-1.5">
+                    <div
+                      className={`truncate text-[11.5px] ${isUnread ? "font-semibold text-[#0F172A]" : "text-slate-500"}`}
+                    >
+                      {t.subject || "(no subject)"}
+                    </div>
+                    <ConversationTypeChip type={t.conversation_type} />
                   </div>
                   <div className="mt-0.5 text-[10px] text-slate-400">
                     {t.message_count} msg

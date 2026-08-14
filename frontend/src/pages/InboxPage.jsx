@@ -75,7 +75,7 @@ export default function InboxPage() {
     try {
       let q = supabase
         .from("lit_email_threads")
-        .select("id, subject, participants, last_message_at, message_count, unread_count, status, campaign_id, company_id, contact_id, provider, email_account_id")
+        .select("id, subject, participants, last_message_at, message_count, unread_count, status, conversation_type, campaign_id, company_id, contact_id, provider, email_account_id")
         .order("last_message_at", { ascending: false, nullsFirst: false })
         .limit(200);
       if (campaignFilter) q = q.eq("campaign_id", campaignFilter);
@@ -230,6 +230,21 @@ export default function InboxPage() {
   );
 }
 
+const CONV_CHIP = {
+  direct: { label: "Direct", cls: "bg-slate-100 text-slate-600" },
+  campaign: { label: "Campaign", cls: "bg-violet-100 text-violet-700" },
+  reply: { label: "Reply", cls: "bg-emerald-100 text-emerald-700" },
+};
+
+function ConversationTypeChip({ type }) {
+  const meta = CONV_CHIP[type] || CONV_CHIP.direct;
+  return (
+    <span className={`rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide ${meta.cls}`}>
+      {meta.label}
+    </span>
+  );
+}
+
 function ThreadRow({ thread, selected, onSelect }) {
   const counterpart = (thread.participants || []).find((p) => p && p.email) || {};
   const subject = thread.subject || "(no subject)";
@@ -260,7 +275,7 @@ function ThreadRow({ thread, selected, onSelect }) {
         </div>
         <div className="mt-0.5 flex items-center gap-2 text-[10px] text-slate-400">
           <span>{thread.message_count} msg{thread.message_count === 1 ? "" : "s"}</span>
-          {thread.campaign_id ? <span className="rounded-full bg-purple-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-purple-700">campaign</span> : null}
+          <ConversationTypeChip type={thread.conversation_type} />
           {isUnread ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-500" /> : null}
         </div>
       </div>
@@ -369,7 +384,10 @@ function ThreadDetail({ threadId, onChanged }) {
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-slate-100 px-5 py-3">
-        <div className="text-[14px] font-bold text-[#0F172A]">{thread.subject || "(no subject)"}</div>
+        <div className="flex items-center gap-2">
+          <div className="text-[14px] font-bold text-[#0F172A]">{thread.subject || "(no subject)"}</div>
+          <ConversationTypeChip type={thread.conversation_type} />
+        </div>
         <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-slate-500">
           {(thread.participants || []).map((p, i) => (
             <span key={i} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[10.5px] text-slate-700">
