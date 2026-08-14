@@ -7,6 +7,7 @@ import { Section } from "@/components/sections/Section";
 import { BreadcrumbBar } from "@/components/sections/BreadcrumbBar";
 import { CtaBanner } from "@/components/sections/CtaBanner";
 import { HubCard } from "@/components/sections/HubCard";
+import { CrmPipelinePreview } from "@/components/sections/CrmPipelinePreview";
 import type { FeaturePage } from "@/app/features/_data";
 
 /**
@@ -38,16 +39,22 @@ export function FeaturePageTemplate({
         title={data.title}
         titleHighlight={data.titleHighlight}
         subtitle={data.lede}
-        primaryCta={{ label: "Try free", href: APP_SIGNUP_URL, icon: "arrow" }}
+        primaryCta={{ label: "Start 7-day trial", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
       />
+
+      {data.slug === "freight-sales-crm" && (
+        <section className="pb-12 sm:pb-16">
+          <CrmPipelinePreview />
+        </section>
+      )}
 
       {/* AEO surface: a self-contained "short answer" paragraph LLMs and
           AI search overviews can quote verbatim. Kept above the fold. */}
       <Section top="none" bottom="md">
         <div className="rounded-2xl border border-ink-100 bg-white p-6 sm:p-8 shadow-sm">
           <div className="font-display text-[11px] font-bold uppercase tracking-[0.12em] text-brand-blue">
-            Short answer
+            In plain terms
           </div>
           <p className="font-body mt-3 text-[16px] leading-relaxed text-ink-700">
             {data.shortAnswer}
@@ -83,7 +90,7 @@ export function FeaturePageTemplate({
       <Section top="md" bottom="md">
         <div className="mb-8 sm:mb-10">
           <div className="eyebrow">Capabilities</div>
-          <h2 className="display-md mt-3">What's in the box.</h2>
+          <h2 className="display-md mt-3">What your team can do.</h2>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
           {data.capabilities.map((c) => (
@@ -105,7 +112,7 @@ export function FeaturePageTemplate({
         <Section top="md" bottom="md">
           <div className="mb-8 sm:mb-10 max-w-[640px]">
             <div className="eyebrow">Workflow</div>
-            <h2 className="display-md mt-3">From signal to booked freight.</h2>
+            <h2 className="display-md mt-3">From the first signal to a managed opportunity.</h2>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-3">
             {data.workflow.map((s, i) => (
@@ -125,7 +132,7 @@ export function FeaturePageTemplate({
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr,3fr]">
           <div>
             <div className="eyebrow">Who it's for</div>
-            <h2 className="display-md mt-3">Built around the team using it.</h2>
+            <h2 className="display-md mt-3">Designed for the people doing the work.</h2>
           </div>
           <ul className="space-y-3">
             {data.whoItsFor.map((p) => (
@@ -172,7 +179,7 @@ export function FeaturePageTemplate({
         <Section top="md" bottom="lg">
           <div className="mb-6 sm:mb-8">
             <div className="eyebrow">Related</div>
-            <h2 className="display-md mt-3">Keep digging.</h2>
+            <h2 className="display-md mt-3">Explore the connected workflow.</h2>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-3">
             {data.related.map((r) => (
@@ -189,10 +196,10 @@ export function FeaturePageTemplate({
 
       <CtaBanner
         eyebrow="See it on your real data"
-        title="Book a 30-minute demo."
-        subtitle="We'll pull this exact view up against your top 5 target accounts so you can see the signal on lanes you actually sell into."
+        title="See how LIT fits your sales process."
+        subtitle="Bring a few target accounts or lanes to the demo. We will show you how the research, contacts, pipeline, and next steps come together."
         primaryCta={{ label: "Book a demo", href: "/demo", icon: "calendar" }}
-        secondaryCta={{ label: "Start free", href: APP_SIGNUP_URL }}
+        secondaryCta={{ label: "Start 7-day trial", href: APP_SIGNUP_URL }}
       />
 
       <Link
