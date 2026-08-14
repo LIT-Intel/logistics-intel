@@ -116,6 +116,31 @@ export async function resolveActiveOrgId(): Promise<string | null> {
   }
 }
 
+/**
+ * Is the caller an owner/admin of their active workspace? Drives the "view as
+ * [member]" affordances — only managers get the dropdown; regular members are
+ * already RLS-scoped to their own rows so the filter would be a no-op for them.
+ * Cheap single-row read; safe to call from UI hooks.
+ */
+export async function isOrgManager(): Promise<boolean> {
+  const uid = await currentUserId();
+  const orgId = await resolveActiveOrgId();
+  if (!uid || !orgId) return false;
+  try {
+    const { data, error } = await supabase
+      .from("org_members")
+      .select("role")
+      .eq("org_id", orgId)
+      .eq("user_id", uid)
+      .eq("status", "active")
+      .maybeSingle();
+    if (error || !data) return false;
+    return (data as any).role === "owner" || (data as any).role === "admin";
+  } catch {
+    return false;
+  }
+}
+
 /** Names for a set of org members (owner avatars / assignee labels). */
 export async function loadMemberNames(
   userIds: string[],
@@ -177,15 +202,20 @@ export async function listStages(): Promise<DealStage[]> {
  * name/domain, primary-contact name, owner name, and next open-task due
  * date so cards render without N+1 fetches.
  */
-export async function listDeals(): Promise<DealCard[]> {
+export async function listDeals(ownerUserId?: string | null): Promise<DealCard[]> {
   const orgId = await resolveActiveOrgId();
   if (!orgId) return [];
 
-  const { data: deals, error } = await supabase
+  let q = supabase
     .from("lit_deals")
     .select("*")
-    .eq("org_id", orgId)
-    .order("updated_at", { ascending: false });
+    .eq("org_id", orgId);
+  // Optional "view as [member]" filter. RLS already restricts what the caller
+  // can see (members: own rows only; owner/admin: all org rows), so passing an
+  // ownerUserId only ever NARROWS an owner/admin's view to one member and is a
+  // harmless no-op / self-filter for a regular member.
+  if (ownerUserId) q = q.eq("owner_user_id", ownerUserId);
+  const { data: deals, error } = await q.order("updated_at", { ascending: false });
   if (error || !deals?.length) return [];
 
   const savedIds = Array.from(
@@ -387,6 +417,27 @@ export async function listMyTasks(): Promise<Task[]> {
     .eq("assignee_user_id", uid)
     .eq("status", "open")
     .order("due_date", { ascending: true, nullsFirst: false });
+  if (error) return [];
+  return (data ?? []) as Task[];
+}
+
+/**
+ * Open tasks visible to the caller across the workspace, due-date sorted.
+ * RLS decides the base scope: a regular member sees only tasks they're the
+ * assignee/creator of; an owner/admin sees ALL org tasks. Owner/admin may pass
+ * `ownerUserId` to narrow to a single member ("view as"); for a regular member
+ * that argument is a harmless self-filter.
+ */
+export async function listTasks(ownerUserId?: string | null): Promise<Task[]> {
+  const orgId = await resolveActiveOrgId();
+  if (!orgId) return [];
+  let q = supabase
+    .from("lit_tasks")
+    .select("*")
+    .eq("org_id", orgId)
+    .eq("status", "open");
+  if (ownerUserId) q = q.eq("assignee_user_id", ownerUserId);
+  const { data, error } = await q.order("due_date", { ascending: true, nullsFirst: false });
   if (error) return [];
   return (data ?? []) as Task[];
 }

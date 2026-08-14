@@ -46,8 +46,15 @@ function num(v: unknown): number {
  * Never throws — on transport error, no active org, or an `{ ok: false }`
  * payload it returns clean zeros so the header renders 0s, not blanks.
  */
-export async function loadCommandCenterKpis(): Promise<CommandCenterKpis> {
-  const { data, error } = await supabase.rpc("lit_pipeline_summary");
+export async function loadCommandCenterKpis(
+  ownerUserId?: string | null,
+): Promise<CommandCenterKpis> {
+  // ownerUserId is the owner/admin "view as [member]" filter, forwarded to the
+  // RPC as p_owner_user_id. The RPC ignores it for regular members (own-only)
+  // and honours it for owner/admin; NULL = whole org.
+  const { data, error } = await supabase.rpc("lit_pipeline_summary", {
+    p_owner_user_id: ownerUserId ?? null,
+  });
   if (error || !data || (data as { ok?: boolean }).ok === false) {
     return { ...EMPTY_KPIS };
   }

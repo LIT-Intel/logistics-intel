@@ -76,13 +76,18 @@ const EMPTY: DashboardCrm = {
 async function loadWins(
   orgId: string,
   limit = 4,
+  ownerUserId?: string | null,
 ): Promise<{ wonAllTimeValue: number; recentWins: RecentWin[] }> {
-  const { data: won, error } = await supabase
+  let wonQ = supabase
     .from("lit_deals")
     .select("id, title, value_amount, closed_at, saved_company_id")
     .eq("org_id", orgId)
-    .eq("status", "won")
-    .order("closed_at", { ascending: false, nullsFirst: false });
+    .eq("status", "won");
+  if (ownerUserId) wonQ = wonQ.eq("owner_user_id", ownerUserId);
+  const { data: won, error } = await wonQ.order("closed_at", {
+    ascending: false,
+    nullsFirst: false,
+  });
 
   if (error || !won?.length) return { wonAllTimeValue: 0, recentWins: [] };
 
@@ -123,14 +128,19 @@ async function loadWins(
  * summary RPC with the wins query. Never throws — returns the empty shape on
  * any failure so the dashboard degrades gracefully to the empty state.
  */
-export async function loadDashboardCrm(): Promise<DashboardCrm> {
+export async function loadDashboardCrm(
+  ownerUserId?: string | null,
+): Promise<DashboardCrm> {
   try {
     const orgId = await resolveActiveOrgId();
     if (!orgId) return EMPTY;
 
+    // ownerUserId = owner/admin "view as [member]" filter. Forwarded to the
+    // summary RPC (ignored for members) and applied to the wins query below so
+    // the Pipeline & Revenue card matches the filtered board.
     const [summary, wins] = await Promise.all([
-      loadPipelineSummary().catch(() => null),
-      loadWins(orgId).catch(() => ({ wonAllTimeValue: 0, recentWins: [] })),
+      loadPipelineSummary(ownerUserId).catch(() => null),
+      loadWins(orgId, 4, ownerUserId).catch(() => ({ wonAllTimeValue: 0, recentWins: [] })),
     ]);
 
     const s: PipelineSummary | null = summary && summary.ok ? summary : null;

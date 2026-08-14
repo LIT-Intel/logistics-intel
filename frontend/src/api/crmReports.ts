@@ -89,7 +89,10 @@ function weekLabel(d: Date): string {
  * Build the full Reports payload from the org's deals + stages + deal
  * activity. Window for rate/velocity metrics defaults to the last 90 days.
  */
-export async function loadPipelineReport(windowDays = 90): Promise<PipelineReport> {
+export async function loadPipelineReport(
+  windowDays = 90,
+  ownerUserId?: string | null,
+): Promise<PipelineReport> {
   const empty: PipelineReport = {
     openValue: 0, weightedForecast: 0, openDealCount: 0,
     wonThisMonthCount: 0, wonThisMonthValue: 0,
@@ -102,9 +105,13 @@ export async function loadPipelineReport(windowDays = 90): Promise<PipelineRepor
   const orgId = await resolveActiveOrgId();
   if (!orgId) return empty;
 
+  // Optional "view as [member]" filter for owner/admin. RLS already scopes the
+  // deal read (member: own rows; owner/admin: whole org), so ownerUserId only
+  // narrows an owner/admin's report to one member (no-op for a member).
+  const dealsQuery = supabase.from("lit_deals").select("*").eq("org_id", orgId);
   const [{ data: stagesRaw }, { data: dealsRaw }] = await Promise.all([
     supabase.from("lit_deal_stages").select("*").eq("org_id", orgId).order("position", { ascending: true }),
-    supabase.from("lit_deals").select("*").eq("org_id", orgId),
+    ownerUserId ? dealsQuery.eq("owner_user_id", ownerUserId) : dealsQuery,
   ]);
 
   const stages = (stagesRaw ?? []) as DealStage[];
@@ -210,12 +217,20 @@ export async function loadPipelineReport(windowDays = 90): Promise<PipelineRepor
     if (!Number.isNaN(createdTs) && createdTs >= windowStart) createdInWindow += 1;
   }
   try {
-    const { data: acts } = await supabase
+    let actQ = supabase
       .from("lit_deal_activity")
       .select("deal_id, kind, created_at")
       .eq("org_id", orgId)
       .eq("kind", "stage_change")
       .gte("created_at", new Date(windowStart).toISOString());
+    // When viewing as a single member, scope the "advanced" set to that
+    // member's deals so the waterfall matches the filtered board.
+    if (ownerUserId) {
+      const ids = deals.map((d) => d.id).filter(Boolean);
+      if (ids.length) actQ = actQ.in("deal_id", ids);
+      else actQ = actQ.in("deal_id", ["00000000-0000-0000-0000-000000000000"]);
+    }
+    const { data: acts } = await actQ;
     const advancedDeals = new Set<string>();
     for (const a of (acts ?? []) as Array<{ deal_id: string }>) advancedDeals.add(a.deal_id);
     advancedInWindow = advancedDeals.size;
@@ -272,9 +287,18 @@ export type PipelineSummary = {
   overdue_tasks?: Array<{ id: string; title: string; due_date: string | null }>;
 };
 
-/** Calls the org-scoped security-definer RPC. Returns null on transport error. */
-export async function loadPipelineSummary(): Promise<PipelineSummary | null> {
-  const { data, error } = await supabase.rpc("lit_pipeline_summary");
+/**
+ * Calls the org-scoped security-definer RPC. Returns null on transport error.
+ * `ownerUserId` is the owner/admin "view as [member]" filter — passed as
+ * `p_owner_user_id`. The RPC IGNORES it for regular members (they always see
+ * only their own pipeline) and honours it for owner/admin; NULL = whole org.
+ */
+export async function loadPipelineSummary(
+  ownerUserId?: string | null,
+): Promise<PipelineSummary | null> {
+  const { data, error } = await supabase.rpc("lit_pipeline_summary", {
+    p_owner_user_id: ownerUserId ?? null,
+  });
   if (error) return null;
   return (data ?? null) as PipelineSummary | null;
 }
