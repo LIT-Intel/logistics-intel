@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 
 import { loadDashboardCrm, type DashboardCrm } from "@/api/dashboardCrm";
+import ViewAsFilter from "@/features/crm/ViewAsFilter";
 
 const CC = "/app/command-center";
 const CC_PIPELINE = `${CC}?tab=pipeline`;
@@ -42,12 +43,17 @@ function money(n: number): string {
 export default function PipelineRevenueCard() {
   const [data, setData] = useState<DashboardCrm | null>(null);
   const [loading, setLoading] = useState(true);
+  // Owner/admin "view as [member]" filter. "" = All members (whole org). The
+  // ViewAsFilter control renders nothing for regular members, so this stays ""
+  // for them and the card shows their own RLS-scoped pipeline.
+  const [viewAsUserId, setViewAsUserId] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setLoading(true);
       try {
-        const d = await loadDashboardCrm();
+        const d = await loadDashboardCrm(viewAsUserId || null);
         if (!cancelled) setData(d);
       } finally {
         if (!cancelled) setLoading(false);
@@ -56,7 +62,7 @@ export default function PipelineRevenueCard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [viewAsUserId]);
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -70,13 +76,17 @@ export default function PipelineRevenueCard() {
             Your workspace CRM at a glance
           </div>
         </div>
-        <a
-          href={CC}
-          className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800"
-        >
-          Open Command Center
-          <ArrowRight className="h-3 w-3" />
-        </a>
+        <div className="flex items-center gap-3">
+          {/* Owner/admin "view as [member]" filter — hidden for members. */}
+          <ViewAsFilter value={viewAsUserId} onChange={setViewAsUserId} />
+          <a
+            href={CC}
+            className="font-display inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800"
+          >
+            Open Command Center
+            <ArrowRight className="h-3 w-3" />
+          </a>
+        </div>
       </div>
 
       {loading ? (

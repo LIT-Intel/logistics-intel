@@ -35,7 +35,7 @@ function days(v: number | null): string {
   return v == null ? "—" : `${Math.round(v)}d`;
 }
 
-export default function PipelineReports() {
+export default function PipelineReports({ viewAsUserId = "" }: { viewAsUserId?: string }) {
   const [report, setReport] = useState<PipelineReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,13 +44,15 @@ export default function PipelineReports() {
     setLoading(true);
     setError(null);
     try {
-      setReport(await loadPipelineReport());
+      // viewAsUserId (owner/admin "view as [member]") narrows the report to one
+      // member; "" = All members. RLS still scopes members to their own rows.
+      setReport(await loadPipelineReport(90, viewAsUserId || null));
     } catch (e: any) {
       setError(e?.message ?? "Failed to load reports");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [viewAsUserId]);
 
   useEffect(() => { load(); }, [load]);
 

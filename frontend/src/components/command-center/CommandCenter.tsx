@@ -34,6 +34,7 @@ import PipelineBoard from "@/features/crm/PipelineBoard";
 import TasksView from "@/features/crm/TasksView";
 import PipelineReports from "@/features/crm/PipelineReports";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
+import ViewAsFilter from "@/features/crm/ViewAsFilter";
 import { listStages, type DealStage, myOverdueTaskCount } from "@/api/crm";
 import { loadCommandCenterKpis, type CommandCenterKpis } from "@/api/commandCenterKpis";
 // AddCompanyModal import removed — manual company entry no longer offered.
@@ -207,6 +208,11 @@ type CrmView = "accounts" | "pipeline" | "tasks" | "reports";
 export default function CommandCenter() {
   const [view, setView] = useState<CrmView>("accounts");
   const [overdueCount, setOverdueCount] = useState(0);
+  // Owner/admin "view as [member]" filter. Empty string = All members (whole
+  // org). Threaded into the KPI RPC + every CRM view (pipeline/tasks/reports).
+  // The ViewAsFilter control renders nothing for regular members, so this stays
+  // "" for them and every read falls back to their own RLS-scoped rows.
+  const [viewAsUserId, setViewAsUserId] = useState<string>("");
   // Header KPI snapshot — one org-scoped lit_pipeline_summary() call. Starts
   // at clean zeros so the bar renders 0s (never blanks) before data lands and
   // on any empty/error state.
@@ -239,13 +245,15 @@ export default function CommandCenter() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const k = await loadCommandCenterKpis();
+      // Forward the owner/admin "view as" filter so the header KPIs match the
+      // filtered board. Ignored server-side for regular members.
+      const k = await loadCommandCenterKpis(viewAsUserId || null);
       if (alive) setKpis(k);
     })();
     return () => {
       alive = false;
     };
-  }, [view]);
+  }, [view, viewAsUserId]);
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC" }}>
@@ -260,9 +268,22 @@ export default function CommandCenter() {
       {/* KPI header bar — below the tabs, above the content. Compact colored
           KpiChip idiom (icon square + tone + bold number + small label), same
           as the dashboard. Reflows to 2-up on phones, one row on desktop. */}
-      <KpiHeaderBar kpis={kpis} overdueForViewer={overdueCount} />
+      <KpiHeaderBar
+        kpis={kpis}
+        overdueForViewer={overdueCount}
+        viewAsUserId={viewAsUserId}
+        onViewAsChange={setViewAsUserId}
+      />
 
-      {view === "accounts" ? <AccountsView /> : view === "pipeline" ? <PipelineBoard /> : view === "tasks" ? <TasksView onCountChange={setOverdueCount} /> : <PipelineReports />}
+      {view === "accounts" ? (
+        <AccountsView />
+      ) : view === "pipeline" ? (
+        <PipelineBoard viewAsUserId={viewAsUserId} />
+      ) : view === "tasks" ? (
+        <TasksView onCountChange={setOverdueCount} viewAsUserId={viewAsUserId} />
+      ) : (
+        <PipelineReports viewAsUserId={viewAsUserId} />
+      )}
     </div>
   );
 }
@@ -319,7 +340,17 @@ function KpiChip({
   );
 }
 
-function KpiHeaderBar({ kpis, overdueForViewer }: { kpis: CommandCenterKpis; overdueForViewer: number }) {
+function KpiHeaderBar({
+  kpis,
+  overdueForViewer,
+  viewAsUserId,
+  onViewAsChange,
+}: {
+  kpis: CommandCenterKpis;
+  overdueForViewer: number;
+  viewAsUserId: string;
+  onViewAsChange: (userId: string) => void;
+}) {
   // "Tasks due" surfaces the org-scoped open-overdue count from the RPC as the
   // primary number; the viewer's own overdue count drives the highlight hint.
   const tasksDue = kpis.overdueTaskCount;
@@ -334,6 +365,10 @@ function KpiHeaderBar({ kpis, overdueForViewer }: { kpis: CommandCenterKpis; ove
         flexShrink: 0,
       }}
     >
+      {/* Owner/admin "view as [member]" filter — renders nothing for members. */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8, minHeight: 0 }}>
+        <ViewAsFilter value={viewAsUserId} onChange={onViewAsChange} />
+      </div>
       <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-5">
         <KpiChip label="Open pipeline" value={formatCurrency(kpis.openPipelineValue)} icon={DollarSign} tone="blue" />
         <KpiChip label="Active deals" value={formatNumber(kpis.activeDealCount)} icon={Briefcase} tone="indigo" />

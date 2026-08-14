@@ -24,7 +24,7 @@ const FONT_BODY = "'DM Sans', sans-serif";
  * repo). Column headers show count + summed value. Deal cards open the
  * DealDetailDrawer. Horizontal scroll of columns on mobile.
  */
-export default function PipelineBoard() {
+export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: string }) {
   const { toast } = useToast();
   const [stages, setStages] = useState<DealStage[]>([]);
   const [deals, setDeals] = useState<DealCard[]>([]);
@@ -39,7 +39,9 @@ export default function PipelineBoard() {
     setLoading(true);
     setError(null);
     try {
-      const [s, d] = await Promise.all([listStages(), listDeals()]);
+      // viewAsUserId (owner/admin "view as [member]") narrows the deal read to
+      // one member; "" = All members. RLS still scopes members to own rows.
+      const [s, d] = await Promise.all([listStages(), listDeals(viewAsUserId || null)]);
       setStages(s);
       setDeals(d);
       if (!s.length) {
@@ -50,7 +52,7 @@ export default function PipelineBoard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [viewAsUserId]);
 
   useEffect(() => {
     reload();

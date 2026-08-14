@@ -3,17 +3,27 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Loader2, Check, AlertTriangle, CheckSquare } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { type Task, listMyTasks, setTaskStatus } from "@/api/crm";
+import { type Task, listTasks, setTaskStatus } from "@/api/crm";
 import { formatDate, isOverdue } from "./crmFormat";
 
 const FONT_HEAD = "'Space Grotesk', sans-serif";
 const FONT_BODY = "'DM Sans', sans-serif";
 
 /**
- * "My tasks" — open tasks assigned to the viewer, due-date sorted, overdue
- * highlighted, mark-done inline. Workspace-scoped via RLS + assignee filter.
+ * Tasks list — open tasks visible to the viewer, due-date sorted, overdue
+ * highlighted, mark-done inline. RLS scopes the base set: a regular member sees
+ * only tasks they're the assignee/creator of; an owner/admin sees ALL org
+ * tasks. `viewAsUserId` (owner/admin "view as [member]") narrows to one member;
+ * "" = All members. For a regular member `viewAsUserId` is always "" and the
+ * list stays their own tasks.
  */
-export default function TasksView({ onCountChange }: { onCountChange?: (overdue: number) => void }) {
+export default function TasksView({
+  onCountChange,
+  viewAsUserId = "",
+}: {
+  onCountChange?: (overdue: number) => void;
+  viewAsUserId?: string;
+}) {
   const { toast } = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,13 +31,13 @@ export default function TasksView({ onCountChange }: { onCountChange?: (overdue:
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const t = await listMyTasks();
+      const t = await listTasks(viewAsUserId || null);
       setTasks(t);
       if (onCountChange) onCountChange(t.filter((x) => isOverdue(x.due_date)).length);
     } finally {
       setLoading(false);
     }
-  }, [onCountChange]);
+  }, [onCountChange, viewAsUserId]);
 
   useEffect(() => {
     reload();
@@ -52,7 +62,7 @@ export default function TasksView({ onCountChange }: { onCountChange?: (overdue:
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC" }}>
       <div style={{ padding: "16px 24px", borderBottom: "1px solid #E5E7EB", background: "#FFFFFF", flexShrink: 0 }}>
         <div style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, color: "#6366F1", letterSpacing: "0.24em", textTransform: "uppercase" }}>Tasks</div>
-        <div style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 700, color: "#0F172A", letterSpacing: "-0.02em" }}>My tasks</div>
+        <div style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 700, color: "#0F172A", letterSpacing: "-0.02em" }}>Open tasks</div>
         <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: "#64748b", marginTop: 2 }}>
           {tasks.length} open{overdue.length ? ` · ${overdue.length} overdue` : ""}
         </div>
@@ -69,7 +79,7 @@ export default function TasksView({ onCountChange }: { onCountChange?: (overdue:
               <CheckSquare style={{ width: 22, height: 22, color: "#94a3b8" }} />
             </div>
             <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 600, color: "#0F172A" }}>You're all caught up</div>
-            <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: "#64748b", marginTop: 4 }}>No open tasks assigned to you.</div>
+            <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: "#64748b", marginTop: 4 }}>No open tasks in this view.</div>
           </div>
         ) : (
           <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18 }}>
