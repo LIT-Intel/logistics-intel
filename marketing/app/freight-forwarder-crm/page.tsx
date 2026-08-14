@@ -15,6 +15,7 @@ const page: SearchDemandPageData = {
   title: "A freight sales CRM that already understands the account's shipment activity.",
   intro: "Command Center connects account ownership, contacts, tasks, outreach, and pipeline stages to the shipment and trade-lane context that freight forwarder sales teams use to qualify opportunities.",
   definition: "A freight forwarder CRM should manage more than names, notes, and deal stages. It should keep the account's shipment activity, lanes, products, contacts, research, follow-ups, and sales history together so the next action is based on freight context rather than an empty record created after the research is finished.",
+  productPreview: "crm",
   capabilities: [
     { title: "Account context from the beginning", body: "Start with company and shipment intelligence, then save the account with its lane, volume, carrier, supplier, and opportunity context attached." },
     { title: "Contacts tied to the shipper", body: "Organize relevant logistics, transportation, supply-chain, procurement, and import contacts alongside the company record and the reason the account was selected." },
