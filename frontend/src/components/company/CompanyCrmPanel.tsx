@@ -25,6 +25,8 @@ import {
   ArrowRight,
   UserPlus,
   Send,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   loadCompanyCrmSummary,
@@ -115,6 +117,26 @@ export default function CompanyCrmPanel(props: CompanyCrmPanelProps) {
 
   const [data, setData] = useState<CompanyCrmSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  // Collapsed by default (owner request) — the header invites the user to
+  // open it; state persists per browser so a user who likes it open stays open.
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("lit:crmPanelOpen") !== "1";
+    } catch {
+      return true;
+    }
+  });
+  const toggle = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("lit:crmPanelOpen", next ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
 
   // Stable identity key so the effect only refires on a real identity change.
   const identKey = useMemo(
@@ -168,8 +190,15 @@ export default function CompanyCrmPanel(props: CompanyCrmPanelProps) {
   return (
     <div className="px-4 pt-3 md:px-6">
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+        {/* Header — click to expand/collapse (collapsed by default) */}
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={!collapsed}
+          className={`flex w-full items-center justify-between gap-2 px-4 py-3 text-left transition-colors hover:bg-slate-50/60 ${
+            collapsed ? "rounded-2xl" : "rounded-t-2xl border-b border-slate-100"
+          }`}
+        >
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50">
               <Briefcase className="h-4 w-4 text-indigo-600" />
@@ -185,15 +214,26 @@ export default function CompanyCrmPanel(props: CompanyCrmPanelProps) {
                 className="text-[11px] text-slate-400"
                 style={{ fontFamily: FONT_BODY }}
               >
-                This company across your workspace
+                {collapsed
+                  ? "Deals, quotes, tasks & outreach — click to open"
+                  : "This company across your workspace"}
               </div>
             </div>
           </div>
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
-          ) : null}
-        </div>
+          <div className="flex items-center gap-2">
+            {loading && !collapsed ? (
+              <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
+            ) : null}
+            {collapsed ? (
+              <ChevronDown className="h-4 w-4 text-slate-400" />
+            ) : (
+              <ChevronUp className="h-4 w-4 text-slate-400" />
+            )}
+          </div>
+        </button>
 
+        {!collapsed && (
+          <>
         {/* Body grid */}
         <div className="grid grid-cols-1 gap-px overflow-hidden rounded-b-2xl bg-slate-100 sm:grid-cols-2 lg:grid-cols-4">
           {/* Deals */}
@@ -394,6 +434,8 @@ export default function CompanyCrmPanel(props: CompanyCrmPanelProps) {
             <ArrowRight className="h-3 w-3" />
           </button>
         </div>
+          </>
+        )}
       </div>
     </div>
   );
