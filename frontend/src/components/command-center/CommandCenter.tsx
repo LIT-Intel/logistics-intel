@@ -24,6 +24,10 @@ import {
   KanbanSquare,
   CheckSquare,
   BarChart3,
+  DollarSign,
+  Briefcase,
+  TrendingUp,
+  Trophy,
 } from "lucide-react";
 import AddToCampaignModal from "./AddToCampaignModal";
 import PipelineBoard from "@/features/crm/PipelineBoard";
@@ -31,6 +35,7 @@ import TasksView from "@/features/crm/TasksView";
 import PipelineReports from "@/features/crm/PipelineReports";
 import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDealModal";
 import { listStages, type DealStage, myOverdueTaskCount } from "@/api/crm";
+import { loadCommandCenterKpis, type CommandCenterKpis } from "@/api/commandCenterKpis";
 // AddCompanyModal import removed — manual company entry no longer offered.
 
 type SavedCompaniesResponse =
@@ -202,6 +207,16 @@ type CrmView = "accounts" | "pipeline" | "tasks" | "reports";
 export default function CommandCenter() {
   const [view, setView] = useState<CrmView>("accounts");
   const [overdueCount, setOverdueCount] = useState(0);
+  // Header KPI snapshot — one org-scoped lit_pipeline_summary() call. Starts
+  // at clean zeros so the bar renders 0s (never blanks) before data lands and
+  // on any empty/error state.
+  const [kpis, setKpis] = useState<CommandCenterKpis>({
+    openPipelineValue: 0,
+    activeDealCount: 0,
+    weightedForecast: 0,
+    wonMtdValue: 0,
+    overdueTaskCount: 0,
+  });
 
   // Load the viewer's overdue-task count for the Tasks tab badge.
   useEffect(() => {
@@ -219,6 +234,19 @@ export default function CommandCenter() {
     };
   }, [view]);
 
+  // Load header KPIs once (org-scoped RPC). Refreshed on tab switches so the
+  // numbers stay current after the viewer edits deals/tasks in another view.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const k = await loadCommandCenterKpis();
+      if (alive) setKpis(k);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [view]);
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC" }}>
       {/* View switcher */}
@@ -229,7 +257,90 @@ export default function CommandCenter() {
         <ViewTab active={view === "reports"} onClick={() => setView("reports")} icon={<BarChart3 style={{ width: 14, height: 14 }} />} label="Reports" />
       </div>
 
+      {/* KPI header bar — below the tabs, above the content. Compact colored
+          KpiChip idiom (icon square + tone + bold number + small label), same
+          as the dashboard. Reflows to 2-up on phones, one row on desktop. */}
+      <KpiHeaderBar kpis={kpis} overdueForViewer={overdueCount} />
+
       {view === "accounts" ? <AccountsView /> : view === "pipeline" ? <PipelineBoard /> : view === "tasks" ? <TasksView onCountChange={setOverdueCount} /> : <PipelineReports />}
+    </div>
+  );
+}
+
+// ── Header KPI bar ──────────────────────────────────────────────────────────
+// Mirrors the dashboard's KpiChip: a colored icon square + bold mono number +
+// small uppercase label. Tasteful and compact — a workspace header strip, not
+// the deep analytics view (Reports tab owns that).
+const KPI_TONES: Record<string, string> = {
+  blue: "bg-blue-50 text-blue-600",
+  indigo: "bg-indigo-50 text-indigo-600",
+  violet: "bg-violet-50 text-violet-600",
+  amber: "bg-amber-50 text-amber-600",
+  emerald: "bg-emerald-50 text-emerald-600",
+};
+
+function KpiChip({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  tone = "blue",
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tone?: keyof typeof KPI_TONES;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+      <span
+        className={[
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+          KPI_TONES[tone] || KPI_TONES.blue,
+        ].join(" ")}
+      >
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <div className="font-mono truncate text-[18px] font-bold leading-none tracking-tight text-slate-900">
+          {value}
+        </div>
+        <div className="mt-1 truncate text-[9.5px] font-semibold uppercase tracking-[0.07em] text-slate-400" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+          {label}
+        </div>
+        {hint ? (
+          <div className="mt-0.5 truncate text-[10px] text-slate-400" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+            {hint}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function KpiHeaderBar({ kpis, overdueForViewer }: { kpis: CommandCenterKpis; overdueForViewer: number }) {
+  // "Tasks due" surfaces the org-scoped open-overdue count from the RPC as the
+  // primary number; the viewer's own overdue count drives the highlight hint.
+  const tasksDue = kpis.overdueTaskCount;
+  const tasksHint = overdueForViewer > 0 ? `${formatNumber(overdueForViewer)} overdue for you` : undefined;
+
+  return (
+    <div
+      style={{
+        padding: "12px 24px",
+        background: "#FFFFFF",
+        borderBottom: "1px solid #E5E7EB",
+        flexShrink: 0,
+      }}
+    >
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-5">
+        <KpiChip label="Open pipeline" value={formatCurrency(kpis.openPipelineValue)} icon={DollarSign} tone="blue" />
+        <KpiChip label="Active deals" value={formatNumber(kpis.activeDealCount)} icon={Briefcase} tone="indigo" />
+        <KpiChip label="Weighted forecast" value={formatCurrency(kpis.weightedForecast)} icon={TrendingUp} tone="violet" />
+        <KpiChip label="Tasks due" value={formatNumber(tasksDue)} hint={tasksHint} icon={CheckSquare} tone="amber" />
+        <KpiChip label="Won MTD" value={formatCurrency(kpis.wonMtdValue)} icon={Trophy} tone="emerald" />
+      </div>
     </div>
   );
 }
