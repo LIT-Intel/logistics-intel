@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { X, Plus, Check, Loader2, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { X, Plus, Check, Loader2, Trash2, Building2, FileText, Mail } from "lucide-react";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -39,7 +40,12 @@ export default function DealDetailDrawer({
   onChanged: () => void;
 }) {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
+  // lit_companies UUID for this deal — resolved from saved_company_id so the
+  // header cross-links (Company profile / Quotes / Inbox) can deep-link to the
+  // real 360 hub. company_id (text) is the fallback when there's no saved row.
+  const [companyUuid, setCompanyUuid] = useState<string | null>(null);
   const [title, setTitle] = useState(deal.title);
   const [value, setValue] = useState<string>(deal.value_amount != null ? String(deal.value_amount) : "");
   const [stageId, setStageId] = useState(deal.stage_id);
@@ -89,8 +95,9 @@ export default function DealDetailDrawer({
           .select("company_id")
           .eq("id", deal.saved_company_id)
           .maybeSingle();
-        const companyUuid = (data as any)?.company_id ?? null;
-        const list = await listCompanyContacts(companyUuid);
+        const uuid = (data as any)?.company_id ?? null;
+        if (alive) setCompanyUuid(uuid);
+        const list = await listCompanyContacts(uuid);
         if (alive) setContacts(list);
       } catch {
         /* ignore */
@@ -102,6 +109,30 @@ export default function DealDetailDrawer({
   }, [deal.saved_company_id]);
 
   const currentStage = useMemo(() => stages.find((s) => s.id === stageId), [stages, stageId]);
+
+  // Company-profile route target for cross-links. Prefer the resolved
+  // lit_companies UUID; fall back to the deal's companyKey / company_id text
+  // so the link still lands somewhere real even before the UUID resolves.
+  const companyRouteId = useMemo(
+    () =>
+      companyUuid ||
+      (deal as any).companyKey ||
+      deal.company_id ||
+      null,
+    [companyUuid, deal],
+  );
+  const companyHref = companyRouteId
+    ? `/app/companies/${encodeURIComponent(String(companyRouteId))}`
+    : null;
+
+  function goCompany(tab?: "quotes" | "inbox") {
+    if (!companyHref) {
+      toast({ title: "No linked company for this deal" });
+      return;
+    }
+    navigate(tab ? `${companyHref}?tab=${tab}` : companyHref);
+    onClose();
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -218,6 +249,32 @@ export default function DealDetailDrawer({
           </div>
           <button onClick={onClose} style={iconBtn} title="Close">
             <X style={{ width: 16, height: 16 }} />
+          </button>
+        </div>
+
+        {/* Cross-links — tie the deal back to the company's 360 hub: the
+            company profile, its quotes, and its inbox/email threads. */}
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            padding: "10px 20px",
+            borderBottom: "1px solid #E5E7EB",
+            background: "#FFFFFF",
+            flexWrap: "wrap",
+          }}
+        >
+          <button onClick={() => goCompany()} style={crossLinkBtn} title="Open company profile">
+            <Building2 style={{ width: 13, height: 13 }} />
+            Company
+          </button>
+          <button onClick={() => goCompany("quotes")} style={crossLinkBtn} title="Company quotes">
+            <FileText style={{ width: 13, height: 13 }} />
+            Quotes
+          </button>
+          <button onClick={() => goCompany("inbox")} style={crossLinkBtn} title="Company inbox / email">
+            <Mail style={{ width: 13, height: 13 }} />
+            Inbox
           </button>
         </div>
 
@@ -445,6 +502,21 @@ const iconBtnBlue: React.CSSProperties = {
   border: "1.5px solid #BFDBFE",
   background: "#EFF6FF",
   color: "#3B82F6",
+};
+
+const crossLinkBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 11px",
+  borderRadius: 9,
+  border: "1px solid #E5E7EB",
+  background: "#F8FAFC",
+  color: "#475569",
+  fontFamily: FONT_HEAD,
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: "pointer",
 };
 
 const taskRow: React.CSSProperties = {
