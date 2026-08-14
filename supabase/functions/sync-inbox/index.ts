@@ -76,7 +76,7 @@ serve(async (req) => {
   // ── Select mailboxes ────────────────────────────────────────────────
   let q = admin
     .from("lit_email_accounts")
-    .select("id, user_id, org_id, provider, email, gmail_history_id, metadata")
+    .select("id, user_id, org_id, provider, email, gmail_history_id, gmail_watch_expiration, graph_subscription_id, graph_subscription_expiration, metadata")
     .eq("status", "connected")
     .in("provider", ["gmail", "outlook"]);
   if (userId) q = q.eq("user_id", userId);
@@ -106,6 +106,11 @@ async function syncGmailMailbox(admin: any, mb: any): Promise<Record<string, unk
   const tokenRes = await getMailboxAccessToken(admin, mb.id, "gmail");
   if (!tokenRes.ok) return { ok: false, error: tokenRes.error, needsReconnect: tokenRes.needsReconnect };
   const accessToken = tokenRes.accessToken;
+
+  // Keep the Gmail users.watch push subscription alive. Gmail expires it
+  // after 7d; re-register when it's null or within 24h. Reuses reply-receiver's
+  // Pub/Sub topic (GMAIL_PUBSUB_TOPIC). Non-fatal on failure.
+  await maybeRenewGmailWatch(admin, mb, accessToken);
 
   // Collect message ids to fetch.
   let messageIds: string[] = [];
@@ -298,6 +303,10 @@ async function syncOutlookMailbox(admin: any, mb: any): Promise<Record<string, u
   const tokenRes = await getMailboxAccessToken(admin, mb.id, "outlook");
   if (!tokenRes.ok) return { ok: false, error: tokenRes.error, needsReconnect: tokenRes.needsReconnect };
   const accessToken = tokenRes.accessToken;
+
+  // Keep the Graph change-subscription alive (Graph caps message subs at
+  // ~71h; re-arm when null or within 12h). Non-fatal on failure.
+  await maybeRenewGraphSubscription(admin, mb, accessToken);
 
   const meta = mb.metadata || {};
   let deltaLink: string | null = meta.graph_delta_link || null;
@@ -572,6 +581,79 @@ async function finalizeThread(admin: any, threadId: string): Promise<void> {
     .from("lit_email_messages")
     .update({ conversation_type: conversationType, campaign_id: campaignId, contact_id: contactId })
     .eq("thread_id", threadId);
+}
+
+// ── Push-subscription renewal ─────────────────────────────────────────────
+
+async function maybeRenewGmailWatch(admin: any, mb: any, accessToken: string): Promise<void> {
+  const topic = Deno.env.get("GMAIL_PUBSUB_TOPIC");
+  if (!topic) return; // no topic configured — reply-receiver push not in use
+  const exp = mb.gmail_watch_expiration ? new Date(mb.gmail_watch_expiration).getTime() : 0;
+  if (exp - Date.now() > 24 * 3600_000) return; // still valid > 24h
+  try {
+    const resp = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/watch", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ topicName: topic, labelIds: ["INBOX"], labelFilterBehavior: "INCLUDE" }),
+    });
+    if (!resp.ok) { console.error("[sync-inbox] gmail watch renew failed:", resp.status); return; }
+    const w = await resp.json();
+    // Gmail watch expiration is epoch ms as a string.
+    const expirationMs = Number(w.expiration) || (Date.now() + 7 * 86400_000);
+    const patch: Record<string, unknown> = { gmail_watch_expiration: new Date(expirationMs).toISOString() };
+    // If we had no baseline historyId yet, seed it from the watch response.
+    if (!mb.gmail_history_id && w.historyId) patch.gmail_history_id = String(w.historyId);
+    await admin.from("lit_email_accounts").update(patch).eq("id", mb.id);
+  } catch (e) {
+    console.error("[sync-inbox] gmail watch renew threw:", e);
+  }
+}
+
+async function maybeRenewGraphSubscription(admin: any, mb: any, accessToken: string): Promise<void> {
+  const exp = mb.graph_subscription_expiration ? new Date(mb.graph_subscription_expiration).getTime() : 0;
+  if (mb.graph_subscription_id && exp - Date.now() > 12 * 3600_000) return; // still valid > 12h
+  const supabaseUrl = SUPABASE_URL;
+  const newExpiry = new Date(Date.now() + 60 * 3600_000).toISOString(); // 60h (< Graph 71h cap)
+  try {
+    // PATCH extends an existing subscription; if it's gone (404) re-create it.
+    if (mb.graph_subscription_id) {
+      const patchResp = await fetch(
+        `https://graph.microsoft.com/v1.0/subscriptions/${mb.graph_subscription_id}`,
+        {
+          method: "PATCH",
+          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ expirationDateTime: newExpiry }),
+        },
+      );
+      if (patchResp.ok) {
+        const s = await patchResp.json();
+        await admin.from("lit_email_accounts")
+          .update({ graph_subscription_expiration: s.expirationDateTime || newExpiry })
+          .eq("id", mb.id);
+        return;
+      }
+      if (patchResp.status !== 404) { console.error("[sync-inbox] graph sub patch failed:", patchResp.status); return; }
+    }
+    // Create a fresh subscription.
+    const createResp = await fetch("https://graph.microsoft.com/v1.0/subscriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        changeType: "created",
+        notificationUrl: `${supabaseUrl}/functions/v1/reply-receiver?source=outlook`,
+        resource: "me/mailFolders('Inbox')/messages",
+        expirationDateTime: newExpiry,
+        clientState: mb.id,
+      }),
+    });
+    if (!createResp.ok) { console.error("[sync-inbox] graph sub create failed:", createResp.status); return; }
+    const s = await createResp.json();
+    await admin.from("lit_email_accounts")
+      .update({ graph_subscription_id: s.id, graph_subscription_expiration: s.expirationDateTime || newExpiry })
+      .eq("id", mb.id);
+  } catch (e) {
+    console.error("[sync-inbox] graph sub renew threw:", e);
+  }
 }
 
 // ── Address parsing ──────────────────────────────────────────────────────
