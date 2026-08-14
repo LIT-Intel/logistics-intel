@@ -41,6 +41,7 @@ export function FeaturePageTemplate({
         subtitle={data.lede}
         primaryCta={{ label: "Start 7-day trial", href: APP_SIGNUP_URL, icon: "arrow" }}
         secondaryCta={{ label: "Book a demo", href: "/demo" }}
+        wide={data.slug === "freight-sales-crm"}
       />
 
       {data.slug === "freight-sales-crm" && (
