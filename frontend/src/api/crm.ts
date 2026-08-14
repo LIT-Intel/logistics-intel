@@ -14,6 +14,47 @@
 
 import { supabase } from "@/lib/supabase";
 
+// ── Service type (lane mode) ────────────────────────────────────────────
+// CEO ask (2026-08-14): deals capture a SERVICE TYPE so opportunities are
+// segmented + reportable by mode. Reuses the profile's mode set. Kept as a
+// local canonical list (rather than importing the intel ServiceMode, which
+// omits rail/intermodal/other) so CRM owns its own contract; values match the
+// lit_deals CHECK constraint (migration 20260814200000).
+export type DealServiceType =
+  | "ocean"
+  | "air"
+  | "truck"
+  | "rail"
+  | "drayage"
+  | "broker"
+  | "domestic"
+  | "intermodal"
+  | "other";
+
+export const DEAL_SERVICE_TYPES: DealServiceType[] = [
+  "ocean",
+  "air",
+  "truck",
+  "rail",
+  "drayage",
+  "broker",
+  "domestic",
+  "intermodal",
+  "other",
+];
+
+export const DEAL_SERVICE_TYPE_LABELS: Record<DealServiceType, string> = {
+  ocean: "Ocean",
+  air: "Air",
+  truck: "Truck",
+  rail: "Rail",
+  drayage: "Drayage",
+  broker: "Broker",
+  domestic: "Domestic",
+  intermodal: "Intermodal",
+  other: "Other",
+};
+
 // ── Types ──────────────────────────────────────────────────────────────
 export type DealStage = {
   id: string;
@@ -39,6 +80,9 @@ export type Deal = {
   primary_contact_id: string | null;
   owner_user_id: string;
   notes: string | null;
+  service_type: DealServiceType | null;
+  origin: string | null;
+  destination: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -307,6 +351,9 @@ export type CreateDealInput = {
   primary_contact_id?: string | null;
   owner_user_id?: string | null;
   notes?: string | null;
+  service_type?: DealServiceType | null;
+  origin?: string | null;
+  destination?: string | null;
 };
 
 export async function createDeal(input: CreateDealInput): Promise<Deal> {
@@ -328,6 +375,9 @@ export async function createDeal(input: CreateDealInput): Promise<Deal> {
       owner_user_id: input.owner_user_id ?? uid,
       created_by: uid,
       notes: input.notes ?? null,
+      service_type: input.service_type ?? null,
+      origin: input.origin ?? null,
+      destination: input.destination ?? null,
     })
     .select("*")
     .single();
@@ -348,6 +398,9 @@ export async function updateDeal(
       | "primary_contact_id"
       | "owner_user_id"
       | "notes"
+      | "service_type"
+      | "origin"
+      | "destination"
     >
   >,
 ): Promise<Deal> {
@@ -513,6 +566,52 @@ export async function listCompanyContacts(
     .order("full_name", { ascending: true });
   if (error) return [];
   return (data ?? []) as any;
+}
+
+/**
+ * Lane suggestions for the create-deal Lane inputs. Reads the per-company
+ * lane × month rollup (`lit_company_lane_months`, keyed by the bare
+ * source_company_key) and returns the company's most-shipped origins and
+ * destinations as datalist hints. Best-effort: unknown key / no rollup / any
+ * error → empty lists, so the Lane fields degrade to free text.
+ */
+export async function companyLaneSuggestions(
+  companyKey: string | null | undefined,
+): Promise<{ origins: string[]; destinations: string[] }> {
+  const empty = { origins: [], destinations: [] };
+  const bare = (companyKey ?? "").replace(/^company\//i, "").trim().toLowerCase();
+  if (!bare) return empty;
+  try {
+    const { data, error } = await supabase
+      .from("lit_company_lane_months")
+      .select("origin_country, origin_city, dest_country, dest_state, dest_city, shipments")
+      .in("company_id", Array.from(new Set([bare, String(companyKey).trim()])))
+      .order("shipments", { ascending: false })
+      .limit(200);
+    if (error || !data?.length) return empty;
+    const originCounts = new Map<string, number>();
+    const destCounts = new Map<string, number>();
+    const bump = (m: Map<string, number>, label: string, n: number) => {
+      const k = label.trim();
+      if (!k) return;
+      m.set(k, (m.get(k) ?? 0) + n);
+    };
+    for (const r of data as any[]) {
+      const n = Number(r.shipments) || 0;
+      const origin = [r.origin_city, r.origin_country].filter(Boolean).join(", ");
+      const dest = [r.dest_city, r.dest_state, r.dest_country].filter(Boolean).join(", ");
+      bump(originCounts, origin, n);
+      bump(destCounts, dest, n);
+    }
+    const topOf = (m: Map<string, number>) =>
+      Array.from(m.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([label]) => label);
+    return { origins: topOf(originCounts), destinations: topOf(destCounts) };
+  } catch {
+    return empty;
+  }
 }
 
 /** Org members for the owner / assignee pickers. */
