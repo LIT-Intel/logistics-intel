@@ -23,11 +23,11 @@ export const revalidate = 600; // ISR — refresh every 10 min
 
 const FALLBACK_HERO = {
   pillText: "Pulse AI · Global Supply Chain Research Intelligence",
-  headline: "Freight Prospecting Software for Brokers,",
+  headline: "Freight Prospecting & CRM Software for Brokers,",
   headlineHighlight: "Forwarders & 3PLs.",
   headlineSuffix: "",
   subhead:
-    "LIT helps freight forwarders, brokers, and logistics sales teams find active shippers, understand their trade activity, enrich verified contacts, and launch multichannel outreach — from one connected workspace built on 124M+ live Bill of Lading records.",
+    "LIT helps freight forwarders, brokers, and logistics sales teams find active shippers, understand their trade activity, reach verified contacts, and manage deals in a full freight-native CRM — from one connected workspace built on 124M+ live Bill of Lading records.",
   noteBelow:
     "Built for logistics teams that need better prospects, better timing, and better context before the first email goes out.",
   badges: [
@@ -76,10 +76,10 @@ const HERO_BADGE_ICONS: Record<string, LucideIcon> = {
 export const metadata: Metadata = buildMetadata({
   path: "/",
   title:
-    "Freight Prospecting Software for Brokers, Forwarders & 3PLs | Logistics Intel",
+    "Freight Prospecting & CRM Software for Logistics Sales | Logistics Intel",
   description:
-    "Logistics Intel turns live shipment data, verified contacts, and Pulse AI into pipeline — the freight prospecting platform for brokers, forwarders, and 3PLs.",
-  eyebrow: "Freight prospecting platform",
+    "Find active shippers, reach verified contacts, manage deals, forecast pipeline, and track tasks in a freight-native CRM for brokers, forwarders, and 3PLs.",
+  eyebrow: "Freight prospecting and CRM platform",
 });
 
 export default async function HomePage() {
@@ -139,7 +139,7 @@ export default async function HomePage() {
             applicationCategory: "BusinessApplication",
             operatingSystem: "Web",
             description:
-              "Market intelligence and revenue execution platform combining company data, trade signals, CRM, and outbound campaigns.",
+              "Freight prospecting and CRM platform combining shipment intelligence, verified contacts, deal pipelines, weighted forecasting, tasks, reporting, and outbound campaigns.",
             offers: {
               "@type": "Offer",
               price: "0",
@@ -160,7 +160,7 @@ function Hero({ hero }: { hero: any }) {
         eyebrow={hero.pillText}
         headline={
           <>
-            Freight Prospecting Software for <em>Brokers, Forwarders &amp; 3PLs</em>.
+            Freight Prospecting &amp; CRM Software for <em>Brokers, Forwarders &amp; 3PLs</em>.
           </>
         }
         lede={hero.subhead}
