@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   if (!orgId) return json({ ok: false, code: "NO_ORG" }, 403);
 
   const body = await req.json().catch(() => ({}));
-  let q = admin.from("lit_quotes").select("id,quote_number,company_id,status,mode,service_type,origin_port,origin_city,destination_port,destination_city,total_sell,gross_profit,gross_margin_pct,owner_user_id,sent_at,valid_until,updated_at")
+  let q = admin.from("lit_quotes").select("id,quote_number,company_id,status,mode,service_type,origin_port,origin_city,destination_port,destination_city,total_sell,gross_profit,gross_margin_pct,owner_user_id,sent_at,valid_until,updated_at,deal_id")
     .eq("org_id", orgId).order("updated_at", { ascending: false });
   if (body.status) q = q.eq("status", body.status);
   if (body.company_id) q = q.eq("company_id", body.company_id);

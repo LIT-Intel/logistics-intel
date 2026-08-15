@@ -89,6 +89,9 @@ export interface Quote {
   sent_at?: string | null;
   approved_at?: string | null;
   closed_at?: string | null;
+  // CRM deal this quote rolls up into (migration 20260814245000). When set, the
+  // deal is the source of truth for pipeline value — see api/quoteDeal.ts.
+  deal_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -111,6 +114,10 @@ export interface QuoteListItem {
   sent_at?: string | null;
   valid_until?: string | null;
   updated_at: string;
+  // Set when this quote has been converted to / attached to a CRM deal. Drives
+  // the "Convert to deal" vs "Linked ✓" affordance in CompanyQuotesTab. The
+  // deal is the single source of truth for value once this is populated.
+  deal_id?: string | null;
   company?: {
     id: string;
     name: string;

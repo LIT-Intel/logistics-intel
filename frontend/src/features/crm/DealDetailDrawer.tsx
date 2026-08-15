@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { X, Plus, Check, Loader2, Trash2, Building2, FileText, Mail } from "lucide-react";
+import { X, Plus, Check, Loader2, Trash2, Building2, FileText, Mail, Link2, Unlink } from "lucide-react";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -23,6 +23,13 @@ import {
   listCompanyContacts,
   listOrgMembers,
 } from "@/api/crm";
+import {
+  listQuotesForDeal,
+  listAttachableQuotes,
+  attachQuoteToDeal,
+  detachQuoteFromDeal,
+  type LinkedQuote,
+} from "@/api/quoteDeal";
 import { formatDate, formatMoney, initials, avatarColor, isOverdue } from "./crmFormat";
 
 const FONT_HEAD = "'Space Grotesk', sans-serif";
@@ -64,6 +71,12 @@ export default function DealDetailDrawer({
   const [members, setMembers] = useState<Member[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activity, setActivity] = useState<DealActivity[]>([]);
+  // Quotes linked to this deal (source of truth for value lives on the deal;
+  // these roll up into it) + unlinked company quotes available to attach.
+  const [linkedQuotes, setLinkedQuotes] = useState<LinkedQuote[]>([]);
+  const [attachable, setAttachable] = useState<LinkedQuote[]>([]);
+  const [attachId, setAttachId] = useState<string>("");
+  const [quoteBusy, setQuoteBusy] = useState(false);
 
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDue, setNewTaskDue] = useState("");
@@ -72,15 +85,17 @@ export default function DealDetailDrawer({
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [m, t, a] = await Promise.all([
+      const [m, t, a, q] = await Promise.all([
         listOrgMembers(),
         listDealTasks(deal.id),
         listDealActivity(deal.id),
+        listQuotesForDeal(deal.id),
       ]);
       if (!alive) return;
       setMembers(m);
       setTasks(t);
       setActivity(a);
+      setLinkedQuotes(q);
     })();
     return () => {
       alive = false;
@@ -103,8 +118,14 @@ export default function DealDetailDrawer({
           .maybeSingle();
         const uuid = (data as any)?.company_id ?? null;
         if (alive) setCompanyUuid(uuid);
-        const list = await listCompanyContacts(uuid);
-        if (alive) setContacts(list);
+        const [list, att] = await Promise.all([
+          listCompanyContacts(uuid),
+          uuid ? listAttachableQuotes(uuid) : Promise.resolve([]),
+        ]);
+        if (alive) {
+          setContacts(list);
+          setAttachable(att);
+        }
       } catch {
         /* ignore */
       }
@@ -202,6 +223,45 @@ export default function DealDetailDrawer({
       setActivity(await listDealActivity(deal.id));
     } catch (e: any) {
       toast({ title: "Could not add note", description: e?.message, variant: "destructive" });
+    }
+  }
+
+  async function refreshQuotes() {
+    const [linked, att] = await Promise.all([
+      listQuotesForDeal(deal.id),
+      companyUuid ? listAttachableQuotes(companyUuid) : Promise.resolve([]),
+    ]);
+    setLinkedQuotes(linked);
+    setAttachable(att);
+  }
+
+  async function handleAttachQuote() {
+    if (!attachId) return;
+    setQuoteBusy(true);
+    try {
+      // Attach only — we do NOT overwrite the deal's value. An open deal may
+      // already reflect a negotiated figure; linked quotes are shown so a human
+      // decides the true number. This is the anti-double-count rule.
+      await attachQuoteToDeal(attachId, deal.id);
+      setAttachId("");
+      await refreshQuotes();
+      toast({ title: "Quote linked to deal" });
+    } catch (e: any) {
+      toast({ title: "Could not link quote", description: e?.message, variant: "destructive" });
+    } finally {
+      setQuoteBusy(false);
+    }
+  }
+
+  async function handleDetachQuote(quoteId: string) {
+    setQuoteBusy(true);
+    try {
+      await detachQuoteFromDeal(quoteId);
+      await refreshQuotes();
+    } catch (e: any) {
+      toast({ title: "Could not unlink quote", description: e?.message, variant: "destructive" });
+    } finally {
+      setQuoteBusy(false);
     }
   }
 
@@ -446,6 +506,103 @@ export default function DealDetailDrawer({
             </div>
           </Section>
 
+          {/* Quotes — quotes linked to this deal roll UP into the deal's value.
+              The deal is the single source of truth for pipeline value, so
+              reporting counts the deal, never the linked quotes → no
+              double-count. Attaching a quote does NOT overwrite deal value. */}
+          <Section
+            title={`Quotes${linkedQuotes.length ? ` (${linkedQuotes.length})` : ""}`}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {linkedQuotes.length === 0 ? (
+                <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8" }}>
+                  No quotes linked yet.
+                </div>
+              ) : (
+                linkedQuotes.map((q) => (
+                  <div key={q.id} style={quoteRow}>
+                    <button
+                      onClick={() => {
+                        navigate(`/app/quoting/${q.id}`);
+                        onClose();
+                      }}
+                      style={{
+                        flex: 1,
+                        textAlign: "left",
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: "#1d4ed8",
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title="Open quote"
+                    >
+                      {q.quote_number ?? "Quote"}
+                    </button>
+                    <span style={quoteStatusPill(q.status)}>{quoteStatusLabel(q.status)}</span>
+                    <span
+                      style={{
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        color: "#0F172A",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {formatMoney(q.total_sell ?? null, q.currency ?? deal.currency)}
+                    </span>
+                    <button
+                      onClick={() => handleDetachQuote(q.id)}
+                      disabled={quoteBusy}
+                      style={iconBtn}
+                      title="Unlink quote"
+                    >
+                      <Unlink style={{ width: 13, height: 13 }} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            {/* Attach an existing (unlinked) company quote. */}
+            {attachable.length > 0 ? (
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                <select
+                  value={attachId}
+                  onChange={(e) => setAttachId(e.target.value)}
+                  style={{ ...inputStyle, flex: 1 }}
+                >
+                  <option value="">Link an existing quote…</option>
+                  {attachable.map((q) => (
+                    <option key={q.id} value={q.id}>
+                      {(q.quote_number ?? "Quote") +
+                        " · " +
+                        formatMoney(q.total_sell ?? null, q.currency ?? deal.currency)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleAttachQuote}
+                  disabled={!attachId || quoteBusy}
+                  style={iconBtnBlue}
+                  title="Link quote to this deal"
+                >
+                  {quoteBusy ? (
+                    <Loader2 style={{ width: 15, height: 15, animation: "spin 1s linear infinite" }} />
+                  ) : (
+                    <Link2 style={{ width: 15, height: 15 }} />
+                  )}
+                </button>
+              </div>
+            ) : null}
+          </Section>
+
           {/* Timeline */}
           <Section title="Timeline">
             <div style={{ display: "flex", gap: 6 }}>
@@ -589,6 +746,55 @@ const crossLinkBtn: React.CSSProperties = {
   fontWeight: 600,
   cursor: "pointer",
 };
+
+const quoteRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 9,
+  padding: "6px 8px",
+  borderRadius: 8,
+  background: "#F8FAFC",
+  border: "1px solid #F1F5F9",
+};
+
+function quoteStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    draft: "Draft",
+    sent: "Sent",
+    viewed: "Viewed",
+    approved: "Approved",
+    closed_won: "Won",
+    closed_lost: "Lost",
+    expired: "Expired",
+  };
+  return map[status] ?? status;
+}
+
+function quoteStatusPill(status: string): React.CSSProperties {
+  const tone: Record<string, { bg: string; fg: string; bd: string }> = {
+    closed_won: { bg: "#ECFDF5", fg: "#047857", bd: "#A7F3D0" },
+    approved: { bg: "#ECFEFF", fg: "#0e7490", bd: "#A5F3FC" },
+    sent: { bg: "#EFF6FF", fg: "#1d4ed8", bd: "#BFDBFE" },
+    viewed: { bg: "#EFF6FF", fg: "#1d4ed8", bd: "#BFDBFE" },
+    closed_lost: { bg: "#FEF2F2", fg: "#b91c1c", bd: "#FECACA" },
+    expired: { bg: "#F1F5F9", fg: "#64748b", bd: "#E2E8F0" },
+    draft: { bg: "#F1F5F9", fg: "#475569", bd: "#E2E8F0" },
+  };
+  const t = tone[status] ?? tone.draft;
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "1px 8px",
+    borderRadius: 999,
+    background: t.bg,
+    color: t.fg,
+    border: `1px solid ${t.bd}`,
+    fontFamily: FONT_HEAD,
+    fontSize: 10,
+    fontWeight: 700,
+    whiteSpace: "nowrap",
+  };
+}
 
 const taskRow: React.CSSProperties = {
   display: "flex",

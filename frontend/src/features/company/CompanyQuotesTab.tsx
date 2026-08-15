@@ -35,9 +35,15 @@ import {
   Plus,
   FileText,
   Sparkles,
+  Briefcase,
+  Link2,
+  Loader2,
 } from "lucide-react";
 
+import { useState } from "react";
 import { quoting } from "@/api/quoting";
+import { convertQuoteToDeal } from "@/api/quoteDeal";
+import { useToast } from "@/components/ui/use-toast";
 import { useEntitlements } from "@/hooks/useEntitlements";
 import type { QuoteListItem, QuoteMode, QuoteCreateInput } from "@/api/quoting";
 import EnhancedKpiCard from "@/components/dashboard/EnhancedKpiCard";
@@ -77,7 +83,10 @@ function formatMargin(pct?: number | null): string {
 export default function CompanyQuotesTab({ companyId }: { companyId: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { entitlements, isAdmin } = useEntitlements();
+  // Quote id currently being converted to a deal (spinner on that row).
+  const [convertingId, setConvertingId] = useState<string | null>(null);
   // KPIs + list stay visible on every plan; only "New Quote" is gated when the
   // server explicitly disables quoting.
   const quotingLocked = !isAdmin && entitlements?.features?.quoting === false;
@@ -160,6 +169,33 @@ export default function CompanyQuotesTab({ companyId }: { companyId: string }) {
       await refreshAll();
     } catch (e) {
       console.error("[CompanyQuotesTab] status update failed", e);
+    }
+  }
+
+  // Convert a quote into a CRM deal (idempotent — opens the existing deal if the
+  // quote already links one). The DEAL becomes the source of truth for value, so
+  // reporting counts the deal, not the quote → no double-count. Then we send the
+  // user to the pipeline and refresh the list so the row shows "Linked ✓".
+  async function handleConvert(id: string) {
+    setConvertingId(id);
+    try {
+      const { deal, created } = await convertQuoteToDeal(id);
+      await refreshAll();
+      toast({
+        title: created ? "Deal created from quote" : "Quote already linked to a deal",
+        description: created
+          ? `“${deal.title}” added to your pipeline.`
+          : "Opening the linked deal in your pipeline.",
+      });
+      navigate("/app/command-center");
+    } catch (e: any) {
+      toast({
+        title: "Could not convert quote",
+        description: e?.message,
+        variant: "destructive",
+      });
+    } finally {
+      setConvertingId(null);
     }
   }
 
@@ -297,6 +333,8 @@ export default function CompanyQuotesTab({ companyId }: { companyId: string }) {
                     onMarkWon={() => handleSetStatus(q.id, "closed_won")}
                     onMarkLost={() => handleSetStatus(q.id, "closed_lost")}
                     onGeneratePdf={() => navigate(`/app/quoting/${q.id}`)}
+                    onConvert={() => handleConvert(q.id)}
+                    converting={convertingId === q.id}
                   />
                 ))}
               </tbody>
@@ -343,6 +381,8 @@ function QuoteRow({
   onMarkWon,
   onMarkLost,
   onGeneratePdf,
+  onConvert,
+  converting,
 }: {
   quote: QuoteListItem;
   onOpen: () => void;
@@ -351,7 +391,10 @@ function QuoteRow({
   onMarkWon: () => void;
   onMarkLost: () => void;
   onGeneratePdf: () => void;
+  onConvert: () => void;
+  converting: boolean;
 }) {
+  const linked = !!quote.deal_id;
   const mode = quote.mode ? MODE_META[quote.mode] : null;
   const ModeIcon = mode?.Icon;
   const origin = laneEndpoint(quote.origin_port, quote.origin_city);
@@ -437,6 +480,26 @@ function QuoteRow({
           <RowAction label="Generate PDF" onClick={onGeneratePdf}>
             <FileDown className="w-3.5 h-3.5" />
           </RowAction>
+          {linked ? (
+            <RowAction
+              label="Linked to a deal — open pipeline"
+              onClick={onConvert}
+              tone="linked"
+            >
+              <Link2 className="w-3.5 h-3.5" />
+            </RowAction>
+          ) : (
+            <RowAction
+              label="Convert to deal"
+              onClick={converting ? undefined : onConvert}
+            >
+              {converting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Briefcase className="w-3.5 h-3.5" />
+              )}
+            </RowAction>
+          )}
         </div>
       </td>
     </tr>
@@ -447,18 +510,27 @@ function RowAction({
   children,
   label,
   onClick,
+  tone = "default",
 }: {
   children: React.ReactNode;
   label: string;
   onClick?: () => void;
+  tone?: "default" | "linked";
 }) {
+  const toneCls =
+    tone === "linked"
+      ? "border-emerald-300 bg-emerald-50 text-emerald-600 hover:border-emerald-400 hover:bg-emerald-100"
+      : "border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50";
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="w-10 h-10 sm:w-8 sm:h-8 rounded-md border border-slate-200 bg-white grid place-items-center text-slate-500 transition hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50"
+      className={
+        "w-10 h-10 sm:w-8 sm:h-8 rounded-md border grid place-items-center transition " +
+        toneCls
+      }
     >
       {children}
     </button>
