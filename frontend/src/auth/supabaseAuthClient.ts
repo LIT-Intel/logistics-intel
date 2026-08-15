@@ -53,11 +53,13 @@ import { readAttribution } from '@/lib/attribution';
 //   - data.session === null  → confirmation email sent; user must click the link
 export async function registerWithEmailPassword({
   fullName,
+  company,
   email,
   password,
   emailRedirectTo,
 }: {
   fullName?: string;
+  company?: string;
   email: string;
   password: string;
   emailRedirectTo?: string;
@@ -73,6 +75,10 @@ export async function registerWithEmailPassword({
       data: {
         full_name: fullName || '',
         display_name: fullName || email.split('@')[0],
+        // Company name captured at signup (mandatory in ModernSignupPage). The
+        // DB triggers persist it to profiles.company_name and name the new
+        // org after it (handle_new_user_profile / handle_new_user_org_bootstrap).
+        ...(company ? { company } : {}),
         // Wizard removed 2026-08-06 — DB triggers provision everything at
         // signup. Kept true (not dropped) so legacy onboarding checks pass.
         onboarding_completed: true,

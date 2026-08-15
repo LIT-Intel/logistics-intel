@@ -5,7 +5,7 @@ import {
   Loader2, Search as SearchIcon, ArrowUpRight, Send, Inbox, Shield,
   BarChart3, Truck, Handshake, Settings2,
   Coins, Database, Zap, Percent, Timer, Gauge, Power, AlertTriangle,
-  RefreshCw, Check, X, Pencil,
+  RefreshCw, Check, X, Pencil, MoreHorizontal, Ban, RotateCcw, Trash2, ShieldAlert,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -46,6 +46,8 @@ type User360 = {
   profile_views_total: number;
   signup_source: string | null;
   signup_landing: string | null;
+  status: string | null;
+  is_banned: boolean;
 };
 
 // ── Data-economics / activation types (mirror the RPC return shapes) ──────────
@@ -102,6 +104,27 @@ const int = (v: number | null | undefined): string =>
   v === null || v === undefined ? "—" : Math.round(Number(v)).toLocaleString();
 const pct = (v: number | null | undefined): string =>
   v === null || v === undefined ? "—" : `${Number(v).toFixed(1)}%`;
+
+// Spam-suspect heuristic (UI-side, non-destructive signal only):
+//   * email NOT confirmed AND never signed in, OR
+//   * no org/company AND the display name looks random (single token, >=4 chars,
+//     no vowels — keyboard mash like "xzqwk").
+// Already-moderated users (suspended/banned) are not re-flagged as "suspect".
+function looksRandomName(name: string | null): boolean {
+  const v = (name || "").trim();
+  if (!v || v.includes(" ")) return false;
+  return /^[a-z]+$/i.test(v) && v.length >= 4 && !/[aeiouy]/i.test(v);
+}
+function isSpamSuspect(u: {
+  email_confirmed: boolean; last_sign_in_at: string | null; org_name: string | null;
+  full_name: string | null; status: string | null; is_banned: boolean;
+}): boolean {
+  if (u.status === "suspended" || u.is_banned) return false;
+  const neverSignedIn = !u.last_sign_in_at;
+  if (!u.email_confirmed && neverSignedIn) return true;
+  if (!u.org_name && looksRandomName(u.full_name)) return true;
+  return false;
+}
 
 const SECTIONS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -302,6 +325,8 @@ export default function AdminCommandDeck() {
         activity_30d: Number(r.activity_30d) || 0,
         enrichments_total: Number(r.enrichments_total) || 0,
         profile_views_total: Number(r.profile_views_total) || 0,
+        status: r.status ?? null,
+        is_banned: Boolean(r.is_banned),
       })));
       setInvites((di.data as any[]) || []);
       setLoading(false);
@@ -383,19 +408,89 @@ export default function AdminCommandDeck() {
     return { total, new7d, active7d, trialing, paid, invited, invOpened, invSigned, invPaid };
   }, [users, invites]);
 
+  const spamCount = useMemo(() => users.filter(isSpamSuspect).length, [users]);
+
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return users;
-    return users.filter(
+    let rows = users;
+    if (spamOnly) rows = rows.filter(isSpamSuspect);
+    if (!q) return rows;
+    return rows.filter(
       (u) =>
         u.email.toLowerCase().includes(q) ||
         (u.full_name || "").toLowerCase().includes(q) ||
         (u.org_name || "").toLowerCase().includes(q) ||
         (u.plan_code || "").toLowerCase().includes(q),
     );
-  }, [users, query]);
+  }, [users, query, spamOnly]);
 
   const setSection = (id: SectionId) => setParams(id === "overview" ? {} : { section: id });
+
+  // ── User moderation (suspend / reactivate / delete) ─────────────────────────
+  // All privileged ops route through the admin-user-moderation edge fn (service
+  // role, platform-admin gated). Optimistic UI + toast; reload on completion.
+  const [spamOnly, setSpamOnly] = useState(false);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [modBusy, setModBusy] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<User360 | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+
+  const flash = (msg: string, ok = true) => {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 3800);
+  };
+
+  const runModeration = useCallback(
+    async (u: User360, action: "suspend" | "reactivate" | "delete", confirm = false) => {
+      setModBusy(u.user_id);
+      setOpenMenu(null);
+      // Optimistic status flip for suspend/reactivate.
+      if (action === "suspend") {
+        setUsers((prev) => prev.map((r) => (r.user_id === u.user_id ? { ...r, status: "suspended", is_banned: true } : r)));
+      } else if (action === "reactivate") {
+        setUsers((prev) => prev.map((r) => (r.user_id === u.user_id ? { ...r, status: "active", is_banned: false } : r)));
+      }
+      try {
+        const { data, error } = await supabase.functions.invoke("admin-user-moderation", {
+          body: { action, user_id: u.user_id, confirm },
+        });
+        if (error || data?.ok === false) {
+          let msg = data?.error || error?.message || `${action} failed`;
+          try {
+            const parsed = await (error as any)?.context?.clone?.().json?.();
+            if (parsed?.error) msg = parsed.error;
+          } catch { /* keep msg */ }
+          flash(msg, false);
+        } else {
+          if (action === "delete") {
+            setUsers((prev) => prev.filter((r) => r.user_id !== u.user_id));
+            flash(`Deleted ${u.email}`);
+          } else {
+            flash(action === "suspend" ? `Suspended ${u.email}` : `Reactivated ${u.email}`);
+          }
+        }
+      } catch (e: any) {
+        flash(e?.message || `${action} failed`, false);
+      } finally {
+        setModBusy(null);
+        // Reload the 360 rows so state reflects the server truth.
+        supabase.rpc("lit_admin_users_360").then(({ data }) => {
+          if (data) {
+            setUsers((data as User360[]).map((r) => ({
+              ...r,
+              activity_30d: Number(r.activity_30d) || 0,
+              enrichments_total: Number(r.enrichments_total) || 0,
+              profile_views_total: Number(r.profile_views_total) || 0,
+              status: r.status ?? null,
+              is_banned: Boolean(r.is_banned),
+            })));
+          }
+        });
+      }
+    },
+    [],
+  );
 
   // Chart data — computed client-side from the loaded rows.
   const charts = useMemo(() => {
@@ -677,38 +772,71 @@ export default function AdminCommandDeck() {
 
           {section === "users" && (
             <div className="space-y-4">
-              <div className="relative max-w-sm">
-                <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search email, name, org, plan…"
-                  className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] shadow-sm outline-none focus:border-blue-400"
-                />
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative max-w-sm flex-1">
+                  <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search email, name, org, plan…"
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] shadow-sm outline-none focus:border-blue-400"
+                  />
+                </div>
+                {/* Spam-suspect filter/signal */}
+                <button
+                  type="button"
+                  onClick={() => setSpamOnly((v) => !v)}
+                  className={[
+                    "font-display inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold transition",
+                    spamOnly
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700",
+                  ].join(" ")}
+                  title="Unconfirmed + never-signed-in, or no company with a random-looking name"
+                >
+                  <ShieldAlert className="h-3.5 w-3.5" />
+                  Spam suspects
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${spamOnly ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"}`}>
+                    {spamCount}
+                  </span>
+                </button>
               </div>
               <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <table className="w-full min-w-[880px]">
+                <table className="w-full min-w-[940px]">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/60">
-                      {["User", "Org / Role", "Plan", "Source", "Last seen", "Activity 30d", "Unlocks", "Enrichments"].map((h) => (
-                        <th key={h} className="font-display px-4 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                      {["User", "Org / Role", "Plan", "Source", "Last seen", "Activity 30d", "Unlocks", "Enrichments", ""].map((h, i) => (
+                        <th key={h || `actions-${i}`} className="font-display px-4 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-400 last:text-right">
                           {h}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUsers.map((u) => (
-                      <tr key={u.user_id} className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/50">
+                    {filteredUsers.map((u) => {
+                      const suspended = u.status === "suspended" || u.is_banned;
+                      const suspect = isSpamSuspect(u);
+                      return (
+                      <tr key={u.user_id} className={`border-b border-slate-50 last:border-b-0 hover:bg-slate-50/50 ${suspended ? "bg-red-50/30" : ""}`}>
                         <td className="px-4 py-2.5">
                           <div className="font-display text-[13px] font-semibold text-slate-900">
                             {u.full_name || u.email.split("@")[0]}
                           </div>
-                          <div className="font-body text-[11px] text-slate-500">
+                          <div className="font-body flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
                             {u.email}
                             {!u.email_confirmed && (
-                              <span className="ml-1.5 rounded bg-amber-50 px-1 py-0.5 text-[9px] font-bold uppercase text-amber-600">
+                              <span className="rounded bg-amber-50 px-1 py-0.5 text-[9px] font-bold uppercase text-amber-600">
                                 unconfirmed
+                              </span>
+                            )}
+                            {suspended && (
+                              <span className="rounded bg-red-100 px-1 py-0.5 text-[9px] font-bold uppercase text-red-700">
+                                suspended
+                              </span>
+                            )}
+                            {suspect && !suspended && (
+                              <span className="rounded bg-red-50 px-1 py-0.5 text-[9px] font-bold uppercase text-red-600">
+                                spam?
                               </span>
                             )}
                           </div>
@@ -730,14 +858,62 @@ export default function AdminCommandDeck() {
                         <td className="font-mono px-4 py-2.5 text-[12px] text-slate-700">{u.activity_30d}</td>
                         <td className="font-mono px-4 py-2.5 text-[12px] text-slate-700">{u.profile_views_total}</td>
                         <td className="font-mono px-4 py-2.5 text-[12px] text-slate-700">{u.enrichments_total}</td>
+                        <td className="px-4 py-2.5 text-right">
+                          <div className="relative inline-block text-left">
+                            <button
+                              type="button"
+                              disabled={modBusy === u.user_id}
+                              onClick={() => setOpenMenu(openMenu === u.user_id ? null : u.user_id)}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-700 disabled:opacity-50"
+                              aria-label="User actions"
+                            >
+                              {modBusy === u.user_id
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <MoreHorizontal className="h-3.5 w-3.5" />}
+                            </button>
+                            {openMenu === u.user_id && (
+                              <>
+                                <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
+                                <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                                  {suspended ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => runModeration(u, "reactivate")}
+                                      className="font-body flex w-full items-center gap-2 px-3 py-2 text-left text-[12.5px] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      <RotateCcw className="h-3.5 w-3.5 text-emerald-600" /> Reactivate
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => runModeration(u, "suspend")}
+                                      className="font-body flex w-full items-center gap-2 px-3 py-2 text-left text-[12.5px] text-slate-700 hover:bg-slate-50"
+                                    >
+                                      <Ban className="h-3.5 w-3.5 text-amber-600" /> Suspend
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => { setOpenMenu(null); setDeleteConfirmText(""); setDeleteTarget(u); }}
+                                    className="font-body flex w-full items-center gap-2 px-3 py-2 text-left text-[12.5px] text-red-600 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" /> Delete…
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
               <p className="font-body text-[11.5px] text-slate-400">
-                {filteredUsers.length} of {users.length} users · plan changes and suspensions live in{" "}
-                <Link to="/app/admin/subscribers" className="text-blue-600 hover:underline">Subscribers</Link> for now.
+                {filteredUsers.length} of {users.length} users · suspend revokes sessions (~100y ban); delete is a hard delete.
+                Plan changes live in{" "}
+                <Link to="/app/admin/subscribers" className="text-blue-600 hover:underline">Subscribers</Link>.
               </p>
             </div>
           )}
@@ -1218,6 +1394,57 @@ export default function AdminCommandDeck() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Hard-delete confirm dialog — requires typing the exact email. */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4"
+          onClick={() => setDeleteTarget(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                <Trash2 className="h-4.5 w-4.5" />
+              </span>
+              <div className="font-display text-[14px] font-bold text-slate-900">
+                Permanently delete user?
+              </div>
+            </div>
+            <p className="font-body mt-3 text-[12.5px] leading-relaxed text-slate-600">
+              This <span className="font-semibold text-red-600">hard-deletes</span>{" "}
+              <span className="font-semibold">{deleteTarget.email}</span> from Supabase Auth and cascades
+              their app data. This cannot be undone. To confirm, type the email address below.
+            </p>
+            <input
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={deleteTarget.email}
+              className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] outline-none focus:border-red-400 focus:bg-white focus:ring-4 focus:ring-red-50"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setDeleteTarget(null)}
+                className="font-display rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-[12.5px] font-semibold text-slate-600 hover:border-slate-300">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteConfirmText.trim().toLowerCase() !== deleteTarget.email.toLowerCase()}
+                onClick={() => { const t = deleteTarget; setDeleteTarget(null); runModeration(t, "delete", true); }}
+                className="font-display rounded-xl bg-red-600 px-3.5 py-2 text-[12.5px] font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
+                Delete permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Moderation toast */}
+      {toast && (
+        <div className={`fixed bottom-5 right-5 z-50 rounded-xl border px-4 py-3 text-[13px] font-medium shadow-lg ${
+          toast.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"
+        }`}>
+          {toast.msg}
         </div>
       )}
     </div>

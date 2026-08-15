@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Mail, Lock, User, Check, Search, Ship, BarChart3 } from "lucide-react";
+import { Mail, Lock, User, Check, Search, Ship, BarChart3, Building2 } from "lucide-react";
 import {
   loginWithGoogle,
   loginWithMicrosoft,
@@ -126,6 +126,33 @@ function SocialButtons({
   );
 }
 
+// ─── Light anti-junk validation ─────────────────────────────────────────────
+// Not aggressive — just blocks obviously-bot input (empty, too short, a single
+// repeated char, or a random-looking single token with no vowels). Real names
+// and company names pass; "aaaa", "xzqwk", "." do not.
+function looksJunk(raw: string): boolean {
+  const v = raw.trim();
+  if (v.length < 2) return true;
+  const collapsed = v.replace(/\s+/g, "");
+  // Single repeated character e.g. "aaaa", "....".
+  if (/^(.)\1+$/.test(collapsed)) return true;
+  // A single alphabetic token (no space) with zero vowels and length >= 4 is
+  // almost always keyboard mash ("xzqwk"). Multi-word input is exempt.
+  if (!v.includes(" ") && /^[a-z]+$/i.test(v) && v.length >= 4 && !/[aeiouy]/i.test(v)) {
+    return true;
+  }
+  return false;
+}
+
+/** Returns an error string, or "" if the field is acceptable. */
+function validateName(raw: string, label: string): string {
+  const v = raw.trim();
+  if (!v) return `${label} is required.`;
+  if (v.length < 2) return `${label} looks too short.`;
+  if (looksJunk(v)) return `Please enter a valid ${label.toLowerCase()}.`;
+  return "";
+}
+
 // ─── Main signup page ──────────────────────────────────────────────────────────
 export default function ModernSignupPage() {
   const navigate = useNavigate();
@@ -138,9 +165,11 @@ export default function ModernSignupPage() {
   const isInviteFlow = Boolean(inviteToken);
 
   const [fullName, setFullName]       = useState("");
+  const [company, setCompany]         = useState("");
   const [email, setEmail]             = useState(inviteEmail);
   const [password, setPassword]       = useState("");
   const [err, setErr]                 = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{ fullName?: string; company?: string }>({});
   const [loading, setLoading]         = useState(false);
   const [signupSuccess, setSignupSuccess] = useState(false);
 
@@ -161,6 +190,16 @@ export default function ModernSignupPage() {
 
   async function handleEmailSignup(e: React.FormEvent) {
     e.preventDefault();
+
+    // Mandatory contact name + company (client-side sanity, light anti-junk).
+    const nameErr = validateName(fullName, "Full name");
+    const companyErr = validateName(company, "Company name");
+    if (nameErr || companyErr) {
+      setFieldErrors({ fullName: nameErr || undefined, company: companyErr || undefined });
+      return;
+    }
+    setFieldErrors({});
+
     try {
       setErr("");
       setLoading(true);
@@ -173,7 +212,8 @@ export default function ModernSignupPage() {
         : `${window.location.origin}/auth/callback`;
 
       await registerWithEmailPassword({
-        fullName,
+        fullName: fullName.trim(),
+        company: company.trim(),
         email,
         password,
         emailRedirectTo,
@@ -304,10 +344,49 @@ export default function ModernSignupPage() {
                       required
                       placeholder="Jane Smith"
                       value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50"
+                      onChange={(e) => {
+                        setFullName(e.target.value);
+                        if (fieldErrors.fullName) setFieldErrors((p) => ({ ...p, fullName: undefined }));
+                      }}
+                      aria-invalid={Boolean(fieldErrors.fullName)}
+                      className={`w-full rounded-xl border bg-slate-50 py-3 pl-10 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:bg-white focus:ring-4 ${
+                        fieldErrors.fullName
+                          ? "border-red-300 focus:border-red-400 focus:ring-red-50"
+                          : "border-slate-200 focus:border-indigo-400 focus:ring-indigo-50"
+                      }`}
                     />
                   </div>
+                  {fieldErrors.fullName && (
+                    <p className="mt-1.5 text-xs text-red-600">{fieldErrors.fullName}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Company name
+                  </label>
+                  <div className="relative">
+                    <Building2 className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="Acme Logistics"
+                      value={company}
+                      onChange={(e) => {
+                        setCompany(e.target.value);
+                        if (fieldErrors.company) setFieldErrors((p) => ({ ...p, company: undefined }));
+                      }}
+                      aria-invalid={Boolean(fieldErrors.company)}
+                      className={`w-full rounded-xl border bg-slate-50 py-3 pl-10 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:bg-white focus:ring-4 ${
+                        fieldErrors.company
+                          ? "border-red-300 focus:border-red-400 focus:ring-red-50"
+                          : "border-slate-200 focus:border-indigo-400 focus:ring-indigo-50"
+                      }`}
+                    />
+                  </div>
+                  {fieldErrors.company && (
+                    <p className="mt-1.5 text-xs text-red-600">{fieldErrors.company}</p>
+                  )}
                 </div>
 
                 <div>
