@@ -1,339 +1,134 @@
 "use client";
 
-import { motion, useInView } from "framer-motion";
+import { motion, useInView, useReducedMotion } from "framer-motion";
+import { ArrowRight, MapPin, Sparkles, Star } from "lucide-react";
 import { useRef } from "react";
-import { Sparkles, Building2, MapPin, Globe2, ArrowRight, Star } from "lucide-react";
-import { CountUp } from "./CountUp";
+import { logoDevUrl } from "@/lib/sanityImage";
+import { LogoImage } from "./LogoImage";
 
-/**
- * Company Intelligence Mock — stylized recreation of the in-app
- * profile screen for marketing use. Generic shipper "Acme Industries"
- * — never references real customers.
- *
- * On scroll-into-view: KPIs count up, FCL/LCL bars fill, "What Matters
- * Now" cyan banner pulses in, top-lane bars stagger up. Pure HTML +
- * Tailwind + framer-motion. No images. Looks like the real product.
- */
+const company = {
+  name: "Home Depot USA",
+  domain: "homedepot.com",
+  location: "Atlanta, GA",
+  shipments: "58,415",
+  teu: "114.5K",
+  spend: "$175.7M",
+  lanes: "22",
+  primaryLane: "VN → US",
+};
+
+const metrics = [
+  { label: "Est. spend 12m", value: company.spend, tone: "text-emerald-600" },
+  { label: "Shipments 12m", value: company.shipments, tone: "text-blue-700" },
+  { label: "TEU 12m", value: company.teu, tone: "text-cyan-700" },
+  { label: "Trade lanes", value: company.lanes, tone: "text-violet-700" },
+];
+
+const lanes = [
+  { origin: "Vietnam", volume: "18,693", share: 0.32 },
+  { origin: "China", volume: "15,806", share: 0.27 },
+  { origin: "Thailand", volume: "8,202", share: 0.14 },
+];
+
+/** Responsive marketing recreation of the real Company Intelligence profile. */
 export function CompanyIntelMock({ className = "" }: { className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: "-80px" });
+  const inView = useInView(ref, { once: true, margin: "-70px" });
+  const reduceMotion = useReducedMotion();
+  const animate = inView || Boolean(reduceMotion);
+  const logo = logoDevUrl(company.domain, { size: 160, format: "png" });
 
   return (
-    <div
-      ref={ref}
-      className={`relative overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-[0_30px_80px_-20px_rgba(15,23,42,0.18)] ${className}`}
-    >
-      {/* Browser chrome */}
-      <div className="flex items-center gap-2 border-b border-ink-100 bg-ink-25 px-4 py-2.5">
+    <div ref={ref} className={`relative overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-[0_30px_80px_-20px_rgba(15,23,42,0.18)] ${className}`}>
+      <div className="flex items-center gap-2 border-b border-ink-100 bg-ink-25 px-3 py-2 sm:px-4 sm:py-2.5">
         <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
         <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
         <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-        <span className="font-mono ml-3 flex-1 truncate rounded-md border border-ink-100 bg-white px-2.5 py-1 text-[11px] text-ink-500">
-          app.logisticintel.com / company / acme-industries
-        </span>
+        <span className="font-mono ml-1 min-w-0 flex-1 truncate rounded-md border border-ink-100 bg-white px-2.5 py-1 text-[9px] text-ink-500 sm:ml-3 sm:text-[11px]">app.logisticintel.com / company / home-depot-usa</span>
       </div>
 
-      <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_220px]">
-        {/* Main column */}
-        <div className="min-w-0">
-          {/* Header */}
-          <div className="flex items-start gap-3">
-            <div
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-[16px] font-bold text-white"
-              style={{ background: "linear-gradient(160deg,#3b82f6,#2563eb)" }}
-            >
-              AI
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="font-display truncate text-[20px] font-semibold tracking-[-0.015em] text-ink-900">
-                  Acme Industries
-                </h3>
-                <Star className="h-3.5 w-3.5 text-ink-200" />
-                <span
-                  className="font-mono inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-semibold"
-                  style={{
-                    color: "#10b981",
-                    background: "rgba(16,185,129,0.1)",
-                    border: "1px solid rgba(16,185,129,0.25)",
-                  }}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  In CRM
-                </span>
-              </div>
-              <div className="font-body mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-ink-500">
-                <span className="font-mono">
-                  Trailing 12m · <span className="font-bold text-ink-900">7,862</span> shipments ·{" "}
-                  <span className="font-bold text-ink-900">18.9K TEU</span>
-                </span>
-                <span className="inline-flex items-center gap-1 truncate">
-                  <MapPin className="h-3 w-3 shrink-0" /> Fremont, CA
-                </span>
-                <span className="inline-flex items-center gap-1 truncate">
-                  <Globe2 className="h-3 w-3 shrink-0" /> acmeindustries.com
-                </span>
-              </div>
+      <div className="p-3 sm:p-5">
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={animate ? { opacity: 1, y: 0 } : {}} transition={{ duration: reduceMotion ? 0 : 0.4 }} className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <LogoImage src={logo} domain={company.domain} name={company.name} className="[&>span:last-child]:text-[16px] sm:[&>span:last-child]:text-[20px]" />
+            <div className="font-body mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-ink-500 sm:text-[11.5px]">
+              <span className="font-mono tabular-nums">Trailing 12m · {company.shipments} shipments · {company.teu} TEU</span>
+              <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" /> {company.location}</span>
             </div>
           </div>
-
-          {/* KPI strip */}
-          <div className="mt-4 grid grid-cols-3 gap-3 rounded-xl border border-ink-100 bg-ink-25 p-3 sm:grid-cols-6">
-            <Kpi label="Shipments 12m" value="7,862" toNumber={7862} format={(n) => Math.round(n).toLocaleString()} start={inView} />
-            <Kpi label="TEU 12m" value="18.9K" toNumber={18900} format={formatK} start={inView} />
-            <Kpi label="Spend (all)" value="$23.4M" toNumber={23.4} format={(n) => `$${n.toFixed(1)}M`} start={inView} />
-            <Kpi label="Total ship" value="50,106" toNumber={50106} format={(n) => Math.round(n).toLocaleString()} start={inView} />
-            <Kpi label="Trade lanes" value="10" toNumber={10} format={(n) => Math.round(n).toString()} start={inView} />
-            <Kpi label="Top lane" value="TR→US" toNumber={49} format={(n) => `${Math.round(n)}%`} start={inView} suffix="49% TR→US" raw />
+          <div className="hidden shrink-0 items-center gap-2 sm:flex">
+            <Star className="h-4 w-4 text-ink-200" />
+            <span className="font-mono rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[9px] font-semibold text-emerald-700">● In CRM</span>
           </div>
+        </motion.div>
 
-          {/* What Matters Now banner */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={inView ? { opacity: 1, y: 0 } : {}}
-            transition={{ delay: 0.5, duration: 0.5, ease: "easeOut" }}
-            className="relative mt-4 overflow-hidden rounded-xl border border-white/10 px-5 py-4 text-white"
-            style={{
-              background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-              boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
-            }}
-          >
-            <span
-              aria-hidden
-              className="pointer-events-none absolute -top-12 -right-10 h-40 w-40 rounded-full opacity-50"
-              style={{ background: "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)" }}
-            />
-            <div
-              className="font-display relative flex items-center gap-2 text-[10.5px] font-bold uppercase tracking-[0.12em]"
-              style={{ color: "#00F0FF" }}
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              What Matters Now
-              <span className="font-mono ml-auto text-[9.5px] font-medium tracking-wider text-ink-200">
-                Trailing 12m
-              </span>
-            </div>
-            <div className="font-display relative mt-1 text-[15px] font-semibold leading-tight tracking-[-0.01em] sm:text-[16px]">
-              Turkey → United States carries 49% of trailing-12m volume.
-            </div>
-            <div className="font-body relative mt-1 text-[11.5px] leading-snug text-ink-150 sm:text-[12px]">
-              <span className="font-bold text-white">7 active lanes</span> across this account · most recent
-              shipment 23 days ago
-            </div>
-          </motion.div>
-
-          {/* Two-column data grid */}
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {/* Top trade lanes */}
-            <Card title="Top trade lanes" subtitle="Globe + ranked share">
-              <ul className="space-y-2">
-                {[
-                  { rank: "01", flag: "🇹🇷", lane: "Çiğli, Turkey", tail: "22 ship · 30 TEU", pct: 0.49 },
-                  { rank: "02", flag: "🇨🇳", lane: "Qing'an, China", tail: "8 ship · 12 TEU", pct: 0.18 },
-                  { rank: "03", flag: "🇪🇸", lane: "Pol, Spain", tail: "7 ship · 11 TEU", pct: 0.16 },
-                  { rank: "04", flag: "🇰🇷", lane: "Manteca, S.Korea", tail: "3 ship · 5 TEU", pct: 0.07 },
-                  { rank: "05", flag: "🇩🇪", lane: "Neuwied, Germany", tail: "2 ship · 3 TEU", pct: 0.04 },
-                ].map((r, i) => (
-                  <li key={r.rank} className="flex items-center gap-2.5">
-                    <span className="font-mono w-5 shrink-0 text-[10px] text-ink-200">{r.rank}</span>
-                    <span className="text-[14px]">{r.flag}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-display truncate text-[12px] font-semibold text-ink-900">
-                        {r.lane}
-                      </div>
-                      <div className="font-mono truncate text-[10px] text-ink-200">{r.tail}</div>
-                    </div>
-                    <div className="relative h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-ink-50">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={inView ? { width: `${r.pct * 100}%` } : {}}
-                        transition={{ delay: 0.6 + i * 0.08, duration: 0.6, ease: "easeOut" }}
-                        className="absolute inset-y-0 left-0 rounded-full"
-                        style={{ background: "linear-gradient(90deg,#3b82f6,#2563eb)" }}
-                      />
-                    </div>
-                    <span className="font-mono w-9 shrink-0 text-right text-[10.5px] font-semibold text-brand-blue-700">
-                      {Math.round(r.pct * 100)}%
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-
-            {/* FCL / LCL split */}
-            <Card title="Imports by mode" subtitle="Modal split · trailing 12m">
-              <BarRow label="FCL" pct={0.94} count="47,136" tone="blue" inView={inView} delay={0.7} />
-              <BarRow label="LCL" pct={0.06} count="2,970" tone="cyan" inView={inView} delay={0.8} />
-              <div className="mt-4">
-                <div className="font-display mb-2 text-[10px] font-semibold uppercase tracking-wider text-ink-200">
-                  Monthly cadence
-                </div>
-                <div className="flex h-14 items-end gap-1.5">
-                  {[0.6, 0.85, 0.7, 0.5].map((h, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ height: 0 }}
-                      animate={inView ? { height: `${h * 100}%` } : {}}
-                      transition={{ delay: 0.9 + i * 0.06, duration: 0.45, ease: "easeOut" }}
-                      className="flex-1 rounded-t"
-                      style={{ background: "linear-gradient(180deg,#60a5fa,#2563eb)" }}
-                    />
-                  ))}
-                </div>
-                <div className="font-mono mt-1 flex justify-between text-[9px] text-ink-200">
-                  <span>Dec</span>
-                  <span>Jan</span>
-                  <span>Feb</span>
-                  <span>Mar</span>
-                </div>
-              </div>
-            </Card>
-          </div>
+        <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+          {metrics.map((metric, index) => (
+            <motion.div key={metric.label} initial={{ opacity: 0, y: 10 }} animate={animate ? { opacity: 1, y: 0 } : {}} transition={{ delay: reduceMotion ? 0 : 0.12 + index * 0.06, duration: reduceMotion ? 0 : 0.38 }} className="min-w-0 rounded-xl border border-ink-100 bg-ink-25 px-3 py-2.5">
+              <div className="font-display truncate text-[8px] font-bold uppercase tracking-[0.06em] text-ink-300 sm:text-[9px]">{metric.label}</div>
+              <div className={`font-mono mt-1 whitespace-nowrap text-[14px] font-semibold tabular-nums sm:text-[16px] ${metric.tone}`}>{metric.value}</div>
+            </motion.div>
+          ))}
         </div>
 
-        {/* Sidebar */}
-        <div className="hidden flex-col gap-3 lg:flex">
-          <SidebarCard title="Account details">
-            <SidebarRow label="Owner" value="Gabriel K." />
-            <SidebarRow label="Last activity" value="23 days ago" />
-            <SidebarRow label="CRM stage" value="Active" tone="emerald" />
-          </SidebarCard>
+        <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_190px]">
+          <div className="min-w-0 space-y-3">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={animate ? { opacity: 1, y: 0 } : {}} transition={{ delay: reduceMotion ? 0 : 0.35, duration: reduceMotion ? 0 : 0.45 }} className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 px-4 py-3.5 text-white sm:px-5 sm:py-4">
+              <div className="font-display flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.12em] text-cyan-300 sm:text-[10px]"><Sparkles className="h-3.5 w-3.5" /> Buying intent</div>
+              <div className="font-display mt-1 text-[13px] font-semibold leading-snug sm:text-[16px]">Vietnam → United States carries 32% of recent import volume.</div>
+              <p className="font-body mt-1 text-[10px] leading-relaxed text-slate-300 sm:text-[11.5px]">Volume increased across three active supplier lanes. The account is ready for focused outreach.</p>
+            </motion.div>
+            <RouteMap animate={animate} reduceMotion={Boolean(reduceMotion)} />
+          </div>
 
-          <SidebarCard title="Trade intelligence">
-            <SidebarRow label="Top lane" value="TR → US" />
-            <SidebarRow label="Top carrier" value="Hapag-Lloyd" />
-            <SidebarRow label="Top mode" value="FCL 94%" />
-            <SidebarRow label="Top HS" value="87 Auto" />
-          </SidebarCard>
-
-          <button
-            className="font-display inline-flex h-10 items-center justify-center gap-1.5 rounded-md text-[12.5px] font-semibold text-white shadow-sm"
-            style={{ background: "linear-gradient(180deg,#3b82f6 0%,#2563eb 100%)" }}
-          >
-            Start Outreach <ArrowRight className="h-3.5 w-3.5" />
-          </button>
+          <motion.aside initial={{ opacity: 0, x: 10 }} animate={animate ? { opacity: 1, x: 0 } : {}} transition={{ delay: reduceMotion ? 0 : 0.5, duration: reduceMotion ? 0 : 0.4 }} className="hidden space-y-3 xl:block">
+            <SideCard title="Account details"><Row label="CRM stage" value="Prospecting" tone="text-blue-700" /><Row label="Last activity" value="4 days ago" /><Row label="Imports to" value="United States" /></SideCard>
+            <SideCard title="Trade intelligence"><Row label="Top lane" value={company.primaryLane} tone="text-blue-700" /><Row label="Top carrier" value="CMDU" /><Row label="Top mode" value="FCL 100%" /></SideCard>
+            <button type="button" className="font-display inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 text-[12px] font-semibold text-white shadow-sm transition hover:bg-blue-700">Start Outreach <ArrowRight className="h-3.5 w-3.5" /></button>
+          </motion.aside>
         </div>
       </div>
     </div>
   );
 }
 
-function Kpi({
-  label,
-  value,
-  toNumber,
-  format,
-  start,
-  suffix,
-  raw,
-}: {
-  label: string;
-  value: string;
-  toNumber: number;
-  format: (n: number) => string;
-  start: boolean;
-  suffix?: string;
-  raw?: boolean;
-}) {
+function RouteMap({ animate, reduceMotion }: { animate: boolean; reduceMotion: boolean }) {
   return (
-    <div>
-      <div className="font-display text-[9px] font-bold uppercase tracking-wider text-ink-200">
-        {label}
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={animate ? { opacity: 1, y: 0 } : {}} transition={{ delay: reduceMotion ? 0 : 0.48, duration: reduceMotion ? 0 : 0.45 }} className="overflow-hidden rounded-xl border border-ink-100 bg-[#edf8f9]">
+      <div className="flex items-center justify-between border-b border-cyan-100 bg-white/80 px-3 py-2.5 sm:px-4">
+        <div><div className="font-display text-[11px] font-semibold text-ink-900 sm:text-[12px]">Global trade lanes</div><div className="font-body text-[9px] text-ink-500 sm:text-[10px]">Recent import activity</div></div>
+        <span className="font-mono rounded-md bg-blue-50 px-2 py-1 text-[9px] font-semibold text-blue-700">2026 · All modes</span>
       </div>
-      <div className="font-mono mt-0.5 text-[15px] font-semibold tracking-[-0.01em] text-brand-blue-700 sm:text-[16px]">
-        {raw ? value : <CountUp to={toNumber} format={format} start={start} duration={1400} />}
-      </div>
-      {suffix && <div className="font-body text-[9px] text-ink-200">{suffix}</div>}
-    </div>
-  );
-}
-
-function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-ink-100 bg-white p-4 shadow-sm">
-      <div className="mb-3">
-        <div className="font-display text-[12px] font-semibold tracking-[-0.005em] text-ink-900">
-          {title}
+      <div className="relative h-[128px] overflow-hidden bg-[radial-gradient(circle_at_16%_42%,rgba(34,211,238,.18),transparent_22%),radial-gradient(circle_at_82%_45%,rgba(59,130,246,.16),transparent_24%),linear-gradient(135deg,#effbfb,#eaf2fb)] sm:h-[168px]">
+        <div className="absolute inset-0 opacity-35 [background-image:linear-gradient(rgba(14,116,144,.12)_1px,transparent_1px),linear-gradient(90deg,rgba(14,116,144,.12)_1px,transparent_1px)] [background-size:32px_32px]" />
+        <span className="font-mono absolute left-[12%] top-[42%] text-[9px] font-semibold text-ink-500 sm:text-[10px]">VIETNAM</span>
+        <span className="font-mono absolute right-[9%] top-[39%] text-[9px] font-semibold text-ink-500 sm:text-[10px]">UNITED STATES</span>
+        <svg viewBox="0 0 700 180" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" aria-hidden>
+          <motion.path d="M126 103 C 275 45, 430 52, 588 94" fill="none" stroke="#2563eb" strokeWidth="4" strokeLinecap="round" strokeDasharray="8 8" initial={{ pathLength: 0 }} animate={animate ? { pathLength: 1 } : {}} transition={{ delay: reduceMotion ? 0 : 0.65, duration: reduceMotion ? 0 : 1.1, ease: "easeInOut" }} />
+          <circle cx="126" cy="103" r="8" fill="#2563eb" /><circle cx="588" cy="94" r="8" fill="#2563eb" />
+        </svg>
+        <div className="absolute bottom-2.5 left-3 right-3 rounded-lg border border-white/80 bg-white/90 px-3 py-2 shadow-sm backdrop-blur sm:left-4 sm:right-auto sm:w-[280px]">
+          <div className="font-display text-[10px] font-semibold text-ink-900 sm:text-[11px]">Vietnam → United States</div>
+          <div className="font-mono mt-0.5 text-[9px] tabular-nums text-ink-500">18,693 shipments · 58,037 TEU</div>
         </div>
-        {subtitle && (
-          <div className="font-body text-[10px] text-ink-500">{subtitle}</div>
-        )}
       </div>
-      {children}
-    </div>
+      <div className="grid grid-cols-3 divide-x divide-ink-100 bg-white">
+        {lanes.map((lane, index) => (
+          <div key={lane.origin} className="min-w-0 px-2.5 py-2.5 sm:px-3">
+            <div className="font-display truncate text-[9px] font-semibold text-ink-900 sm:text-[10px]">{lane.origin}</div>
+            <div className="font-mono mt-1 truncate text-[8px] tabular-nums text-ink-500 sm:text-[9px]">{lane.volume} ship</div>
+            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-ink-50"><motion.div className="h-full rounded-full bg-blue-600" initial={{ width: 0 }} animate={animate ? { width: `${lane.share * 100}%` } : {}} transition={{ delay: reduceMotion ? 0 : 0.8 + index * 0.08, duration: reduceMotion ? 0 : 0.55 }} /></div>
+          </div>
+        ))}
+      </div>
+    </motion.div>
   );
 }
 
-function BarRow({
-  label,
-  pct,
-  count,
-  tone,
-  inView,
-  delay,
-}: {
-  label: string;
-  pct: number;
-  count: string;
-  tone: "blue" | "cyan";
-  inView: boolean;
-  delay: number;
-}) {
-  const grad =
-    tone === "blue"
-      ? "linear-gradient(90deg,#3b82f6,#2563eb)"
-      : "linear-gradient(90deg,#22d3ee,#0891b2)";
-  return (
-    <div className="mb-2.5 last:mb-0">
-      <div className="font-display mb-1 flex items-center justify-between">
-        <span className="text-[11.5px] font-semibold text-ink-900">{label}</span>
-        <span className="font-mono text-[11px] text-ink-500">
-          {count} ·{" "}
-          <span className="font-semibold" style={{ color: tone === "blue" ? "#2563eb" : "#0891b2" }}>
-            {Math.round(pct * 100)}%
-          </span>
-        </span>
-      </div>
-      <div className="relative h-1.5 overflow-hidden rounded-full bg-ink-50">
-        <motion.div
-          initial={{ width: 0 }}
-          animate={inView ? { width: `${pct * 100}%` } : {}}
-          transition={{ delay, duration: 0.7, ease: "easeOut" }}
-          className="absolute inset-y-0 left-0 rounded-full"
-          style={{ background: grad }}
-        />
-      </div>
-    </div>
-  );
+function SideCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return <div className="rounded-xl border border-ink-100 bg-white p-3 shadow-sm"><div className="font-display mb-2 text-[9px] font-bold uppercase tracking-[0.08em] text-ink-300">{title}</div><div className="space-y-2">{children}</div></div>;
 }
 
-function SidebarCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-ink-100 bg-white p-3 shadow-sm">
-      <div className="font-display mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-200">
-        {title}
-      </div>
-      <div className="space-y-1.5">{children}</div>
-    </div>
-  );
-}
-
-function SidebarRow({ label, value, tone }: { label: string; value: string; tone?: "emerald" }) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="font-body text-[10.5px] text-ink-500">{label}</span>
-      <span
-        className={`font-display truncate text-[11px] font-semibold ${
-          tone === "emerald" ? "text-emerald-600" : "text-ink-900"
-        }`}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function formatK(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return Math.round(n).toString();
+function Row({ label, value, tone = "text-ink-900" }: { label: string; value: string; tone?: string }) {
+  return <div className="flex items-center justify-between gap-2"><span className="font-body text-[9.5px] text-ink-500">{label}</span><span className={`font-display truncate text-right text-[10px] font-semibold tabular-nums ${tone}`}>{value}</span></div>;
 }

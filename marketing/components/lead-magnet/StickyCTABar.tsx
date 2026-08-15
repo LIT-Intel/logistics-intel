@@ -104,7 +104,7 @@ export function StickyCTABar({
       >
         <div className="mx-auto flex max-w-content items-center gap-4 px-4 py-2.5 sm:px-6">
           <p className="hidden text-[13px] font-medium text-white/90 sm:block">
-            Start free — <span className="text-brand-cyan">10 searches + 10 verified contacts.</span>{" "}
+            Start a 7-day trial — <span className="text-brand-cyan">10 searches + 10 verified contacts.</span>{" "}
             <span className="text-white/60">No credit card.</span>
           </p>
 
@@ -130,7 +130,7 @@ export function StickyCTABar({
               disabled={submitting}
               className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-brand-cyan px-3 text-[13px] font-semibold text-dark-0 transition hover:bg-brand-cyan-dim disabled:opacity-60"
             >
-              {submitting ? "…" : "Start free"}
+              {submitting ? "…" : "Start 7-day trial"}
             </button>
           </form>
         </div>

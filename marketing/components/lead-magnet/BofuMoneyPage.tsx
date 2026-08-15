@@ -29,7 +29,7 @@ export function BofuMoneyPage({ page }: { page: BofuPage }) {
           eyebrow={page.eyebrow}
           headline={page.headline}
           lede={page.lede}
-          ctaLabel="Start free →"
+          ctaLabel="Start 7-day trial →"
           formSource={`${page.slug}-hero`}
           formNote={page.formNote}
         >
@@ -63,7 +63,7 @@ export function BofuMoneyPage({ page }: { page: BofuPage }) {
             <div className="mt-3.5 flex items-center justify-between border-t border-white/10 pt-3.5 font-mono text-[11px] text-white/45">
               <span>{page.previewFooter}</span>
               <a href="#start" className="font-display font-semibold text-brand-cyan hover:text-white">
-                Start free to see all →
+                Start a 7-day trial to see all →
               </a>
             </div>
           </LiveProductPreview>
@@ -113,7 +113,7 @@ export function BofuMoneyPage({ page }: { page: BofuPage }) {
         <FinalCtaBand
           heading={page.finalCta.heading}
           body={page.finalCta.body}
-          ctaLabel="Start free →"
+          ctaLabel="Start 7-day trial →"
           formSource={`${page.slug}-final`}
         />
       </MoneyPageShell>

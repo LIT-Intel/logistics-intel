@@ -48,11 +48,13 @@ export function PageHero({
   const introMax = wide ? "max-w-[680px]" : "max-w-[640px]";
 
   return (
-    <section className="relative px-5 sm:px-8 pt-14 sm:pt-24 pb-10 sm:pb-16">
+    <section className="relative overflow-hidden px-5 pb-12 pt-14 sm:px-8 sm:pb-16 sm:pt-20 lg:pt-24">
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(760px_360px_at_78%_0%,rgba(34,211,238,0.12),transparent_68%),radial-gradient(620px_360px_at_28%_0%,rgba(59,130,246,0.09),transparent_72%)]" />
+      <div className="pointer-events-none absolute right-[-7%] top-0 -z-10 h-[420px] w-[620px] opacity-30 [background-image:linear-gradient(rgba(59,130,246,.09)_1px,transparent_1px),linear-gradient(90deg,rgba(59,130,246,.09)_1px,transparent_1px)] [background-size:42px_42px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_74%)]" />
       <div className={`mx-auto max-w-content ${isCenter ? "text-center" : ""}`}>
         <div className={isCenter ? "mx-auto inline-flex" : ""}>
           {eyebrow && (
-            <div className="lit-pill">
+            <div className="lit-pill shadow-sm">
               <span className="dot" />
               {eyebrow}
             </div>
@@ -91,7 +93,11 @@ export function PageHero({
             )}
           </div>
         )}
-        {children && <div className="mt-12 sm:mt-14">{children}</div>}
+        {children && (
+          <div className="mt-10 overflow-hidden rounded-3xl border border-blue-100/80 bg-white/80 p-2 shadow-[0_28px_80px_-42px_rgba(15,23,42,.45)] backdrop-blur sm:mt-12 sm:p-3">
+            {children}
+          </div>
+        )}
       </div>
     </section>
   );

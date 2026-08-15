@@ -23,10 +23,11 @@ const POINTS = [
 export default function DemoPage() {
   return (
     <PageShell>
-      <section className="relative px-6 pt-[72px] pb-16 sm:px-8">
+      <section className="relative overflow-hidden px-6 pb-16 pt-16 sm:px-8 sm:pt-20 lg:pt-24">
+        <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(820px_460px_at_82%_14%,rgba(34,211,238,0.14),transparent_68%),radial-gradient(640px_380px_at_26%_0%,rgba(59,130,246,0.09),transparent_72%)]" />
         <div className="mx-auto grid max-w-container gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
           <div>
-            <div className="lit-pill">
+            <div className="lit-pill shadow-sm">
               <span className="dot" />
               30 min · Live with your accounts
             </div>
@@ -71,7 +72,8 @@ export default function DemoPage() {
           </div>
 
           <div>
-            <div className="rounded-3xl border border-ink-100 bg-white p-6 shadow-[0_30px_60px_-20px_rgba(15,23,42,0.18)] sm:p-8">
+            <div className="relative overflow-hidden rounded-3xl border border-blue-100/80 bg-white/85 p-6 shadow-[0_30px_80px_-42px_rgba(15,23,42,.5)] backdrop-blur sm:p-8">
+              <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-300/70 to-transparent" />
               <div className="mb-5">
                 <div className="font-display flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-200">
                   <Calendar className="h-3.5 w-3.5" />

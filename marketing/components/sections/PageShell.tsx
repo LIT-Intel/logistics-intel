@@ -9,7 +9,7 @@ export function PageShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <Nav />
-      <main>{children}</main>
+      <main className="min-h-screen bg-section">{children}</main>
       <Footer />
     </>
   );

@@ -63,7 +63,7 @@ export default function ContactPage() {
               <Link
                 key={c.title}
                 href={c.href}
-                className="group rounded-2xl border border-ink-100 bg-white p-7 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg"
+                className="group relative overflow-hidden rounded-2xl border border-ink-100 bg-white/85 p-7 shadow-sm backdrop-blur transition-all before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-blue-300/70 before:to-transparent hover:-translate-y-1 hover:border-blue-200 hover:shadow-lg"
               >
                 <div
                   className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl"
@@ -87,20 +87,14 @@ export default function ContactPage() {
 
       <section className="px-5 sm:px-8 pb-24">
         <div className="mx-auto max-w-container">
-          <div
-            className="rounded-3xl border border-white/10 px-10 py-10 text-white"
-            style={{
-              background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-              boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18)",
-            }}
-          >
-            <div className="lit-eyebrow-dark">
+          <div className="relative overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-white via-blue-50/60 to-cyan-50/70 px-10 py-10 shadow-[0_28px_70px_-48px_rgba(15,23,42,.5)]">
+            <div className="eyebrow">
               Headquarters
             </div>
-            <div className="font-display mt-2 text-[20px] font-semibold tracking-[-0.015em]">
+            <div className="font-display mt-2 text-[20px] font-semibold tracking-[-0.015em] text-ink-900">
               Logistics Intel, Inc.
             </div>
-            <p className="font-body mt-1 text-[15px] leading-relaxed text-ink-150">
+            <p className="font-body mt-1 text-[15px] leading-relaxed text-ink-500">
               United States · Remote-first · Customers in 14 countries
             </p>
           </div>

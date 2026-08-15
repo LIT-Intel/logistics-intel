@@ -38,9 +38,9 @@ export function ProofStrip({
   domains = DEFAULT_DOMAINS,
 }: Props) {
   return (
-    <section className="border-y border-white/5 bg-dark-0">
+    <section className="border-y border-ink-100/70 bg-white/55 backdrop-blur">
       <div className="mx-auto flex max-w-content flex-col items-center gap-5 px-4 py-8 sm:px-6">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-ink-500">
           {label}
         </p>
         <div className={`${styles.logoCloud} flex flex-wrap items-center justify-center gap-x-6 gap-y-4 sm:gap-x-10`}>

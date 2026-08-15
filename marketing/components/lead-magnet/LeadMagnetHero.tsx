@@ -37,32 +37,24 @@ export function LeadMagnetHero({
   const { onSubmit, submitting } = useLeadMagnetForm({ source: formSource });
 
   return (
-    <section className="relative overflow-hidden bg-dark-0 text-white">
-      {/* Ambient gradient wash */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-70"
-        style={{
-          background:
-            "radial-gradient(900px 480px at 15% 10%, rgba(0,240,255,0.16), transparent 60%), radial-gradient(700px 420px at 85% 30%, rgba(59,130,246,0.18), transparent 65%)",
-        }}
-      />
+    <section className="relative overflow-hidden">
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(820px_460px_at_82%_14%,rgba(34,211,238,0.14),transparent_68%),radial-gradient(640px_380px_at_26%_0%,rgba(59,130,246,0.09),transparent_72%)]" />
 
       <div className="relative mx-auto grid max-w-container grid-cols-1 gap-12 px-4 pb-16 pt-10 sm:px-6 sm:pt-14 lg:grid-cols-[1.05fr_minmax(0,1fr)] lg:gap-16 lg:py-24">
         {/* Left: copy + form */}
         <div className="flex min-w-0 flex-col justify-center">
-          <span className="lit-eyebrow-dark">{eyebrow}</span>
+          <span className="lit-pill w-fit shadow-sm"><span className="dot" />{eyebrow}</span>
 
           {/* Any <em> OR <strong> inside the headline gets the cyan→blue
            *  gradient. Callers prefer <strong> on money pages (carries
            *  more SEO weight for the highlighted noun phrase) and <em> on
            *  the home hero (rhetorical emphasis). Both render identically
            *  via the parallel selectors below. */}
-          <h1 className="font-display mt-5 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl [&_em]:not-italic [&_em]:bg-[linear-gradient(90deg,#00F0FF_0%,#3b82f6_60%,#2563eb_100%)] [&_em]:bg-clip-text [&_em]:text-transparent [&_strong]:font-bold [&_strong]:bg-[linear-gradient(90deg,#00F0FF_0%,#3b82f6_60%,#2563eb_100%)] [&_strong]:bg-clip-text [&_strong]:text-transparent">
+          <h1 className="display-xl mt-5 max-w-[660px] [&_em]:not-italic [&_em]:bg-[linear-gradient(90deg,#2563eb_0%,#0891b2_100%)] [&_em]:bg-clip-text [&_em]:text-transparent [&_strong]:font-bold [&_strong]:bg-[linear-gradient(90deg,#2563eb_0%,#0891b2_100%)] [&_strong]:bg-clip-text [&_strong]:text-transparent">
             {headline}
           </h1>
 
-          <p className="mt-5 max-w-prose text-base leading-relaxed text-white/70 sm:text-lg">
+          <p className="lead mt-5 max-w-[600px]">
             {lede}
           </p>
 
@@ -81,32 +73,32 @@ export function LeadMagnetHero({
               required
               autoComplete="email"
               placeholder="you@company.com"
-              className="h-12 w-full min-w-0 appearance-none rounded-md border-[1.5px] border-slate-300 bg-white px-4 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-cyan focus:outline-none focus:ring-2 focus:ring-brand-cyan sm:flex-1 sm:text-[15px]"
+              className="h-12 w-full min-w-0 appearance-none rounded-xl border border-ink-100 bg-white px-4 text-base text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 sm:flex-1 sm:text-[15px]"
             />
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex h-12 w-full items-center justify-center rounded-lg bg-brand-cyan px-6 text-sm font-semibold text-dark-0 shadow-glow-cyan transition hover:bg-brand-cyan-dim disabled:opacity-60 sm:w-auto"
+              className="font-display inline-flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-6 text-sm font-semibold text-white shadow-glow-blue transition hover:bg-blue-700 disabled:opacity-60 sm:w-auto"
             >
               {submitting ? "Starting…" : ctaLabel}
             </button>
           </form>
 
           {formNote && (
-            <p className="mt-3 text-xs text-white/50">{formNote}</p>
+            <p className="mt-3 text-xs text-ink-500">{formNote}</p>
           )}
 
-          <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] uppercase tracking-[0.08em] text-white/55">
+          <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] uppercase tracking-[0.08em] text-ink-500">
             <span className="inline-flex items-center gap-1.5">
-              <ShieldCheck className="h-3.5 w-3.5 text-brand-cyan" aria-hidden />
+              <ShieldCheck className="h-3.5 w-3.5 text-blue-600" aria-hidden />
               SOC&nbsp;2 Type II audit in progress
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <ShieldCheck className="h-3.5 w-3.5 text-brand-cyan" aria-hidden />
+              <ShieldCheck className="h-3.5 w-3.5 text-blue-600" aria-hidden />
               GDPR
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <ShieldCheck className="h-3.5 w-3.5 text-brand-cyan" aria-hidden />
+              <ShieldCheck className="h-3.5 w-3.5 text-blue-600" aria-hidden />
               CCPA
             </span>
           </div>
@@ -117,7 +109,8 @@ export function LeadMagnetHero({
          *  flex/grid children with intrinsic widths (typewriter text,
          *  result-card rows) can push past the viewport on mobile. */}
         <div className="relative flex min-w-0 items-center justify-center">
-          <div className="w-full max-w-[560px]">{children}</div>
+          <div className="absolute -inset-5 -z-10 rounded-[38px] bg-gradient-to-br from-cyan-200/35 via-blue-200/25 to-transparent blur-2xl" />
+          <div className="w-full max-w-[560px] overflow-hidden rounded-3xl border border-blue-100/80 bg-white/75 p-2 shadow-[0_30px_90px_-45px_rgba(15,23,42,.55)] backdrop-blur sm:p-3">{children}</div>
         </div>
       </div>
     </section>

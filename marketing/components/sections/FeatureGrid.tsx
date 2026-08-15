@@ -29,7 +29,7 @@ export function FeatureGrid({
   if (!features?.length) return null;
   const gridClass = cols === 2 ? "md:grid-cols-2" : "md:grid-cols-2 lg:grid-cols-3";
   return (
-    <section className="px-5 sm:px-8 py-12 sm:py-20">
+    <section className="relative overflow-hidden bg-section-soft-blue px-5 py-14 sm:px-8 sm:py-20">
       <div className="mx-auto max-w-container">
         {(eyebrow || title || subtitle) && (
           <div className="mx-auto max-w-[780px] text-center">
@@ -44,7 +44,7 @@ export function FeatureGrid({
             return (
               <div
                 key={`${f.title}-${i}`}
-                className="group rounded-2xl border border-ink-100 bg-white p-7 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg"
+                className="group relative overflow-hidden rounded-2xl border border-ink-100 bg-white/85 p-7 shadow-sm backdrop-blur transition-all before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-blue-300/70 before:to-transparent hover:-translate-y-1 hover:border-blue-200 hover:shadow-[0_22px_55px_-34px_rgba(15,23,42,.55)]"
               >
                 {Icon && (
                   <div

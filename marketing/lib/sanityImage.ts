@@ -24,7 +24,10 @@ export function imgUrl(
  */
 export function logoDevUrl(domain?: string | null, opts: { size?: number; format?: "svg" | "png" } = {}) {
   if (!domain) return null;
-  const key = process.env.NEXT_PUBLIC_LOGO_DEV_KEY;
+  const key =
+    process.env.NEXT_PUBLIC_LOGO_DEV_TOKEN ||
+    process.env.NEXT_PUBLIC_LOGO_DEV_KEY ||
+    process.env.VITE_LOGO_DEV_TOKEN;
   if (!key) return null;
   // Strip protocol + trailing slash + path
   const clean = domain.replace(/^https?:\/\//, "").replace(/\/.*/, "").trim();

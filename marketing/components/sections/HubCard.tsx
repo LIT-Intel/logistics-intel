@@ -24,8 +24,9 @@ export function HubCard({
     <Link
       href={href}
       className={cn(
-        "group block rounded-2xl border border-ink-100 bg-white shadow-sm transition-all",
-        "hover:-translate-y-0.5 hover:border-brand-blue/30 hover:shadow-lg",
+        "group relative block overflow-hidden rounded-2xl border border-ink-100 bg-white/80 shadow-sm backdrop-blur transition-all",
+        "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-blue-300/70 before:to-transparent",
+        "hover:-translate-y-1 hover:border-blue-200 hover:bg-white hover:shadow-[0_22px_55px_-34px_rgba(15,23,42,.55)]",
         variant === "compact" ? "p-6" : "p-8",
         className,
       )}

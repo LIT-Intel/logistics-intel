@@ -152,7 +152,7 @@ export default function CompanyIntelligencePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_PAGE_JSONLD) }}
       />
       <div className="lit-page">
-        <PulseExplorerHero />
+        <PulseExplorerHero variant="company" />
         <VideoTutorialSection />
         <LeadMagnetCtaSection />
         <DemoSchedulerSection />

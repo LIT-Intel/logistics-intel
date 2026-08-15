@@ -21,6 +21,7 @@ export type SearchDemandPageData = {
 };
 
 export function SearchDemandPage({ page }: { page: SearchDemandPageData }) {
+  const hasProductPreview = page.productPreview === "crm";
   const faqJsonLd = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
@@ -47,41 +48,45 @@ export function SearchDemandPage({ page }: { page: SearchDemandPageData }) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
       <BreadcrumbBar crumbs={[{ label: "Home", href: "/" }, { label: page.eyebrow }]} />
 
-      <section className="relative overflow-hidden px-5 pb-16 pt-16 sm:px-8 sm:pb-20 sm:pt-24">
-        <div className="absolute inset-x-0 top-0 -z-10 h-[420px] bg-[radial-gradient(circle_at_50%_0%,rgba(37,99,235,0.13),transparent_65%)]" />
-        <div className="mx-auto max-w-content text-center">
-          <div className="lit-pill"><span className="dot" />{page.eyebrow}</div>
-          <h1 className="display-xl mx-auto mt-5 max-w-[920px]">{page.title}</h1>
-          <p className="lead mx-auto mt-6 max-w-[760px]">{page.intro}</p>
-          <div className="mt-8 flex flex-wrap justify-center gap-3">
+      <section className="relative overflow-hidden px-5 pb-14 pt-14 sm:px-8 sm:pb-20 sm:pt-20 lg:pt-24">
+        <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(820px_460px_at_82%_14%,rgba(34,211,238,0.14),transparent_68%),radial-gradient(640px_380px_at_26%_0%,rgba(59,130,246,0.09),transparent_72%)]" />
+        <div className={`mx-auto ${hasProductPreview ? "grid max-w-container items-center gap-12 lg:grid-cols-[minmax(0,.82fr)_minmax(0,1.18fr)] lg:gap-14" : "max-w-content text-center"}`}>
+          <div className={hasProductPreview ? "max-w-[620px]" : ""}>
+          <div className="lit-pill shadow-sm"><span className="dot" />{page.eyebrow}</div>
+          <h1 className={`display-xl mt-5 ${hasProductPreview ? "max-w-[650px]" : "mx-auto max-w-[920px]"}`}>{page.title}</h1>
+          <p className={`lead mt-6 ${hasProductPreview ? "max-w-[590px]" : "mx-auto max-w-[760px]"}`}>{page.intro}</p>
+          <div className={`mt-8 flex flex-wrap gap-3 ${hasProductPreview ? "" : "justify-center"}`}>
             <Link href={APP_SIGNUP_URL} className="font-display inline-flex h-12 items-center gap-2 rounded-xl bg-blue-600 px-6 text-[14px] font-semibold text-white shadow-glow-blue transition hover:bg-blue-700">Start 7-day trial<ArrowRight className="h-4 w-4" /></Link>
             <Link href="/demo" className="font-display inline-flex h-12 items-center rounded-xl border border-ink-100 bg-white px-6 text-[14px] font-semibold text-ink-900 shadow-sm transition hover:shadow-md">Book a demo</Link>
           </div>
           <p className="font-body mt-4 text-[12.5px] text-ink-500">10 searches + 10 verified contacts. No credit card.</p>
+          </div>
+          {hasProductPreview && (
+            <div className="relative min-w-0">
+              <div className="absolute -inset-5 -z-10 rounded-[38px] bg-gradient-to-br from-cyan-200/35 via-blue-200/25 to-transparent blur-2xl" />
+              <div className="overflow-hidden rounded-3xl border border-blue-100/80 bg-white/75 p-2 shadow-[0_30px_90px_-45px_rgba(15,23,42,.55)] backdrop-blur sm:p-3">
+                <CrmPipelinePreview />
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
-      {page.productPreview === "crm" && (
-        <section className="pb-10 sm:pb-16">
-          <CrmPipelinePreview />
-        </section>
-      )}
-
       <section className="px-5 py-14 sm:px-8">
-        <div className="mx-auto grid max-w-content gap-7 rounded-3xl border border-ink-100 bg-white p-7 shadow-sm md:grid-cols-[0.8fr_1.2fr] md:p-10">
+        <div className="relative mx-auto grid max-w-content gap-7 overflow-hidden rounded-3xl border border-blue-100/80 bg-gradient-to-br from-white via-blue-50/45 to-cyan-50/55 p-7 shadow-[0_24px_70px_-48px_rgba(15,23,42,.5)] md:grid-cols-[0.8fr_1.2fr] md:p-10">
           <div><div className="eyebrow">The practical definition</div><h2 className="display-md mt-3">What the software should help your team accomplish.</h2></div>
           <p className="font-body text-[17px] leading-[1.75] text-ink-700">{page.definition}</p>
         </div>
       </section>
 
-      <section className="px-5 py-16 sm:px-8">
+      <section className="bg-section-soft-blue px-5 py-16 sm:px-8">
         <div className="mx-auto max-w-content">
           <div className="max-w-[680px]"><div className="eyebrow">Core capabilities</div><h2 className="display-lg mt-3">The context and controls to move an opportunity forward.</h2></div>
           <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {page.capabilities.map((item, index) => {
               const icons = [Database, Search, Workflow];
               const Icon = icons[index % icons.length];
-              return <article key={item.title} className="rounded-2xl border border-ink-100 bg-white p-6 shadow-sm"><span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50"><Icon className="h-5 w-5 text-blue-700" /></span><h3 className="display-sm mt-5">{item.title}</h3><p className="font-body mt-3 text-[14px] leading-relaxed text-ink-500">{item.body}</p></article>;
+              return <article key={item.title} className="relative overflow-hidden rounded-2xl border border-ink-100 bg-white/85 p-6 shadow-sm backdrop-blur transition hover:-translate-y-1 hover:border-blue-200 hover:shadow-lg"><span className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-300/70 to-transparent" /><span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50"><Icon className="h-5 w-5 text-blue-700" /></span><h3 className="display-sm mt-5">{item.title}</h3><p className="font-body mt-3 text-[14px] leading-relaxed text-ink-500">{item.body}</p></article>;
             })}
           </div>
         </div>

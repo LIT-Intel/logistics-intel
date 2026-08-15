@@ -24,20 +24,30 @@ const KPIS: Array<[string, string]> = [
  * page wrapper clips on negative offsets) to teach what an account row
  * looks like when surfaced from the map.
  */
-export function PulseExplorerHero() {
+export function PulseExplorerHero({ variant = "pulse" }: { variant?: "pulse" | "company" }) {
   const [mode, setMode] = useState<MapMode>("bubble");
+  const copy = variant === "company"
+    ? {
+        eyebrow: "Company intelligence",
+        title: <>Research every freight account with <span className="grad-text-cyan">shipment context built in.</span></>,
+        lede: "See shipment activity, trade lanes, suppliers, products, verified contacts, and CRM history in one account workspace built for freight sales.",
+      }
+    : {
+        eyebrow: "Pulse Explorer · Map-first discovery",
+        title: <>Find active shippers before the opportunity <span className="grad-text-cyan">becomes obvious.</span></>,
+        lede: "Explore the market by industry, location, shipment activity, and trade behavior, then move qualified accounts directly into research and pipeline.",
+      };
 
   return (
-    <section style={{ position: "relative", paddingTop: 64, paddingBottom: 56 }}>
+    <section className="relative overflow-hidden pb-14 pt-14 sm:pb-20 sm:pt-20 lg:pt-24">
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(820px_460px_at_82%_14%,rgba(34,211,238,0.14),transparent_68%),radial-gradient(640px_380px_at_26%_0%,rgba(59,130,246,0.09),transparent_72%)]" />
       <div
         className="mx-auto px-8"
         style={{ maxWidth: 1240, position: "relative" }}
       >
         <div
           style={{
-            maxWidth: 920,
-            margin: "0 auto",
-            textAlign: "center",
+            maxWidth: 760,
           }}
         >
           <div
@@ -54,39 +64,34 @@ export function PulseExplorerHero() {
                 boxShadow: "0 0 8px #3b82f6",
               }}
             />
-            New · Pulse Explorer V2 — map-first sales intelligence
+            {copy.eyebrow}
           </div>
           <h1 className="display-xl" style={{ marginTop: 22 }}>
-            Pulse Explorer: Freight Prospecting Software Built for{" "}
-            <span className="grad-text-cyan">Logistics Sales Teams</span>
+            {copy.title}
           </h1>
           <p
             className="lead"
             style={{
               marginTop: 20,
-              maxWidth: 700,
-              marginLeft: "auto",
-              marginRight: "auto",
+              maxWidth: 670,
             }}
           >
-            Find active shippers, analyze trade lanes, enrich decision-makers,
-            and build targeted lead lists from one interactive freight intelligence workspace.
+            {copy.lede}
           </p>
           <div
             style={{
               display: "flex",
               gap: 12,
               marginTop: 30,
-              justifyContent: "center",
               flexWrap: "wrap",
             }}
           >
             <Button variant="primary" size="lg" href={DEMO_URL}>
               <Calendar size={16} />
-              Book a Pulse Explorer Demo
+              Book a demo
             </Button>
             <Button variant="secondary" size="lg" href={APP_SIGNUP_URL}>
-              Start Free
+              Start 7-day trial
               <ArrowRight size={16} />
             </Button>
           </div>

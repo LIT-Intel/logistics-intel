@@ -51,16 +51,17 @@ export function ProductHero({
   const SecondaryIcon = secondary.icon === "calendar" ? Calendar : ArrowRight;
 
   return (
-    <section className="relative px-5 sm:px-8 pt-14 sm:pt-24 pb-12 sm:pb-16">
+    <section className="relative overflow-hidden px-5 pb-14 pt-14 sm:px-8 sm:pb-20 sm:pt-20 lg:pt-24">
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(820px_460px_at_82%_14%,rgba(34,211,238,0.14),transparent_68%),radial-gradient(640px_380px_at_26%_0%,rgba(59,130,246,0.09),transparent_72%)]" />
       <div
         className={
           visual
-            ? "mx-auto grid max-w-content gap-10 lg:gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center"
+            ? "mx-auto grid max-w-container gap-10 lg:grid-cols-[minmax(0,.82fr)_minmax(0,1.18fr)] lg:items-center lg:gap-14"
             : "mx-auto max-w-content"
         }
       >
         <div className="min-w-0">
-          <div className="lit-pill">
+          <div className="lit-pill shadow-sm">
             <span className="dot" />
             {eyebrow}
           </div>
@@ -95,8 +96,11 @@ export function ProductHero({
         </div>
 
         {visual && (
-          <div className="relative" style={{ contain: "layout paint", maxWidth: "100%" }}>
-            {visual}
+          <div className="relative min-w-0" style={{ contain: "layout paint", maxWidth: "100%" }}>
+            <div className="absolute -inset-5 -z-10 rounded-[38px] bg-gradient-to-br from-cyan-200/35 via-blue-200/25 to-transparent blur-2xl" />
+            <div className="overflow-hidden rounded-3xl border border-blue-100/80 bg-white/75 p-2 shadow-[0_30px_90px_-45px_rgba(15,23,42,.55)] backdrop-blur sm:p-3">
+              {visual}
+            </div>
           </div>
         )}
       </div>

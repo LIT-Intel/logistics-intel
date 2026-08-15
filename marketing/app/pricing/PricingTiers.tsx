@@ -85,28 +85,29 @@ export function PricingTiers() {
   return (
     <section className="px-5 py-16 sm:px-8 sm:py-20" data-price-source-last-sync={PRICE_SOURCE_LAST_SYNC}>
       <div className="mx-auto max-w-container">
-        <div className="overflow-hidden rounded-[32px] border border-slate-800 bg-slate-950 px-6 py-9 text-white shadow-[0_32px_90px_rgba(2,6,23,0.22)] sm:px-10">
+        <div className="relative overflow-hidden rounded-[32px] border border-blue-100 bg-gradient-to-br from-white via-blue-50/70 to-cyan-50/80 px-6 py-9 shadow-[0_30px_80px_-48px_rgba(15,23,42,.55)] sm:px-10">
+          <span aria-hidden className="pointer-events-none absolute -right-20 -top-28 h-80 w-80 rounded-full bg-cyan-300/20 blur-3xl" />
           <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-[700px]">
-              <div className="font-display text-[11px] font-bold uppercase tracking-[0.16em] text-cyan-300">Simple plans. Real freight workflows.</div>
-              <h2 className="font-display mt-3 text-[34px] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-[48px]">Choose the capacity your sales team needs now.</h2>
-              <p className="font-body mt-4 max-w-[620px] text-[15px] leading-relaxed text-slate-300">Every trial lasts 7 days and includes 10 searches plus 10 verified contacts. No credit card. Upgrade only when the workflow earns a place in your process.</p>
+              <div className="eyebrow">Simple plans. Real freight workflows.</div>
+              <h2 className="font-display mt-3 text-[34px] font-semibold leading-[1.05] tracking-[-0.035em] text-ink-900 sm:text-[48px]">Choose the capacity your sales team needs now.</h2>
+              <p className="font-body mt-4 max-w-[620px] text-[15px] leading-relaxed text-ink-500">Every trial lasts 7 days and includes 10 searches plus 10 verified contacts. No credit card. Upgrade only when the workflow earns a place in your process.</p>
             </div>
             <div className="shrink-0">
-              <div className="inline-flex rounded-xl border border-white/10 bg-white/[0.06] p-1" role="group" aria-label="Billing period">
+              <div className="inline-flex rounded-xl border border-ink-100 bg-white/80 p-1 shadow-sm" role="group" aria-label="Billing period">
                 {(["monthly", "annual"] as const).map((period) => (
-                  <button key={period} type="button" aria-pressed={billing === period} onClick={() => setBilling(period)} className={["font-display rounded-lg px-4 py-2.5 text-[13px] font-semibold capitalize transition", billing === period ? "bg-white text-slate-950 shadow-sm" : "text-slate-300 hover:text-white"].join(" ")}>
+                  <button key={period} type="button" aria-pressed={billing === period} onClick={() => setBilling(period)} className={["font-display rounded-lg px-4 py-2.5 text-[13px] font-semibold capitalize transition", billing === period ? "bg-blue-600 text-white shadow-sm" : "text-ink-500 hover:text-ink-900"].join(" ")}>
                     {period}{period === "annual" && <span className="ml-2 text-emerald-600">Save 25%</span>}
                   </button>
                 ))}
               </div>
             </div>
           </div>
-          <div className="mt-8 grid gap-3 border-t border-white/10 pt-6 sm:grid-cols-3">
+          <div className="relative mt-8 grid gap-3 border-t border-blue-100 pt-6 sm:grid-cols-3">
             {TRIAL_POINTS.map(({ icon: Icon, title, body }) => (
-              <div key={title} className="flex items-start gap-3 rounded-2xl bg-white/[0.04] p-4">
-                <Icon className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" aria-hidden />
-                <div><div className="font-display text-[13px] font-semibold text-white">{title}</div><div className="font-body mt-1 text-[12px] leading-relaxed text-slate-400">{body}</div></div>
+              <div key={title} className="flex items-start gap-3 rounded-2xl border border-white/80 bg-white/65 p-4 shadow-sm backdrop-blur">
+                <Icon className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+                <div><div className="font-display text-[13px] font-semibold text-ink-900">{title}</div><div className="font-body mt-1 text-[12px] leading-relaxed text-ink-500">{body}</div></div>
               </div>
             ))}
           </div>

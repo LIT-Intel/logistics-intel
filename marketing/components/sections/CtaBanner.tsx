@@ -2,7 +2,7 @@ import { ArrowRight, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 /**
- * Bottom-of-page CTA — Pulse Coach surface (slate gradient + cyan glow).
+ * Bottom-of-page CTA — calm conversion surface shared with the homepage.
  * Default copy comes from siteSettings.ctaCopy when caller doesn't override.
  */
 export function CtaBanner({
@@ -22,30 +22,24 @@ export function CtaBanner({
   return (
     <section className="px-5 sm:px-8 py-12 sm:py-20">
       <div className="mx-auto max-w-container">
-        <div
-          className="relative overflow-hidden rounded-3xl border border-white/10 px-10 py-14 text-white shadow-[0_30px_80px_-20px_rgba(15,23,42,0.45)]"
-          style={{
-            background: "linear-gradient(160deg,#0F172A 0%,#1E293B 100%)",
-            boxShadow: "inset 0 -1px 0 rgba(0,240,255,0.18), 0 30px 80px -20px rgba(15,23,42,0.5)",
-          }}
-        >
+        <div className="relative overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-r from-blue-50 via-cyan-50 to-slate-50 px-7 py-10 shadow-[0_28px_80px_-50px_rgba(15,23,42,.5)] sm:px-10 sm:py-12 lg:px-12">
           <span
             aria-hidden
-            className="pointer-events-none absolute -top-20 -right-16 h-72 w-72 rounded-full opacity-50"
-            style={{ background: "radial-gradient(circle, rgba(0,240,255,0.28), transparent 70%)" }}
+            className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full opacity-50"
+            style={{ background: "radial-gradient(circle, rgba(34,211,238,0.26), transparent 70%)" }}
           />
           <span
             aria-hidden
-            className="pointer-events-none absolute -bottom-24 -left-20 h-72 w-72 rounded-full opacity-30"
-            style={{ background: "radial-gradient(circle, rgba(59,130,246,0.4), transparent 70%)" }}
+            className="pointer-events-none absolute -bottom-28 -left-24 h-72 w-72 rounded-full opacity-25"
+            style={{ background: "radial-gradient(circle, rgba(59,130,246,0.35), transparent 70%)" }}
           />
           <div className="relative max-w-[720px]">
-            <div className="lit-eyebrow-dark">{eyebrow}</div>
-            <h2 className="font-display mt-3 text-[40px] font-semibold leading-[1.05] tracking-[-0.02em]">
+            <div className="eyebrow">{eyebrow}</div>
+            <h2 className="font-display mt-3 text-[32px] font-semibold leading-[1.08] tracking-[-0.025em] text-ink-900 sm:text-[40px]">
               {title}
             </h2>
             {subtitle && (
-              <p className="font-body mt-4 max-w-[560px] text-[16px] leading-relaxed text-ink-150">
+              <p className="font-body mt-4 max-w-[590px] text-[15px] leading-relaxed text-ink-500 sm:text-[16px]">
                 {subtitle}
               </p>
             )}
@@ -60,13 +54,11 @@ export function CtaBanner({
                 {primaryCta.label}
               </Button>
               {secondaryCta && (
-                /* Dark-surface secondary: white/15 border + white/5 fill,
-                   not the default light-surface secondary token. */
                 <Button
                   variant="secondary"
                   size="lg"
                   href={secondaryCta.href}
-                  className="border-white/15 bg-white/5 text-white backdrop-blur-0 hover:border-white/15 hover:bg-white/10"
+                  className="border-ink-100 bg-white text-ink-900 shadow-sm hover:border-blue-200 hover:bg-white"
                 >
                   {secondaryCta.label}
                   <ArrowRight className="h-4 w-4" />
