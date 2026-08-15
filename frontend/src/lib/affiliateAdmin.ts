@@ -160,6 +160,43 @@ export async function fetchAdminCommissions() {
 export async function fetchAdminPayouts() {
   return callFn('affiliate-admin', { action: 'list_payouts' });
 }
+
+export interface PayoutRunResult {
+  partner_id: string;
+  ref_code?: string;
+  status:
+    | 'paid'
+    | 'eligible'
+    | 'below_threshold'
+    | 'skipped_inflight'
+    | 'skipped_raced'
+    | 'failed'
+    | 'error';
+  amount_cents?: number;
+  eligible_cents?: number;
+  min_payout_cents?: number;
+  commissions_count?: number;
+  currency?: string;
+  stripe_transfer_id?: string;
+  payout_id?: string;
+  reason?: string;
+}
+
+/**
+ * Run affiliate payouts. dry_run=true computes eligibility (which partners /
+ * how much) WITHOUT creating Stripe transfers or mutating commissions. A real
+ * run creates one Stripe Connect transfer per eligible partner, inserts an
+ * affiliate_payouts row, and stamps the settled commissions 'paid'. Platform
+ * admin gated (also callable by cron). Idempotent server-side.
+ */
+export async function runPayouts(opts?: { dry_run?: boolean; min_payout_cents?: number }) {
+  return callFn('partner-payout-run', {
+    dry_run: opts?.dry_run === true,
+    ...(typeof opts?.min_payout_cents === 'number' ? { min_payout_cents: opts.min_payout_cents } : {}),
+  }) as Promise<
+    { ok: boolean; dry_run?: boolean; partners_considered?: number; paid_count?: number; paid_cents?: number; skipped?: number; failed?: number; results?: PayoutRunResult[]; code?: string; error?: string }
+  >;
+}
 export async function fetchAdminTiers() {
   return callFn('affiliate-admin', { action: 'list_tiers' });
 }

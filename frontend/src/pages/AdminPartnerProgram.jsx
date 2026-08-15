@@ -36,6 +36,7 @@ import {
   fetchAdminPartners,
   fetchAdminCommissions,
   fetchAdminPayouts,
+  runPayouts,
   fetchAdminTiers,
   reviewApplication,
   createAffiliateInvite,
@@ -1656,24 +1657,174 @@ function AdminCommissions() {
 /* ── Payout runs tab ───────────────────────────────────────── */
 function AdminPayouts() {
   const [rows, setRows] = useState([]);
+  const [partners, setPartners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [runResult, setRunResult] = useState(null); // { dry_run, summary, results }
+  const [notice, setNotice] = useState(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const res = await fetchAdminPayouts();
-      if (cancelled) return;
-      if (res.ok) setRows(res.payouts || []);
-      else setError(res.error || 'Failed to load payouts');
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [payRes, partnerRes] = await Promise.all([fetchAdminPayouts(), fetchAdminPartners()]);
+    if (payRes.ok) setRows(payRes.payouts || []);
+    else setError(payRes.error || 'Failed to load payouts');
+    if (partnerRes.ok) setPartners(partnerRes.partners || []);
+    setLoading(false);
   }, []);
 
+  useEffect(() => { load(); }, [load]);
+
+  async function doRun(dryRun) {
+    if (running) return;
+    if (!dryRun && !window.confirm('Run payouts now? This creates real Stripe Connect transfers to every eligible partner. This cannot be undone.')) return;
+    setRunning(true);
+    setRunResult(null);
+    setNotice(null);
+    const res = await runPayouts({ dry_run: dryRun });
+    setRunning(false);
+    if (res.code === 'STRIPE_NOT_CONFIGURED') {
+      setNotice({ tone: 'warn', text: 'Stripe is not configured (STRIPE_SECRET_KEY missing on the edge function). Payouts cannot run.' });
+      return;
+    }
+    if (!res.ok) {
+      setNotice({ tone: 'danger', text: res.error || 'Payout run failed.' });
+      return;
+    }
+    setRunResult({ dry_run: !!res.dry_run, summary: res, results: res.results || [] });
+    if (!dryRun) {
+      setNotice({
+        tone: (res.failed || 0) > 0 ? 'warn' : 'success',
+        text: `Paid ${res.paid_count || 0} partner(s) · ${fmtCurrency(res.paid_cents || 0)}. Skipped ${res.skipped || 0}, failed ${res.failed || 0}.`,
+      });
+      await load();
+    }
+  }
+
+  // Connect-status + accrued/earned/paid rollups per partner (real data).
+  const partnerSummary = useMemo(() => {
+    return partners.map((p) => ({
+      id: p.id,
+      label: p.email || p.user_id,
+      ref_code: p.ref_code,
+      stripe_status: p.stripe_status,
+      payouts_enabled: !!p.stripe_payouts_enabled,
+      onboarded: p.stripe_status === 'payouts_enabled' || !!p.stripe_payouts_enabled,
+      pending_cents: p.pending_cents || 0,        // accrued (hold not elapsed)
+      available_cents: p.available_cents || 0,    // earned & payable
+      lifetime_cents: p.lifetime_earnings_cents || 0,
+    }));
+  }, [partners]);
+
   return (
-    <div style={{ maxWidth: 1240, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <ErrorBanner>{error}</ErrorBanner>
+      {notice && (
+        <div
+          style={{
+            background:
+              notice.tone === 'success' ? T.greenBg :
+              notice.tone === 'danger'  ? T.redBg :
+              notice.tone === 'warn'    ? T.amberBg : T.brandSoft,
+            border: `1px solid ${
+              notice.tone === 'success' ? T.greenBorder :
+              notice.tone === 'danger'  ? T.redBorder :
+              notice.tone === 'warn'    ? T.amberBorder : T.brandBorder
+            }`,
+            borderRadius: 10, padding: '10px 14px',
+            display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, color: T.inkMuted,
+          }}
+        >
+          <div style={{ flex: 1 }}>{notice.text}</div>
+          <button type="button" style={Btn.quiet} onClick={() => setNotice(null)}>Dismiss</button>
+        </div>
+      )}
+
+      {/* Per-partner connect status + accrued/earned/paid */}
+      <Card padded={false}>
+        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.borderSoft}`, fontFamily: T.ffDisplay, fontSize: 13, fontWeight: 700, color: T.ink }}>
+          Partner balances & Stripe Connect
+        </div>
+        {loading ? (
+          <Spinner />
+        ) : partnerSummary.length === 0 ? (
+          <EmptyRow label="No partners yet." />
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead>
+              <tr style={{ background: T.bgSubtle, textAlign: 'left' }}>
+                {['Partner','Connect','Accrued (hold)','Earned (payable)','Paid lifetime',''].map((h) => (
+                  <th key={h} style={TH_STYLE}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {partnerSummary.map((p, i, arr) => (
+                <tr key={p.id} style={{ borderBottom: i < arr.length - 1 ? `1px solid ${T.borderSoft}` : 'none' }}>
+                  <td style={TD_BASE}>
+                    <div style={{ fontFamily: T.ffDisplay, fontWeight: 600, color: T.ink }}>{p.label}</div>
+                    {p.ref_code && <div style={{ fontFamily: T.ffMono, fontSize: 11, color: T.inkFaint, marginTop: 2 }}>{p.ref_code}</div>}
+                  </td>
+                  <td style={TD_BASE}>
+                    <Badge tone={p.payouts_enabled ? 'success' : 'warn'} dot>
+                      {(p.stripe_status || 'not_connected').replace(/_/g, ' ')}
+                    </Badge>
+                    {!p.payouts_enabled && (
+                      <div style={{ fontSize: 10.5, color: T.inkFaint, marginTop: 2 }}>payouts off</div>
+                    )}
+                  </td>
+                  <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.inkSoft }}>{fmtCurrency(p.pending_cents)}</td>
+                  <td style={{ ...TD_BASE, fontFamily: T.ffMono, fontWeight: 600, color: p.available_cents > 0 ? T.brandDeep : T.inkFaint }}>{fmtCurrency(p.available_cents)}</td>
+                  <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.ink }}>{fmtCurrency(p.lifetime_cents)}</td>
+                  <td style={{ ...TD_BASE, fontSize: 11, color: T.inkFaint }}>
+                    {p.payouts_enabled ? '' : 'Send onboarding link from Partners tab'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      {/* Dry-run / real-run result detail */}
+      {runResult && (
+        <Card padded={false}>
+          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${T.borderSoft}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Badge tone={runResult.dry_run ? 'brand' : 'success'}>{runResult.dry_run ? 'Dry run' : 'Run complete'}</Badge>
+            <div style={{ fontSize: 12.5, color: T.inkMuted, flex: 1 }}>
+              {runResult.summary.partners_considered} partner(s) considered · {runResult.dry_run ? `${runResult.summary.paid_count} eligible · ${fmtCurrency(runResult.summary.paid_cents)}` : `${runResult.summary.paid_count} paid · ${fmtCurrency(runResult.summary.paid_cents)}`} · skipped {runResult.summary.skipped} · failed {runResult.summary.failed}
+            </div>
+            <button type="button" style={Btn.quiet} onClick={() => setRunResult(null)}>Dismiss</button>
+          </div>
+          {runResult.results.length === 0 ? (
+            <EmptyRow label="No eligible partners this batch." />
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ background: T.bgSubtle, textAlign: 'left' }}>
+                  {['Partner','Outcome','Amount','Commissions','Detail'].map((h) => (
+                    <th key={h} style={TH_STYLE}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {runResult.results.map((r, i, arr) => (
+                  <tr key={`${r.partner_id}-${i}`} style={{ borderBottom: i < arr.length - 1 ? `1px solid ${T.borderSoft}` : 'none' }}>
+                    <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.inkSoft }}>{r.ref_code || r.partner_id}</td>
+                    <td style={TD_BASE}><Badge tone={statusTone(r.status)} dot>{r.status.replace(/_/g, ' ')}</Badge></td>
+                    <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.ink }}>{fmtCurrency(r.amount_cents ?? r.eligible_cents ?? 0, r.currency)}</td>
+                    <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.inkSoft }}>{r.commissions_count ?? '—'}</td>
+                    <td style={{ ...TD_BASE, fontSize: 11.5, color: T.inkFaint }}>
+                      {r.stripe_transfer_id ? r.stripe_transfer_id : r.reason ? r.reason : r.status === 'below_threshold' ? `min ${fmtCurrency(r.min_payout_cents || 0)}` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      )}
+
       <Card padded={false}>
         <div
           style={{
@@ -1687,19 +1838,21 @@ function AdminPayouts() {
           </div>
           <button
             type="button"
-            style={{ ...Btn.ghost, opacity: 0.55, cursor: 'not-allowed' }}
-            disabled
-            title="Payout-run engine not enabled yet"
+            style={{ ...Btn.ghost, opacity: running ? 0.6 : 1, cursor: running ? 'wait' : 'pointer' }}
+            disabled={running}
+            onClick={() => doRun(true)}
+            title="Compute which partners would be paid and how much — no money moves"
           >
-            <Play size={12} /> Dry-run next batch
+            <Play size={12} /> {running ? '…' : 'Dry-run next batch'}
           </button>
           <button
             type="button"
-            style={{ ...Btn.primary, opacity: 0.55, cursor: 'not-allowed' }}
-            disabled
-            title="Payout-run engine not enabled yet"
+            style={{ ...Btn.primary, opacity: running ? 0.6 : 1, cursor: running ? 'wait' : 'pointer' }}
+            disabled={running}
+            onClick={() => doRun(false)}
+            title="Create Stripe Connect transfers to every eligible partner"
           >
-            <Send size={12} /> Run payout
+            <Send size={12} /> {running ? 'Running…' : 'Run payout'}
           </button>
         </div>
         {loading ? (
