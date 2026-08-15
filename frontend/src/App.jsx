@@ -70,6 +70,19 @@ const SectorLandingPage = lazy(() => import("@/pages/landing/SectorLandingPage")
 // Public live quote view (/q/:token) — recipients open this from the quote
 // email with no account; see frontend/src/pages/PublicQuotePage.tsx.
 const PublicQuotePage = lazy(() => import("@/pages/PublicQuotePage"));
+
+// Lead CRM (Phase 1) — a STANDALONE, shared sales workspace with its own
+// minimal shell (LeadCrmLayout), gated on lead-CRM membership via
+// RequireLeadCrm (calls lit_my_lead_crm_access). A SALES REP gets ONLY this
+// route, NOT the rest of the admin deck. See frontend/src/pages/leadcrm/.
+const LeadCrmLayout = lazy(() => import("@/pages/leadcrm/LeadCrmLayout"));
+const RequireLeadCrm = lazy(() =>
+  import("@/pages/leadcrm/LeadCrmLayout").then((m) => ({ default: m.RequireLeadCrm })),
+);
+const LeadsListPage = lazy(() => import("@/pages/leadcrm/LeadsListPage"));
+const LeadCrmPipelinePage = lazy(() => import("@/pages/leadcrm/PipelinePage"));
+const LeadCrmTeamPage = lazy(() => import("@/pages/leadcrm/TeamPage"));
+
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
@@ -818,6 +831,27 @@ export default function App() {
             </RequireAdmin>
           }
         />
+
+        {/* Lead CRM (Phase 1) — STANDALONE shared sales workspace. Its own
+            minimal shell (LeadCrmLayout), gated by RequireLeadCrm, which calls
+            lit_my_lead_crm_access(). A SALES REP (non-platform-admin) is
+            admitted purely on lead-CRM membership and sees ONLY this route —
+            no admin deck, no plan gate (RequireAuth only, then RequireLeadCrm).
+            Team child is additionally hidden/guarded to platform admins. */}
+        <Route
+          path="/app/leads"
+          element={
+            <RequireAuth>
+              <RequireLeadCrm>
+                <LeadCrmLayout />
+              </RequireLeadCrm>
+            </RequireAuth>
+          }
+        >
+          <Route index element={<LeadsListPage />} />
+          <Route path="pipeline" element={<LeadCrmPipelinePage />} />
+          <Route path="team" element={<LeadCrmTeamPage />} />
+        </Route>
 
         <Route path="/app" element={<Navigate to="/app/search" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

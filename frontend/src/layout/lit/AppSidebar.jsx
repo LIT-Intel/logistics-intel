@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 import { useAuth } from "@/auth/AuthProvider";
+import { useLeadCrmAccess } from "@/hooks/useLeadCrmAccess";
 import { canAccessFeature } from "@/lib/planLimits";
 import SidebarUsageChip from "@/components/shared/SidebarUsageChip";
 import "./litLogo.css";
@@ -39,6 +40,11 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const showAdminSection = Boolean(isSuperAdmin);
   // Feature locks bypass for superadmins only (not org owners)
   const isAdmin = Boolean(isSuperAdmin);
+
+  // Lead CRM (Phase 1) — the standalone shared sales workspace. Show its nav
+  // link only to lead-CRM members (reps/managers/admins), resolved server-side
+  // via lit_my_lead_crm_access(). Non-members never see the entry.
+  const { isMember: isLeadCrmMember } = useLeadCrmAccess();
 
   const canUseCampaigns = isAdmin || canAccessFeature(plan, "campaign_builder");
   const canUsePulse = isAdmin || canAccessFeature(plan, "pulse");
@@ -90,6 +96,11 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
           locked: !canUseCampaigns,
         },
         { label: "Quoting", href: "/app/quoting", icon: FileText },
+        // Lead CRM — only rendered for lead-CRM members. Standalone route
+        // (/app/leads) with its own shell; reps who are members reach it here.
+        ...(isLeadCrmMember
+          ? [{ label: "Lead CRM", href: "/app/leads", icon: Users }]
+          : []),
       ],
     },
     // Account links (Settings / Billing / Affiliate) intentionally
