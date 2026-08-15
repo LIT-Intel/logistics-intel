@@ -2,9 +2,16 @@
 //
 // 30-day hold release for affiliate commissions.
 //
-// Moves affiliate_commissions rows from 'pending' -> 'cleared' once their
-// clears_at hold has elapsed and they have not been voided (refunded). A
-// 'cleared' commission is eligible for the (not-yet-built) payout runner.
+// Moves affiliate_commissions rows from 'pending' -> 'earned' once their
+// clears_at hold has elapsed and they have not been voided (refunded). An
+// 'earned' commission is matured & payable — the partner-payout-run function
+// groups positive sums of 'earned' commissions per partner into a Stripe
+// transfer and stamps them 'paid'.
+//
+// NOTE: 'earned' is the constraint-valid "matured" status (the
+// affiliate_commissions.status check allows pending|earned|paid|voided|flagged).
+// An earlier revision wrote 'cleared', which is NOT in the constraint and would
+// have failed every run — fixed here so the hold-release actually persists.
 //
 // Cron-only: gated by verifyCronAuth (X-Internal-Cron header == LIT_CRON_SECRET).
 // Schedule via pg_cron + pg_net, e.g. daily:
@@ -61,10 +68,10 @@ serve(async (req) => {
   const nowIso = new Date().toISOString();
 
   try {
-    // pending -> cleared where the hold has elapsed and not voided.
+    // pending -> earned where the hold has elapsed and not voided.
     const { data, error } = await db
       .from("affiliate_commissions")
-      .update({ status: "cleared", updated_at: nowIso })
+      .update({ status: "earned", updated_at: nowIso })
       .eq("status", "pending")
       .is("voided_at", null)
       .lte("clears_at", nowIso)
