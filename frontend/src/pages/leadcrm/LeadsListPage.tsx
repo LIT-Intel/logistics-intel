@@ -20,8 +20,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  Plus,
+  X,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { CompanyAvatar } from "@/components/CompanyAvatar";
+import { useToast } from "@/components/ui/use-toast";
 import {
   type Lead,
   type LeadStage,
@@ -29,6 +33,8 @@ import {
   listLeads,
   listStages,
   listAssignees,
+  getLead,
+  createLead,
 } from "@/api/leadCrm";
 import LeadDetailDrawer from "./LeadDetailDrawer";
 import {
@@ -53,6 +59,7 @@ export default function LeadsListPage() {
   const [page, setPage] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openLead, setOpenLead] = useState<Lead | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   // Debounce the search box → server query.
   useEffect(() => {
@@ -141,6 +148,28 @@ export default function LeadsListPage() {
               Work leads toward becoming subscribers
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "9px 14px",
+              borderRadius: 10,
+              border: "none",
+              background: "#3B82F6",
+              color: "#FFFFFF",
+              fontFamily: FONT_HEAD,
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <Plus style={{ width: 14, height: 14 }} />
+            Add opportunity
+          </button>
         </div>
 
         {/* Search + filter toggle */}
@@ -347,9 +376,20 @@ export default function LeadsListPage() {
                           </div>
                         </td>
                         <td style={{ padding: "8px 14px", verticalAlign: "middle" }}>
-                          <span style={{ fontSize: 12.5, color: "#334155", fontFamily: FONT_BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: "100%" }}>
-                            {lead.company_name || "—"}
-                          </span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                            {lead.company_name || lead.company_domain ? (
+                              <CompanyAvatar
+                                name={lead.company_name || lead.company_domain || "Company"}
+                                domain={lead.company_domain}
+                                logoUrl={lead.company_logo_url}
+                                size="sm"
+                                className="!h-6 !w-6 !rounded-md shrink-0"
+                              />
+                            ) : null}
+                            <span style={{ fontSize: 12.5, color: "#334155", fontFamily: FONT_BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: "100%" }}>
+                              {lead.company_name || (lead.company_domain ? lead.company_domain : "—")}
+                            </span>
+                          </div>
                         </td>
                         <td style={{ padding: "8px 14px", verticalAlign: "middle" }}>
                           {stage ? <span style={stageBadgeStyle(stage.color)}>{stage.name}</span> : <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>}
@@ -478,9 +518,162 @@ export default function LeadsListPage() {
           onChanged={() => refetch()}
         />
       ) : null}
+
+      {addOpen ? (
+        <AddOpportunityModal
+          stages={stages}
+          assignees={assignees}
+          onClose={() => setAddOpen(false)}
+          onCreated={async (leadId) => {
+            setAddOpen(false);
+            await refetch();
+            const full = await getLead(leadId);
+            if (full) setOpenLead(full);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
+
+// ── Add-opportunity modal (manual lead creation → lit_leadcrm_create_lead) ────
+
+function AddOpportunityModal({
+  stages,
+  assignees,
+  onClose,
+  onCreated,
+}: {
+  stages: LeadStage[];
+  assignees: Assignee[];
+  onClose: () => void;
+  onCreated: (leadId: string) => void;
+}) {
+  const { toast } = useToast();
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [stageId, setStageId] = useState("");
+  const [assignee, setAssignee] = useState("");
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit() {
+    const trimmed = email.trim();
+    if (!trimmed) {
+      toast({ title: "Email is required", variant: "destructive" });
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await createLead({
+        email: trimmed,
+        fullName: fullName.trim() || null,
+        companyName: companyName.trim() || null,
+        stageId: stageId || null,
+        assignee: assignee || null,
+        notes: notes.trim() || null,
+      });
+      if (!res.ok || !res.lead_id) {
+        toast({
+          title: res.reason === "invalid_email" ? "Invalid email" : "Could not create opportunity",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: res.merged ? "Merged into existing lead" : "Opportunity added" });
+      onCreated(res.lead_id);
+    } catch (e: any) {
+      toast({ title: "Could not create opportunity", description: e?.message, variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={onClose}
+    >
+      <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.45)" }} />
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ position: "relative", width: "min(460px, 100%)", background: "#FFFFFF", borderRadius: 16, boxShadow: "0 24px 48px rgba(15,23,42,0.24)", overflow: "hidden" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", borderBottom: "1px solid #E5E7EB" }}>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Add opportunity</div>
+          <button onClick={onClose} style={{ display: "inline-flex", width: 28, height: 28, alignItems: "center", justifyContent: "center", borderRadius: 8, border: "1px solid #E5E7EB", background: "#FFFFFF", color: "#64748b", cursor: "pointer" }}>
+            <X style={{ width: 15, height: 15 }} />
+          </button>
+        </div>
+        <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
+          <ModalField label="Email *">
+            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@company.com" style={modalInput} autoFocus />
+          </ModalField>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <ModalField label="Full name">
+              <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Doe" style={modalInput} />
+            </ModalField>
+            <ModalField label="Company">
+              <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Acme Corp" style={modalInput} />
+            </ModalField>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <ModalField label="Stage">
+              <select value={stageId} onChange={(e) => setStageId(e.target.value)} style={modalInput}>
+                <option value="">New (default)</option>
+                {stages.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </ModalField>
+            <ModalField label="Assignee">
+              <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={modalInput}>
+                <option value="">Unassigned</option>
+                {assignees.map((a) => (
+                  <option key={a.user_id} value={a.user_id}>{a.name}</option>
+                ))}
+              </select>
+            </ModalField>
+          </div>
+          <ModalField label="Notes">
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Optional context…" style={{ ...modalInput, resize: "vertical" }} />
+          </ModalField>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "14px 18px", borderTop: "1px solid #E5E7EB", background: "#F8FAFC" }}>
+          <button onClick={onClose} disabled={busy} style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+            Cancel
+          </button>
+          <button onClick={handleSubmit} disabled={busy || !email.trim()} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 10, border: "none", background: "#3B82F6", color: "#FFFFFF", fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: busy ? "not-allowed" : "pointer", opacity: busy || !email.trim() ? 0.6 : 1 }}>
+            {busy ? <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} /> : <Plus style={{ width: 14, height: 14 }} />}
+            Add opportunity
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b" }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const modalInput: React.CSSProperties = {
+  width: "100%",
+  padding: "8px 10px",
+  borderRadius: 8,
+  border: "1.5px solid #CBD5E1",
+  background: "#FFFFFF",
+  fontFamily: FONT_BODY,
+  fontSize: 13,
+  color: "#0F172A",
+  outline: "none",
+};
 
 function Cell({ label, value }: { label: string; value: string }) {
   return (

@@ -31,6 +31,7 @@ import {
   Building2,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { CompanyAvatar } from "@/components/CompanyAvatar";
 import {
   type Lead,
   type LeadStage,
@@ -55,6 +56,7 @@ import {
   leadDisplayName,
   sourceMeta,
 } from "./leadCrmFormat";
+import { CompanyPanel, ContactsPanel } from "./LeadCompanyPanels";
 
 type Tab = "activity" | "details";
 
@@ -242,10 +244,20 @@ export default function LeadDetailDrawer({
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
               {currentStage ? <span style={stageBadgeStyle(currentStage.color)}>{currentStage.name}</span> : null}
-              {lead.company_name ? (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: FONT_BODY, fontSize: 11.5, color: "#475569" }}>
-                  <Building2 style={{ width: 12, height: 12 }} />
-                  {lead.company_name}
+              {lead.company_name || lead.company_domain ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: FONT_BODY, fontSize: 11.5, color: "#475569" }}>
+                  {lead.company_domain || lead.company_logo_url ? (
+                    <CompanyAvatar
+                      name={lead.company_name || lead.company_domain || "Company"}
+                      domain={lead.company_domain}
+                      logoUrl={lead.company_logo_url}
+                      size="sm"
+                      className="!h-4 !w-4 !rounded"
+                    />
+                  ) : (
+                    <Building2 style={{ width: 12, height: 12 }} />
+                  )}
+                  {lead.company_name || lead.company_domain}
                 </span>
               ) : null}
             </div>
@@ -307,6 +319,12 @@ export default function LeadDetailDrawer({
 
           {tab === "details" ? (
             <>
+              {/* Company intelligence (recognition + snapshot) */}
+              <CompanyPanel lead={lead} onRecognized={refresh} />
+
+              {/* Company contacts + enrichment */}
+              <ContactsPanel lead={lead} />
+
               {/* Subscription / plan panel */}
               <Section title="Subscription">
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
