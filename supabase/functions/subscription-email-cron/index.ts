@@ -99,6 +99,7 @@ const ALLOWED_EVENTS = new Set([
   "trial_ending_soon",
   "trial_book_demo",
   "trial_check_in_inactive",
+  "day1_run_first_search",
   "paid_plan_welcome",
   "upgrade_confirmation",
   "payment_failed",
@@ -151,12 +152,23 @@ serve(async (req: Request) => {
     "id, user_id, organization_id, plan_code, started_at, trial_ends_at";
   const day12Columns =
     "id, user_id, organization_id, plan_code, trial_ends_at";
+  // Day-1 activation window: signups from 24-48h ago. Distinct from the
+  // day2 activation sweep (2-3d) — this fires ONCE, ~24-48h after signup,
+  // only for users who confirmed email but have taken ZERO action (no
+  // activity events AND no company_search / company_profile_view usage).
+  const day1 = dayWindow(2, 1);
   const day2 = dayWindow(3, 2);
   const day3 = dayWindow(4, 3);
   const day4 = dayWindow(5, 4);
   const day5 = dayWindow(6, 5);
   const day6 = dayWindow(7, 6);
 
+  const { data: day1c } = await db
+    .from("subscriptions")
+    .select(select)
+    .eq("status", "trialing")
+    .gte("started_at", day1.gte)
+    .lte("started_at", day1.lte);
   const { data: day2c } = await db
     .from("subscriptions")
     .select(select)
@@ -249,7 +261,27 @@ serve(async (req: Request) => {
     }
   }
 
+  // True when the user has ANY measurable activity: an activity event OR a
+  // company_search / company_profile_view usage-ledger row (searches are
+  // free but still instrumented into lit_usage_ledger). Used to hold the
+  // Day-1 nudge back from anyone who has already acted.
+  async function hasAnyActivity(userId: string): Promise<boolean> {
+    const { count: activityCount } = await db
+      .from("lit_activity_events")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId);
+    if ((activityCount ?? 0) > 0) return true;
+    const { count: usageCount } = await db
+      .from("lit_usage_ledger")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .in("feature_key", ["company_search", "company_profile_view"]);
+    return (usageCount ?? 0) > 0;
+  }
+
   const stats: Record<string, number> = {
+    day_1_first_search: 0,
+    skipped_day_1_active: 0,
     day_2: 0,
     day_3: 0,
     day_4: 0,
@@ -261,6 +293,33 @@ serve(async (req: Request) => {
     skipped_check_in_active: 0,
   };
   const errors: string[] = [];
+
+  // Day-1 "run your first search" nudge. Confirmed-but-inactive users
+  // 24-48h post-signup. getRecipientInfo already gates on
+  // email_confirmed_at; hasAnyActivity gates on zero activity/usage.
+  // send-subscription-email dedups on (event_type, plan_slug, user_id)
+  // so this fires at most ONCE per user even across repeated cron runs.
+  for (const sub of day1c ?? []) {
+    const { email, firstName } = await getRecipientInfo(sub.user_id);
+    if (!email) continue;
+    if (!sub.user_id) continue;
+    if (await hasAnyActivity(sub.user_id)) {
+      stats.skipped_day_1_active++;
+      continue;
+    }
+    const r = await dispatchEmail({
+      user_id: sub.user_id,
+      org_id: sub.organization_id,
+      subscription_id: sub.id,
+      recipient_email: email,
+      first_name: firstName,
+      plan_slug: normalizePlanCode(sub.plan_code),
+      event_type: "day1_run_first_search",
+    });
+    if (r.skipped) continue;
+    if (r.ok) stats.day_1_first_search++;
+    else errors.push(`day1 ${email}: ${r.error}`);
+  }
 
   for (const sub of day2c ?? []) {
     const { email, firstName } = await getRecipientInfo(sub.user_id);

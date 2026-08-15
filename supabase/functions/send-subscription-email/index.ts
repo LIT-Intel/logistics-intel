@@ -24,6 +24,7 @@ type EventType =
   | "trial_limit_reached"
   | "trial_book_demo"
   | "trial_check_in_inactive"
+  | "day1_run_first_search"
   | "paid_plan_welcome"
   | "upgrade_confirmation"
   | "payment_failed"
@@ -40,6 +41,7 @@ const VALID_EVENT_TYPES: EventType[] = [
   "trial_limit_reached",
   "trial_book_demo",
   "trial_check_in_inactive",
+  "day1_run_first_search",
   "paid_plan_welcome",
   "upgrade_confirmation",
   "payment_failed",
@@ -447,6 +449,29 @@ function buildEmail(
         fromOverride: SALES_FROM,
         replyToOverride: SALES_REPLY_TO,
       };
+    }
+    case "day1_run_first_search": {
+      // Day-1 activation nudge: fired by subscription-email-cron ~24-48h
+      // after email confirm for users with ZERO activity (no
+      // lit_activity_events, no company_search / company_profile_view
+      // usage). ONE branded email, ONE CTA → /app/search, seeded with a
+      // concrete example lane so the empty-search-box paralysis breaks.
+      // Searching is free, so this is a pure activation prompt.
+      const exampleQuery = "furniture importers";
+      const searchUrl = `${appUrl}/app/search?q=${encodeURIComponent(exampleQuery)}`;
+      const bodyHtml = `<p style="margin:0 0 18px 0;">Hi ${esc(name)},</p><p style="margin:0 0 18px 0;">You confirmed your account but haven't run a search yet — and that first search is where LIT actually clicks. It's free and it takes about ten seconds.</p><p style="margin:0 0 8px 0;font-weight:700;color:${COLOR.text};">Try a concrete one to see it in action:</p><p style="margin:0 0 18px 0;">Search <strong>&ldquo;${esc(exampleQuery)}&rdquo;</strong> — you'll get real importers with their ocean lanes, shipping cadence, and carrier mix, pulled straight from live bill-of-lading data. Swap in your own commodity or a shipper you already sell to and the results get personal fast.</p>${proTipHtml(`Search is unlimited and free on every plan. Run a few — the accounts you find are yours to keep.`)}<p style="margin:24px 0 0 0;font-style:italic;color:${COLOR.textSubtle};font-size:14px;">Stuck on what to search? Reply and tell me your lane — I'll send you three shippers to start with. — Gabriel</p>`;
+      const bodyText = `Hi ${name},\n\nYou confirmed your account but haven't run a search yet — and that first search is where LIT actually clicks. It's free and takes about ten seconds.\n\nTry a concrete one: search "${exampleQuery}" and you'll get real importers with their ocean lanes, shipping cadence, and carrier mix — from live bill-of-lading data. Swap in your own commodity or a shipper you already sell to.\n\nPRO TIP: Search is unlimited and free on every plan. The accounts you find are yours to keep.\n\nStuck on what to search? Reply with your lane and I'll send you three shippers to start with. — Gabriel`;
+      const { html, text } = buildLayout({
+        previewText: "Run your first search — it's free and takes 10 seconds.",
+        headline: "Run your first search.",
+        subtitle: "Ten seconds to see what LIT actually does.",
+        bodyHtml,
+        bodyText,
+        ctaText: "Run your first search",
+        ctaUrl: searchUrl,
+        unsubscribeUrl,
+      });
+      return { subject: "Run your first LIT search (it's free)", html, text };
     }
     case "paid_plan_welcome": {
       const tip =
