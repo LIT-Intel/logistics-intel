@@ -176,6 +176,21 @@ export default function ModernSignupPage() {
     ? `/app/companies/${encodeURIComponent(companyParam.replace(/^company\//i, ""))}`
     : "";
 
+  // Saved-search handoff (§15): the LIST lead magnets (/top-shippers,
+  // /free-freight-prospects) send the visitor here with ?saved_search=1 and a
+  // compact ?explore=<url-encoded JSON {filters}>. Instead of the generic
+  // dashboard, reopen the EXACT generated search in the Pulse Explorer so the
+  // user never rebuilds it (§15 "Do not make the user rebuild the exact
+  // search"). useExploreState reads the `explore` param, and the app route
+  // /app/search?tab=pulse mounts the Pulse Explorer. The anon→user session
+  // stitch already runs in AuthProvider; we only wire routing here. If the
+  // explore blob is missing we still land them on the Explorer (not dashboard).
+  const savedSearch = (searchParams.get("saved_search") || "").trim() === "1";
+  const exploreParam = (searchParams.get("explore") || "").trim();
+  const savedSearchDeepLink = savedSearch
+    ? `/app/search?tab=pulse${exploreParam ? `&explore=${encodeURIComponent(exploreParam)}` : ""}`
+    : "";
+
   const [fullName, setFullName]       = useState("");
   const [company, setCompany]         = useState("");
   const [email, setEmail]             = useState(inviteEmail);
@@ -189,7 +204,7 @@ export default function ModernSignupPage() {
     ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
         inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
       }`
-    : nextParam || companyDeepLink || "/app/search";
+    : nextParam || companyDeepLink || savedSearchDeepLink || "/app/search";
 
   useEffect(() => {
     if (inviteEmail) setEmail(inviteEmail);
@@ -224,7 +239,7 @@ export default function ModernSignupPage() {
       // link. Covers the invite flow AND the lead-magnet company deep-link
       // (§12) — without this, ?company= is lost across email confirmation.
       const emailRedirectTo =
-        isInviteFlow || companyDeepLink
+        isInviteFlow || companyDeepLink || savedSearchDeepLink
           ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(postInvitePath)}`
           : `${window.location.origin}/auth/callback`;
 
