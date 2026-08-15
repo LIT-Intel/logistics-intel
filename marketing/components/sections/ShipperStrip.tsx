@@ -1,6 +1,7 @@
 import Link from "next/link";
-import Image from "next/image";
 import { formatNumber, type PublicCompany } from "@/lib/companies";
+import { logoDevUrl } from "@/lib/sanityImage";
+import { LogoImage } from "./LogoImage";
 import { OverlinePill } from "./OverlinePill";
 
 type FeaturedRow = PublicCompany & { _featured_domain: string };
@@ -43,7 +44,7 @@ export function ShipperStrip({
         <div className="shipper-strip">
           {companies.slice(0, 6).map((c) => {
             const teu = Number(c.teu) || 0;
-            const logoSrc = `https://img.logo.dev/${c._featured_domain}?token=pk_X-1ZO13GSgeOoUrIuJ6GMQ&size=96&format=png&retina=true`;
+            const logoSrc = logoDevUrl(c._featured_domain, { size: 96, format: "png" });
             return (
               <Link
                 key={c.seo_slug}
@@ -51,12 +52,11 @@ export function ShipperStrip({
                 className="shipper-tile"
               >
                 <div className="st-logo">
-                  <Image
+                  <LogoImage
                     src={logoSrc}
-                    alt={`${c.company_name} logo`}
-                    width={48}
-                    height={48}
-                    loading="lazy"
+                    domain={c._featured_domain}
+                    name={c.company_name}
+                    className="[&>span:last-child]:sr-only"
                   />
                 </div>
                 <span className="st-name">{c.company_name}</span>
