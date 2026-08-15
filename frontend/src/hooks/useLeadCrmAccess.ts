@@ -16,8 +16,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/auth/AuthProvider";
 import { myLeadCrmAccess, type LeadCrmAccess } from "@/api/leadCrm";
 
-const LEAD_CRM_ACCESS_KEY = ["lead-crm", "access"] as const;
-
 const NO_ACCESS: LeadCrmAccess = {
   is_member: false,
   role: null,
@@ -28,7 +26,11 @@ export function useLeadCrmAccess() {
   const { user } = useAuth();
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: LEAD_CRM_ACCESS_KEY,
+    // SECURITY: scope the cache key by the current user id so a cached "member"
+    // answer can never leak across a logout → different-user login within the
+    // same tab session. Without the id, user B could momentarily inherit user
+    // A's access answer from the query cache before the refetch resolves.
+    queryKey: ["lead-crm", "access", user?.id ?? null],
     queryFn: myLeadCrmAccess,
     enabled: Boolean(user),
     staleTime: 5 * 60_000,

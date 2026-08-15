@@ -108,6 +108,7 @@ export function RequireLeadCrm({ children }: { children: React.ReactNode }) {
 export default function LeadCrmLayout() {
   const { user, fullName } = useAuth();
   const { isPlatformAdmin, role } = useLeadCrmAccess();
+  const navigate = useNavigate();
 
   const displayName =
     fullName ||
@@ -131,6 +132,33 @@ export default function LeadCrmLayout() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          {/* Back to the main app — platform admins especially need to return
+              to the admin deck; every member returns to /app. */}
+          <button
+            type="button"
+            onClick={() => navigate("/app")}
+            title="Back to Logistics Intel"
+            aria-label="Back to Logistics Intel"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 11px",
+              borderRadius: 9,
+              border: "1px solid rgba(255,255,255,0.14)",
+              background: "rgba(255,255,255,0.04)",
+              color: "#CBD5E1",
+              fontFamily: FONT_HEAD,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
+            <ArrowLeft style={{ width: 14, height: 14 }} />
+            <span className="hidden sm:inline">Back to Logistics Intel</span>
+          </button>
           <span
             style={{
               fontFamily: FONT_HEAD,

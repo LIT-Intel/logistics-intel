@@ -167,6 +167,23 @@ export type ListLeadsParams = {
   offset?: number;
 };
 
+/** Paginated result of `lit_leadcrm_list_leads()` — `{ ok, total, leads }`. */
+export type ListLeadsResult = { leads: Lead[]; total: number };
+
+/** A company row from `lit_leadcrm_search_companies()` (the "Add from LIT" picker). */
+export type CompanySearchResult = {
+  id: string | null;
+  source_company_key: string | null;
+  name: string;
+  domain: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  industry: string | null;
+  origin: "companies" | "directory" | string;
+  has_snapshot: boolean;
+};
+
 // ── Route gate ──────────────────────────────────────────────────────────
 
 /**
@@ -194,7 +211,11 @@ export async function myLeadCrmAccess(): Promise<LeadCrmAccess> {
 
 // ── Stages ──────────────────────────────────────────────────────────────
 
-/** Pipeline stages ordered by position (New → … → Subscriber → Lost). */
+/**
+ * Pipeline stages ordered by position (New → … → Subscriber → Lost).
+ * Shape (verified vs pg_get_functiondef): `lit_leadcrm_stages()` returns a
+ * jsonb ARRAY directly (jsonb_agg over the stages) — read `data` as the array.
+ */
 export async function listStages(): Promise<LeadStage[]> {
   try {
     const { data, error } = await supabase.rpc("lit_leadcrm_stages");
@@ -217,8 +238,21 @@ export async function listStages(): Promise<LeadStage[]> {
 
 // ── Leads ───────────────────────────────────────────────────────────────
 
-/** Paginated, filtered lead list. Silent-fail → empty array. */
+/**
+ * Paginated, filtered lead list. Silent-fail → empty array.
+ *
+ * SHAPE (verified vs pg_get_functiondef): `lit_leadcrm_list_leads()` returns a
+ * jsonb OBJECT `{ ok, total, leads: [...] }` — NOT a bare array. Reading `data`
+ * as an array (the previous bug) always yielded `[]`, so the list rendered
+ * "No leads yet" even with 69 rows. Read `data.leads`.
+ */
 export async function listLeads(params: ListLeadsParams = {}): Promise<Lead[]> {
+  return (await listLeadsPage(params)).leads;
+}
+
+/** Same as `listLeads` but also returns the server `total` for pagination. */
+export async function listLeadsPage(params: ListLeadsParams = {}): Promise<ListLeadsResult> {
+  const empty: ListLeadsResult = { leads: [], total: 0 };
   try {
     const { data, error } = await supabase.rpc("lit_leadcrm_list_leads", {
       p_stage_id: params.stageId ?? null,
@@ -228,14 +262,26 @@ export async function listLeads(params: ListLeadsParams = {}): Promise<Lead[]> {
       p_limit: params.limit ?? 100,
       p_offset: params.offset ?? 0,
     });
-    if (error || !Array.isArray(data)) return [];
-    return (data as any[]).map(normalizeLead);
+    if (error || !data || typeof data !== "object") return empty;
+    const obj = data as any;
+    const rows = Array.isArray(obj.leads) ? obj.leads : [];
+    return { leads: rows.map(normalizeLead), total: Number(obj.total ?? rows.length) };
   } catch {
-    return [];
+    return empty;
   }
 }
 
-/** Resolve one lead + its subscription/plan/activation summary. */
+/**
+ * Resolve one lead + its subscription/plan/activation summary.
+ *
+ * SHAPE (verified vs pg_get_functiondef): `lit_leadcrm_get_lead()` returns
+ * `{ ok, lead, user, subscription, activation }` (or `{ ok:false, reason }`).
+ * The previous code passed the WHOLE envelope to `normalizeLead`, so `id` etc.
+ * were undefined. Read `data.lead`, and fold `activation.current_plan` /
+ * `current_status` (which live on the `activation` sub-object here, unlike the
+ * flat list rows) onto the returned Lead so the drawer's Subscription panel and
+ * list filters keep working from one shape.
+ */
 export async function getLead(leadId: string): Promise<Lead | null> {
   if (!leadId) return null;
   try {
@@ -243,9 +289,18 @@ export async function getLead(leadId: string): Promise<Lead | null> {
       p_lead_id: leadId,
     });
     if (error || !data) return null;
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row) return null;
-    return normalizeLead(row);
+    const obj = data as any;
+    if (obj.ok === false || !obj.lead) return null;
+    return normalizeLead({
+      ...obj.lead,
+      // Flatten activation-derived plan/status so Lead shape stays uniform.
+      current_plan: obj.activation?.current_plan ?? obj.lead.current_plan ?? null,
+      current_status: obj.activation?.current_status ?? obj.lead.current_status ?? null,
+      // Prefer the lead's own signup/trial timestamps; fall back to activation.
+      signup_at: obj.lead.signup_at ?? obj.activation?.signup_at ?? null,
+      trial_started_at: obj.lead.trial_started_at ?? obj.activation?.trial_started_at ?? null,
+      converted_at: obj.lead.converted_at ?? obj.activation?.converted_paid_at ?? null,
+    });
   } catch {
     return null;
   }
@@ -286,15 +341,21 @@ function normalizeLead(row: any): Lead {
 
 // ── Timeline ────────────────────────────────────────────────────────────
 
-/** Lead activity timeline, newest first. Silent-fail → empty. */
+/**
+ * Lead activity timeline, newest first. Silent-fail → empty.
+ *
+ * SHAPE (verified vs pg_get_functiondef): `lit_leadcrm_lead_timeline()` returns
+ * `{ ok, timeline: [...] }` — read `data.timeline`, not `data` as an array.
+ */
 export async function getLeadTimeline(leadId: string): Promise<LeadTimelineEntry[]> {
   if (!leadId) return [];
   try {
     const { data, error } = await supabase.rpc("lit_leadcrm_lead_timeline", {
       p_lead_id: leadId,
     });
-    if (error || !Array.isArray(data)) return [];
-    return (data as any[]).map((e) => ({
+    const rows = (data as any)?.timeline;
+    if (error || !Array.isArray(rows)) return [];
+    return (rows as any[]).map((e) => ({
       occurred_at: e.occurred_at ?? null,
       kind: e.kind ?? null,
       source: e.source ?? null,
@@ -356,17 +417,27 @@ export async function logTouch(
 
 // ── Pipeline summary ────────────────────────────────────────────────────
 
-/** Per-stage counts + conversion rates. Silent-fail → empty. */
+/**
+ * Per-stage counts + conversion rates. Silent-fail → empty.
+ *
+ * SHAPE (verified vs pg_get_functiondef): `lit_leadcrm_pipeline_summary()`
+ * returns an OBJECT `{ ok, generated_at, stages:[{stage_id, stage, position,
+ * count}], totals, conversion_rates }`. Per-stage rows key the name as `stage`
+ * and the count as `count` (NOT `stage_name`/`lead_count`), and carry no
+ * per-stage `color`/`conversion_rate`. Map to the UI's PipelineStageSummary.
+ * The previous code read `data` as an array → always empty.
+ */
 export async function pipelineSummary(): Promise<PipelineStageSummary[]> {
   try {
     const { data, error } = await supabase.rpc("lit_leadcrm_pipeline_summary");
-    if (error || !Array.isArray(data)) return [];
-    return (data as any[]).map((r) => ({
+    const stages = (data as any)?.stages;
+    if (error || !Array.isArray(stages)) return [];
+    return (stages as any[]).map((r) => ({
       stage_id: r.stage_id != null ? String(r.stage_id) : null,
-      stage_name: r.stage_name ?? null,
+      stage_name: r.stage ?? r.stage_name ?? null,
       color: r.color ?? null,
       position: r.position != null ? Number(r.position) : null,
-      lead_count: Number(r.lead_count ?? 0),
+      lead_count: Number(r.count ?? r.lead_count ?? 0),
       conversion_rate: r.conversion_rate != null ? Number(r.conversion_rate) : null,
     }));
   } catch {
@@ -376,18 +447,29 @@ export async function pipelineSummary(): Promise<PipelineStageSummary[]> {
 
 // ── Member management (platform-admin only) ─────────────────────────────
 
-/** List lead-CRM members. Platform-admin only (RLS enforces). */
+/**
+ * List lead-CRM members. Platform-admin only (RPC re-checks server-side).
+ *
+ * SHAPE (verified vs pg_get_functiondef): `lit_admin_list_lead_crm_members()`
+ * returns `{ ok, members:[{user_id, role, email, full_name, added_by,
+ * created_at}] }` — read `data.members`, not `data` as an array. The row keys
+ * `created_at` (mapped → `added_at`) and has NO `enabled` column: a revoked
+ * member has its row DELETED (see `setMember(..., false)`), so every row
+ * present is an enabled member (`enabled: true`).
+ */
 export async function listMembers(): Promise<LeadCrmMember[]> {
   try {
     const { data, error } = await supabase.rpc("lit_admin_list_lead_crm_members");
-    if (error || !Array.isArray(data)) return [];
-    return (data as any[]).map((m) => ({
+    const rows = (data as any)?.members;
+    if (error || !Array.isArray(rows)) return [];
+    return (rows as any[]).map((m) => ({
       user_id: String(m.user_id),
       email: m.email ?? null,
       full_name: m.full_name ?? null,
       role: m.role ?? null,
-      enabled: m.enabled != null ? Boolean(m.enabled) : null,
-      added_at: m.added_at ?? null,
+      // Membership is presence-based: listed ⇒ enabled.
+      enabled: true,
+      added_at: m.added_at ?? m.created_at ?? null,
     }));
   } catch {
     return [];
@@ -537,11 +619,14 @@ export async function enrichLeadContacts(
 }
 
 /**
- * Manually add an opportunity (or merge into an existing lead by email).
- * Auto-runs company recognition server-side. Throws on transport error.
+ * Manually add an opportunity (or merge into an existing lead).
+ *
+ * Email is now OPTIONAL (server requires email OR company_name). When email is
+ * omitted, the lead is created company-first and deduped on normalized company
+ * name. Auto-runs company recognition server-side. Throws on transport error.
  */
 export async function createLead(params: {
-  email: string;
+  email?: string | null;
   fullName?: string | null;
   companyName?: string | null;
   stageId?: string | null;
@@ -549,12 +634,79 @@ export async function createLead(params: {
   notes?: string | null;
 }): Promise<CreateLeadResult> {
   const { data, error } = await supabase.rpc("lit_leadcrm_create_lead", {
-    p_email: params.email,
+    p_email: params.email?.trim() || null,
     p_full_name: params.fullName ?? null,
     p_company_name: params.companyName ?? null,
     p_stage_id: params.stageId ?? null,
     p_assignee: params.assignee ?? null,
     p_notes: params.notes ?? null,
+  });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as any;
+  return {
+    ok: Boolean(row?.ok),
+    lead_id: row?.lead_id != null ? String(row.lead_id) : undefined,
+    created: Boolean(row?.created),
+    merged: Boolean(row?.merged),
+    reason: row?.reason,
+  };
+}
+
+// ── "Add from LIT" company picker (structural: pull from existing LIT data) ──
+
+/**
+ * Membership-gated typeahead over LIT's existing company data
+ * (`lit_leadcrm_search_companies`): lit_companies + the 78k-row
+ * lit_company_directory (brokers / forwarders / importers). Cached reads only —
+ * 0 provider credits. Returns `data.companies`. Silent-fail → empty.
+ */
+export async function searchCompanies(q: string, limit = 20): Promise<CompanySearchResult[]> {
+  const term = (q ?? "").trim();
+  if (term.length < 2) return [];
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_search_companies", {
+      p_q: term,
+      p_limit: limit,
+    });
+    const rows = (data as any)?.companies;
+    if (error || !Array.isArray(rows)) return [];
+    return (rows as any[]).map((c) => ({
+      id: c.id != null ? String(c.id) : null,
+      source_company_key: c.source_company_key ?? null,
+      name: c.name ?? "Company",
+      domain: c.domain ?? null,
+      city: c.city ?? null,
+      state: c.state ?? null,
+      country: c.country ?? null,
+      industry: c.industry ?? null,
+      origin: c.origin ?? "directory",
+      has_snapshot: Boolean(c.has_snapshot),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Create a lead from an existing LIT company (broker/forwarder/directory row) —
+ * NO email required (`lit_leadcrm_create_lead_from_company`). Auto-populates
+ * company_* columns via the recognizer (cached reads, 0 credits) and dedupes on
+ * company. Enrich contacts afterward to get people + emails. Throws on transport
+ * error.
+ */
+export async function createLeadFromCompany(params: {
+  companyId?: string | null;
+  sourceCompanyKey?: string | null;
+  companyName?: string | null;
+  stageId?: string | null;
+  assignee?: string | null;
+}): Promise<CreateLeadResult> {
+  const { data, error } = await supabase.rpc("lit_leadcrm_create_lead_from_company", {
+    p_company_id: params.companyId ?? null,
+    p_source_company_key: params.sourceCompanyKey ?? null,
+    p_company_name: params.companyName ?? null,
+    p_stage_id: params.stageId ?? null,
+    p_assignee: params.assignee ?? null,
   });
   if (error) throw new Error(error.message);
   const row = (Array.isArray(data) ? data[0] : data) as any;

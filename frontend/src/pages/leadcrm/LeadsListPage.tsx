@@ -12,7 +12,7 @@
  * near-empty until backfill, so an empty result renders an honest "No leads
  * yet" state rather than blanks or NaN.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   Loader2,
@@ -22,6 +22,9 @@ import {
   Filter,
   Plus,
   X,
+  Building2,
+  Mail,
+  MapPin,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -30,11 +33,15 @@ import {
   type Lead,
   type LeadStage,
   type Assignee,
-  listLeads,
+  type CompanySearchResult,
+  type ListLeadsResult,
+  listLeadsPage,
   listStages,
   listAssignees,
   getLead,
   createLead,
+  createLeadFromCompany,
+  searchCompanies,
 } from "@/api/leadCrm";
 import LeadDetailDrawer from "./LeadDetailDrawer";
 import {
@@ -85,14 +92,14 @@ export default function LeadsListPage() {
   });
 
   const {
-    data: leads = [],
+    data: page_result = { leads: [], total: 0 },
     isLoading,
     isFetching,
     refetch,
-  } = useQuery<Lead[]>({
+  } = useQuery<ListLeadsResult>({
     queryKey: ["lead-crm", "leads", { stageId, source, assignee, q: debouncedSearch, page }],
     queryFn: () =>
-      listLeads({
+      listLeadsPage({
         stageId: stageId || null,
         source: source || null,
         assignee: assignee || null,
@@ -103,6 +110,8 @@ export default function LeadsListPage() {
     staleTime: 15_000,
     placeholderData: (prev) => prev,
   });
+  const leads = page_result.leads;
+  const totalLeads = page_result.total;
 
   const stageById = useMemo(() => {
     const m: Record<string, LeadStage> = {};
@@ -120,7 +129,7 @@ export default function LeadsListPage() {
   const activeFilterCount =
     (stageId ? 1 : 0) + (source ? 1 : 0) + (assignee ? 1 : 0);
 
-  const hasNextPage = leads.length === PAGE_SIZE;
+  const hasNextPage = (page + 1) * PAGE_SIZE < totalLeads;
   const pageStart = leads.length ? page * PAGE_SIZE + 1 : 0;
   const pageEnd = page * PAGE_SIZE + leads.length;
 
@@ -224,7 +233,7 @@ export default function LeadsListPage() {
 
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto", fontSize: 12, color: "#94a3b8", fontFamily: FONT_BODY }}>
             {isFetching ? <Loader2 style={{ width: 12, height: 12, animation: "spin 1s linear infinite" }} /> : null}
-            {leads.length} shown
+            {totalLeads} total · {leads.length} shown
           </div>
         </div>
 
@@ -481,7 +490,7 @@ export default function LeadsListPage() {
       {!isLoading && leads.length > 0 ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 20px", borderTop: "1px solid #E5E7EB", background: "#FAFAFA", flexShrink: 0 }}>
           <span style={{ fontSize: 12, color: "#64748b", fontFamily: FONT_BODY }}>
-            Showing {pageStart}–{pageEnd}
+            Showing {pageStart}–{pageEnd} of {totalLeads}
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <button
@@ -538,6 +547,8 @@ export default function LeadsListPage() {
 
 // ── Add-opportunity modal (manual lead creation → lit_leadcrm_create_lead) ────
 
+type AddMode = "company" | "manual";
+
 function AddOpportunityModal({
   stages,
   assignees,
@@ -550,35 +561,76 @@ function AddOpportunityModal({
   onCreated: (leadId: string) => void;
 }) {
   const { toast } = useToast();
+  const [mode, setMode] = useState<AddMode>("company");
+
+  // Shared placement fields.
+  const [stageId, setStageId] = useState("");
+  const [assignee, setAssignee] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // "Add by email / manual" fields.
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [companyName, setCompanyName] = useState("");
-  const [stageId, setStageId] = useState("");
-  const [assignee, setAssignee] = useState("");
   const [notes, setNotes] = useState("");
-  const [busy, setBusy] = useState(false);
+
+  // "Add by company" (typeahead over existing LIT companies) state.
+  const [companyQuery, setCompanyQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [picked, setPicked] = useState<CompanySearchResult | null>(null);
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(companyQuery.trim()), 250);
+    return () => clearTimeout(t);
+  }, [companyQuery]);
+
+  const { data: results = [], isFetching: searching } = useQuery<CompanySearchResult[]>({
+    queryKey: ["lead-crm", "company-search", debouncedQuery],
+    queryFn: () => searchCompanies(debouncedQuery, 20),
+    enabled: mode === "company" && debouncedQuery.length >= 2 && !picked,
+    staleTime: 60_000,
+  });
+
+  const canSubmit =
+    mode === "manual"
+      ? Boolean(email.trim() || companyName.trim())
+      : Boolean(picked);
 
   async function handleSubmit() {
-    const trimmed = email.trim();
-    if (!trimmed) {
-      toast({ title: "Email is required", variant: "destructive" });
-      return;
-    }
+    if (busy || !canSubmit) return;
     setBusy(true);
     try {
-      const res = await createLead({
-        email: trimmed,
-        fullName: fullName.trim() || null,
-        companyName: companyName.trim() || null,
-        stageId: stageId || null,
-        assignee: assignee || null,
-        notes: notes.trim() || null,
-      });
-      if (!res.ok || !res.lead_id) {
-        toast({
-          title: res.reason === "invalid_email" ? "Invalid email" : "Could not create opportunity",
-          variant: "destructive",
+      let res;
+      if (mode === "company" && picked) {
+        res = await createLeadFromCompany({
+          companyId: picked.id,
+          sourceCompanyKey: picked.source_company_key,
+          companyName: picked.name,
+          stageId: stageId || null,
+          assignee: assignee || null,
         });
+      } else {
+        res = await createLead({
+          email: email.trim() || null,
+          fullName: fullName.trim() || null,
+          companyName: companyName.trim() || null,
+          stageId: stageId || null,
+          assignee: assignee || null,
+          notes: notes.trim() || null,
+        });
+      }
+      if (!res.ok || !res.lead_id) {
+        const title =
+          res.reason === "invalid_email"
+            ? "Invalid email"
+            : res.reason === "email_or_company_required"
+            ? "Add an email or a company"
+            : res.reason === "company_required"
+            ? "Pick a company first"
+            : "Could not create opportunity";
+        toast({ title, variant: "destructive" });
         return;
       }
       toast({ title: res.merged ? "Merged into existing lead" : "Opportunity added" });
@@ -598,7 +650,7 @@ function AddOpportunityModal({
       <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.45)" }} />
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ position: "relative", width: "min(460px, 100%)", background: "#FFFFFF", borderRadius: 16, boxShadow: "0 24px 48px rgba(15,23,42,0.24)", overflow: "hidden" }}
+        style={{ position: "relative", width: "min(480px, 100%)", background: "#FFFFFF", borderRadius: 16, boxShadow: "0 24px 48px rgba(15,23,42,0.24)", overflow: "hidden" }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", borderBottom: "1px solid #E5E7EB" }}>
           <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Add opportunity</div>
@@ -606,18 +658,109 @@ function AddOpportunityModal({
             <X style={{ width: 15, height: 15 }} />
           </button>
         </div>
+
+        {/* Mode toggle: pull an existing LIT company (brokers/forwarders/etc.)
+            or add manually by email. */}
+        <div style={{ display: "flex", gap: 6, padding: "12px 18px 0" }}>
+          <ModeTab active={mode === "company"} onClick={() => setMode("company")} icon={<Building2 style={{ width: 13, height: 13 }} />} label="Add from LIT" />
+          <ModeTab active={mode === "manual"} onClick={() => setMode("manual")} icon={<Mail style={{ width: 13, height: 13 }} />} label="Add by email / manual" />
+        </div>
+
         <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
-          <ModalField label="Email *">
-            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@company.com" style={modalInput} autoFocus />
-          </ModalField>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <ModalField label="Full name">
-              <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Doe" style={modalInput} />
-            </ModalField>
-            <ModalField label="Company">
-              <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Acme Corp" style={modalInput} />
-            </ModalField>
-          </div>
+          {mode === "company" ? (
+            <>
+              {picked ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "1.5px solid #BFDBFE", borderRadius: 12, background: "#EFF6FF" }}>
+                  <CompanyAvatar name={picked.name} domain={picked.domain} size="sm" className="!h-8 !w-8 !rounded-lg shrink-0" />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{picked.name}</div>
+                    <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: "#64748b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {[picked.city, picked.state, picked.country].filter(Boolean).join(", ") || picked.domain || (picked.origin === "directory" ? "Directory" : "Company")}
+                      {picked.has_snapshot ? " · shipment data" : ""}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setPicked(null); setCompanyQuery(""); }}
+                    style={{ display: "inline-flex", width: 26, height: 26, alignItems: "center", justifyContent: "center", borderRadius: 8, border: "1px solid #BFDBFE", background: "#FFFFFF", color: "#2563EB", cursor: "pointer", flexShrink: 0 }}
+                    title="Change company"
+                  >
+                    <X style={{ width: 13, height: 13 }} />
+                  </button>
+                </div>
+              ) : (
+                <ModalField label="Company">
+                  <div style={{ position: "relative" }}>
+                    <input
+                      value={companyQuery}
+                      onChange={(e) => setCompanyQuery(e.target.value)}
+                      onFocus={() => { if (blurTimer.current) clearTimeout(blurTimer.current); setFocused(true); }}
+                      onBlur={() => { blurTimer.current = setTimeout(() => setFocused(false), 150); }}
+                      placeholder="Search LIT companies, brokers, forwarders…"
+                      style={modalInput}
+                      autoFocus
+                    />
+                    {searching ? (
+                      <Loader2 style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, color: "#94a3b8", animation: "spin 1s linear infinite" }} />
+                    ) : null}
+                    {focused && debouncedQuery.length >= 2 ? (
+                      <div style={{ position: "absolute", zIndex: 5, top: "calc(100% + 4px)", left: 0, right: 0, maxHeight: 260, overflowY: "auto", background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, boxShadow: "0 12px 28px rgba(15,23,42,0.14)" }}>
+                        {results.length === 0 && !searching ? (
+                          <div style={{ padding: "12px 14px", fontFamily: FONT_BODY, fontSize: 12.5, color: "#94a3b8" }}>
+                            No LIT companies match. Switch to "Add by email / manual" to create a new one.
+                          </div>
+                        ) : (
+                          results.map((c, i) => (
+                            <button
+                              key={`${c.origin}-${c.id ?? c.source_company_key ?? i}`}
+                              type="button"
+                              onMouseDown={(e) => { e.preventDefault(); setPicked(c); setFocused(false); }}
+                              style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "8px 12px", border: "none", borderTop: i === 0 ? "none" : "1px solid #F1F5F9", background: "#FFFFFF", cursor: "pointer", textAlign: "left" }}
+                            >
+                              <CompanyAvatar name={c.name} domain={c.domain} size="sm" className="!h-7 !w-7 !rounded-md shrink-0" />
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: FONT_BODY, fontSize: 10.5, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                  {(c.city || c.state || c.country) ? <MapPin style={{ width: 10, height: 10, flexShrink: 0 }} /> : null}
+                                  {[c.city, c.state, c.country].filter(Boolean).join(", ") || c.domain || (c.origin === "directory" ? "Directory" : "Company")}
+                                  {c.has_snapshot ? " · shipments" : ""}
+                                </div>
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                </ModalField>
+              )}
+              <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: "#94a3b8", marginTop: -4 }}>
+                No email? Add the company and use Enrich to find contacts.
+              </div>
+            </>
+          ) : (
+            <>
+              <ModalField label="Email (optional)">
+                <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@company.com" style={modalInput} autoFocus />
+              </ModalField>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <ModalField label="Full name">
+                  <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Doe" style={modalInput} />
+                </ModalField>
+                <ModalField label="Company">
+                  <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Acme Corp" style={modalInput} />
+                </ModalField>
+              </div>
+              <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: "#94a3b8", marginTop: -4 }}>
+                Add at least an email or a company. No email? Add the company and use Enrich to find contacts.
+              </div>
+              <ModalField label="Notes">
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Optional context…" style={{ ...modalInput, resize: "vertical" }} />
+              </ModalField>
+            </>
+          )}
+
+          {/* Shared placement (both modes) */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <ModalField label="Stage">
               <select value={stageId} onChange={(e) => setStageId(e.target.value)} style={modalInput}>
@@ -636,21 +779,45 @@ function AddOpportunityModal({
               </select>
             </ModalField>
           </div>
-          <ModalField label="Notes">
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Optional context…" style={{ ...modalInput, resize: "vertical" }} />
-          </ModalField>
         </div>
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "14px 18px", borderTop: "1px solid #E5E7EB", background: "#F8FAFC" }}>
           <button onClick={onClose} disabled={busy} style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
             Cancel
           </button>
-          <button onClick={handleSubmit} disabled={busy || !email.trim()} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 10, border: "none", background: "#3B82F6", color: "#FFFFFF", fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: busy ? "not-allowed" : "pointer", opacity: busy || !email.trim() ? 0.6 : 1 }}>
+          <button onClick={handleSubmit} disabled={busy || !canSubmit} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 10, border: "none", background: "#3B82F6", color: "#FFFFFF", fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: busy || !canSubmit ? "not-allowed" : "pointer", opacity: busy || !canSubmit ? 0.6 : 1 }}>
             {busy ? <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} /> : <Plus style={{ width: 14, height: 14 }} />}
             Add opportunity
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+function ModeTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "7px 12px",
+        borderRadius: 9,
+        border: "1.5px solid " + (active ? "#3B82F6" : "#E5E7EB"),
+        background: active ? "rgba(59,130,246,0.08)" : "#FFFFFF",
+        color: active ? "#1D4ED8" : "#64748b",
+        fontFamily: FONT_HEAD,
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: "pointer",
+      }}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 
