@@ -11,6 +11,7 @@ import { PulseExplorerMock } from "@/components/sections/pulse-explorer/PulseExp
 import { SignalJourney } from "@/components/sections/SignalJourney";
 import { APP_SIGNUP_URL } from "@/lib/app-urls";
 import { buildMetadata } from "@/lib/seo";
+import { FEATURED_LEAD_MAGNETS } from "@/lib/leadMagnets";
 
 export const revalidate = 600;
 
@@ -56,6 +57,7 @@ export default function HomePage() {
         <SignalJourney />
         <ProductTour />
         <CapabilityBand />
+        <FreeToolsBand />
         <AudienceSection />
         <FinalCta />
       </main>
@@ -126,6 +128,42 @@ function CapabilityBand() {
             <div><h2 className="font-display text-[16px] font-semibold text-ink-900">{title}</h2><p className="font-body mt-1.5 text-[13px] leading-relaxed text-ink-500">{body}</p></div>
           </article>
         ))}
+      </div>
+    </section>
+  );
+}
+
+// Compact free-tools strip (§26). A low-friction entry point that funnels
+// visitors into the interactive lead magnets without pulling focus from the
+// core LIT pitch above/below it. Config-driven via FEATURED_LEAD_MAGNETS.
+function FreeToolsBand() {
+  return (
+    <section className="px-5 pb-4 pt-4 sm:px-8">
+      <div className="mx-auto flex max-w-container flex-col gap-5 rounded-2xl border border-ink-100 bg-white/70 px-6 py-6 shadow-sm backdrop-blur sm:px-8 lg:flex-row lg:items-center lg:justify-between">
+        <div className="max-w-[420px]">
+          <div className="font-display text-[12px] font-semibold uppercase tracking-[0.12em] text-blue-600">
+            Free tools · no signup
+          </div>
+          <p className="font-body mt-1.5 text-[14px] leading-relaxed text-ink-500">
+            Try LIT's data on any importer in your browser, then{" "}
+            <Link href="/tools" className="font-semibold text-blue-700 hover:text-blue-800">
+              see all free tools
+            </Link>
+            .
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2.5">
+          {FEATURED_LEAD_MAGNETS.map((t) => (
+            <Link
+              key={t.href}
+              href={t.href}
+              className="font-display inline-flex items-center gap-1.5 rounded-xl border border-ink-100 bg-white px-4 py-2.5 text-[13px] font-semibold text-ink-900 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:text-blue-700"
+            >
+              {t.ctaLabel}
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+            </Link>
+          ))}
+        </div>
       </div>
     </section>
   );

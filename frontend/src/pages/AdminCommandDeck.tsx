@@ -358,9 +358,12 @@ export default function AdminCommandDeck() {
       const raw = ss.data;
       const obj = Array.isArray(raw) ? (raw[0] ?? null) : raw;
       setSprint((obj as SprintStatus) || null);
-      setMagnets(((lm.data as LeadMagnetRow[]) || []).map((r) => ({
-        slug: r.slug,
-        visitors: r.visitors === null || r.visitors === undefined ? null : num(r.visitors),
+      // RPC lit_admin_lead_magnet_performance returns columns
+      // (magnet_slug, sessions, leads, trials, activated, paid, revenue);
+      // normalize to the local {slug, visitors, ...} render shape.
+      setMagnets(((lm.data as any[]) || []).map((r) => ({
+        slug: r.magnet_slug ?? r.slug,
+        visitors: r.sessions === null || r.sessions === undefined ? null : num(r.sessions),
         leads: r.leads === null || r.leads === undefined ? null : num(r.leads),
         trials: r.trials === null || r.trials === undefined ? null : num(r.trials),
         activated: r.activated === null || r.activated === undefined ? null : num(r.activated),
