@@ -39,7 +39,7 @@ import {
   enrichLeadContacts,
   recognizeCompany,
 } from "@/api/leadCrm";
-import { FONT_HEAD, FONT_BODY, FONT_MONO } from "./leadCrmFormat";
+import { FONT_HEAD, FONT_BODY, FONT_MONO, asText } from "./leadCrmFormat";
 
 function fmtNum(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return "—";
@@ -131,17 +131,17 @@ export function CompanyPanel({ lead, onRecognized }: { lead: Lead; onRecognized:
             />
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {displayName}
+                {asText(displayName)}
               </div>
               {locationBits.length > 0 ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: FONT_BODY, fontSize: 12, color: "#64748b", marginTop: 2 }}>
                   <MapPin style={{ width: 12, height: 12 }} />
-                  {locationBits.join(", ")}
+                  {asText(locationBits.join(", "))}
                 </div>
               ) : null}
               {lead.company_domain ? (
                 <a href={`https://${lead.company_domain}`} target="_blank" rel="noreferrer" style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: "#2563eb", textDecoration: "none" }}>
-                  {lead.company_domain}
+                  {asText(lead.company_domain)}
                 </a>
               ) : null}
             </div>
@@ -158,12 +158,12 @@ export function CompanyPanel({ lead, onRecognized }: { lead: Lead; onRecognized:
                 <Metric icon={<Ship style={m14} />} label="Est. 12m shipments" value={fmtNum(snap.shipments_12m)} />
                 <Metric icon={<Container style={m14} />} label="Total TEU" value={fmtNum(snap.total_teu)} />
               </div>
-              {snap.top_lane ? <KeyVal label="Lead lane" value={snap.top_lane} /> : null}
+              {snap.top_lane ? <KeyVal label="Lead lane" value={asText(snap.top_lane)} /> : null}
               {snap.top_origin_countries.length > 0 ? (
-                <KeyVal label="Top origins" value={snap.top_origin_countries.slice(0, 3).join(" · ")} />
+                <KeyVal label="Top origins" value={asText(snap.top_origin_countries.slice(0, 3))} />
               ) : null}
               {snap.top_us_ports.length > 0 ? (
-                <KeyVal label="Top US ports" value={snap.top_us_ports.slice(0, 3).join(" · ")} />
+                <KeyVal label="Top US ports" value={asText(snap.top_us_ports.slice(0, 3))} />
               ) : null}
               {snap.monthly_trend.length > 1 ? <MiniTrend data={snap.monthly_trend} /> : null}
               {snap.profile_href ? (
@@ -295,11 +295,11 @@ function ContactCard({ contact }: { contact: LeadContact }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {name}
+            {asText(name)}
           </div>
           {contact.title ? (
             <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: "#64748b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {contact.title}
+              {asText(contact.title)}
             </div>
           ) : null}
         </div>
@@ -312,12 +312,12 @@ function ContactCard({ contact }: { contact: LeadContact }) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 6 }}>
         {contact.email ? (
           <span style={contactMeta}>
-            <Mail style={{ width: 12, height: 12 }} /> {contact.email}
+            <Mail style={{ width: 12, height: 12 }} /> {asText(contact.email)}
           </span>
         ) : null}
         {contact.phone ? (
           <span style={contactMeta}>
-            <Phone style={{ width: 12, height: 12 }} /> {contact.phone}
+            <Phone style={{ width: 12, height: 12 }} /> {asText(contact.phone)}
           </span>
         ) : null}
       </div>

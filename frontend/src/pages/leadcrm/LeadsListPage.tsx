@@ -35,19 +35,23 @@ import {
   type Assignee,
   type CompanySearchResult,
   type ListLeadsResult,
+  type PipelineSummary,
   listLeadsPage,
   listStages,
   listAssignees,
   getLead,
+  getPipelineSummary,
   createLead,
   createLeadFromCompany,
   searchCompanies,
 } from "@/api/leadCrm";
 import LeadDetailDrawer from "./LeadDetailDrawer";
+import LeadCrmKpis, { type StageChip } from "./LeadCrmKpis";
 import {
   FONT_HEAD,
   FONT_BODY,
   FONT_MONO,
+  asText,
   formatRelative,
   initials,
   avatarColor,
@@ -91,6 +95,13 @@ export default function LeadsListPage() {
     staleTime: 5 * 60_000,
   });
 
+  // Pipeline summary powers the KPI row (totals + conversions + per-stage chips).
+  const { data: summary = null, isLoading: summaryLoading } = useQuery<PipelineSummary>({
+    queryKey: ["lead-crm", "pipeline-summary-full"],
+    queryFn: getPipelineSummary,
+    staleTime: 30_000,
+  });
+
   const {
     data: page_result = { leads: [], total: 0 },
     isLoading,
@@ -118,6 +129,21 @@ export default function LeadsListPage() {
     for (const s of stages) m[s.id] = s;
     return m;
   }, [stages]);
+
+  // Ordered per-stage chips for the KPI row — colors resolved from the stage
+  // reference data (falls back to the summary's own color). Values are counts,
+  // rendered as text so no jsonb leaks through as a React child.
+  const stageChips = useMemo<StageChip[]>(() => {
+    const rows = summary?.stages ?? [];
+    return [...rows]
+      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+      .map((s) => ({
+        stage_id: s.stage_id,
+        name: s.stage ?? (s.stage_id ? stageById[s.stage_id]?.name : null) ?? "Stage",
+        color: s.color ?? (s.stage_id ? stageById[s.stage_id]?.color ?? null : null),
+        count: s.count,
+      }));
+  }, [summary, stageById]);
 
   // Source options — the known lead entry channels. Free-form values from the
   // backend still filter via the "All sources" default.
@@ -179,6 +205,16 @@ export default function LeadsListPage() {
             <Plus style={{ width: 14, height: 14 }} />
             Add opportunity
           </button>
+        </div>
+
+        {/* KPI row — Attio-style headline metrics + per-stage chips */}
+        <div style={{ marginBottom: 12 }}>
+          <LeadCrmKpis
+            summary={summary}
+            totalLeads={totalLeads}
+            stageChips={stageChips}
+            loading={summaryLoading}
+          />
         </div>
 
         {/* Search + filter toggle */}
@@ -376,10 +412,10 @@ export default function LeadsListPage() {
                             </div>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontSize: 13, fontWeight: 600, color: "#0F172A", fontFamily: FONT_HEAD, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                {name}
+                                {asText(name)}
                               </div>
                               <div style={{ fontSize: 10.5, color: "#94A3B8", fontFamily: FONT_BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                {lead.email || "—"}
+                                {asText(lead.email) || "—"}
                               </div>
                             </div>
                           </div>
@@ -396,26 +432,26 @@ export default function LeadsListPage() {
                               />
                             ) : null}
                             <span style={{ fontSize: 12.5, color: "#334155", fontFamily: FONT_BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: "100%" }}>
-                              {lead.company_name || (lead.company_domain ? lead.company_domain : "—")}
+                              {asText(lead.company_name) || asText(lead.company_domain) || "—"}
                             </span>
                           </div>
                         </td>
                         <td style={{ padding: "8px 14px", verticalAlign: "middle" }}>
-                          {stage ? <span style={stageBadgeStyle(stage.color)}>{stage.name}</span> : <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>}
+                          {stage ? <span style={stageBadgeStyle(stage.color)}>{asText(stage.name)}</span> : <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>}
                         </td>
                         <td style={{ padding: "8px 14px", verticalAlign: "middle" }}>
                           <span style={{ fontSize: 12, color: "#475569", fontFamily: FONT_BODY, textTransform: "capitalize" }}>
-                            {lead.primary_source || lead.magnet_slug || "—"}
+                            {asText(lead.primary_source) || asText(lead.magnet_slug) || "—"}
                           </span>
                         </td>
                         <td style={{ padding: "8px 14px", verticalAlign: "middle", textAlign: "right" }}>
                           <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700, color: lead.lead_score != null ? "#1d4ed8" : "#94A3B8" }}>
-                            {lead.lead_score != null ? lead.lead_score : "—"}
+                            {lead.lead_score != null ? asText(lead.lead_score) : "—"}
                           </span>
                         </td>
                         <td style={{ padding: "8px 14px", verticalAlign: "middle" }}>
                           <span style={{ fontSize: 12, color: "#475569", fontFamily: FONT_BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: "100%" }}>
-                            {lead.assignee_name || "Unassigned"}
+                            {asText(lead.assignee_name) || "Unassigned"}
                           </span>
                         </td>
                         <td style={{ padding: "8px 14px", verticalAlign: "middle" }}>
@@ -458,18 +494,18 @@ export default function LeadsListPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-semibold text-slate-900 truncate" style={{ fontFamily: FONT_HEAD }}>
-                          {name}
+                          {asText(name)}
                         </div>
                         <div className="text-[11px] text-slate-500 truncate" style={{ fontFamily: FONT_BODY }}>
-                          {lead.email || "—"}
+                          {asText(lead.email) || "—"}
                         </div>
                       </div>
-                      {stage ? <span style={stageBadgeStyle(stage.color)}>{stage.name}</span> : null}
+                      {stage ? <span style={stageBadgeStyle(stage.color)}>{asText(stage.name)}</span> : null}
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                      <Cell label="Company" value={lead.company_name || "—"} />
-                      <Cell label="Source" value={lead.primary_source || lead.magnet_slug || "—"} />
-                      <Cell label="Assignee" value={lead.assignee_name || "Unassigned"} />
+                      <Cell label="Company" value={asText(lead.company_name) || "—"} />
+                      <Cell label="Source" value={asText(lead.primary_source) || asText(lead.magnet_slug) || "—"} />
+                      <Cell label="Assignee" value={asText(lead.assignee_name) || "Unassigned"} />
                       <Cell label="Last activity" value={formatRelative(lead.last_activity_at)} />
                     </div>
                     <div className="mt-2 flex items-center justify-between">
@@ -673,7 +709,7 @@ function AddOpportunityModal({
                 <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "1.5px solid #BFDBFE", borderRadius: 12, background: "#EFF6FF" }}>
                   <CompanyAvatar name={picked.name} domain={picked.domain} size="sm" className="!h-8 !w-8 !rounded-lg shrink-0" />
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{picked.name}</div>
+                    <div style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{asText(picked.name)}</div>
                     <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: "#64748b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {[picked.city, picked.state, picked.country].filter(Boolean).join(", ") || picked.domain || (picked.origin === "directory" ? "Directory" : "Company")}
                       {picked.has_snapshot ? " · shipment data" : ""}
@@ -719,7 +755,7 @@ function AddOpportunityModal({
                             >
                               <CompanyAvatar name={c.name} domain={c.domain} size="sm" className="!h-7 !w-7 !rounded-md shrink-0" />
                               <div style={{ minWidth: 0, flex: 1 }}>
-                                <div style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</div>
+                                <div style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{asText(c.name)}</div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: FONT_BODY, fontSize: 10.5, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                   {(c.city || c.state || c.country) ? <MapPin style={{ width: 10, height: 10, flexShrink: 0 }} /> : null}
                                   {[c.city, c.state, c.country].filter(Boolean).join(", ") || c.domain || (c.origin === "directory" ? "Directory" : "Company")}

@@ -29,6 +29,10 @@ import {
   Hand,
   Cog,
   Building2,
+  CheckSquare,
+  Square,
+  Plus,
+  CircleAlert,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -37,8 +41,12 @@ import {
   type LeadStage,
   type LeadTimelineEntry,
   type Assignee,
+  type LeadTask,
   getLead,
   getLeadTimeline,
+  getLeadTasks,
+  createTask,
+  completeTask,
   setStage as apiSetStage,
   assignLead,
   addNote,
@@ -48,6 +56,7 @@ import {
   FONT_HEAD,
   FONT_BODY,
   FONT_MONO,
+  asText,
   formatDate,
   formatRelative,
   initials,
@@ -237,13 +246,13 @@ export default function LeadDetailDrawer({
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {name}
+              {asText(name)}
             </div>
             <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#64748b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {lead.email || "No email"}
+              {asText(lead.email) || "No email"}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-              {currentStage ? <span style={stageBadgeStyle(currentStage.color)}>{currentStage.name}</span> : null}
+              {currentStage ? <span style={stageBadgeStyle(currentStage.color)}>{asText(currentStage.name)}</span> : null}
               {lead.company_name || lead.company_domain ? (
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: FONT_BODY, fontSize: 11.5, color: "#475569" }}>
                   {lead.company_domain || lead.company_logo_url ? (
@@ -257,7 +266,7 @@ export default function LeadDetailDrawer({
                   ) : (
                     <Building2 style={{ width: 12, height: 12 }} />
                   )}
-                  {lead.company_name || lead.company_domain}
+                  {asText(lead.company_name) || asText(lead.company_domain)}
                 </span>
               ) : null}
             </div>
@@ -325,11 +334,14 @@ export default function LeadDetailDrawer({
               {/* Company contacts + enrichment */}
               <ContactsPanel lead={lead} />
 
+              {/* Tasks / follow-ups */}
+              <TasksSection leadId={lead.id} assignees={assignees} onChanged={onChanged} />
+
               {/* Subscription / plan panel */}
               <Section title="Subscription">
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <Stat label="Plan" value={lead.current_plan || "—"} />
-                  <Stat label="Status" value={lead.current_status || lead.status || "—"} />
+                  <Stat label="Plan" value={asText(lead.current_plan) || "—"} />
+                  <Stat label="Status" value={asText(lead.current_status) || asText(lead.status) || "—"} />
                   <Stat label="Trial started" value={formatDate(lead.trial_started_at)} />
                   <Stat label="Converted" value={formatDate(lead.converted_at)} />
                 </div>
@@ -338,10 +350,10 @@ export default function LeadDetailDrawer({
               {/* Lead facts */}
               <Section title="Lead">
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <Stat label="Source" value={lead.primary_source || "—"} />
-                  <Stat label="Magnet" value={lead.magnet_slug || "—"} />
-                  <Stat label="UTM source" value={lead.utm_source || "—"} />
-                  <Stat label="Score" value={lead.lead_score != null ? String(lead.lead_score) : "—"} mono />
+                  <Stat label="Source" value={asText(lead.primary_source) || "—"} />
+                  <Stat label="Magnet" value={asText(lead.magnet_slug) || "—"} />
+                  <Stat label="UTM source" value={asText(lead.utm_source) || "—"} />
+                  <Stat label="Score" value={lead.lead_score != null ? asText(lead.lead_score) : "—"} mono />
                   <Stat label="First seen" value={formatDate(lead.first_seen_at)} />
                   <Stat label="Signed up" value={formatDate(lead.signup_at)} />
                 </div>
@@ -432,7 +444,7 @@ function TimelineRow({ entry }: { entry: LeadTimelineEntry }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <span style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: "#0F172A" }}>
-            {entry.title || entry.kind || "Activity"}
+            {asText(entry.title) || asText(entry.kind) || "Activity"}
           </span>
           <span
             style={{
@@ -471,22 +483,174 @@ function TimelineRow({ entry }: { entry: LeadTimelineEntry }) {
 
 /** Render a timeline entry's `detail` (string OR jsonb object) as safe text.
  *  A jsonb object rendered directly as a React child throws React error #31
- *  ("Objects are not valid as a React child"). Coerce to readable text. */
+ *  ("Objects are not valid as a React child"). Delegates to the shared `asText`
+ *  guard so the coercion rules are identical everywhere in the workspace. */
 function renderTimelineDetail(detail: unknown): string {
-  if (detail == null) return "";
-  if (typeof detail === "string") return detail;
-  if (typeof detail === "number" || typeof detail === "boolean") return String(detail);
-  if (typeof detail === "object") {
+  return asText(detail);
+}
+
+// ── Tasks section (this lead's follow-ups + add-follow-up composer) ─────────
+
+function TasksSection({
+  leadId,
+  assignees,
+  onChanged,
+}: {
+  leadId: string;
+  assignees: Assignee[];
+  onChanged: () => void;
+}) {
+  const { toast } = useToast();
+  const [tasks, setTasks] = useState<LeadTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [title, setTitle] = useState("");
+  const [due, setDue] = useState("");
+  const [assignee, setAssignee] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    (async () => {
+      const rows = await getLeadTasks(leadId);
+      if (!alive) return;
+      setTasks(rows);
+      setLoading(false);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [leadId]);
+
+  async function reload() {
+    setTasks(await getLeadTasks(leadId));
+    onChanged();
+  }
+
+  async function handleCreate() {
+    const t = title.trim();
+    if (!t || saving) return;
+    setSaving(true);
     try {
-      return Object.entries(detail as Record<string, unknown>)
-        .filter(([, v]) => v != null && v !== "")
-        .map(([k, v]) => `${k.replace(/_/g, " ")}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
-        .join(" · ");
-    } catch {
-      return "";
+      const res = await createTask({ leadId, title: t, dueDate: due || null, assignee: assignee || null });
+      if (!res.ok) {
+        toast({ title: res.reason === "title_required" ? "Enter a task title" : "Could not add task", variant: "destructive" });
+        return;
+      }
+      setTitle("");
+      setDue("");
+      setAssignee("");
+      setAdding(false);
+      toast({ title: "Follow-up added" });
+      await reload();
+    } catch (e: any) {
+      toast({ title: "Could not add task", description: e?.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
   }
-  return "";
+
+  async function handleToggle(task: LeadTask) {
+    setBusyId(task.id);
+    const done = task.status !== "done";
+    try {
+      await completeTask(task.id, done);
+      await reload();
+    } catch (e: any) {
+      toast({ title: "Could not update task", description: e?.message, variant: "destructive" });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <Section title="Tasks">
+      {loading ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#94a3b8", fontFamily: FONT_BODY, fontSize: 12, padding: "4px 0" }}>
+          <Loader2 style={spinIcon} /> Loading tasks…
+        </div>
+      ) : tasks.length === 0 ? (
+        <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8" }}>No follow-ups yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {tasks.map((task) => {
+            const done = task.status === "done";
+            return (
+              <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 9px", border: "1px solid #EEF2F7", borderRadius: 10, background: task.overdue ? "#FFFBFA" : "#F8FAFC" }}>
+                <button
+                  type="button"
+                  onClick={() => handleToggle(task)}
+                  disabled={busyId === task.id}
+                  title={done ? "Reopen" : "Complete"}
+                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, border: "none", background: "transparent", color: done ? "#059669" : "#94a3b8", cursor: "pointer", flexShrink: 0 }}
+                >
+                  {busyId === task.id ? (
+                    <Loader2 style={spinIcon} />
+                  ) : done ? (
+                    <CheckSquare style={{ width: 16, height: 16 }} />
+                  ) : (
+                    <Square style={{ width: 16, height: 16 }} />
+                  )}
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: done ? "#94a3b8" : "#0F172A", textDecoration: done ? "line-through" : "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {asText(task.title) || "Follow-up"}
+                  </div>
+                  {task.due_date || task.assignee_name ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: FONT_BODY, fontSize: 10.5, color: task.overdue ? "#dc2626" : "#94a3b8", marginTop: 1 }}>
+                      {task.overdue ? <CircleAlert style={{ width: 10, height: 10 }} /> : null}
+                      {task.due_date ? asText(formatDate(task.due_date)) : ""}
+                      {task.due_date && task.assignee_name ? " · " : ""}
+                      {task.assignee_name ? asText(task.assignee_name) : ""}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {adding ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4, padding: 10, border: "1px solid #E5E7EB", borderRadius: 10, background: "#F8FAFC" }}>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Follow-up (e.g. Call back re: pricing)"
+            style={inputStyle}
+            autoFocus
+          />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <input type="date" value={due} onChange={(e) => setDue(e.target.value)} style={inputStyle} />
+            <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={inputStyle}>
+              <option value="">Me</option>
+              {assignees.map((a) => (
+                <option key={a.user_id} value={a.user_id}>
+                  {asText(a.name)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleCreate} disabled={saving || !title.trim()} style={primaryBtn}>
+              {saving ? <Loader2 style={spinIcon} /> : <Plus style={{ width: 14, height: 14 }} />}
+              Add follow-up
+            </button>
+            <button onClick={() => { setAdding(false); setTitle(""); setDue(""); setAssignee(""); }} disabled={saving} style={ghostBtn}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} style={{ ...ghostBtn, alignSelf: "flex-start" }}>
+          <Plus style={{ width: 14, height: 14 }} />
+          Add follow-up
+        </button>
+      )}
+    </Section>
+  );
 }
 
 // ── Small UI atoms (mirror DealDetailDrawer) ───────────────────────────────

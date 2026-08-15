@@ -155,6 +155,59 @@ export type PipelineStageSummary = {
   conversion_rate: number | null;
 };
 
+/** Full pipeline summary object — the whole `lit_leadcrm_pipeline_summary()` envelope. */
+export type PipelineSummary = {
+  stages: { stage_id: string | null; stage: string | null; color: string | null; position: number | null; count: number }[];
+  totals: {
+    total_leads: number | null;
+    contacted: number | null;
+    engaged: number | null;
+    trial: number | null;
+    subscriber: number | null;
+    lost: number | null;
+    new_this_week: number | null;
+    unassigned: number | null;
+    avg_score: number | null;
+  };
+  conversion_rates: {
+    lead_to_contacted: number | null;
+    lead_to_engaged: number | null;
+    lead_to_trial: number | null;
+    lead_to_subscriber: number | null;
+    trial_to_subscriber: number | null;
+  };
+};
+
+/** A single kanban column — `lit_leadcrm_board()`. */
+export type BoardColumn = {
+  stage_id: string;
+  stage_name: string | null;
+  color: string | null;
+  position: number | null;
+  is_won: boolean;
+  is_lost: boolean;
+  total: number;
+  leads: Lead[];
+};
+
+/** A lead task row — `lit_leadcrm_lead_tasks()` / `lit_leadcrm_my_tasks()`. */
+export type LeadTask = {
+  id: string;
+  lead_id: string;
+  title: string | null;
+  due_date: string | null;
+  status: string | null;
+  assignee_user_id: string | null;
+  assignee_name: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+  overdue: boolean;
+  // Present only on my_tasks (joined lead context for the shell Tasks tab).
+  lead_name?: string | null;
+  lead_company?: string | null;
+  lead_email?: string | null;
+};
+
 /** Assignee option for the pickers (derived from members). */
 export type Assignee = { user_id: string; name: string };
 
@@ -443,6 +496,170 @@ export async function pipelineSummary(): Promise<PipelineStageSummary[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * Full pipeline summary envelope (totals + conversion_rates + stages) for the
+ * KPI row. Null-safe: any error → a zeroed shape so the KPI cards render "—"
+ * rather than crashing. Coerces every numeric so a jsonb string can't leak
+ * through as a React child.
+ */
+export async function getPipelineSummary(): Promise<PipelineSummary> {
+  const empty: PipelineSummary = {
+    stages: [],
+    totals: {
+      total_leads: null, contacted: null, engaged: null, trial: null,
+      subscriber: null, lost: null, new_this_week: null, unassigned: null, avg_score: null,
+    },
+    conversion_rates: {
+      lead_to_contacted: null, lead_to_engaged: null, lead_to_trial: null,
+      lead_to_subscriber: null, trial_to_subscriber: null,
+    },
+  };
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_pipeline_summary");
+    if (error || !data || typeof data !== "object") return empty;
+    const obj = data as any;
+    const n = (v: any): number | null => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
+    const t = obj.totals ?? {};
+    const c = obj.conversion_rates ?? {};
+    return {
+      stages: Array.isArray(obj.stages)
+        ? obj.stages.map((s: any) => ({
+            stage_id: s.stage_id != null ? String(s.stage_id) : null,
+            stage: s.stage ?? s.stage_name ?? null,
+            color: s.color ?? null,
+            position: s.position != null ? Number(s.position) : null,
+            count: Number(s.count ?? 0),
+          }))
+        : [],
+      totals: {
+        total_leads: n(t.total_leads), contacted: n(t.contacted), engaged: n(t.engaged),
+        trial: n(t.trial), subscriber: n(t.subscriber), lost: n(t.lost),
+        new_this_week: n(t.new_this_week), unassigned: n(t.unassigned), avg_score: n(t.avg_score),
+      },
+      conversion_rates: {
+        lead_to_contacted: n(c.lead_to_contacted), lead_to_engaged: n(c.lead_to_engaged),
+        lead_to_trial: n(c.lead_to_trial), lead_to_subscriber: n(c.lead_to_subscriber),
+        trial_to_subscriber: n(c.trial_to_subscriber),
+      },
+    };
+  } catch {
+    return empty;
+  }
+}
+
+// ── Kanban board ────────────────────────────────────────────────────────────
+
+/**
+ * Stage-grouped, per-column-capped board for the Pipeline kanban. One RPC round
+ * trip; each column carries its true `total` plus up to `limitPerStage` leads.
+ * Silent-fail → empty columns.
+ */
+export async function getBoard(limitPerStage = 50): Promise<BoardColumn[]> {
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_board", {
+      p_limit_per_stage: limitPerStage,
+    });
+    const stages = (data as any)?.stages;
+    if (error || !Array.isArray(stages)) return [];
+    return (stages as any[])
+      .map((s) => ({
+        stage_id: String(s.stage_id),
+        stage_name: s.stage_name ?? null,
+        color: s.color ?? null,
+        position: s.position != null ? Number(s.position) : null,
+        is_won: Boolean(s.is_won),
+        is_lost: Boolean(s.is_lost),
+        total: Number(s.total ?? 0),
+        leads: Array.isArray(s.leads) ? s.leads.map(normalizeLead) : [],
+      }))
+      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  } catch {
+    return [];
+  }
+}
+
+// ── Tasks ───────────────────────────────────────────────────────────────────
+
+function normalizeTask(row: any): LeadTask {
+  return {
+    id: String(row.id),
+    lead_id: String(row.lead_id),
+    title: row.title ?? null,
+    due_date: row.due_date ?? null,
+    status: row.status ?? null,
+    assignee_user_id: row.assignee_user_id != null ? String(row.assignee_user_id) : null,
+    assignee_name: row.assignee_name ?? null,
+    completed_at: row.completed_at ?? null,
+    created_at: row.created_at ?? null,
+    overdue: Boolean(row.overdue),
+    lead_name: row.lead_name ?? null,
+    lead_company: row.lead_company ?? null,
+    lead_email: row.lead_email ?? null,
+  };
+}
+
+/** Tasks for one lead (drawer). Silent-fail → empty. */
+export async function getLeadTasks(leadId: string): Promise<LeadTask[]> {
+  if (!leadId) return [];
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_lead_tasks", { p_lead_id: leadId });
+    const rows = (data as any)?.tasks;
+    if (error || !Array.isArray(rows)) return [];
+    return (rows as any[]).map(normalizeTask);
+  } catch {
+    return [];
+  }
+}
+
+/** My (or a member's) open/overdue/done tasks for the shell Tasks tab. Silent-fail → empty. */
+export async function getMyTasks(
+  status: "open" | "overdue" | "done" | "all" = "open",
+  assignee?: string | null,
+): Promise<LeadTask[]> {
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_my_tasks", {
+      p_assignee: assignee ?? null,
+      p_status: status,
+    });
+    const rows = (data as any)?.tasks;
+    if (error || !Array.isArray(rows)) return [];
+    return (rows as any[]).map(normalizeTask);
+  } catch {
+    return [];
+  }
+}
+
+/** Create a follow-up task on a lead. Throws on transport error; returns {ok,reason}. */
+export async function createTask(params: {
+  leadId: string;
+  title: string;
+  dueDate?: string | null;
+  assignee?: string | null;
+}): Promise<{ ok: boolean; task_id?: string; reason?: string }> {
+  const { data, error } = await supabase.rpc("lit_leadcrm_create_task", {
+    p_lead_id: params.leadId,
+    p_title: params.title,
+    p_due_date: params.dueDate ?? null,
+    p_assignee: params.assignee ?? null,
+  });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as any;
+  return {
+    ok: Boolean(row?.ok),
+    task_id: row?.task_id != null ? String(row.task_id) : undefined,
+    reason: row?.reason,
+  };
+}
+
+/** Complete / reopen a task. Throws on transport error. */
+export async function completeTask(taskId: string, done = true): Promise<void> {
+  const { error } = await supabase.rpc("lit_leadcrm_complete_task", {
+    p_task_id: taskId,
+    p_done: done,
+  });
+  if (error) throw new Error(error.message);
 }
 
 // ── Member management (platform-admin only) ─────────────────────────────

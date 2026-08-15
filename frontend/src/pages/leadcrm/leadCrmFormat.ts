@@ -9,6 +9,57 @@ export const FONT_HEAD = "'Space Grotesk', sans-serif";
 export const FONT_BODY = "'DM Sans', sans-serif";
 export const FONT_MONO = "'JetBrains Mono', monospace";
 
+/**
+ * asText — the single guard against React error #31 ("Objects are not valid as
+ * a React child"). ANY value that (a) originates from an RPC / jsonb column and
+ * (b) is placed directly as a React child MUST pass through this first. tsc does
+ * NOT catch object-as-child, so this is a runtime-safety helper, not a type one.
+ *
+ *   string   → itself
+ *   number   → String(n)   (NaN → "")
+ *   boolean  → "Yes"/"No"
+ *   null/undef → ""        (callers add their own "—" fallback when wanted)
+ *   array    → each element as text, joined with " · "  (empty → "")
+ *   object   → readable "key: value · key: value" of non-empty entries;
+ *              nested objects/arrays are JSON-stringified so nothing renders raw.
+ *
+ * Never throws — a malformed value degrades to "" rather than crashing render.
+ */
+export function asText(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return Number.isFinite(v) ? String(v) : "";
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (Array.isArray(v)) {
+    return v
+      .map((el) => asText(el))
+      .filter((s) => s !== "")
+      .join(" · ");
+  }
+  if (typeof v === "object") {
+    try {
+      return Object.entries(v as Record<string, unknown>)
+        .filter(([, val]) => val != null && val !== "")
+        .map(([k, val]) => {
+          const label = k.replace(/_/g, " ");
+          const inner =
+            val != null && typeof val === "object" ? JSON.stringify(val) : asText(val);
+          return `${label}: ${inner}`;
+        })
+        .join(" · ");
+    } catch {
+      return "";
+    }
+  }
+  return String(v);
+}
+
+/** asText, but returns a supplied fallback (default "—") when the result is empty. */
+export function textOr(v: unknown, fallback = "—"): string {
+  const t = asText(v);
+  return t === "" ? fallback : t;
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
