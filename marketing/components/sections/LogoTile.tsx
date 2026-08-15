@@ -86,6 +86,7 @@ export function LogoTile({
         fallbackSrc={fallback}
         alt={`${name} logo`}
         px={px}
+        name={name}
       />
     </div>
   );
