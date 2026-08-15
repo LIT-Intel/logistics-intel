@@ -869,6 +869,235 @@ export async function createLead(params: {
   };
 }
 
+// ── Phase 3: Communication & Nurture ────────────────────────────────────────
+
+/** Lead email + suppression state — `lit_leadcrm_lead_email()`. Drives composer. */
+export type LeadEmailInfo = {
+  ok: boolean;
+  email: string | null;
+  full_name: string | null;
+  has_email: boolean;
+  suppressed: boolean;
+  suppressed_reason: string | null;
+};
+
+/** A compact inbox thread for the lead — `lit_leadcrm_lead_threads()`. */
+export type LeadThread = {
+  id: string;
+  subject: string | null;
+  participants: unknown;
+  last_message_at: string | null;
+  message_count: number | null;
+  unread_count: number | null;
+  provider: string | null;
+  status: string | null;
+  last_snippet: string | null;
+};
+
+/** An enrollable campaign — `lit_leadcrm_list_campaigns()`. */
+export type LeadCampaign = { id: string; name: string | null; status: string | null };
+
+/** Cal.com booking config — `lit_leadcrm_cal_config()`. */
+export type CalConfig = {
+  ok: boolean;
+  configured: boolean;
+  cal_url: string | null;
+  can_configure: boolean;
+};
+
+/** Resolve the lead's email + suppression flag. Null-safe → no-email default. */
+export async function getLeadEmailInfo(leadId: string): Promise<LeadEmailInfo> {
+  const fallback: LeadEmailInfo = {
+    ok: false, email: null, full_name: null, has_email: false, suppressed: false, suppressed_reason: null,
+  };
+  if (!leadId) return fallback;
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_lead_email", { p_lead_id: leadId });
+    if (error || !data) return fallback;
+    const row = (Array.isArray(data) ? data[0] : data) as any;
+    if (!row || row.ok === false) return fallback;
+    return {
+      ok: true,
+      email: row.email ?? null,
+      full_name: row.full_name ?? null,
+      has_email: Boolean(row.has_email),
+      suppressed: Boolean(row.suppressed),
+      suppressed_reason: row.suppressed_reason ?? null,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Send a one-off branded email to the lead via the `lead-crm-send-email` edge
+ * fn (reuses Resend + records to lit_outreach_history + lit_lead_activity).
+ * Returns the (possibly !ok) result so the caller can surface no-email /
+ * suppressed / send-failed messages. Throws only on transport error.
+ */
+export async function sendLeadEmail(params: {
+  leadId: string;
+  subject: string;
+  body: string;
+}): Promise<{ ok: boolean; sent?: boolean; message_id?: string | null; error?: string; code?: string }> {
+  const { data, error } = await supabase.functions.invoke("lead-crm-send-email", {
+    body: { lead_id: params.leadId, subject: params.subject, body: params.body },
+  });
+  if (error) {
+    const ctx = (error as any)?.context;
+    if (ctx && typeof ctx.json === "function") {
+      try {
+        const b = await ctx.json();
+        return { ok: false, error: b?.error ?? error.message, code: b?.code };
+      } catch {
+        /* fall through */
+      }
+    }
+    return { ok: false, error: error.message };
+  }
+  return (data as any) ?? { ok: false, error: "No response" };
+}
+
+/** Inbox threads where the lead is a participant. Silent-fail → empty. */
+export async function getLeadThreads(
+  leadId: string,
+): Promise<{ hasEmail: boolean; threads: LeadThread[] }> {
+  if (!leadId) return { hasEmail: false, threads: [] };
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_lead_threads", { p_lead_id: leadId });
+    if (error || !data) return { hasEmail: false, threads: [] };
+    const row = (Array.isArray(data) ? data[0] : data) as any;
+    if (!row || row.ok === false) return { hasEmail: false, threads: [] };
+    const threads = Array.isArray(row.threads)
+      ? row.threads.map((t: any) => ({
+          id: String(t.id),
+          subject: t.subject ?? null,
+          participants: t.participants ?? null,
+          last_message_at: t.last_message_at ?? null,
+          message_count: t.message_count != null ? Number(t.message_count) : null,
+          unread_count: t.unread_count != null ? Number(t.unread_count) : null,
+          provider: t.provider ?? null,
+          status: t.status ?? null,
+          last_snippet: t.last_snippet ?? null,
+        }))
+      : [];
+    return { hasEmail: Boolean(row.has_email), threads };
+  } catch {
+    return { hasEmail: false, threads: [] };
+  }
+}
+
+/** Send a demo invite for the lead via `send-demo-invite`, then log the touch. */
+export async function sendLeadDemoInvite(params: {
+  leadId: string;
+  email: string;
+  name?: string | null;
+  company?: string | null;
+  note?: string | null;
+}): Promise<{ ok: boolean; sent?: boolean; error?: string; code?: string }> {
+  const { data, error } = await supabase.functions.invoke("send-demo-invite", {
+    body: {
+      email: params.email,
+      name: params.name ?? "",
+      company: params.company ?? "",
+      note: params.note ?? "",
+    },
+  });
+  if (error) {
+    const ctx = (error as any)?.context;
+    if (ctx && typeof ctx.json === "function") {
+      try {
+        const b = await ctx.json();
+        return { ok: false, error: b?.error ?? error.message, code: b?.code };
+      } catch {
+        /* fall through */
+      }
+    }
+    return { ok: false, error: error.message };
+  }
+  const res = (data as any) ?? {};
+  if (res.ok && (res.sent ?? true)) {
+    // Log the demo-invite touch onto the lead timeline (best-effort).
+    try {
+      await supabase.rpc("lit_leadcrm_log_demo_invite", { p_lead_id: params.leadId });
+    } catch {
+      /* non-fatal */
+    }
+  }
+  return { ok: Boolean(res.ok), sent: Boolean(res.sent), error: res.error, code: res.code };
+}
+
+/** Campaigns the team can enroll this lead into. Silent-fail → empty. */
+export async function listLeadCampaigns(): Promise<LeadCampaign[]> {
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_list_campaigns");
+    const rows = (data as any)?.campaigns;
+    if (error || !Array.isArray(rows)) return [];
+    return (rows as any[]).map((c) => ({
+      id: String(c.id),
+      name: c.name ?? null,
+      status: c.status ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Enroll the lead's email into a campaign. Returns the (possibly !ok) result. */
+export async function addLeadToCampaign(
+  leadId: string,
+  campaignId: string,
+): Promise<{ ok: boolean; enrolled?: boolean; already_enrolled?: boolean; reason?: string }> {
+  const { data, error } = await supabase.rpc("lit_leadcrm_add_to_campaign", {
+    p_lead_id: leadId,
+    p_campaign_id: campaignId,
+  });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as any;
+  return {
+    ok: Boolean(row?.ok),
+    enrolled: Boolean(row?.enrolled),
+    already_enrolled: Boolean(row?.already_enrolled),
+    reason: row?.reason,
+  };
+}
+
+/** Read the Cal.com booking config. Null-safe → unconfigured default. */
+export async function getCalConfig(): Promise<CalConfig> {
+  const fallback: CalConfig = { ok: false, configured: false, cal_url: null, can_configure: false };
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_cal_config");
+    if (error || !data) return fallback;
+    const row = (Array.isArray(data) ? data[0] : data) as any;
+    if (!row || row.ok === false) return fallback;
+    return {
+      ok: true,
+      configured: Boolean(row.configured),
+      cal_url: row.cal_url ?? null,
+      can_configure: Boolean(row.can_configure),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+/** Set the Cal.com booking URL (platform-admin only). Throws on transport error. */
+export async function setCalUrl(url: string): Promise<{ ok: boolean; cal_url?: string; reason?: string }> {
+  const { data, error } = await supabase.rpc("lit_admin_set_cal_url", { p_url: url });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as any;
+  return { ok: Boolean(row?.ok), cal_url: row?.cal_url ?? undefined, reason: row?.reason };
+}
+
+/** Log that a rep opened the Cal.com booking link for a lead (best-effort). */
+export async function logCallBookingOpened(leadId: string): Promise<void> {
+  try {
+    await supabase.rpc("lit_leadcrm_log_call_booking_opened", { p_lead_id: leadId });
+  } catch {
+    /* non-fatal — the link still opened */
+  }
+}
+
 // ── "Add from LIT" company picker (structural: pull from existing LIT data) ──
 
 /**

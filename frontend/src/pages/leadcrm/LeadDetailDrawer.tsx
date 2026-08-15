@@ -64,10 +64,12 @@ import {
   stageBadgeStyle,
   leadDisplayName,
   sourceMeta,
+  kindLabel,
 } from "./leadCrmFormat";
 import { CompanyPanel, ContactsPanel } from "./LeadCompanyPanels";
+import LeadCommunicationPanel from "./LeadCommunicationPanel";
 
-type Tab = "activity" | "details";
+type Tab = "activity" | "communicate" | "details";
 
 export default function LeadDetailDrawer({
   lead: initialLead,
@@ -279,6 +281,7 @@ export default function LeadDetailDrawer({
         {/* Tabs */}
         <div style={{ display: "flex", gap: 2, padding: "0 20px", borderBottom: "1px solid #E5E7EB", background: "#FFFFFF" }}>
           <DrawerTab active={tab === "activity"} onClick={() => setTab("activity")} label="Activity" />
+          <DrawerTab active={tab === "communicate"} onClick={() => setTab("communicate")} label="Communicate" />
           <DrawerTab active={tab === "details"} onClick={() => setTab("details")} label="Details" />
         </div>
 
@@ -326,7 +329,9 @@ export default function LeadDetailDrawer({
             </div>
           </Section>
 
-          {tab === "details" ? (
+          {tab === "communicate" ? (
+            <LeadCommunicationPanel lead={lead} onLogged={refresh} />
+          ) : tab === "details" ? (
             <>
               {/* Company intelligence (recognition + snapshot) */}
               <CompanyPanel lead={lead} onRecognized={refresh} />
@@ -444,7 +449,7 @@ function TimelineRow({ entry }: { entry: LeadTimelineEntry }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <span style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: "#0F172A" }}>
-            {asText(entry.title) || asText(entry.kind) || "Activity"}
+            {kindLabel(entry.kind) || asText(entry.title) || "Activity"}
           </span>
           <span
             style={{

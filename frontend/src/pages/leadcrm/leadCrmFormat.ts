@@ -168,3 +168,40 @@ export function sourceMeta(source: string | null | undefined) {
   const key = String(source ?? "").toLowerCase() as SourceKey;
   return SOURCE_META[key] ?? SOURCE_META.system;
 }
+
+/**
+ * Human-readable label for a timeline entry's `kind`. The Phase-3 comms actions
+ * write snake_case kinds to lit_lead_activity (email_sent, demo_invite_sent,
+ * added_to_campaign, call_booking_opened, call_booked, …); prettify them so the
+ * timeline reads like sentences instead of raw column values. Falls back to a
+ * title-cased version of any unknown kind so nothing renders as raw snake_case.
+ */
+const KIND_LABELS: Record<string, string> = {
+  email_sent: "Email sent",
+  email_received: "Email received",
+  email_thread: "Email in thread",
+  demo_invite_sent: "Demo invite sent",
+  demo_sent: "Demo invite sent",
+  added_to_campaign: "Added to campaign",
+  call_booking_opened: "Booking link opened",
+  call_booked: "Call booked",
+  call_booking_cancelled: "Call cancelled",
+  call_booking_rescheduled: "Call rescheduled",
+  call_booking_update: "Call updated",
+  note: "Note",
+  touch: "Touch logged",
+  assignment: "Assigned",
+};
+
+export function kindLabel(kind: string | null | undefined): string {
+  const raw = asText(kind);
+  if (raw === "") return "";
+  const known = KIND_LABELS[raw.toLowerCase()];
+  if (known) return known;
+  // Title-case an unknown snake/colon kind (e.g. "search:company" → "Search Company").
+  return raw
+    .replace(/[:_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}

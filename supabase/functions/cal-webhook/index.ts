@@ -406,6 +406,49 @@ serve(async (req: Request) => {
     }
   }
 
+  // ── Lead-CRM Phase 3: mirror the booking onto the matching Lead-CRM lead ──
+  // If the booker's email matches a lead in lit_admin_leads, drop a
+  // 'call_booked' (or cancelled/rescheduled) touch onto lit_lead_activity so the
+  // booking surfaces in the CRM lead timeline alongside the "Book a call" click.
+  // Service-role write; best-effort — never fail the webhook on this.
+  if (attendeeEmail) {
+    try {
+      const { data: leadRows } = await db
+        .from("lit_admin_leads")
+        .select("id")
+        .eq("email", attendeeEmail)
+        .limit(5);
+      if (leadRows && leadRows.length > 0) {
+        const leadKind =
+          eventType === "meeting_booked"
+            ? "call_booked"
+            : eventType === "meeting_cancelled"
+            ? "call_booking_cancelled"
+            : eventType === "meeting_rescheduled"
+            ? "call_booking_rescheduled"
+            : "call_booking_update";
+        const rows = leadRows.map((r: { id: string }) => ({
+          lead_id: r.id,
+          kind: leadKind,
+          body: {
+            cal_booking_id: bookingId,
+            meeting_title: meetingTitle,
+            start_time: startTime,
+            meeting_url: meetingUrl,
+            attendee_email: attendeeEmail,
+          },
+          actor_user_id: null,
+          source: "manual",
+        }));
+        const { error: leadErr } = await db.from("lit_lead_activity").insert(rows);
+        if (leadErr) log("warn", "leadcrm_activity_insert_failed", { err: leadErr.message, attendee_email: attendeeEmail });
+        else log("info", "leadcrm_booking_logged", { attendee_email: attendeeEmail, leads: leadRows.length, kind: leadKind });
+      }
+    } catch (e) {
+      log("warn", "leadcrm_booking_mirror_failed", { err: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   log("info", "meeting_logged", { event_type: eventType, cal_booking_id: bookingId, campaign_id: campaignId, attribution_path: attributionPath, matched: !!campaignId, exit_applied: exitApplied });
   return new Response(JSON.stringify({ ok: true, id: inserted?.id, event_type: eventType, campaign_id: campaignId, attribution_path: attributionPath, exit_applied: exitApplied }), { headers: { "Content-Type": "application/json" } });
 });
