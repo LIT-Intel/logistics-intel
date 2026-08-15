@@ -3124,6 +3124,27 @@ async function searchShippersFromCache(
   }
 }
 
+// Records a `company_search` ledger row for a search that was served from the
+// client-side cache (and therefore never hit importyeti-proxy's search path).
+// consume_usage is service-role only, so the write has to go through an edge
+// function — we reuse importyeti-proxy's existing search instrumentation via
+// the `measureOnly` flag, which logs the ledger row and returns WITHOUT any
+// paid ImportYeti upstream call. Best-effort: callers fire-and-forget this.
+async function logCompanySearchMeasurement(q: string, page: number): Promise<void> {
+  const headers = await getAuthHeaders();
+  await fetch(`${SUPABASE_URL}/functions/v1/importyeti-proxy`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      action: "search",
+      q,
+      page,
+      pageSize: 1,
+      measureOnly: true,
+    }),
+  });
+}
+
 export async function searchShippers(
   params: { q: string; page?: number; pageSize?: number; forceRefresh?: boolean },
   signal?: AbortSignal,
@@ -3161,6 +3182,15 @@ export async function searchShippers(
   if (!forceRefresh) {
     const cached = await searchShippersFromCache(q, page, pageSize);
     if (cached && cached.results.length > 0) {
+      // METERING (2026-08-14): cache hits are served entirely client-side and
+      // never reach importyeti-proxy, so the search would go UNCOUNTED — this
+      // is exactly why `company_search` stopped writing to lit_usage_ledger on
+      // 2026-08-06 once the cache warmed up. Fire a measureOnly ledger write so
+      // the search is still recorded (feeds the Searches meter + admin "last
+      // company search"). Search is free, so this only LOGS — the proxy skips
+      // the paid upstream path when measureOnly is set. Fire-and-forget: never
+      // awaited, never blocks or fails the search on a metering hiccup.
+      void logCompanySearchMeasurement(q, page).catch(() => undefined);
       return { ...cached, meta: { ...cached.meta, q, page, pageSize, cache: true } as any };
     }
   }
@@ -4292,6 +4322,10 @@ export async function fetchSearchMetadataOverlay(
   vertical?: string | null;
   revenue?: number | string | null;
   opportunity_composite_score?: number | null;
+  teu?: number | null;
+  shipments?: number | null;
+  top_lane?: string | null;
+  last_shipment?: string | null;
   is_saved?: boolean;
 }>> {
   if (!companyKeys.length) return {};
@@ -4320,21 +4354,42 @@ export async function fetchSearchMetadataOverlay(
   const lookupKeys = Array.from(variants).filter(Boolean);
 
   const out: Record<string, any> = {};
+  // Merge rule: first non-null value wins, nulls never clobber. The same
+  // original key can match several rows (slug + "company/<slug>" duplicates
+  // both exist in lit_companies), and a sparser duplicate must not blank a
+  // field an earlier row already filled.
   const mapEntry = (rowKey: string | null | undefined, patch: Record<string, unknown>) => {
     if (!rowKey) return;
     const original = variantToOriginal[rowKey] ?? rowKey;
-    out[original] = { ...(out[original] ?? {}), ...patch };
+    const next = { ...(out[original] ?? {}) };
+    for (const [k, v] of Object.entries(patch)) {
+      if (v == null) continue;
+      if (next[k] == null) next[k] = v;
+    }
+    out[original] = next;
+  };
+
+  // Numeric coercion for cached KPI fields — numerics arrive as numbers
+  // or numeric strings depending on the source column type.
+  const toFiniteNumber = (v: unknown): number | null => {
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
   };
 
   try {
     const { data } = await supabase
       .from('lit_companies')
-      .select('source_company_key, industry, revenue')
+      .select('source_company_key, industry, revenue, teu_12m, shipments_12m, top_route_12m, recent_route, most_recent_shipment_date')
       .in('source_company_key', lookupKeys);
     for (const r of data ?? []) {
       mapEntry(r?.source_company_key, {
         industry: r?.industry ?? null,
         revenue: r?.revenue ?? null,
+        teu: toFiniteNumber(r?.teu_12m),
+        shipments: toFiniteNumber(r?.shipments_12m),
+        top_lane: r?.top_route_12m ?? r?.recent_route ?? null,
+        last_shipment: r?.most_recent_shipment_date ?? null,
       });
     }
   } catch { /* fall through */ }
@@ -4367,6 +4422,38 @@ export async function fetchSearchMetadataOverlay(
       mapEntry(r?.source_company_key, { is_saved: true });
     }
   } catch { /* saved-companies lookup optional */ }
+
+  // 30-day profile snapshot cache (lit_importyeti_company_snapshot) —
+  // free reads, keyed by slug in company_id. Any company that has EVER
+  // been opened has its full profile cached here, so TEU 12M / shipments
+  // / top lane / last shipment populate without a live provider call.
+  // Fills only the gaps the structured lit_companies row left empty.
+  try {
+    const slugKeys = lookupKeys.filter((k) => !k.includes('/'));
+    if (slugKeys.length) {
+      const { data } = await supabase
+        .from('lit_importyeti_company_snapshot')
+        .select('company_id, parsed_summary')
+        .in('company_id', slugKeys);
+      for (const r of data ?? []) {
+        if (!r?.company_id) continue;
+        const ps = (r.parsed_summary ?? {}) as Record<string, any>;
+        const kpis = (ps.route_kpis ?? {}) as Record<string, any>;
+        const original = variantToOriginal[r.company_id] ?? r.company_id;
+        const cur = out[original] ?? {};
+        out[original] = {
+          ...cur,
+          teu: cur.teu ?? toFiniteNumber(kpis.teuLast12m) ?? toFiniteNumber(ps.total_teu),
+          shipments:
+            cur.shipments ??
+            toFiniteNumber(ps.shipments_last_12m) ??
+            toFiniteNumber(ps.total_shipments),
+          top_lane: cur.top_lane ?? kpis.topRouteLast12m ?? kpis.mostRecentRoute ?? null,
+          last_shipment: cur.last_shipment ?? ps.last_shipment_date ?? null,
+        };
+      }
+    }
+  } catch { /* snapshot cache optional — never break search */ }
 
   // A2 bridge: the V6 vendor firmographics live in lit_company_directory keyed
   // by canonical_name with a NULL source_company_key, so the lookups above miss
@@ -4412,13 +4499,20 @@ export async function fetchSearchMetadataOverlay(
         for (const [canon, keys] of canonToKeys) {
           const r = best.get(canon);
           if (!r) continue;
+          // V6 directory revenue is stored in MILLIONS of USD (e.g. "673819"
+          // = $673.8B — see ExploreAccountTable's fmtMoneyM). The Company
+          // Search table renders absolute dollars, so scale here.
+          const dirRevenue = (() => {
+            const n = Number(r.revenue);
+            return Number.isFinite(n) && n > 0 ? n * 1_000_000 : null;
+          })();
           for (const original of keys) {
             const cur = out[original] ?? {};
             out[original] = {
               ...cur,
               industry: cur.industry ?? r.industry ?? null,
               vertical: cur.vertical ?? r.vertical ?? null,
-              revenue: cur.revenue ?? r.revenue ?? null,
+              revenue: cur.revenue ?? dirRevenue,
               opportunity_composite_score:
                 cur.opportunity_composite_score ??
                 (typeof r.opportunity_composite_score === 'number'

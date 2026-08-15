@@ -1,0 +1,19 @@
+-- P0#2 fix: saved_company / company_saved double-write into lit_activity_events.
+--
+-- Saving one company wrote TWO activity rows:
+--   1. DB trigger  log_saved_company_insert -> log_saved_company_activity()
+--      inserts event_type='saved_company' (metadata only {stage}, NO org_id)
+--   2. save-company edge fn inserts event_type='company_saved'
+--      (rich metadata + resolved org_id)
+-- This double-counted saves in every funnel (650 vs 616 rows @ 2026-08-14).
+--
+-- Decision: keep the EDGE-FUNCTION write ('company_saved') — it is the name the
+-- frontend already consumes (ActivityFeed.tsx, companyProfile.types.ts), carries
+-- org_id on 100% of rows (multi-tenant correct), and save-company is the
+-- canonical save path per CLAUDE.md. Eliminate the trigger write at the source.
+--
+-- Drop ONLY the trigger so the redundant future insert stops. The function is
+-- left in place (harmless, unreferenced) to keep the change minimal and easily
+-- reversible. Historical rows are NOT touched — dedup of history is deferred to
+-- the Phase 3/4 activation model.
+DROP TRIGGER IF EXISTS log_saved_company_insert ON public.lit_saved_companies;

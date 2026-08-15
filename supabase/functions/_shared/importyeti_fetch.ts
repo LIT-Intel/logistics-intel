@@ -13,10 +13,41 @@
 // into `lit_importyeti_company_snapshot.parsed_summary`.
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import {
+  isProviderEnabled,
+  recordProviderUsage,
+  updateProviderBalance,
+  type ProviderUsageEvent,
+} from "./provider_ledger.ts";
+import {
+  PROVIDER_FLAGS,
+  PROVIDERS,
+  type ProviderOperation,
+  type TriggerType,
+} from "./provider_operations.ts";
 
 export type EnvConfig = {
   IMPORTYETI_API_KEY: string;
   IMPORTYETI_API_BASE?: string;
+};
+
+/**
+ * Metering context threaded into every gated ImportYeti fetch. Optional at the
+ * type level so pre-existing callers keep compiling, but both real callers
+ * (importyeti-proxy, pulse-refresh-tick) pass it so the call is gated + ledgered.
+ */
+export type MeterCtx = {
+  operation: ProviderOperation | string;
+  trigger_type: TriggerType | string;
+  source: string;
+  organization_id?: string | null;
+  user_id?: string | null;
+  company_id?: string | null;
+  saved_company_id?: string | null;
+  subscription_tier?: string | null;
+  request_id?: string | null;
+  /** Kill-switch flag to gate on. Defaults to IMPORTYETI_ENABLED. */
+  flagKey?: string;
 };
 
 export type FetchResult = {
@@ -24,17 +55,103 @@ export type FetchResult = {
   parsedSummary: Record<string, unknown> | null;
   previousParsedSummary: Record<string, unknown> | null;
   rawPayload: Record<string, unknown> | null;
+  /** Provider account balance from the upstream response, when reported. */
+  creditsRemaining?: number | null;
 };
 
 const DEFAULT_BASE = "https://data.importyeti.com/v1.0";
 const SNAPSHOT_TABLE = "lit_importyeti_company_snapshot";
 
+/**
+ * Extract the ImportYeti account balance from a response. IY reports it in the
+ * JSON body (creditsRemaining / credits_remaining / meta.creditsRemaining —
+ * mirrors iy-powerquery-sync's fetchPage) and, on some endpoints, in a header
+ * (x-credits-remaining). Returns null when no balance is present.
+ */
+function extractCreditsRemaining(
+  payload: Record<string, unknown> | null,
+  resp: Response,
+): number | null {
+  const p: any = payload ?? {};
+  const bodyVal =
+    pickFiniteNumber(p?.creditsRemaining) ??
+    pickFiniteNumber(p?.credits_remaining) ??
+    pickFiniteNumber(p?.meta?.creditsRemaining) ??
+    pickFiniteNumber(p?.meta?.credits_remaining) ??
+    pickFiniteNumber(p?.data?.creditsRemaining) ??
+    pickFiniteNumber(p?.data?.credits_remaining);
+  if (bodyVal != null) return bodyVal;
+
+  const headerVal =
+    resp.headers.get("x-credits-remaining") ??
+    resp.headers.get("x-credits-left") ??
+    resp.headers.get("iy-credits-remaining");
+  return pickFiniteNumber(headerVal);
+}
+
+function pickFiniteNumber(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+/**
+ * Fire a ledger row for one upstream ImportYeti fetch. credits_consumed is left
+ * null so recordProviderUsage fills it from provider_pricing.credit_cost (we do
+ * NOT derive per-call credits here). Balance is mirrored when reported. All
+ * metering is best-effort — the helpers never throw — so it can NEVER change
+ * this function's return/throw contract for callers.
+ */
+async function meterFetch(
+  supabase: SupabaseClient,
+  meterCtx: MeterCtx,
+  status: ProviderUsageEvent["status"],
+  cleanSlug: string,
+  creditsRemaining: number | null,
+): Promise<void> {
+  await recordProviderUsage(supabase, {
+    provider: PROVIDERS.IMPORTYETI,
+    operation: meterCtx.operation,
+    status,
+    credits_consumed: null, // let the helper fill from provider_pricing
+    cache_hit: false,
+    trigger_type: meterCtx.trigger_type,
+    source: meterCtx.source,
+    organization_id: meterCtx.organization_id ?? null,
+    user_id: meterCtx.user_id ?? null,
+    company_id: meterCtx.company_id ?? null,
+    saved_company_id: meterCtx.saved_company_id ?? null,
+    subscription_tier: meterCtx.subscription_tier ?? null,
+    request_id: meterCtx.request_id ?? null,
+    metadata: { company_slug: cleanSlug },
+  });
+  await updateProviderBalance(supabase, PROVIDERS.IMPORTYETI, creditsRemaining);
+}
+
 export async function fetchAndUpsertSnapshot(
   supabase: SupabaseClient,
   companySlug: string,
   env: EnvConfig,
+  meterCtx?: MeterCtx,
 ): Promise<FetchResult> {
   const cleanSlug = normalizeCompanyKey(companySlug);
+
+  // 0. Kill-switch gate — checked BEFORE any upstream spend. Fail-open lives
+  //    inside isProviderEnabled, so a flag-RPC bug won't block real traffic.
+  if (meterCtx) {
+    const flagKey = meterCtx.flagKey ?? PROVIDER_FLAGS.IMPORTYETI_ENABLED;
+    const enabled = await isProviderEnabled(supabase, flagKey);
+    if (!enabled) {
+      const err = new Error(
+        `importyeti provider disabled by flag ${flagKey}`,
+      ) as Error & { code?: string };
+      err.code = "PROVIDER_DISABLED";
+      throw err;
+    }
+  }
 
   // 1. Pull current snapshot (the about-to-be-previous payload).
   const { data: prev } = await supabase
@@ -59,11 +176,24 @@ export async function fetchAndUpsertSnapshot(
   });
 
   if (resp.status === 404) {
+    // 404 still bills upstream — record it and mirror any balance in the body.
+    let notFoundPayload: Record<string, unknown> | null = null;
+    try {
+      const t = await resp.text();
+      notFoundPayload = t ? JSON.parse(t) : null;
+    } catch {
+      notFoundPayload = null;
+    }
+    const creditsRemaining = extractCreditsRemaining(notFoundPayload, resp);
+    if (meterCtx) {
+      await meterFetch(supabase, meterCtx, "not_found", cleanSlug, creditsRemaining);
+    }
     return {
       httpStatus: 404,
       parsedSummary: null,
       previousParsedSummary,
       rawPayload: null,
+      creditsRemaining,
     };
   }
   if (!resp.ok) {
@@ -81,6 +211,25 @@ export async function fetchAndUpsertSnapshot(
     const creditsExhausted =
       resp.status === 402 ||
       /not enough credits|insufficient credits/i.test(bodyText);
+
+    // The exhausted (402/403) body may still carry the (near-zero) balance.
+    let errPayload: Record<string, unknown> | null = null;
+    try {
+      errPayload = bodyText ? JSON.parse(bodyText) : null;
+    } catch {
+      errPayload = null;
+    }
+    const creditsRemaining = extractCreditsRemaining(errPayload, resp);
+    if (meterCtx) {
+      await meterFetch(
+        supabase,
+        meterCtx,
+        creditsExhausted ? "credits_exhausted" : "error",
+        cleanSlug,
+        creditsRemaining,
+      );
+    }
+
     const err = new Error(
       creditsExhausted
         ? `importyeti_credits_exhausted (upstream ${resp.status})`
@@ -101,6 +250,7 @@ export async function fetchAndUpsertSnapshot(
     rawPayload = {};
   }
 
+  const creditsRemaining = extractCreditsRemaining(rawPayload, resp);
   const parsedSummary = buildParsedSummary(cleanSlug, rawPayload);
 
   // 3. Upsert with previous_parsed_summary preserved.
@@ -117,11 +267,19 @@ export async function fetchAndUpsertSnapshot(
 
   if (error) throw new Error(`snapshot_upsert_failed: ${error.message}`);
 
+  // 4. Ledger the successful upstream call + mirror the live balance. Best-
+  //    effort — meterFetch's helpers never throw, so a metering failure cannot
+  //    change what this function returns to its callers.
+  if (meterCtx) {
+    await meterFetch(supabase, meterCtx, "success", cleanSlug, creditsRemaining);
+  }
+
   return {
     httpStatus: 200,
     parsedSummary,
     previousParsedSummary,
     rawPayload,
+    creditsRemaining,
   };
 }
 

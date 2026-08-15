@@ -1,29 +1,50 @@
 // pulse-refresh-tick — rolling refresh of saved companies via ImportYeti.
-// Triggered every 15 min by pg_cron. Processes up to 20 companies per tick.
-// Auth: X-Internal-Cron header against LIT_CRON_SECRET env.
+// Triggered by pg_cron. Auth: X-Internal-Cron header against LIT_CRON_SECRET env.
 //
-// Comment bump 2026-08-13: rebundle with the updated
-// _shared/importyeti_fetch.ts (captures the upstream 403 body and tags
-// "Not enough credits" as PROVIDER_CREDITS_EXHAUSTED so refresh failures
-// are honestly attributable). The auto-deploy workflow skips _shared-only
-// diffs, so this touch forces the redeploy.
+// Phase 2B (2026-08-14): background-refresh is now credit-controlled. It:
+//   - exits early when IMPORTYETI_BACKGROUND_REFRESH_ENABLED is killed;
+//   - only refreshes ACTIVE, non-churned owners on daily/weekly tiers whose
+//     snapshot age exceeds the tier cadence (selection lives in the
+//     pick_refreshable_saved_snapshots RPC — 'none'/NULL tiers get no bg refresh);
+//   - meters every upstream call into provider_usage_events + mirrors the live
+//     ImportYeti balance (via fetchAndUpsertSnapshot's meterCtx);
+//   - enforces a hard per-run cap so a bug can't drain the whole balance.
+// The auto-deploy workflow skips _shared-only diffs, so editing this file also
+// forces the redeploy that picks up the updated _shared modules.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { verifyCronAuth } from "../_shared/cron_auth.ts";
-import { fetchAndUpsertSnapshot } from "../_shared/importyeti_fetch.ts";
+import {
+  fetchAndUpsertSnapshot,
+  type MeterCtx,
+} from "../_shared/importyeti_fetch.ts";
 import { computeAlertCandidates } from "../_shared/alert_diff.ts";
 import { rematerializeCompanyBols } from "../_shared/materialize_bols.ts";
+import { isProviderEnabled } from "../_shared/provider_ledger.ts";
+import {
+  PROVIDER_FLAGS,
+  PROVIDER_OPERATIONS,
+  TRIGGER_TYPES,
+} from "../_shared/provider_operations.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const IMPORTYETI_API_KEY = Deno.env.get("IMPORTYETI_API_KEY") || "";
 
-// Weekly refresh cadence: cron runs once daily, processes up to 40
-// stalest saves per tick. 279 saved companies / 40 per day ≈ full
-// sweep every 7 days. TTL aligned with that cadence.
+// Per-run hard cap on companies refreshed. A safety valve: even if the picker
+// mis-selects, one tick can never drain more than this many credits. Overridable
+// via env (PULSE_REFRESH_MAX_PER_RUN) so ops can tune without a redeploy.
+const DEFAULT_MAX_PER_RUN = 200;
+const MAX_PER_RUN = (() => {
+  const raw = Number(Deno.env.get("PULSE_REFRESH_MAX_PER_RUN"));
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MAX_PER_RUN;
+})();
+
+// Per-tick batch. The tier + activeness + cadence filtering now lives in the
+// pick_refreshable_saved_snapshots RPC, so this is just how many due candidates
+// we take per run (never more than MAX_PER_RUN).
 const BATCH_SIZE = 40;
-const TTL_HOURS = 24 * 7; // 7 days
 const LOCK_KEY = 7281990; // arbitrary 32-bit signed int identifying this cron lock
 
 serve(async (req) => {
@@ -31,6 +52,21 @@ serve(async (req) => {
   if (!auth.ok) return auth.response;
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+  // 0. Background-refresh kill switch. If disabled, do ZERO work (no upstream
+  //    spend, no lock churn). Fail-open lives inside isProviderEnabled, so a
+  //    flag-RPC bug won't silently pause the sweep.
+  const bgEnabled = await isProviderEnabled(
+    supabase,
+    PROVIDER_FLAGS.IMPORTYETI_BACKGROUND_REFRESH_ENABLED,
+  );
+  if (!bgEnabled) {
+    console.log("[pulse-refresh-tick] background refresh disabled — 0 work");
+    return new Response(
+      JSON.stringify({ ok: true, skipped: true, reason: "background_refresh_disabled" }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }
 
   // 1. Advisory lock — abort if another tick is mid-flight.
   const { data: lockOk } = await supabase.rpc("try_pulse_refresh_lock", { p_key: LOCK_KEY });
@@ -46,19 +82,40 @@ serve(async (req) => {
     .single();
   const runId = runRow?.id;
 
-  // 3. Claim up to BATCH_SIZE companies. Two passes: stale snapshots, then never-fetched saves.
-  const stale = await pickStaleSnapshots(supabase, BATCH_SIZE);
-  const remaining = BATCH_SIZE - stale.length;
-  const neverFetched = remaining > 0 ? await pickNeverFetched(supabase, remaining) : [];
-  const slugs = [...stale, ...neverFetched];
+  // 3. Claim due candidates. The RPC filters to ACTIVE (activity in last 30d),
+  //    non-churned owners on daily/weekly tiers whose snapshot age exceeds the
+  //    tier cadence (weekly=7d, daily=24h; 'none'/NULL tiers excluded). The
+  //    per-run cap is a hard ceiling below which a bug cannot drain the balance.
+  const take = Math.min(BATCH_SIZE, MAX_PER_RUN);
+  const candidates = await pickRefreshable(supabase, take);
+  const capped = candidates.length >= MAX_PER_RUN;
+  if (capped) {
+    console.log(`[pulse-refresh-tick] per-run cap reached: ${MAX_PER_RUN} companies`);
+  }
 
-  // 4. Process each company.
+  // 4. Process each candidate — gated + ledgered via meterCtx.
   let processed = 0;
   let alertsCreated = 0;
   let errors = 0;
-  for (const slug of slugs) {
+  for (const cand of candidates) {
+    const slug = cand.source_company_key;
     try {
-      const result = await fetchAndUpsertSnapshot(supabase, slug, { IMPORTYETI_API_KEY });
+      const meterCtx: MeterCtx = {
+        operation: PROVIDER_OPERATIONS.PULSE_REFRESH,
+        trigger_type: TRIGGER_TYPES.CRON,
+        source: "pulse-refresh-tick",
+        organization_id: cand.org_id ?? null,
+        user_id: cand.user_id ?? null,
+        saved_company_id: cand.saved_company_id ?? null,
+        subscription_tier: cand.subscription_tier ?? null,
+        flagKey: PROVIDER_FLAGS.IMPORTYETI_BACKGROUND_REFRESH_ENABLED,
+      };
+      const result = await fetchAndUpsertSnapshot(
+        supabase,
+        slug,
+        { IMPORTYETI_API_KEY },
+        meterCtx,
+      );
       if (result.httpStatus === 404) {
         await markUntrackable(supabase, slug);
         continue;
@@ -72,15 +129,21 @@ serve(async (req) => {
       } catch (matErr) {
         console.error(`[pulse-refresh-tick] rematerialize failed for ${slug}:`, (matErr as any)?.message || matErr);
       }
-      const candidates = computeAlertCandidates(result.previousParsedSummary, result.parsedSummary!);
-      if (candidates.length > 0) {
-        alertsCreated += await fanOutAlerts(supabase, slug, candidates);
+      const candidateAlerts = computeAlertCandidates(result.previousParsedSummary, result.parsedSummary!);
+      if (candidateAlerts.length > 0) {
+        alertsCreated += await fanOutAlerts(supabase, slug, candidateAlerts);
       }
       await resetFailureCount(supabase, slug);
       processed++;
     } catch (err) {
       errors++;
-      console.error(`[pulse-refresh-tick] ${slug}:`, err?.message || err);
+      console.error(`[pulse-refresh-tick] ${slug}:`, (err as any)?.message || err);
+      // A global kill mid-run (PROVIDER_DISABLED) shouldn't be logged as a
+      // per-company failure spiral — stop the sweep cleanly.
+      if ((err as any)?.code === "PROVIDER_DISABLED") {
+        console.log("[pulse-refresh-tick] provider disabled mid-run — stopping");
+        break;
+      }
       await bumpFailureCount(supabase, slug);
     }
   }
@@ -99,42 +162,31 @@ serve(async (req) => {
   // pg_advisory_unlock(LOCK_KEY) — omitted; session ends here, lock auto-releases.
 
   return new Response(JSON.stringify({
-    ok: true, processed, alerts: alertsCreated, errors, slugs: slugs.length,
+    ok: true, processed, alerts: alertsCreated, errors, candidates: candidates.length, capped,
   }), { headers: { "Content-Type": "application/json" } });
 });
 
-async function pickStaleSnapshots(supabase: any, limit: number): Promise<string[]> {
-  // Delegate to pick_stale_saved_snapshots RPC. The RPC does the
-  // INNER JOIN between lit_saved_companies and lit_importyeti_company_snapshot
-  // so the LIMIT applies AFTER the active-save filter. Previous in-app
-  // two-step query (select 20 oldest snapshots, then filter to saved)
-  // shipped 0 candidates because orphan snapshots filled all 20 slots.
-  const { data, error } = await supabase.rpc("pick_stale_saved_snapshots", {
+type RefreshCandidate = {
+  source_company_key: string;
+  saved_company_id: string | null;
+  user_id: string | null;
+  org_id: string | null;
+  subscription_tier: string | null;
+  snapshot_updated_at: string | null;
+};
+
+async function pickRefreshable(supabase: any, limit: number): Promise<RefreshCandidate[]> {
+  // Delegates ALL selection to pick_refreshable_saved_snapshots: active-user +
+  // non-churned + tier-cadence filtering happens in SQL so the LIMIT applies
+  // after filtering (mirrors the old pick_stale_saved_snapshots pattern).
+  const { data, error } = await supabase.rpc("pick_refreshable_saved_snapshots", {
     p_limit: limit,
-    p_ttl_hours: TTL_HOURS,
   });
   if (error) {
-    console.error("[pulse-refresh-tick] pick_stale_saved_snapshots RPC failed:", error);
+    console.error("[pulse-refresh-tick] pick_refreshable_saved_snapshots RPC failed:", error);
     return [];
   }
-  return (data ?? []).map((row: { source_company_key: string }) => row.source_company_key);
-}
-
-async function pickNeverFetched(supabase: any, limit: number): Promise<string[]> {
-  // Pick saved companies that have NO row in lit_importyeti_company_snapshot yet.
-  const { data: saves } = await supabase
-    .from("lit_saved_companies")
-    .select("source_company_key")
-    .eq("refresh_status", "active")
-    .not("source_company_key", "is", null);
-  if (!saves || saves.length === 0) return [];
-  const allSlugs = Array.from(new Set(saves.map((r: any) => r.source_company_key)));
-  const { data: existing } = await supabase
-    .from("lit_importyeti_company_snapshot")
-    .select("company_id")
-    .in("company_id", allSlugs);
-  const existingSet = new Set((existing || []).map((r: any) => r.company_id));
-  return allSlugs.filter((s: string) => !existingSet.has(s)).slice(0, limit);
+  return (data ?? []) as RefreshCandidate[];
 }
 
 async function fanOutAlerts(supabase: any, slug: string, candidates: any[]): Promise<number> {

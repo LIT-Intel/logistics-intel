@@ -3,8 +3,20 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   buildParsedSummary,
   fetchAndUpsertSnapshot,
+  type MeterCtx,
 } from "../_shared/importyeti_fetch.ts";
 import { rematerializeCompanyBols } from "../_shared/materialize_bols.ts";
+import {
+  isProviderEnabled,
+  recordProviderUsage,
+  updateProviderBalance,
+} from "../_shared/provider_ledger.ts";
+import {
+  PROVIDER_FLAGS,
+  PROVIDER_OPERATIONS,
+  PROVIDERS,
+  TRIGGER_TYPES,
+} from "../_shared/provider_operations.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -344,6 +356,21 @@ async function fetchImportYetiJson(url: string, apiKey: string) {
   }
 }
 
+// Pull the ImportYeti account balance from a response payload. IY reports it in
+// the JSON body (creditsRemaining / credits_remaining / meta.creditsRemaining —
+// mirrors iy-powerquery-sync's fetchPage). Returns null when absent. Used by the
+// direct-fetch upstream paths (search, bols) that bypass fetchAndUpsertSnapshot.
+function extractCreditsRemainingFromPayload(payload: any): number | null {
+  const v =
+    normalizeNumber(payload?.creditsRemaining) ??
+    normalizeNumber(payload?.credits_remaining) ??
+    normalizeNumber(payload?.meta?.creditsRemaining) ??
+    normalizeNumber(payload?.meta?.credits_remaining) ??
+    normalizeNumber(payload?.data?.creditsRemaining) ??
+    normalizeNumber(payload?.data?.credits_remaining);
+  return v == null ? null : v;
+}
+
 function normalizeSearchResults(rawPayload: any): any[] {
   if (Array.isArray(rawPayload?.results)) return rawPayload.results;
   if (Array.isArray(rawPayload?.data)) return rawPayload.data;
@@ -610,6 +637,29 @@ function isProviderCreditsError(error: any): boolean {
   );
 }
 
+/** Thrown when the IMPORTYETI_ENABLED kill switch is off (fetch gated). */
+function isProviderDisabledError(error: any): boolean {
+  return error?.code === "PROVIDER_DISABLED";
+}
+
+/**
+ * Honest "temporarily paused" response for when the ImportYeti kill switch is
+ * off. 503 (not 5xx-generic) so the frontend shows a "data refresh is paused"
+ * banner rather than "something broke". Retrying may succeed once re-enabled.
+ */
+function providerDisabledResponse(): Response {
+  return jsonResponse(
+    {
+      ok: false,
+      error: "provider_temporarily_paused",
+      code: "PROVIDER_DISABLED",
+      message:
+        "Live shipment-data refresh is temporarily paused. Existing intelligence stays available; refresh resumes shortly.",
+    },
+    503,
+  );
+}
+
 async function handlePulseRefreshAction(
   supabase: any,
   companyId: string,
@@ -633,6 +683,18 @@ async function handlePulseRefreshAction(
   const cached = await getPulseCachedSnapshotIfFresh(supabase, normalizedCompanyKey);
   if (cached) {
     console.log("✅ Pulse refresh — cache hit", { requestId, companyId: normalizedCompanyKey });
+    await recordProviderUsage(supabase, {
+      provider: PROVIDERS.IMPORTYETI,
+      operation: PROVIDER_OPERATIONS.COMPANY_REFRESH,
+      status: "success",
+      cache_hit: true,
+      credits_consumed: 0,
+      trigger_type: TRIGGER_TYPES.USER,
+      source: "importyeti-proxy",
+      user_id: userId,
+      request_id: requestId,
+      metadata: { company_slug: normalizedCompanyKey, action: "pulse_refresh" },
+    });
     return jsonResponse({
       ok: true,
       source: "cache",
@@ -672,10 +734,19 @@ async function handlePulseRefreshAction(
 
   // 3. Upstream fetch + snapshot persist.
   try {
+    const pulseRefreshMeterCtx: MeterCtx = {
+      operation: PROVIDER_OPERATIONS.COMPANY_REFRESH,
+      trigger_type: TRIGGER_TYPES.USER,
+      source: "importyeti-proxy",
+      user_id: userId,
+      subscription_tier: planTier,
+      request_id: requestId,
+    };
     const fetchResult = await fetchAndUpsertSnapshot(
       supabase,
       normalizedCompanyKey,
       { IMPORTYETI_API_KEY: env.apiKey, IMPORTYETI_API_BASE: env.dmaBaseUrl },
+      pulseRefreshMeterCtx,
     );
     if (fetchResult.httpStatus === 404 || !fetchResult.parsedSummary) {
       await writeProfile404(supabase, normalizedCompanyKey);
@@ -695,6 +766,7 @@ async function handlePulseRefreshAction(
     });
   } catch (error: any) {
     console.error("❌ Pulse refresh failed", { requestId, error: error?.message || error });
+    if (isProviderDisabledError(error)) return providerDisabledResponse();
     if (isProviderCreditsError(error)) return providerCreditsResponse();
     return jsonResponse(
       { ok: false, error: error?.message || "Pulse refresh failed", code: "PULSE_REFRESH_FAILED" },
@@ -936,7 +1008,13 @@ async function resolveCompanyKeyToSlug(supabase: any, companyId: string): Promis
   return companyId;
 }
 
-async function handleCompanyBolsAction(supabase: any, companyId: string, requestId: string) {
+async function handleCompanyBolsAction(
+  supabase: any,
+  companyId: string,
+  requestId: string,
+  userId: string | null = null,
+  orgId: string | null = null,
+) {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("📋 COMPANY BOLS REQUEST:", { requestId, companyId });
 
@@ -948,6 +1026,22 @@ async function handleCompanyBolsAction(supabase: any, companyId: string, request
   const slugInput = await resolveCompanyKeyToSlug(supabase, companyId);
   const normalizedCompanyKey = normalizeCompanyKey(slugInput);
   console.log("  Normalized slug:", normalizedCompanyKey);
+
+  // Ledger a BOLs cache hit (served without upstream spend).
+  const recordBolsCacheHit = () =>
+    recordProviderUsage(supabase, {
+      provider: PROVIDERS.IMPORTYETI,
+      operation: PROVIDER_OPERATIONS.COMPANY_BOLS,
+      status: "success",
+      cache_hit: true,
+      credits_consumed: 0,
+      trigger_type: TRIGGER_TYPES.USER,
+      source: "importyeti-proxy",
+      user_id: userId,
+      organization_id: orgId,
+      request_id: requestId,
+      metadata: { company_slug: normalizedCompanyKey },
+    });
 
   try {
     const cached = await getCachedSnapshot(supabase, normalizedCompanyKey);
@@ -961,6 +1055,7 @@ async function handleCompanyBolsAction(supabase: any, companyId: string, request
         cached.data.raw_payload.data.recent_bols.length,
       );
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      await recordBolsCacheHit();
       return jsonResponse({
         ok: true,
         rows: cached.data.raw_payload.data.recent_bols,
@@ -977,6 +1072,7 @@ async function handleCompanyBolsAction(supabase: any, companyId: string, request
         cached.data.raw_payload.recent_bols.length,
       );
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      await recordBolsCacheHit();
       return jsonResponse({
         ok: true,
         rows: cached.data.raw_payload.recent_bols,
@@ -1009,15 +1105,38 @@ async function handleCompanyBolsAction(supabase: any, companyId: string, request
             last_hit_at: new Date().toISOString(),
           })
           .eq("cache_key", bolsCacheKey);
+        await recordBolsCacheHit();
         return jsonResponse({ ...bolsHit.response_data, source: "cache" });
       }
     } catch (cacheErr: any) {
       console.warn("BOLs cache read failed (continuing to upstream):", cacheErr?.message || cacheErr);
     }
 
+    // Kill-switch gate before paid upstream (fail-open inside the helper).
+    if (!(await isProviderEnabled(supabase, PROVIDER_FLAGS.IMPORTYETI_ENABLED))) {
+      return providerDisabledResponse();
+    }
+
     const upstream = await fetchCompanyBolsUpstream(normalizedCompanyKey, env);
     console.log("✅ BOL rows fetched:", upstream.rows.length);
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    // Ledger the paid upstream BOLs call + mirror the reported balance.
+    const bolsCreditsRemaining = extractCreditsRemainingFromPayload(upstream.raw);
+    await recordProviderUsage(supabase, {
+      provider: PROVIDERS.IMPORTYETI,
+      operation: PROVIDER_OPERATIONS.COMPANY_BOLS,
+      status: "success",
+      credits_consumed: null, // filled from provider_pricing.credit_cost
+      cache_hit: false,
+      trigger_type: TRIGGER_TYPES.USER,
+      source: "importyeti-proxy",
+      user_id: userId,
+      organization_id: orgId,
+      request_id: requestId,
+      metadata: { company_slug: normalizedCompanyKey, rows: upstream.rows.length },
+    });
+    await updateProviderBalance(supabase, PROVIDERS.IMPORTYETI, bolsCreditsRemaining);
 
     const bolsBody = {
       ok: true,
@@ -1046,6 +1165,7 @@ async function handleCompanyBolsAction(supabase: any, companyId: string, request
     return jsonResponse(bolsBody);
   } catch (error: any) {
     console.error("❌ companyBols failed:", { requestId, error: error?.message || error });
+    if (isProviderDisabledError(error)) return providerDisabledResponse();
     if (isProviderCreditsError(error)) return providerCreditsResponse();
     return jsonResponse(
       {
@@ -1065,6 +1185,7 @@ async function handleSearchAction(
   pageSize: number = 25,
   requestId: string = crypto.randomUUID(),
   userId: string | null = null,
+  orgId: string | null = null,
 ) {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("🔍 SEARCH REQUEST:", { requestId, q, page, pageSize });
@@ -1119,6 +1240,19 @@ async function handleSearchAction(
           last_hit_at: new Date().toISOString(),
         })
         .eq("cache_key", cacheKey);
+      await recordProviderUsage(supabase, {
+        provider: PROVIDERS.IMPORTYETI,
+        operation: PROVIDER_OPERATIONS.COMPANY_SEARCH,
+        status: "success",
+        cache_hit: true,
+        credits_consumed: 0,
+        trigger_type: TRIGGER_TYPES.USER,
+        source: "importyeti-proxy",
+        user_id: userId,
+        organization_id: orgId,
+        request_id: requestId,
+        metadata: { q: searchTerm.slice(0, 200), page: validatedPage },
+      });
       return jsonResponse({ ...cacheHit.response_data, source: "cache" });
     }
   } catch (cacheErr: any) {
@@ -1126,6 +1260,13 @@ async function handleSearchAction(
   }
 
   try {
+    // Kill-switch gate before any paid upstream search. Fail-open lives inside
+    // isProviderEnabled. When disabled, degrade to the free local index below
+    // (same path as a quota-exhausted search) rather than hard-failing.
+    if (!(await isProviderEnabled(supabase, PROVIDER_FLAGS.IMPORTYETI_ENABLED))) {
+      console.log("⛔ ImportYeti disabled by flag — serving local index:", { requestId });
+      throw new Error("importyeti_disabled_flag");
+    }
     // Cost guard: an uncached search consumes the per-user daily ImportYeti
     // quota (same pool as Pulse refresh). When exhausted, fall through to
     // the free local-index search instead of hard-failing.
@@ -1159,6 +1300,24 @@ async function handleSearchAction(
     console.log("  Auth:", env.apiKeySource || "IY API key");
 
     const rawPayload = await fetchImportYetiJson(iyUrl, env.apiKey);
+
+    // Ledger the paid upstream search + mirror the reported balance.
+    const searchCreditsRemaining = extractCreditsRemainingFromPayload(rawPayload);
+    await recordProviderUsage(supabase, {
+      provider: PROVIDERS.IMPORTYETI,
+      operation: PROVIDER_OPERATIONS.COMPANY_SEARCH,
+      status: "success",
+      credits_consumed: null, // filled from provider_pricing.credit_cost
+      cache_hit: false,
+      trigger_type: TRIGGER_TYPES.USER,
+      source: "importyeti-proxy",
+      user_id: userId,
+      organization_id: orgId,
+      request_id: requestId,
+      metadata: { q: searchTerm.slice(0, 200), page: validatedPage },
+    });
+    await updateProviderBalance(supabase, PROVIDERS.IMPORTYETI, searchCreditsRemaining);
+
     const upstreamResults = normalizeSearchResults(rawPayload);
     const normalizedResults = upstreamResults.map(normalizeSearchHit);
 
@@ -1332,6 +1491,22 @@ async function handleCompanyProfileAction(
         normalizedCompanyKey,
       );
 
+      // Served from snapshot cache — no upstream spend. Record cache_hit for
+      // the ledger's cache-effectiveness view (credits_consumed forced to 0).
+      await recordProviderUsage(supabase, {
+        provider: PROVIDERS.IMPORTYETI,
+        operation: PROVIDER_OPERATIONS.COMPANY_PROFILE,
+        status: "success",
+        cache_hit: true,
+        credits_consumed: 0,
+        trigger_type: TRIGGER_TYPES.USER,
+        source: "importyeti-proxy",
+        organization_id: orgId,
+        user_id: userId,
+        request_id: requestId,
+        metadata: { company_slug: normalizedCompanyKey },
+      });
+
       return jsonResponse({
         ok: true,
         source: "cache",
@@ -1410,6 +1585,16 @@ async function handleCompanyProfileAction(
     // shared module so the cron refresher (pulse-refresh-tick) writes the
     // exact same shape into lit_importyeti_company_snapshot. The user-JWT
     // gate + quota check above stay in this proxy.
+    const profileMeterCtx: MeterCtx = {
+      operation: forceRefresh
+        ? PROVIDER_OPERATIONS.COMPANY_REFRESH
+        : PROVIDER_OPERATIONS.COMPANY_PROFILE,
+      trigger_type: TRIGGER_TYPES.USER,
+      source: "importyeti-proxy",
+      organization_id: orgId,
+      user_id: userId,
+      request_id: requestId,
+    };
     const fetchResult = await fetchAndUpsertSnapshot(
       supabase,
       normalizedCompanyKey,
@@ -1417,6 +1602,7 @@ async function handleCompanyProfileAction(
         IMPORTYETI_API_KEY: env.apiKey,
         IMPORTYETI_API_BASE: env.dmaBaseUrl,
       },
+      profileMeterCtx,
     );
 
     if (fetchResult.httpStatus === 404 || !fetchResult.parsedSummary) {
@@ -1535,6 +1721,7 @@ async function handleCompanyProfileAction(
     });
   } catch (error: any) {
     console.error("❌ Company profile failed:", { requestId, error: error?.message || error });
+    if (isProviderDisabledError(error)) return providerDisabledResponse();
     if (isProviderCreditsError(error)) return providerCreditsResponse();
     return jsonResponse(
       {
@@ -1817,7 +2004,7 @@ Deno.serve(async (req: Request) => {
       body = {};
     }
 
-    const { action, company_id, companyKey, q, page, pageSize, refresh } = body ?? {};
+    const { action, company_id, companyKey, q, page, pageSize, refresh, measureOnly } = body ?? {};
     const requestedCompanyId = company_id || companyKey;
     const resolvedAction = action ?? (requestedCompanyId ? "companyProfile" : undefined);
     // Explicit "Refresh Intel" passes refresh:true (or action:"refresh"),
@@ -1880,6 +2067,11 @@ Deno.serve(async (req: Request) => {
             503,
           );
         }
+        // Kill-switch gate — respect the global ImportYeti pause even for the
+        // read-only metadata endpoint (fail-open inside isProviderEnabled).
+        if (!(await isProviderEnabled(supabase, PROVIDER_FLAGS.IMPORTYETI_ENABLED))) {
+          return providerDisabledResponse();
+        }
         const baseRaw = (Deno.env.get("IMPORTYETI_API_BASE") || "https://data.importyeti.com/v1.0").replace(/\/+$/, "");
         const upstreamResp = await fetch(`${baseRaw}/database-updated`, {
           method: "GET",
@@ -1887,6 +2079,27 @@ Deno.serve(async (req: Request) => {
         });
         let payload: any = {};
         try { payload = await upstreamResp.json(); } catch { payload = {}; }
+        // Read-only metadata endpoint — per IY docs it does NOT burn credits, so
+        // record it with credits_consumed=0 (operation 'other') for call
+        // visibility without inflating cost. Mirror a balance only if reported.
+        await recordProviderUsage(supabase, {
+          provider: PROVIDERS.IMPORTYETI,
+          operation: PROVIDER_OPERATIONS.OTHER,
+          status: upstreamResp.ok ? "success" : "error",
+          credits_consumed: 0,
+          cache_hit: false,
+          trigger_type: TRIGGER_TYPES.USER,
+          source: "importyeti-proxy",
+          user_id: userId,
+          organization_id: orgIdForUsage,
+          request_id: requestId,
+          metadata: { endpoint: "database-updated" },
+        });
+        await updateProviderBalance(
+          supabase,
+          PROVIDERS.IMPORTYETI,
+          extractCreditsRemainingFromPayload(payload),
+        );
         const lastUpdated = normalizeString(
           payload?.last_updated ?? payload?.lastUpdated ?? payload?.updated_at ?? null,
         );
@@ -1929,6 +2142,17 @@ Deno.serve(async (req: Request) => {
       // only inserts a ledger row; it does NOT gate or charge (the search
       // proceeds regardless), so this is pure measurement, not a limit.
       // Fire-and-forget + try/catch so a ledger hiccup never fails a search.
+      //
+      // CACHE-HIT MEASUREMENT (2026-08-14): the live search UI
+      // (`searchShippers` in frontend/src/lib/api.ts) serves cache hits
+      // ENTIRELY client-side from lit_company_index and returns WITHOUT ever
+      // reaching this proxy — so the instrumentation below only fired on
+      // cache MISSES. That's why `company_search` stopped writing to
+      // lit_usage_ledger on 2026-08-06 (cache warmed up → nearly every search
+      // is now a hit). The frontend therefore fires a `measureOnly:true`
+      // POST on the cache-hit path so the search is still counted. In that
+      // mode we log the ledger row and return immediately — no upstream IY
+      // fetch, no PowerQuery spend, no local index lookup.
       if (userId && typeof q === "string" && q.trim().length > 0) {
         try {
           await supabase.rpc("consume_usage", {
@@ -1936,13 +2160,24 @@ Deno.serve(async (req: Request) => {
             p_user_id: userId,
             p_feature_key: "company_search",
             p_quantity: 1,
-            p_metadata: { q: q.trim().slice(0, 200), page, measurement_only: true },
+            p_metadata: {
+              q: q.trim().slice(0, 200),
+              page,
+              measurement_only: true,
+              served_from: measureOnly ? "cache" : "proxy",
+            },
           });
         } catch (usageErr) {
           console.warn("[importyeti-proxy] search consume_usage failed (nonfatal)", usageErr);
         }
       }
-      return await handleSearchAction(supabase, q, page, pageSize, requestId, userId);
+      // measureOnly = the frontend already served this search from its client
+      // cache and is calling purely to record the ledger row. Do NOT run the
+      // paid upstream search path in that case.
+      if (measureOnly === true) {
+        return jsonResponse({ ok: true, measured: true, results: [], total: 0, meta: { q, page, pageSize, measureOnly: true } });
+      }
+      return await handleSearchAction(supabase, q, page, pageSize, requestId, userId, orgIdForUsage);
     }
 
     if (!requestedCompanyId) {
@@ -1957,7 +2192,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (resolvedAction === "companyBols") {
-      return await handleCompanyBolsAction(supabase, requestedCompanyId, requestId);
+      return await handleCompanyBolsAction(supabase, requestedCompanyId, requestId, userId, orgIdForUsage);
     }
 
     if (resolvedAction === "reparseAll" || resolvedAction === "reparse") {
