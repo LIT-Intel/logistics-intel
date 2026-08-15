@@ -410,6 +410,10 @@ export default function AdminCommandDeck() {
 
   const spamCount = useMemo(() => users.filter(isSpamSuspect).length, [users]);
 
+  // `spamOnly` gates the users-table filter below (see filteredUsers); declared
+  // here so it precedes its first use and can't hit a temporal-dead-zone.
+  const [spamOnly, setSpamOnly] = useState(false);
+
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
     let rows = users;
@@ -429,7 +433,7 @@ export default function AdminCommandDeck() {
   // ── User moderation (suspend / reactivate / delete) ─────────────────────────
   // All privileged ops route through the admin-user-moderation edge fn (service
   // role, platform-admin gated). Optimistic UI + toast; reload on completion.
-  const [spamOnly, setSpamOnly] = useState(false);
+  // (`spamOnly` is declared above, before filteredUsers, to avoid a TDZ.)
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [modBusy, setModBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);

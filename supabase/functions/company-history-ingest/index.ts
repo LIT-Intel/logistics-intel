@@ -40,6 +40,17 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { verifyCronAuth } from "../_shared/cron_auth.ts";
 import { buildUnifiedShipmentRow } from "../_shared/materialize_bols.ts";
+import {
+  isProviderEnabled,
+  recordProviderUsage,
+  updateProviderBalance,
+} from "../_shared/provider_ledger.ts";
+import {
+  PROVIDER_FLAGS,
+  PROVIDER_OPERATIONS,
+  PROVIDERS,
+  TRIGGER_TYPES,
+} from "../_shared/provider_operations.ts";
 
 const CONFIG_META_KEY = "company_history_ingest_config";
 const PAGE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // mirror BOLS_CACHE_TTL_MS in importyeti-proxy
@@ -129,6 +140,68 @@ function extractRequestCost(payload: any): number {
   return typeof n === "number" && Number.isFinite(n) ? n : 0;
 }
 
+// Mirror _shared/importyeti_fetch.ts's extractCreditsRemaining (body-only here —
+// iyGet doesn't surface the raw Response, and IY reports the balance in the JSON
+// body: creditsRemaining / credits_remaining / meta.* / data.*). Returns null
+// when no balance is present so updateProviderBalance no-ops.
+function pickFiniteNumber(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function extractCreditsRemaining(payload: any): number | null {
+  const p: any = payload ?? {};
+  return (
+    pickFiniteNumber(p?.creditsRemaining) ??
+    pickFiniteNumber(p?.credits_remaining) ??
+    pickFiniteNumber(p?.meta?.creditsRemaining) ??
+    pickFiniteNumber(p?.meta?.credits_remaining) ??
+    pickFiniteNumber(p?.data?.creditsRemaining) ??
+    pickFiniteNumber(p?.data?.credits_remaining)
+  );
+}
+
+// Best-effort metering for ONE upstream ImportYeti fetch. Mirrors the meterFetch
+// helper in _shared/importyeti_fetch.ts: records a provider_usage_events row
+// (credits_consumed=null so provider_pricing fills it) and mirrors the live
+// balance. All helpers are no-throw, so metering can NEVER break the ingest.
+async function meterUpstream(
+  sb: any,
+  args: {
+    operation: string;
+    status: "success" | "not_found" | "credits_exhausted" | "error";
+    company_id: string;
+    payload?: any;
+  },
+): Promise<void> {
+  try {
+    await recordProviderUsage(sb, {
+      provider: PROVIDERS.IMPORTYETI,
+      operation: args.operation,
+      status: args.status,
+      credits_consumed: null, // let provider_pricing fill it
+      cache_hit: false,
+      trigger_type: TRIGGER_TYPES.CRON,
+      source: "company-history-ingest",
+      company_id: args.company_id,
+      metadata: { source_company_key: args.company_id },
+    });
+    await updateProviderBalance(
+      sb,
+      PROVIDERS.IMPORTYETI,
+      extractCreditsRemaining(args.payload),
+    );
+  } catch (e: any) {
+    // Absolute backstop — the ledger helpers already swallow their own errors,
+    // but never let a metering path throw into the ingest loop.
+    console.warn("[company-history-ingest] metering failed:", e?.message || e);
+  }
+}
+
 async function cacheGet(sb: any, key: string): Promise<any | null> {
   try {
     const { data: hit } = await sb
@@ -202,7 +275,28 @@ async function fetchIdPage(
     const ids = Array.isArray(cached?.data) ? cached.data.filter((x: any) => typeof x === "string") : [];
     return { ids, fromCache: true, credits: 0 };
   }
-  const payload = await iyGet(iy, `/company/${slug}/bols?offset=${offset}`);
+  let payload: any;
+  try {
+    payload = await iyGet(iy, `/company/${slug}/bols?offset=${offset}`);
+  } catch (e: any) {
+    // Live upstream call that failed — meter it (error/credits_exhausted) then
+    // rethrow so paging/budget logic is unchanged.
+    const msg = String(e?.message || e);
+    const exhausted = /not enough credits|insufficient credits|402/i.test(msg);
+    await meterUpstream(sb, {
+      operation: PROVIDER_OPERATIONS.SHIPMENT_HISTORY,
+      status: exhausted ? "credits_exhausted" : "error",
+      company_id: slug,
+    });
+    throw e;
+  }
+  // Meter the successful live ID-page fetch (~1 credit / 10 BOL IDs).
+  await meterUpstream(sb, {
+    operation: PROVIDER_OPERATIONS.SHIPMENT_HISTORY,
+    status: "success",
+    company_id: slug,
+    payload,
+  });
   await cachePut(sb, key, "company/bols", { company_id: slug, offset }, payload);
   const ids = Array.isArray(payload?.data) ? payload.data.filter((x: any) => typeof x === "string") : [];
   return { ids, fromCache: false, credits: extractRequestCost(payload) || 1 };
@@ -211,6 +305,7 @@ async function fetchIdPage(
 // ── /bol/{id} detail (cache-first) ──────────────────────────────────────────
 async function fetchBolDetail(
   sb: any,
+  slug: string,
   bolId: string,
   iy: { apiKey: string; baseUrl: string },
 ): Promise<{ detail: any | null; fromCache: boolean; credits: number }> {
@@ -219,7 +314,28 @@ async function fetchBolDetail(
   if (cached) {
     return { detail: cached?.data ?? cached, fromCache: true, credits: 0 };
   }
-  const payload = await iyGet(iy, `/bol/${encodeURIComponent(bolId)}`);
+  let payload: any;
+  try {
+    payload = await iyGet(iy, `/bol/${encodeURIComponent(bolId)}`);
+  } catch (e: any) {
+    // Live per-BOL detail fetch that failed — meter it then rethrow so the
+    // per-BOL catch in the main loop handles it exactly as before.
+    const msg = String(e?.message || e);
+    const exhausted = /not enough credits|insufficient credits|402/i.test(msg);
+    await meterUpstream(sb, {
+      operation: PROVIDER_OPERATIONS.DEEP_HISTORY,
+      status: exhausted ? "credits_exhausted" : "error",
+      company_id: slug,
+    });
+    throw e;
+  }
+  // Meter the successful live per-BOL detail fetch (~0.1 credit each).
+  await meterUpstream(sb, {
+    operation: PROVIDER_OPERATIONS.DEEP_HISTORY,
+    status: "success",
+    company_id: slug,
+    payload,
+  });
   await cachePut(sb, key, "bol/detail", { bol_id: bolId }, payload);
   return {
     detail: payload?.data ?? null,
@@ -391,6 +507,34 @@ Deno.serve(async (req: Request) => {
   const cfg = await loadConfig(sb);
   if (!cfg.enabled) {
     return json({ ok: true, skipped: "ingest disabled via config" });
+  }
+
+  // Phase 2B kill-switch gate — checked BEFORE any upstream spend. This is a
+  // background/cron job, so BOTH the global provider flag AND the background-
+  // refresh flag must be enabled. If either is killed, do ZERO upstream work
+  // (no ID pages, no /bol detail, not even the probe). Fail-open lives inside
+  // isProviderEnabled, so a flag-RPC bug won't silently pause the ingest.
+  // NOTE: while IMPORTYETI_BACKGROUND_REFRESH_ENABLED is held disabled (the
+  // parent's current safety hold), this stays dormant even if the cron is
+  // re-enabled.
+  const [providerEnabled, bgEnabled] = await Promise.all([
+    isProviderEnabled(sb, PROVIDER_FLAGS.IMPORTYETI_ENABLED),
+    isProviderEnabled(sb, PROVIDER_FLAGS.IMPORTYETI_BACKGROUND_REFRESH_ENABLED),
+  ]);
+  if (!providerEnabled || !bgEnabled) {
+    console.log(
+      "[company-history-ingest] provider disabled — 0 work",
+      JSON.stringify({
+        importyeti_enabled: providerEnabled,
+        background_refresh_enabled: bgEnabled,
+      }),
+    );
+    return json({
+      ok: true,
+      skipped: "provider disabled by kill switch",
+      importyeti_enabled: providerEnabled,
+      background_refresh_enabled: bgEnabled,
+    });
   }
 
   const iy = getIyEnv();
@@ -574,7 +718,7 @@ Deno.serve(async (req: Request) => {
         for (const bolId of unknownIds) {
           if (Date.now() - startedAt > WALL_CLOCK_BUDGET_MS) break;
           try {
-            const det = await fetchBolDetail(sb, bolId, iy);
+            const det = await fetchBolDetail(sb, slug, bolId, iy);
             if (det.fromCache) detailsFromCache++;
             else {
               detailsFetched++;
