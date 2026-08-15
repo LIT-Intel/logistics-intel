@@ -9,7 +9,13 @@ import { LeadMagnetHero } from "@/components/lead-magnet/LeadMagnetHero";
 import { LiveProductPreview } from "@/components/lead-magnet/LiveProductPreview";
 import { ProofStrip } from "@/components/lead-magnet/ProofStrip";
 import { OutcomesBand } from "@/components/lead-magnet/OutcomesBand";
-import { ProductShowcase } from "@/components/sections/ProductShowcase";
+import { CompanyIntelMock } from "@/components/sections/CompanyIntelMock";
+import { CrmPipelinePreview } from "@/components/sections/CrmPipelinePreview";
+import {
+  HomeShowcaseTabs,
+  type ShowcaseTab,
+} from "@/components/sections/HomeShowcaseTabs";
+import { PulseExplorerMock } from "@/components/sections/pulse-explorer/PulseExplorerMock";
 import { StepsRow } from "@/components/sections/StepsRow";
 import { QuoteGrid } from "@/components/sections/QuoteGrid";
 import { fetchTeamAuthors } from "@/lib/team-authors";
@@ -96,6 +102,56 @@ export default async function SolutionsHubPage() {
   ]);
 
   const cards = buildRoleCards(sanityRoles || []);
+  const productTourTabs: [ShowcaseTab, ...ShowcaseTab[]] = [
+    {
+      id: "discover",
+      label: "Discover",
+      eyebrow: "Find the right accounts",
+      headline: "Turn a broad territory into a focused shipper list.",
+      description:
+        "Search by industry, geography, trade lane, and shipment behavior. Pulse Explorer helps freight sales teams see where the opportunity is concentrated.",
+      bullets: [
+        "Explore active shippers on an interactive map",
+        "Filter by location, shipment activity, and freight signals",
+        "Save qualified accounts for deeper research",
+      ],
+      ctaLabel: "Explore Pulse",
+      ctaHref: "/pulse",
+      mock: <PulseExplorerMock />,
+    },
+    {
+      id: "research",
+      label: "Research",
+      eyebrow: "Understand the opportunity",
+      headline: "See the freight story behind every account.",
+      description:
+        "Open a company profile to review shipment cadence, trade lanes, suppliers, products, and verified contacts before your first conversation.",
+      bullets: [
+        "Review live shipment activity and lane history",
+        "Understand supplier, product, and carrier patterns",
+        "Connect account context with verified contacts",
+      ],
+      ctaLabel: "See company intelligence",
+      ctaHref: "/company-intelligence",
+      mock: <CompanyIntelMock />,
+    },
+    {
+      id: "pipeline",
+      label: "Pipeline",
+      eyebrow: "Work the opportunity",
+      headline: "Keep the freight context attached to every deal.",
+      description:
+        "Move researched accounts into a freight-native CRM where your team can manage deals, tasks, ownership, forecasts, and follow-up.",
+      bullets: [
+        "Manage accounts, contacts, deals, and tasks",
+        "Move opportunities through a visual pipeline",
+        "Track ownership, next steps, and forecasts",
+      ],
+      ctaLabel: "Explore the CRM",
+      ctaHref: "/freight-broker-crm",
+      mock: <CrmPipelinePreview />,
+    },
+  ];
 
   const breadcrumb = {
     "@context": "https://schema.org",
@@ -171,19 +227,16 @@ export default async function SolutionsHubPage() {
 
       <ProofStrip />
 
-      {/* Glossy injection #1 — dark product showcase. Frame renders a
-          CSS-only placeholder until screenshots clear PII review. */}
-      <ProductShowcase
-        eyebrow="Inside the workspace"
-        heading="One screen. Every shipment, contact, and account in motion."
-        lede="Search by buyer, lane, HS code, or signal. Pull verified decision-makers. Trigger a sequence — all inside LIT, no tab-switching."
-        urlBarText="app.logisticintel.com / company / home depot"
-        callouts={[
-          { kpi: "524K", label: "Active US shippers" },
-          { kpi: "120M+", label: "BOL records" },
-          { kpi: "8 min", label: "To first booked meeting" },
-        ]}
-      />
+      <div id="solutions-product-tour" className="scroll-mt-24">
+        <HomeShowcaseTabs
+          eyebrow="Inside the workspace"
+          headline="From shipper discovery to a sales-ready opportunity."
+          intro="Follow one connected workflow through Pulse Explorer, Company Intelligence, and the LIT CRM. The tour advances automatically, or choose a stage to explore it yourself."
+          tabs={productTourTabs}
+          autoPlay
+          autoPlayMs={6500}
+        />
+      </div>
 
       {/* Role router */}
       <section className="bg-white">
@@ -265,9 +318,9 @@ export default async function SolutionsHubPage() {
           },
           {
             eyebrow: "03 · Engage + close",
-            title: "Trigger a sequence — book the meeting",
-            body: "Validated emails. Personalized hooks pulled from shipment history. Track replies, meetings, and pipeline in one place.",
-            meta: "94% deliverability · 4.1× reply rate",
+            title: "Move the opportunity forward",
+            body: "Use verified contacts and shipment context to start outreach, then manage replies, tasks, meetings, and pipeline in one place.",
+            meta: "Outreach + CRM · One connected workflow",
           },
         ]}
       />
@@ -280,14 +333,14 @@ export default async function SolutionsHubPage() {
             body: "Each role onboarding sets up the right signals, searches, sequences, and dashboards — without manual setup.",
           },
           {
-            num: "8 min",
-            label: "To first qualified meeting",
-            body: "Average time from signup to first booked meeting across forwarder + broker customers.",
+            num: "3",
+            label: "Connected sales stages",
+            body: "Discover the market, research the account, and manage the opportunity without rebuilding context between tools.",
           },
           {
-            num: "14 days",
-            label: "To full team activation",
-            body: "Most teams reach 80% rep activation within two weeks. Onboarding is included in every paid plan.",
+            num: "1",
+            label: "Freight-native CRM",
+            body: "Accounts, contacts, deals, tasks, forecasting, reporting, and outreach stay connected to freight activity.",
           },
         ]}
       />
@@ -305,7 +358,7 @@ export default async function SolutionsHubPage() {
             text: "We don't ship five products — we ship one platform that knows what motion you're in. Forwarders see lanes first. Brokers see shippers first. Sales leaders see pipeline first. Same data, different surface.",
             stats: [
               { num: "5", label: "Role workspaces" },
-              { num: "8 min", label: "To first meeting" },
+              { num: "1", label: "Connected platform" },
             ],
             name: team["gabriel-reyes"].name,
             role: team["gabriel-reyes"].role,
@@ -314,8 +367,8 @@ export default async function SolutionsHubPage() {
           {
             text: "Onboarding is part of the product. Every plan ships with a workspace tour, lane templates, and sample sequences — so reps aren't staring at a blank dashboard on day one.",
             stats: [
-              { num: "14 days", label: "Full team active" },
-              { num: "80%", label: "Rep activation" },
+              { num: "7 days", label: "Trial period" },
+              { num: "10", label: "Preloaded accounts" },
             ],
             name: team["jennifer-okafor"].name,
             role: team["jennifer-okafor"].role,
@@ -325,7 +378,7 @@ export default async function SolutionsHubPage() {
             text: "We watch every search, every save, every reply. When a workflow earns its keep, it becomes a default. When it doesn't, it gets cut. The product gets better every week because the operators using it tell us what's working.",
             stats: [
               { num: "Weekly", label: "Ship cadence" },
-              { num: "94%", label: "Email deliverability" },
+              { num: "3", label: "Core workflows" },
             ],
             name: team["nikki-patel"].name,
             role: team["nikki-patel"].role,
@@ -345,15 +398,15 @@ export default async function SolutionsHubPage() {
               See LIT configured for your role.
             </h2>
             <p className="mx-auto mt-4 max-w-prose text-base leading-relaxed text-white/70">
-              Forwarder, broker, NVOCC, 3PL, sales leader — start free and the
-              workspace builds itself around the way you sell freight.
+              Forwarder, broker, NVOCC, 3PL, or sales leader: start a seven-day
+              trial and see how LIT supports the way your team sells freight.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link
                 href="/signup?source=solutions-final"
                 className="inline-flex h-12 items-center justify-center rounded-lg bg-brand-cyan px-6 text-sm font-semibold text-dark-0 shadow-glow-cyan transition hover:bg-brand-cyan-dim"
               >
-                Start free
+                Start 7-day trial
               </Link>
               <Link
                 href="/demo?source=solutions-final"
@@ -393,4 +446,3 @@ export default async function SolutionsHubPage() {
     </>
   );
 }
-
