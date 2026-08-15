@@ -34,6 +34,11 @@ import {
   Plus,
   CircleAlert,
   Tag as TagIcon,
+  MoreHorizontal,
+  Archive,
+  ArchiveRestore,
+  Trash2,
+  RotateCcw,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -52,6 +57,9 @@ import {
   assignLead,
   addNote,
   logTouch,
+  archiveLead,
+  deleteLead,
+  restoreLead,
   type LeadTag,
   listTags,
   createTag,
@@ -84,17 +92,24 @@ export default function LeadDetailDrawer({
   assignees,
   onClose,
   onChanged,
+  onRemoved,
 }: {
   lead: Lead;
   stages: LeadStage[];
   assignees: Assignee[];
   onClose: () => void;
   onChanged: () => void;
+  /** Called after archive/delete/restore so the parent can refresh + close.
+   *  Falls back to onChanged()+onClose() when not supplied. */
+  onRemoved?: () => void;
 }) {
   const { toast } = useToast();
   const [lead, setLead] = useState<Lead>(initialLead);
   const [timeline, setTimeline] = useState<LeadTimelineEntry[]>([]);
   const [tab, setTab] = useState<Tab>("activity");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const [stageId, setStageId] = useState<string>(initialLead.stage_id ?? "");
   const [assigneeId, setAssigneeId] = useState<string>(initialLead.assigned_to ?? "");
@@ -205,6 +220,68 @@ export default function LeadDetailDrawer({
     }
   }
 
+  // Archive / delete / restore all remove the lead from the current view; after
+  // success we notify the parent (refresh) and close the drawer.
+  function afterLifecycle() {
+    if (onRemoved) onRemoved();
+    else {
+      onChanged();
+      onClose();
+    }
+  }
+
+  async function handleArchive(archived: boolean) {
+    if (lifecycleBusy) return;
+    setLifecycleBusy(true);
+    setMenuOpen(false);
+    try {
+      const res = await archiveLead(lead.id, archived);
+      if (!res.ok) throw new Error(res.reason || "failed");
+      toast({ title: archived ? "Lead archived" : "Lead unarchived" });
+      afterLifecycle();
+    } catch (e: any) {
+      toast({ title: archived ? "Could not archive" : "Could not unarchive", description: e?.message, variant: "destructive" });
+    } finally {
+      setLifecycleBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (lifecycleBusy) return;
+    setLifecycleBusy(true);
+    setMenuOpen(false);
+    setConfirmDelete(false);
+    try {
+      const res = await deleteLead(lead.id);
+      if (!res.ok) throw new Error(res.reason || "failed");
+      toast({ title: "Lead deleted", description: "Moved to Deleted — restore anytime." });
+      afterLifecycle();
+    } catch (e: any) {
+      toast({ title: "Could not delete", description: e?.message, variant: "destructive" });
+    } finally {
+      setLifecycleBusy(false);
+    }
+  }
+
+  async function handleRestore() {
+    if (lifecycleBusy) return;
+    setLifecycleBusy(true);
+    setMenuOpen(false);
+    try {
+      const res = await restoreLead(lead.id);
+      if (!res.ok) throw new Error(res.reason || "failed");
+      toast({ title: "Lead restored" });
+      afterLifecycle();
+    } catch (e: any) {
+      toast({ title: "Could not restore", description: e?.message, variant: "destructive" });
+    } finally {
+      setLifecycleBusy(false);
+    }
+  }
+
+  const isArchived = Boolean(lead.archived_at);
+  const isDeleted = Boolean(lead.deleted_at);
+
   return (
     <div
       style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", justifyContent: "flex-end" }}
@@ -280,10 +357,85 @@ export default function LeadDetailDrawer({
               ) : null}
             </div>
             <TagsRow leadId={lead.id} />
+            {isArchived || isDeleted ? (
+              <div style={{ marginTop: 6 }}>
+                <span
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 9px", borderRadius: 999,
+                    background: isDeleted ? "#FEF2F2" : "#FFF7ED",
+                    border: `1px solid ${isDeleted ? "#FECACA" : "#FED7AA"}`,
+                    color: isDeleted ? "#b91c1c" : "#c2410c",
+                    fontFamily: FONT_HEAD, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
+                  }}
+                >
+                  {isDeleted ? <Trash2 style={{ width: 11, height: 11 }} /> : <Archive style={{ width: 11, height: 11 }} />}
+                  {isDeleted ? "Deleted" : "Archived"}
+                </span>
+              </div>
+            ) : null}
           </div>
-          <button onClick={onClose} style={iconBtn} title="Close">
-            <X style={{ width: 16, height: 16 }} />
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, position: "relative" }}>
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              style={iconBtn}
+              title="Lead actions"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              disabled={lifecycleBusy}
+            >
+              {lifecycleBusy ? <Loader2 style={spinIcon} /> : <MoreHorizontal style={{ width: 16, height: 16 }} />}
+            </button>
+            <button onClick={onClose} style={iconBtn} title="Close">
+              <X style={{ width: 16, height: 16 }} />
+            </button>
+
+            {menuOpen ? (
+              <>
+                {/* click-away scrim */}
+                <div
+                  onClick={() => { setMenuOpen(false); setConfirmDelete(false); }}
+                  style={{ position: "fixed", inset: 0, zIndex: 30 }}
+                />
+                <div
+                  role="menu"
+                  style={{
+                    position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 31, width: 210,
+                    background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12,
+                    boxShadow: "0 12px 28px rgba(15,23,42,0.16)", padding: 6,
+                    display: "flex", flexDirection: "column", gap: 2,
+                  }}
+                >
+                  {isArchived || isDeleted ? (
+                    <MenuItem icon={<RotateCcw style={menuIco} />} label="Restore lead" onClick={handleRestore} />
+                  ) : null}
+                  {!isDeleted ? (
+                    isArchived ? (
+                      <MenuItem icon={<ArchiveRestore style={menuIco} />} label="Unarchive" onClick={() => handleArchive(false)} />
+                    ) : (
+                      <MenuItem icon={<Archive style={menuIco} />} label="Archive lead" onClick={() => handleArchive(true)} />
+                    )
+                  ) : null}
+                  {!isDeleted ? (
+                    confirmDelete ? (
+                      <MenuItem
+                        icon={<Trash2 style={menuIco} />}
+                        label="Confirm delete"
+                        danger
+                        onClick={handleDelete}
+                      />
+                    ) : (
+                      <MenuItem
+                        icon={<Trash2 style={menuIco} />}
+                        label="Delete lead"
+                        danger
+                        onClick={() => setConfirmDelete(true)}
+                      />
+                    )
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+          </div>
         </div>
 
         {/* Tabs */}
@@ -708,6 +860,39 @@ function Stat({ label, value, mono }: { label: string; value: string; mono?: boo
         {value}
       </div>
     </div>
+  );
+}
+
+const menuIco: React.CSSProperties = { width: 14, height: 14 };
+
+function MenuItem({
+  icon,
+  label,
+  onClick,
+  danger,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      style={{
+        display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "8px 10px",
+        border: "none", borderRadius: 8, background: "transparent", cursor: "pointer",
+        fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, textAlign: "left",
+        color: danger ? "#dc2626" : "#334155",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = danger ? "#FEF2F2" : "#F1F5F9")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

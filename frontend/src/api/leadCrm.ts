@@ -68,7 +68,13 @@ export type Lead = {
   company_city: string | null;
   company_state: string | null;
   company_recognized_at: string | null;
+  // Phase 5 — hygiene lifecycle (soft archive / soft delete).
+  archived_at: string | null;
+  deleted_at: string | null;
 };
+
+/** Lead lifecycle view filter for the list (server enforces the actual filter). */
+export type LeadStatusFilter = "active" | "archived" | "deleted" | "all";
 
 /** Company intelligence snapshot — `lit_leadcrm_company_snapshot()`. */
 export type LeadCompanySnapshot = {
@@ -218,6 +224,8 @@ export type ListLeadsParams = {
   q?: string | null;
   limit?: number;
   offset?: number;
+  /** Lifecycle view: 'active' (default) hides merged+archived+deleted. */
+  status?: LeadStatusFilter | null;
 };
 
 /** Paginated result of `lit_leadcrm_list_leads()` — `{ ok, total, leads }`. */
@@ -314,6 +322,7 @@ export async function listLeadsPage(params: ListLeadsParams = {}): Promise<ListL
       p_q: params.q ?? null,
       p_limit: params.limit ?? 100,
       p_offset: params.offset ?? 0,
+      p_status: params.status ?? "active",
     });
     if (error || !data || typeof data !== "object") return empty;
     const obj = data as any;
@@ -389,6 +398,8 @@ function normalizeLead(row: any): Lead {
     company_city: row.company_city ?? null,
     company_state: row.company_state ?? null,
     company_recognized_at: row.company_recognized_at ?? null,
+    archived_at: row.archived_at ?? null,
+    deleted_at: row.deleted_at ?? null,
   };
 }
 
@@ -1419,6 +1430,60 @@ export async function findDuplicates(): Promise<DuplicateGroup[]> {
 export async function mergeLeads(primaryId: string, duplicateId: string): Promise<{ ok: boolean; reason?: string }> {
   const { data, error } = await supabase.rpc("lit_leadcrm_merge_leads", {
     p_primary_id: primaryId, p_duplicate_id: duplicateId,
+  });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as any;
+  return { ok: Boolean(row?.ok), reason: row?.reason };
+}
+
+// ── Archive / soft-delete / restore (hygiene lifecycle) ──────────────────────
+
+export type LeadLifecycleResult = { ok: boolean; reason?: string };
+
+/** Archive or un-archive a lead. Membership-gated. Throws on transport error. */
+export async function archiveLead(leadId: string, archived = true): Promise<LeadLifecycleResult> {
+  const { data, error } = await supabase.rpc("lit_leadcrm_archive_lead", {
+    p_lead_id: leadId,
+    p_archived: archived,
+  });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as any;
+  return { ok: Boolean(row?.ok), reason: row?.reason };
+}
+
+/**
+ * Soft-delete a lead — sets deleted_at and preserves all activity. The lead is
+ * hidden from the active list/board/summary but recoverable via restoreLead.
+ * Membership-gated. Throws on transport error.
+ */
+export async function deleteLead(leadId: string): Promise<LeadLifecycleResult> {
+  const { data, error } = await supabase.rpc("lit_leadcrm_delete_lead", {
+    p_lead_id: leadId,
+  });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as any;
+  return { ok: Boolean(row?.ok), reason: row?.reason };
+}
+
+/** Restore a lead from archived and/or (soft-)deleted state. Throws on transport error. */
+export async function restoreLead(leadId: string): Promise<LeadLifecycleResult> {
+  const { data, error } = await supabase.rpc("lit_leadcrm_restore_lead", {
+    p_lead_id: leadId,
+  });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as any;
+  return { ok: Boolean(row?.ok), reason: row?.reason };
+}
+
+/**
+ * HARD delete (platform-admin only) — permanently purges the lead + its
+ * activity/tasks. Requires an explicit confirm flag server-side. Throws on
+ * transport error; returns {ok:false, reason:'confirm_required'} if not confirmed.
+ */
+export async function purgeLead(leadId: string, confirm: boolean): Promise<LeadLifecycleResult> {
+  const { data, error } = await supabase.rpc("lit_leadcrm_purge_lead", {
+    p_lead_id: leadId,
+    p_confirm: confirm,
   });
   if (error) throw new Error(error.message);
   const row = (Array.isArray(data) ? data[0] : data) as any;

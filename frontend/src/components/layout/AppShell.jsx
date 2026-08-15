@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { useEntitlements } from "@/hooks/useEntitlements";
+import { useLeadCrmAccess } from "@/hooks/useLeadCrmAccess";
 import { canAccessFeature } from "@/lib/planLimits";
 import { logout } from "@/auth/supabaseAuthClient";
 import { LockoutBanner } from "@/components/subscription/LockoutBanner";
@@ -139,6 +140,9 @@ export default function AppShell({ currentPageName, children }) {
   const location = useLocation();
 
   const { entitlements } = useEntitlements();
+  // Lead CRM (standalone /app/leads workspace) — server-authoritative membership
+  // gate. Same hook the desktop sidebar uses; non-members never see the link.
+  const { isMember: isLeadCrmMember } = useLeadCrmAccess();
 
   const isAdmin = Boolean(canAccessAdmin || isOrgAdmin || isSuperAdmin);
   const showCampaigns = isAdmin || canAccessFeature(plan, "campaign_builder");
@@ -426,6 +430,9 @@ export default function AppShell({ currentPageName, children }) {
               <SideLink to="/app/quoting" icon={FileText} label="Quoting" lockHint={quotingLocked} />
               {showPulse && (
                 <SideLink to="/app/prospecting" icon={TrendingUp} label="Pulse" />
+              )}
+              {isLeadCrmMember && (
+                <SideLink to="/app/leads" icon={Users2} label="Lead CRM" />
               )}
               <SideLink to="/app/widgets" icon={Box} label="Widgets" />
               <SideLink to="/app/settings" icon={Settings} label="Settings" />

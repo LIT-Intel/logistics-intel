@@ -12,7 +12,7 @@
  * near-empty until backfill, so an empty result renders an honest "No leads
  * yet" state rather than blanks or NaN.
  */
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Search,
   Loader2,
@@ -25,6 +25,11 @@ import {
   Building2,
   Mail,
   MapPin,
+  MoreHorizontal,
+  Archive,
+  ArchiveRestore,
+  Trash2,
+  RotateCcw,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -36,6 +41,7 @@ import {
   type CompanySearchResult,
   type ListLeadsResult,
   type PipelineSummary,
+  type LeadStatusFilter,
   listLeadsPage,
   listStages,
   listAssignees,
@@ -44,6 +50,9 @@ import {
   createLead,
   createLeadFromCompany,
   searchCompanies,
+  archiveLead,
+  deleteLead,
+  restoreLead,
 } from "@/api/leadCrm";
 import LeadDetailDrawer from "./LeadDetailDrawer";
 import LeadCrmKpis, { type StageChip } from "./LeadCrmKpis";
@@ -61,16 +70,25 @@ import {
 
 const PAGE_SIZE = 50;
 
+const STATUS_TABS: { value: LeadStatusFilter; label: string }[] = [
+  { value: "active", label: "Active" },
+  { value: "archived", label: "Archived" },
+  { value: "deleted", label: "Deleted" },
+];
+
 export default function LeadsListPage() {
+  const { toast } = useToast();
   const [stageId, setStageId] = useState<string>("");
   const [source, setSource] = useState<string>("");
   const [assignee, setAssignee] = useState<string>("");
   const [search, setSearch] = useState<string>("");
   const [debouncedSearch, setDebouncedSearch] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<LeadStatusFilter>("active");
   const [page, setPage] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openLead, setOpenLead] = useState<Lead | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [rowMenuId, setRowMenuId] = useState<string | null>(null);
 
   // Debounce the search box → server query.
   useEffect(() => {
@@ -81,7 +99,7 @@ export default function LeadsListPage() {
   // Reset to page 0 whenever a filter changes.
   useEffect(() => {
     setPage(0);
-  }, [stageId, source, assignee, debouncedSearch]);
+  }, [stageId, source, assignee, debouncedSearch, statusFilter]);
 
   // Reference data (stages + assignees) — cached, shared with the drawer.
   const { data: stages = [] } = useQuery<LeadStage[]>({
@@ -108,13 +126,14 @@ export default function LeadsListPage() {
     isFetching,
     refetch,
   } = useQuery<ListLeadsResult>({
-    queryKey: ["lead-crm", "leads", { stageId, source, assignee, q: debouncedSearch, page }],
+    queryKey: ["lead-crm", "leads", { stageId, source, assignee, q: debouncedSearch, status: statusFilter, page }],
     queryFn: () =>
       listLeadsPage({
         stageId: stageId || null,
         source: source || null,
         assignee: assignee || null,
         q: debouncedSearch || null,
+        status: statusFilter,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       }),
@@ -158,6 +177,28 @@ export default function LeadsListPage() {
   const hasNextPage = (page + 1) * PAGE_SIZE < totalLeads;
   const pageStart = leads.length ? page * PAGE_SIZE + 1 : 0;
   const pageEnd = page * PAGE_SIZE + leads.length;
+
+  // Row lifecycle actions (archive / delete / restore). Close the row menu,
+  // toast, then refetch the list. All server-gated + soft (no data loss).
+  async function runLifecycle(action: "archive" | "unarchive" | "delete" | "restore", leadId: string) {
+    setRowMenuId(null);
+    try {
+      if (action === "archive") await archiveLead(leadId, true);
+      else if (action === "unarchive") await archiveLead(leadId, false);
+      else if (action === "delete") await deleteLead(leadId);
+      else await restoreLead(leadId);
+      toast({
+        title:
+          action === "archive" ? "Lead archived"
+          : action === "unarchive" ? "Lead unarchived"
+          : action === "delete" ? "Lead deleted"
+          : "Lead restored",
+      });
+      await refetch();
+    } catch (e: any) {
+      toast({ title: "Action failed", description: e?.message, variant: "destructive" });
+    }
+  }
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC" }}>
@@ -267,6 +308,33 @@ export default function LeadsListPage() {
             ) : null}
           </button>
 
+          {/* Lifecycle view tabs — Active (default) / Archived / Deleted. */}
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 2, padding: 3, borderRadius: 10, border: "1px solid #E5E7EB", background: "#FFFFFF" }}>
+            {STATUS_TABS.map((t) => {
+              const on = statusFilter === t.value;
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setStatusFilter(t.value)}
+                  style={{
+                    padding: "5px 11px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: on ? "#0F172A" : "transparent",
+                    color: on ? "#FFFFFF" : "#64748b",
+                    fontFamily: FONT_HEAD,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto", fontSize: 12, color: "#94a3b8", fontFamily: FONT_BODY }}>
             {isFetching ? <Loader2 style={{ width: 12, height: 12, animation: "spin 1s linear infinite" }} /> : null}
             {totalLeads} total · {leads.length} shown
@@ -358,10 +426,20 @@ export default function LeadsListPage() {
               <Users style={{ width: 24, height: 24, color: "#94a3b8" }} />
             </div>
             <div style={{ fontSize: 15, fontWeight: 600, color: "#0F172A", fontFamily: FONT_HEAD }}>
-              {activeFilterCount > 0 || debouncedSearch ? "No leads match this view" : "No leads yet"}
+              {statusFilter === "archived"
+                ? "No archived leads"
+                : statusFilter === "deleted"
+                ? "No deleted leads"
+                : activeFilterCount > 0 || debouncedSearch
+                ? "No leads match this view"
+                : "No leads yet"}
             </div>
             <div style={{ fontSize: 13, color: "#64748b", fontFamily: FONT_BODY, marginTop: 4 }}>
-              {activeFilterCount > 0 || debouncedSearch
+              {statusFilter === "archived"
+                ? "Archived leads are hidden from the active pipeline. Archive a lead to park it here."
+                : statusFilter === "deleted"
+                ? "Deleted leads are soft-deleted and can be restored from here."
+                : activeFilterCount > 0 || debouncedSearch
                 ? "Try clearing a filter or search."
                 : "Leads will appear here as they come in from magnets, product signups, and demos."}
             </div>
@@ -373,12 +451,13 @@ export default function LeadsListPage() {
               <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 1080 }}>
                 <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
                   <tr style={{ background: "#FFFFFF", borderBottom: "1px solid #E5E7EB" }}>
-                    {["Lead", "Company", "Stage", "Source", "Score", "Assignee", "Last activity"].map((h, i) => (
+                    {["Lead", "Company", "Stage", "Source", "Score", "Assignee", "Last activity", ""].map((h, i) => (
                       <th
-                        key={h}
+                        key={h || `col-${i}`}
                         style={{
                           textAlign: i === 4 ? "right" : "left",
                           padding: "10px 14px",
+                          width: i === 7 ? 48 : undefined,
                           fontSize: 9,
                           fontWeight: 700,
                           letterSpacing: "0.09em",
@@ -459,6 +538,15 @@ export default function LeadsListPage() {
                             {formatRelative(lead.last_activity_at)}
                           </span>
                         </td>
+                        <td style={{ padding: "8px 10px", verticalAlign: "middle", textAlign: "right" }}>
+                          <RowActions
+                            lead={lead}
+                            open={rowMenuId === lead.id}
+                            onToggle={() => setRowMenuId((id) => (id === lead.id ? null : lead.id))}
+                            onClose={() => setRowMenuId(null)}
+                            onAction={(a) => runLifecycle(a, lead.id)}
+                          />
+                        </td>
                       </tr>
                     );
                   })}
@@ -510,9 +598,18 @@ export default function LeadsListPage() {
                     </div>
                     <div className="mt-2 flex items-center justify-between">
                       <span className="text-[11px] font-semibold text-blue-600">Open →</span>
-                      <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: lead.lead_score != null ? "#1d4ed8" : "#94A3B8" }}>
-                        {lead.lead_score != null ? `Score ${lead.lead_score}` : "—"}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: lead.lead_score != null ? "#1d4ed8" : "#94A3B8" }}>
+                          {lead.lead_score != null ? `Score ${lead.lead_score}` : "—"}
+                        </span>
+                        <RowActions
+                          lead={lead}
+                          open={rowMenuId === lead.id}
+                          onToggle={() => setRowMenuId((id) => (id === lead.id ? null : lead.id))}
+                          onClose={() => setRowMenuId(null)}
+                          onAction={(a) => runLifecycle(a, lead.id)}
+                        />
+                      </div>
                     </div>
                   </div>
                 );
@@ -561,6 +658,10 @@ export default function LeadsListPage() {
           assignees={assignees}
           onClose={() => setOpenLead(null)}
           onChanged={() => refetch()}
+          onRemoved={() => {
+            setOpenLead(null);
+            refetch();
+          }}
         />
       ) : null}
 
@@ -614,8 +715,6 @@ function AddOpportunityModal({
   const [companyQuery, setCompanyQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [picked, setPicked] = useState<CompanySearchResult | null>(null);
-  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [focused, setFocused] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(companyQuery.trim()), 250);
@@ -730,8 +829,6 @@ function AddOpportunityModal({
                     <input
                       value={companyQuery}
                       onChange={(e) => setCompanyQuery(e.target.value)}
-                      onFocus={() => { if (blurTimer.current) clearTimeout(blurTimer.current); setFocused(true); }}
-                      onBlur={() => { blurTimer.current = setTimeout(() => setFocused(false), 150); }}
                       placeholder="Search LIT companies, brokers, forwarders…"
                       style={modalInput}
                       autoFocus
@@ -739,8 +836,19 @@ function AddOpportunityModal({
                     {searching ? (
                       <Loader2 style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, color: "#94a3b8", animation: "spin 1s linear infinite" }} />
                     ) : null}
-                    {focused && debouncedQuery.length >= 2 ? (
-                      <div style={{ position: "absolute", zIndex: 5, top: "calc(100% + 4px)", left: 0, right: 0, maxHeight: 260, overflowY: "auto", background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, boxShadow: "0 12px 28px rgba(15,23,42,0.14)" }}>
+                    {/* Show the dropdown whenever there's a live query and nothing
+                        is picked yet. Selection uses onClick (reliable on touch +
+                        trackpad) and the list is NOT gated on input focus — the
+                        prior focus/blur-timer race could unmount the results
+                        before the pick registered, which is why "Add from LIT"
+                        appeared to do nothing. An outside-click scrim closes it. */}
+                    {debouncedQuery.length >= 2 ? (
+                      <>
+                        <div
+                          onClick={() => setCompanyQuery("")}
+                          style={{ position: "fixed", inset: 0, zIndex: 4 }}
+                        />
+                        <div style={{ position: "absolute", zIndex: 5, top: "calc(100% + 4px)", left: 0, right: 0, maxHeight: 260, overflowY: "auto", background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, boxShadow: "0 12px 28px rgba(15,23,42,0.14)" }}>
                         {results.length === 0 && !searching ? (
                           <div style={{ padding: "12px 14px", fontFamily: FONT_BODY, fontSize: 12.5, color: "#94a3b8" }}>
                             No LIT companies match. Switch to "Add by email / manual" to create a new one.
@@ -750,7 +858,7 @@ function AddOpportunityModal({
                             <button
                               key={`${c.origin}-${c.id ?? c.source_company_key ?? i}`}
                               type="button"
-                              onMouseDown={(e) => { e.preventDefault(); setPicked(c); setFocused(false); }}
+                              onClick={() => { setPicked(c); }}
                               style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "8px 12px", border: "none", borderTop: i === 0 ? "none" : "1px solid #F1F5F9", background: "#FFFFFF", cursor: "pointer", textAlign: "left" }}
                             >
                               <CompanyAvatar name={c.name} domain={c.domain} size="sm" className="!h-7 !w-7 !rounded-md shrink-0" />
@@ -765,7 +873,8 @@ function AddOpportunityModal({
                             </button>
                           ))
                         )}
-                      </div>
+                        </div>
+                      </>
                     ) : null}
                   </div>
                 </ModalField>
@@ -828,6 +937,122 @@ function AddOpportunityModal({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Row kebab menu (archive / delete / restore) ──────────────────────────────
+
+type RowAction = "archive" | "unarchive" | "delete" | "restore";
+
+function RowActions({
+  lead,
+  open,
+  onToggle,
+  onClose,
+  onAction,
+}: {
+  lead: Lead;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onAction: (a: RowAction) => void;
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const isArchived = Boolean(lead.archived_at);
+  const isDeleted = Boolean(lead.deleted_at);
+
+  // Reset the delete confirm whenever the menu closes.
+  useEffect(() => {
+    if (!open) setConfirmDelete(false);
+  }, [open]);
+
+  return (
+    <div style={{ position: "relative", display: "inline-block" }} onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+        title="Actions"
+        style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 28, height: 28, borderRadius: 8, border: "1px solid #E5E7EB",
+          background: "#FFFFFF", color: "#64748b", cursor: "pointer",
+        }}
+      >
+        <MoreHorizontal style={{ width: 15, height: 15 }} />
+      </button>
+
+      {open ? (
+        <>
+          <div onClick={(e) => { e.stopPropagation(); onClose(); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <div
+            role="menu"
+            style={{
+              position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 41, width: 190,
+              background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12,
+              boxShadow: "0 12px 28px rgba(15,23,42,0.16)", padding: 6,
+              display: "flex", flexDirection: "column", gap: 2, textAlign: "left",
+            }}
+          >
+            {isArchived || isDeleted ? (
+              <RowMenuItem icon={<RotateCcw style={rowMenuIco} />} label="Restore" onClick={() => onAction("restore")} />
+            ) : null}
+            {!isDeleted ? (
+              isArchived ? (
+                <RowMenuItem icon={<ArchiveRestore style={rowMenuIco} />} label="Unarchive" onClick={() => onAction("unarchive")} />
+              ) : (
+                <RowMenuItem icon={<Archive style={rowMenuIco} />} label="Archive" onClick={() => onAction("archive")} />
+              )
+            ) : null}
+            {!isDeleted ? (
+              confirmDelete ? (
+                <RowMenuItem icon={<Trash2 style={rowMenuIco} />} label="Confirm delete" danger onClick={() => onAction("delete")} />
+              ) : (
+                <RowMenuItem icon={<Trash2 style={rowMenuIco} />} label="Delete" danger onClick={() => setConfirmDelete(true)} />
+              )
+            ) : null}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+const rowMenuIco: React.CSSProperties = { width: 14, height: 14 };
+
+function RowMenuItem({
+  icon,
+  label,
+  onClick,
+  danger,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      style={{
+        display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "8px 10px",
+        border: "none", borderRadius: 8, background: "transparent", cursor: "pointer",
+        fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, textAlign: "left",
+        color: danger ? "#dc2626" : "#334155",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = danger ? "#FEF2F2" : "#F1F5F9")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 
