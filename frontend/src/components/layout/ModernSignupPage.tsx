@@ -172,8 +172,18 @@ export default function ModernSignupPage() {
   // pass it straight through. The anon→user session stitch already runs in
   // AuthProvider, so we only wire routing here.
   const companyParam = (searchParams.get("company") || "").trim();
+  // Pulse handoff (§20 — Import & Tariff Risk Scanner magnet): when the magnet
+  // sends the visitor here with ?intent=pulse&company=<key>, land them on that
+  // company's LIVE Pulse monitoring tab (tab=live in CompanyProfileV2), NOT the
+  // generic dashboard, so they immediately see supply-chain change monitoring.
+  // Any other case (or no intent) keeps the existing company deep-link (which
+  // opens the company's default Supply Chain tab). CompanyProfileV2 resolves the
+  // slug → canonical UUID, so the key passes straight through.
+  const intentParam = (searchParams.get("intent") || "").trim().toLowerCase();
   const companyDeepLink = companyParam
-    ? `/app/companies/${encodeURIComponent(companyParam.replace(/^company\//i, ""))}`
+    ? `/app/companies/${encodeURIComponent(companyParam.replace(/^company\//i, ""))}${
+        intentParam === "pulse" ? "?tab=live" : ""
+      }`
     : "";
 
   // Saved-search handoff (§15): the LIST lead magnets (/top-shippers,
