@@ -343,6 +343,23 @@ export type PipelineSummary = {
   stuck_deals?: Array<{ id: string; title: string; value: number | null; stage: string; last_touch: string; days_stale: number }>;
   stuck_count?: number;
   overdue_tasks?: Array<{ id: string; title: string; due_date: string | null }>;
+  // Close-date alerts (migration 20260814240500). Both are open-deal lists
+  // scoped by the RPC's existing owner-scoping. `days` = days until close
+  // (negative = overdue by N). closing_soon = within the next 3 days.
+  closing_soon?: CloseAlertDeal[];
+  closing_soon_count?: number;
+  overdue?: CloseAlertDeal[];
+  overdue_count?: number;
+};
+
+export type CloseAlertDeal = {
+  id: string;
+  title: string;
+  value: number | null;
+  expected_close_date: string | null;
+  stage: string;
+  owner: string | null;
+  days: number;
 };
 
 /**

@@ -14,6 +14,7 @@ import { formatMoney } from "@/features/crm/crmFormat";
 
 /** Pre-built chips surfaced above the composer input. */
 export const PIPELINE_PROMPTS = [
+  "What deals need my attention?",
   "What's my pipeline value?",
   "Which deals are stuck?",
   "Who should I follow up with?",
@@ -38,16 +39,83 @@ export function isPipelineQuestion(text: string): boolean {
     "pipeline", "deal", "deals", "forecast", "won ", "win rate", "stuck",
     "follow up", "follow-up", "overdue", "quota", "close this month",
     "won this month", "in negotiation", "negotiation", "quoted",
+    "need my attention", "at risk", "at-risk", "closing soon", "closing",
   ];
   return kw.some((k) => q.includes(k));
 }
 
-function classify(text: string): "stuck" | "followup" | "won" | "overview" {
+function classify(text: string): "attention" | "stuck" | "followup" | "won" | "overview" {
   const q = text.toLowerCase();
+  // "What deals need my attention?" — the at-risk digest (closing soon +
+  // overdue close + stale). Checked first so it wins over the narrower buckets.
+  if (
+    q.includes("need my attention") || q.includes("attention") ||
+    q.includes("at risk") || q.includes("at-risk") ||
+    q.includes("closing soon") || q.includes("closing") ||
+    (q.includes("overdue") && q.includes("deal"))
+  ) return "attention";
   if (q.includes("stuck") || q.includes("no activity") || q.includes("stale")) return "stuck";
   if (q.includes("follow up") || q.includes("follow-up") || q.includes("overdue") || q.includes("who should i")) return "followup";
   if (q.includes("won") || q.includes("close") || q.includes("this month")) return "won";
   return "overview";
+}
+
+/** Compact "Aug 28" style label for a close date. */
+function closeDateLabel(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/**
+ * "What deals need my attention?" — a factual at-risk digest built entirely
+ * from the RPC's real, owner-scoped data (no fabrication): overdue close dates
+ * first (most urgent), then closing-soon, then deals gone quiet (stale/stuck).
+ */
+function attentionMd(s: PipelineSummary): string {
+  const overdue = s.overdue ?? [];
+  const closingSoon = s.closing_soon ?? [];
+  const stuck = s.stuck_deals ?? [];
+  const total = overdue.length + closingSoon.length + stuck.length;
+  if (total === 0) {
+    return "Nothing needs your attention right now — no deals are overdue, closing in the next few days, or going cold. 🎯";
+  }
+  const lines: string[] = [];
+  lines.push(`${total} deal${total === 1 ? "" : "s"} could use a look:`);
+
+  if (overdue.length) {
+    lines.push("");
+    lines.push(`⚠️ Past close date (${overdue.length}):`);
+    for (const d of overdue.slice(0, 5)) {
+      const val = d.value != null ? ` · ${formatMoney(d.value)}` : "";
+      const by = Math.abs(d.days ?? 0);
+      const when = closeDateLabel(d.expected_close_date);
+      lines.push(`  • ${d.title} (${d.stage})${val} — due ${when}, ${by}d overdue`);
+    }
+  }
+
+  if (closingSoon.length) {
+    lines.push("");
+    lines.push(`⏳ Closing soon (${closingSoon.length}):`);
+    for (const d of closingSoon.slice(0, 5)) {
+      const val = d.value != null ? ` · ${formatMoney(d.value)}` : "";
+      const when = closeDateLabel(d.expected_close_date);
+      const inDays = d.days === 0 ? "today" : `in ${d.days}d`;
+      lines.push(`  • ${d.title} (${d.stage})${val} — closes ${when} (${inDays})`);
+    }
+  }
+
+  if (stuck.length) {
+    lines.push("");
+    lines.push(`💤 Going quiet (${s.stuck_count ?? stuck.length}):`);
+    for (const d of stuck.slice(0, 4)) {
+      const val = d.value != null ? ` · ${formatMoney(d.value)}` : "";
+      lines.push(`  • ${d.title} (${d.stage})${val} — ${d.days_stale}d idle`);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 function overviewMd(s: PipelineSummary): string {
@@ -120,6 +188,7 @@ export async function answerPipelineQuestion(text: string): Promise<PipelineAnsw
   }
   let md: string;
   switch (classify(text)) {
+    case "attention": md = attentionMd(s); break;
     case "stuck": md = stuckMd(s); break;
     case "followup": md = followupMd(s); break;
     case "won": md = wonMd(s); break;
