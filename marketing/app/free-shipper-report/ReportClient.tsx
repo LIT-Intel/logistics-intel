@@ -133,7 +133,11 @@ export function ReportClient() {
   const activeCompany = useRef<Company | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
 
-  const configured = Boolean(SUPABASE_URL && ANON_KEY);
+  // lead-magnet-report is verify_jwt=false (public) — it needs the project
+  // URL to reach the function, but NOT the anon key (the fn takes no auth).
+  // Gating "configured" on ANON_KEY showed a false "not configured" banner
+  // even though the report loaded fine. Require only the URL.
+  const configured = Boolean(SUPABASE_URL);
 
   const onSearch = useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
