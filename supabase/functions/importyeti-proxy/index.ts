@@ -1922,6 +1922,26 @@ Deno.serve(async (req: Request) => {
       // click (`company_profile_view`). External IY spend is contained inside
       // handleSearchAction via the response cache + per-user daily quota
       // (quota-exhausted searches degrade to the free local index).
+      //
+      // INSTRUMENTATION (2026-08-14): search is free but still needs to be
+      // *measured* — activation was under-counted because free searches
+      // stopped writing to lit_usage_ledger on 2026-08-06. consume_usage()
+      // only inserts a ledger row; it does NOT gate or charge (the search
+      // proceeds regardless), so this is pure measurement, not a limit.
+      // Fire-and-forget + try/catch so a ledger hiccup never fails a search.
+      if (userId && typeof q === "string" && q.trim().length > 0) {
+        try {
+          await supabase.rpc("consume_usage", {
+            p_org_id: orgIdForUsage,
+            p_user_id: userId,
+            p_feature_key: "company_search",
+            p_quantity: 1,
+            p_metadata: { q: q.trim().slice(0, 200), page, measurement_only: true },
+          });
+        } catch (usageErr) {
+          console.warn("[importyeti-proxy] search consume_usage failed (nonfatal)", usageErr);
+        }
+      }
       return await handleSearchAction(supabase, q, page, pageSize, requestId, userId);
     }
 
