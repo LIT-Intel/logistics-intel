@@ -180,7 +180,7 @@ serve(async (req) => {
     const created = (user as { created_at?: string }).created_at;
     if (created) {
       const end = new Date(created);
-      end.setDate(end.getDate() + (plan!.trial_days || 30));
+      end.setDate(end.getDate() + (plan!.trial_days || 7));
       trialEndsAt = end.toISOString();
     }
   }

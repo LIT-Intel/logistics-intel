@@ -9,6 +9,7 @@ import {
   supabase,
 } from './supabaseAuthClient';
 import { getStoredRef, clearStoredRef } from '@/lib/affiliateRef';
+import { getAnonId } from '@/lib/anonId';
 import { identifySentryUser, clearSentryUser } from '@/lib/sentry';
 import { captureAppAttribution, readAttribution } from '@/lib/attribution';
 
@@ -27,11 +28,19 @@ async function backfillAttributionIfNew(user) {
   attributionBackfillDone = true;
   try {
     if (user.user_metadata?.attribution) return;
-    const attribution = readAttribution();
-    if (!attribution) return;
+    const attr = readAttribution();
+    if (!attr || (!attr.attribution && !attr.first_touch && !attr.last_touch)) return;
     const ageMs = Date.now() - new Date(user.created_at || 0).getTime();
     if (!Number.isFinite(ageMs) || ageMs > 48 * 3600 * 1000) return;
-    await supabase.auth.updateUser({ data: { attribution } });
+    // Additive keys — flat legacy blob + rich first/last touch (mirrors the
+    // email/password signup metadata write in supabaseAuthClient.ts).
+    await supabase.auth.updateUser({
+      data: {
+        ...(attr.attribution ? { attribution: attr.attribution } : {}),
+        ...(attr.first_touch ? { first_touch: attr.first_touch } : {}),
+        ...(attr.last_touch ? { last_touch: attr.last_touch } : {}),
+      },
+    });
   } catch {
     // best-effort — never block auth on attribution
   }
@@ -62,6 +71,26 @@ async function claimAffiliateReferralIfAny() {
     }
   } catch {
     // ignore — try again next auth-ready
+  }
+}
+
+// Stitch any pre-auth anonymous session (lead-magnet visits, searches made
+// before signup) onto the freshly-authenticated user. The anonymous_id was
+// minted on the marketing site / first app load (getAnonId, lit_anon_id
+// cookie shared across .logisticintel.com). Fire-and-forget + idempotent
+// server-side, so it's safe to call on every auth-ready transition. The
+// stitch_lead_magnet_session RPC is built in parallel.
+async function stitchAnonymousSession(user) {
+  if (!supabase || !user) return;
+  try {
+    const anonymousId = getAnonId();
+    if (!anonymousId) return;
+    await supabase.rpc('stitch_lead_magnet_session', {
+      p_anonymous_id: anonymousId,
+      p_user_id: user.id,
+    });
+  } catch {
+    // best-effort — never block auth on stitching
   }
 }
 
@@ -221,6 +250,8 @@ export function AuthProvider({ children }) {
         // ?ref= was captured before sign-up.
         void claimAffiliateReferralIfAny();
         void backfillAttributionIfNew(merged);
+        // Stitch the pre-auth anonymous session (lit_anon_id) onto this user.
+        void stitchAnonymousSession(u);
 
         const membership = await fetchPrimaryOrgMembership(u.id);
 

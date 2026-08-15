@@ -6,6 +6,7 @@ import {
   BarChart3, Truck, Handshake, Settings2,
   Coins, Database, Zap, Percent, Timer, Gauge, Power, AlertTriangle,
   RefreshCw, Check, X, Pencil, MoreHorizontal, Ban, RotateCcw, Trash2, ShieldAlert,
+  Rocket, Target, CalendarClock, Magnet,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -97,6 +98,30 @@ type CohortRow = { cohort: string; cohort_size: number; weeks_since: number; ret
 // Aggregated activation milestones for the exec strip (from lit_user_activation).
 type Activation = { signups: number; searched: number; saved: number; returned_d7: number; trial: number; converted: number };
 
+// ── Growth sprint types (mirror lit_admin_growth_sprint_status jsonb +
+//    lit_admin_lead_magnet_performance rows). All fields nullable — the
+//    RPCs are built in parallel, so the tab must render cleanly with zeros. ─
+type SprintStatus = {
+  goal: number | null;
+  current: number | null;
+  pct_complete: number | null;
+  days_remaining: number | null;
+  required_per_day: number | null;
+  actual_pace: number | null;
+  projected_final: number | null;
+  metric_label?: string | null;
+  ends_at?: string | null;
+};
+type LeadMagnetRow = {
+  slug: string;
+  visitors: number | null;
+  leads: number | null;
+  trials: number | null;
+  activated: number | null;
+  paid: number | null;
+  revenue: number | null;
+};
+
 const num = (v: any): number => (v === null || v === undefined ? 0 : Number(v) || 0);
 const usd = (v: number | null | undefined): string =>
   v === null || v === undefined ? "—" : `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -132,6 +157,7 @@ const SECTIONS = [
   { id: "funnel", label: "Sales Funnel", icon: TrendingUp },
   { id: "marketing", label: "Marketing", icon: Megaphone },
   { id: "revenue", label: "Data Economics", icon: CreditCard },
+  { id: "growth", label: "Growth", icon: Rocket },
   { id: "ops", label: "Operations", icon: Wrench },
 ] as const;
 
@@ -260,6 +286,12 @@ export default function AdminCommandDeck() {
   const [activation, setActivation] = useState<Activation>({ signups: 0, searched: 0, saved: 0, returned_d7: 0, trial: 0, converted: 0 });
   const [econBusy, setEconBusy] = useState(false);
 
+  // ── Growth sprint state (Growth tab) ────────────────────────────────────
+  const [sprint, setSprint] = useState<SprintStatus | null>(null);
+  const [magnets, setMagnets] = useState<LeadMagnetRow[]>([]);
+  const [growthWindow, setGrowthWindow] = useState<7 | 30 | 90>(30);
+  const [growthBusy, setGrowthBusy] = useState(false);
+
   // Reusable loader for the economics + attribution surfaces (also the Refresh button).
   const loadEconomics = useCallback(async () => {
     setEconBusy(true);
@@ -312,6 +344,41 @@ export default function AdminCommandDeck() {
     });
     setEconBusy(false);
   }, []);
+
+  // Growth-sprint loader (scoreboard jsonb + per-magnet perf). Both RPCs are
+  // built in parallel; failures degrade to null/empty and the tab shows "—".
+  const loadGrowth = useCallback(async (windowDays: 7 | 30 | 90) => {
+    setGrowthBusy(true);
+    try {
+      const [ss, lm] = await Promise.all([
+        supabase.rpc("lit_admin_growth_sprint_status"),
+        supabase.rpc("lit_admin_lead_magnet_performance", { p_days: windowDays }),
+      ]);
+      // sprint status returns a single jsonb object (or a 1-row set).
+      const raw = ss.data;
+      const obj = Array.isArray(raw) ? (raw[0] ?? null) : raw;
+      setSprint((obj as SprintStatus) || null);
+      setMagnets(((lm.data as LeadMagnetRow[]) || []).map((r) => ({
+        slug: r.slug,
+        visitors: r.visitors === null || r.visitors === undefined ? null : num(r.visitors),
+        leads: r.leads === null || r.leads === undefined ? null : num(r.leads),
+        trials: r.trials === null || r.trials === undefined ? null : num(r.trials),
+        activated: r.activated === null || r.activated === undefined ? null : num(r.activated),
+        paid: r.paid === null || r.paid === undefined ? null : num(r.paid),
+        revenue: r.revenue === null || r.revenue === undefined ? null : num(r.revenue),
+      })));
+    } catch {
+      setSprint(null);
+      setMagnets([]);
+    }
+    setGrowthBusy(false);
+  }, []);
+
+  // Load growth data when the tab is opened or the window filter changes.
+  useEffect(() => {
+    if (section !== "growth") return;
+    loadGrowth(growthWindow).catch(() => setGrowthBusy(false));
+  }, [section, growthWindow, loadGrowth]);
 
   useEffect(() => {
     (async () => {
@@ -552,6 +619,45 @@ export default function AdminCommandDeck() {
     ];
     return steps.map((s) => ({ ...s, pct: base ? Math.round((s.value / base) * 100) : 0 }));
   }, [activation]);
+
+  // Growth funnel strip: Visitors → Leads → Trials → First Search → First
+  // Save → D7 → Paid. Visitors/Leads come from lead-magnet perf (summed)
+  // until real traffic instrumentation lands — null when there's no data so
+  // the UI can render "—" instead of a fake zero. The mid/late stages reuse
+  // the already-loaded activation aggregate.
+  const growthFunnel = useMemo(() => {
+    const sumOrNull = (key: "visitors" | "leads"): number | null => {
+      if (magnets.length === 0) return null;
+      let any = false;
+      let total = 0;
+      for (const m of magnets) {
+        const v = m[key];
+        if (v !== null && v !== undefined) { any = true; total += num(v); }
+      }
+      return any ? total : null;
+    };
+    const visitors = sumOrNull("visitors");
+    const leads = sumOrNull("leads");
+    // Ordered stages; value null → renders "—", and %-between is skipped.
+    const stages: { key: string; label: string; value: number | null }[] = [
+      { key: "visitors", label: "Visitors", value: visitors },
+      { key: "leads", label: "Leads", value: leads },
+      { key: "trials", label: "Trials", value: activation.trial || null },
+      { key: "search", label: "First Search", value: activation.searched || null },
+      { key: "save", label: "First Save", value: activation.saved || null },
+      { key: "d7", label: "D7", value: activation.returned_d7 || null },
+      { key: "paid", label: "Paid", value: activation.converted || null },
+    ];
+    // %-between consecutive stages (only when both sides are real numbers).
+    return stages.map((s, i) => {
+      const prev = i > 0 ? stages[i - 1].value : null;
+      const conv =
+        i > 0 && prev !== null && prev > 0 && s.value !== null
+          ? Math.round((s.value / prev) * 100)
+          : null;
+      return { ...s, conv };
+    });
+  }, [magnets, activation]);
 
   // Retention cohort matrix: pivot rows into cohort × weeks-since grid.
   const cohortMatrix = useMemo(() => {
@@ -1346,6 +1452,151 @@ export default function AdminCommandDeck() {
                 <LinkCard to="/app/billing" icon={TrendingUp} title="Plans & pricing"
                   blurb="The live plan matrix as customers see it." />
               </div>
+            </div>
+          )}
+
+          {section === "growth" && (
+            <div className="space-y-6">
+              {/* Window filter */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Rocket className="h-3.5 w-3.5 text-slate-400" />
+                  <span className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                    Growth sprint
+                  </span>
+                  {growthBusy && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-300" />}
+                </div>
+                <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5 shadow-sm">
+                  {([7, 30, 90] as const).map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setGrowthWindow(d)}
+                      className={[
+                        "font-display rounded-lg px-3 py-1.5 text-[12px] font-semibold transition",
+                        growthWindow === d ? "bg-blue-50 text-blue-700" : "text-slate-400 hover:text-slate-600",
+                      ].join(" ")}
+                    >
+                      {d}d
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* (i) Sprint tracker */}
+              <DeckCard
+                title="Sprint tracker"
+                subtitle={sprint?.metric_label || "Progress toward the current growth-sprint goal"}
+              >
+                {!sprint ? (
+                  <div className="font-body py-6 text-center text-[12px] text-slate-400">
+                    No active sprint yet.
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
+                      <KpiCard label="Goal" value={int(sprint.goal)} icon={Target} tone="blue" />
+                      <KpiCard label="Current" value={int(sprint.current)} icon={TrendingUp} tone="cyan" />
+                      <KpiCard
+                        label="% complete"
+                        value={sprint.pct_complete === null || sprint.pct_complete === undefined ? "—" : pct(sprint.pct_complete)}
+                        icon={Percent}
+                        tone="violet"
+                      />
+                      <KpiCard label="Days remaining" value={int(sprint.days_remaining)} icon={CalendarClock} tone="amber" />
+                      <KpiCard label="Req. / day" value={int(sprint.required_per_day)} icon={Gauge} tone="slate" />
+                      <KpiCard label="Actual pace" value={int(sprint.actual_pace)} icon={Zap} tone="cyan" />
+                      <KpiCard
+                        label="Projected final"
+                        value={int(sprint.projected_final)}
+                        icon={Rocket}
+                        tone={
+                          sprint.projected_final !== null && sprint.goal !== null && sprint.projected_final >= sprint.goal
+                            ? "emerald"
+                            : "amber"
+                        }
+                        tooltip="Projected end-of-sprint total at the current pace."
+                      />
+                    </div>
+                    {/* Progress bar */}
+                    {sprint.pct_complete !== null && sprint.pct_complete !== undefined && (
+                      <div className="mt-4">
+                        <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-blue-600 transition-all"
+                            style={{ width: `${Math.min(Math.max(num(sprint.pct_complete), 0), 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </DeckCard>
+
+              {/* (ii) Growth funnel strip */}
+              <DeckCard
+                title="Growth funnel"
+                subtitle="Visitors → Leads → Trials → First Search → First Save → D7 → Paid"
+              >
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                  {growthFunnel.map((s) => (
+                    <div key={s.key} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center shadow-sm">
+                      <div className="font-mono text-[18px] font-bold leading-none text-slate-900">
+                        {s.value === null ? "—" : int(s.value)}
+                      </div>
+                      <div className="font-display mt-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-400">
+                        {s.label}
+                      </div>
+                      <div className="font-body mt-1 text-[10.5px] text-slate-400">
+                        {s.conv === null ? " " : `${s.conv}%`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="font-body mt-3 text-[11px] text-slate-400">
+                  Visitors &amp; Leads come from lead-magnet performance until traffic instrumentation lands; "—" means no data yet.
+                </p>
+              </DeckCard>
+
+              {/* (iii) Lead-magnet performance */}
+              <DeckCard title="Lead-magnet performance" subtitle={`Per-magnet funnel · last ${growthWindow}d`}>
+                {magnets.length === 0 ? (
+                  <div className="font-body py-6 text-center text-[12px] text-slate-400">
+                    {growthBusy ? "Loading…" : "No lead-magnet data yet."}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[640px]">
+                      <thead>
+                        <tr className="border-b border-slate-100">
+                          {["Magnet", "Visitors", "Leads", "Trials", "Activated", "Paid", "Revenue"].map((h) => (
+                            <th key={h} className="font-display px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400 last:text-right">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {magnets.map((m) => (
+                          <tr key={m.slug} className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/50">
+                            <td className="px-3 py-2">
+                              <span className="font-display inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-800">
+                                <Magnet className="h-3.5 w-3.5 text-blue-500" /> {m.slug}
+                              </span>
+                            </td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(m.visitors)}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(m.leads)}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(m.trials)}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(m.activated)}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(m.paid)}</td>
+                            <td className="font-mono px-3 py-2 text-right text-[12px] text-slate-700">{usd(m.revenue)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </DeckCard>
             </div>
           )}
 

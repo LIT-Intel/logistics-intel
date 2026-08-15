@@ -2,65 +2,110 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 /**
- * First-touch attribution capture.
+ * Attribution capture at the edge.
  *
- * On a visitor's FIRST request (no `lit_attrib` cookie yet) we record how
- * they arrived — UTM parameters, external referrer, and landing path —
- * in a first-party cookie scoped to `.logisticintel.com`, so the app at
- * app.logisticintel.com can read it at signup and stamp it into the new
- * user's metadata. That's what powers the "Source" column in the admin
- * Users 360 view: every subscriber traces back to the LinkedIn post,
- * Google search, referral, or direct visit that started them.
+ * Two jobs, both scoped to `.logisticintel.com` so the app at
+ * app.logisticintel.com can read them at signup:
  *
- * First-touch semantics: an existing cookie is never overwritten — the
- * channel that FIRST earned the visit gets the credit, even if the user
- * later returns via another. 90-day lifetime. Not httpOnly on purpose
- * (the app reads it from document.cookie); it holds no secrets.
+ *   1. First-touch (`lit_attrib`, write-once): how a visitor FIRST arrived
+ *      — UTMs, external referrer, and the full landing path+query. Never
+ *      overwritten; the channel that first earned the visit keeps credit.
+ *      This is the thin legacy cookie signup falls back to.
+ *
+ *   2. Last-touch (`lit_last_touch`, refreshed): the MOST RECENT tagged
+ *      landing, written in the SAME rich camelCase shape as
+ *      marketing/lib/attribution.ts so the client capture and the edge
+ *      capture agree. Refreshed on every request that carries a utm /
+ *      click-id / off-site referrer; a bare untagged page-load does NOT
+ *      clobber it (that would silently delete real attribution).
+ *
+ * Not httpOnly on purpose (the app reads from document.cookie); no secrets.
+ * 90-day lifetime.
  */
 
-const COOKIE_NAME = "lit_attrib";
+const FIRST_COOKIE = "lit_attrib";
+const LAST_COOKIE = "lit_last_touch";
 const MAX_AGE_SECONDS = 90 * 24 * 3600;
 const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"] as const;
 
-export function middleware(req: NextRequest) {
-  const res = NextResponse.next();
-  if (req.cookies.get(COOKIE_NAME)) return res;
-
-  const url = req.nextUrl;
-  const attrib: Record<string, string> = {};
-
-  for (const key of UTM_KEYS) {
-    const v = url.searchParams.get(key);
-    if (v) attrib[key] = v.slice(0, 120);
-  }
-
-  const referrer = req.headers.get("referer") || "";
+function offsiteReferrerHost(referrer: string): string | null {
   try {
     const refHost = referrer ? new URL(referrer).hostname : "";
     if (refHost && !refHost.endsWith("logisticintel.com")) {
-      attrib.referrer = refHost.slice(0, 120);
+      return refHost.slice(0, 120);
     }
   } catch {
     /* malformed referer header — ignore */
   }
+  return null;
+}
 
-  // A truly direct visit (no UTMs, no external referrer) is still worth
-  // stamping: "direct" + landing page beats an empty Source column.
-  attrib.landing = url.pathname.slice(0, 160);
-  attrib.ts = new Date().toISOString();
-
+export function middleware(req: NextRequest) {
+  const res = NextResponse.next();
+  const url = req.nextUrl;
   const host = req.headers.get("host") || "";
-  res.cookies.set(COOKIE_NAME, encodeURIComponent(JSON.stringify(attrib)), {
-    maxAge: MAX_AGE_SECONDS,
-    path: "/",
-    sameSite: "lax",
-    secure: true,
-    httpOnly: false,
-    // Parent-domain scope so app.logisticintel.com sees it. On previews /
-    // localhost, fall back to host-only (a domain mismatch would make the
-    // browser drop the cookie entirely).
-    ...(host.endsWith("logisticintel.com") ? { domain: ".logisticintel.com" } : {}),
-  });
+  const isProdHost = host.endsWith("logisticintel.com");
+  const domainOpt = isProdHost ? { domain: ".logisticintel.com" as const } : {};
+  // Full landing = path + query (not just pathname) so the utm-tagged URL
+  // that started the visit is preserved verbatim.
+  const landing = (url.pathname + (url.search || "")).slice(0, 300);
+  const referrerHost = offsiteReferrerHost(req.headers.get("referer") || "");
+
+  // Collect present UTMs once (used by both cookies).
+  const utm: Record<string, string> = {};
+  for (const key of UTM_KEYS) {
+    const v = url.searchParams.get(key);
+    if (v) utm[key] = v.slice(0, 120);
+  }
+  const gclid = url.searchParams.get("gclid");
+  const fbclid = url.searchParams.get("fbclid");
+  const liFatId = url.searchParams.get("li_fat_id");
+
+  // ── First-touch: write once. ──────────────────────────────────────────
+  if (!req.cookies.get(FIRST_COOKIE)) {
+    const attrib: Record<string, string> = { ...utm };
+    if (referrerHost) attrib.referrer = referrerHost;
+    // A truly direct visit is still worth stamping: "landing" beats an
+    // empty Source column.
+    attrib.landing = landing;
+    attrib.ts = new Date().toISOString();
+    res.cookies.set(FIRST_COOKIE, encodeURIComponent(JSON.stringify(attrib)), {
+      maxAge: MAX_AGE_SECONDS,
+      path: "/",
+      sameSite: "lax",
+      secure: true,
+      httpOnly: false,
+      ...domainOpt,
+    });
+  }
+
+  // ── Last-touch: refresh on every TAGGED landing (rich camelCase shape,
+  // matching marketing/lib/attribution.ts). Untagged loads are skipped so
+  // they don't clobber the attribution we just captured. ─────────────────
+  const isTagged = Object.keys(utm).length > 0 || !!gclid || !!fbclid || !!liFatId || !!referrerHost;
+  if (isTagged) {
+    const last: Record<string, string> = {};
+    if (utm.utm_source) last.utmSource = utm.utm_source;
+    if (utm.utm_medium) last.utmMedium = utm.utm_medium;
+    if (utm.utm_campaign) last.utmCampaign = utm.utm_campaign;
+    if (utm.utm_term) last.utmTerm = utm.utm_term;
+    if (utm.utm_content) last.utmContent = utm.utm_content;
+    if (gclid) last.gclid = gclid.slice(0, 200);
+    if (fbclid) last.fbclid = fbclid.slice(0, 200);
+    if (liFatId) last.liFatId = liFatId.slice(0, 200);
+    if (referrerHost) last.referrer = referrerHost;
+    last.landingPage = landing;
+    last.capturedAt = new Date().toISOString();
+    res.cookies.set(LAST_COOKIE, encodeURIComponent(JSON.stringify(last)), {
+      maxAge: MAX_AGE_SECONDS,
+      path: "/",
+      sameSite: "lax",
+      secure: true,
+      httpOnly: false,
+      ...domainOpt,
+    });
+  }
+
   return res;
 }
 

@@ -67,7 +67,7 @@ export async function registerWithEmailPassword({
   if (!auth) throw new Error('Auth not configured');
   if (!email || !password) throw new Error('Email and password required');
 
-  const attribution = readAttribution();
+  const attr = readAttribution();
   const { data, error } = await auth.auth.signUp({
     email,
     password,
@@ -82,9 +82,16 @@ export async function registerWithEmailPassword({
         // Wizard removed 2026-08-06 — DB triggers provision everything at
         // signup. Kept true (not dropped) so legacy onboarding checks pass.
         onboarding_completed: true,
-        // First-touch source (lit_attrib cookie). OAuth signups can't carry
-        // metadata here — AuthProvider backfills them post-first-session.
-        ...(attribution ? { attribution } : {}),
+        // Attribution (2026-08-15 fix): the marketing site's rich
+        // lit_first_touch / lit_last_touch cookies now flow through here.
+        //   user_metadata.attribution      — flat legacy blob (utm_source/…),
+        //                                     back-compat for existing readers.
+        //   user_metadata.first_touch/…    — full rich snapshots (additive).
+        // OAuth signups can't carry metadata here — AuthProvider backfills
+        // them post-first-session.
+        ...(attr?.attribution ? { attribution: attr.attribution } : {}),
+        ...(attr?.first_touch ? { first_touch: attr.first_touch } : {}),
+        ...(attr?.last_touch ? { last_touch: attr.last_touch } : {}),
       },
       emailRedirectTo:
         emailRedirectTo || `${window.location.origin}/auth/callback`,

@@ -117,7 +117,7 @@ export const TEMPLATE_OPTIONS: TemplateOption[] = [
   // Trial welcome (5)
   { envVar: "RESEND_TPL_TRIAL_WELCOME", label: "Trial · Step 1 — Welcome", sequence: "Trial Welcome", step: 1, subject: "Your LIT trial is ready — 10 searches + 10 verified contacts" },
   { envVar: "RESEND_TPL_TRIAL_DAY_2", label: "Trial · Step 2 — Social proof", sequence: "Trial Welcome", step: 2, subject: "How forwarders book 4× more meetings with LIT" },
-  { envVar: "RESEND_TPL_TRIAL_DAY_5", label: "Trial · Step 3 — Trial reminder", sequence: "Trial Welcome", step: 3, subject: "Your free searches expire in 9 days" },
+  { envVar: "RESEND_TPL_TRIAL_DAY_5", label: "Trial · Step 3 — Trial reminder", sequence: "Trial Welcome", step: 3, subject: "Your free searches expire in 2 days" },
   { envVar: "RESEND_TPL_TRIAL_DAY_9", label: "Trial · Step 4 — Demo nudge", sequence: "Trial Welcome", step: 4, subject: "Want a 30-min walkthrough on your lanes?" },
   { envVar: "RESEND_TPL_TRIAL_DAY_14", label: "Trial · Step 5 — Recap", sequence: "Trial Welcome", step: 5, subject: "Your LIT trial ended — here is what we built for you" },
   // Top 100 PDF (3)
