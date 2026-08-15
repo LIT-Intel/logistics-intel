@@ -632,6 +632,19 @@ export default function SearchPage() {
     }
   };
 
+  // Opt-in enrich prompt shown ONLY after a company is saved. Enrichment
+  // costs contact-enrichment credits, so this must never fire automatically
+  // — one click here deep-links the user into the just-saved company's
+  // Contacts tab, where the existing credit-gated "Enrich" controls
+  // (CDPContacts → enrich-contact-orchestrator) let them confirm which
+  // contacts to enrich. No credit is burned by this navigation itself.
+  const enrichSavedCompany = (company: SearchCompany) => {
+    const companyKey = company.importyeti_key || company.id;
+    if (!companyKey) return;
+    const slug = String(companyKey).replace(/^company\//, "");
+    navigate(`/app/companies/${encodeURIComponent(slug)}?tab=contacts&enrich=1`);
+  };
+
   // "View details" — primary CTA. Skips the preview drawer entirely:
   // fetch a fresh snapshot so the saved row carries full intel, save,
   // then navigate into the Command Center company profile. If the row
@@ -1496,7 +1509,8 @@ export default function SearchPage() {
                       </div>
 
                       {/* Actions */}
-                      <div className="mt-auto flex gap-1.5 pt-0.5">
+                      <div className="mt-auto flex flex-col gap-1.5 pt-0.5">
+                       <div className="flex gap-1.5">
                         {/* View details — auto-saves the company and
                             navigates straight into the Command Center
                             company profile. The right-side preview drawer
@@ -1565,6 +1579,22 @@ export default function SearchPage() {
                             <BookmarkPlus className="h-3.5 w-3.5" />
                           )}
                         </button>
+                       </div>
+                       {/* Opt-in enrich prompt — appears only AFTER save.
+                           Enrichment costs credits, so this never fires
+                           automatically: it deep-links into the company's
+                           Contacts tab where the user confirms enrichment. */}
+                       {isSaved && (
+                         <button
+                           type="button"
+                           onClick={() => enrichSavedCompany(company)}
+                           title="Enrich key contacts for this company"
+                           className="font-display inline-flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 text-[10.5px] font-semibold text-blue-700 transition hover:bg-blue-100"
+                         >
+                           <Sparkles className="h-3 w-3" />
+                           <span>Enrich key contacts</span>
+                         </button>
+                       )}
                       </div>
                     </motion.div>
                   );
@@ -1724,6 +1754,20 @@ export default function SearchPage() {
                                   <BookmarkPlus className="h-3.5 w-3.5" />
                                 )}
                               </button>
+                              {/* Opt-in enrich prompt — only after save.
+                                  Deep-links to the Contacts tab; never
+                                  auto-charges enrichment credits. */}
+                              {isSaved && (
+                                <button
+                                  type="button"
+                                  onClick={() => enrichSavedCompany(company)}
+                                  title="Enrich key contacts"
+                                  className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10.5px] font-semibold text-blue-700 transition hover:bg-blue-100"
+                                >
+                                  <Sparkles className="h-3 w-3" />
+                                  <span>Enrich</span>
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
