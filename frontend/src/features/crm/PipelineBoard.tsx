@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/use-toast";
 import {
   type DealCard,
   type DealStage,
+  DEAL_SERVICE_TYPE_LABELS,
   listStages,
   listDeals,
   moveDealStage,
@@ -17,6 +18,78 @@ import CreateDealModal from "./CreateDealModal";
 
 const FONT_HEAD = "'Space Grotesk', sans-serif";
 const FONT_BODY = "'DM Sans', sans-serif";
+
+/** Honor OS-level reduced-motion (SSR-safe). */
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/**
+ * Minimal self-contained confetti burst — no npm dependency. Paints a
+ * short-lived full-screen canvas overlay of falling/rotating particles and
+ * cleans itself up. Called only on the transition INTO a won stage, and
+ * skipped when reduced-motion is preferred.
+ */
+function fireConfetti(): void {
+  if (typeof document === "undefined") return;
+  if (prefersReducedMotion()) return;
+  const canvas = document.createElement("canvas");
+  canvas.style.cssText =
+    "position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:2147483647";
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    canvas.remove();
+    return;
+  }
+  const dpr = window.devicePixelRatio || 1;
+  const W = (canvas.width = window.innerWidth * dpr);
+  const H = (canvas.height = window.innerHeight * dpr);
+  ctx.scale(dpr, dpr);
+  const vw = window.innerWidth;
+  const colors = ["#3B82F6", "#6366F1", "#22C55E", "#F59E0B", "#EC4899", "#0EA5E9"];
+  const N = 130;
+  const parts = Array.from({ length: N }, () => ({
+    x: vw / 2 + (Math.random() - 0.5) * 120,
+    y: window.innerHeight * 0.35 + (Math.random() - 0.5) * 60,
+    vx: (Math.random() - 0.5) * 12,
+    vy: Math.random() * -14 - 4,
+    size: Math.random() * 7 + 4,
+    color: colors[(Math.random() * colors.length) | 0],
+    rot: Math.random() * Math.PI,
+    vr: (Math.random() - 0.5) * 0.4,
+  }));
+  const gravity = 0.45;
+  const start = performance.now();
+  const DURATION = 2600;
+  let raf = 0;
+  function frame(now: number) {
+    const elapsed = now - start;
+    ctx!.clearRect(0, 0, W, H);
+    const fade = Math.max(0, 1 - Math.max(0, elapsed - 1600) / 1000);
+    for (const p of parts) {
+      p.vy += gravity;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.vr;
+      ctx!.save();
+      ctx!.globalAlpha = fade;
+      ctx!.translate(p.x, p.y);
+      ctx!.rotate(p.rot);
+      ctx!.fillStyle = p.color;
+      ctx!.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+      ctx!.restore();
+    }
+    if (elapsed < DURATION) {
+      raf = requestAnimationFrame(frame);
+    } else {
+      cancelAnimationFrame(raf);
+      canvas.remove();
+    }
+  }
+  raf = requestAnimationFrame(frame);
+}
 
 /**
  * Pipeline board (Kanban). Columns = stages, cards = deals. Drag-and-drop
@@ -34,6 +107,8 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
   const [creating, setCreating] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+  // Deal id currently playing the muted "lost" dim-pulse (cleared after the animation).
+  const [lostPulseId, setLostPulseId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -67,6 +142,33 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
     return map;
   }, [stages, deals]);
 
+  // Fire the celebratory (won) / muted (lost) feedback — but ONLY when the deal
+  // is transitioning INTO a won/lost stage from a stage that was not already the
+  // same win/loss state. Prevents re-firing on same-column drops or re-renders.
+  const celebrateMove = useCallback(
+    (deal: DealCard, fromStageId: string, toStageId: string) => {
+      if (fromStageId === toStageId) return;
+      const from = stages.find((s) => s.id === fromStageId);
+      const to = stages.find((s) => s.id === toStageId);
+      if (!to) return;
+      const label = deal.companyName || deal.title || "Deal";
+      const value = formatMoney(deal.value_amount, deal.currency);
+      if (to.is_won && !from?.is_won) {
+        fireConfetti();
+        toast({ title: `🎉 Won: ${label}`, description: value !== "—" ? value : undefined });
+      } else if (to.is_lost && !from?.is_lost) {
+        toast({ title: `Lost: ${label}`, description: value !== "—" ? value : undefined });
+        if (!prefersReducedMotion()) {
+          setLostPulseId(deal.id);
+          window.setTimeout(() => {
+            setLostPulseId((cur) => (cur === deal.id ? null : cur));
+          }, 900);
+        }
+      }
+    },
+    [stages, toast],
+  );
+
   async function handleDrop(stageId: string) {
     const id = dragId;
     setDragId(null);
@@ -74,8 +176,10 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
     if (!id) return;
     const deal = deals.find((d) => d.id === id);
     if (!deal || deal.stage_id === stageId) return;
+    const fromStageId = deal.stage_id;
     // optimistic move
     setDeals((prev) => prev.map((d) => (d.id === id ? { ...d, stage_id: stageId } : d)));
+    celebrateMove(deal, fromStageId, stageId);
     try {
       await moveDealStage(id, stageId);
       // refresh so derived status (won/lost) + activity are current
@@ -89,6 +193,8 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
   // Click-to-move fallback (accessible + mobile-friendly): move a card via a
   // small stage menu from the card footer. Native DnD is the primary path.
   async function handleClickMove(dealId: string, stageId: string) {
+    const deal = deals.find((d) => d.id === dealId);
+    if (deal && deal.stage_id !== stageId) celebrateMove(deal, deal.stage_id, stageId);
     setDeals((prev) => prev.map((d) => (d.id === dealId ? { ...d, stage_id: stageId } : d)));
     try {
       await moveDealStage(dealId, stageId);
@@ -101,6 +207,16 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC" }}>
+      <style>{`
+        @keyframes litLostPulse {
+          0%   { box-shadow: 0 1px 2px rgba(15,23,42,0.05); background: #FFFFFF; }
+          35%  { box-shadow: 0 0 0 3px rgba(100,116,139,0.28); background: #F1F5F9; }
+          100% { box-shadow: 0 1px 2px rgba(15,23,42,0.05); background: #FFFFFF; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes litLostPulse { from {} to {} }
+        }
+      `}</style>
       {/* Header */}
       <div style={{ padding: "16px 24px", borderBottom: "1px solid #E5E7EB", background: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexShrink: 0 }}>
         <div>
@@ -174,6 +290,7 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
                           deal={deal}
                           stages={stages}
                           dragging={dragId === deal.id}
+                          lostPulse={lostPulseId === deal.id}
                           onDragStart={() => setDragId(deal.id)}
                           onDragEnd={() => setDragId(null)}
                           onOpen={() => setActiveDeal(deal)}
@@ -209,6 +326,7 @@ function DealCardView({
   deal,
   stages,
   dragging,
+  lostPulse,
   onDragStart,
   onDragEnd,
   onOpen,
@@ -217,6 +335,7 @@ function DealCardView({
   deal: DealCard;
   stages: DealStage[];
   dragging: boolean;
+  lostPulse: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
   onOpen: () => void;
@@ -224,6 +343,11 @@ function DealCardView({
 }) {
   const days = daysBetween(deal.updated_at);
   const overdueTask = deal.nextTaskDue && isOverdue(deal.nextTaskDue);
+  const serviceLabel = deal.service_type ? DEAL_SERVICE_TYPE_LABELS[deal.service_type] : null;
+  const lane =
+    deal.origin && deal.destination
+      ? `${deal.origin} → ${deal.destination}`
+      : deal.origin || deal.destination || null;
   return (
     <div
       draggable
@@ -238,6 +362,7 @@ function DealCardView({
         cursor: "grab",
         boxShadow: "0 1px 2px rgba(15,23,42,0.05)",
         opacity: dragging ? 0.5 : 1,
+        animation: lostPulse ? "litLostPulse 900ms ease-out" : undefined,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -261,6 +386,47 @@ function DealCardView({
 
       {deal.contactName ? (
         <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: "#64748b", marginTop: 6 }}>{deal.contactName}</div>
+      ) : null}
+
+      {serviceLabel || lane ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7, flexWrap: "wrap" }}>
+          {serviceLabel ? (
+            <span
+              title={`Service: ${serviceLabel}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                fontFamily: FONT_BODY,
+                fontSize: 10,
+                fontWeight: 600,
+                color: "#475569",
+                background: "#F1F5F9",
+                border: "1px solid #E2E8F0",
+                borderRadius: 6,
+                padding: "1px 6px",
+                letterSpacing: "0.01em",
+              }}
+            >
+              {serviceLabel}
+            </span>
+          ) : null}
+          {lane ? (
+            <span
+              title={lane}
+              style={{
+                fontFamily: FONT_BODY,
+                fontSize: 10.5,
+                color: "#94a3b8",
+                minWidth: 0,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {lane}
+            </span>
+          ) : null}
+        </div>
       ) : null}
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
