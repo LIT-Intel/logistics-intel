@@ -164,6 +164,18 @@ export default function ModernSignupPage() {
   const nextParam   = (searchParams.get("next")  || "").trim();
   const isInviteFlow = Boolean(inviteToken);
 
+  // Lead-magnet handoff (§12): when the marketing "Free Shipper Report" magnet
+  // sends the visitor here with ?company=<key> (and ?magnet=...), land them
+  // directly in that company's profile after signup instead of the generic
+  // dashboard. The company_key is an ImportYeti-style slug; CompanyProfileV2's
+  // /app/companies/:id route resolves slugs → the canonical UUID, so we can
+  // pass it straight through. The anon→user session stitch already runs in
+  // AuthProvider, so we only wire routing here.
+  const companyParam = (searchParams.get("company") || "").trim();
+  const companyDeepLink = companyParam
+    ? `/app/companies/${encodeURIComponent(companyParam.replace(/^company\//i, ""))}`
+    : "";
+
   const [fullName, setFullName]       = useState("");
   const [company, setCompany]         = useState("");
   const [email, setEmail]             = useState(inviteEmail);
@@ -177,7 +189,7 @@ export default function ModernSignupPage() {
     ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
         inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
       }`
-    : nextParam || "/app/search";
+    : nextParam || companyDeepLink || "/app/search";
 
   useEffect(() => {
     if (inviteEmail) setEmail(inviteEmail);
@@ -207,9 +219,14 @@ export default function ModernSignupPage() {
       // URL so AuthCallback can route the user to /accept-invite (not /onboarding)
       // after they click the confirmation link. Without this, the token is lost
       // and the invited user falls into the "fresh signup → /onboarding" branch.
-      const emailRedirectTo = isInviteFlow
-        ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(postInvitePath)}`
-        : `${window.location.origin}/auth/callback`;
+      // Thread the post-signup destination through the email-confirmation URL
+      // so AuthCallback can honor it after the user clicks the confirmation
+      // link. Covers the invite flow AND the lead-magnet company deep-link
+      // (§12) — without this, ?company= is lost across email confirmation.
+      const emailRedirectTo =
+        isInviteFlow || companyDeepLink
+          ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(postInvitePath)}`
+          : `${window.location.origin}/auth/callback`;
 
       await registerWithEmailPassword({
         fullName: fullName.trim(),

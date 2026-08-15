@@ -34,6 +34,7 @@
     "fuel-index-refresh",
     "generate-signals",
     "get-billing-status",
+    "lead-magnet-report",
     "lusha-contact-search",
     "normalize-company",
     "oauth-gmail-callback",
