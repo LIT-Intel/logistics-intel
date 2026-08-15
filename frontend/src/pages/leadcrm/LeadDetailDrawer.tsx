@@ -453,17 +453,40 @@ function TimelineRow({ entry }: { entry: LeadTimelineEntry }) {
             {meta.label}
           </span>
         </div>
-        {entry.detail ? (
-          <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#475569", marginTop: 2, wordBreak: "break-word" }}>
-            {entry.detail}
-          </div>
-        ) : null}
+        {(() => {
+          const d = renderTimelineDetail(entry.detail);
+          return d ? (
+            <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#475569", marginTop: 2, wordBreak: "break-word" }}>
+              {d}
+            </div>
+          ) : null;
+        })()}
         <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94a3b8", marginTop: 2 }}>
           {formatRelative(entry.occurred_at)}
         </div>
       </div>
     </div>
   );
+}
+
+/** Render a timeline entry's `detail` (string OR jsonb object) as safe text.
+ *  A jsonb object rendered directly as a React child throws React error #31
+ *  ("Objects are not valid as a React child"). Coerce to readable text. */
+function renderTimelineDetail(detail: unknown): string {
+  if (detail == null) return "";
+  if (typeof detail === "string") return detail;
+  if (typeof detail === "number" || typeof detail === "boolean") return String(detail);
+  if (typeof detail === "object") {
+    try {
+      return Object.entries(detail as Record<string, unknown>)
+        .filter(([, v]) => v != null && v !== "")
+        .map(([k, v]) => `${k.replace(/_/g, " ")}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+        .join(" · ");
+    } catch {
+      return "";
+    }
+  }
+  return "";
 }
 
 // ── Small UI atoms (mirror DealDetailDrawer) ───────────────────────────────
