@@ -18,6 +18,13 @@
 import { useCallback, useMemo, useState } from "react";
 import { getAnonId } from "@/lib/anonId";
 import { APP_URL } from "@/lib/app-urls";
+import {
+  PROSPECT_INDUSTRIES,
+  PROSPECT_ORIGIN_COUNTRIES,
+  PROSPECT_REGIONS,
+  PROSPECT_MODES,
+  PROSPECT_VOLUME_RANGES,
+} from "@/lib/prospectFilters";
 
 const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SITE_URL || "";
@@ -25,49 +32,15 @@ const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const FN_URL = `${SUPABASE_URL}/functions/v1/lead-magnet-list`;
 
 // ---- filter option lists (§14) — none required ----
-const INDUSTRIES = [
-  "Retail",
-  "Consumer Goods",
-  "Industrial",
-  "Automotive",
-  "Food & Beverage",
-  "Apparel & Textiles",
-  "Electronics",
-  "Chemicals",
-  "Building Materials",
-  "Machinery",
-];
-
-const ORIGIN_COUNTRIES = [
-  "China",
-  "Vietnam",
-  "India",
-  "Germany",
-  "Mexico",
-  "South Korea",
-  "Japan",
-  "Italy",
-  "Taiwan",
-  "Canada",
-];
-
-const REGIONS = [
-  { value: "southeast", label: "Southeast US" },
-  { value: "west_coast", label: "West Coast US" },
-  { value: "northeast", label: "Northeast US" },
-  { value: "midwest", label: "Midwest US" },
-  { value: "southwest", label: "Southwest US" },
-  { value: "mountain", label: "Mountain US" },
-];
-
-const MODES = ["Ocean FCL", "Ocean LCL", "Air", "Rail", "Truck"];
-
-const VOLUME_RANGES = [
-  { value: "", label: "Any volume" },
-  { value: "medium", label: "25+ shipments / yr" },
-  { value: "high", label: "100+ shipments / yr" },
-  { value: "enterprise", label: "500+ shipments / yr" },
-];
+// Driven from the shared prospectFilters module so UI == DB (Bug 1 fix): the
+// industry values are the REAL lit_company_directory.industry values, and the
+// origin/region options are soft lane-text refinements the edge fn applies
+// without ever zeroing the result set.
+const INDUSTRIES = PROSPECT_INDUSTRIES;
+const ORIGIN_COUNTRIES = PROSPECT_ORIGIN_COUNTRIES;
+const REGIONS = PROSPECT_REGIONS;
+const MODES = PROSPECT_MODES;
+const VOLUME_RANGES = PROSPECT_VOLUME_RANGES;
 
 // ---------------------------------------------------------------------------
 // types

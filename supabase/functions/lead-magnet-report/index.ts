@@ -52,6 +52,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { createLogger, requestId } from "../_shared/logger.ts";
+import { sendLeadMagnetEmail } from "../_shared/lead_magnet_email.ts";
 
 const log = createLogger("lead-magnet-report");
 
@@ -152,6 +153,45 @@ async function emitEvent(
     });
   } catch (err) {
     log.warn("event_emit_failed", { event: opts.eventName, err: String(err) });
+  }
+}
+
+/**
+ * Best-effort immediate email delivery for a captured lead. Sends the branded
+ * magnet email (shared template + Resend + suppression gate) and stamps
+ * report_emailed_at on success. A failure NEVER throws to the response path —
+ * it records last_email_error / increments attempts so the fulfillment cron
+ * retries. No-op if there is no session id.
+ */
+async function deliverMagnetEmail(
+  admin: SupabaseClient,
+  session: string | null,
+  magnetSlug: string,
+  email: string,
+  firstName: string | null,
+  payload: Record<string, unknown>,
+  rid: string,
+): Promise<void> {
+  if (!session) return;
+  try {
+    const res = await sendLeadMagnetEmail(admin, { magnetSlug, email, firstName, payload });
+    if (res.skipped) {
+      // Suppressed/internal — mark as "handled" so the cron doesn't retry forever.
+      await admin.from("lit_lead_magnet_sessions")
+        .update({ report_emailed_at: new Date().toISOString(), last_email_error: `skipped:${res.reason}` })
+        .eq("id", session);
+    } else {
+      await admin.from("lit_lead_magnet_sessions")
+        .update({ report_emailed_at: new Date().toISOString() })
+        .eq("id", session);
+    }
+  } catch (err) {
+    log.warn("immediate_email_failed", { request_id: rid, magnet: magnetSlug, err: String(err) });
+    try {
+      await admin.from("lit_lead_magnet_sessions")
+        .update({ last_email_error: String(err).slice(0, 500) })
+        .eq("id", session);
+    } catch { /* ignore */ }
   }
 }
 
@@ -788,6 +828,11 @@ serve(async (req) => {
       return json({ state: "error", message: "We couldn't save that just now. Please try again." });
     }
 
+    // Best-effort immediate delivery of the estimate email (cron retries).
+    await deliverMagnetEmail(admin, session, magnetSlug, email, firstName, {
+      estimate: body.estimate ?? null,
+    }, rid);
+
     log.info("estimate_captured", { request_id: rid });
     return json({ state: "captured", email_captured: true });
   }
@@ -909,6 +954,10 @@ serve(async (req) => {
       } catch (err) {
         log.warn("risk_email_capture_failed", { request_id: rid, err: String(err) });
       }
+      // Best-effort immediate delivery of the risk-scan email (cron retries).
+      await deliverMagnetEmail(admin, session, magnetSlug, email, firstName, {
+        visible: risk.visible,
+      }, rid);
     }
 
     await emitEvent(admin, {
@@ -1021,6 +1070,11 @@ serve(async (req) => {
     } catch (err) {
       log.warn("email_capture_failed", { request_id: rid, err: String(err) });
     }
+
+    // Best-effort immediate delivery of the report email (cron retries on fail).
+    await deliverMagnetEmail(admin, session, magnetSlug, email, firstName, {
+      visible: report.visible,
+    }, rid);
   }
 
   // ---- funnel events: the visitor SAW value and hit a lock (§11) ----

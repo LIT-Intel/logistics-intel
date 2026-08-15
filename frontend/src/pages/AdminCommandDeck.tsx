@@ -122,6 +122,46 @@ type LeadMagnetRow = {
   revenue: number | null;
 };
 
+// Per-magnet funnel-step counts (from lit_admin_lead_magnet_funnel). All the
+// step columns are non-null bigints from the RPC; num() coerces defensively.
+type MagnetFunnelRow = {
+  magnet_slug: string;
+  viewed: number;
+  started: number;
+  submitted: number;
+  lead_captured: number;
+  result_viewed: number;
+  trial_cta_clicked: number;
+  signup: number;
+  trial_started: number;
+  activated: number;
+  paid: number;
+};
+// Source x magnet rollup (from lit_admin_lead_magnet_by_source).
+type LeadSourceRow = {
+  magnet_slug: string;
+  utm_source: string;
+  sessions: number;
+  leads: number;
+  signups: number;
+  trials: number;
+  paid: number;
+};
+// Lead-level captured lead (from lit_admin_recent_leads).
+type RecentLead = {
+  session_id: string;
+  email: string;
+  first_name: string | null;
+  magnet_slug: string;
+  utm_source: string | null;
+  utm_campaign: string | null;
+  landing_page: string | null;
+  stage: string;
+  created_at: string;
+  email_captured_at: string | null;
+  converted_user_id: string | null;
+};
+
 const num = (v: any): number => (v === null || v === undefined ? 0 : Number(v) || 0);
 const usd = (v: number | null | undefined): string =>
   v === null || v === undefined ? "—" : `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -265,6 +305,37 @@ function PlanPill({ plan, status }: { plan: string | null; status: string | null
   );
 }
 
+// Lead-stage badge for the Recent Leads table. Escalating tone
+// captured → signup → trial → activated → paid.
+const LEAD_STAGE_TONE: Record<string, string> = {
+  captured: "border-slate-200 bg-slate-50 text-slate-500",
+  signup: "border-blue-200 bg-blue-50 text-blue-700",
+  trial: "border-cyan-200 bg-cyan-50 text-cyan-700",
+  activated: "border-violet-200 bg-violet-50 text-violet-700",
+  paid: "border-emerald-200 bg-emerald-50 text-emerald-700",
+};
+function StageBadge({ stage }: { stage: string }) {
+  const tone = LEAD_STAGE_TONE[stage] || LEAD_STAGE_TONE.captured;
+  return (
+    <span className={`font-display inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.05em] ${tone}`}>
+      {stage}
+    </span>
+  );
+}
+
+// The ordered per-magnet funnel steps rendered as horizontal bars. Keyed to the
+// MagnetFunnelRow columns; drop-off is computed vs. the first (viewed) step.
+const MAGNET_FUNNEL_STEPS: { key: keyof MagnetFunnelRow; label: string; color: string }[] = [
+  { key: "viewed", label: "Viewed", color: "#2563EB" },
+  { key: "started", label: "Started", color: "#3B82F6" },
+  { key: "submitted", label: "Submitted", color: "#38BDF8" },
+  { key: "lead_captured", label: "Captured", color: "#0EA5E9" },
+  { key: "signup", label: "Signup", color: "#7C3AED" },
+  { key: "trial_started", label: "Trial", color: "#F59E0B" },
+  { key: "activated", label: "Activated", color: "#14B8A6" },
+  { key: "paid", label: "Paid", color: "#059669" },
+];
+
 export default function AdminCommandDeck() {
   const [params, setParams] = useSearchParams();
   const section = (params.get("section") as SectionId) || "overview";
@@ -289,6 +360,9 @@ export default function AdminCommandDeck() {
   // ── Growth sprint state (Growth tab) ────────────────────────────────────
   const [sprint, setSprint] = useState<SprintStatus | null>(null);
   const [magnets, setMagnets] = useState<LeadMagnetRow[]>([]);
+  const [magnetFunnel, setMagnetFunnel] = useState<MagnetFunnelRow[]>([]);
+  const [leadSources, setLeadSources] = useState<LeadSourceRow[]>([]);
+  const [recentLeads, setRecentLeads] = useState<RecentLead[]>([]);
   const [growthWindow, setGrowthWindow] = useState<7 | 30 | 90>(30);
   const [growthBusy, setGrowthBusy] = useState(false);
 
@@ -350,9 +424,12 @@ export default function AdminCommandDeck() {
   const loadGrowth = useCallback(async (windowDays: 7 | 30 | 90) => {
     setGrowthBusy(true);
     try {
-      const [ss, lm] = await Promise.all([
+      const [ss, lm, mf, ls, rl] = await Promise.all([
         supabase.rpc("lit_admin_growth_sprint_status"),
         supabase.rpc("lit_admin_lead_magnet_performance", { p_days: windowDays }),
+        supabase.rpc("lit_admin_lead_magnet_funnel", { p_days: windowDays }),
+        supabase.rpc("lit_admin_lead_magnet_by_source", { p_days: windowDays }),
+        supabase.rpc("lit_admin_recent_leads", { p_days: windowDays, p_limit: 200 }),
       ]);
       // sprint status returns a single jsonb object (or a 1-row set).
       const raw = ss.data;
@@ -370,9 +447,50 @@ export default function AdminCommandDeck() {
         paid: r.paid === null || r.paid === undefined ? null : num(r.paid),
         revenue: r.revenue === null || r.revenue === undefined ? null : num(r.revenue),
       })));
+      // Per-magnet funnel steps (all step columns non-null bigints; num() is defensive).
+      setMagnetFunnel(((mf.data as any[]) || []).map((r) => ({
+        magnet_slug: r.magnet_slug,
+        viewed: num(r.viewed),
+        started: num(r.started),
+        submitted: num(r.submitted),
+        lead_captured: num(r.lead_captured),
+        result_viewed: num(r.result_viewed),
+        trial_cta_clicked: num(r.trial_cta_clicked),
+        signup: num(r.signup),
+        trial_started: num(r.trial_started),
+        activated: num(r.activated),
+        paid: num(r.paid),
+      })));
+      // Source x magnet rollup.
+      setLeadSources(((ls.data as any[]) || []).map((r) => ({
+        magnet_slug: r.magnet_slug,
+        utm_source: r.utm_source ?? "direct/unknown",
+        sessions: num(r.sessions),
+        leads: num(r.leads),
+        signups: num(r.signups),
+        trials: num(r.trials),
+        paid: num(r.paid),
+      })));
+      // Lead-level captured leads.
+      setRecentLeads(((rl.data as any[]) || []).map((r) => ({
+        session_id: r.session_id,
+        email: r.email,
+        first_name: r.first_name ?? null,
+        magnet_slug: r.magnet_slug,
+        utm_source: r.utm_source ?? null,
+        utm_campaign: r.utm_campaign ?? null,
+        landing_page: r.landing_page ?? null,
+        stage: r.stage ?? "captured",
+        created_at: r.created_at,
+        email_captured_at: r.email_captured_at ?? null,
+        converted_user_id: r.converted_user_id ?? null,
+      })));
     } catch {
       setSprint(null);
       setMagnets([]);
+      setMagnetFunnel([]);
+      setLeadSources([]);
+      setRecentLeads([]);
     }
     setGrowthBusy(false);
   }, []);
@@ -1593,6 +1711,160 @@ export default function AdminCommandDeck() {
                             <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(m.activated)}</td>
                             <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(m.paid)}</td>
                             <td className="font-mono px-3 py-2 text-right text-[12px] text-slate-700">{usd(m.revenue)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </DeckCard>
+
+              {/* (iv) Per-magnet funnel steps — horizontal step bars per magnet.
+                   From lit_admin_lead_magnet_funnel: viewed → started → submitted
+                   → captured → signup → trial → activated → paid, with drop-off %. */}
+              <DeckCard
+                title="Lead-magnet funnel steps"
+                subtitle={`Where leads drop, per magnet · last ${growthWindow}d`}
+              >
+                {magnetFunnel.length === 0 ? (
+                  <div className="font-body py-6 text-center text-[12px] text-slate-400">
+                    {growthBusy ? "Loading…" : "No funnel-step data yet."}
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    {magnetFunnel.map((mf) => {
+                      const top = num(mf.viewed) || Math.max(
+                        ...MAGNET_FUNNEL_STEPS.map((s) => num(mf[s.key] as number)), 1,
+                      );
+                      return (
+                        <div key={mf.magnet_slug}>
+                          <div className="mb-2 flex items-center gap-1.5">
+                            <Magnet className="h-3.5 w-3.5 text-blue-500" />
+                            <span className="font-display text-[12.5px] font-semibold text-slate-800">
+                              {mf.magnet_slug}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+                            {MAGNET_FUNNEL_STEPS.map((s, i) => {
+                              const val = num(mf[s.key] as number);
+                              const prevVal = i > 0 ? num(mf[MAGNET_FUNNEL_STEPS[i - 1].key] as number) : null;
+                              const drop = prevVal && prevVal > 0 ? Math.round((1 - val / prevVal) * 100) : null;
+                              const barPct = top > 0 ? Math.min(Math.round((val / top) * 100), 100) : 0;
+                              return (
+                                <div key={s.key} className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 shadow-sm">
+                                  <div className="font-mono text-[15px] font-bold leading-none text-slate-900">
+                                    {int(val)}
+                                  </div>
+                                  <div className="font-display mt-1 text-[9.5px] font-semibold uppercase tracking-[0.05em] text-slate-400">
+                                    {s.label}
+                                  </div>
+                                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                                    <div className="h-full rounded-full" style={{ width: `${barPct}%`, backgroundColor: s.color }} />
+                                  </div>
+                                  <div className="font-body mt-1 text-[9.5px] text-slate-400">
+                                    {drop === null ? " " : `−${drop}%`}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </DeckCard>
+
+              {/* (v) Source × magnet table — from lit_admin_lead_magnet_by_source. */}
+              <DeckCard
+                title="Leads by source × magnet"
+                subtitle={`Which source × which magnet produces leads · last ${growthWindow}d`}
+              >
+                {leadSources.length === 0 ? (
+                  <div className="font-body py-6 text-center text-[12px] text-slate-400">
+                    {growthBusy ? "Loading…" : "No source data yet."}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[640px]">
+                      <thead>
+                        <tr className="border-b border-slate-100">
+                          {["Source", "Magnet", "Sessions", "Leads", "Signups", "Trials", "Paid"].map((h) => (
+                            <th key={h} className="font-display px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400 last:text-right">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {leadSources.map((r) => (
+                          <tr key={`${r.utm_source}|${r.magnet_slug}`} className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/50">
+                            <td className="px-3 py-2">
+                              <span className="font-body text-[12px] font-medium text-slate-700">{r.utm_source}</span>
+                            </td>
+                            <td className="px-3 py-2 font-body text-[12px] text-slate-600">{r.magnet_slug}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(r.sessions)}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(r.leads)}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(r.signups)}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(r.trials)}</td>
+                            <td className="font-mono px-3 py-2 text-right text-[12px] text-slate-700">{int(r.paid)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </DeckCard>
+
+              {/* (vi) Recent captured leads — from lit_admin_recent_leads. The
+                   actual lead-capture visibility the owner asked for. */}
+              <DeckCard
+                title="Recent leads"
+                subtitle={`Captured lead-magnet leads to follow up · last ${growthWindow}d`}
+                right={
+                  <span className="font-mono rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">
+                    {int(recentLeads.length)}
+                  </span>
+                }
+              >
+                {recentLeads.length === 0 ? (
+                  <div className="font-body py-6 text-center text-[12px] text-slate-400">
+                    {growthBusy ? "Loading…" : "No captured leads yet."}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[820px]">
+                      <thead>
+                        <tr className="border-b border-slate-100">
+                          {["Lead", "Magnet", "Source", "Campaign", "Stage", "Captured"].map((h) => (
+                            <th key={h} className="font-display px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400 last:text-right">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recentLeads.map((l) => (
+                          <tr key={l.session_id} className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/50">
+                            <td className="px-3 py-2">
+                              <div className="font-display text-[12.5px] font-semibold text-slate-900">
+                                {l.first_name || l.email.split("@")[0]}
+                              </div>
+                              <div className="font-body text-[11px] text-slate-500">{l.email}</div>
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className="font-display inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-700">
+                                <Magnet className="h-3 w-3 text-blue-500" /> {l.magnet_slug}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 font-body text-[12px] text-slate-600">{l.utm_source || "direct/unknown"}</td>
+                            <td className="px-3 py-2 font-body text-[12px] text-slate-500">{l.utm_campaign || "—"}</td>
+                            <td className="px-3 py-2"><StageBadge stage={l.stage} /></td>
+                            <td className="font-mono px-3 py-2 text-right text-[11px] text-slate-500">
+                              {l.email_captured_at
+                                ? new Date(l.email_captured_at).toLocaleDateString()
+                                : new Date(l.created_at).toLocaleDateString()}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

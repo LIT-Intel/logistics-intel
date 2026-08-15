@@ -55,27 +55,22 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 import { createLogger, requestId } from "../_shared/logger.ts";
-import { expandRegion } from "../_shared/region_presets.ts";
-import { compositeScore } from "../_shared/opportunity_scoring.ts";
+import {
+  parseFilters,
+  resolveProspectList,
+  buildListResult,
+} from "../_shared/lead_magnet_builders.ts";
+import { sendLeadMagnetEmail } from "../_shared/lead_magnet_email.ts";
 
 const log = createLogger("lead-magnet-list");
 
 const VALID_SLUGS = new Set(["top-shippers", "free-freight-prospects"]);
-
-// Total context (visible + locked) — Plan §14 caps at 25.
-const VISIBLE_COUNT = 5;
-const LOCKED_COUNT = 20;
-const TOTAL_COUNT = VISIBLE_COUNT + LOCKED_COUNT;
 
 // Rate limits (§62/§65) — mirror lead-magnet-report.
 const SESSION_LIMIT = 25; // calls per anon session per 24h
 const SESSION_WINDOW = 86_400;
 const EMAIL_LIMIT = 3; // email submits per email per 24h
 const EMAIL_WINDOW = 86_400;
-
-// Cap the directory read. We only need the top TOTAL_COUNT after ranking, but
-// pull a wider window so ranking is meaningful even with sparse filters.
-const READ_CAP = 500;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -100,241 +95,13 @@ function str(v: unknown): string | null {
   return t.length ? t : null;
 }
 
-function strArr(v: unknown): string[] {
-  if (Array.isArray(v)) return v.map((x) => str(x)).filter((x): x is string => Boolean(x));
-  const s = str(v);
-  return s ? [s] : [];
-}
-
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// State-code → full-name map (mirrors pulse-explore — the directory stores full
-// state names). Used only when a caller passes explicit US states.
-const STATE_CODE_TO_NAME: Record<string, string> = {
-  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
-  CO: "Colorado", CT: "Connecticut", DE: "Delaware", DC: "District of Columbia",
-  FL: "Florida", GA: "Georgia", HI: "Hawaii", ID: "Idaho", IL: "Illinois",
-  IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky", LA: "Louisiana",
-  ME: "Maine", MD: "Maryland", MA: "Massachusetts", MI: "Michigan", MN: "Minnesota",
-  MS: "Mississippi", MO: "Missouri", MT: "Montana", NE: "Nebraska", NV: "Nevada",
-  NH: "New Hampshire", NJ: "New Jersey", NM: "New Mexico", NY: "New York",
-  NC: "North Carolina", ND: "North Dakota", OH: "Ohio", OK: "Oklahoma", OR: "Oregon",
-  PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina", SD: "South Dakota",
-  TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia",
-  WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
-  PR: "Puerto Rico",
-};
-
-function statesToFullNames(codes: string[]): string[] {
-  return codes.map((c) => STATE_CODE_TO_NAME[c.toUpperCase()] ?? c);
-}
-
-// ---------------------------------------------------------------------------
-// filter mapping — magnet payload → directory query filters
-// ---------------------------------------------------------------------------
-//
-// The magnet exposes a simplified filter surface (§14). We map each field onto
-// the SAME lit_company_directory columns pulse-explore filters, and preserve
-// the raw payload so it can be stored as metadata.saved_query (§15) and later
-// rehydrated into the Explorer's `explore` URL state post-signup.
-
-type MagnetFilters = {
-  industry: string[];
-  // origin_country and region both feed geo. region → US states via
-  // expandRegion (shared with pulse-explore); explicit states supported too.
-  regions: string[];
-  states: string[];
-  countries: string[];
-  // volume_range → shipments floor. Buckets picked to be honest & coarse.
-  shipments_min: number | null;
-  // destination_region/port + mode are accepted at the boundary and PRESERVED
-  // in saved_query, but are NOT filterable on lit_company_directory (no
-  // destination/port/mode columns) — same limitation pulse-explore documents.
-  destination_hint: string[];
-  mode: string[];
-};
-
-const VOLUME_FLOORS: Record<string, number> = {
-  low: 0,
-  small: 0,
-  medium: 25,
-  mid: 25,
-  high: 100,
-  large: 100,
-  enterprise: 500,
-};
-
-function volumeFloor(v: unknown): number | null {
-  const s = str(v);
-  if (!s) return null;
-  const key = s.toLowerCase().trim();
-  if (key in VOLUME_FLOORS) return VOLUME_FLOORS[key];
-  // Accept a raw numeric floor too ("50", "100+").
-  const n = Number(key.replace(/[^0-9.]/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-function parseFilters(raw: unknown): MagnetFilters {
-  const f = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const regions = strArr(f.region).map((r) => r.toLowerCase());
-  const states = strArr(f.state);
-  return {
-    industry: strArr(f.industry),
-    regions,
-    states,
-    countries: strArr(f.origin_country),
-    shipments_min: volumeFloor(f.volume_range),
-    destination_hint: [...strArr(f.destination_region), ...strArr(f.destination_port)],
-    mode: strArr(f.mode),
-  };
-}
-
-// Expand region keys + explicit states to the directory's full-name form
-// (mirrors pulse-explore's expandStates → statesToFullNames pipeline).
-function expandedStateNames(f: MagnetFilters): string[] {
-  const fromRegions = f.regions.flatMap((k) => expandRegion(k));
-  const all = Array.from(new Set([...fromRegions, ...f.states].map((s) => s.toUpperCase())));
-  return statesToFullNames(all);
-}
-
-// ---------------------------------------------------------------------------
-// directory read — cached table only, 0 provider cost.
-// Applies the same filter semantics as pulse-explore's applyDirectoryFilters.
-// ---------------------------------------------------------------------------
-
-type DirRow = {
-  id: string;
-  company_name: string;
-  industry: string | null;
-  vertical: string | null;
-  state: string | null;
-  country: string | null;
-  city: string | null;
-  teu: number | null;
-  shipments: number | null;
-  value_usd: number | null;
-  top_dimensions: unknown;
-  opportunity_consolidation_score: number;
-  opportunity_vulnerable_score: number;
-  opportunity_velocity_score: number;
-  opportunity_composite_score: number;
-};
-
-async function fetchDirectory(admin: SupabaseClient, f: MagnetFilters): Promise<DirRow[]> {
-  let q = admin
-    .from("lit_company_directory")
-    .select(
-      "id, company_name, industry, vertical, state, country, city, teu, shipments, value_usd, " +
-        "top_dimensions, opportunity_consolidation_score, opportunity_vulnerable_score, " +
-        "opportunity_velocity_score, opportunity_composite_score",
-    )
-    // Rank at the DB so READ_CAP captures the strongest matches (the magnet only
-    // shows the top 25 anyway). Same ordering key pulse-explore sorts on.
-    .order("opportunity_composite_score", { ascending: false, nullsFirst: false })
-    .limit(READ_CAP);
-
-  if (f.industry.length) q = q.in("industry", f.industry);
-  const stateNames = expandedStateNames(f);
-  if (stateNames.length) q = q.in("state", stateNames);
-  if (f.countries.length) q = q.in("country", f.countries);
-  if (f.shipments_min != null && f.shipments_min > 0) q = q.gte("shipments", f.shipments_min);
-
-  const { data, error } = await q;
-  if (error) {
-    log.error("directory_read_failed", { err: error.message });
-    return [];
-  }
-  return (data ?? []).map((r) => ({
-    id: String((r as any).id),
-    company_name: str((r as any).company_name) ?? "",
-    industry: str((r as any).industry),
-    vertical: str((r as any).vertical),
-    state: str((r as any).state),
-    country: str((r as any).country),
-    city: str((r as any).city),
-    teu: numOrNull((r as any).teu),
-    shipments: numOrNull((r as any).shipments),
-    value_usd: numOrNull((r as any).value_usd),
-    top_dimensions: (r as any).top_dimensions ?? null,
-    opportunity_consolidation_score: Number((r as any).opportunity_consolidation_score ?? 0),
-    opportunity_vulnerable_score: Number((r as any).opportunity_vulnerable_score ?? 0),
-    opportunity_velocity_score: Number((r as any).opportunity_velocity_score ?? 0),
-    opportunity_composite_score: Number((r as any).opportunity_composite_score ?? 0),
-  }));
-}
-
-function numOrNull(v: unknown): number | null {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
-// ---------------------------------------------------------------------------
-// row → public shape.  VISIBLE = aggregated/estimated public intel only.
-// ---------------------------------------------------------------------------
-
-// Pull the lead lane label out of top_dimensions ([{ lane, teu, percent }, ...]).
-function topLane(dims: unknown): string | null {
-  if (!Array.isArray(dims) || dims.length === 0) return null;
-  const first = dims[0] as Record<string, unknown>;
-  return str(first?.lane) ?? str(first?.route) ?? null;
-}
-
-// Honest, DERIVED growth trend — NOT fabricated. velocity score already encodes
-// recency + volume percentile (see _shared/opportunity_scoring.ts). Bucket it
-// into a coarse, clearly-qualitative label.
-function growthTrend(velocity: number): "accelerating" | "steady" | "cooling" {
-  if (velocity >= 55) return "accelerating";
-  if (velocity >= 25) return "steady";
-  return "cooling";
-}
-
-// Compute (or trust) the composite score using the SAME shared scorer
-// pulse-explore uses, so ranking is consistent across surfaces.
-function composite(r: DirRow): number {
-  if (r.opportunity_composite_score > 0) return r.opportunity_composite_score;
-  return compositeScore({
-    consolidation: r.opportunity_consolidation_score,
-    vulnerable: r.opportunity_vulnerable_score,
-    velocity: r.opportunity_velocity_score,
-    defend: 0, // no user context in the anonymous magnet
-  });
-}
-
-function toVisible(r: DirRow, rank: number) {
-  return {
-    rank,
-    company_name: r.company_name,
-    industry: r.industry ?? r.vertical ?? null,
-    region: [r.city, r.state, r.country].filter(Boolean).join(", ") || null,
-    // clearly-labeled estimates (§10/§97)
-    shipments_12m: r.shipments != null ? Math.round(r.shipments) : null,
-    shipments_12m_label: "estimated · trailing 12 months",
-    teu: r.teu != null ? Math.round(r.teu) : null,
-    teu_label: "modeled estimate",
-    growth_trend: growthTrend(r.opportunity_velocity_score),
-    top_lane: topLane(r.top_dimensions),
-    opportunity_score: Math.round(composite(r)),
-  };
-}
-
-// LOCKED rows expose NO real data — only rank + a masked-name teaser so the
-// visitor sees there are more, without leaking any company intel (§67).
-function toLocked(r: DirRow, rank: number) {
-  return {
-    rank,
-    // blurred teaser: first char + length-appropriate mask, never the real name.
-    name_teaser: maskName(r.company_name),
-    industry: r.industry ?? r.vertical ?? null, // industry is a coarse public hint, safe
-    locked: true as const,
-  };
-}
-
-function maskName(name: string): string {
-  const clean = name.trim();
-  if (!clean) return "•••••••";
-  const first = clean[0].toUpperCase();
-  return `${first}${"•".repeat(Math.max(4, Math.min(10, clean.length - 1)))}`;
-}
+// NOTE: filter parsing, the directory query engine (hard filters + soft lane
+// refinement + global fallback), ranking, and the visible/locked row shapes all
+// live in ../_shared/lead_magnet_builders.ts so the fulfillment cron builds the
+// identical list for the email. This file only orchestrates rate-limits,
+// sessions, events, and the HTTP response.
 
 // ---------------------------------------------------------------------------
 // session + events
@@ -573,30 +340,57 @@ serve(async (req) => {
   }
 
   // ---- run the cached engine (0 provider credits) ----
-  const rows = await fetchDirectory(admin, filters);
+  // resolveProspectList applies hard filters (industry/volume/state), a SOFT
+  // lane refinement for origin/destination (never zeroes), and a global
+  // top-ranked fallback so a common query never dead-ends (Bug 1 fix).
+  const { rows, usedFallback } = await resolveProspectList(admin, filters);
 
-  // Rank by the shared composite scorer (DB already pre-sorted, but re-rank so
-  // any zero-score rows that needed recomputation land correctly).
-  const ranked = [...rows].sort((a, b) => composite(b) - composite(a)).slice(0, TOTAL_COUNT);
+  // Rank + split into 5 visible / 20 locked via the SHARED builder (identical
+  // to what the fulfillment cron emails).
+  const listResult = buildListResult(rows);
+  const visibleRows = listResult.visible;
+  const lockedRows = listResult.locked;
 
   await emitEvent(admin, magnetSlug, {
     sessionId: session,
     eventName: "lead_magnet_submitted",
     anonymousId,
-    metadata: { filters: savedQuery.raw, matched: ranked.length },
+    metadata: { filters: savedQuery.raw, matched: listResult.total_count, used_fallback: usedFallback },
   });
 
-  if (ranked.length === 0) {
+  // With the global fallback, this is only ever empty if the directory table
+  // itself is empty (won't happen in prod) — keep the honest state just in case.
+  if (visibleRows.length === 0) {
     log.info("no_results", { request_id: rid, magnet: magnetSlug });
     return json({
       state: "no_results",
       email_captured: emailCaptured,
-      message: "No companies match those filters yet — try widening them.",
+      message: "The prospect directory is temporarily unavailable. Please try again shortly.",
     });
   }
 
-  const visibleRows = ranked.slice(0, VISIBLE_COUNT).map((r, i) => toVisible(r, i + 1));
-  const lockedRows = ranked.slice(VISIBLE_COUNT).map((r, i) => toLocked(r, VISIBLE_COUNT + i + 1));
+  // ---- best-effort immediate email delivery on capture (§ email wiring) ----
+  // A send failure must NOT break the API response; the fulfillment cron retries.
+  if (emailCaptured && email && session) {
+    try {
+      await sendLeadMagnetEmail(admin, {
+        magnetSlug,
+        email,
+        firstName,
+        payload: { visible: visibleRows, locked_count: lockedRows.length, total_count: listResult.total_count, saved_query: savedQuery },
+      });
+      await admin.from("lit_lead_magnet_sessions")
+        .update({ report_emailed_at: new Date().toISOString() })
+        .eq("id", session);
+    } catch (err) {
+      log.warn("immediate_email_failed", { request_id: rid, err: String(err) });
+      try {
+        await admin.from("lit_lead_magnet_sessions")
+          .update({ last_email_error: String(err).slice(0, 500) })
+          .eq("id", session);
+      } catch { /* ignore */ }
+    }
+  }
 
   // Total matched context (capped at 25 for the magnet). The real universe is
   // larger; we surface the honest "showing top 25" framing in the UI.
@@ -627,11 +421,11 @@ serve(async (req) => {
     email_captured: emailCaptured,
     visible: visibleRows,
     locked: lockedRows,
-    locked_count: lockedRows.length,
-    total_count: visibleRows.length + lockedRows.length,
+    locked_count: listResult.locked_count,
+    total_count: listResult.total_count,
     // echo the saved_query so the client can build the signup deep-link (§15)
     // without re-deriving the mapping.
     saved_query: savedQuery,
-    data_freshness: "cached directory · aggregated public intel",
+    data_freshness: listResult.data_freshness,
   });
 });
