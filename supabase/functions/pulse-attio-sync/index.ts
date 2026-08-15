@@ -12,6 +12,7 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createLogger, requestId } from "../_shared/logger.ts";
 import { verifyCronAuth } from "../_shared/cron_auth.ts";
+import { isAttioSyncEnabled } from "../_shared/attio_sync_flag.ts";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -425,6 +426,17 @@ Deno.serve(async (req: Request) => {
     });
   }
   const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // 3b. Attio cutover kill-switch — once the owner migrates onto LIT's own CRM
+  // and flips lit_admin_set_attio_sync(false), stop pushing to Attio. No-op
+  // (200) so the trigger caller doesn't retry/alarm. Fails OPEN.
+  if (!(await isAttioSyncEnabled(supabase))) {
+    log.info("attio_sync_disabled_skip");
+    return new Response(
+      JSON.stringify({ ok: true, skipped: "attio_sync_disabled" }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
 
   // 4. Confirm list has syncs_to_attio = true (defense in depth)
   const { data: list, error: listErr } = await supabase

@@ -14,7 +14,7 @@
  */
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Users, KanbanSquare, ListChecks, UserCog, Loader2, LogOut, ArrowLeft } from "lucide-react";
+import { Users, KanbanSquare, ListChecks, BarChart3, UserCog, Loader2, LogOut, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { logout } from "@/auth/supabaseAuthClient";
 import { useLeadCrmAccess } from "@/hooks/useLeadCrmAccess";
@@ -283,6 +283,11 @@ export default function LeadCrmLayout() {
           to="/app/leads/tasks"
           icon={<ListChecks style={{ width: 14, height: 14 }} />}
           label="Tasks"
+        />
+        <ShellTab
+          to="/app/leads/reports"
+          icon={<BarChart3 style={{ width: 14, height: 14 }} />}
+          label="Reports"
         />
         {isPlatformAdmin ? (
           <ShellTab to="/app/leads/team" icon={<UserCog style={{ width: 14, height: 14 }} />} label="Team" />

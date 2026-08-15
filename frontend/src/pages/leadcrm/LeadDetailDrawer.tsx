@@ -33,6 +33,7 @@ import {
   Square,
   Plus,
   CircleAlert,
+  Tag as TagIcon,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -51,6 +52,12 @@ import {
   assignLead,
   addNote,
   logTouch,
+  type LeadTag,
+  listTags,
+  createTag,
+  getLeadTags,
+  addLeadTag,
+  removeLeadTag,
 } from "@/api/leadCrm";
 import {
   FONT_HEAD,
@@ -272,6 +279,7 @@ export default function LeadDetailDrawer({
                 </span>
               ) : null}
             </div>
+            <TagsRow leadId={lead.id} />
           </div>
           <button onClick={onClose} style={iconBtn} title="Close">
             <X style={{ width: 16, height: 16 }} />
@@ -801,3 +809,125 @@ const ghostBtn: React.CSSProperties = {
   fontWeight: 600,
   cursor: "pointer",
 };
+
+/**
+ * Tags on the lead — chips with a small add/create popover. All values pass
+ * through asText() (React #31 safety). Best-effort: any error degrades to an
+ * empty tag list rather than crashing the drawer.
+ */
+function TagsRow({ leadId }: { leadId: string }) {
+  const [tags, setTags] = useState<LeadTag[]>([]);
+  const [all, setAll] = useState<LeadTag[]>([]);
+  const [open, setOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = React.useCallback(async () => {
+    const [lt, at] = await Promise.all([getLeadTags(leadId), listTags()]);
+    setTags(lt);
+    setAll(at);
+  }, [leadId]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [lt, at] = await Promise.all([getLeadTags(leadId), listTags()]);
+      if (!alive) return;
+      setTags(lt);
+      setAll(at);
+    })();
+    return () => { alive = false; };
+  }, [leadId]);
+
+  const has = (id: string) => tags.some((t) => t.id === id);
+  const available = all.filter((t) => !has(t.id));
+
+  async function add(tagId: string) {
+    setBusy(true);
+    try { await addLeadTag(leadId, tagId); await load(); } catch { /* noop */ } finally { setBusy(false); }
+  }
+  async function remove(tagId: string) {
+    setBusy(true);
+    try { await removeLeadTag(leadId, tagId); await load(); } catch { /* noop */ } finally { setBusy(false); }
+  }
+  async function createAndAdd() {
+    const nm = newName.trim();
+    if (!nm) return;
+    setBusy(true);
+    try {
+      const res = await createTag(nm);
+      if (res.ok && res.tag_id) await addLeadTag(leadId, res.tag_id);
+      setNewName("");
+      await load();
+    } catch { /* noop */ } finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, flexWrap: "wrap", position: "relative" }}>
+      {tags.map((t) => (
+        <span
+          key={t.id}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 999,
+            background: "#F1F5F9", border: "1px solid #E2E8F0", color: "#475569",
+            fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600,
+          }}
+        >
+          <TagIcon style={{ width: 10, height: 10, color: t.color ?? "#94a3b8" }} />
+          {asText(t.name)}
+          <button onClick={() => remove(t.id)} disabled={busy} title="Remove tag"
+            style={{ border: "none", background: "transparent", cursor: "pointer", color: "#94a3b8", padding: 0, display: "inline-flex" }}>
+            <X style={{ width: 10, height: 10 }} />
+          </button>
+        </span>
+      ))}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 8px", borderRadius: 999,
+          background: "#FFFFFF", border: "1px dashed #CBD5E1", color: "#64748b",
+          fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 600, cursor: "pointer",
+        }}
+      >
+        <Plus style={{ width: 11, height: 11 }} /> Tag
+      </button>
+      {open ? (
+        <div
+          style={{
+            position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20, width: 220,
+            background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, boxShadow: "0 8px 24px rgba(15,23,42,0.12)", padding: 10,
+          }}
+        >
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") createAndAdd(); }}
+              placeholder="New tag…"
+              style={{ flex: 1, minWidth: 0, padding: "5px 8px", border: "1px solid #E5E7EB", borderRadius: 8, fontFamily: FONT_BODY, fontSize: 12 }}
+            />
+            <button onClick={createAndAdd} disabled={busy || !newName.trim()}
+              style={{ padding: "5px 9px", border: "none", borderRadius: 8, background: "#0F172A", color: "#FFFFFF", fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700, cursor: "pointer", opacity: busy || !newName.trim() ? 0.6 : 1 }}>
+              Add
+            </button>
+          </div>
+          <div style={{ maxHeight: 160, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+            {available.length === 0 ? (
+              <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: "#94a3b8", padding: "4px 2px" }}>No more tags — create one above.</div>
+            ) : available.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => add(t.id)}
+                disabled={busy}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", border: "none", background: "transparent", borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 12, color: "#334155", textAlign: "left" }}
+              >
+                <TagIcon style={{ width: 11, height: 11, color: t.color ?? "#94a3b8" }} />
+                {asText(t.name)}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}

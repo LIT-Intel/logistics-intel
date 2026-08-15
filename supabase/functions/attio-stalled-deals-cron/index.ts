@@ -29,8 +29,10 @@
 // (default 14).
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyCronAuth } from "../_shared/cron_auth.ts";
 import { createLogger, requestId } from "../_shared/logger.ts";
+import { isAttioSyncEnabled } from "../_shared/attio_sync_flag.ts";
 
 const ATTIO_BASE = "https://api.attio.com/v2";
 
@@ -203,6 +205,23 @@ serve(async (req: Request) => {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  // Attio cutover kill-switch — stop the daily stalled-deal scan/task creation
+  // once the owner flips lit_admin_set_attio_sync(false). No-op (200). Fails OPEN.
+  {
+    const url = Deno.env.get("SUPABASE_URL");
+    const svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (url && svc) {
+      const flagClient = createClient(url, svc);
+      if (!(await isAttioSyncEnabled(flagClient))) {
+        log.info("attio_sync_disabled_skip");
+        return new Response(
+          JSON.stringify({ ok: true, skipped: "attio_sync_disabled" }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+    }
   }
 
   const stallDays = Number(Deno.env.get("ATTIO_STALL_DAYS") || "14") || 14;

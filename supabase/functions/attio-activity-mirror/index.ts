@@ -18,6 +18,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
+import { isAttioSyncEnabled } from "../_shared/attio_sync_flag.ts";
 
 const ATTIO_BASE = "https://api.attio.com/v2";
 
@@ -158,6 +159,17 @@ serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const db = createClient(supabaseUrl, serviceRoleKey);
+
+  // Attio cutover kill-switch — stop mirroring activity to Attio once the owner
+  // flips lit_admin_set_attio_sync(false). No-op (200) so triggers don't retry.
+  // Fails OPEN.
+  if (!(await isAttioSyncEnabled(db))) {
+    log("info", "attio_sync_disabled_skip", { dedupe_key: dedupeKey });
+    return new Response(
+      JSON.stringify({ ok: true, skipped: true, reason: "attio_sync_disabled" }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }
 
   // 1. Dedupe check — same key within 7 days = skip.
   const { data: existing } = await db

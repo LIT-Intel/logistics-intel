@@ -1164,3 +1164,317 @@ export async function createLeadFromCompany(params: {
     reason: row?.reason,
   };
 }
+
+// ── Phase 4: Reporting · Hygiene · Attio cutover ────────────────────────────
+
+const num = (v: any): number | null => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
+const int0 = (v: any): number => Number(v ?? 0) || 0;
+
+// ── Reports ──────────────────────────────────────────────────────────────
+
+export type FunnelStep = { key: string; label: string; count: number };
+export type FunnelReport = {
+  steps: FunnelStep[];
+  lost: number;
+  conversions: {
+    leads_to_contacted: number | null;
+    contacted_to_engaged: number | null;
+    engaged_to_trial: number | null;
+    trial_to_subscriber: number | null;
+    leads_to_subscriber: number | null;
+  };
+};
+
+/** Lifecycle funnel counts + conversion % between stages. Null-safe → empty. */
+export async function reportFunnel(days = 30): Promise<FunnelReport> {
+  const empty: FunnelReport = {
+    steps: [], lost: 0,
+    conversions: {
+      leads_to_contacted: null, contacted_to_engaged: null, engaged_to_trial: null,
+      trial_to_subscriber: null, leads_to_subscriber: null,
+    },
+  };
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_report_funnel", { p_days: days });
+    if (error || !data || typeof data !== "object") return empty;
+    const o = data as any;
+    const c = o.conversions ?? {};
+    return {
+      steps: Array.isArray(o.steps)
+        ? o.steps.map((s: any) => ({ key: String(s.key ?? ""), label: String(s.label ?? ""), count: int0(s.count) }))
+        : [],
+      lost: int0(o.lost),
+      conversions: {
+        leads_to_contacted: num(c.leads_to_contacted),
+        contacted_to_engaged: num(c.contacted_to_engaged),
+        engaged_to_trial: num(c.engaged_to_trial),
+        trial_to_subscriber: num(c.trial_to_subscriber),
+        leads_to_subscriber: num(c.leads_to_subscriber),
+      },
+    };
+  } catch {
+    return empty;
+  }
+}
+
+export type SourceRow = {
+  source: string; leads: number; trials: number; subscribers: number; conversion: number | null;
+};
+
+/** Per-source (utm/primary) leads/trials/subscribers + conversion%. Null-safe → []. */
+export async function reportBySource(days = 30): Promise<SourceRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_report_by_source", { p_days: days });
+    const rows = (data as any)?.rows;
+    if (error || !Array.isArray(rows)) return [];
+    return rows.map((r: any) => ({
+      source: String(r.source ?? "unknown"),
+      leads: int0(r.leads), trials: int0(r.trials), subscribers: int0(r.subscribers),
+      conversion: num(r.conversion),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type RepRow = {
+  user_id: string | null; name: string; email: string | null;
+  assigned: number; worked: number; trials: number; subscribers: number;
+  open_tasks: number; overdue_tasks: number;
+};
+
+/** Per-rep performance. Null-safe → []. */
+export async function reportByRep(days = 30): Promise<RepRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_report_by_rep", { p_days: days });
+    const rows = (data as any)?.rows;
+    if (error || !Array.isArray(rows)) return [];
+    return rows.map((r: any) => ({
+      user_id: r.user_id != null ? String(r.user_id) : null,
+      name: String(r.name ?? "Teammate"),
+      email: r.email ?? null,
+      assigned: int0(r.assigned), worked: int0(r.worked), trials: int0(r.trials),
+      subscribers: int0(r.subscribers), open_tasks: int0(r.open_tasks), overdue_tasks: int0(r.overdue_tasks),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type VelocityReport = {
+  avg_days_lead_to_trial: number | null;
+  avg_days_trial_to_subscriber: number | null;
+  series: { date: string; created: number; converted: number }[];
+};
+
+/** Velocity (avg days between milestones) + daily created/converted series. */
+export async function reportVelocity(days = 30): Promise<VelocityReport> {
+  const empty: VelocityReport = { avg_days_lead_to_trial: null, avg_days_trial_to_subscriber: null, series: [] };
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_report_velocity", { p_days: days });
+    if (error || !data || typeof data !== "object") return empty;
+    const o = data as any;
+    return {
+      avg_days_lead_to_trial: num(o.avg_days_lead_to_trial),
+      avg_days_trial_to_subscriber: num(o.avg_days_trial_to_subscriber),
+      series: Array.isArray(o.series)
+        ? o.series.map((p: any) => ({ date: String(p.date ?? ""), created: int0(p.created), converted: int0(p.converted) }))
+        : [],
+    };
+  } catch {
+    return empty;
+  }
+}
+
+export type WonLostReport = {
+  won: number; lost: number; lost_reasons: { reason: string; count: number }[];
+};
+
+/** Won vs lost + lost reasons. Null-safe → zeroed. */
+export async function reportWonLost(days = 30): Promise<WonLostReport> {
+  const empty: WonLostReport = { won: 0, lost: 0, lost_reasons: [] };
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_report_won_lost", { p_days: days });
+    if (error || !data || typeof data !== "object") return empty;
+    const o = data as any;
+    return {
+      won: int0(o.won), lost: int0(o.lost),
+      lost_reasons: Array.isArray(o.lost_reasons)
+        ? o.lost_reasons.map((r: any) => ({ reason: String(r.reason ?? "Unspecified"), count: int0(r.count) }))
+        : [],
+    };
+  } catch {
+    return empty;
+  }
+}
+
+export type AuditRow = {
+  occurred_at: string | null; kind: string | null; source: string | null;
+  lead_id: string | null; lead_label: string | null;
+  actor_name: string | null; actor_email: string | null;
+};
+
+/** Audit trail (platform-admin only). Null-safe → []. */
+export async function reportAudit(days = 30, limit = 200): Promise<AuditRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_audit", { p_days: days, p_limit: limit });
+    const rows = (data as any)?.rows;
+    if (error || !Array.isArray(rows)) return [];
+    return rows.map((r: any) => ({
+      occurred_at: r.occurred_at ?? null,
+      kind: r.kind ?? null,
+      source: r.source ?? null,
+      lead_id: r.lead_id != null ? String(r.lead_id) : null,
+      lead_label: r.lead_label ?? null,
+      actor_name: r.actor_name ?? null,
+      actor_email: r.actor_email ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// ── Tags ─────────────────────────────────────────────────────────────────
+
+export type LeadTag = { id: string; name: string; color: string | null; lead_count?: number };
+
+export async function listTags(): Promise<LeadTag[]> {
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_list_tags");
+    const rows = (data as any)?.tags;
+    if (error || !Array.isArray(rows)) return [];
+    return rows.map((t: any) => ({
+      id: String(t.id), name: String(t.name ?? ""), color: t.color ?? null,
+      lead_count: t.lead_count != null ? Number(t.lead_count) : undefined,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function createTag(name: string, color?: string | null): Promise<{ ok: boolean; tag_id?: string; reason?: string }> {
+  const { data, error } = await supabase.rpc("lit_leadcrm_create_tag", { p_name: name, p_color: color ?? null });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as any;
+  return { ok: Boolean(row?.ok), tag_id: row?.tag_id != null ? String(row.tag_id) : undefined, reason: row?.reason };
+}
+
+export async function getLeadTags(leadId: string): Promise<LeadTag[]> {
+  if (!leadId) return [];
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_lead_tags", { p_lead_id: leadId });
+    const rows = (data as any)?.tags;
+    if (error || !Array.isArray(rows)) return [];
+    return rows.map((t: any) => ({ id: String(t.id), name: String(t.name ?? ""), color: t.color ?? null }));
+  } catch {
+    return [];
+  }
+}
+
+export async function addLeadTag(leadId: string, tagId: string): Promise<void> {
+  const { error } = await supabase.rpc("lit_leadcrm_add_tag", { p_lead_id: leadId, p_tag_id: tagId });
+  if (error) throw new Error(error.message);
+}
+
+export async function removeLeadTag(leadId: string, tagId: string): Promise<void> {
+  const { error } = await supabase.rpc("lit_leadcrm_remove_tag", { p_lead_id: leadId, p_tag_id: tagId });
+  if (error) throw new Error(error.message);
+}
+
+// ── Dedupe / merge ─────────────────────────────────────────────────────────
+
+export type DuplicateLead = {
+  id: string; full_name: string | null; company_name: string | null;
+  lead_score: number | null; created_at: string | null; last_activity_at: string | null;
+};
+export type DuplicateGroup = {
+  key_kind: string; key_val: string | null; count: number; leads: DuplicateLead[];
+};
+
+export async function findDuplicates(): Promise<DuplicateGroup[]> {
+  try {
+    const { data, error } = await supabase.rpc("lit_leadcrm_find_duplicates");
+    const groups = (data as any)?.groups;
+    if (error || !Array.isArray(groups)) return [];
+    return groups.map((g: any) => ({
+      key_kind: String(g.key_kind ?? ""),
+      key_val: g.key_val ?? null,
+      count: int0(g.count),
+      leads: Array.isArray(g.leads)
+        ? g.leads.map((l: any) => ({
+            id: String(l.id),
+            full_name: l.full_name ?? null,
+            company_name: l.company_name ?? null,
+            lead_score: l.lead_score != null ? Number(l.lead_score) : null,
+            created_at: l.created_at ?? null,
+            last_activity_at: l.last_activity_at ?? null,
+          }))
+        : [],
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function mergeLeads(primaryId: string, duplicateId: string): Promise<{ ok: boolean; reason?: string }> {
+  const { data, error } = await supabase.rpc("lit_leadcrm_merge_leads", {
+    p_primary_id: primaryId, p_duplicate_id: duplicateId,
+  });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as any;
+  return { ok: Boolean(row?.ok), reason: row?.reason };
+}
+
+// ── Attio cutover ──────────────────────────────────────────────────────────
+
+export type AttioSyncStatus = { ok: boolean; enabled: boolean; updated_at: string | null };
+
+/** Read the Attio push flag (platform-admin). Null-safe → enabled default. */
+export async function getAttioSyncStatus(): Promise<AttioSyncStatus> {
+  const fallback: AttioSyncStatus = { ok: false, enabled: true, updated_at: null };
+  try {
+    const { data, error } = await supabase.rpc("lit_admin_attio_sync_status");
+    if (error || !data) return fallback;
+    const row = (Array.isArray(data) ? data[0] : data) as any;
+    if (!row || row.ok === false) return fallback;
+    return { ok: true, enabled: row.enabled !== false, updated_at: row.updated_at ?? null };
+  } catch {
+    return fallback;
+  }
+}
+
+/** Flip the Attio push flag (platform-admin). Throws on error. */
+export async function setAttioSync(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> {
+  const { data, error } = await supabase.rpc("lit_admin_set_attio_sync", { p_enabled: enabled });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as any;
+  return { ok: Boolean(row?.ok), enabled: row?.enabled !== false };
+}
+
+export type AttioImportResult = {
+  ok: boolean; total?: number; created?: number; updated?: number;
+  skipped?: number; failed?: number; notes_added?: number; errors?: string[]; error?: string; code?: string;
+};
+
+/** Import an Attio export (JSON array) or pull via API. Platform-admin. */
+export async function importAttio(params: {
+  records?: unknown[];
+  mode?: "records" | "api";
+}): Promise<AttioImportResult> {
+  const { data, error } = await supabase.functions.invoke("lead-crm-attio-import", {
+    body: params.mode === "api" ? { mode: "api" } : { records: params.records ?? [] },
+  });
+  if (error) {
+    const ctx = (error as any)?.context;
+    if (ctx && typeof ctx.json === "function") {
+      try {
+        const b = await ctx.json();
+        return { ok: false, error: b?.error ?? error.message, code: b?.code };
+      } catch {
+        /* fall through */
+      }
+    }
+    return { ok: false, error: error.message };
+  }
+  return (data as AttioImportResult) ?? { ok: false, error: "No response" };
+}
