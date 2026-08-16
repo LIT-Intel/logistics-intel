@@ -10,15 +10,17 @@
  * (lit_admin_set_lead_crm_member with p_enabled=false). Kept intentionally
  * simple — this is the owner's grant surface, not a full IAM console.
  */
-import React, { useState } from "react";
-import { UserPlus, Loader2, ShieldCheck, Trash2, Users } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { UserPlus, Loader2, ShieldCheck, Trash2, Users, Search, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast";
 import { useLeadCrmAccess } from "@/hooks/useLeadCrmAccess";
 import {
   type LeadCrmMember,
+  type CrmUserSearchResult,
   listMembers,
   setMember,
+  searchUsers,
 } from "@/api/leadCrm";
 import { FONT_HEAD, FONT_BODY, formatDate, initials, avatarColor } from "./leadCrmFormat";
 
@@ -26,10 +28,26 @@ export default function TeamPage() {
   const { toast } = useToast();
   const { isPlatformAdmin, loading: accessLoading } = useLeadCrmAccess();
 
-  const [newUserId, setNewUserId] = useState("");
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [picked, setPicked] = useState<CrmUserSearchResult | null>(null);
   const [newRole, setNewRole] = useState<"rep" | "manager">("rep");
   const [adding, setAdding] = useState(false);
   const [busyUser, setBusyUser] = useState<string | null>(null);
+
+  // Debounce the search box → user-search RPC.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 250);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  // Candidate users to add — searched by name/email/company (platform-admin only).
+  const { data: candidates = [] } = useQuery<CrmUserSearchResult[]>({
+    queryKey: ["lead-crm", "user-search", debouncedQuery],
+    queryFn: () => searchUsers(debouncedQuery),
+    enabled: isPlatformAdmin && debouncedQuery.length >= 2 && !picked,
+    staleTime: 15_000,
+  });
 
   const {
     data: members = [],
@@ -58,13 +76,15 @@ export default function TeamPage() {
   }
 
   async function handleAdd() {
-    const uid = newUserId.trim();
-    if (!uid) return;
+    if (!picked || picked.is_member) return;
     setAdding(true);
     try {
-      await setMember(uid, true, newRole);
-      setNewUserId("");
-      toast({ title: "Member added" });
+      await setMember(picked.user_id, true, newRole);
+      const label = picked.full_name || picked.email || "Member";
+      setPicked(null);
+      setQuery("");
+      setDebouncedQuery("");
+      toast({ title: `${label} added to the Lead CRM` });
       await refetch();
     } catch (e: any) {
       toast({ title: "Could not add member", description: e?.message, variant: "destructive" });
@@ -111,37 +131,94 @@ export default function TeamPage() {
           </div>
         </div>
 
-        {/* Add member */}
+        {/* Add member — search existing users, pick by name/email (no UUIDs) */}
         <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, padding: 16, marginBottom: 18 }}>
           <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#64748b", marginBottom: 12 }}>
             Add member
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 220 }}>
-              <span style={fieldLabel}>User ID</span>
-              <input
-                value={newUserId}
-                onChange={(e) => setNewUserId(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-                placeholder="auth user UUID"
-                style={inputStyle}
-              />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, width: 140 }}>
-              <span style={fieldLabel}>Role</span>
-              <select value={newRole} onChange={(e) => setNewRole(e.target.value as "rep" | "manager")} style={inputStyle}>
+
+          {picked ? (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 220, padding: "7px 10px", border: "1.5px solid #CBD5E1", borderRadius: 8, background: "#F8FAFC" }}>
+                <div style={{ width: 30, height: 30, borderRadius: "50%", background: avatarColor(picked.full_name || picked.email || ""), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                  {initials(picked.full_name || picked.email || "?")}
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {picked.full_name || picked.email}
+                  </div>
+                  <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {picked.email}{picked.is_member ? " · already a member" : ""}
+                  </div>
+                </div>
+                <button onClick={() => setPicked(null)} title="Change" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#94a3b8", flexShrink: 0, lineHeight: 0 }}>
+                  <X style={{ width: 15, height: 15 }} />
+                </button>
+              </div>
+              <select value={newRole} onChange={(e) => setNewRole(e.target.value as "rep" | "manager")} style={{ ...inputStyle, width: 130 }}>
                 <option value="rep">Rep</option>
                 <option value="manager">Manager</option>
               </select>
-            </label>
-            <button onClick={handleAdd} disabled={adding || !newUserId.trim()} style={primaryBtn}>
-              {adding ? <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} /> : <UserPlus style={{ width: 14, height: 14 }} />}
-              Add
-            </button>
-          </div>
+              <button onClick={handleAdd} disabled={adding || picked.is_member} style={{ ...primaryBtn, opacity: picked.is_member ? 0.5 : 1 }}>
+                {adding ? <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} /> : <UserPlus style={{ width: 14, height: 14 }} />}
+                {picked.is_member ? "Already added" : "Add"}
+              </button>
+            </div>
+          ) : (
+            <div style={{ position: "relative" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1.5px solid #CBD5E1", borderRadius: 8, padding: "0 10px", background: "#FFFFFF" }}>
+                <Search style={{ width: 15, height: 15, color: "#94a3b8", flexShrink: 0 }} />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search your team by name or email…"
+                  autoFocus
+                  style={{ ...inputStyle, border: "none", padding: "9px 0" }}
+                />
+              </div>
+              {debouncedQuery.length >= 2 ? (
+                <>
+                  <div onClick={() => setQuery("")} style={{ position: "fixed", inset: 0, zIndex: 19 }} />
+                  <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 20, background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 10, boxShadow: "0 8px 24px rgba(15,23,42,0.14)", maxHeight: 300, overflowY: "auto" }}>
+                    {candidates.length === 0 ? (
+                      <div style={{ padding: "14px 12px", fontFamily: FONT_BODY, fontSize: 12.5, color: "#94a3b8" }}>
+                        No users match that search.
+                      </div>
+                    ) : (
+                      candidates.map((u) => {
+                        const nm = u.full_name || (u.email ? u.email.split("@")[0] : "User");
+                        return (
+                          <button
+                            key={u.user_id}
+                            onClick={() => { setPicked(u); setQuery(""); }}
+                            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 12px", border: "none", borderBottom: "1px solid #F1F5F9", background: "#FFFFFF", cursor: "pointer", textAlign: "left" }}
+                          >
+                            <div style={{ width: 30, height: 30, borderRadius: "50%", background: avatarColor(nm), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                              {initials(nm)}
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nm}</div>
+                              <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {u.email}{u.company_name ? ` · ${u.company_name}` : ""}
+                              </div>
+                            </div>
+                            {u.is_member ? (
+                              <span style={{ fontSize: 9.5, fontWeight: 700, color: "#166534", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 999, padding: "1px 7px", fontFamily: FONT_HEAD, textTransform: "uppercase", letterSpacing: "0.04em", flexShrink: 0 }}>Member</span>
+                            ) : u.is_platform_admin ? (
+                              <span style={{ fontSize: 9.5, fontWeight: 700, color: "#3730a3", background: "#EEF2FF", border: "1px solid #C7D2FE", borderRadius: 999, padding: "1px 7px", fontFamily: FONT_HEAD, textTransform: "uppercase", letterSpacing: "0.04em", flexShrink: 0 }}>Admin</span>
+                            ) : null}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          )}
           <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: "#94a3b8", marginTop: 8 }}>
-            Paste the rep's auth user ID. They'll get access to the Lead CRM at{" "}
-            <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>/app/leads</span> on next load.
+            Search your existing users and pick one — they get Lead CRM access at{" "}
+            <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>/app/leads</span> on next load. Suspended accounts are hidden.
           </div>
         </div>
 

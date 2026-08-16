@@ -157,14 +157,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
         email_confirmed_at: authUser?.user?.email_confirmed_at ?? null,
       };
 
-      const { error: delErr } = await admin.auth.admin.deleteUser(targetId);
-      if (delErr) {
-        // Most likely an ON DELETE NO ACTION FK (see header). Surface verbatim
-        // so the admin can fall back to suspend.
-        log.error("delete_failed", { err: delErr.message, target: targetId });
-        await writeAudit("admin.user.delete.failed", "error", { error: delErr.message, snapshot });
+      // Purge the full footprint (solely-owned org, membership, subscription,
+      // demo-seed saved companies, CRM/activation/referral rows, profile) THEN the
+      // auth account. A raw deleteUser is blocked by the signup-provisioned FKs
+      // (org membership etc.) — which is exactly why deleting bot signups failed.
+      // lit_admin_purge_user handles the cascade in dependency order.
+      const { data: purge, error: purgeErr } = await admin.rpc("lit_admin_purge_user", {
+        p_user_id: targetId,
+        p_confirm: true,
+      });
+      if (purgeErr || (purge && (purge as { ok?: boolean }).ok === false)) {
+        const reason = purgeErr?.message || (purge as { reason?: string } | null)?.reason || "purge_failed";
+        log.error("delete_failed", { err: reason, target: targetId });
+        await writeAudit("admin.user.delete.failed", "error", { error: reason, snapshot });
         return json(
-          { ok: false, action, user_id: targetId, error: `Delete failed: ${delErr.message}` },
+          { ok: false, action, user_id: targetId, error: `Delete failed: ${reason}` },
           409,
         );
       }

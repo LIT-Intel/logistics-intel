@@ -718,6 +718,41 @@ export async function setMember(
   if (error) throw new Error(error.message);
 }
 
+/** A user candidate for the Team picker (lit_admin_search_users). */
+export type CrmUserSearchResult = {
+  user_id: string;
+  email: string | null;
+  full_name: string | null;
+  company_name: string | null;
+  is_member: boolean;
+  is_platform_admin: boolean;
+};
+
+/**
+ * Search existing LIT users by name/email/company for the Team member picker —
+ * so the admin picks a real person instead of pasting a UUID. Platform-admin
+ * only (RPC self-gates). RPC returns { ok, users:[...] }; read `data.users`.
+ */
+export async function searchUsers(q: string, limit = 20): Promise<CrmUserSearchResult[]> {
+  const term = (q ?? "").trim();
+  if (term.length < 2) return [];
+  try {
+    const { data, error } = await supabase.rpc("lit_admin_search_users", { p_q: term, p_limit: limit });
+    const rows = (data as any)?.users;
+    if (error || !Array.isArray(rows)) return [];
+    return (rows as any[]).map((u) => ({
+      user_id: String(u.user_id),
+      email: u.email ?? null,
+      full_name: u.full_name ?? null,
+      company_name: u.company_name ?? null,
+      is_member: Boolean(u.is_member),
+      is_platform_admin: Boolean(u.is_platform_admin),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Assignee options for the leads-list filter + drawer assignee picker.
  * Derived from the member list (enabled members only). Best-effort: any error
