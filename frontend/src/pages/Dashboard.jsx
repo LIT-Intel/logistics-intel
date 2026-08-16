@@ -48,6 +48,7 @@ import { listSavedCompanies, getCrmCampaigns } from "@/lib/api";
 import { quoting } from "@/api/quoting";
 import { getLitCampaigns } from "@/lib/litCampaigns";
 import { supabase } from "@/lib/supabase";
+import InviteFreightProCard from "@/components/referral/InviteFreightProCard";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import EnhancedKpiCard from "@/components/dashboard/EnhancedKpiCard";
 import { DashboardLoadingSkeleton } from "@/components/dashboard/LoadingSkeletons";
@@ -935,6 +936,16 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
+
+        {/* Referral loop (Phase 8) — invite a freight pro, earn credits on
+            their activation. Reuses the affiliate /?ref= capture + claim path. */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.06 }}
+        >
+          <InviteFreightProCard />
+        </motion.div>
 
         {/* Signals row — top 3 unseen, real cron-driven. */}
         <motion.div

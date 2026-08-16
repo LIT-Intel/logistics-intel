@@ -25,6 +25,15 @@ type EventType =
   | "trial_book_demo"
   | "trial_check_in_inactive"
   | "day1_run_first_search"
+  // ── Phase 7 lifecycle behavioral nudges (stage-aware; sent by
+  //    lifecycle-nudge-tick, gated behind the owner switch). These accept a
+  //    caller-supplied cta_url (the resolved deep link) so the CTA points at
+  //    the exact company/route the user's stage calls for. ──
+  | "lifecycle_save_company"
+  | "lifecycle_view_intel"
+  | "lifecycle_find_contacts"
+  | "lifecycle_value_recap"
+  | "lifecycle_trial_value"
   | "paid_plan_welcome"
   | "upgrade_confirmation"
   | "payment_failed"
@@ -42,6 +51,11 @@ const VALID_EVENT_TYPES: EventType[] = [
   "trial_book_demo",
   "trial_check_in_inactive",
   "day1_run_first_search",
+  "lifecycle_save_company",
+  "lifecycle_view_intel",
+  "lifecycle_find_contacts",
+  "lifecycle_value_recap",
+  "lifecycle_trial_value",
   "paid_plan_welcome",
   "upgrade_confirmation",
   "payment_failed",
@@ -70,6 +84,14 @@ interface SendPayload {
   previous_plan_name?: string;
   period_end?: string;
   plan_name?: string;
+  // Resolved deep link for the lifecycle_* nudges (e.g.
+  // "/app/companies/tesla?tab=contacts"). Optional; falls back to a sensible
+  // default path per event when absent. Only "/app/..."-relative paths are
+  // honored — absolute/external URLs are ignored for safety.
+  cta_url?: string;
+  // Optional personalization for the value-recap / trial-value templates.
+  saved_count?: number;
+  contacts_count?: number;
 }
 
 interface PlanEmailCopy {
@@ -271,6 +293,16 @@ function buildEmail(
   const plan = PLAN_EMAIL_COPY[planSlug];
   const name = payload.first_name?.trim() || "there";
   const nameSuffix = name === "there" ? "" : `, ${name}`;
+  // Resolve a lifecycle CTA: honor a caller-supplied relative "/app/..." deep
+  // link; otherwise use the per-event fallback path. Never trust an
+  // absolute/external URL from the payload.
+  const resolveCta = (fallbackPath: string): string => {
+    const raw = (payload.cta_url ?? "").trim();
+    if (raw.startsWith("/app/") || raw === "/app/pricing" || raw.startsWith("/app/search")) {
+      return `${appUrl}${raw}`;
+    }
+    return `${appUrl}${fallbackPath}`;
+  };
   switch (eventType) {
     case "trial_welcome": {
       const tip = `Run a Pulse AI brief on a prospect <strong>before</strong> your next sales call. 30 seconds of context beats 30 minutes of generic outreach.`;
@@ -472,6 +504,115 @@ function buildEmail(
         unsubscribeUrl,
       });
       return { subject: "Run your first LIT search (it's free)", html, text };
+    }
+    // ── Phase 7 lifecycle nudges ─────────────────────────────────────────
+    case "lifecycle_save_company": {
+      // Stage 1: searched, no save. Push them to save a company so LIT starts
+      // monitoring it. CTA -> most-recent company or /app/search.
+      const bodyHtml = `<p style="margin:0 0 18px 0;">Hi ${esc(name)},</p><p style="margin:0 0 18px 0;">You've run a search — nice. The next move is to <strong>save a company</strong>. The moment you do, LIT starts monitoring it for you: new shipments, lane shifts, and cadence changes land in your dashboard automatically.</p><p style="margin:0 0 8px 0;font-weight:700;color:${COLOR.text};">Saving a shipper unlocks:</p>${benefitsHtml(["Automatic shipment monitoring — no re-searching","A running timeline of their lanes, volumes & carriers","Alerts when their freight pattern changes"])}${proTipHtml(`Save the shippers you already sell to first. LIT will surface changes you'd otherwise miss between calls.`)}<p style="margin:24px 0 0 0;font-style:italic;color:${COLOR.textSubtle};font-size:14px;">Reply if you want a hand picking which accounts to save. — Gabriel</p>`;
+      const bodyText = `Hi ${name},\n\nYou've run a search — nice. The next move is to save a company. The moment you do, LIT starts monitoring it: new shipments, lane shifts, cadence changes.\n\nPRO TIP: Save the shippers you already sell to first.\n\n— Gabriel`;
+      const { html, text } = buildLayout({
+        previewText: "Save a company and let LIT monitor it for you.",
+        headline: "Save a company. Let LIT watch it.",
+        subtitle: "One click turns a search into ongoing intelligence.",
+        bodyHtml,
+        bodyText,
+        ctaText: "Save your first company",
+        ctaUrl: resolveCta("/app/search"),
+        unsubscribeUrl,
+      });
+      return { subject: "Save a company and let LIT monitor it", html, text };
+    }
+    case "lifecycle_view_intel": {
+      // Stage 2: saved a company, hasn't opened the intelligence/returned.
+      // CTA -> saved company's research (Pulse AI) tab.
+      const bodyHtml = `<p style="margin:0 0 18px 0;">Hi ${esc(name)},</p><p style="margin:0 0 18px 0;">You saved a company — but the best part is what's <em>inside</em> the profile. LIT has already pulled together its shipment history, active trade lanes, carrier mix, and a Pulse AI brief that summarizes the account in seconds.</p><p style="margin:0 0 8px 0;font-weight:700;color:${COLOR.text};">Open the profile to see:</p>${benefitsHtml(["A Pulse AI brief — the account, summarized","Active lanes, shipping cadence & carrier mix","Monitoring that keeps it all current"])}${proTipHtml(`Read the Pulse AI brief right before your next call with them. 30 seconds of context beats 30 minutes of generic outreach.`)}<p style="margin:24px 0 0 0;font-style:italic;color:${COLOR.textSubtle};font-size:14px;">— Gabriel</p>`;
+      const bodyText = `Hi ${name},\n\nYou saved a company — the best part is inside the profile: shipment history, active lanes, carrier mix, and a Pulse AI brief.\n\nPRO TIP: Read the Pulse AI brief right before your next call.\n\n— Gabriel`;
+      const { html, text } = buildLayout({
+        previewText: "Your saved company has monitoring & intelligence waiting.",
+        headline: "There's intelligence in that profile.",
+        subtitle: "Monitoring, lanes, and a Pulse AI brief — already done.",
+        bodyHtml,
+        bodyText,
+        ctaText: "Open the company profile",
+        ctaUrl: resolveCta("/app/companies"),
+        unsubscribeUrl,
+      });
+      return { subject: "Your saved company has intelligence waiting", html, text };
+    }
+    case "lifecycle_find_contacts": {
+      // Stage 3: viewed intel, no contact enrichment yet.
+      // CTA -> saved company's contacts tab.
+      const bodyHtml = `<p style="margin:0 0 18px 0;">Hi ${esc(name)},</p><p style="margin:0 0 18px 0;">You've seen the account intelligence. Now find the people who actually make the freight decisions. LIT enriches contacts with verified emails, roles, and LinkedIn — so you reach the VP or Director of Logistics directly instead of guessing.</p><p style="margin:0 0 8px 0;font-weight:700;color:${COLOR.text};">Contact enrichment gives you:</p>${benefitsHtml(["Verified emails with 95%+ deliverability","Titles & LinkedIn for the decision-makers","A ready-to-call list, not a guess"])}${proTipHtml(`Enrich the VP / Director of Logistics on the accounts you've already researched. 10 verified contacts beat 100 stale ones.`)}<p style="margin:24px 0 0 0;font-style:italic;color:${COLOR.textSubtle};font-size:14px;">— Gabriel</p>`;
+      const bodyText = `Hi ${name},\n\nYou've seen the intelligence. Now find the decision-makers. LIT enriches contacts with verified emails, roles, and LinkedIn.\n\nPRO TIP: 10 verified contacts beat 100 stale ones.\n\n— Gabriel`;
+      const { html, text } = buildLayout({
+        previewText: "Find the decision-makers at the accounts you're watching.",
+        headline: "Find the decision-makers.",
+        subtitle: "Verified contacts for the accounts you already researched.",
+        bodyHtml,
+        bodyText,
+        ctaText: "Find contacts",
+        ctaUrl: resolveCta("/app/companies"),
+        unsubscribeUrl,
+      });
+      return { subject: "Find the decision-makers at your saved accounts", html, text };
+    }
+    case "lifecycle_value_recap": {
+      // Stage 4: engaged across the workflow, trial not converted. Value /
+      // retention framing (saved companies, contacts, alerts) -> /app/pricing.
+      const savedCount = Number(payload.saved_count ?? 0);
+      const contactsCount = Number(payload.contacts_count ?? 0);
+      const savedPhrase = savedCount > 0
+        ? `You've saved <strong>${savedCount}</strong> ${savedCount === 1 ? "company" : "companies"}${contactsCount > 0 ? ` and enriched <strong>${contactsCount}</strong> ${contactsCount === 1 ? "contact" : "contacts"}` : ""}. `
+        : "You've done the real work in LIT — searched accounts, saved shippers, and pulled intelligence. ";
+      const bodyHtml = `<p style="margin:0 0 18px 0;">Hi ${esc(name)},</p><p style="margin:0 0 18px 0;">${savedPhrase}That's a working pipeline, and LIT is actively monitoring it for you.</p><p style="margin:0 0 18px 0;">Here's the thing worth knowing: everything you've built — the saved accounts, the enriched contacts, the alerts — keeps working on a paid plan. On the free trial, that access winds down.</p><p style="margin:0 0 8px 0;font-weight:700;color:${COLOR.text};">Keep what you've built:</p>${benefitsHtml(PLAN_EMAIL_COPY.starter.benefits)}${proTipHtml(`Your saved accounts and contacts don't disappear — pick a plan and pick up exactly where you left off.`)}<p style="margin:24px 0 0 0;font-style:italic;color:${COLOR.textSubtle};font-size:14px;">Not sure which plan fits? Reply with your team size and I'll tell you straight. — Gabriel</p>`;
+      const bodyText = `Hi ${name},\n\n${savedCount > 0 ? `You've saved ${savedCount} companies${contactsCount > 0 ? ` and enriched ${contactsCount} contacts` : ""}. ` : "You've done the real work in LIT. "}That's a working pipeline LIT is monitoring for you.\n\nEverything you've built keeps working on a paid plan.\n\n— Gabriel`;
+      const { html, text } = buildLayout({
+        previewText: "Everything you've built in LIT — keep it working.",
+        headline: "You've built a real pipeline in LIT.",
+        subtitle: "Here's how to keep it working for you.",
+        bodyHtml,
+        bodyText,
+        ctaText: "See plans & keep your workspace",
+        ctaUrl: resolveCta("/app/pricing"),
+        unsubscribeUrl,
+      });
+      return {
+        subject: "Keep the pipeline you built in LIT",
+        html,
+        text,
+        fromOverride: SALES_FROM,
+        replyToOverride: SALES_REPLY_TO,
+      };
+    }
+    case "lifecycle_trial_value": {
+      // Trial day 5/6/7/expired for ENGAGED (searched) users. Accumulated-value
+      // framing (§54) — NOT "expires tomorrow" panic. -> /app/pricing.
+      const savedCount = Number(payload.saved_count ?? 0);
+      const contactsCount = Number(payload.contacts_count ?? 0);
+      const recap = savedCount > 0 || contactsCount > 0
+        ? `In your trial you've saved <strong>${savedCount}</strong> ${savedCount === 1 ? "account" : "accounts"}${contactsCount > 0 ? ` and enriched <strong>${contactsCount}</strong> ${contactsCount === 1 ? "contact" : "contacts"}` : ""} — real research you can act on.`
+        : `In your trial you've searched shippers and pulled real freight intelligence — the kind of research that turns cold outreach into informed conversations.`;
+      const bodyHtml = `<p style="margin:0 0 18px 0;">Hi ${esc(name)},</p><p style="margin:0 0 18px 0;">${recap}</p><p style="margin:0 0 18px 0;">Your trial is wrapping up. This isn't a "hurry up" email — it's a "here's what you've got, and here's how to keep it" one. Everything you found stays saved; a paid plan simply keeps the monitoring, enrichment, and alerts flowing.</p><p style="margin:0 0 8px 0;font-weight:700;color:${COLOR.text};">On a paid plan you keep:</p>${benefitsHtml(PLAN_EMAIL_COPY.starter.benefits)}${proTipHtml(`The accounts and contacts you built this week are still there. Choose a plan and continue exactly where you left off.`)}<p style="margin:24px 0 0 0;font-style:italic;color:${COLOR.textSubtle};font-size:14px;">Want me to recommend the right plan for your lanes? Just reply. — Gabriel</p>`;
+      const bodyText = `Hi ${name},\n\n${savedCount > 0 || contactsCount > 0 ? `In your trial you saved ${savedCount} accounts${contactsCount > 0 ? ` and enriched ${contactsCount} contacts` : ""}.` : "In your trial you searched shippers and pulled real freight intelligence."}\n\nYour trial is wrapping up. Everything you found stays saved; a paid plan keeps monitoring, enrichment, and alerts flowing.\n\n— Gabriel`;
+      const { html, text } = buildLayout({
+        previewText: "Here's what you built in your trial — and how to keep it.",
+        headline: "Here's what your trial actually produced.",
+        subtitle: "Keep the accounts, contacts, and alerts working.",
+        bodyHtml,
+        bodyText,
+        ctaText: "See plans & continue",
+        ctaUrl: resolveCta("/app/pricing"),
+        unsubscribeUrl,
+        showHeroBanner: false,
+      });
+      return {
+        subject: "What you built in your LIT trial (and how to keep it)",
+        html,
+        text,
+        fromOverride: SALES_FROM,
+        replyToOverride: SALES_REPLY_TO,
+      };
     }
     case "paid_plan_welcome": {
       const tip =
@@ -759,6 +900,9 @@ serve(async (req: Request) => {
         previous_plan_name: body.previous_plan_name,
         period_end: body.period_end,
         plan_name: body.plan_name,
+        cta_url: body.cta_url,
+        saved_count: body.saved_count,
+        contacts_count: body.contacts_count,
       },
     })
     .select("id")

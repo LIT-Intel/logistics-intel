@@ -73,7 +73,88 @@ serve(async (req) => {
     console.warn("[claim-affiliate-referral] partner lookup err", partnerErr);
     return jsonRes(500, { ok: false, status: "server_error" });
   }
-  if (!partner) return jsonRes(404, { ok: false, status: "invalid_ref", reason: "unknown_code" });
+
+  // 1b. MEMBER REFERRAL FALLBACK (Phase 8 referral loop). If the code is not an
+  //     affiliate partner's, it may be a plain member's referral code minted by
+  //     lit_get_or_create_referral_code(). We reuse the SAME captured ?ref
+  //     cookie + this same claim entry point — no second attribution system.
+  //     A member referral rewards the referrer with intelligence credits (not
+  //     cash commission), issued later when the referred user activates. Here we
+  //     only record the pending attribution + the click/signup funnel events.
+  if (!partner) {
+    const { data: member, error: memberErr } = await supa
+      .from("lit_user_referrals")
+      .select("user_id, ref_code")
+      .ilike("ref_code", refCodeRaw)
+      .maybeSingle();
+    if (memberErr) {
+      console.warn("[claim-affiliate-referral] member lookup err", memberErr);
+      return jsonRes(500, { ok: false, status: "server_error" });
+    }
+    if (!member) {
+      return jsonRes(404, { ok: false, status: "invalid_ref", reason: "unknown_code" });
+    }
+    // Block self-referral.
+    if (member.user_id === userId) {
+      return jsonRes(409, { ok: false, status: "self_referral" });
+    }
+    // Block attribution for users who joined > 1 year ago (mirror partner path).
+    if (userCreatedAt) {
+      const ageDays = (Date.now() - new Date(userCreatedAt).getTime()) / 86400000;
+      if (ageDays > 365) {
+        return jsonRes(409, { ok: false, status: "too_late", reason: "user_too_old" });
+      }
+    }
+    // Idempotent: unique(referred_user_id) blocks a re-insert. On duplicate we
+    // return the existing attribution so the client stops retrying.
+    const { data: existingReward } = await supa
+      .from("lit_referral_rewards")
+      .select("id, referrer_user_id, ref_code, status")
+      .eq("referred_user_id", userId)
+      .maybeSingle();
+    if (existingReward) {
+      return jsonRes(200, {
+        ok: true,
+        status: "duplicate",
+        kind: "member",
+        reward_id: existingReward.id,
+      });
+    }
+    const { data: insertedReward, error: rewardErr } = await supa
+      .from("lit_referral_rewards")
+      .insert({
+        referrer_user_id: member.user_id,
+        referred_user_id: userId,
+        ref_code: member.ref_code,
+        status: "pending",
+      })
+      .select("id")
+      .single();
+    if (rewardErr) {
+      if (String(rewardErr.code) === "23505") {
+        return jsonRes(200, { ok: true, status: "duplicate", kind: "member" });
+      }
+      console.warn("[claim-affiliate-referral] member reward insert err", rewardErr);
+      return jsonRes(500, { ok: false, status: "server_error", detail: rewardErr.message });
+    }
+    // Funnel events: clicked (the referred user landed via ?ref) + signup (they
+    // are now an authenticated account). reward_issued fires later on activation.
+    await supa.from("lit_referral_events").insert([
+      { event_type: "clicked", ref_code: member.ref_code, referrer_user_id: member.user_id, referred_user_id: userId },
+      { event_type: "signup", ref_code: member.ref_code, referrer_user_id: member.user_id, referred_user_id: userId },
+    ]);
+    // Best-effort: process immediately in case the referred user already
+    // activated before claiming (idempotent server-side).
+    try { await supa.rpc("process_referral_rewards", { p_referred_user_id: userId }); } catch { /* noop */ }
+
+    return jsonRes(200, {
+      ok: true,
+      status: "claimed",
+      kind: "member",
+      reward_id: insertedReward.id,
+      ref_code: member.ref_code,
+    });
+  }
   if (partner.status !== "active") {
     return jsonRes(409, { ok: false, status: "invalid_ref", reason: `partner_${partner.status}` });
   }

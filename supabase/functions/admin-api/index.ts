@@ -253,6 +253,33 @@ serve(async (req) => {
       return json({ ok: true });
     }
 
+    // ── RUN REACTIVATION SEND (Phase 9) ──────────────────────────────────────
+    // Proxies the platform-admin's "Send reactivation to Segment X now" click to
+    // the gated lifecycle-nudge-tick dispatcher. Still a no-op unless the owner
+    // has enabled lit_internal_meta['reactivation_enabled'] — the tick + the
+    // pick-batch RPC both re-check the flag, and suppression/dedup are enforced
+    // server-side. This handler only forwards; it holds no send logic itself.
+    if (action === "run_reactivation") {
+      const segment = String((params as { segment?: string }).segment || "").toUpperCase();
+      if (!["A", "B", "C", "D"].includes(segment)) {
+        return json({ error: "segment must be A, B, C, or D" }, 400);
+      }
+      const cronSecret = Deno.env.get("LIT_CRON_SECRET");
+      if (!cronSecret) return json({ error: "LIT_CRON_SECRET not configured" }, 500);
+
+      const resp = await fetch(`${supabaseUrl}/functions/v1/lifecycle-nudge-tick`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Cron": cronSecret,
+        },
+        body: JSON.stringify({ mode: "reactivation", segment }),
+      });
+      const result = await resp.json().catch(() => ({}));
+      log.info("run_reactivation", { user_id: user.id, segment, result });
+      return json({ ok: resp.ok, ...result });
+    }
+
     return json({ error: `Unknown action: ${action}` }, 400);
   } catch (err) {
     console.error("[admin-api] fatal error", err);

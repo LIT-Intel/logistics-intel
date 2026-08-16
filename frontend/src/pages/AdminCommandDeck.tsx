@@ -122,6 +122,44 @@ type LeadMagnetRow = {
   revenue: number | null;
 };
 
+// ── Lifecycle messaging (Phase 7/9) ─────────────────────────────────────────
+type LifecycleSegment = {
+  stage: string;
+  event_type: string | null;
+  total: number;
+  eligible: number;
+  already_nudged: number;
+  suppressed: number;
+};
+type ReactSegment = {
+  segment: string;
+  label: string;
+  total: number;
+  eligible: number;
+  already_sent: number;
+  suppressed: number;
+};
+type LifecyclePreviewRow = {
+  user_id: string;
+  email: string;
+  stage: string;
+  event_type: string | null;
+  deep_link: string | null;
+  activity_count_30d: number | null;
+  last_active_at: string | null;
+  already_nudged: boolean;
+  suppressed: boolean;
+};
+// Human labels for the machine stage codes.
+const STAGE_LABELS: Record<string, string> = {
+  stage0: "Signed up · no search",
+  stage1: "Searched · no save",
+  stage2: "Saved · no intel/return",
+  stage3: "Viewed intel · no contacts",
+  stage4: "Engaged · not converted",
+  trial_expiry: "Trial expiring (engaged)",
+};
+
 // Per-magnet funnel-step counts (from lit_admin_lead_magnet_funnel). All the
 // step columns are non-null bigints from the RPC; num() coerces defensively.
 type MagnetFunnelRow = {
@@ -161,6 +199,18 @@ type RecentLead = {
   email_captured_at: string | null;
   converted_user_id: string | null;
 };
+// Per-referrer rollup for the referral loop (from lit_admin_referral_summary).
+type ReferralSummaryRow = {
+  referrer_user_id: string;
+  referrer_email: string | null;
+  ref_code: string;
+  clicks: number;
+  signups: number;
+  activated: number;
+  paid: number;
+  credits_issued: number;
+  revenue_cents: number;
+};
 
 const num = (v: any): number => (v === null || v === undefined ? 0 : Number(v) || 0);
 const usd = (v: number | null | undefined): string =>
@@ -198,6 +248,7 @@ const SECTIONS = [
   { id: "marketing", label: "Marketing", icon: Megaphone },
   { id: "revenue", label: "Data Economics", icon: CreditCard },
   { id: "growth", label: "Growth", icon: Rocket },
+  { id: "lifecycle", label: "Lifecycle", icon: Send },
   { id: "ops", label: "Operations", icon: Wrench },
 ] as const;
 
@@ -363,8 +414,21 @@ export default function AdminCommandDeck() {
   const [magnetFunnel, setMagnetFunnel] = useState<MagnetFunnelRow[]>([]);
   const [leadSources, setLeadSources] = useState<LeadSourceRow[]>([]);
   const [recentLeads, setRecentLeads] = useState<RecentLead[]>([]);
+  const [referrals, setReferrals] = useState<ReferralSummaryRow[]>([]);
   const [growthWindow, setGrowthWindow] = useState<7 | 30 | 90>(30);
   const [growthBusy, setGrowthBusy] = useState(false);
+
+  // ── Lifecycle messaging state (Lifecycle tab, Phase 7/9) ────────────────
+  const [lcSegments, setLcSegments] = useState<LifecycleSegment[]>([]);
+  const [reactSegments, setReactSegments] = useState<ReactSegment[]>([]);
+  const [lcPreview, setLcPreview] = useState<LifecyclePreviewRow[]>([]);
+  const [lcFlags, setLcFlags] = useState<{ lifecycle: boolean; reactivation: boolean }>({ lifecycle: false, reactivation: false });
+  const [lcBusy, setLcBusy] = useState(false);
+  const [lcPendingFlag, setLcPendingFlag] = useState<{ key: string; label: string; next: boolean } | null>(null);
+  const [lcFlagBusy, setLcFlagBusy] = useState<string | null>(null);
+  const [reactPending, setReactPending] = useState<{ segment: string; label: string; count: number } | null>(null);
+  const [reactBusy, setReactBusy] = useState<string | null>(null);
+  const [reactResult, setReactResult] = useState<string | null>(null);
 
   // Reusable loader for the economics + attribution surfaces (also the Refresh button).
   const loadEconomics = useCallback(async () => {
@@ -424,12 +488,13 @@ export default function AdminCommandDeck() {
   const loadGrowth = useCallback(async (windowDays: 7 | 30 | 90) => {
     setGrowthBusy(true);
     try {
-      const [ss, lm, mf, ls, rl] = await Promise.all([
+      const [ss, lm, mf, ls, rl, rf] = await Promise.all([
         supabase.rpc("lit_admin_growth_sprint_status"),
         supabase.rpc("lit_admin_lead_magnet_performance", { p_days: windowDays }),
         supabase.rpc("lit_admin_lead_magnet_funnel", { p_days: windowDays }),
         supabase.rpc("lit_admin_lead_magnet_by_source", { p_days: windowDays }),
         supabase.rpc("lit_admin_recent_leads", { p_days: windowDays, p_limit: 200 }),
+        supabase.rpc("lit_admin_referral_summary"),
       ]);
       // sprint status returns a single jsonb object (or a 1-row set).
       const raw = ss.data;
@@ -485,12 +550,25 @@ export default function AdminCommandDeck() {
         email_captured_at: r.email_captured_at ?? null,
         converted_user_id: r.converted_user_id ?? null,
       })));
+      // Referral loop rollup — per-referrer clicks/signups/activated/paid/credits.
+      setReferrals(((rf.data as any[]) || []).map((r) => ({
+        referrer_user_id: r.referrer_user_id,
+        referrer_email: r.referrer_email ?? null,
+        ref_code: r.ref_code,
+        clicks: num(r.clicks),
+        signups: num(r.signups),
+        activated: num(r.activated),
+        paid: num(r.paid),
+        credits_issued: num(r.credits_issued),
+        revenue_cents: num(r.revenue_cents),
+      })));
     } catch {
       setSprint(null);
       setMagnets([]);
       setMagnetFunnel([]);
       setLeadSources([]);
       setRecentLeads([]);
+      setReferrals([]);
     }
     setGrowthBusy(false);
   }, []);
@@ -500,6 +578,123 @@ export default function AdminCommandDeck() {
     if (section !== "growth") return;
     loadGrowth(growthWindow).catch(() => setGrowthBusy(false));
   }, [section, growthWindow, loadGrowth]);
+
+  // ── Lifecycle loader (segments + reactivation + preview + flag state) ────
+  const loadLifecycle = useCallback(async () => {
+    setLcBusy(true);
+    try {
+      const [seg, react, prev, fLife, fReact] = await Promise.all([
+        supabase.rpc("lit_admin_lifecycle_segments"),
+        supabase.rpc("lit_admin_reactivation_segments"),
+        supabase.rpc("lit_admin_lifecycle_preview", { p_stage: null, p_limit: 40 }),
+        supabase.rpc("lit_lifecycle_flag", { p_key: "lifecycle_messaging_enabled" }),
+        supabase.rpc("lit_lifecycle_flag", { p_key: "reactivation_enabled" }),
+      ]);
+      setLcSegments(((seg.data as any[]) || []).map((r) => ({
+        stage: r.stage,
+        event_type: r.event_type ?? null,
+        total: num(r.total),
+        eligible: num(r.eligible),
+        already_nudged: num(r.already_nudged),
+        suppressed: num(r.suppressed),
+      })));
+      setReactSegments(((react.data as any[]) || []).map((r) => ({
+        segment: r.segment,
+        label: r.label,
+        total: num(r.total),
+        eligible: num(r.eligible),
+        already_sent: num(r.already_sent),
+        suppressed: num(r.suppressed),
+      })));
+      setLcPreview(((prev.data as any[]) || []).map((r) => ({
+        user_id: r.user_id,
+        email: r.email,
+        stage: r.stage,
+        event_type: r.event_type ?? null,
+        deep_link: r.deep_link ?? null,
+        activity_count_30d: r.activity_count_30d === null || r.activity_count_30d === undefined ? null : num(r.activity_count_30d),
+        last_active_at: r.last_active_at ?? null,
+        already_nudged: Boolean(r.already_nudged),
+        suppressed: Boolean(r.suppressed),
+      })));
+      setLcFlags({ lifecycle: fLife.data === true, reactivation: fReact.data === true });
+    } catch {
+      setLcSegments([]);
+      setReactSegments([]);
+      setLcPreview([]);
+    }
+    setLcBusy(false);
+  }, []);
+
+  useEffect(() => {
+    if (section !== "lifecycle") return;
+    loadLifecycle().catch(() => setLcBusy(false));
+  }, [section, loadLifecycle]);
+
+  // Gate-flag toggle: confirm ("this will start emailing real users") before flip.
+  const requestLcFlag = (key: "lifecycle_messaging_enabled" | "reactivation_enabled", label: string, current: boolean) =>
+    setLcPendingFlag({ key, label, next: !current });
+
+  const confirmLcFlag = async () => {
+    if (!lcPendingFlag) return;
+    const { key, next } = lcPendingFlag;
+    setLcPendingFlag(null);
+    setLcFlagBusy(key);
+    // Optimistic.
+    setLcFlags((prev) => ({
+      ...prev,
+      lifecycle: key === "lifecycle_messaging_enabled" ? next : prev.lifecycle,
+      reactivation: key === "reactivation_enabled" ? next : prev.reactivation,
+    }));
+    const { data, error } = await supabase.rpc("lit_admin_set_lifecycle_flag", { p_key: key, p_enabled: next });
+    if (error) {
+      // Revert.
+      setLcFlags((prev) => ({
+        ...prev,
+        lifecycle: key === "lifecycle_messaging_enabled" ? !next : prev.lifecycle,
+        reactivation: key === "reactivation_enabled" ? !next : prev.reactivation,
+      }));
+    } else {
+      const row = ((data as any[]) || [])[0];
+      const enabled = row ? Boolean(row.enabled) : next;
+      setLcFlags((prev) => ({
+        ...prev,
+        lifecycle: key === "lifecycle_messaging_enabled" ? enabled : prev.lifecycle,
+        reactivation: key === "reactivation_enabled" ? enabled : prev.reactivation,
+      }));
+    }
+    setLcFlagBusy(null);
+  };
+
+  // "Send reactivation to Segment X now" — proxied via admin-api → lifecycle-nudge-tick.
+  const requestReact = (segment: string, label: string, count: number) =>
+    setReactPending({ segment, label, count });
+
+  const confirmReact = async () => {
+    if (!reactPending) return;
+    const { segment } = reactPending;
+    setReactPending(null);
+    setReactBusy(segment);
+    setReactResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-api", {
+        body: { action: "run_reactivation", params: { segment } },
+      });
+      if (error) {
+        setReactResult(`Segment ${segment}: failed — ${error.message}`);
+      } else if ((data as any)?.skipped) {
+        setReactResult(`Segment ${segment}: skipped — reactivation flag is OFF. Enable it first.`);
+      } else {
+        const sent = num((data as any)?.sent);
+        const elig = num((data as any)?.eligible);
+        setReactResult(`Segment ${segment}: sent ${sent} of ${elig} eligible.`);
+      }
+    } catch (err) {
+      setReactResult(`Segment ${segment}: error — ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setReactBusy(null);
+    loadLifecycle().catch(() => {});
+  };
 
   useEffect(() => {
     (async () => {
@@ -1872,6 +2067,302 @@ export default function AdminCommandDeck() {
                   </div>
                 )}
               </DeckCard>
+
+              {/* (vii) Referral loop — per-referrer rollup from
+                   lit_admin_referral_summary. Reward is intelligence credits,
+                   issued on the invitee's activation (first search/save). */}
+              <DeckCard
+                title="Referrals"
+                subtitle="Member invite loop · reward = intelligence credits on invitee activation"
+                right={
+                  <span className="font-mono rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">
+                    {int(referrals.length)}
+                  </span>
+                }
+              >
+                {referrals.length === 0 ? (
+                  <div className="font-body py-6 text-center text-[12px] text-slate-400">
+                    {growthBusy ? "Loading…" : "No member referrals yet."}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px]">
+                      <thead>
+                        <tr className="border-b border-slate-100">
+                          {["Referrer", "Code", "Clicks", "Signups", "Activated", "Paid", "Credits", "Revenue"].map((h) => (
+                            <th key={h} className="font-display px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400 last:text-right">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {referrals.map((r) => (
+                          <tr key={r.referrer_user_id} className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/50">
+                            <td className="px-3 py-2 font-body text-[12px] text-slate-700">
+                              {r.referrer_email || r.referrer_user_id.slice(0, 8)}
+                            </td>
+                            <td className="font-mono px-3 py-2 text-[11.5px] text-slate-500">{r.ref_code}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(r.clicks)}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(r.signups)}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(r.activated)}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] text-slate-700">{int(r.paid)}</td>
+                            <td className="font-mono px-3 py-2 text-[12px] font-semibold text-blue-700">{int(r.credits_issued)}</td>
+                            <td className="font-mono px-3 py-2 text-right text-[12px] text-slate-700">{usd(r.revenue_cents / 100)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </DeckCard>
+            </div>
+          )}
+
+          {section === "lifecycle" && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Send className="h-3.5 w-3.5 text-slate-400" />
+                  <span className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                    Lifecycle behavioral messaging
+                  </span>
+                  {lcBusy && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-300" />}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadLifecycle().catch(() => setLcBusy(false))}
+                  className="font-display inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-600 shadow-sm hover:text-slate-900"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Refresh
+                </button>
+              </div>
+
+              {/* (i) The two owner gates */}
+              <DeckCard
+                title="Send gates"
+                subtitle="Both default OFF. Nothing emails a real user until you enable a gate here."
+              >
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {[
+                    { key: "lifecycle_messaging_enabled" as const, label: "Lifecycle drip", on: lcFlags.lifecycle,
+                      blurb: "Daily stage-aware nudges (runs 15:00 UTC when ON)." },
+                    { key: "reactivation_enabled" as const, label: "Reactivation sends", on: lcFlags.reactivation,
+                      blurb: "One-time targeted per-segment sends (manual)." },
+                  ].map((g) => (
+                    <div key={g.key} className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+                      <div>
+                        <div className="font-display flex items-center gap-2 text-[13px] font-bold text-slate-900">
+                          <Power className={`h-3.5 w-3.5 ${g.on ? "text-emerald-500" : "text-slate-300"}`} />
+                          {g.label}
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${g.on ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                            {g.on ? "ON" : "OFF"}
+                          </span>
+                        </div>
+                        <p className="font-body mt-1 text-[11.5px] text-slate-500">{g.blurb}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => requestLcFlag(g.key, g.label, g.on)}
+                        disabled={lcFlagBusy === g.key}
+                        role="switch"
+                        aria-checked={g.on}
+                        className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition disabled:opacity-50 ${g.on ? "bg-emerald-500" : "bg-slate-300"}`}
+                      >
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${g.on ? "translate-x-5" : "translate-x-0.5"}`} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {!lcFlags.lifecycle && !lcFlags.reactivation && (
+                  <p className="font-body mt-3 flex items-center gap-1.5 text-[11px] text-amber-600">
+                    <ShieldAlert className="h-3.5 w-3.5" /> Both gates are OFF — the system is fully dormant. No user will be emailed.
+                  </p>
+                )}
+              </DeckCard>
+
+              {/* (ii) Lifecycle stage segments */}
+              <DeckCard title="Lifecycle stages" subtitle="Active, non-internal, unconverted users by computed stage">
+                {lcSegments.length === 0 ? (
+                  <div className="font-body py-6 text-center text-[12px] text-slate-400">
+                    {lcBusy ? "Loading…" : "No users in any lifecycle stage."}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[560px]">
+                      <thead>
+                        <tr className="border-b border-slate-100">
+                          {["Stage", "Template", "Total", "Eligible", "Nudged", "Suppressed"].map((h) => (
+                            <th key={h} className="font-display px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lcSegments.map((s) => (
+                          <tr key={s.stage} className="border-b border-slate-50">
+                            <td className="px-3 py-2.5 text-[12px] font-semibold text-slate-800">
+                              {STAGE_LABELS[s.stage] ?? s.stage}
+                            </td>
+                            <td className="px-3 py-2.5 font-mono text-[11px] text-slate-500">{s.event_type ?? "—"}</td>
+                            <td className="px-3 py-2.5 text-[12px] text-slate-700">{int(s.total)}</td>
+                            <td className="px-3 py-2.5 text-[12px] font-semibold text-blue-700">{int(s.eligible)}</td>
+                            <td className="px-3 py-2.5 text-[12px] text-slate-500">{int(s.already_nudged)}</td>
+                            <td className="px-3 py-2.5 text-[12px] text-slate-500">{int(s.suppressed)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </DeckCard>
+
+              {/* (iii) Reactivation segments + per-segment send */}
+              <DeckCard title="Reactivation segments (Phase 9)" subtitle="One-time targeted sends to the existing base — respects suppression + once-per-user dedup">
+                {reactResult && (
+                  <div className="font-body mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-700">
+                    {reactResult}
+                  </div>
+                )}
+                {reactSegments.length === 0 ? (
+                  <div className="font-body py-6 text-center text-[12px] text-slate-400">
+                    {lcBusy ? "Loading…" : "No reactivation segments."}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {reactSegments.map((s) => (
+                      <div key={s.segment} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="font-display text-[13px] font-bold text-slate-900">
+                              Segment {s.segment}
+                            </div>
+                            <p className="font-body text-[11.5px] text-slate-500">{s.label}</p>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-mono text-[18px] font-bold leading-none text-slate-900">{int(s.eligible)}</div>
+                            <div className="font-display text-[10px] uppercase tracking-[0.06em] text-slate-400">eligible</div>
+                          </div>
+                        </div>
+                        <div className="font-body mt-2 flex gap-3 text-[11px] text-slate-400">
+                          <span>{int(s.total)} total</span>
+                          <span>{int(s.already_sent)} sent</span>
+                          <span>{int(s.suppressed)} suppressed</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => requestReact(s.segment, s.label, s.eligible)}
+                          disabled={reactBusy === s.segment || s.eligible === 0 || !lcFlags.reactivation}
+                          className="font-display mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+                        >
+                          {reactBusy === s.segment ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                          {lcFlags.reactivation ? `Send to Segment ${s.segment} now` : "Enable gate to send"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </DeckCard>
+
+              {/* (iv) Per-stage preview sample */}
+              <DeckCard title="Who's in each stage" subtitle="Sample of users per stage with their resolved deep link">
+                {lcPreview.length === 0 ? (
+                  <div className="font-body py-6 text-center text-[12px] text-slate-400">
+                    {lcBusy ? "Loading…" : "No users to preview."}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[720px]">
+                      <thead>
+                        <tr className="border-b border-slate-100">
+                          {["Email", "Stage", "Deep link", "Act. 30d", "Status"].map((h) => (
+                            <th key={h} className="font-display px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lcPreview.map((r) => (
+                          <tr key={r.user_id} className="border-b border-slate-50">
+                            <td className="px-3 py-2 text-[12px] text-slate-700">{r.email}</td>
+                            <td className="px-3 py-2 text-[11.5px] text-slate-600">{STAGE_LABELS[r.stage] ?? r.stage}</td>
+                            <td className="px-3 py-2 font-mono text-[11px] text-slate-500">{r.deep_link ?? "—"}</td>
+                            <td className="px-3 py-2 text-[12px] text-slate-500">{r.activity_count_30d === null ? "—" : int(r.activity_count_30d)}</td>
+                            <td className="px-3 py-2 text-[11px]">
+                              {r.suppressed ? (
+                                <span className="rounded-full bg-rose-50 px-2 py-0.5 font-semibold text-rose-600">suppressed</span>
+                              ) : r.already_nudged ? (
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-500">nudged</span>
+                              ) : (
+                                <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">eligible</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </DeckCard>
+            </div>
+          )}
+
+          {/* Confirm dialogs for lifecycle gate toggle + reactivation send */}
+          {lcPendingFlag && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+              <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+                <div className="flex items-center gap-2 text-amber-600">
+                  <AlertTriangle className="h-5 w-5" />
+                  <h3 className="font-display text-[15px] font-bold text-slate-900">
+                    {lcPendingFlag.next ? `Enable ${lcPendingFlag.label}?` : `Disable ${lcPendingFlag.label}?`}
+                  </h3>
+                </div>
+                <p className="font-body mt-3 text-[13px] text-slate-600">
+                  {lcPendingFlag.next
+                    ? "This will start emailing real users. Sends still respect suppression, unsubscribe, and once-per-stage dedup — but live emails will go out."
+                    : "This stops the system from emailing users. It becomes fully dormant."}
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button type="button" onClick={() => setLcPendingFlag(null)}
+                    className="font-display rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-semibold text-slate-600 hover:bg-slate-50">
+                    Cancel
+                  </button>
+                  <button type="button" onClick={confirmLcFlag}
+                    className={`font-display rounded-lg px-4 py-2 text-[13px] font-semibold text-white ${lcPendingFlag.next ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-700 hover:bg-slate-800"}`}>
+                    {lcPendingFlag.next ? "Yes, enable sends" : "Yes, disable"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {reactPending && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+              <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+                <div className="flex items-center gap-2 text-blue-600">
+                  <Send className="h-5 w-5" />
+                  <h3 className="font-display text-[15px] font-bold text-slate-900">
+                    Send reactivation to Segment {reactPending.segment}?
+                  </h3>
+                </div>
+                <p className="font-body mt-3 text-[13px] text-slate-600">
+                  This will email up to <strong>{reactPending.count}</strong> eligible users in “{reactPending.label}”.
+                  Suppressed/unsubscribed users and anyone already sent this campaign are skipped automatically.
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button type="button" onClick={() => setReactPending(null)}
+                    className="font-display rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-semibold text-slate-600 hover:bg-slate-50">
+                    Cancel
+                  </button>
+                  <button type="button" onClick={confirmReact}
+                    className="font-display rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-700">
+                    Yes, send now
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
