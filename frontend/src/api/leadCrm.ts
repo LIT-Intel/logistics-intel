@@ -116,6 +116,35 @@ export type LeadContact = {
   country_code: string | null;
 };
 
+/** Persisted-contact state for the signed-in user. */
+export async function getSavedContactIds(contactIds: string[]): Promise<Set<string>> {
+  if (!contactIds.length) return new Set();
+  const { data, error } = await supabase
+    .from("lit_saved_contacts")
+    .select("contact_id")
+    .in("contact_id", contactIds);
+  if (error) return new Set();
+  return new Set((data ?? []).map((row: any) => String(row.contact_id)));
+}
+
+/** Save one or more enriched contacts for outreach, segmentation, and reporting. */
+export async function saveLeadContacts(contacts: Pick<LeadContact, "id">[], companyId?: string | null): Promise<number> {
+  if (!contacts.length) return 0;
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) throw new Error(authError?.message || "Sign in required");
+  const rows = contacts.map((contact) => ({
+    user_id: authData.user.id,
+    contact_id: contact.id,
+    company_id: companyId ?? null,
+    status: "saved",
+  }));
+  const { error } = await supabase
+    .from("lit_saved_contacts")
+    .upsert(rows, { onConflict: "user_id,contact_id", ignoreDuplicates: true });
+  if (error) throw new Error(error.message);
+  return rows.length;
+}
+
 /** Result of the enrich edge function. */
 export type EnrichResult = {
   ok: boolean;
