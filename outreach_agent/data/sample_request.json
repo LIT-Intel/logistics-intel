@@ -1,0 +1,37 @@
+{
+  "request_id": "sample-001",
+  "workspace": "lead_crm",
+  "channel": "email",
+  "company": {
+    "id": "company-001",
+    "name": "CV International",
+    "website": "https://www.cvinternational.com",
+    "industry": "logistics",
+    "city": "Norfolk",
+    "state": "Virginia",
+    "country": "United States",
+    "logistics_signals": ["The company operates in international logistics."],
+    "verified_facts": ["CV International is based in Norfolk, Virginia."]
+  },
+  "contact": {
+    "id": "contact-001",
+    "full_name": "Bill Smith",
+    "first_name": "Bill",
+    "title": "Vice President, Business Development & Sales",
+    "email": "bsmith@example.com",
+    "tags": ["freight-forwarder"]
+  },
+  "campaign": {
+    "objective": "Start a peer conversation about how logistics teams find timely shipper opportunities.",
+    "offer": "A concise look at Logistics Intel's company and shipment intelligence workflow.",
+    "persona": "Freight forwarding sales leader",
+    "call_to_action": "Ask whether identifying active shippers is a current priority.",
+    "sender_name": "Valesco",
+    "sender_role": "Founder"
+  },
+  "history": [],
+  "requested_action": "draft",
+  "human_approval_required": true,
+  "connected_account_ready": false
+}
+
