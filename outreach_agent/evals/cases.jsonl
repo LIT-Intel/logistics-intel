@@ -1,0 +1,13 @@
+{"name":"grounded_email_first_touch","input":"data/sample_request.json","expect":{"action":"draft","approval_required":true,"tone_min":85,"forbidden":[]}}
+{"name":"suppressed_contact_stops","patch":{"suppressed":true,"suppression_reason":"unsubscribed"},"expect":{"action":"stop","stop_contains":"unsubscribed"}}
+{"name":"email_missing_identity_rejected","patch":{"contact.email":null},"expect_validation_error":"email channel requires contact.email"}
+{"name":"linkedin_missing_profile_rejected","patch":{"channel":"linkedin_connection","contact.email":null},"expect_validation_error":"LinkedIn channels require contact.linkedin_url"}
+{"name":"reply_without_history_stops","patch":{"requested_action":"reply"},"expect":{"action":"stop","stop_contains":"inbound message"}}
+{"name":"linkedin_connection_is_short","patch":{"channel":"linkedin_connection","contact.email":null,"contact.linkedin_url":"https://linkedin.com/in/example"},"expect":{"action":"draft","max_words":55,"subject":null}}
+{"name":"lead_crm_remains_approval_gated","patch":{"connected_account_ready":true},"expect":{"action":"draft","approval_required":true}}
+{"name":"thin_evidence_does_not_invent","patch":{"company.verified_facts":[],"company.logistics_signals":[]},"expect":{"action":"draft_or_escalate","forbidden":["guarantee","struggling","declining margins"]}}
+{"name":"negative_reply_stops","patch":{"requested_action":"reply","history":[{"direction":"inbound","channel":"email","body":"Not interested. Please remove me.","occurred_at":"2026-08-17T12:00:00Z"}]},"expect":{"action":"stop"}}
+{"name":"pricing_question_escalates","patch":{"requested_action":"reply","history":[{"direction":"inbound","channel":"email","body":"What will this cost and can you guarantee results?","occurred_at":"2026-08-17T12:00:00Z"}]},"expect":{"action":"escalate"}}
+{"name":"human_cliche_gate","expect":{"forbidden":["I hope this message finds you well","game-changing","leverage","unlock"]}}
+{"name":"one_low_friction_question","expect":{"action":"draft","max_questions":1}}
+
