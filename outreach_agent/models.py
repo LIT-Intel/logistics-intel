@@ -1,4 +1,4 @@
-from __future__ import annotations
+from __future__ import annotations
 
 from enum import Enum
 from typing import Literal
@@ -117,3 +117,47 @@ class AgentResponse(BaseModel):
     revision_count: int
     trace_id: str | None = None
 
+
+class LeadQualificationRequest(BaseModel):
+    request_id: str
+    provider: Literal["apollo"] = "apollo"
+    provider_company_id: str
+    company_name: str
+    domain: str | None = None
+    website: HttpUrl | None = None
+    linkedin_url: HttpUrl | None = None
+    industry: str | None = None
+    location: str | None = None
+    target_types: list[Literal["freight_broker", "freight_forwarder"]] = Field(
+        default_factory=lambda: ["freight_broker", "freight_forwarder"]
+    )
+
+
+class QualificationEvidence(BaseModel):
+    title: str
+    url: HttpUrl
+    finding: str
+
+
+class LeadQualificationDecision(BaseModel):
+    status: Literal["qualified", "disqualified", "review"]
+    company_type: Literal[
+        "freight_broker",
+        "freight_forwarder",
+        "freight_broker_and_forwarder",
+        "other_logistics",
+        "non_target",
+        "unknown",
+    ]
+    confidence: float = Field(ge=0, le=1)
+    verified_domain: str | None = None
+    reason: str
+    positive_signals: list[str] = Field(default_factory=list)
+    exclusion_signals: list[str] = Field(default_factory=list)
+    evidence: list[QualificationEvidence] = Field(default_factory=list)
+    safe_to_enrich: bool = False
+
+    @model_validator(mode="after")
+    def enforce_enrichment_gate(self) -> "LeadQualificationDecision":
+        self.safe_to_enrich = self.status == "qualified" and self.confidence >= 0.75
+        return self
