@@ -94,7 +94,19 @@ export default function FindLeadsPage() {
   }
 
   return (
-    <div style={{ minHeight: "100%", background: theme.bg, color: theme.text, fontFamily: FONT_BODY }}>
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        height: "100%",
+        overflowY: "auto",
+        overscrollBehavior: "contain",
+        WebkitOverflowScrolling: "touch",
+        background: theme.bg,
+        color: theme.text,
+        fontFamily: FONT_BODY,
+      }}
+    >
       <header style={{ padding: "18px 24px", borderBottom: `1px solid ${theme.border}`, background: theme.panel }}>
         <button onClick={() => navigate("/app/leads")} style={linkButton(theme.textMuted)}><ArrowLeft size={14} /> Back to leads</button>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, flexWrap: "wrap", marginTop: 12 }}>
@@ -109,7 +121,7 @@ export default function FindLeadsPage() {
         </div>
       </header>
 
-      <main style={{ padding: 24, maxWidth: 1240, margin: "0 auto" }}>
+      <main style={{ width: "100%", padding: 24, maxWidth: 1240, margin: "0 auto" }}>
         <section style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1fr) minmax(210px, .55fr) auto", gap: 10, padding: 16, border: `1px solid ${theme.border}`, borderRadius: 14, background: theme.panel }} className="max-md:!grid-cols-1">
           <Field label="Company keywords" theme={theme}><input value={keywords} onChange={(e) => setKeywords(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runSearch()} placeholder={DEFAULT_KEYWORDS} style={inputStyle(theme)} /></Field>
           <Field label="Company location" theme={theme}><input value={location} onChange={(e) => setLocation(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runSearch()} placeholder="United States" style={inputStyle(theme)} /></Field>
