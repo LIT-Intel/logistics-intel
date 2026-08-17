@@ -84,6 +84,7 @@ const LeadCrmPipelinePage = lazy(() => import("@/pages/leadcrm/PipelinePage"));
 const LeadCrmTasksPage = lazy(() => import("@/pages/leadcrm/TasksPage"));
 const LeadCrmReportsPage = lazy(() => import("@/pages/leadcrm/ReportsPage"));
 const LeadCrmTeamPage = lazy(() => import("@/pages/leadcrm/TeamPage"));
+const LeadCrmFindLeadsPage = lazy(() => import("@/pages/leadcrm/FindLeadsPage"));
 
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
@@ -851,6 +852,7 @@ export default function App() {
           }
         >
           <Route index element={<LeadsListPage />} />
+          <Route path="find" element={<LeadCrmFindLeadsPage />} />
           <Route path="pipeline" element={<LeadCrmPipelinePage />} />
           <Route path="tasks" element={<LeadCrmTasksPage />} />
           <Route path="reports" element={<LeadCrmReportsPage />} />

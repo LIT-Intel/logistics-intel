@@ -110,15 +110,17 @@ export default function DealDetailDrawer({
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!deal.saved_company_id) return;
       try {
         const { supabase } = await import("@/lib/supabase");
-        const { data } = await supabase
-          .from("lit_saved_companies")
-          .select("company_id")
-          .eq("id", deal.saved_company_id)
-          .maybeSingle();
-        const uuid = (data as any)?.company_id ?? null;
+        let uuid: string | null = deal.company_id ?? null;
+        if (deal.saved_company_id) {
+          const { data } = await supabase
+            .from("lit_saved_companies")
+            .select("company_id")
+            .eq("id", deal.saved_company_id)
+            .maybeSingle();
+          uuid = (data as any)?.company_id ?? uuid;
+        }
         if (alive) setCompanyUuid(uuid);
         const [list, att] = await Promise.all([
           listCompanyContacts(uuid),
@@ -513,12 +515,12 @@ export default function DealDetailDrawer({
               reporting counts the deal, never the linked quotes → no
               double-count. Attaching a quote does NOT overwrite deal value. */}
           <Section
-            title={`Quotes${linkedQuotes.length ? ` (${linkedQuotes.length})` : ""}`}
+            title={`Quotes${linkedQuotes.length + attachable.length ? ` (${linkedQuotes.length + attachable.length})` : ""}`}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {linkedQuotes.length === 0 ? (
+              {linkedQuotes.length === 0 && attachable.length === 0 ? (
                 <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint }}>
-                  No quotes linked yet.
+                  No quotes generated for this account yet.
                 </div>
               ) : (
                 linkedQuotes.map((q) => (
@@ -572,6 +574,28 @@ export default function DealDetailDrawer({
                 ))
               )}
             </div>
+            {attachable.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: linkedQuotes.length ? 10 : 0 }}>
+                <div style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  Account quotes
+                </div>
+                {attachable.map((q) => (
+                  <div key={q.id} style={quoteRow(theme)}>
+                    <button
+                      onClick={() => { navigate(`/app/quoting/${q.id}`); onClose(); }}
+                      style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, fontWeight: 600, color: mode === "dark" ? "#93C5FD" : "#1d4ed8" }}
+                      title="Open quote"
+                    >
+                      {q.quote_number ?? "Quote"}
+                    </button>
+                    <span style={quoteStatusPill(q.status, mode)}>{quoteStatusLabel(q.status)}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, fontWeight: 700, color: theme.text, whiteSpace: "nowrap" }}>
+                      {formatMoney(q.total_sell ?? null, q.currency ?? deal.currency)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {/* Attach an existing (unlinked) company quote. */}
             {attachable.length > 0 ? (
               <div style={{ display: "flex", gap: 6, marginTop: 8 }}>

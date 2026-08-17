@@ -32,6 +32,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -81,6 +82,7 @@ const STATUS_TABS: { value: LeadStatusFilter; label: string }[] = [
 export default function LeadsListPage() {
   const { toast } = useToast();
   const { theme } = useLeadCrmTheme();
+  const navigate = useNavigate();
   const [stageId, setStageId] = useState<string>("");
   const [source, setSource] = useState<string>("");
   const [assignee, setAssignee] = useState<string>("");
@@ -226,6 +228,14 @@ export default function LeadsListPage() {
               Work leads toward becoming subscribers
             </div>
           </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => navigate("/app/leads/find")}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, background: theme.panelAlt, color: theme.text, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
+          >
+            <Search style={{ width: 14, height: 14 }} /> Find leads
+          </button>
           <button
             type="button"
             onClick={() => setAddOpen(true)}
@@ -248,6 +258,7 @@ export default function LeadsListPage() {
             <Plus style={{ width: 14, height: 14 }} />
             Add opportunity
           </button>
+          </div>
         </div>
 
         {/* KPI row — Attio-style headline metrics + per-stage chips */}
