@@ -1,4 +1,4 @@
-from models import Channel, OutreachDecision, OutreachRequest
+from models import Channel, LeadQualificationDecision, OutreachDecision, OutreachRequest
 from policies import assess_human_tone, preflight_stop_reason
 
 
@@ -41,3 +41,20 @@ def test_grounded_plain_message_passes() -> None:
     assessment = assess_human_tone(decision, req)
     assert assessment.passed, assessment.failures
 
+
+def test_only_confident_qualified_company_is_safe_to_enrich() -> None:
+    qualified = LeadQualificationDecision(
+        status="qualified",
+        company_type="freight_broker",
+        confidence=0.88,
+        reason="Official site confirms freight brokerage services.",
+    )
+    uncertain = LeadQualificationDecision(
+        status="review",
+        company_type="unknown",
+        confidence=0.6,
+        reason="Evidence is incomplete.",
+        safe_to_enrich=True,
+    )
+    assert qualified.safe_to_enrich
+    assert not uncertain.safe_to_enrich

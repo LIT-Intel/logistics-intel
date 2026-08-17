@@ -1,12 +1,18 @@
-from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
 from pathlib import Path
 
-from agents import Agent, Runner, trace
+from agents import Agent, Runner, WebSearchTool, trace
 
-from models import AgentResponse, OutreachDecision, OutreachRequest
+from models import (
+    AgentResponse,
+    LeadQualificationDecision,
+    LeadQualificationRequest,
+    OutreachDecision,
+    OutreachRequest,
+)
 from policies import assess_human_tone, forbidden_fact_claims, preflight_stop_reason
 from tools import check_approval_policy, get_channel_policy
 
@@ -34,6 +40,36 @@ def build_agent() -> Agent:
         tools=[get_channel_policy, check_approval_policy],
         output_type=OutreachDecision,
     )
+
+
+def build_qualification_agent() -> Agent:
+    return Agent(
+        name="LIT Lead Qualification Agent",
+        model=os.getenv("OUTREACH_AGENT_MODEL", "gpt-5.6-luna"),
+        instructions=(ROOT / "docs" / "qualification-prompt.md").read_text(encoding="utf-8"),
+        tools=[WebSearchTool()],
+        output_type=LeadQualificationDecision,
+    )
+
+
+async def run_lead_qualification(
+    request: LeadQualificationRequest,
+) -> LeadQualificationDecision:
+    _configure_api_key()
+    with trace(
+        "lit_lead_qualification",
+        metadata={
+            "request_id": request.request_id,
+            "provider": request.provider,
+            "provider_company_id": request.provider_company_id,
+        },
+    ):
+        result = await Runner.run(
+            build_qualification_agent(),
+            request.model_dump_json(),
+            max_turns=8,
+        )
+    return result.final_output
 
 
 def _input_payload(request: OutreachRequest, revision_feedback: list[str] | None = None) -> str:
@@ -103,4 +139,3 @@ async def run_outreach_agent(request: OutreachRequest) -> AgentResponse:
         revision_count=max_revisions,
         trace_id=getattr(workflow_trace, "trace_id", None),
     )
-

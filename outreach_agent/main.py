@@ -1,4 +1,4 @@
-from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import asyncio
@@ -8,8 +8,8 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 
-from agent import run_outreach_agent
-from models import AgentResponse, OutreachRequest
+from agent import run_lead_qualification, run_outreach_agent
+from models import AgentResponse, LeadQualificationDecision, LeadQualificationRequest, OutreachRequest
 
 app = FastAPI(title="LIT Outreach Agent", version="0.1.0")
 
@@ -30,6 +30,15 @@ async def draft(request: OutreachRequest) -> AgentResponse:
     return await run_outreach_agent(request)
 
 
+@app.post(
+    "/v1/qualify",
+    response_model=LeadQualificationDecision,
+    dependencies=[Depends(authorize)],
+)
+async def qualify(request: LeadQualificationRequest) -> LeadQualificationDecision:
+    return await run_lead_qualification(request)
+
+
 async def _cli(input_path: Path) -> None:
     request = OutreachRequest.model_validate_json(input_path.read_text(encoding="utf-8"))
     response = await run_outreach_agent(request)
@@ -47,4 +56,3 @@ if __name__ == "__main__":
         parser.add_argument("--input", type=Path, default=Path("data/sample_request.json"))
         args = parser.parse_args()
         asyncio.run(_cli(args.input))
-
