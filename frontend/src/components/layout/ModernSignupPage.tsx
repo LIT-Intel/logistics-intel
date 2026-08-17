@@ -7,6 +7,10 @@ import {
   registerWithEmailPassword,
 } from "@/auth/supabaseAuthClient";
 import { useAuth } from "@/auth/AuthProvider";
+import TurnstileWidget, {
+  TURNSTILE_SITE_KEY,
+  isTurnstileEnabled,
+} from "@/components/layout/TurnstileWidget";
 
 // ─── Left branded panel ────────────────────────────────────────────────────────
 function BrandPanel({ inviteMode = false }: { inviteMode?: boolean }) {
@@ -210,6 +214,21 @@ export default function ModernSignupPage() {
   const [loading, setLoading]         = useState(false);
   const [signupSuccess, setSignupSuccess] = useState(false);
 
+  // ── Cloudflare Turnstile (BOT SIGNUP DOOR-BLOCK) ──────────────────────────
+  // ENV-GATED: captchaEnabled is true only when the owner has provisioned
+  // VITE_TURNSTILE_SITE_KEY. When false, no widget renders and no token is
+  // required — signup works exactly as it did before this change.
+  const captchaEnabled = isTurnstileEnabled();
+  const [captchaToken, setCaptchaToken] = useState("");
+  const turnstileHostRef = React.useRef<HTMLDivElement | null>(null);
+  // Force the widget to re-challenge (used after a failed submit).
+  function resetCaptcha() {
+    setCaptchaToken("");
+    turnstileHostRef.current
+      ?.querySelector("div")
+      ?.dispatchEvent(new Event("turnstile-reset", { bubbles: false }));
+  }
+
   const postInvitePath = isInviteFlow
     ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
         inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
@@ -237,6 +256,14 @@ export default function ModernSignupPage() {
     }
     setFieldErrors({});
 
+    // Turnstile gate: only enforced when the owner has provisioned a site key.
+    // (Belt-and-suspenders — the submit button is already disabled without a
+    // token when captchaEnabled.)
+    if (captchaEnabled && !captchaToken) {
+      setErr("Please complete the human-verification challenge.");
+      return;
+    }
+
     try {
       setErr("");
       setLoading(true);
@@ -259,6 +286,8 @@ export default function ModernSignupPage() {
         email,
         password,
         emailRedirectTo,
+        // Undefined when captcha disabled → signUp options omit captchaToken.
+        captchaToken: captchaEnabled ? captchaToken : undefined,
       });
 
       if (isInviteFlow) {
@@ -269,6 +298,8 @@ export default function ModernSignupPage() {
       }
     } catch (e: any) {
       setErr(e?.message || "Sign-up failed. Please try again.");
+      // A used/expired token can't be reused — force a fresh challenge.
+      if (captchaEnabled) resetCaptcha();
     } finally {
       setLoading(false);
     }
@@ -466,9 +497,23 @@ export default function ModernSignupPage() {
                   </div>
                 </div>
 
+                {/* Cloudflare Turnstile — only rendered when the owner has set
+                    VITE_TURNSTILE_SITE_KEY. Otherwise nothing renders and no
+                    token is required (signup unchanged). */}
+                {captchaEnabled && (
+                  <div ref={turnstileHostRef} className="pt-1">
+                    <TurnstileWidget
+                      siteKey={TURNSTILE_SITE_KEY}
+                      onToken={setCaptchaToken}
+                      onExpireOrError={() => setCaptchaToken("")}
+                      className="min-h-[65px]"
+                    />
+                  </div>
+                )}
+
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || (captchaEnabled && !captchaToken)}
                   className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? "Creating account…" : isInviteFlow ? "Create Account & Join" : "Create free account"}

@@ -57,12 +57,19 @@ export async function registerWithEmailPassword({
   email,
   password,
   emailRedirectTo,
+  captchaToken,
 }: {
   fullName?: string;
   company?: string;
   email: string;
   password: string;
   emailRedirectTo?: string;
+  // Cloudflare Turnstile token (BOT SIGNUP DOOR-BLOCK). Optional: when the owner
+  // has NOT provisioned VITE_TURNSTILE_SITE_KEY, the signup form never renders
+  // the widget and this is undefined — signup behaves exactly as before. When a
+  // key IS set, the form supplies a solved token here and GoTrue verifies it
+  // (requires Supabase Auth → Attack Protection → CAPTCHA = Turnstile enabled).
+  captchaToken?: string;
 }) {
   if (!auth) throw new Error('Auth not configured');
   if (!email || !password) throw new Error('Email and password required');
@@ -72,6 +79,10 @@ export async function registerWithEmailPassword({
     email,
     password,
     options: {
+      // Only include captchaToken when present. Passing undefined is harmless,
+      // but omitting it keeps the "no key set → unchanged behavior" guarantee
+      // crystal clear.
+      ...(captchaToken ? { captchaToken } : {}),
       data: {
         full_name: fullName || '',
         display_name: fullName || email.split('@')[0],
