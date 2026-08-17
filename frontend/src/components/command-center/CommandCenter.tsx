@@ -37,6 +37,12 @@ import CreateDealModal, { type CreateDealPrefill } from "@/features/crm/CreateDe
 import ViewAsFilter from "@/features/crm/ViewAsFilter";
 import { listStages, type DealStage, myOverdueTaskCount } from "@/api/crm";
 import { loadCommandCenterKpis, type CommandCenterKpis } from "@/api/commandCenterKpis";
+import {
+  CommandCenterThemeProvider,
+  CrmThemeToggle,
+  useCrmTheme,
+  type CrmThemeTokens,
+} from "@/features/crm/CommandCenterTheme";
 // AddCompanyModal import removed — manual company entry no longer offered.
 
 type SavedCompaniesResponse =
@@ -108,6 +114,19 @@ const STATUS_STYLE = {
   pending:  { bg: '#FFFBEB', color: '#B45309', border: '#FDE68A', dot: '#F59E0B', label: 'Pending'  },
   inactive: { bg: '#F1F5F9', color: '#64748b', border: '#E2E8F0', dot: '#94A3B8', label: 'Inactive' },
 };
+
+// Dark-mode status pills — brighter fg on translucent tinted fills so they stay
+// legible on deep-slate panels. Same keys as STATUS_STYLE.
+const STATUS_STYLE_DARK = {
+  active:   { bg: 'rgba(34,197,94,0.14)',  color: '#4ADE80', border: 'rgba(34,197,94,0.35)',  dot: '#22C55E', label: 'Active'   },
+  pending:  { bg: 'rgba(245,158,11,0.16)', color: '#FBBF24', border: 'rgba(245,158,11,0.35)', dot: '#F59E0B', label: 'Pending'  },
+  inactive: { bg: 'rgba(148,163,184,0.14)',color: '#94A3B8', border: 'rgba(148,163,184,0.3)', dot: '#94A3B8', label: 'Inactive' },
+};
+
+type StatusKey = keyof typeof STATUS_STYLE;
+function statusStyle(mode: 'light' | 'dark', key: StatusKey) {
+  return (mode === 'dark' ? STATUS_STYLE_DARK : STATUS_STYLE)[key];
+}
 
 const PAGE_SIZE = 25;
 
@@ -206,6 +225,17 @@ type CrmView = "accounts" | "pipeline" | "tasks" | "reports";
  * the Kanban deals board and "Tasks" is the My-tasks list (CRM Phase 1).
  */
 export default function CommandCenter() {
+  // The provider wraps the whole surface so every child (shell + views + drawer)
+  // can read the active theme and the `.dark` class is scoped here only.
+  return (
+    <CommandCenterThemeProvider>
+      <CommandCenterInner />
+    </CommandCenterThemeProvider>
+  );
+}
+
+function CommandCenterInner() {
+  const { theme, mode } = useCrmTheme();
   const [view, setView] = useState<CrmView>("accounts");
   const [overdueCount, setOverdueCount] = useState(0);
   // Owner/admin "view as [member]" filter. Empty string = All members (whole
@@ -256,13 +286,19 @@ export default function CommandCenter() {
   }, [view, viewAsUserId]);
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC" }}>
-      {/* View switcher */}
-      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "10px 24px 0", background: "#FFFFFF", borderBottom: "1px solid #E5E7EB", flexShrink: 0 }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: theme.bg }}>
+      {/* View switcher — the tab row is horizontally scrollable so all four
+          tabs + the theme toggle stay reachable on narrow phones. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "10px 16px 0", background: theme.panel, borderBottom: `1px solid ${theme.border}`, flexShrink: 0, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
         <ViewTab active={view === "accounts"} onClick={() => setView("accounts")} icon={<LayoutGrid style={{ width: 14, height: 14 }} />} label="Accounts" />
         <ViewTab active={view === "pipeline"} onClick={() => setView("pipeline")} icon={<KanbanSquare style={{ width: 14, height: 14 }} />} label="Pipeline" />
         <ViewTab active={view === "tasks"} onClick={() => setView("tasks")} icon={<CheckSquare style={{ width: 14, height: 14 }} />} label="Tasks" badge={overdueCount || undefined} />
         <ViewTab active={view === "reports"} onClick={() => setView("reports")} icon={<BarChart3 style={{ width: 14, height: 14 }} />} label="Reports" />
+        {/* Theme toggle lives at the end of the tab row so it's always visible
+            (and reachable on mobile via the scrollable row). */}
+        <div style={{ marginLeft: "auto", paddingLeft: 8, paddingBottom: 6, flexShrink: 0 }}>
+          <CrmThemeToggle />
+        </div>
       </div>
 
       {/* KPI header bar — below the tabs, above the content. Compact colored
@@ -293,11 +329,11 @@ export default function CommandCenter() {
 // small uppercase label. Tasteful and compact — a workspace header strip, not
 // the deep analytics view (Reports tab owns that).
 const KPI_TONES: Record<string, string> = {
-  blue: "bg-blue-50 text-blue-600",
-  indigo: "bg-indigo-50 text-indigo-600",
-  violet: "bg-violet-50 text-violet-600",
-  amber: "bg-amber-50 text-amber-600",
-  emerald: "bg-emerald-50 text-emerald-600",
+  blue: "bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300",
+  indigo: "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300",
+  violet: "bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300",
+  amber: "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300",
+  emerald: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300",
 };
 
 function KpiChip({
@@ -314,7 +350,7 @@ function KpiChip({
   tone?: keyof typeof KPI_TONES;
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+    <div className="flex min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-none">
       <span
         className={[
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
@@ -324,14 +360,14 @@ function KpiChip({
         <Icon className="h-4 w-4" />
       </span>
       <div className="min-w-0">
-        <div className="font-mono truncate text-[18px] font-bold leading-none tracking-tight text-slate-900">
+        <div className="font-mono truncate text-[18px] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-100">
           {value}
         </div>
-        <div className="mt-1 truncate text-[9.5px] font-semibold uppercase tracking-[0.07em] text-slate-400" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+        <div className="mt-1 truncate text-[9.5px] font-semibold uppercase tracking-[0.07em] text-slate-400 dark:text-slate-500" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
           {label}
         </div>
         {hint ? (
-          <div className="mt-0.5 truncate text-[10px] text-slate-400" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+          <div className="mt-0.5 truncate text-[10px] text-slate-400 dark:text-slate-500" style={{ fontFamily: "'DM Sans', sans-serif" }}>
             {hint}
           </div>
         ) : null}
@@ -353,6 +389,7 @@ function KpiHeaderBar({
 }) {
   // "Tasks due" surfaces the org-scoped open-overdue count from the RPC as the
   // primary number; the viewer's own overdue count drives the highlight hint.
+  const { theme } = useCrmTheme();
   const tasksDue = kpis.overdueTaskCount;
   const tasksHint = overdueForViewer > 0 ? `${formatNumber(overdueForViewer)} overdue for you` : undefined;
 
@@ -360,8 +397,8 @@ function KpiHeaderBar({
     <div
       style={{
         padding: "12px 24px",
-        background: "#FFFFFF",
-        borderBottom: "1px solid #E5E7EB",
+        background: theme.panel,
+        borderBottom: `1px solid ${theme.border}`,
         flexShrink: 0,
       }}
     >
@@ -381,6 +418,7 @@ function KpiHeaderBar({
 }
 
 function ViewTab({ active, onClick, icon, label, badge }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; badge?: number }) {
+  const { theme } = useCrmTheme();
   return (
     <button
       type="button"
@@ -391,14 +429,16 @@ function ViewTab({ active, onClick, icon, label, badge }: { active: boolean; onC
         gap: 6,
         padding: "8px 14px",
         border: "none",
-        borderBottom: `2px solid ${active ? "#3B82F6" : "transparent"}`,
+        borderBottom: `2px solid ${active ? theme.accentBorder : "transparent"}`,
         background: "transparent",
-        color: active ? "#1D4ED8" : "#64748b",
+        color: active ? theme.accentSoftText : theme.textMuted,
         fontFamily: "'Space Grotesk', sans-serif",
         fontSize: 13,
         fontWeight: 700,
         cursor: "pointer",
         marginBottom: -1,
+        whiteSpace: "nowrap",
+        flexShrink: 0,
       }}
     >
       {icon}
@@ -413,6 +453,7 @@ function ViewTab({ active, onClick, icon, label, badge }: { active: boolean; onC
 function AccountsView() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { theme, mode } = useCrmTheme();
 
   const [savedCompanies, setSavedCompanies] = useState<CommandCenterRecord[]>([]);
   const [dealStages, setDealStages] = useState<DealStage[]>([]);
@@ -730,7 +771,7 @@ function AccountsView() {
   }
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#F8FAFC' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: theme.bg }}>
       {/* Header — Phase B.3 design-source alignment.
           KPI strip removed (was 4 tiles). Filter chips removed (was All /
           High value / Active / Recent). Subtitle now exactly:
@@ -740,21 +781,23 @@ function AccountsView() {
       <div
         style={{
           padding: '20px 24px 16px',
-          borderBottom: '1px solid #E5E7EB',
+          borderBottom: `1px solid ${theme.border}`,
           background:
-            'radial-gradient(circle at 0% 0%, rgba(99,102,241,0.08) 0%, rgba(99,102,241,0) 35%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)',
+            mode === 'dark'
+              ? `radial-gradient(circle at 0% 0%, rgba(99,102,241,0.12) 0%, rgba(99,102,241,0) 35%), linear-gradient(180deg, ${theme.panel} 0%, ${theme.bg} 100%)`
+              : 'radial-gradient(circle at 0% 0%, rgba(99,102,241,0.08) 0%, rgba(99,102,241,0) 35%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)',
           flexShrink: 0,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 14 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 10, fontWeight: 700, color: '#6366F1', letterSpacing: '0.24em', textTransform: 'uppercase' }}>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 10, fontWeight: 700, color: mode === 'dark' ? '#A5B4FC' : '#6366F1', letterSpacing: '0.24em', textTransform: 'uppercase' }}>
               Revenue Intelligence
             </div>
-            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em', marginTop: 4 }}>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, color: theme.heading, letterSpacing: '-0.02em', marginTop: 4 }}>
               Command Center
             </div>
-            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#64748b', marginTop: 2 }}>
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: theme.textMuted, marginTop: 2 }}>
               {sortedRows.length} saved companies · Sorted by shipments
             </div>
           </div>
@@ -766,18 +809,18 @@ function AccountsView() {
         {/* Search row — chips removed in Phase B.3. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ position: 'relative', flex: 1, minWidth: 220, maxWidth: 340 }}>
-            <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: '#94a3b8' }} />
+            <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: theme.textFaint }} />
             <input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search companies, routes, domains…"
               style={{
-                width: '100%', background: '#F8FAFC', border: '1.5px solid #CBD5E1', borderRadius: 10,
+                width: '100%', background: theme.inputBg, border: `1.5px solid ${theme.borderStrong}`, borderRadius: 10,
                 padding: '7px 12px 7px 30px', fontSize: 13, fontFamily: "'DM Sans', sans-serif",
-                color: '#0F172A', outline: 'none',
+                color: theme.text, outline: 'none',
               }}
-              onFocus={(e) => { e.target.style.borderColor = '#3B82F6'; e.target.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.1)'; }}
-              onBlur={(e)  => { e.target.style.borderColor = '#CBD5E1'; e.target.style.boxShadow = 'none'; }}
+              onFocus={(e) => { e.target.style.borderColor = theme.accentBorder; e.target.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.1)'; }}
+              onBlur={(e)  => { e.target.style.borderColor = theme.borderStrong; e.target.style.boxShadow = 'none'; }}
             />
           </div>
 
@@ -788,9 +831,9 @@ function AccountsView() {
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '7px 12px', borderRadius: 10,
-              border: '1.5px solid ' + (activeFilterCount > 0 ? '#3B82F6' : '#CBD5E1'),
-              background: activeFilterCount > 0 ? 'rgba(59,130,246,0.08)' : '#FFFFFF',
-              color: activeFilterCount > 0 ? '#1D4ED8' : '#0F172A',
+              border: '1.5px solid ' + (activeFilterCount > 0 ? theme.accentBorder : theme.borderStrong),
+              background: activeFilterCount > 0 ? theme.accentSoft : theme.panel,
+              color: activeFilterCount > 0 ? theme.accentSoftText : theme.text,
               fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
             }}
@@ -801,12 +844,12 @@ function AccountsView() {
               <span style={{
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                 minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9,
-                background: '#3B82F6', color: '#FFFFFF', fontSize: 10, fontWeight: 700,
+                background: theme.accentBorder, color: '#FFFFFF', fontSize: 10, fontWeight: 700,
               }}>{activeFilterCount}</span>
             ) : null}
           </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#94a3b8', fontFamily: "'DM Sans', sans-serif", marginLeft: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: theme.textFaint, fontFamily: "'DM Sans', sans-serif", marginLeft: 'auto' }}>
             {formatNumber(sortedRows.length)} shown
           </div>
         </div>
@@ -817,8 +860,8 @@ function AccountsView() {
               marginTop: 12,
               padding: 14,
               borderRadius: 12,
-              border: '1px solid #E5E7EB',
-              background: '#FFFFFF',
+              border: `1px solid ${theme.border}`,
+              background: theme.panel,
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
               gap: 12,
@@ -829,7 +872,7 @@ function AccountsView() {
               <select
                 value={filterCountry}
                 onChange={(e) => setFilterCountry(e.target.value)}
-                style={selectStyle}
+                style={fieldControlStyle(theme)}
               >
                 <option value="">All countries</option>
                 {countryOptions.map((c) => (
@@ -842,7 +885,7 @@ function AccountsView() {
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value as any)}
-                style={selectStyle}
+                style={fieldControlStyle(theme)}
               >
                 <option value="all">All statuses</option>
                 <option value="active">Active</option>
@@ -855,7 +898,7 @@ function AccountsView() {
               <select
                 value={filterHasContacts}
                 onChange={(e) => setFilterHasContacts(e.target.value as any)}
-                style={selectStyle}
+                style={fieldControlStyle(theme)}
               >
                 <option value="all">All accounts</option>
                 <option value="yes">With contacts</option>
@@ -867,7 +910,7 @@ function AccountsView() {
               <select
                 value={filterMode}
                 onChange={(e) => setFilterMode(e.target.value as any)}
-                style={selectStyle}
+                style={fieldControlStyle(theme)}
               >
                 <option value="all">FCL + LCL</option>
                 <option value="fcl">FCL only</option>
@@ -881,7 +924,7 @@ function AccountsView() {
                 value={filterLane}
                 onChange={(e) => setFilterLane(e.target.value)}
                 placeholder="e.g. CN→US"
-                style={inputStyle}
+                style={fieldControlStyle(theme)}
               />
             </FilterField>
 
@@ -892,7 +935,7 @@ function AccountsView() {
                 value={filterMinShipments}
                 onChange={(e) => setFilterMinShipments(e.target.value)}
                 placeholder="0"
-                style={inputStyle}
+                style={fieldControlStyle(theme)}
               />
             </FilterField>
 
@@ -902,10 +945,10 @@ function AccountsView() {
                 onClick={resetFilters}
                 style={{
                   padding: '7px 12px',
-                  border: '1.5px solid #CBD5E1',
+                  border: `1.5px solid ${theme.borderStrong}`,
                   borderRadius: 10,
-                  background: '#FFFFFF',
-                  color: '#475569',
+                  background: theme.panel,
+                  color: theme.textMuted,
                   fontFamily: "'Space Grotesk', sans-serif",
                   fontSize: 12,
                   fontWeight: 600,
@@ -922,19 +965,19 @@ function AccountsView() {
       {/* Table area */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {savedLoading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '64px 0', color: '#64748b', fontFamily: "'DM Sans', sans-serif", fontSize: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '64px 0', color: theme.textMuted, fontFamily: "'DM Sans', sans-serif", fontSize: 14 }}>
             <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
             Loading saved companies…
           </div>
         ) : savedError ? (
-          <div style={{ padding: '40px 24px', color: '#dc2626', fontFamily: "'DM Sans', sans-serif", fontSize: 14 }}>{savedError}</div>
+          <div style={{ padding: '40px 24px', color: theme.danger, fontFamily: "'DM Sans', sans-serif", fontSize: 14 }}>{savedError}</div>
         ) : sortedRows.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '64px 0' }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: '50%', background: '#F1F5F9', marginBottom: 16 }}>
-              <Building2 style={{ width: 24, height: 24, color: '#94a3b8' }} />
+            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: '50%', background: theme.panelMuted, marginBottom: 16 }}>
+              <Building2 style={{ width: 24, height: 24, color: theme.textFaint }} />
             </div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#0F172A', fontFamily: "'Space Grotesk', sans-serif" }}>No saved companies match this view</div>
-            <div style={{ fontSize: 13, color: '#64748b', fontFamily: "'DM Sans', sans-serif", marginTop: 4 }}>Try changing your search, or add a new company.</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: theme.heading, fontFamily: "'Space Grotesk', sans-serif" }}>No saved companies match this view</div>
+            <div style={{ fontSize: 13, color: theme.textMuted, fontFamily: "'DM Sans', sans-serif", marginTop: 4 }}>Try changing your search, or add a new company.</div>
           </div>
         ) : (
           <>
@@ -944,7 +987,7 @@ function AccountsView() {
           <div className="hidden md:block" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1200 }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-              <tr style={{ background: '#FFFFFF', borderBottom: '1px solid #E5E7EB' }}>
+              <tr style={{ background: theme.panel, borderBottom: `1px solid ${theme.border}` }}>
                 {TABLE_COLS.map((col) => {
                   const isSorted = col.sortable && col.key === sortKey;
                   return (
@@ -953,24 +996,25 @@ function AccountsView() {
                       style={{
                         width: col.width, textAlign: 'left', padding: '10px 14px',
                         fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase',
-                        color: '#94A3B8', fontFamily: "'Space Grotesk', sans-serif",
+                        color: theme.textFaint, fontFamily: "'Space Grotesk', sans-serif",
                         cursor: col.sortable ? 'pointer' : 'default',
                         whiteSpace: 'nowrap', userSelect: 'none',
+                        background: theme.panel,
                       }}
                       onClick={() => col.sortable && toggleSort(col.key as SortableKey)}
                     >
                       {col.label}
                       {isSorted && (
-                        <span style={{ marginLeft: 3, color: '#3B82F6' }}>{sortDir > 0 ? '↑' : '↓'}</span>
+                        <span style={{ marginLeft: 3, color: theme.accentBorder }}>{sortDir > 0 ? '↑' : '↓'}</span>
                       )}
                     </th>
                   );
                 })}
               </tr>
             </thead>
-            <tbody>
+            <tbody style={{ background: theme.panel }}>
               {paginatedRows.map((row, index) => {
-                const st = STATUS_STYLE[statusForRow(row)];
+                const st = statusStyle(mode, statusForRow(row));
                 const hasActivity = (row.shipments12m || 0) > 0;
                 return (
                   <motion.tr
@@ -979,9 +1023,9 @@ function AccountsView() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.15, delay: index * 0.012 }}
                     onClick={() => handleOpenCompany(row)}
-                    style={{ borderBottom: '1px solid #F1F5F9', cursor: 'pointer', transition: 'background 120ms' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = '#F8FAFC')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = '')}
+                    style={{ borderBottom: `1px solid ${theme.border}`, cursor: 'pointer', transition: 'background 120ms', background: theme.panel }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = theme.hover)}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = theme.panel)}
                   >
                     {/* Company */}
                     <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
@@ -994,7 +1038,7 @@ function AccountsView() {
                         />
                         <div style={{ minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                            <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: theme.text, fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {row.companyName}
                             </span>
                             {row.sharedBy ? (
@@ -1003,8 +1047,9 @@ function AccountsView() {
                                 style={{
                                   flexShrink: 0, fontSize: 9, fontWeight: 700,
                                   fontFamily: "'Space Grotesk', sans-serif",
-                                  color: '#4338CA', background: '#EEF2FF',
-                                  border: '1px solid #C7D2FE', borderRadius: 9999,
+                                  color: mode === 'dark' ? '#A5B4FC' : '#4338CA',
+                                  background: mode === 'dark' ? 'rgba(99,102,241,0.18)' : '#EEF2FF',
+                                  border: `1px solid ${mode === 'dark' ? 'rgba(99,102,241,0.4)' : '#C7D2FE'}`, borderRadius: 9999,
                                   padding: '1px 7px', whiteSpace: 'nowrap',
                                 }}
                               >
@@ -1012,7 +1057,7 @@ function AccountsView() {
                               </span>
                             ) : null}
                           </div>
-                          <div style={{ fontSize: 10, color: '#94A3B8', fontFamily: "'DM Sans', sans-serif", marginTop: 1 }}>
+                          <div style={{ fontSize: 10, color: theme.textFaint, fontFamily: "'DM Sans', sans-serif", marginTop: 1 }}>
                             {row.address || row.countryCode || row.domain || '—'}
                           </div>
                         </div>
@@ -1021,28 +1066,28 @@ function AccountsView() {
 
                     {/* Last Shipment */}
                     <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
-                      <span style={{ fontSize: 12, color: '#64748b', fontFamily: "'DM Sans', sans-serif" }}>
+                      <span style={{ fontSize: 12, color: theme.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
                         {formatDate(row.lastActivity)}
                       </span>
                     </td>
 
                     {/* Shipments 12M */}
                     <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#1d4ed8' }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: mode === 'dark' ? '#93C5FD' : '#1d4ed8' }}>
                         {formatNumber(row.shipments12m)}
                       </span>
                     </td>
 
                     {/* TEU 12M */}
                     <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#374151' }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: mode === 'dark' ? '#CBD5E1' : '#374151' }}>
                         {formatNumber(row.teu12m, 1)}
                       </span>
                     </td>
 
                     {/* Est. Spend */}
                     <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#374151' }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: mode === 'dark' ? '#CBD5E1' : '#374151' }}>
                         {formatCurrency(row.estSpend12m)}
                       </span>
                     </td>
@@ -1063,8 +1108,8 @@ function AccountsView() {
                           textOverflow: 'ellipsis',
                           fontFamily: "'JetBrains Mono', monospace",
                           fontSize: 11,
-                          color: '#64748b',
-                          background: '#F1F5F9',
+                          color: theme.textMuted,
+                          background: theme.panelMuted,
                           padding: '2px 7px',
                           borderRadius: 4,
                         }}
@@ -1084,8 +1129,8 @@ function AccountsView() {
                         fontSize: 11, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif",
                         padding: '2px 7px', borderRadius: 9999, whiteSpace: 'nowrap',
                         ...(hasActivity
-                          ? { color: '#15803d', background: 'rgba(34,197,94,0.1)' }
-                          : { color: '#94A3B8', background: '#F1F5F9' }),
+                          ? { color: mode === 'dark' ? '#4ADE80' : '#15803d', background: 'rgba(34,197,94,0.14)' }
+                          : { color: theme.textFaint, background: theme.panelMuted }),
                       }}>
                         {hasActivity ? '↑ Active' : '→ Idle'}
                       </span>
@@ -1114,8 +1159,10 @@ function AccountsView() {
                         <button
                           onClick={(e) => { e.stopPropagation(); handleOpenCompany(row); }}
                           style={{
-                            fontSize: 11, fontWeight: 600, background: '#EFF6FF', color: '#3b82f6',
-                            border: '1px solid #BFDBFE', borderRadius: 6, padding: '4px 10px',
+                            fontSize: 11, fontWeight: 600,
+                            background: mode === 'dark' ? 'rgba(59,130,246,0.16)' : '#EFF6FF',
+                            color: mode === 'dark' ? '#93C5FD' : '#3b82f6',
+                            border: `1px solid ${mode === 'dark' ? 'rgba(59,130,246,0.4)' : '#BFDBFE'}`, borderRadius: 6, padding: '4px 10px',
                             cursor: 'pointer', fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap',
                           }}
                         >
@@ -1131,9 +1178,9 @@ function AccountsView() {
                               gap: 3,
                               fontSize: 11,
                               fontWeight: 600,
-                              background: '#FFFFFF',
-                              color: '#475569',
-                              border: '1px solid #E2E8F0',
+                              background: theme.panel,
+                              color: theme.textMuted,
+                              border: `1px solid ${theme.border}`,
                               borderRadius: 6,
                               padding: '4px 8px',
                               cursor: 'pointer',
@@ -1154,9 +1201,9 @@ function AccountsView() {
                             gap: 3,
                             fontSize: 11,
                             fontWeight: 600,
-                            background: '#FFFFFF',
-                            color: '#4338CA',
-                            border: '1px solid #C7D2FE',
+                            background: theme.panel,
+                            color: mode === 'dark' ? '#A5B4FC' : '#4338CA',
+                            border: `1px solid ${mode === 'dark' ? 'rgba(99,102,241,0.4)' : '#C7D2FE'}`,
                             borderRadius: 6,
                             padding: '4px 8px',
                             cursor: 'pointer',
@@ -1183,7 +1230,7 @@ function AccountsView() {
               and opens the Add-to-Campaign modal. */}
           <div className="block md:hidden p-3 space-y-2">
             {paginatedRows.map((row) => {
-              const st = STATUS_STYLE[statusForRow(row)];
+              const st = statusStyle(mode, statusForRow(row));
               return (
                 <div
                   key={`m-${row.key}`}
@@ -1191,7 +1238,7 @@ function AccountsView() {
                   tabIndex={0}
                   onClick={() => handleOpenCompany(row)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpenCompany(row); } }}
-                  className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm hover:bg-slate-50 transition cursor-pointer"
+                  className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm hover:bg-slate-50 transition cursor-pointer dark:border-slate-700 dark:bg-slate-900 dark:shadow-none dark:hover:bg-slate-800"
                 >
                   <div className="flex items-start gap-3">
                     <CompanyAvatar
@@ -1201,18 +1248,18 @@ function AccountsView() {
                       className="shrink-0"
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-slate-900 truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                      <div className="text-sm font-semibold text-slate-900 truncate dark:text-slate-100" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                         {row.companyName}
                       </div>
                       {row.sharedBy ? (
                         <span
-                          className="mt-0.5 inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-px text-[9px] font-bold text-indigo-700"
+                          className="mt-0.5 inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-px text-[9px] font-bold text-indigo-700 dark:border-indigo-500/40 dark:bg-indigo-500/15 dark:text-indigo-300"
                           style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                         >
                           Saved by {row.sharedBy}
                         </span>
                       ) : null}
-                      <div className="text-[11px] text-slate-500 truncate" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+                      <div className="text-[11px] text-slate-500 truncate dark:text-slate-400" style={{ fontFamily: "'DM Sans', sans-serif" }}>
                         {row.address || row.countryCode || row.domain || '—'}
                       </div>
                     </div>
@@ -1228,33 +1275,33 @@ function AccountsView() {
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <div>
-                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Last Shipment</div>
-                      <div className="text-slate-700">{formatSafeShipmentDate(row.lastActivity, '—')}</div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">Last Shipment</div>
+                      <div className="text-slate-700 dark:text-slate-300">{formatSafeShipmentDate(row.lastActivity, '—')}</div>
                     </div>
                     <div>
-                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Shipments 12M</div>
-                      <div className="font-mono text-blue-700 font-semibold">{formatNumber(row.shipments12m)}</div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">Shipments 12M</div>
+                      <div className="font-mono text-blue-700 font-semibold dark:text-blue-300">{formatNumber(row.shipments12m)}</div>
                     </div>
                     <div>
-                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">TEU 12M</div>
-                      <div className="font-mono text-slate-900">{formatNumber(row.teu12m, 1)}</div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">TEU 12M</div>
+                      <div className="font-mono text-slate-900 dark:text-slate-100">{formatNumber(row.teu12m, 1)}</div>
                     </div>
                     <div>
-                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Top Route</div>
-                      <div className="truncate text-slate-700" title={row.topRoute12m || row.recentRoute || ''}>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">Top Route</div>
+                      <div className="truncate text-slate-700 dark:text-slate-300" title={row.topRoute12m || row.recentRoute || ''}>
                         {row.topRoute12m || row.recentRoute || '—'}
                       </div>
                     </div>
                   </div>
                   <div className="mt-3 flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-blue-600">View →</span>
+                    <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-300">View →</span>
                     <div className="flex items-center gap-1.5">
                       {row.companyId ? (
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setCampaignModalRow(row); }}
                           title="Add to Campaign"
-                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                           style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                         >
                           <Send className="h-3 w-3" />
@@ -1265,7 +1312,7 @@ function AccountsView() {
                         type="button"
                         onClick={(e) => { e.stopPropagation(); handleAddToPipeline(row); }}
                         title="Add to pipeline"
-                        className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-white px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
+                        className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-white px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-slate-900 dark:text-indigo-300 dark:hover:bg-slate-800"
                         style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                       >
                         <Plus className="h-3 w-3" />
@@ -1311,8 +1358,8 @@ function AccountsView() {
 
       {/* Pagination */}
       {!savedLoading && !savedError && sortedRows.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderTop: '1px solid #E5E7EB', background: '#FAFAFA', flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: '#64748b', fontFamily: "'DM Sans', sans-serif" }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderTop: `1px solid ${theme.border}`, background: theme.panelAlt, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, color: theme.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
             Showing {pageStart}–{pageEnd} of {sortedRows.length} companies
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1322,15 +1369,15 @@ function AccountsView() {
               disabled={currentPage === 1}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4, height: 32, padding: '0 12px',
-                borderRadius: 8, border: '1px solid #E5E7EB', background: '#FFFFFF',
-                fontSize: 12, fontWeight: 600, color: '#374151', cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.panel,
+                fontSize: 12, fontWeight: 600, color: theme.textMuted, cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
                 opacity: currentPage === 1 ? 0.4 : 1, fontFamily: "'Space Grotesk', sans-serif",
               }}
             >
               <ChevronLeft style={{ width: 14, height: 14 }} />
               Prev
             </button>
-            <span style={{ padding: '0 10px', height: 32, display: 'inline-flex', alignItems: 'center', borderRadius: 8, border: '1px solid #E5E7EB', background: '#FFFFFF', fontSize: 12, fontWeight: 700, color: '#0F172A', fontFamily: "'Space Grotesk', sans-serif" }}>
+            <span style={{ padding: '0 10px', height: 32, display: 'inline-flex', alignItems: 'center', borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.panel, fontSize: 12, fontWeight: 700, color: theme.text, fontFamily: "'Space Grotesk', sans-serif" }}>
               {currentPage} / {totalPages}
             </span>
             <button
@@ -1339,8 +1386,8 @@ function AccountsView() {
               disabled={currentPage === totalPages}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4, height: 32, padding: '0 12px',
-                borderRadius: 8, border: '1px solid #E5E7EB', background: '#FFFFFF',
-                fontSize: 12, fontWeight: 600, color: '#374151', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.panel,
+                fontSize: 12, fontWeight: 600, color: theme.textMuted, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
                 opacity: currentPage === totalPages ? 0.4 : 1, fontFamily: "'Space Grotesk', sans-serif",
               }}
             >
@@ -1354,31 +1401,24 @@ function AccountsView() {
   );
 }
 
-const selectStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '7px 10px',
-  borderRadius: 8,
-  border: '1.5px solid #CBD5E1',
-  background: '#FFFFFF',
-  fontFamily: "'DM Sans', sans-serif",
-  fontSize: 12.5,
-  color: '#0F172A',
-  outline: 'none',
-};
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '7px 10px',
-  borderRadius: 8,
-  border: '1.5px solid #CBD5E1',
-  background: '#FFFFFF',
-  fontFamily: "'DM Sans', sans-serif",
-  fontSize: 12.5,
-  color: '#0F172A',
-  outline: 'none',
-};
+// Theme-aware form-control style shared by the filter selects/inputs. Replaces
+// the former static selectStyle/inputStyle constants so dark mode themes them.
+function fieldControlStyle(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    width: '100%',
+    padding: '7px 10px',
+    borderRadius: 8,
+    border: `1.5px solid ${theme.borderStrong}`,
+    background: theme.inputBg,
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 12.5,
+    color: theme.text,
+    outline: 'none',
+  };
+}
 
 function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
+  const { theme } = useCrmTheme();
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <span
@@ -1388,7 +1428,7 @@ function FilterField({ label, children }: { label: string; children: React.React
           fontWeight: 700,
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
-          color: '#64748b',
+          color: theme.textMuted,
         }}
       >
         {label}

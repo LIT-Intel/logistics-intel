@@ -14,6 +14,7 @@ import {
   type DealServiceType,
 } from "@/api/crm";
 import { formatMoney, initials, avatarColor } from "@/features/crm/crmFormat";
+import { useCrmTheme, type CrmThemeTokens } from "@/features/crm/CommandCenterTheme";
 
 /**
  * CRM Phase 2 — Pipeline Reports.
@@ -41,6 +42,7 @@ function days(v: number | null): string {
 }
 
 export default function PipelineReports({ viewAsUserId = "" }: { viewAsUserId?: string }) {
+  const { theme, mode } = useCrmTheme();
   const [report, setReport] = useState<PipelineReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,23 +69,23 @@ export default function PipelineReports({ viewAsUserId = "" }: { viewAsUserId?: 
 
   if (loading && !report) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "64px 0", color: "#64748b", fontFamily: FONT_BODY, fontSize: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "64px 0", color: theme.textMuted, fontFamily: FONT_BODY, fontSize: 14, background: theme.bg }}>
         <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite" }} />
         Loading pipeline reports…
       </div>
     );
   }
   if (error) {
-    return <div style={{ padding: "40px 24px", color: "#dc2626", fontFamily: FONT_BODY, fontSize: 14 }}>{error}</div>;
+    return <div style={{ padding: "40px 24px", color: theme.danger, fontFamily: FONT_BODY, fontSize: 14, background: theme.bg }}>{error}</div>;
   }
   if (!report || !report.hasData) {
     return (
-      <div style={{ textAlign: "center", padding: "64px 24px" }}>
-        <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 56, height: 56, borderRadius: "50%", background: "#F1F5F9", marginBottom: 16 }}>
-          <TrendingUp style={{ width: 24, height: 24, color: "#94a3b8" }} />
+      <div style={{ textAlign: "center", padding: "64px 24px", background: theme.bg, flex: 1 }}>
+        <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 56, height: 56, borderRadius: "50%", background: theme.panelMuted, marginBottom: 16 }}>
+          <TrendingUp style={{ width: 24, height: 24, color: theme.textFaint }} />
         </div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: "#0F172A", fontFamily: FONT_DISPLAY }}>No pipeline data yet</div>
-        <div style={{ fontSize: 13, color: "#64748b", fontFamily: FONT_BODY, marginTop: 4 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: theme.heading, fontFamily: FONT_DISPLAY }}>No pipeline data yet</div>
+        <div style={{ fontSize: 13, color: theme.textMuted, fontFamily: FONT_BODY, marginTop: 4 }}>
           Add deals from the Pipeline tab and your reports will fill in here.
         </div>
       </div>
@@ -93,29 +95,29 @@ export default function PipelineReports({ viewAsUserId = "" }: { viewAsUserId?: 
   const r = report;
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", background: "#F8FAFC", padding: "20px 24px 40px" }}>
+    <div style={{ flex: 1, overflowY: "auto", background: theme.bg, padding: "20px 24px 40px" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
         <div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, color: "#6366F1", letterSpacing: "0.24em", textTransform: "uppercase" }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, color: mode === "dark" ? "#A5B4FC" : "#6366F1", letterSpacing: "0.24em", textTransform: "uppercase" }}>
             Revenue Intelligence
           </div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 700, color: "#0F172A", letterSpacing: "-0.02em", marginTop: 4 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 700, color: theme.heading, letterSpacing: "-0.02em", marginTop: 4 }}>
             Pipeline Reports
           </div>
-          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: "#64748b", marginTop: 2 }}>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: theme.textMuted, marginTop: 2 }}>
             Forecast + performance across your workspace pipeline
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#94A3B8" }}>
+            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: theme.textFaint }}>
               Service type
             </span>
             <select
               value={serviceType}
               onChange={(e) => setServiceType(e.target.value as DealServiceType | "")}
-              style={{ padding: "7px 10px", borderRadius: 10, border: "1.5px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+              style={{ padding: "7px 10px", borderRadius: 10, border: `1.5px solid ${theme.borderStrong}`, background: theme.inputBg, color: theme.textMuted, fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
             >
               <option value="">All types</option>
               {DEAL_SERVICE_TYPES.map((m) => (
@@ -129,7 +131,7 @@ export default function PipelineReports({ viewAsUserId = "" }: { viewAsUserId?: 
             type="button"
             onClick={load}
             disabled={loading}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 10, border: `1.5px solid ${theme.borderStrong}`, background: theme.panel, color: theme.textMuted, fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
           >
             <RefreshCw style={{ width: 13, height: 13, animation: loading ? "spin 1s linear infinite" : undefined }} />
             Refresh
@@ -182,46 +184,64 @@ export default function PipelineReports({ viewAsUserId = "" }: { viewAsUserId?: 
 const ICON: React.CSSProperties = { width: 15, height: 15 };
 
 function Kpi({ icon, label, value, sub, tint }: { icon: React.ReactNode; label: string; value: string; sub: string; tint: string }) {
+  const { theme } = useCrmTheme();
   return (
-    <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, padding: "14px 16px" }}>
+    <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 14, padding: "14px 16px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 8, background: `${tint}15`, color: tint }}>{icon}</span>
-        <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#94A3B8" }}>{label}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 8, background: `${tint}${theme.mode === "dark" ? "26" : "15"}`, color: tint }}>{icon}</span>
+        <span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: theme.textFaint }}>{label}</span>
       </div>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 22, fontWeight: 700, color: "#0F172A", lineHeight: 1 }}>{value}</div>
-      <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: "#64748b", marginTop: 4 }}>{sub}</div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 22, fontWeight: 700, color: theme.heading, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: theme.textMuted, marginTop: 4 }}>{sub}</div>
     </div>
   );
 }
 
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  const { theme } = useCrmTheme();
   return (
-    <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, padding: 16 }}>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{title}</div>
-      {subtitle ? <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: "#94A3B8", marginTop: 2, marginBottom: 10 }}>{subtitle}</div> : <div style={{ height: 10 }} />}
+    <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 14, padding: 16 }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13, fontWeight: 700, color: theme.heading }}>{title}</div>
+      {subtitle ? <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: theme.textFaint, marginTop: 2, marginBottom: 10 }}>{subtitle}</div> : <div style={{ height: 10 }} />}
       {children}
     </div>
   );
 }
 
-const tooltipStyle: React.CSSProperties = { fontFamily: FONT_BODY, fontSize: 12, borderRadius: 8, border: "1px solid #E5E7EB" };
+// Recharts tooltip surface — themed so the popover isn't white-on-white in dark.
+function useTooltipStyle(): React.CSSProperties {
+  const { theme } = useCrmTheme();
+  return { fontFamily: FONT_BODY, fontSize: 12, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.panel, color: theme.text };
+}
+
+// Shared chart axis/grid colors, themed.
+function useChartColors() {
+  const { theme, mode } = useCrmTheme();
+  return {
+    grid: mode === "dark" ? "#1E2A44" : "#EEF2F7",
+    axisFaint: theme.textFaint,
+    axisMuted: theme.textMuted,
+  };
+}
 
 function StageBar({ buckets }: { buckets: StageBucket[] }) {
+  const tooltipStyle = useTooltipStyle();
+  const { grid, axisFaint, axisMuted } = useChartColors();
   const data = buckets.map((b) => ({ name: b.name, value: b.openValue, count: b.openCount, color: b.color, prob: b.winProbability }));
   if (!data.some((d) => d.value > 0 || d.count > 0)) return <Empty label="No open deals in the pipeline" />;
   return (
     <ResponsiveContainer width="100%" height={240}>
       <BarChart data={data} layout="vertical" margin={{ left: 8, right: 24, top: 4, bottom: 4 }}>
-        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#EEF2F7" />
-        <XAxis type="number" tickFormatter={(v) => formatMoney(Number(v))} tick={{ fontSize: 11, fontFamily: FONT_BODY, fill: "#94A3B8" }} />
-        <YAxis type="category" dataKey="name" width={84} tick={{ fontSize: 11, fontFamily: FONT_DISPLAY, fill: "#475569" }} />
+        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={grid} />
+        <XAxis type="number" tickFormatter={(v) => formatMoney(Number(v))} tick={{ fontSize: 11, fontFamily: FONT_BODY, fill: axisFaint }} />
+        <YAxis type="category" dataKey="name" width={84} tick={{ fontSize: 11, fontFamily: FONT_DISPLAY, fill: axisMuted }} />
         <Tooltip
           contentStyle={tooltipStyle}
           formatter={(v: any, _n: any, p: any) => [`${formatMoney(Number(v))} · ${p?.payload?.count ?? 0} deals · ${p?.payload?.prob ?? 0}% win`, "Open value"]}
         />
         <Bar dataKey="value" radius={[0, 6, 6, 0]}>
           {data.map((d, i) => <Cell key={i} fill={d.color} />)}
-          <LabelList dataKey="value" position="right" formatter={(v: any) => formatMoney(Number(v))} style={{ fontFamily: FONT_MONO, fontSize: 10, fill: "#64748b" }} />
+          <LabelList dataKey="value" position="right" formatter={(v: any) => formatMoney(Number(v))} style={{ fontFamily: FONT_MONO, fontSize: 10, fill: axisMuted }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -229,6 +249,7 @@ function StageBar({ buckets }: { buckets: StageBucket[] }) {
 }
 
 function WinLossDonut({ won, lost }: { won: number; lost: number }) {
+  const tooltipStyle = useTooltipStyle();
   if (won + lost === 0) return <Empty label="No closed deals yet" />;
   const data = [
     { name: "Won", value: won, color: "#22C55E" },
@@ -248,13 +269,15 @@ function WinLossDonut({ won, lost }: { won: number; lost: number }) {
 }
 
 function CreatedVsWon({ report }: { report: PipelineReport }) {
+  const tooltipStyle = useTooltipStyle();
+  const { grid, axisFaint } = useChartColors();
   const data = report.weekly.map((w) => ({ name: w.label, created: w.created, won: w.won }));
   return (
     <ResponsiveContainer width="100%" height={240}>
       <BarChart data={data} margin={{ left: 0, right: 8, top: 8, bottom: 4 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EEF2F7" />
-        <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: FONT_BODY, fill: "#94A3B8" }} />
-        <YAxis allowDecimals={false} tick={{ fontSize: 11, fontFamily: FONT_BODY, fill: "#94A3B8" }} />
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={grid} />
+        <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: FONT_BODY, fill: axisFaint }} />
+        <YAxis allowDecimals={false} tick={{ fontSize: 11, fontFamily: FONT_BODY, fill: axisFaint }} />
         <Tooltip contentStyle={tooltipStyle} />
         <Legend wrapperStyle={{ fontFamily: FONT_BODY, fontSize: 12 }} />
         <Bar dataKey="created" name="Created" fill="#6366F1" radius={[4, 4, 0, 0]} />
@@ -265,6 +288,8 @@ function CreatedVsWon({ report }: { report: PipelineReport }) {
 }
 
 function Waterfall({ report }: { report: PipelineReport }) {
+  const tooltipStyle = useTooltipStyle();
+  const { grid, axisFaint, axisMuted } = useChartColors();
   const w = report.waterfall;
   const data = [
     { name: "Created", value: w.created, color: "#6366F1" },
@@ -276,13 +301,13 @@ function Waterfall({ report }: { report: PipelineReport }) {
   return (
     <ResponsiveContainer width="100%" height={240}>
       <BarChart data={data} margin={{ left: 0, right: 8, top: 8, bottom: 4 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EEF2F7" />
-        <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: FONT_BODY, fill: "#94A3B8" }} />
-        <YAxis allowDecimals={false} tick={{ fontSize: 11, fontFamily: FONT_BODY, fill: "#94A3B8" }} />
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={grid} />
+        <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: FONT_BODY, fill: axisFaint }} />
+        <YAxis allowDecimals={false} tick={{ fontSize: 11, fontFamily: FONT_BODY, fill: axisFaint }} />
         <Tooltip contentStyle={tooltipStyle} />
         <Bar dataKey="value" radius={[4, 4, 0, 0]}>
           {data.map((d, i) => <Cell key={i} fill={d.color} />)}
-          <LabelList dataKey="value" position="top" style={{ fontFamily: FONT_MONO, fontSize: 11, fill: "#475569" }} />
+          <LabelList dataKey="value" position="top" style={{ fontFamily: FONT_MONO, fontSize: 11, fill: axisMuted }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -290,6 +315,7 @@ function Waterfall({ report }: { report: PipelineReport }) {
 }
 
 function OwnerLeaderboard({ report }: { report: PipelineReport }) {
+  const { theme } = useCrmTheme();
   if (!report.owners.length) return <Empty label="No deal owners yet" />;
   const max = Math.max(1, ...report.owners.map((o) => o.openValue + o.wonValue));
   return (
@@ -303,13 +329,13 @@ function OwnerLeaderboard({ report }: { report: PipelineReport }) {
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12.5, fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.name}</span>
-                <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: "#475569", flexShrink: 0 }}>{formatMoney(total)}</span>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12.5, fontWeight: 600, color: theme.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.name}</span>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: theme.textMuted, flexShrink: 0 }}>{formatMoney(total)}</span>
               </div>
-              <div style={{ position: "relative", height: 6, borderRadius: 3, background: "#F1F5F9", marginTop: 4, overflow: "hidden" }}>
+              <div style={{ position: "relative", height: 6, borderRadius: 3, background: theme.panelMuted, marginTop: 4, overflow: "hidden" }}>
                 <div style={{ position: "absolute", inset: 0, width: `${(total / max) * 100}%`, background: "linear-gradient(90deg,#6366F1,#8B5CF6)", borderRadius: 3 }} />
               </div>
-              <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94A3B8", marginTop: 3 }}>
+              <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: theme.textFaint, marginTop: 3 }}>
                 {o.openCount} open · {o.wonCount} won
               </div>
             </div>
@@ -321,6 +347,7 @@ function OwnerLeaderboard({ report }: { report: PipelineReport }) {
 }
 
 function ServiceTypeBreakdown({ report }: { report: PipelineReport }) {
+  const { theme } = useCrmTheme();
   const rows = report.serviceTypes;
   if (!rows.length) return <Empty label="No deals yet" />;
   const max = Math.max(1, ...rows.map((s) => s.openValue + s.wonValue));
@@ -332,13 +359,13 @@ function ServiceTypeBreakdown({ report }: { report: PipelineReport }) {
           <div key={s.serviceType} style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12.5, fontWeight: 600, color: s.serviceType === "unspecified" ? "#94A3B8" : "#0F172A" }}>{s.label}</span>
-                <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: "#475569", flexShrink: 0 }}>{formatMoney(s.openValue)}</span>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12.5, fontWeight: 600, color: s.serviceType === "unspecified" ? theme.textFaint : theme.text }}>{s.label}</span>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: theme.textMuted, flexShrink: 0 }}>{formatMoney(s.openValue)}</span>
               </div>
-              <div style={{ position: "relative", height: 6, borderRadius: 3, background: "#F1F5F9", marginTop: 4, overflow: "hidden" }}>
+              <div style={{ position: "relative", height: 6, borderRadius: 3, background: theme.panelMuted, marginTop: 4, overflow: "hidden" }}>
                 <div style={{ position: "absolute", inset: 0, width: `${(total / max) * 100}%`, background: "linear-gradient(90deg,#0EA5E9,#6366F1)", borderRadius: 3 }} />
               </div>
-              <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94A3B8", marginTop: 3 }}>
+              <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: theme.textFaint, marginTop: 3 }}>
                 {s.totalCount} deals · {s.openCount} open · {s.wonCount} won
               </div>
             </div>
@@ -350,8 +377,9 @@ function ServiceTypeBreakdown({ report }: { report: PipelineReport }) {
 }
 
 function Empty({ label }: { label: string }) {
+  const { theme } = useCrmTheme();
   return (
-    <div style={{ height: 240, display: "flex", alignItems: "center", justifyContent: "center", color: "#94A3B8", fontFamily: FONT_BODY, fontSize: 12.5 }}>
+    <div style={{ height: 240, display: "flex", alignItems: "center", justifyContent: "center", color: theme.textFaint, fontFamily: FONT_BODY, fontSize: 12.5 }}>
       {label}
     </div>
   );

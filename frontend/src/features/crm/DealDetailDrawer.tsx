@@ -31,6 +31,7 @@ import {
   type LinkedQuote,
 } from "@/api/quoteDeal";
 import { formatDate, formatMoney, initials, avatarColor, isOverdue } from "./crmFormat";
+import { useCrmTheme, type CrmThemeTokens } from "./CommandCenterTheme";
 
 const FONT_HEAD = "'Space Grotesk', sans-serif";
 const FONT_BODY = "'DM Sans', sans-serif";
@@ -51,6 +52,7 @@ export default function DealDetailDrawer({
 }) {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { theme, mode } = useCrmTheme();
   const [saving, setSaving] = useState(false);
   // lit_companies UUID for this deal — resolved from saved_company_id so the
   // header cross-links (Company profile / Quotes / Inbox) can deep-link to the
@@ -282,15 +284,15 @@ export default function DealDetailDrawer({
       style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", justifyContent: "flex-end" }}
       onClick={onClose}
     >
-      <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.4)" }} />
+      <div style={{ position: "absolute", inset: 0, background: theme.overlay }} />
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
           position: "relative",
           width: "min(560px, 100%)",
           height: "100%",
-          background: "#F8FAFC",
-          boxShadow: "-8px 0 24px rgba(15,23,42,0.12)",
+          background: theme.bg,
+          boxShadow: `-8px 0 24px ${theme.shadow}`,
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -300,8 +302,8 @@ export default function DealDetailDrawer({
         <div
           style={{
             padding: "16px 20px",
-            borderBottom: "1px solid #E5E7EB",
-            background: "#FFFFFF",
+            borderBottom: `1px solid ${theme.border}`,
+            background: theme.panel,
             display: "flex",
             alignItems: "flex-start",
             gap: 12,
@@ -309,10 +311,10 @@ export default function DealDetailDrawer({
         >
           <CompanyAvatar name={deal.companyName || deal.title} domain={deal.companyDomain || undefined} size="sm" className="shrink-0" />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>
+            <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: theme.heading }}>
               {deal.companyName || "Deal"}
             </div>
-            <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#64748b" }}>
+            <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textMuted }}>
               {currentStage?.name ?? "—"} · {formatMoney(value === "" ? null : Number(value), deal.currency)}
             </div>
             {(serviceType || origin || destination) ? (
@@ -324,9 +326,9 @@ export default function DealDetailDrawer({
                       alignItems: "center",
                       padding: "2px 9px",
                       borderRadius: 999,
-                      border: "1px solid #BFDBFE",
-                      background: "#EFF6FF",
-                      color: "#1D4ED8",
+                      border: `1px solid ${mode === "dark" ? "rgba(59,130,246,0.4)" : "#BFDBFE"}`,
+                      background: mode === "dark" ? "rgba(59,130,246,0.16)" : "#EFF6FF",
+                      color: mode === "dark" ? "#93C5FD" : "#1D4ED8",
                       fontFamily: FONT_HEAD,
                       fontSize: 11,
                       fontWeight: 700,
@@ -336,14 +338,14 @@ export default function DealDetailDrawer({
                   </span>
                 ) : null}
                 {(origin || destination) ? (
-                  <span style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: "#475569" }}>
-                    Lane: <b style={{ color: "#0F172A" }}>{origin || "—"}</b> → <b style={{ color: "#0F172A" }}>{destination || "—"}</b>
+                  <span style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: theme.textMuted }}>
+                    Lane: <b style={{ color: theme.text }}>{origin || "—"}</b> → <b style={{ color: theme.text }}>{destination || "—"}</b>
                   </span>
                 ) : null}
               </div>
             ) : null}
           </div>
-          <button onClick={onClose} style={iconBtn} title="Close">
+          <button onClick={onClose} style={iconBtn(theme)} title="Close">
             <X style={{ width: 16, height: 16 }} />
           </button>
         </div>
@@ -355,20 +357,20 @@ export default function DealDetailDrawer({
             display: "flex",
             gap: 8,
             padding: "10px 20px",
-            borderBottom: "1px solid #E5E7EB",
-            background: "#FFFFFF",
+            borderBottom: `1px solid ${theme.border}`,
+            background: theme.panel,
             flexWrap: "wrap",
           }}
         >
-          <button onClick={() => goCompany()} style={crossLinkBtn} title="Open company profile">
+          <button onClick={() => goCompany()} style={crossLinkBtn(theme)} title="Open company profile">
             <Building2 style={{ width: 13, height: 13 }} />
             Company
           </button>
-          <button onClick={() => goCompany("quotes")} style={crossLinkBtn} title="Company quotes">
+          <button onClick={() => goCompany("quotes")} style={crossLinkBtn(theme)} title="Company quotes">
             <FileText style={{ width: 13, height: 13 }} />
             Quotes
           </button>
-          <button onClick={() => goCompany("inbox")} style={crossLinkBtn} title="Company inbox / email">
+          <button onClick={() => goCompany("inbox")} style={crossLinkBtn(theme)} title="Company inbox / email">
             <Mail style={{ width: 13, height: 13 }} />
             Inbox
           </button>
@@ -378,14 +380,14 @@ export default function DealDetailDrawer({
           {/* Editable fields */}
           <Section title="Details">
             <Field label="Title">
-              <input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} />
+              <input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle(theme)} />
             </Field>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <Field label="Value">
-                <input type="number" value={value} onChange={(e) => setValue(e.target.value)} placeholder="0" style={inputStyle} />
+                <input type="number" value={value} onChange={(e) => setValue(e.target.value)} placeholder="0" style={inputStyle(theme)} />
               </Field>
               <Field label="Stage">
-                <select value={stageId} onChange={(e) => setStageId(e.target.value)} style={inputStyle}>
+                <select value={stageId} onChange={(e) => setStageId(e.target.value)} style={inputStyle(theme)}>
                   {stages.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
@@ -396,10 +398,10 @@ export default function DealDetailDrawer({
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <Field label="Expected close">
-                <input type="date" value={closeDate} onChange={(e) => setCloseDate(e.target.value)} style={inputStyle} />
+                <input type="date" value={closeDate} onChange={(e) => setCloseDate(e.target.value)} style={inputStyle(theme)} />
               </Field>
               <Field label="Owner">
-                <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} style={inputStyle}>
+                <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} style={inputStyle(theme)}>
                   {members.map((m) => (
                     <option key={m.user_id} value={m.user_id}>
                       {m.name}
@@ -420,9 +422,9 @@ export default function DealDetailDrawer({
                       style={{
                         padding: "4px 10px",
                         borderRadius: 999,
-                        border: active ? "1.5px solid #3B82F6" : "1.5px solid #CBD5E1",
-                        background: active ? "#EFF6FF" : "#FFFFFF",
-                        color: active ? "#1D4ED8" : "#475569",
+                        border: active ? `1.5px solid ${theme.accentBorder}` : `1.5px solid ${theme.borderStrong}`,
+                        background: active ? theme.accentSoft : theme.panel,
+                        color: active ? theme.accentSoftText : theme.textMuted,
                         fontFamily: FONT_HEAD,
                         fontSize: 11.5,
                         fontWeight: 600,
@@ -437,14 +439,14 @@ export default function DealDetailDrawer({
             </Field>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <Field label="From (origin)">
-                <input value={origin} onChange={(e) => setOrigin(e.target.value)} placeholder="Origin" style={inputStyle} />
+                <input value={origin} onChange={(e) => setOrigin(e.target.value)} placeholder="Origin" style={inputStyle(theme)} />
               </Field>
               <Field label="To (destination)">
-                <input value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Destination" style={inputStyle} />
+                <input value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Destination" style={inputStyle(theme)} />
               </Field>
             </div>
             <Field label="Primary contact">
-              <select value={contactId} onChange={(e) => setContactId(e.target.value)} style={inputStyle}>
+              <select value={contactId} onChange={(e) => setContactId(e.target.value)} style={inputStyle(theme)}>
                 <option value="">— none —</option>
                 {contacts.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -455,14 +457,14 @@ export default function DealDetailDrawer({
               </select>
             </Field>
             <Field label="Notes">
-              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...inputStyle, resize: "vertical" }} />
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...inputStyle(theme), resize: "vertical" }} />
             </Field>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={handleSave} disabled={saving} style={primaryBtn}>
+              <button onClick={handleSave} disabled={saving} style={primaryBtn(theme)}>
                 {saving ? <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} /> : null}
                 Save changes
               </button>
-              <button onClick={handleDelete} style={dangerBtn} title="Delete deal">
+              <button onClick={handleDelete} style={dangerBtn(theme)} title="Delete deal">
                 <Trash2 style={{ width: 14, height: 14 }} />
               </button>
             </div>
@@ -476,27 +478,27 @@ export default function DealDetailDrawer({
                 onChange={(e) => setNewTaskTitle(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddTask()}
                 placeholder="Add a task…"
-                style={{ ...inputStyle, flex: 1 }}
+                style={{ ...inputStyle(theme), flex: 1 }}
               />
-              <input type="date" value={newTaskDue} onChange={(e) => setNewTaskDue(e.target.value)} style={{ ...inputStyle, width: 140 }} />
-              <button onClick={handleAddTask} style={iconBtnBlue} title="Add task">
+              <input type="date" value={newTaskDue} onChange={(e) => setNewTaskDue(e.target.value)} style={{ ...inputStyle(theme), width: 140 }} />
+              <button onClick={handleAddTask} style={iconBtnBlue(theme)} title="Add task">
                 <Plus style={{ width: 15, height: 15 }} />
               </button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
               {tasks.length === 0 ? (
-                <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8" }}>No tasks yet.</div>
+                <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint }}>No tasks yet.</div>
               ) : (
                 tasks.map((t) => (
-                  <div key={t.id} style={taskRow}>
-                    <button onClick={() => toggleTask(t)} style={{ ...checkbox, background: t.status === "done" ? "#22C55E" : "#FFFFFF", borderColor: t.status === "done" ? "#22C55E" : "#CBD5E1" }} title="Toggle done">
+                  <div key={t.id} style={taskRow(theme)}>
+                    <button onClick={() => toggleTask(t)} style={{ ...checkbox(theme), background: t.status === "done" ? "#22C55E" : theme.panel, borderColor: t.status === "done" ? "#22C55E" : theme.borderStrong }} title="Toggle done">
                       {t.status === "done" ? <Check style={{ width: 12, height: 12, color: "#FFFFFF" }} /> : null}
                     </button>
-                    <span style={{ flex: 1, fontFamily: FONT_BODY, fontSize: 13, color: t.status === "done" ? "#94a3b8" : "#0F172A", textDecoration: t.status === "done" ? "line-through" : "none" }}>
+                    <span style={{ flex: 1, fontFamily: FONT_BODY, fontSize: 13, color: t.status === "done" ? theme.textFaint : theme.text, textDecoration: t.status === "done" ? "line-through" : "none" }}>
                       {t.title}
                     </span>
                     {t.due_date ? (
-                      <span style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: isOverdue(t.due_date) && t.status === "open" ? "#dc2626" : "#64748b" }}>
+                      <span style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: isOverdue(t.due_date) && t.status === "open" ? theme.danger : theme.textMuted }}>
                         {formatDate(t.due_date)}
                       </span>
                     ) : null}
@@ -515,12 +517,12 @@ export default function DealDetailDrawer({
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {linkedQuotes.length === 0 ? (
-                <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8" }}>
+                <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint }}>
                   No quotes linked yet.
                 </div>
               ) : (
                 linkedQuotes.map((q) => (
-                  <div key={q.id} style={quoteRow}>
+                  <div key={q.id} style={quoteRow(theme)}>
                     <button
                       onClick={() => {
                         navigate(`/app/quoting/${q.id}`);
@@ -536,7 +538,7 @@ export default function DealDetailDrawer({
                         fontFamily: "'JetBrains Mono', monospace",
                         fontSize: 12.5,
                         fontWeight: 600,
-                        color: "#1d4ed8",
+                        color: mode === "dark" ? "#93C5FD" : "#1d4ed8",
                         minWidth: 0,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -546,13 +548,13 @@ export default function DealDetailDrawer({
                     >
                       {q.quote_number ?? "Quote"}
                     </button>
-                    <span style={quoteStatusPill(q.status)}>{quoteStatusLabel(q.status)}</span>
+                    <span style={quoteStatusPill(q.status, mode)}>{quoteStatusLabel(q.status)}</span>
                     <span
                       style={{
                         fontFamily: "'JetBrains Mono', monospace",
                         fontSize: 12.5,
                         fontWeight: 700,
-                        color: "#0F172A",
+                        color: theme.text,
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -561,7 +563,7 @@ export default function DealDetailDrawer({
                     <button
                       onClick={() => handleDetachQuote(q.id)}
                       disabled={quoteBusy}
-                      style={iconBtn}
+                      style={iconBtn(theme)}
                       title="Unlink quote"
                     >
                       <Unlink style={{ width: 13, height: 13 }} />
@@ -576,7 +578,7 @@ export default function DealDetailDrawer({
                 <select
                   value={attachId}
                   onChange={(e) => setAttachId(e.target.value)}
-                  style={{ ...inputStyle, flex: 1 }}
+                  style={{ ...inputStyle(theme), flex: 1 }}
                 >
                   <option value="">Link an existing quote…</option>
                   {attachable.map((q) => (
@@ -590,7 +592,7 @@ export default function DealDetailDrawer({
                 <button
                   onClick={handleAttachQuote}
                   disabled={!attachId || quoteBusy}
-                  style={iconBtnBlue}
+                  style={iconBtnBlue(theme)}
                   title="Link quote to this deal"
                 >
                   {quoteBusy ? (
@@ -611,15 +613,15 @@ export default function DealDetailDrawer({
                 onChange={(e) => setNoteText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddNote()}
                 placeholder="Log a note…"
-                style={{ ...inputStyle, flex: 1 }}
+                style={{ ...inputStyle(theme), flex: 1 }}
               />
-              <button onClick={handleAddNote} style={iconBtnBlue} title="Add note">
+              <button onClick={handleAddNote} style={iconBtnBlue(theme)} title="Add note">
                 <Plus style={{ width: 15, height: 15 }} />
               </button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
               {activity.length === 0 ? (
-                <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8" }}>No activity yet.</div>
+                <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint }}>No activity yet.</div>
               ) : (
                 activity.map((a) => <TimelineRow key={a.id} a={a} members={members} />)
               )}
@@ -632,6 +634,7 @@ export default function DealDetailDrawer({
 }
 
 function TimelineRow({ a, members }: { a: DealActivity; members: Member[] }) {
+  const { theme } = useCrmTheme();
   const actor = members.find((m) => m.user_id === a.actor_user_id)?.name ?? "Someone";
   let label = "";
   const b = a.body as any;
@@ -645,19 +648,20 @@ function TimelineRow({ a, members }: { a: DealActivity; members: Member[] }) {
         {initials(actor)}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: "#334155" }}>
-          <b style={{ color: "#0F172A" }}>{actor}</b> {label}
+        <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: theme.textMuted }}>
+          <b style={{ color: theme.text }}>{actor}</b> {label}
         </div>
-        <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94a3b8" }}>{formatDate(a.created_at)}</div>
+        <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: theme.textFaint }}>{formatDate(a.created_at)}</div>
       </div>
     </div>
   );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const { theme } = useCrmTheme();
   return (
-    <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, padding: 14 }}>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#64748b", marginBottom: 10 }}>
+    <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 14, padding: 14 }}>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: theme.textMuted, marginBottom: 10 }}>
         {title}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
@@ -666,96 +670,111 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const { theme } = useCrmTheme();
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#94a3b8" }}>{label}</span>
+      <span style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: theme.textFaint }}>{label}</span>
       {children}
     </label>
   );
 }
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "7px 10px",
-  borderRadius: 8,
-  border: "1.5px solid #CBD5E1",
-  background: "#FFFFFF",
-  fontFamily: FONT_BODY,
-  fontSize: 13,
-  color: "#0F172A",
-  outline: "none",
-};
+function inputStyle(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    width: "100%",
+    padding: "7px 10px",
+    borderRadius: 8,
+    border: `1.5px solid ${theme.borderStrong}`,
+    background: theme.inputBg,
+    fontFamily: FONT_BODY,
+    fontSize: 13,
+    color: theme.text,
+    outline: "none",
+  };
+}
 
-const primaryBtn: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "8px 14px",
-  borderRadius: 10,
-  border: "none",
-  background: "#3B82F6",
-  color: "#FFFFFF",
-  fontFamily: FONT_HEAD,
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: "pointer",
-};
+function primaryBtn(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "8px 14px",
+    borderRadius: 10,
+    border: "none",
+    background: theme.accentBorder,
+    color: "#FFFFFF",
+    fontFamily: FONT_HEAD,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+  };
+}
 
-const dangerBtn: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "8px 12px",
-  borderRadius: 10,
-  border: "1.5px solid #FECACA",
-  background: "#FFFFFF",
-  color: "#dc2626",
-  cursor: "pointer",
-};
+function dangerBtn(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "8px 12px",
+    borderRadius: 10,
+    border: `1.5px solid ${theme.dangerBorder}`,
+    background: theme.panel,
+    color: theme.danger,
+    cursor: "pointer",
+  };
+}
 
-const iconBtn: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 30,
-  height: 30,
-  borderRadius: 8,
-  border: "1px solid #E5E7EB",
-  background: "#FFFFFF",
-  color: "#64748b",
-  cursor: "pointer",
-};
+function iconBtn(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    border: `1px solid ${theme.border}`,
+    background: theme.panel,
+    color: theme.textMuted,
+    cursor: "pointer",
+  };
+}
 
-const iconBtnBlue: React.CSSProperties = {
-  ...iconBtn,
-  border: "1.5px solid #BFDBFE",
-  background: "#EFF6FF",
-  color: "#3B82F6",
-};
+function iconBtnBlue(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    ...iconBtn(theme),
+    border: `1.5px solid ${theme.mode === "dark" ? "rgba(59,130,246,0.4)" : "#BFDBFE"}`,
+    background: theme.mode === "dark" ? "rgba(59,130,246,0.16)" : "#EFF6FF",
+    color: theme.mode === "dark" ? "#93C5FD" : "#3B82F6",
+  };
+}
 
-const crossLinkBtn: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "6px 11px",
-  borderRadius: 9,
-  border: "1px solid #E5E7EB",
-  background: "#F8FAFC",
-  color: "#475569",
-  fontFamily: FONT_HEAD,
-  fontSize: 12,
-  fontWeight: 600,
-  cursor: "pointer",
-};
+function crossLinkBtn(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 11px",
+    borderRadius: 9,
+    border: `1px solid ${theme.border}`,
+    background: theme.panelAlt,
+    color: theme.textMuted,
+    fontFamily: FONT_HEAD,
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+  };
+}
 
-const quoteRow: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 9,
-  padding: "6px 8px",
-  borderRadius: 8,
-  background: "#F8FAFC",
-  border: "1px solid #F1F5F9",
-};
+function quoteRow(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    padding: "6px 8px",
+    borderRadius: 8,
+    background: theme.panelAlt,
+    border: `1px solid ${theme.border}`,
+  };
+}
 
 function quoteStatusLabel(status: string): string {
   const map: Record<string, string> = {
@@ -770,8 +789,8 @@ function quoteStatusLabel(status: string): string {
   return map[status] ?? status;
 }
 
-function quoteStatusPill(status: string): React.CSSProperties {
-  const tone: Record<string, { bg: string; fg: string; bd: string }> = {
+function quoteStatusPill(status: string, mode: "light" | "dark" = "light"): React.CSSProperties {
+  const light: Record<string, { bg: string; fg: string; bd: string }> = {
     closed_won: { bg: "#ECFDF5", fg: "#047857", bd: "#A7F3D0" },
     approved: { bg: "#ECFEFF", fg: "#0e7490", bd: "#A5F3FC" },
     sent: { bg: "#EFF6FF", fg: "#1d4ed8", bd: "#BFDBFE" },
@@ -780,7 +799,18 @@ function quoteStatusPill(status: string): React.CSSProperties {
     expired: { bg: "#F1F5F9", fg: "#64748b", bd: "#E2E8F0" },
     draft: { bg: "#F1F5F9", fg: "#475569", bd: "#E2E8F0" },
   };
-  const t = tone[status] ?? tone.draft;
+  // Dark tones — brighter fg on translucent tinted fills for legibility on slate.
+  const dark: Record<string, { bg: string; fg: string; bd: string }> = {
+    closed_won: { bg: "rgba(5,150,105,0.18)", fg: "#6EE7B7", bd: "rgba(16,185,129,0.35)" },
+    approved: { bg: "rgba(14,116,144,0.2)", fg: "#67E8F9", bd: "rgba(34,211,238,0.35)" },
+    sent: { bg: "rgba(59,130,246,0.16)", fg: "#93C5FD", bd: "rgba(59,130,246,0.4)" },
+    viewed: { bg: "rgba(59,130,246,0.16)", fg: "#93C5FD", bd: "rgba(59,130,246,0.4)" },
+    closed_lost: { bg: "rgba(220,38,38,0.16)", fg: "#FCA5A5", bd: "rgba(248,113,113,0.4)" },
+    expired: { bg: "rgba(148,163,184,0.14)", fg: "#94A3B8", bd: "rgba(148,163,184,0.3)" },
+    draft: { bg: "rgba(148,163,184,0.14)", fg: "#CBD5E1", bd: "rgba(148,163,184,0.3)" },
+  };
+  const table = mode === "dark" ? dark : light;
+  const t = table[status] ?? table.draft;
   return {
     display: "inline-flex",
     alignItems: "center",
@@ -796,24 +826,28 @@ function quoteStatusPill(status: string): React.CSSProperties {
   };
 }
 
-const taskRow: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 9,
-  padding: "6px 8px",
-  borderRadius: 8,
-  background: "#F8FAFC",
-  border: "1px solid #F1F5F9",
-};
+function taskRow(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    padding: "6px 8px",
+    borderRadius: 8,
+    background: theme.panelAlt,
+    border: `1px solid ${theme.border}`,
+  };
+}
 
-const checkbox: React.CSSProperties = {
-  width: 18,
-  height: 18,
-  borderRadius: 5,
-  border: "1.5px solid #CBD5E1",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  cursor: "pointer",
-  flexShrink: 0,
-};
+function checkbox(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    border: `1.5px solid ${theme.borderStrong}`,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    flexShrink: 0,
+  };
+}

@@ -15,6 +15,7 @@ import {
 import { formatMoney, sumMoney, daysBetween, formatDate, initials, avatarColor, isOverdue } from "./crmFormat";
 import DealDetailDrawer from "./DealDetailDrawer";
 import CreateDealModal from "./CreateDealModal";
+import { useCrmTheme, type CrmThemeTokens } from "./CommandCenterTheme";
 
 const FONT_HEAD = "'Space Grotesk', sans-serif";
 const FONT_BODY = "'DM Sans', sans-serif";
@@ -99,6 +100,7 @@ function fireConfetti(): void {
  */
 export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: string }) {
   const { toast } = useToast();
+  const { theme, mode } = useCrmTheme();
   const [stages, setStages] = useState<DealStage[]>([]);
   const [deals, setDeals] = useState<DealCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,37 +208,37 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
   }
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: theme.bg }}>
       <style>{`
         @keyframes litLostPulse {
-          0%   { box-shadow: 0 1px 2px rgba(15,23,42,0.05); background: #FFFFFF; }
-          35%  { box-shadow: 0 0 0 3px rgba(100,116,139,0.28); background: #F1F5F9; }
-          100% { box-shadow: 0 1px 2px rgba(15,23,42,0.05); background: #FFFFFF; }
+          0%   { box-shadow: 0 1px 2px ${theme.shadow}; background: ${theme.panel}; }
+          35%  { box-shadow: 0 0 0 3px rgba(100,116,139,0.28); background: ${theme.panelMuted}; }
+          100% { box-shadow: 0 1px 2px ${theme.shadow}; background: ${theme.panel}; }
         }
         @media (prefers-reduced-motion: reduce) {
           @keyframes litLostPulse { from {} to {} }
         }
       `}</style>
       {/* Header */}
-      <div style={{ padding: "16px 24px", borderBottom: "1px solid #E5E7EB", background: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexShrink: 0 }}>
+      <div style={{ padding: "16px 24px", borderBottom: `1px solid ${theme.border}`, background: theme.panel, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexShrink: 0 }}>
         <div>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, color: "#6366F1", letterSpacing: "0.24em", textTransform: "uppercase" }}>Pipeline</div>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 700, color: "#0F172A", letterSpacing: "-0.02em" }}>Deals board</div>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, color: mode === "dark" ? "#A5B4FC" : "#6366F1", letterSpacing: "0.24em", textTransform: "uppercase" }}>Pipeline</div>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 700, color: theme.heading, letterSpacing: "-0.02em" }}>Deals board</div>
         </div>
-        <button onClick={() => setCreating(true)} disabled={!stages.length} style={primaryBtn}>
+        <button onClick={() => setCreating(true)} disabled={!stages.length} style={primaryBtn(theme)}>
           <Plus style={{ width: 15, height: 15 }} />
           New deal
         </button>
       </div>
 
       {loading ? (
-        <div style={centerMsg}>
+        <div style={centerMsg(theme)}>
           <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite" }} /> Loading pipeline…
         </div>
       ) : error && !stages.length ? (
-        <div style={{ ...centerMsg, flexDirection: "column", gap: 14 }}>
-          <div style={{ color: "#64748b" }}>{error}</div>
-          <button onClick={() => setCreating(true)} style={primaryBtn}>
+        <div style={{ ...centerMsg(theme), flexDirection: "column", gap: 14 }}>
+          <div style={{ color: theme.textMuted }}>{error}</div>
+          <button onClick={() => setCreating(true)} style={primaryBtn(theme)}>
             <Plus style={{ width: 15, height: 15 }} />
             New deal
           </button>
@@ -262,27 +264,27 @@ export default function PipelineBoard({ viewAsUserId = "" }: { viewAsUserId?: st
                     flexShrink: 0,
                     display: "flex",
                     flexDirection: "column",
-                    background: isOver ? "#EFF6FF" : "#F1F5F9",
-                    border: isOver ? "1.5px dashed #3B82F6" : "1px solid #E5E7EB",
+                    background: isOver ? theme.accentSoft : theme.panelAlt,
+                    border: isOver ? `1.5px dashed ${theme.accentBorder}` : `1px solid ${theme.border}`,
                     borderRadius: 14,
                     overflow: "hidden",
                     transition: "background 120ms, border-color 120ms",
                   }}
                 >
                   {/* Column header */}
-                  <div style={{ padding: "12px 14px", borderBottom: "1px solid #E5E7EB", background: "#FFFFFF" }}>
+                  <div style={{ padding: "12px 14px", borderBottom: `1px solid ${theme.border}`, background: theme.panel }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ width: 9, height: 9, borderRadius: "50%", background: stage.color, flexShrink: 0 }} />
-                      <span style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: "#0F172A", flex: 1 }}>{stage.name}</span>
-                      <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: "#64748b", background: "#F1F5F9", borderRadius: 9999, padding: "1px 8px" }}>{cards.length}</span>
+                      <span style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: theme.text, flex: 1 }}>{stage.name}</span>
+                      <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: theme.textMuted, background: theme.panelMuted, borderRadius: 9999, padding: "1px 8px" }}>{cards.length}</span>
                     </div>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#64748b", marginTop: 4 }}>{formatMoney(total)}</div>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: theme.textMuted, marginTop: 4 }}>{formatMoney(total)}</div>
                   </div>
 
                   {/* Cards */}
                   <div style={{ flex: 1, overflowY: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                     {cards.length === 0 ? (
-                      <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8", textAlign: "center", padding: "16px 0" }}>Drop deals here</div>
+                      <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint, textAlign: "center", padding: "16px 0" }}>Drop deals here</div>
                     ) : (
                       cards.map((deal) => (
                         <DealCardView
@@ -341,6 +343,7 @@ function DealCardView({
   onOpen: () => void;
   onMove: (dealId: string, stageId: string) => void;
 }) {
+  const { theme, mode } = useCrmTheme();
   const days = daysBetween(deal.updated_at);
   const overdueTask = deal.nextTaskDue && isOverdue(deal.nextTaskDue);
   const serviceLabel = deal.service_type ? DEAL_SERVICE_TYPE_LABELS[deal.service_type] : null;
@@ -355,12 +358,12 @@ function DealCardView({
       onDragEnd={onDragEnd}
       onClick={onOpen}
       style={{
-        background: "#FFFFFF",
-        border: "1px solid #E5E7EB",
+        background: theme.panel,
+        border: `1px solid ${theme.border}`,
         borderRadius: 12,
         padding: 11,
         cursor: "grab",
-        boxShadow: "0 1px 2px rgba(15,23,42,0.05)",
+        boxShadow: `0 1px 2px ${theme.shadow}`,
         opacity: dragging ? 0.5 : 1,
         animation: lostPulse ? "litLostPulse 900ms ease-out" : undefined,
       }}
@@ -368,15 +371,15 @@ function DealCardView({
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <CompanyAvatar name={deal.companyName || deal.title} domain={deal.companyDomain || undefined} size="sm" className="shrink-0" />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: theme.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {deal.companyName || deal.title}
           </div>
-          <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{deal.title}</div>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: theme.textFaint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{deal.title}</div>
         </div>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 9 }}>
-        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700, color: "#1d4ed8" }}>{formatMoney(deal.value_amount, deal.currency)}</span>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700, color: mode === "dark" ? "#93C5FD" : "#1d4ed8" }}>{formatMoney(deal.value_amount, deal.currency)}</span>
         {deal.ownerName ? (
           <span title={`Owner: ${deal.ownerName}`} style={{ width: 22, height: 22, borderRadius: "50%", background: avatarColor(deal.ownerName), color: "#FFFFFF", display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_HEAD, fontSize: 9, fontWeight: 700 }}>
             {initials(deal.ownerName)}
@@ -385,7 +388,7 @@ function DealCardView({
       </div>
 
       {deal.contactName ? (
-        <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: "#64748b", marginTop: 6 }}>{deal.contactName}</div>
+        <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: theme.textMuted, marginTop: 6 }}>{deal.contactName}</div>
       ) : null}
 
       {serviceLabel || lane ? (
@@ -399,9 +402,9 @@ function DealCardView({
                 fontFamily: FONT_BODY,
                 fontSize: 10,
                 fontWeight: 600,
-                color: "#475569",
-                background: "#F1F5F9",
-                border: "1px solid #E2E8F0",
+                color: theme.textMuted,
+                background: theme.panelMuted,
+                border: `1px solid ${theme.border}`,
                 borderRadius: 6,
                 padding: "1px 6px",
                 letterSpacing: "0.01em",
@@ -416,7 +419,7 @@ function DealCardView({
               style={{
                 fontFamily: FONT_BODY,
                 fontSize: 10.5,
-                color: "#94a3b8",
+                color: theme.textFaint,
                 minWidth: 0,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
@@ -431,13 +434,13 @@ function DealCardView({
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
         {days != null ? (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: FONT_BODY, fontSize: 10.5, color: "#94a3b8" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: FONT_BODY, fontSize: 10.5, color: theme.textFaint }}>
             <Clock style={{ width: 11, height: 11 }} />
             {days}d in stage
           </span>
         ) : null}
         {deal.openTaskCount ? (
-          <span title={deal.nextTaskDue ? `Next task due ${formatDate(deal.nextTaskDue)}` : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: FONT_BODY, fontSize: 10.5, fontWeight: 600, color: overdueTask ? "#dc2626" : "#64748b" }}>
+          <span title={deal.nextTaskDue ? `Next task due ${formatDate(deal.nextTaskDue)}` : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: FONT_BODY, fontSize: 10.5, fontWeight: 600, color: overdueTask ? theme.danger : theme.textMuted }}>
             <CheckSquare style={{ width: 11, height: 11 }} />
             {deal.nextTaskDue ? formatDate(deal.nextTaskDue) : `${deal.openTaskCount} task${deal.openTaskCount > 1 ? "s" : ""}`}
           </span>
@@ -457,11 +460,11 @@ function DealCardView({
           width: "100%",
           padding: "4px 6px",
           borderRadius: 7,
-          border: "1px solid #E5E7EB",
-          background: "#F8FAFC",
+          border: `1px solid ${theme.border}`,
+          background: theme.inputBg,
           fontFamily: FONT_BODY,
           fontSize: 11,
-          color: "#475569",
+          color: theme.textMuted,
           outline: "none",
           cursor: "pointer",
         }}
@@ -477,28 +480,32 @@ function DealCardView({
   );
 }
 
-const primaryBtn: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "8px 14px",
-  borderRadius: 10,
-  border: "none",
-  background: "#3B82F6",
-  color: "#FFFFFF",
-  fontFamily: FONT_HEAD,
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: "pointer",
-};
+function primaryBtn(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "8px 14px",
+    borderRadius: 10,
+    border: "none",
+    background: theme.accentBorder,
+    color: "#FFFFFF",
+    fontFamily: FONT_HEAD,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+  };
+}
 
-const centerMsg: React.CSSProperties = {
-  flex: 1,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 10,
-  color: "#64748b",
-  fontFamily: FONT_BODY,
-  fontSize: 14,
-};
+function centerMsg(theme: CrmThemeTokens): React.CSSProperties {
+  return {
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    color: theme.textMuted,
+    fontFamily: FONT_BODY,
+    fontSize: 14,
+  };
+}

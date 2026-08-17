@@ -7,6 +7,7 @@ import { useEntitlements } from "@/hooks/useEntitlements";
 import { fetchCrmAddonPricing, type CrmAddonPricing } from "@/api/entitlements";
 import PipelineBoard from "./PipelineBoard";
 import CrmCheckoutModal from "./CrmCheckoutModal";
+import { useCrmTheme } from "./CommandCenterTheme";
 
 const FONT_HEAD = "'Space Grotesk', sans-serif";
 const FONT_BODY = "'DM Sans', sans-serif";
@@ -21,6 +22,7 @@ const FONT_BODY = "'DM Sans', sans-serif";
  * is a UX affordance. A non-entitled user cannot read real deals anyway.
  */
 export default function PipelineGate({ viewAsUserId = "" }: { viewAsUserId?: string }) {
+  const { theme } = useCrmTheme();
   const { crmEnabled, isChecking, plan, invalidateCache } = useEntitlements();
   const [pricing, setPricing] = useState<CrmAddonPricing | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -55,7 +57,7 @@ export default function PipelineGate({ viewAsUserId = "" }: { viewAsUserId?: str
 
   if (isChecking) {
     return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "#64748b", fontFamily: FONT_BODY, fontSize: 14, background: "#F8FAFC" }}>
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: theme.textMuted, fontFamily: FONT_BODY, fontSize: 14, background: theme.bg }}>
         <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite" }} /> Loading pipeline…
       </div>
     );
@@ -71,7 +73,7 @@ export default function PipelineGate({ viewAsUserId = "" }: { viewAsUserId?: str
   const totalMo = perSeat != null ? perSeat * seats : null;
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: theme.bg }}>
       {/* Unlock banner */}
       <div
         style={{
@@ -215,6 +217,7 @@ function initials(name: string) {
 }
 
 function DemoPipeline() {
+  const { theme, mode } = useCrmTheme();
   const columns = useMemo(() => DEMO_STAGES, []);
   return (
     <div style={{ flex: 1, overflowX: "auto", overflowY: "hidden", padding: 16, position: "relative" }}>
@@ -229,19 +232,19 @@ function DemoPipeline() {
                 flexShrink: 0,
                 display: "flex",
                 flexDirection: "column",
-                background: "#F1F5F9",
-                border: "1px solid #E5E7EB",
+                background: theme.panelAlt,
+                border: `1px solid ${theme.border}`,
                 borderRadius: 14,
                 overflow: "hidden",
               }}
             >
-              <div style={{ padding: "12px 14px", borderBottom: "1px solid #E5E7EB", background: "#FFFFFF" }}>
+              <div style={{ padding: "12px 14px", borderBottom: `1px solid ${theme.border}`, background: theme.panel }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ width: 9, height: 9, borderRadius: "50%", background: stage.color, flexShrink: 0 }} />
-                  <span style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: "#0F172A", flex: 1 }}>{stage.name}</span>
-                  <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: "#64748b", background: "#F1F5F9", borderRadius: 9999, padding: "1px 8px" }}>{stage.deals.length}</span>
+                  <span style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: theme.text, flex: 1 }}>{stage.name}</span>
+                  <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: theme.textMuted, background: theme.panelMuted, borderRadius: 9999, padding: "1px 8px" }}>{stage.deals.length}</span>
                 </div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#64748b", marginTop: 4 }}>{money(total)}</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: theme.textMuted, marginTop: 4 }}>{money(total)}</div>
               </div>
               <div style={{ flex: 1, overflowY: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                 {stage.deals.map((deal) => (
@@ -249,11 +252,11 @@ function DemoPipeline() {
                     key={deal.company}
                     style={{
                       position: "relative",
-                      background: "#FFFFFF",
-                      border: "1px solid #E5E7EB",
+                      background: theme.panel,
+                      border: `1px solid ${theme.border}`,
                       borderRadius: 12,
                       padding: 11,
-                      boxShadow: "0 1px 2px rgba(15,23,42,0.05)",
+                      boxShadow: `0 1px 2px ${theme.shadow}`,
                       cursor: "default",
                       userSelect: "none",
                     }}
@@ -267,9 +270,9 @@ function DemoPipeline() {
                         fontSize: 8.5,
                         fontWeight: 800,
                         letterSpacing: "0.14em",
-                        color: "#6366F1",
-                        background: "#EEF2FF",
-                        border: "1px solid #C7D2FE",
+                        color: mode === "dark" ? "#A5B4FC" : "#6366F1",
+                        background: mode === "dark" ? "rgba(99,102,241,0.18)" : "#EEF2FF",
+                        border: `1px solid ${mode === "dark" ? "rgba(99,102,241,0.4)" : "#C7D2FE"}`,
                         borderRadius: 6,
                         padding: "2px 6px",
                       }}
@@ -279,12 +282,12 @@ function DemoPipeline() {
                     <div style={{ display: "flex", alignItems: "center", gap: 8, paddingRight: 54 }}>
                       <CompanyAvatar name={deal.company} domain={deal.domain} size="sm" className="shrink-0" />
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{deal.company}</div>
-                        <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{deal.title}</div>
+                        <div style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: theme.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{deal.company}</div>
+                        <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: theme.textFaint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{deal.title}</div>
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 9 }}>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700, color: "#1d4ed8" }}>{money(deal.value)}</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700, color: mode === "dark" ? "#93C5FD" : "#1d4ed8" }}>{money(deal.value)}</span>
                       <span title={`Owner: ${deal.owner}`} style={{ width: 22, height: 22, borderRadius: "50%", background: "#6366F1", color: "#FFFFFF", display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_HEAD, fontSize: 9, fontWeight: 700 }}>
                         {initials(deal.owner)}
                       </span>

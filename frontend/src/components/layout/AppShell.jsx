@@ -434,6 +434,8 @@ export default function AppShell({ currentPageName, children }) {
               {isLeadCrmMember && (
                 <SideLink to="/app/leads" icon={Users2} label="Lead CRM" />
               )}
+              {/* Lists — desktop sidebar parity (was missing from the mobile drawer). */}
+              <SideLink to="/app/lists" icon={Database} label="Lists" />
               <SideLink to="/app/widgets" icon={Box} label="Widgets" />
               <SideLink to="/app/settings" icon={Settings} label="Settings" />
               <SideLink to="/app/billing" icon={CreditCard} label="Billing" />
