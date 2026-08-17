@@ -5,8 +5,6 @@ const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 const cleanDomain = (value: unknown) => String(value || "").replace(/^https?:\/\//i, "").replace(/^www\./i, "").split(/[/?#]/)[0].toLowerCase() || null;
 const canonicalName = (value: unknown) => String(value || "").toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "").replace(/(inc|llc|ltd|corp|corporation|company|co)$/i, "");
-const apolloIdFromNotes = (value: unknown) => String(value || "").match(/organization\s+([A-Za-z0-9_-]+)/i)?.[1] || null;
-const domainFromNotes = (value: unknown) => cleanDomain(String(value || "").match(/Imported from Apollo\s*·\s*(\S+)/i)?.[1]);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -40,31 +38,35 @@ Deno.serve(async (req) => {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) return json({ ok: false, error: payload?.message || payload?.error || "Apollo search failed", provider_status: response.status }, response.status === 429 ? 429 : 502);
 
+  const rows = Array.isArray(payload?.organizations) ? payload.organizations : Array.isArray(payload?.accounts) ? payload.accounts : [];
+  const apolloIds = rows.map((org: any) => String(org.id || "")).filter(Boolean);
   const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
-  const [{ data: leadRows, error: leadsError }, { data: qualificationRows, error: qualificationError }] = await Promise.all([
-    admin.from("lit_admin_leads").select("id,company_name,company_domain,website,notes,apollo_organization_id,archived_at,deleted_at"),
-    admin.from("lit_lead_company_qualifications").select("provider_company_id,status,company_type,confidence,reason,checked_at,expires_at").eq("provider", "apollo"),
+  const [{ data: leadEnvelope, error: leadsError }, { data: qualificationRows, error: qualificationError }] = await Promise.all([
+    caller.rpc("lit_leadcrm_list_leads", {
+      p_stage_id: null, p_source: null, p_assignee: null, p_q: null,
+      p_limit: 500, p_offset: 0, p_status: "all",
+    }),
+    admin.from("lit_lead_company_qualifications")
+      .select("provider_company_id,status,company_type,confidence,reason,checked_at,expires_at")
+      .eq("provider", "apollo").in("provider_company_id", apolloIds),
   ]);
   if (leadsError) console.error("saved lead lookup failed", leadsError);
   if (qualificationError) console.error("qualification lookup failed", qualificationError);
 
-  const savedByApollo = new Map<string, any>();
+  const leadRows = Array.isArray((leadEnvelope as any)?.leads) ? (leadEnvelope as any).leads : [];
   const savedByDomain = new Map<string, any>();
   const savedByName = new Map<string, any>();
-  for (const lead of leadRows || []) {
-    const apolloId = lead.apollo_organization_id || apolloIdFromNotes(lead.notes);
-    const domain = cleanDomain(lead.company_domain || lead.website) || domainFromNotes(lead.notes);
+  for (const lead of leadRows) {
+    const domain = cleanDomain(lead.company_domain || lead.website);
     const name = canonicalName(lead.company_name);
-    if (apolloId) savedByApollo.set(String(apolloId), lead);
     if (domain) savedByDomain.set(domain, lead);
     if (name) savedByName.set(name, lead);
   }
   const qualifications = new Map((qualificationRows || []).map((row: any) => [String(row.provider_company_id), row]));
-  const rows = Array.isArray(payload?.organizations) ? payload.organizations : Array.isArray(payload?.accounts) ? payload.accounts : [];
   const companies = rows.map((org: any) => {
     const id = String(org.id || `${org.name || "company"}-${org.primary_domain || ""}`);
     const domain = cleanDomain(org.primary_domain || org.website_url);
-    const existing = savedByApollo.get(id) || (domain ? savedByDomain.get(domain) : null) || savedByName.get(canonicalName(org.name));
+    const existing = (domain ? savedByDomain.get(domain) : null) || savedByName.get(canonicalName(org.name));
     const qualification: any = qualifications.get(id);
     const qualificationFresh = qualification && new Date(qualification.expires_at).getTime() > Date.now();
     const savedStatus = existing ? existing.deleted_at ? "deleted" : existing.archived_at ? "archived" : "active" : null;
