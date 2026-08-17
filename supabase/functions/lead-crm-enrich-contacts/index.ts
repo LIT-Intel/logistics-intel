@@ -51,7 +51,7 @@ Deno.serve(async (req: Request) => {
   // 3) Resolve the lead's recognized company. Enrichment needs a linked company.
   const { data: lead, error: leadErr } = await admin
     .from("lit_admin_leads")
-    .select("id, company_id, company_domain, company_name")
+    .select("id, company_id, company_domain, company_name, website, apollo_organization_id, company_city, company_state, company_country")
     .eq("id", leadId)
     .maybeSingle();
   if (leadErr || !lead) return json({ ok: false, error: "Lead not found", code: "NO_LEAD" }, 404);
@@ -66,6 +66,59 @@ Deno.serve(async (req: Request) => {
       { ok: false, error: "No company identity for this lead — add a company name or website first.", code: "COMPANY_NOT_RECOGNIZED" },
       409,
     );
+  }
+
+  // Qualification is a hard pre-enrichment gate. The same agent endpoint is
+  // used by Find Leads; existing/manual records receive a durable lead-scoped
+  // provider key. Qualified cached decisions return without another model run.
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const forwardAuth = req.headers.get("Authorization")!;
+  try {
+    const qualificationResponse = await fetch(`${supabaseUrl}/functions/v1/lead-crm-qualify-company`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: forwardAuth,
+        apikey: Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      },
+      body: JSON.stringify({
+        provider_company_id: lead.apollo_organization_id || `leadcrm-${leadId}`,
+        company_name: lead.company_name,
+        domain: lead.company_domain,
+        website: lead.website || (hasDomain ? `https://${lead.company_domain}` : null),
+        location: [lead.company_city, lead.company_state, lead.company_country].filter(Boolean).join(", ") || null,
+      }),
+    });
+    const qualificationBody = await qualificationResponse.json().catch(() => ({}));
+    if (!qualificationResponse.ok || qualificationBody?.ok === false) {
+      return json({
+        ok: false,
+        error: qualificationBody?.error || "Company verification failed before enrichment.",
+        code: "COMPANY_QUALIFICATION_FAILED",
+      }, qualificationResponse.status >= 400 ? qualificationResponse.status : 502);
+    }
+    if (qualificationBody?.qualification?.safe_to_enrich !== true) {
+      await admin.from("lit_lead_activity").insert({
+        lead_id: leadId,
+        kind: "company_qualification_blocked",
+        body: {
+          status: qualificationBody?.qualification?.status || "review",
+          reason: qualificationBody?.qualification?.reason || "Company did not pass qualification.",
+          confidence: qualificationBody?.qualification?.confidence ?? null,
+        },
+        actor_user_id: user.id,
+        source: "system",
+      });
+      return json({
+        ok: false,
+        error: qualificationBody?.qualification?.reason || "This company is not a qualified freight broker or freight forwarder.",
+        code: qualificationBody?.qualification?.status === "disqualified" ? "COMPANY_DISQUALIFIED" : "COMPANY_REVIEW_REQUIRED",
+        qualification: qualificationBody?.qualification,
+      }, 409);
+    }
+  } catch (err) {
+    log.error("company_qualification_unavailable", { err: String(err), lead_id: leadId });
+    return json({ ok: false, error: "Company verification service unavailable.", code: "COMPANY_QUALIFICATION_UNAVAILABLE" }, 502);
   }
 
   // Domain/name-only leads need a canonical lit_companies UUID before Apollo
@@ -121,9 +174,6 @@ Deno.serve(async (req: Request) => {
   //    contact TARGETS; it does not turn a company id/domain into people. The old
   //    wrapper skipped this step, so Apollo received no contacts and returned
   //    NO_TARGETS even though APOLLO_API_KEY was valid.
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const forwardAuth = req.headers.get("Authorization")!;
-
   let discoveredContacts: any[] = [];
   try {
     const search = await fetch(`${supabaseUrl}/functions/v1/apollo-contact-search`, {
