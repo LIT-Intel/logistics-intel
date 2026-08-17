@@ -22,6 +22,14 @@ type ApolloCompany = {
   country: string | null;
   employee_count: number | null;
   linkedin_url: string | null;
+  saved: boolean;
+  saved_lead_id: string | null;
+  saved_status: "active" | "archived" | "deleted" | null;
+  qualification_status: "unverified" | "qualified" | "disqualified" | "review";
+  qualification_company_type: string | null;
+  qualification_confidence: number | null;
+  qualification_reason: string | null;
+  safe_to_enrich: boolean;
 };
 
 const DEFAULT_KEYWORDS = "freight broker, freight forwarder";
@@ -53,10 +61,16 @@ export default function FindLeadsPage() {
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [verifying, setVerifying] = useState<Set<string>>(new Set());
   const [searched, setSearched] = useState(false);
   const [pagination, setPagination] = useState<ApolloPagination>(INITIAL_PAGINATION);
 
-  const selectableIds = useMemo(() => results.filter((r) => !saved.has(r.id)).map((r) => r.id), [results, saved]);
+  const selectableIds = useMemo(
+    () => results
+      .filter((r) => !r.saved && !saved.has(r.id) && !["disqualified", "review"].includes(r.qualification_status))
+      .map((r) => r.id),
+    [results, saved],
+  );
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
   async function runSearch(requestedPage = 1) {
@@ -75,6 +89,7 @@ export default function FindLeadsPage() {
       const totalEntries = Number(meta.total_entries ?? meta.totalEntries);
       const totalPages = Number(meta.total_pages ?? meta.totalPages);
       setResults(companies);
+      setSaved(new Set(companies.filter((company: ApolloCompany) => company.saved).map((company: ApolloCompany) => company.id)));
       setPagination({
         page: Number(meta.page) || requestedPage,
         perPage: Number(meta.per_page ?? meta.perPage) || PAGE_SIZE,
@@ -91,48 +106,108 @@ export default function FindLeadsPage() {
     }
   }
 
-  function toggle(id: string) {
-    if (saved.has(id)) return;
+  function toggle(company: ApolloCompany) {
+    if (company.saved || saved.has(company.id) || ["disqualified", "review"].includes(company.qualification_status)) return;
     setSelected((current) => {
       const next = new Set(current);
-      next.has(id) ? next.delete(id) : next.add(id);
+      next.has(company.id) ? next.delete(company.id) : next.add(company.id);
       return next;
     });
   }
 
+  async function qualifyCompany(company: ApolloCompany): Promise<ApolloCompany | null> {
+    if (company.safe_to_enrich) return company;
+    setVerifying((current) => new Set(current).add(company.id));
+    try {
+      const { data, error } = await supabase.functions.invoke("lead-crm-qualify-company", {
+        body: {
+          provider_company_id: company.id,
+          company_name: company.name,
+          domain: company.domain,
+          website: company.website,
+          linkedin_url: company.linkedin_url,
+          industry: company.industry,
+          location: [company.city, company.state, company.country].filter(Boolean).join(", ") || null,
+        },
+      });
+      if (error) throw error;
+      if (!data?.ok) throw new Error(data?.error || "Company verification failed");
+      const qualification = data.qualification;
+      const updated: ApolloCompany = {
+        ...company,
+        qualification_status: qualification.status,
+        qualification_company_type: qualification.company_type,
+        qualification_confidence: Number(qualification.confidence),
+        qualification_reason: qualification.reason,
+        safe_to_enrich: Boolean(qualification.safe_to_enrich),
+      };
+      setResults((current) => current.map((row) => row.id === company.id ? updated : row));
+      if (!updated.safe_to_enrich) {
+        toast({
+          title: updated.qualification_status === "disqualified" ? "Not a qualified lead" : "Manual review required",
+          description: updated.qualification_reason || "The company cannot proceed to enrichment.",
+          variant: "destructive",
+        });
+        return null;
+      }
+      return updated;
+    } catch (error: any) {
+      toast({ title: "Verification failed", description: error?.message || "Could not verify this company.", variant: "destructive" });
+      return null;
+    } finally {
+      setVerifying((current) => {
+        const next = new Set(current);
+        next.delete(company.id);
+        return next;
+      });
+    }
+  }
+
   async function saveCompanies(ids: string[]) {
-    const companies = results.filter((company) => ids.includes(company.id) && !saved.has(company.id));
+    const companies = results.filter((company) => ids.includes(company.id) && !company.saved && !saved.has(company.id));
     if (!companies.length) return;
     setSaving(true);
     let success = 0;
+    let rejected = 0;
     const completed = new Set<string>();
     for (const company of companies) {
+      const qualified = await qualifyCompany(company);
+      if (!qualified) {
+        rejected += 1;
+        continue;
+      }
       try {
-        const result = await createLead({
-          companyName: company.name,
-          notes: `Imported from Apollo · organization ${company.id}`,
+        const { data, error } = await supabase.rpc("lit_leadcrm_import_apollo_company", {
+          p_apollo_organization_id: qualified.id,
+          p_company_name: qualified.name,
+          p_website: qualified.website,
+          p_company_domain: qualified.domain,
+          p_logo_url: qualified.logo_url,
+          p_company_city: qualified.city,
+          p_company_state: qualified.state,
+          p_company_country: qualified.country,
         });
-        if (result.ok && result.lead_id) {
-          const updated = await updateLead(result.lead_id, {
-            companyName: company.name,
-            website: company.website || company.domain,
-            companyDomain: company.domain,
-            companyCity: company.city,
-            companyState: company.state,
-            companyCountry: company.country,
-          });
-          if (!updated.ok) throw new Error(updated.reason || "Company details were not saved");
-          success += 1;
-          completed.add(company.id);
-        }
-      } catch { /* Continue bulk import and report the partial result. */ }
+        if (error) throw error;
+        const result = Array.isArray(data) ? data[0] : data;
+        if (!result?.ok) throw new Error(result?.reason || "Company could not be saved");
+        success += 1;
+        completed.add(qualified.id);
+        setResults((current) => current.map((row) => row.id === qualified.id ? {
+          ...row,
+          saved: true,
+          saved_lead_id: result.lead_id,
+          saved_status: result.saved_status || "active",
+        } : row));
+      } catch (error: any) {
+        toast({ title: `Could not save ${qualified.name}`, description: error?.message || "Import failed.", variant: "destructive" });
+      }
     }
     setSaved((current) => new Set([...current, ...completed]));
     setSelected((current) => new Set([...current].filter((id) => !completed.has(id))));
     setSaving(false);
     toast({
-      title: success === companies.length ? "Leads saved" : "Import finished",
-      description: `${success} of ${companies.length} ${companies.length === 1 ? "company" : "companies"} added to the Lead CRM.`,
+      title: success ? "Qualified leads saved" : "No leads saved",
+      description: `${success} saved${rejected ? ` · ${rejected} rejected or held for review` : ""}.`,
       variant: success === 0 ? "destructive" : undefined,
     });
   }
@@ -191,8 +266,11 @@ export default function FindLeadsPage() {
         : !searched ? <Empty icon={<Search />} title="Start with the freight market" detail="The default search is preloaded for U.S. freight brokers and freight forwarders." theme={theme} />
         : <div style={{ display: "grid", gap: 8 }}>
             {results.map((company) => {
-              const isSelected = selected.has(company.id); const isSaved = saved.has(company.id);
-              return <article key={company.id} onClick={() => toggle(company.id)} style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr) auto", gap: 12, alignItems: "center", padding: 14, borderRadius: 12, border: `1px solid ${isSelected ? theme.accentBorder : theme.border}`, background: isSelected ? theme.accentSoft : theme.panel, cursor: isSaved ? "default" : "pointer" }}>
+              const isSelected = selected.has(company.id);
+              const isSaved = company.saved || saved.has(company.id);
+              const isVerifying = verifying.has(company.id);
+              const isBlocked = ["disqualified", "review"].includes(company.qualification_status);
+              return <article key={company.id} onClick={() => toggle(company)} style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr) auto", gap: 12, alignItems: "center", padding: 14, borderRadius: 12, border: `1px solid ${isSelected ? theme.accentBorder : theme.border}`, background: isSelected ? theme.accentSoft : theme.panel, cursor: isSaved || isBlocked ? "default" : "pointer" }}>
                 <CompanyAvatar name={company.name} domain={company.domain} logoUrl={company.logo_url} size="md" />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontFamily: FONT_HEAD, fontSize: 14, fontWeight: 700, color: theme.heading, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{company.name}</div>
@@ -201,10 +279,20 @@ export default function FindLeadsPage() {
                     {[company.city, company.state, company.country].filter(Boolean).length ? <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}><MapPin size={11} />{[company.city, company.state, company.country].filter(Boolean).join(", ")}</span> : null}
                     {company.employee_count ? <span>{company.employee_count.toLocaleString()} employees</span> : null}
                     {company.domain ? <span>{company.domain}</span> : null}
+                    <span style={{ color: company.qualification_status === "qualified" ? "#059669" : company.qualification_status === "disqualified" ? "#dc2626" : theme.textMuted }}>
+                      {company.qualification_status === "qualified" ? `Verified · ${Math.round((company.qualification_confidence || 0) * 100)}%`
+                        : company.qualification_status === "disqualified" ? "Not a target"
+                        : company.qualification_status === "review" ? "Needs review"
+                        : "Not verified"}
+                    </span>
                   </div>
                 </div>
-                {isSaved ? <span style={{ display: "inline-flex", gap: 5, alignItems: "center", color: "#059669", fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 700 }}><Check size={14} /> Saved</span>
-                : <button onClick={(e) => { e.stopPropagation(); saveCompanies([company.id]); }} disabled={saving} style={secondaryButton(theme)}>{isSelected ? <Check size={14} /> : <Building2 size={14} />} {isSelected ? "Selected" : "Save"}</button>}
+                {isSaved ? <span title={company.saved_status === "deleted" ? "This company was previously saved and later deleted." : undefined} style={{ display: "inline-flex", gap: 5, alignItems: "center", color: "#059669", fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 700 }}><Check size={14} /> {company.saved_status === "deleted" ? "Previously saved" : "Saved"}</span>
+                : isBlocked ? <span title={company.qualification_reason || undefined} style={{ color: company.qualification_status === "disqualified" ? "#dc2626" : "#d97706", fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 700 }}>{company.qualification_status === "disqualified" ? "Excluded" : "Review"}</span>
+                : <button onClick={(e) => { e.stopPropagation(); saveCompanies([company.id]); }} disabled={saving || isVerifying} style={secondaryButton(theme)}>
+                    {isVerifying ? <Loader2 size={14} className="animate-spin" /> : isSelected ? <Check size={14} /> : <Building2 size={14} />}
+                    {isVerifying ? "Verifying" : isSelected ? "Selected" : company.safe_to_enrich ? "Save" : "Verify & save"}
+                  </button>}
               </article>;
             })}
           </div>}
