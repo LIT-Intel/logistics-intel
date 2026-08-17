@@ -213,6 +213,63 @@ Deno.serve(async (req: Request) => {
   const count = Number(orchResp?.count ?? 0) || 0;
   const pending = orchResp?.pending === true;
 
+  // Promote the best usable contact into the lead's primary contact fields.
+  // This is the handoff that makes enrichment immediately usable by the
+  // Communicate tab and campaign recipient flows. Never replace an existing
+  // primary email automatically; an explicit "Save selected" can do that.
+  if (count > 0 && lead.company_id) {
+    try {
+      const { data: currentLead } = await admin
+        .from("lit_admin_leads")
+        .select("full_name, email, phone, title")
+        .eq("id", leadId)
+        .maybeSingle();
+
+      if (currentLead && !currentLead.email) {
+        const { data: primary } = await admin
+          .from("lit_contacts")
+          .select("id, full_name, email, phone, title")
+          .eq("company_id", lead.company_id)
+          .not("email", "is", null)
+          .order("email_verified", { ascending: false })
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (primary?.email) {
+          const { error: promoteError } = await admin
+            .from("lit_admin_leads")
+            .update({
+              full_name: currentLead.full_name || primary.full_name,
+              email: primary.email,
+              phone: currentLead.phone || primary.phone,
+              title: currentLead.title || primary.title,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", leadId);
+
+          if (promoteError) {
+            log.warn("primary_contact_promotion_failed", {
+              lead_id: leadId,
+              contact_id: primary.id,
+              err: promoteError.message,
+            });
+          } else {
+            await admin.from("lit_lead_activity").insert({
+              lead_id: leadId,
+              kind: "primary_contact_assigned",
+              body: { contact_id: primary.id, source: "apollo_enrichment", automatic: true },
+              actor_user_id: user.id,
+              source: "system",
+            });
+          }
+        }
+      }
+    } catch (err) {
+      log.warn("primary_contact_promotion_threw", { lead_id: leadId, err: String(err) });
+    }
+  }
+
   // 7) CRM audit: activity row + provider_usage_events (attributes CRM spend).
   //    The orchestrator already consumed usage; this is an additional cost-ledger
   //    breadcrumb tagged to the lead-CRM feature. credits_consumed is left null so

@@ -216,12 +216,13 @@ export function ContactsPanel({ lead, onChanged }: { lead: Lead; onChanged?: () 
     if (!rows.length) return;
     setSaving(true);
     try {
-      await saveLeadContacts(rows, lead.company_id);
+      await saveLeadContacts(lead.id, rows, lead.company_id);
       setSavedIds((current) => new Set([...current, ...rows.map((contact) => contact.id)]));
       setSelected(new Set());
+      onChanged?.();
       toast({
         title: `Saved ${rows.length} contact${rows.length === 1 ? "" : "s"}`,
-        description: "Saved contacts remain linked to this company and its tags for segmentation and reporting.",
+        description: `${rows[0].full_name || "The selected contact"} is now the primary CRM contact and is ready in Communicate and campaigns.`,
       });
     } catch (e: any) {
       toast({ title: "Could not save contacts", description: e?.message, variant: "destructive" });

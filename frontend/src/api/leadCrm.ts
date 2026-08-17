@@ -127,9 +127,13 @@ export async function getSavedContactIds(contactIds: string[]): Promise<Set<stri
   return new Set((data ?? []).map((row: any) => String(row.contact_id)));
 }
 
-/** Save one or more enriched contacts for outreach, segmentation, and reporting. */
-export async function saveLeadContacts(contacts: Pick<LeadContact, "id">[], companyId?: string | null): Promise<number> {
-  if (!contacts.length) return 0;
+/** Save enriched contacts and promote the first selection to the CRM's primary contact. */
+export async function saveLeadContacts(
+  leadId: string,
+  contacts: LeadContact[],
+  companyId?: string | null,
+): Promise<{ saved: number; primaryUpdated: boolean }> {
+  if (!contacts.length) return { saved: 0, primaryUpdated: false };
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) throw new Error(authError?.message || "Sign in required");
   const rows = contacts.map((contact) => ({
@@ -142,7 +146,22 @@ export async function saveLeadContacts(contacts: Pick<LeadContact, "id">[], comp
     .from("lit_saved_contacts")
     .upsert(rows, { onConflict: "user_id,contact_id", ignoreDuplicates: true });
   if (error) throw new Error(error.message);
-  return rows.length;
+
+  const primary = contacts[0];
+  const updated = await updateLead(leadId, {
+    fullName: primary.full_name,
+    email: primary.email,
+    phone: primary.phone,
+    title: primary.title,
+  });
+  if (!updated.ok) {
+    throw new Error(
+      updated.reason === "email_in_use"
+        ? "Contact saved, but this email already belongs to another CRM record."
+        : updated.reason || "Contact saved, but could not make it the primary contact.",
+    );
+  }
+  return { saved: rows.length, primaryUpdated: true };
 }
 
 /** Result of the enrich edge function. */
