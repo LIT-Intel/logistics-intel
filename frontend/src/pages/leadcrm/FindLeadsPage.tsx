@@ -4,7 +4,7 @@ import React, { useMemo, useRef, useState } from "react";
 import { ArrowLeft, Building2, Check, ChevronLeft, ChevronRight, Loader2, MapPin, Search, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { createLead } from "@/api/leadCrm";
+import { createLead, updateLead } from "@/api/leadCrm";
 import { useToast } from "@/components/ui/use-toast";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { FONT_BODY, FONT_HEAD } from "./leadCrmFormat";
@@ -108,8 +108,23 @@ export default function FindLeadsPage() {
     const completed = new Set<string>();
     for (const company of companies) {
       try {
-        const result = await createLead({ companyName: company.name, notes: `Imported from Apollo${company.domain ? ` · ${company.domain}` : ""}` });
-        if (result.ok) { success += 1; completed.add(company.id); }
+        const result = await createLead({
+          companyName: company.name,
+          notes: `Imported from Apollo · organization ${company.id}`,
+        });
+        if (result.ok && result.lead_id) {
+          const updated = await updateLead(result.lead_id, {
+            companyName: company.name,
+            website: company.website || company.domain,
+            companyDomain: company.domain,
+            companyCity: company.city,
+            companyState: company.state,
+            companyCountry: company.country,
+          });
+          if (!updated.ok) throw new Error(updated.reason || "Company details were not saved");
+          success += 1;
+          completed.add(company.id);
+        }
       } catch { /* Continue bulk import and report the partial result. */ }
     }
     setSaved((current) => new Set([...current, ...completed]));
