@@ -18,7 +18,7 @@
 import React, { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  Users, KanbanSquare, ListChecks, BarChart3, UserCog, Loader2, LogOut,
+  Users, KanbanSquare, ListChecks, BarChart3, UserCog, Loader2, LogOut, Search,
   ArrowLeft, Sun, Moon, Menu,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
@@ -114,6 +114,7 @@ type NavItem = { to: string; end?: boolean; icon: React.ReactNode; label: string
 
 /** Human title per route for the top bar. */
 const SECTION_TITLES: { match: (p: string) => boolean; title: string }[] = [
+  { match: (p) => p.endsWith("/find"), title: "Find leads" },
   { match: (p) => p.endsWith("/pipeline"), title: "Pipeline" },
   { match: (p) => p.endsWith("/tasks"), title: "Tasks" },
   { match: (p) => p.endsWith("/reports"), title: "Reports" },
@@ -146,6 +147,7 @@ function LeadCrmShell() {
 
   const navItems: NavItem[] = [
     { to: "/app/leads", end: true, icon: <Users style={navIco} />, label: "Leads" },
+    { to: "/app/leads/find", icon: <Search style={navIco} />, label: "Find leads" },
     { to: "/app/leads/pipeline", icon: <KanbanSquare style={navIco} />, label: "Pipeline" },
     { to: "/app/leads/tasks", icon: <ListChecks style={navIco} />, label: "Tasks" },
     { to: "/app/leads/reports", icon: <BarChart3 style={navIco} />, label: "Reports" },
