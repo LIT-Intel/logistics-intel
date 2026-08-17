@@ -642,15 +642,20 @@ export async function getMyTasks(
   }
 }
 
-/** Create a follow-up task on a lead. Throws on transport error; returns {ok,reason}. */
+/**
+ * Create a follow-up task. `leadId` is OPTIONAL — a null lead creates a
+ * standalone personal task (supported since migration
+ * 20260816930000_lit_leadcrm_standalone_tasks). Throws on transport error;
+ * returns {ok,reason}.
+ */
 export async function createTask(params: {
-  leadId: string;
+  leadId?: string | null;
   title: string;
   dueDate?: string | null;
   assignee?: string | null;
 }): Promise<{ ok: boolean; task_id?: string; reason?: string }> {
   const { data, error } = await supabase.rpc("lit_leadcrm_create_task", {
-    p_lead_id: params.leadId,
+    p_lead_id: params.leadId ?? null,
     p_title: params.title,
     p_due_date: params.dueDate ?? null,
     p_assignee: params.assignee ?? null,

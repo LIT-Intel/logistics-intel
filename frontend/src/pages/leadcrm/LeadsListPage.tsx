@@ -66,7 +66,9 @@ import {
   avatarColor,
   stageBadgeStyle,
   leadDisplayName,
+  type LeadCrmThemeTokens,
 } from "./leadCrmFormat";
+import { useLeadCrmTheme } from "./LeadCrmTheme";
 
 const PAGE_SIZE = 50;
 
@@ -78,6 +80,7 @@ const STATUS_TABS: { value: LeadStatusFilter; label: string }[] = [
 
 export default function LeadsListPage() {
   const { toast } = useToast();
+  const { theme } = useLeadCrmTheme();
   const [stageId, setStageId] = useState<string>("");
   const [source, setSource] = useState<string>("");
   const [assignee, setAssignee] = useState<string>("");
@@ -201,26 +204,25 @@ export default function LeadsListPage() {
   }
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: theme.bg }}>
       {/* Header + filter bar */}
       <div
         style={{
           padding: "18px 24px 14px",
-          borderBottom: "1px solid #E5E7EB",
-          background:
-            "radial-gradient(circle at 0% 0%, rgba(59,130,246,0.06) 0%, rgba(59,130,246,0) 35%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)",
+          borderBottom: `1px solid ${theme.border}`,
+          background: theme.panel,
           flexShrink: 0,
         }}
       >
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 12 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, color: "#3B82F6", letterSpacing: "0.22em", textTransform: "uppercase" }}>
+            <div style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, color: theme.accent, letterSpacing: "0.22em", textTransform: "uppercase" }}>
               Shared workspace
             </div>
-            <div style={{ fontFamily: FONT_HEAD, fontSize: 20, fontWeight: 700, color: "#0F172A", letterSpacing: "-0.02em", marginTop: 3 }}>
+            <div style={{ fontFamily: FONT_HEAD, fontSize: 20, fontWeight: 700, color: theme.heading, letterSpacing: "-0.02em", marginTop: 3 }}>
               Leads
             </div>
-            <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: "#64748b", marginTop: 2 }}>
+            <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: theme.textMuted, marginTop: 2 }}>
               Work leads toward becoming subscribers
             </div>
           </div>
@@ -234,8 +236,8 @@ export default function LeadsListPage() {
               padding: "9px 14px",
               borderRadius: 10,
               border: "none",
-              background: "#3B82F6",
-              color: "#FFFFFF",
+              background: theme.accent,
+              color: theme.accentText,
               fontFamily: FONT_HEAD,
               fontSize: 12.5,
               fontWeight: 600,
@@ -261,20 +263,20 @@ export default function LeadsListPage() {
         {/* Search + filter toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <div style={{ position: "relative", flex: 1, minWidth: 220, maxWidth: 360 }}>
-            <Search style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", width: 13, height: 13, color: "#94a3b8" }} />
+            <Search style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", width: 13, height: 13, color: theme.textFaint }} />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search name, email, company…"
               style={{
                 width: "100%",
-                background: "#F8FAFC",
-                border: "1.5px solid #CBD5E1",
+                background: theme.inputBg,
+                border: `1.5px solid ${theme.borderStrong}`,
                 borderRadius: 10,
                 padding: "7px 12px 7px 30px",
                 fontSize: 13,
                 fontFamily: FONT_BODY,
-                color: "#0F172A",
+                color: theme.text,
                 outline: "none",
               }}
             />
@@ -290,9 +292,9 @@ export default function LeadsListPage() {
               gap: 6,
               padding: "7px 12px",
               borderRadius: 10,
-              border: "1.5px solid " + (activeFilterCount > 0 ? "#3B82F6" : "#CBD5E1"),
-              background: activeFilterCount > 0 ? "rgba(59,130,246,0.08)" : "#FFFFFF",
-              color: activeFilterCount > 0 ? "#1D4ED8" : "#0F172A",
+              border: "1.5px solid " + (activeFilterCount > 0 ? theme.accentBorder : theme.borderStrong),
+              background: activeFilterCount > 0 ? theme.accentSoft : theme.panel,
+              color: activeFilterCount > 0 ? theme.accentSoftText : theme.text,
               fontFamily: FONT_HEAD,
               fontSize: 12,
               fontWeight: 600,
@@ -302,14 +304,14 @@ export default function LeadsListPage() {
             <Filter style={{ width: 13, height: 13 }} />
             Filters
             {activeFilterCount > 0 ? (
-              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: "#3B82F6", color: "#FFFFFF", fontSize: 10, fontWeight: 700 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: theme.accent, color: theme.accentText, fontSize: 10, fontWeight: 700 }}>
                 {activeFilterCount}
               </span>
             ) : null}
           </button>
 
           {/* Lifecycle view tabs — Active (default) / Archived / Deleted. */}
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 2, padding: 3, borderRadius: 10, border: "1px solid #E5E7EB", background: "#FFFFFF" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 2, padding: 3, borderRadius: 10, border: `1px solid ${theme.border}`, background: theme.panel }}>
             {STATUS_TABS.map((t) => {
               const on = statusFilter === t.value;
               return (
@@ -321,8 +323,8 @@ export default function LeadsListPage() {
                     padding: "5px 11px",
                     borderRadius: 8,
                     border: "none",
-                    background: on ? "#0F172A" : "transparent",
-                    color: on ? "#FFFFFF" : "#64748b",
+                    background: on ? theme.accent : "transparent",
+                    color: on ? theme.accentText : theme.textMuted,
                     fontFamily: FONT_HEAD,
                     fontSize: 12,
                     fontWeight: 600,
@@ -335,7 +337,7 @@ export default function LeadsListPage() {
             })}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto", fontSize: 12, color: "#94a3b8", fontFamily: FONT_BODY }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto", fontSize: 12, color: theme.textFaint, fontFamily: FONT_BODY }}>
             {isFetching ? <Loader2 style={{ width: 12, height: 12, animation: "spin 1s linear infinite" }} /> : null}
             {totalLeads} total · {leads.length} shown
           </div>
@@ -347,8 +349,8 @@ export default function LeadsListPage() {
               marginTop: 12,
               padding: 14,
               borderRadius: 12,
-              border: "1px solid #E5E7EB",
-              background: "#FFFFFF",
+              border: `1px solid ${theme.border}`,
+              background: theme.panel,
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
               gap: 12,
@@ -356,7 +358,7 @@ export default function LeadsListPage() {
             }}
           >
             <FilterField label="Stage">
-              <select value={stageId} onChange={(e) => setStageId(e.target.value)} style={selectStyle}>
+              <select value={stageId} onChange={(e) => setStageId(e.target.value)} style={selectStyle(theme)}>
                 <option value="">All stages</option>
                 {stages.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -366,7 +368,7 @@ export default function LeadsListPage() {
               </select>
             </FilterField>
             <FilterField label="Source">
-              <select value={source} onChange={(e) => setSource(e.target.value)} style={selectStyle}>
+              <select value={source} onChange={(e) => setSource(e.target.value)} style={selectStyle(theme)}>
                 <option value="">All sources</option>
                 {sourceOptions.map((s) => (
                   <option key={s} value={s} style={{ textTransform: "capitalize" }}>
@@ -376,7 +378,7 @@ export default function LeadsListPage() {
               </select>
             </FilterField>
             <FilterField label="Assignee">
-              <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={selectStyle}>
+              <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={selectStyle(theme)}>
                 <option value="">All assignees</option>
                 {assignees.map((a) => (
                   <option key={a.user_id} value={a.user_id}>
@@ -396,10 +398,10 @@ export default function LeadsListPage() {
                 }}
                 style={{
                   padding: "7px 12px",
-                  border: "1.5px solid #CBD5E1",
+                  border: `1.5px solid ${theme.borderStrong}`,
                   borderRadius: 10,
-                  background: "#FFFFFF",
-                  color: "#475569",
+                  background: theme.panel,
+                  color: theme.textMuted,
                   fontFamily: FONT_HEAD,
                   fontSize: 12,
                   fontWeight: 600,
@@ -416,16 +418,16 @@ export default function LeadsListPage() {
       {/* Table / cards */}
       <div style={{ flex: 1, overflowY: "auto" }}>
         {isLoading ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "64px 0", color: "#64748b", fontFamily: FONT_BODY, fontSize: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "64px 0", color: theme.textMuted, fontFamily: FONT_BODY, fontSize: 14 }}>
             <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite" }} />
             Loading leads…
           </div>
         ) : leads.length === 0 ? (
           <div style={{ textAlign: "center", padding: "64px 0" }}>
-            <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 56, height: 56, borderRadius: "50%", background: "#F1F5F9", marginBottom: 16 }}>
-              <Users style={{ width: 24, height: 24, color: "#94a3b8" }} />
+            <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 56, height: 56, borderRadius: "50%", background: theme.panelMuted, marginBottom: 16 }}>
+              <Users style={{ width: 24, height: 24, color: theme.textFaint }} />
             </div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#0F172A", fontFamily: FONT_HEAD }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: theme.heading, fontFamily: FONT_HEAD }}>
               {statusFilter === "archived"
                 ? "No archived leads"
                 : statusFilter === "deleted"
@@ -434,7 +436,7 @@ export default function LeadsListPage() {
                 ? "No leads match this view"
                 : "No leads yet"}
             </div>
-            <div style={{ fontSize: 13, color: "#64748b", fontFamily: FONT_BODY, marginTop: 4 }}>
+            <div style={{ fontSize: 13, color: theme.textMuted, fontFamily: FONT_BODY, marginTop: 4 }}>
               {statusFilter === "archived"
                 ? "Archived leads are hidden from the active pipeline. Archive a lead to park it here."
                 : statusFilter === "deleted"
@@ -450,7 +452,7 @@ export default function LeadsListPage() {
             <div className="hidden md:block" style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 1080 }}>
                 <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
-                  <tr style={{ background: "#FFFFFF", borderBottom: "1px solid #E5E7EB" }}>
+                  <tr style={{ background: theme.panel, borderBottom: `1px solid ${theme.border}` }}>
                     {["Lead", "Company", "Stage", "Source", "Score", "Assignee", "Last activity", ""].map((h, i) => (
                       <th
                         key={h || `col-${i}`}
@@ -462,7 +464,7 @@ export default function LeadsListPage() {
                           fontWeight: 700,
                           letterSpacing: "0.09em",
                           textTransform: "uppercase",
-                          color: "#94A3B8",
+                          color: theme.textFaint,
                           fontFamily: FONT_HEAD,
                           whiteSpace: "nowrap",
                         }}
@@ -480,8 +482,8 @@ export default function LeadsListPage() {
                       <tr
                         key={lead.id}
                         onClick={() => setOpenLead(lead)}
-                        style={{ borderBottom: "1px solid #F1F5F9", cursor: "pointer" }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "#F8FAFC")}
+                        style={{ borderBottom: `1px solid ${theme.border}`, cursor: "pointer" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = theme.hover)}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "")}
                       >
                         <td style={{ padding: "8px 14px", verticalAlign: "middle" }}>
@@ -490,10 +492,10 @@ export default function LeadsListPage() {
                               {initials(name)}
                             </div>
                             <div style={{ minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: "#0F172A", fontFamily: FONT_HEAD, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: theme.heading, fontFamily: FONT_HEAD, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {asText(name)}
                               </div>
-                              <div style={{ fontSize: 10.5, color: "#94A3B8", fontFamily: FONT_BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              <div style={{ fontSize: 10.5, color: theme.textFaint, fontFamily: FONT_BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {asText(lead.email) || "—"}
                               </div>
                             </div>
@@ -510,31 +512,31 @@ export default function LeadsListPage() {
                                 className="!h-6 !w-6 !rounded-md shrink-0"
                               />
                             ) : null}
-                            <span style={{ fontSize: 12.5, color: "#334155", fontFamily: FONT_BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: "100%" }}>
+                            <span style={{ fontSize: 12.5, color: theme.text, fontFamily: FONT_BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: "100%" }}>
                               {asText(lead.company_name) || asText(lead.company_domain) || "—"}
                             </span>
                           </div>
                         </td>
                         <td style={{ padding: "8px 14px", verticalAlign: "middle" }}>
-                          {stage ? <span style={stageBadgeStyle(stage.color)}>{asText(stage.name)}</span> : <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>}
+                          {stage ? <span style={stageBadgeStyle(stage.color)}>{asText(stage.name)}</span> : <span style={{ color: theme.textFaint, fontSize: 12 }}>—</span>}
                         </td>
                         <td style={{ padding: "8px 14px", verticalAlign: "middle" }}>
-                          <span style={{ fontSize: 12, color: "#475569", fontFamily: FONT_BODY, textTransform: "capitalize" }}>
+                          <span style={{ fontSize: 12, color: theme.textMuted, fontFamily: FONT_BODY, textTransform: "capitalize" }}>
                             {asText(lead.primary_source) || asText(lead.magnet_slug) || "—"}
                           </span>
                         </td>
                         <td style={{ padding: "8px 14px", verticalAlign: "middle", textAlign: "right" }}>
-                          <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700, color: lead.lead_score != null ? "#1d4ed8" : "#94A3B8" }}>
+                          <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700, color: lead.lead_score != null ? theme.accentSoftText : theme.textFaint }}>
                             {lead.lead_score != null ? asText(lead.lead_score) : "—"}
                           </span>
                         </td>
                         <td style={{ padding: "8px 14px", verticalAlign: "middle" }}>
-                          <span style={{ fontSize: 12, color: "#475569", fontFamily: FONT_BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: "100%" }}>
+                          <span style={{ fontSize: 12, color: theme.textMuted, fontFamily: FONT_BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: "100%" }}>
                             {asText(lead.assignee_name) || "Unassigned"}
                           </span>
                         </td>
                         <td style={{ padding: "8px 14px", verticalAlign: "middle" }}>
-                          <span style={{ fontSize: 12, color: "#64748b", fontFamily: FONT_BODY, whiteSpace: "nowrap" }}>
+                          <span style={{ fontSize: 12, color: theme.textMuted, fontFamily: FONT_BODY, whiteSpace: "nowrap" }}>
                             {formatRelative(lead.last_activity_at)}
                           </span>
                         </td>
@@ -621,8 +623,8 @@ export default function LeadsListPage() {
 
       {/* Pagination */}
       {!isLoading && leads.length > 0 ? (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 20px", borderTop: "1px solid #E5E7EB", background: "#FAFAFA", flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: "#64748b", fontFamily: FONT_BODY }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 20px", borderTop: `1px solid ${theme.border}`, background: theme.panelAlt, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, color: theme.textMuted, fontFamily: FONT_BODY }}>
             Showing {pageStart}–{pageEnd} of {totalLeads}
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -630,19 +632,19 @@ export default function LeadsListPage() {
               type="button"
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={page === 0}
-              style={pageBtn(page === 0)}
+              style={pageBtn(page === 0, theme)}
             >
               <ChevronLeft style={{ width: 14, height: 14 }} />
               Prev
             </button>
-            <span style={{ padding: "0 10px", height: 32, display: "inline-flex", alignItems: "center", borderRadius: 8, border: "1px solid #E5E7EB", background: "#FFFFFF", fontSize: 12, fontWeight: 700, color: "#0F172A", fontFamily: FONT_HEAD }}>
+            <span style={{ padding: "0 10px", height: 32, display: "inline-flex", alignItems: "center", borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.panel, fontSize: 12, fontWeight: 700, color: theme.heading, fontFamily: FONT_HEAD }}>
               Page {page + 1}
             </span>
             <button
               type="button"
               onClick={() => setPage((p) => p + 1)}
               disabled={!hasNextPage}
-              style={pageBtn(!hasNextPage)}
+              style={pageBtn(!hasNextPage, theme)}
             >
               Next
               <ChevronRight style={{ width: 14, height: 14 }} />
@@ -698,6 +700,8 @@ function AddOpportunityModal({
   onCreated: (leadId: string) => void;
 }) {
   const { toast } = useToast();
+  const { theme } = useLeadCrmTheme();
+  const mInput = modalInput(theme);
   const [mode, setMode] = useState<AddMode>("company");
 
   // Shared placement fields.
@@ -782,14 +786,14 @@ function AddOpportunityModal({
       style={{ position: "fixed", inset: 0, zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       onClick={onClose}
     >
-      <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.45)" }} />
+      <div style={{ position: "absolute", inset: 0, background: theme.overlay }} />
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ position: "relative", width: "min(480px, 100%)", background: "#FFFFFF", borderRadius: 16, boxShadow: "0 24px 48px rgba(15,23,42,0.24)", overflow: "hidden" }}
+        style={{ position: "relative", width: "min(480px, 100%)", background: theme.panel, borderRadius: 16, boxShadow: `0 24px 48px ${theme.shadow}`, overflow: "hidden" }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", borderBottom: "1px solid #E5E7EB" }}>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Add opportunity</div>
-          <button onClick={onClose} style={{ display: "inline-flex", width: 28, height: 28, alignItems: "center", justifyContent: "center", borderRadius: 8, border: "1px solid #E5E7EB", background: "#FFFFFF", color: "#64748b", cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", borderBottom: `1px solid ${theme.border}` }}>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: theme.heading }}>Add opportunity</div>
+          <button onClick={onClose} style={{ display: "inline-flex", width: 28, height: 28, alignItems: "center", justifyContent: "center", borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.panel, color: theme.textMuted, cursor: "pointer" }}>
             <X style={{ width: 15, height: 15 }} />
           </button>
         </div>
@@ -805,11 +809,11 @@ function AddOpportunityModal({
           {mode === "company" ? (
             <>
               {picked ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "1.5px solid #BFDBFE", borderRadius: 12, background: "#EFF6FF" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: `1.5px solid ${theme.accentBorder}`, borderRadius: 12, background: theme.accentSoft }}>
                   <CompanyAvatar name={picked.name} domain={picked.domain} size="sm" className="!h-8 !w-8 !rounded-lg shrink-0" />
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{asText(picked.name)}</div>
-                    <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: "#64748b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <div style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: theme.heading, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{asText(picked.name)}</div>
+                    <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: theme.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {[picked.city, picked.state, picked.country].filter(Boolean).join(", ") || picked.domain || (picked.origin === "directory" ? "Directory" : "Company")}
                       {picked.has_snapshot ? " · shipment data" : ""}
                     </div>
@@ -817,7 +821,7 @@ function AddOpportunityModal({
                   <button
                     type="button"
                     onClick={() => { setPicked(null); setCompanyQuery(""); }}
-                    style={{ display: "inline-flex", width: 26, height: 26, alignItems: "center", justifyContent: "center", borderRadius: 8, border: "1px solid #BFDBFE", background: "#FFFFFF", color: "#2563EB", cursor: "pointer", flexShrink: 0 }}
+                    style={{ display: "inline-flex", width: 26, height: 26, alignItems: "center", justifyContent: "center", borderRadius: 8, border: `1px solid ${theme.accentBorder}`, background: theme.panel, color: theme.accent, cursor: "pointer", flexShrink: 0 }}
                     title="Change company"
                   >
                     <X style={{ width: 13, height: 13 }} />
@@ -830,7 +834,7 @@ function AddOpportunityModal({
                       value={companyQuery}
                       onChange={(e) => setCompanyQuery(e.target.value)}
                       placeholder="Search LIT companies, brokers, forwarders…"
-                      style={modalInput}
+                      style={mInput}
                       autoFocus
                     />
                     {searching ? (
@@ -848,9 +852,9 @@ function AddOpportunityModal({
                           onClick={() => setCompanyQuery("")}
                           style={{ position: "fixed", inset: 0, zIndex: 4 }}
                         />
-                        <div style={{ position: "absolute", zIndex: 5, top: "calc(100% + 4px)", left: 0, right: 0, maxHeight: 260, overflowY: "auto", background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, boxShadow: "0 12px 28px rgba(15,23,42,0.14)" }}>
+                        <div style={{ position: "absolute", zIndex: 5, top: "calc(100% + 4px)", left: 0, right: 0, maxHeight: 260, overflowY: "auto", background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, boxShadow: `0 12px 28px ${theme.shadow}` }}>
                         {results.length === 0 && !searching ? (
-                          <div style={{ padding: "12px 14px", fontFamily: FONT_BODY, fontSize: 12.5, color: "#94a3b8" }}>
+                          <div style={{ padding: "12px 14px", fontFamily: FONT_BODY, fontSize: 12.5, color: theme.textFaint }}>
                             No LIT companies match. Switch to "Add by email / manual" to create a new one.
                           </div>
                         ) : (
@@ -859,12 +863,12 @@ function AddOpportunityModal({
                               key={`${c.origin}-${c.id ?? c.source_company_key ?? i}`}
                               type="button"
                               onClick={() => { setPicked(c); }}
-                              style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "8px 12px", border: "none", borderTop: i === 0 ? "none" : "1px solid #F1F5F9", background: "#FFFFFF", cursor: "pointer", textAlign: "left" }}
+                              style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "8px 12px", border: "none", borderTop: i === 0 ? "none" : `1px solid ${theme.border}`, background: theme.panel, cursor: "pointer", textAlign: "left" }}
                             >
                               <CompanyAvatar name={c.name} domain={c.domain} size="sm" className="!h-7 !w-7 !rounded-md shrink-0" />
                               <div style={{ minWidth: 0, flex: 1 }}>
-                                <div style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{asText(c.name)}</div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: FONT_BODY, fontSize: 10.5, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                <div style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: theme.heading, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{asText(c.name)}</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: FONT_BODY, fontSize: 10.5, color: theme.textFaint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                   {(c.city || c.state || c.country) ? <MapPin style={{ width: 10, height: 10, flexShrink: 0 }} /> : null}
                                   {[c.city, c.state, c.country].filter(Boolean).join(", ") || c.domain || (c.origin === "directory" ? "Directory" : "Company")}
                                   {c.has_snapshot ? " · shipments" : ""}
@@ -879,28 +883,28 @@ function AddOpportunityModal({
                   </div>
                 </ModalField>
               )}
-              <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: "#94a3b8", marginTop: -4 }}>
+              <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: theme.textFaint, marginTop: -4 }}>
                 No email? Add the company and use Enrich to find contacts.
               </div>
             </>
           ) : (
             <>
               <ModalField label="Email (optional)">
-                <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@company.com" style={modalInput} autoFocus />
+                <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@company.com" style={mInput} autoFocus />
               </ModalField>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <ModalField label="Full name">
-                  <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Doe" style={modalInput} />
+                  <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Doe" style={mInput} />
                 </ModalField>
                 <ModalField label="Company">
-                  <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Acme Corp" style={modalInput} />
+                  <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Acme Corp" style={mInput} />
                 </ModalField>
               </div>
-              <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: "#94a3b8", marginTop: -4 }}>
+              <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: theme.textFaint, marginTop: -4 }}>
                 Add at least an email or a company. No email? Add the company and use Enrich to find contacts.
               </div>
               <ModalField label="Notes">
-                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Optional context…" style={{ ...modalInput, resize: "vertical" }} />
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Optional context…" style={{ ...mInput, resize: "vertical" }} />
               </ModalField>
             </>
           )}
@@ -908,7 +912,7 @@ function AddOpportunityModal({
           {/* Shared placement (both modes) */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <ModalField label="Stage">
-              <select value={stageId} onChange={(e) => setStageId(e.target.value)} style={modalInput}>
+              <select value={stageId} onChange={(e) => setStageId(e.target.value)} style={mInput}>
                 <option value="">New (default)</option>
                 {stages.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
@@ -916,7 +920,7 @@ function AddOpportunityModal({
               </select>
             </ModalField>
             <ModalField label="Assignee">
-              <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={modalInput}>
+              <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={mInput}>
                 <option value="">Unassigned</option>
                 {assignees.map((a) => (
                   <option key={a.user_id} value={a.user_id}>{a.name}</option>
@@ -926,11 +930,11 @@ function AddOpportunityModal({
           </div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "14px 18px", borderTop: "1px solid #E5E7EB", background: "#F8FAFC" }}>
-          <button onClick={onClose} disabled={busy} style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "14px 18px", borderTop: `1px solid ${theme.border}`, background: theme.panelAlt }}>
+          <button onClick={onClose} disabled={busy} style={{ padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${theme.borderStrong}`, background: theme.panel, color: theme.textMuted, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
             Cancel
           </button>
-          <button onClick={handleSubmit} disabled={busy || !canSubmit} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 10, border: "none", background: "#3B82F6", color: "#FFFFFF", fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: busy || !canSubmit ? "not-allowed" : "pointer", opacity: busy || !canSubmit ? 0.6 : 1 }}>
+          <button onClick={handleSubmit} disabled={busy || !canSubmit} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 10, border: "none", background: theme.accent, color: theme.accentText, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: busy || !canSubmit ? "not-allowed" : "pointer", opacity: busy || !canSubmit ? 0.6 : 1 }}>
             {busy ? <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} /> : <Plus style={{ width: 14, height: 14 }} />}
             Add opportunity
           </button>
@@ -957,6 +961,7 @@ function RowActions({
   onClose: () => void;
   onAction: (a: RowAction) => void;
 }) {
+  const { theme } = useLeadCrmTheme();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const isArchived = Boolean(lead.archived_at);
   const isDeleted = Boolean(lead.deleted_at);
@@ -977,8 +982,8 @@ function RowActions({
         title="Actions"
         style={{
           display: "inline-flex", alignItems: "center", justifyContent: "center",
-          width: 28, height: 28, borderRadius: 8, border: "1px solid #E5E7EB",
-          background: "#FFFFFF", color: "#64748b", cursor: "pointer",
+          width: 28, height: 28, borderRadius: 8, border: `1px solid ${theme.border}`,
+          background: theme.panel, color: theme.textMuted, cursor: "pointer",
         }}
       >
         <MoreHorizontal style={{ width: 15, height: 15 }} />
@@ -991,8 +996,8 @@ function RowActions({
             role="menu"
             style={{
               position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 41, width: 190,
-              background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12,
-              boxShadow: "0 12px 28px rgba(15,23,42,0.16)", padding: 6,
+              background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12,
+              boxShadow: `0 12px 28px ${theme.shadow}`, padding: 6,
               display: "flex", flexDirection: "column", gap: 2, textAlign: "left",
             }}
           >
@@ -1033,6 +1038,7 @@ function RowMenuItem({
   onClick: () => void;
   danger?: boolean;
 }) {
+  const { theme } = useLeadCrmTheme();
   return (
     <button
       type="button"
@@ -1045,9 +1051,9 @@ function RowMenuItem({
         display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "8px 10px",
         border: "none", borderRadius: 8, background: "transparent", cursor: "pointer",
         fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, textAlign: "left",
-        color: danger ? "#dc2626" : "#334155",
+        color: danger ? theme.danger : theme.text,
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = danger ? "#FEF2F2" : "#F1F5F9")}
+      onMouseEnter={(e) => (e.currentTarget.style.background = danger ? theme.dangerSoft : theme.hover)}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
       {icon}
@@ -1057,6 +1063,7 @@ function RowMenuItem({
 }
 
 function ModeTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  const { theme } = useLeadCrmTheme();
   return (
     <button
       type="button"
@@ -1067,9 +1074,9 @@ function ModeTab({ active, onClick, icon, label }: { active: boolean; onClick: (
         gap: 6,
         padding: "7px 12px",
         borderRadius: 9,
-        border: "1.5px solid " + (active ? "#3B82F6" : "#E5E7EB"),
-        background: active ? "rgba(59,130,246,0.08)" : "#FFFFFF",
-        color: active ? "#1D4ED8" : "#64748b",
+        border: "1.5px solid " + (active ? theme.accentBorder : theme.border),
+        background: active ? theme.accentSoft : theme.panel,
+        color: active ? theme.accentSoftText : theme.textMuted,
         fontFamily: FONT_HEAD,
         fontSize: 12,
         fontWeight: 600,
@@ -1083,31 +1090,35 @@ function ModeTab({ active, onClick, icon, label }: { active: boolean; onClick: (
 }
 
 function ModalField({ label, children }: { label: string; children: React.ReactNode }) {
+  const { theme } = useLeadCrmTheme();
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b" }}>{label}</span>
+      <span style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: theme.textMuted }}>{label}</span>
       {children}
     </label>
   );
 }
 
-const modalInput: React.CSSProperties = {
-  width: "100%",
-  padding: "8px 10px",
-  borderRadius: 8,
-  border: "1.5px solid #CBD5E1",
-  background: "#FFFFFF",
-  fontFamily: FONT_BODY,
-  fontSize: 13,
-  color: "#0F172A",
-  outline: "none",
-};
+function modalInput(theme: LeadCrmThemeTokens): React.CSSProperties {
+  return {
+    width: "100%",
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: `1.5px solid ${theme.borderStrong}`,
+    background: theme.inputBg,
+    fontFamily: FONT_BODY,
+    fontSize: 13,
+    color: theme.text,
+    outline: "none",
+  };
+}
 
 function Cell({ label, value }: { label: string; value: string }) {
+  const { theme } = useLeadCrmTheme();
   return (
     <div>
-      <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</div>
-      <div className="truncate text-slate-700" style={{ fontFamily: FONT_BODY, textTransform: label === "Source" ? "capitalize" : "none" }} title={value}>
+      <div style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: theme.textFaint }}>{label}</div>
+      <div className="truncate" style={{ color: theme.text, fontFamily: FONT_BODY, textTransform: label === "Source" ? "capitalize" : "none" }} title={value}>
         {value}
       </div>
     </div>
@@ -1115,9 +1126,10 @@ function Cell({ label, value }: { label: string; value: string }) {
 }
 
 function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
+  const { theme } = useLeadCrmTheme();
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b" }}>
+      <span style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: theme.textMuted }}>
         {label}
       </span>
       {children}
@@ -1125,19 +1137,21 @@ function FilterField({ label, children }: { label: string; children: React.React
   );
 }
 
-const selectStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "7px 10px",
-  borderRadius: 8,
-  border: "1.5px solid #CBD5E1",
-  background: "#FFFFFF",
-  fontFamily: FONT_BODY,
-  fontSize: 12.5,
-  color: "#0F172A",
-  outline: "none",
-};
+function selectStyle(theme: LeadCrmThemeTokens): React.CSSProperties {
+  return {
+    width: "100%",
+    padding: "7px 10px",
+    borderRadius: 8,
+    border: `1.5px solid ${theme.borderStrong}`,
+    background: theme.inputBg,
+    fontFamily: FONT_BODY,
+    fontSize: 12.5,
+    color: theme.text,
+    outline: "none",
+  };
+}
 
-function pageBtn(disabled: boolean): React.CSSProperties {
+function pageBtn(disabled: boolean, theme: LeadCrmThemeTokens): React.CSSProperties {
   return {
     display: "inline-flex",
     alignItems: "center",
@@ -1145,11 +1159,11 @@ function pageBtn(disabled: boolean): React.CSSProperties {
     height: 32,
     padding: "0 12px",
     borderRadius: 8,
-    border: "1px solid #E5E7EB",
-    background: "#FFFFFF",
+    border: `1px solid ${theme.border}`,
+    background: theme.panel,
     fontSize: 12,
     fontWeight: 600,
-    color: "#374151",
+    color: theme.textMuted,
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.4 : 1,
     fontFamily: FONT_HEAD,

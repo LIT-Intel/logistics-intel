@@ -80,7 +80,9 @@ import {
   leadDisplayName,
   sourceMeta,
   kindLabel,
+  type LeadCrmThemeTokens,
 } from "./leadCrmFormat";
+import { useLeadCrmTheme } from "./LeadCrmTheme";
 import { CompanyPanel, ContactsPanel } from "./LeadCompanyPanels";
 import LeadCommunicationPanel from "./LeadCommunicationPanel";
 
@@ -104,6 +106,11 @@ export default function LeadDetailDrawer({
   onRemoved?: () => void;
 }) {
   const { toast } = useToast();
+  const { theme } = useLeadCrmTheme();
+  const inputStyle = makeInputStyle(theme);
+  const iconBtn = makeIconBtn(theme);
+  const primaryBtn = makePrimaryBtn(theme);
+  const ghostBtn = makeGhostBtn(theme);
   const [lead, setLead] = useState<Lead>(initialLead);
   const [timeline, setTimeline] = useState<LeadTimelineEntry[]>([]);
   const [tab, setTab] = useState<Tab>("activity");
@@ -287,15 +294,15 @@ export default function LeadDetailDrawer({
       style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", justifyContent: "flex-end" }}
       onClick={onClose}
     >
-      <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.4)" }} />
+      <div style={{ position: "absolute", inset: 0, background: theme.overlay }} />
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
           position: "relative",
           width: "min(560px, 100%)",
           height: "100%",
-          background: "#F8FAFC",
-          boxShadow: "-8px 0 24px rgba(15,23,42,0.12)",
+          background: theme.bg,
+          boxShadow: `-8px 0 24px ${theme.shadow}`,
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -305,8 +312,8 @@ export default function LeadDetailDrawer({
         <div
           style={{
             padding: "16px 20px",
-            borderBottom: "1px solid #E5E7EB",
-            background: "#FFFFFF",
+            borderBottom: `1px solid ${theme.border}`,
+            background: theme.panel,
             display: "flex",
             alignItems: "flex-start",
             gap: 12,
@@ -331,16 +338,16 @@ export default function LeadDetailDrawer({
             {initials(name)}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: theme.heading, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {asText(name)}
             </div>
-            <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#64748b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {asText(lead.email) || "No email"}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
               {currentStage ? <span style={stageBadgeStyle(currentStage.color)}>{asText(currentStage.name)}</span> : null}
               {lead.company_name || lead.company_domain ? (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: FONT_BODY, fontSize: 11.5, color: "#475569" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: FONT_BODY, fontSize: 11.5, color: theme.textMuted }}>
                   {lead.company_domain || lead.company_logo_url ? (
                     <CompanyAvatar
                       name={lead.company_name || lead.company_domain || "Company"}
@@ -400,8 +407,8 @@ export default function LeadDetailDrawer({
                   role="menu"
                   style={{
                     position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 31, width: 210,
-                    background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12,
-                    boxShadow: "0 12px 28px rgba(15,23,42,0.16)", padding: 6,
+                    background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12,
+                    boxShadow: `0 12px 28px ${theme.shadow}`, padding: 6,
                     display: "flex", flexDirection: "column", gap: 2,
                   }}
                 >
@@ -439,7 +446,7 @@ export default function LeadDetailDrawer({
         </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 2, padding: "0 20px", borderBottom: "1px solid #E5E7EB", background: "#FFFFFF" }}>
+        <div style={{ display: "flex", gap: 2, padding: "0 20px", borderBottom: `1px solid ${theme.border}`, background: theme.panel }}>
           <DrawerTab active={tab === "activity"} onClick={() => setTab("activity")} label="Activity" />
           <DrawerTab active={tab === "communicate"} onClick={() => setTab("communicate")} label="Communicate" />
           <DrawerTab active={tab === "details"} onClick={() => setTab("details")} label="Details" />
@@ -557,7 +564,7 @@ export default function LeadDetailDrawer({
               {/* Activity timeline */}
               <Section title="Timeline">
                 {timeline.length === 0 ? (
-                  <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8" }}>No activity yet.</div>
+                  <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint }}>No activity yet.</div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                     {timeline.map((e, i) => (
@@ -587,7 +594,8 @@ function SourceIcon({ source }: { source: string | null | undefined }) {
 }
 
 function TimelineRow({ entry }: { entry: LeadTimelineEntry }) {
-  const meta = sourceMeta(entry.source);
+  const { theme, mode } = useLeadCrmTheme();
+  const meta = sourceMeta(entry.source, mode);
   return (
     <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
       <div
@@ -608,7 +616,7 @@ function TimelineRow({ entry }: { entry: LeadTimelineEntry }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <span style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: "#0F172A" }}>
+          <span style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: theme.heading }}>
             {kindLabel(entry.kind) || asText(entry.title) || "Activity"}
           </span>
           <span
@@ -633,12 +641,12 @@ function TimelineRow({ entry }: { entry: LeadTimelineEntry }) {
         {(() => {
           const d = renderTimelineDetail(entry.detail);
           return d ? (
-            <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#475569", marginTop: 2, wordBreak: "break-word" }}>
+            <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textMuted, marginTop: 2, wordBreak: "break-word" }}>
               {d}
             </div>
           ) : null;
         })()}
-        <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94a3b8", marginTop: 2 }}>
+        <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: theme.textFaint, marginTop: 2 }}>
           {formatRelative(entry.occurred_at)}
         </div>
       </div>
@@ -666,6 +674,10 @@ function TasksSection({
   onChanged: () => void;
 }) {
   const { toast } = useToast();
+  const { theme } = useLeadCrmTheme();
+  const inputStyle = makeInputStyle(theme);
+  const primaryBtn = makePrimaryBtn(theme);
+  const ghostBtn = makeGhostBtn(theme);
   const [tasks, setTasks] = useState<LeadTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -733,23 +745,23 @@ function TasksSection({
   return (
     <Section title="Tasks">
       {loading ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#94a3b8", fontFamily: FONT_BODY, fontSize: 12, padding: "4px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: theme.textFaint, fontFamily: FONT_BODY, fontSize: 12, padding: "4px 0" }}>
           <Loader2 style={spinIcon} /> Loading tasks…
         </div>
       ) : tasks.length === 0 ? (
-        <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8" }}>No follow-ups yet.</div>
+        <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint }}>No follow-ups yet.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {tasks.map((task) => {
             const done = task.status === "done";
             return (
-              <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 9px", border: "1px solid #EEF2F7", borderRadius: 10, background: task.overdue ? "#FFFBFA" : "#F8FAFC" }}>
+              <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 9px", border: `1px solid ${theme.border}`, borderRadius: 10, background: task.overdue ? theme.dangerSoft : theme.panelAlt }}>
                 <button
                   type="button"
                   onClick={() => handleToggle(task)}
                   disabled={busyId === task.id}
                   title={done ? "Reopen" : "Complete"}
-                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, border: "none", background: "transparent", color: done ? "#059669" : "#94a3b8", cursor: "pointer", flexShrink: 0 }}
+                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, border: "none", background: "transparent", color: done ? theme.success : theme.textFaint, cursor: "pointer", flexShrink: 0 }}
                 >
                   {busyId === task.id ? (
                     <Loader2 style={spinIcon} />
@@ -760,11 +772,11 @@ function TasksSection({
                   )}
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: done ? "#94a3b8" : "#0F172A", textDecoration: done ? "line-through" : "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: done ? theme.textFaint : theme.heading, textDecoration: done ? "line-through" : "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {asText(task.title) || "Follow-up"}
                   </div>
                   {task.due_date || task.assignee_name ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: FONT_BODY, fontSize: 10.5, color: task.overdue ? "#dc2626" : "#94a3b8", marginTop: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: FONT_BODY, fontSize: 10.5, color: task.overdue ? theme.danger : theme.textFaint, marginTop: 1 }}>
                       {task.overdue ? <CircleAlert style={{ width: 10, height: 10 }} /> : null}
                       {task.due_date ? asText(formatDate(task.due_date)) : ""}
                       {task.due_date && task.assignee_name ? " · " : ""}
@@ -779,7 +791,7 @@ function TasksSection({
       )}
 
       {adding ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4, padding: 10, border: "1px solid #E5E7EB", borderRadius: 10, background: "#F8FAFC" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4, padding: 10, border: `1px solid ${theme.border}`, borderRadius: 10, background: theme.panelAlt }}>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -821,9 +833,10 @@ function TasksSection({
 // ── Small UI atoms (mirror DealDetailDrawer) ───────────────────────────────
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const { theme } = useLeadCrmTheme();
   return (
-    <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, padding: 14 }}>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#64748b", marginBottom: 10 }}>
+    <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 14, padding: 14 }}>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: theme.textMuted, marginBottom: 10 }}>
         {title}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
@@ -832,18 +845,20 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const { theme } = useLeadCrmTheme();
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#94a3b8" }}>{label}</span>
+      <span style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: theme.textFaint }}>{label}</span>
       {children}
     </label>
   );
 }
 
 function Stat({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  const { theme } = useLeadCrmTheme();
   return (
     <div>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#94a3b8" }}>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: theme.textFaint }}>
         {label}
       </div>
       <div
@@ -851,7 +866,7 @@ function Stat({ label, value, mono }: { label: string; value: string; mono?: boo
           fontFamily: mono ? FONT_MONO : FONT_BODY,
           fontSize: 13,
           fontWeight: mono ? 700 : 500,
-          color: "#0F172A",
+          color: theme.text,
           marginTop: 2,
           wordBreak: "break-word",
           textTransform: label === "Status" || label === "Plan" ? "capitalize" : "none",
@@ -876,6 +891,7 @@ function MenuItem({
   onClick: () => void;
   danger?: boolean;
 }) {
+  const { theme } = useLeadCrmTheme();
   return (
     <button
       type="button"
@@ -885,9 +901,9 @@ function MenuItem({
         display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "8px 10px",
         border: "none", borderRadius: 8, background: "transparent", cursor: "pointer",
         fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, textAlign: "left",
-        color: danger ? "#dc2626" : "#334155",
+        color: danger ? theme.danger : theme.text,
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = danger ? "#FEF2F2" : "#F1F5F9")}
+      onMouseEnter={(e) => (e.currentTarget.style.background = danger ? theme.dangerSoft : theme.hover)}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
       {icon}
@@ -897,6 +913,7 @@ function MenuItem({
 }
 
 function DrawerTab({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  const { theme } = useLeadCrmTheme();
   return (
     <button
       type="button"
@@ -904,9 +921,9 @@ function DrawerTab({ active, onClick, label }: { active: boolean; onClick: () =>
       style={{
         padding: "11px 14px",
         border: "none",
-        borderBottom: `2px solid ${active ? "#3B82F6" : "transparent"}`,
+        borderBottom: `2px solid ${active ? theme.accentBorder : "transparent"}`,
         background: "transparent",
-        color: active ? "#1D4ED8" : "#64748b",
+        color: active ? theme.accentSoftText : theme.textMuted,
         fontFamily: FONT_HEAD,
         fontSize: 12.5,
         fontWeight: 700,
@@ -920,6 +937,7 @@ function DrawerTab({ active, onClick, label }: { active: boolean; onClick: () =>
 }
 
 function SpinnerAdorn() {
+  const { theme } = useLeadCrmTheme();
   return (
     <Loader2
       style={{
@@ -929,7 +947,7 @@ function SpinnerAdorn() {
         transform: "translateY(-50%)",
         width: 14,
         height: 14,
-        color: "#94a3b8",
+        color: theme.textFaint,
         animation: "spin 1s linear infinite",
         pointerEvents: "none",
       }}
@@ -939,61 +957,69 @@ function SpinnerAdorn() {
 
 const spinIcon: React.CSSProperties = { width: 14, height: 14, animation: "spin 1s linear infinite" };
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "7px 10px",
-  borderRadius: 8,
-  border: "1.5px solid #CBD5E1",
-  background: "#FFFFFF",
-  fontFamily: FONT_BODY,
-  fontSize: 13,
-  color: "#0F172A",
-  outline: "none",
-};
+function makeInputStyle(theme: LeadCrmThemeTokens): React.CSSProperties {
+  return {
+    width: "100%",
+    padding: "7px 10px",
+    borderRadius: 8,
+    border: `1.5px solid ${theme.borderStrong}`,
+    background: theme.inputBg,
+    fontFamily: FONT_BODY,
+    fontSize: 13,
+    color: theme.text,
+    outline: "none",
+  };
+}
 
-const iconBtn: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 30,
-  height: 30,
-  borderRadius: 8,
-  border: "1px solid #E5E7EB",
-  background: "#FFFFFF",
-  color: "#64748b",
-  cursor: "pointer",
-  flexShrink: 0,
-};
+function makeIconBtn(theme: LeadCrmThemeTokens): React.CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    border: `1px solid ${theme.border}`,
+    background: theme.panel,
+    color: theme.textMuted,
+    cursor: "pointer",
+    flexShrink: 0,
+  };
+}
 
-const primaryBtn: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "8px 14px",
-  borderRadius: 10,
-  border: "none",
-  background: "#3B82F6",
-  color: "#FFFFFF",
-  fontFamily: FONT_HEAD,
-  fontSize: 12.5,
-  fontWeight: 600,
-  cursor: "pointer",
-};
+function makePrimaryBtn(theme: LeadCrmThemeTokens): React.CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "8px 14px",
+    borderRadius: 10,
+    border: "none",
+    background: theme.accent,
+    color: theme.accentText,
+    fontFamily: FONT_HEAD,
+    fontSize: 12.5,
+    fontWeight: 600,
+    cursor: "pointer",
+  };
+}
 
-const ghostBtn: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "8px 12px",
-  borderRadius: 10,
-  border: "1.5px solid #CBD5E1",
-  background: "#FFFFFF",
-  color: "#475569",
-  fontFamily: FONT_HEAD,
-  fontSize: 12.5,
-  fontWeight: 600,
-  cursor: "pointer",
-};
+function makeGhostBtn(theme: LeadCrmThemeTokens): React.CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "8px 12px",
+    borderRadius: 10,
+    border: `1.5px solid ${theme.borderStrong}`,
+    background: theme.panel,
+    color: theme.textMuted,
+    fontFamily: FONT_HEAD,
+    fontSize: 12.5,
+    fontWeight: 600,
+    cursor: "pointer",
+  };
+}
 
 /**
  * Tags on the lead — chips with a small add/create popover. All values pass
@@ -1001,6 +1027,7 @@ const ghostBtn: React.CSSProperties = {
  * empty tag list rather than crashing the drawer.
  */
 function TagsRow({ leadId }: { leadId: string }) {
+  const { theme } = useLeadCrmTheme();
   const [tags, setTags] = useState<LeadTag[]>([]);
   const [all, setAll] = useState<LeadTag[]>([]);
   const [open, setOpen] = useState(false);
@@ -1054,14 +1081,14 @@ function TagsRow({ leadId }: { leadId: string }) {
           key={t.id}
           style={{
             display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 999,
-            background: "#F1F5F9", border: "1px solid #E2E8F0", color: "#475569",
+            background: theme.panelMuted, border: `1px solid ${theme.border}`, color: theme.textMuted,
             fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600,
           }}
         >
-          <TagIcon style={{ width: 10, height: 10, color: t.color ?? "#94a3b8" }} />
+          <TagIcon style={{ width: 10, height: 10, color: t.color ?? theme.textFaint }} />
           {asText(t.name)}
           <button onClick={() => remove(t.id)} disabled={busy} title="Remove tag"
-            style={{ border: "none", background: "transparent", cursor: "pointer", color: "#94a3b8", padding: 0, display: "inline-flex" }}>
+            style={{ border: "none", background: "transparent", cursor: "pointer", color: theme.textFaint, padding: 0, display: "inline-flex" }}>
             <X style={{ width: 10, height: 10 }} />
           </button>
         </span>
@@ -1070,7 +1097,7 @@ function TagsRow({ leadId }: { leadId: string }) {
         onClick={() => setOpen((v) => !v)}
         style={{
           display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 8px", borderRadius: 999,
-          background: "#FFFFFF", border: "1px dashed #CBD5E1", color: "#64748b",
+          background: theme.panel, border: `1px dashed ${theme.borderStrong}`, color: theme.textMuted,
           fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 600, cursor: "pointer",
         }}
       >
@@ -1080,7 +1107,7 @@ function TagsRow({ leadId }: { leadId: string }) {
         <div
           style={{
             position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20, width: 220,
-            background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 12, boxShadow: "0 8px 24px rgba(15,23,42,0.12)", padding: 10,
+            background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, boxShadow: `0 8px 24px ${theme.shadow}`, padding: 10,
           }}
         >
           <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
@@ -1089,24 +1116,24 @@ function TagsRow({ leadId }: { leadId: string }) {
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") createAndAdd(); }}
               placeholder="New tag…"
-              style={{ flex: 1, minWidth: 0, padding: "5px 8px", border: "1px solid #E5E7EB", borderRadius: 8, fontFamily: FONT_BODY, fontSize: 12 }}
+              style={{ flex: 1, minWidth: 0, padding: "5px 8px", border: `1px solid ${theme.border}`, borderRadius: 8, fontFamily: FONT_BODY, fontSize: 12, background: theme.inputBg, color: theme.text }}
             />
             <button onClick={createAndAdd} disabled={busy || !newName.trim()}
-              style={{ padding: "5px 9px", border: "none", borderRadius: 8, background: "#0F172A", color: "#FFFFFF", fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700, cursor: "pointer", opacity: busy || !newName.trim() ? 0.6 : 1 }}>
+              style={{ padding: "5px 9px", border: "none", borderRadius: 8, background: theme.accent, color: theme.accentText, fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700, cursor: "pointer", opacity: busy || !newName.trim() ? 0.6 : 1 }}>
               Add
             </button>
           </div>
           <div style={{ maxHeight: 160, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
             {available.length === 0 ? (
-              <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: "#94a3b8", padding: "4px 2px" }}>No more tags — create one above.</div>
+              <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: theme.textFaint, padding: "4px 2px" }}>No more tags — create one above.</div>
             ) : available.map((t) => (
               <button
                 key={t.id}
                 onClick={() => add(t.id)}
                 disabled={busy}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", border: "none", background: "transparent", borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 12, color: "#334155", textAlign: "left" }}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", border: "none", background: "transparent", borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 12, color: theme.text, textAlign: "left" }}
               >
-                <TagIcon style={{ width: 11, height: 11, color: t.color ?? "#94a3b8" }} />
+                <TagIcon style={{ width: 11, height: 11, color: t.color ?? theme.textFaint }} />
                 {asText(t.name)}
               </button>
             ))}

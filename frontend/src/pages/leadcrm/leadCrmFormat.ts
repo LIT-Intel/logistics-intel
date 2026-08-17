@@ -9,6 +9,152 @@ export const FONT_HEAD = "'Space Grotesk', sans-serif";
 export const FONT_BODY = "'DM Sans', sans-serif";
 export const FONT_MONO = "'JetBrains Mono', monospace";
 
+/* ────────────────────────────────────────────────────────────────────────
+ * THEME SYSTEM
+ * The Lead-CRM uses inline styles with hardcoded hex. To support a real
+ * light/dark toggle we centralize every surface color into a token object.
+ * Components read the ACTIVE theme via the `useLeadCrmTheme()` context hook
+ * (see LeadCrmTheme.tsx) and style off `theme.<token>` instead of literal hex.
+ *
+ * Token vocabulary (semantic, palette-agnostic):
+ *   bg        — the workspace canvas behind panels
+ *   panel     — primary card / table / header surface
+ *   panelAlt  — a secondary surface (sunken rows, footers, chips)
+ *   panelMuted— subtle fills (avatars placeholders, empty-state circles)
+ *   border    — hairline dividers + card borders
+ *   borderStrong — inputs / stronger separators
+ *   text      — primary text
+ *   textMuted — secondary text
+ *   textFaint — tertiary / placeholder text
+ *   heading   — strongest headings
+ *   accent    — brand blue (buttons, active nav)
+ *   accentText— text/icon on an accent fill
+ *   accentSoft— tinted accent background (active chips)
+ *   accentSoftText — text on accentSoft
+ *   hover     — row/nav hover fill
+ *   inputBg   — form control background
+ *   danger / dangerText / dangerSoft — destructive actions
+ *   success   — positive (completed, subscriber)
+ *   overlay   — modal / drawer scrim
+ *   shadow    — box-shadow color
+ *   sidebar / sidebarText / sidebarMuted / sidebarActiveBg / sidebarActiveText
+ *             — the persistent left rail (dark in both themes for brand)
+ * ──────────────────────────────────────────────────────────────────────── */
+
+export type ThemeMode = "light" | "dark";
+
+export type LeadCrmThemeTokens = {
+  mode: ThemeMode;
+  bg: string;
+  panel: string;
+  panelAlt: string;
+  panelMuted: string;
+  border: string;
+  borderStrong: string;
+  text: string;
+  textMuted: string;
+  textFaint: string;
+  heading: string;
+  accent: string;
+  accentText: string;
+  accentSoft: string;
+  accentSoftText: string;
+  accentBorder: string;
+  hover: string;
+  inputBg: string;
+  danger: string;
+  dangerText: string;
+  dangerSoft: string;
+  dangerBorder: string;
+  success: string;
+  successSoft: string;
+  overlay: string;
+  shadow: string;
+  sidebar: string;
+  sidebarText: string;
+  sidebarMuted: string;
+  sidebarActiveBg: string;
+  sidebarActiveText: string;
+  sidebarBorder: string;
+};
+
+const light: LeadCrmThemeTokens = {
+  mode: "light",
+  bg: "#F8FAFC",
+  panel: "#FFFFFF",
+  panelAlt: "#F8FAFC",
+  panelMuted: "#F1F5F9",
+  border: "#E5E7EB",
+  borderStrong: "#CBD5E1",
+  text: "#0F172A",
+  textMuted: "#64748b",
+  textFaint: "#94A3B8",
+  heading: "#0F172A",
+  accent: "#2563EB",
+  accentText: "#FFFFFF",
+  accentSoft: "rgba(59,130,246,0.08)",
+  accentSoftText: "#1D4ED8",
+  accentBorder: "#3B82F6",
+  hover: "#F8FAFC",
+  inputBg: "#FFFFFF",
+  danger: "#dc2626",
+  dangerText: "#FFFFFF",
+  dangerSoft: "#FEF2F2",
+  dangerBorder: "#FECACA",
+  success: "#059669",
+  successSoft: "#ECFDF5",
+  overlay: "rgba(15,23,42,0.45)",
+  shadow: "rgba(15,23,42,0.08)",
+  sidebar: "#0F172A",
+  sidebarText: "#E2E8F0",
+  sidebarMuted: "#94A3B8",
+  sidebarActiveBg: "rgba(59,130,246,0.18)",
+  sidebarActiveText: "#FFFFFF",
+  sidebarBorder: "rgba(255,255,255,0.08)",
+};
+
+const dark: LeadCrmThemeTokens = {
+  mode: "dark",
+  bg: "#0B1220",
+  panel: "#0F172A",
+  panelAlt: "#111C31",
+  panelMuted: "#1A2740",
+  border: "#1E2A44",
+  borderStrong: "#2B3A57",
+  text: "#E5EDF9",
+  textMuted: "#94A3B8",
+  textFaint: "#64748B",
+  heading: "#F1F5F9",
+  accent: "#3B82F6",
+  accentText: "#FFFFFF",
+  accentSoft: "rgba(59,130,246,0.16)",
+  accentSoftText: "#93C5FD",
+  accentBorder: "#3B82F6",
+  hover: "#16233B",
+  inputBg: "#0B1220",
+  danger: "#F87171",
+  dangerText: "#FFFFFF",
+  dangerSoft: "rgba(248,113,113,0.12)",
+  dangerBorder: "rgba(248,113,113,0.4)",
+  success: "#34D399",
+  successSoft: "rgba(52,211,153,0.12)",
+  overlay: "rgba(2,6,16,0.66)",
+  shadow: "rgba(0,0,0,0.5)",
+  sidebar: "#080E1A",
+  sidebarText: "#E2E8F0",
+  sidebarMuted: "#7C8AA5",
+  sidebarActiveBg: "rgba(59,130,246,0.22)",
+  sidebarActiveText: "#FFFFFF",
+  sidebarBorder: "rgba(255,255,255,0.06)",
+};
+
+export const themes: Record<ThemeMode, LeadCrmThemeTokens> = { light, dark };
+
+/** Resolve a theme object from a mode string (defaults to light). */
+export function themeFor(mode: ThemeMode | null | undefined): LeadCrmThemeTokens {
+  return mode === "dark" ? dark : light;
+}
+
 /**
  * asText — the single guard against React error #31 ("Objects are not valid as
  * a React child"). ANY value that (a) originates from an RPC / jsonb column and
@@ -164,9 +310,21 @@ export const SOURCE_META: Record<SourceKey, { label: string; fg: string; bg: str
   system: { label: "System", fg: "#475569", bg: "#F1F5F9", bd: "#E2E8F0" },
 };
 
-export function sourceMeta(source: string | null | undefined) {
+// Dark-mode variants — brighter fg on translucent tinted fills so the badges
+// stay legible on deep-slate panels.
+const SOURCE_META_DARK: Record<SourceKey, { label: string; fg: string; bg: string; bd: string }> = {
+  magnet: { label: "Magnet", fg: "#C4B5FD", bg: "rgba(124,58,237,0.18)", bd: "rgba(124,58,237,0.4)" },
+  product: { label: "Product", fg: "#93C5FD", bg: "rgba(59,130,246,0.18)", bd: "rgba(59,130,246,0.4)" },
+  email: { label: "Email", fg: "#67E8F9", bg: "rgba(14,116,144,0.2)", bd: "rgba(34,211,238,0.35)" },
+  demo: { label: "Demo", fg: "#FCD34D", bg: "rgba(180,83,9,0.2)", bd: "rgba(245,158,11,0.35)" },
+  manual: { label: "Manual", fg: "#6EE7B7", bg: "rgba(4,120,87,0.2)", bd: "rgba(16,185,129,0.35)" },
+  system: { label: "System", fg: "#CBD5E1", bg: "rgba(148,163,184,0.16)", bd: "rgba(148,163,184,0.3)" },
+};
+
+export function sourceMeta(source: string | null | undefined, mode: ThemeMode = "light") {
   const key = String(source ?? "").toLowerCase() as SourceKey;
-  return SOURCE_META[key] ?? SOURCE_META.system;
+  const table = mode === "dark" ? SOURCE_META_DARK : SOURCE_META;
+  return table[key] ?? table.system;
 }
 
 /**

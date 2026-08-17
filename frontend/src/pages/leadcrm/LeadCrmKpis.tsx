@@ -13,6 +13,7 @@
 import React from "react";
 import { Users, Sparkles, TrendingUp, UserX, Target, Loader2 } from "lucide-react";
 import { FONT_HEAD, FONT_BODY, FONT_MONO, asText, stageBadgeStyle } from "./leadCrmFormat";
+import { useLeadCrmTheme } from "./LeadCrmTheme";
 import type { PipelineSummary } from "@/api/leadCrm";
 
 function KpiCard({
@@ -28,16 +29,24 @@ function KpiCard({
   icon?: React.ComponentType<{ style?: React.CSSProperties }>;
   tone?: "blue" | "violet" | "emerald" | "amber" | "slate";
 }) {
-  const tones: Record<string, { bg: string; fg: string }> = {
+  const { theme, mode } = useLeadCrmTheme();
+  const tonesLight: Record<string, { bg: string; fg: string }> = {
     blue: { bg: "#EFF6FF", fg: "#2563EB" },
     violet: { bg: "#F5F3FF", fg: "#7C3AED" },
     emerald: { bg: "#ECFDF5", fg: "#059669" },
     amber: { bg: "#FFFBEB", fg: "#B45309" },
     slate: { bg: "#F1F5F9", fg: "#475569" },
   };
-  const t = tones[tone] ?? tones.blue;
+  const tonesDark: Record<string, { bg: string; fg: string }> = {
+    blue: { bg: "rgba(59,130,246,0.16)", fg: "#93C5FD" },
+    violet: { bg: "rgba(124,58,237,0.18)", fg: "#C4B5FD" },
+    emerald: { bg: "rgba(16,185,129,0.16)", fg: "#6EE7B7" },
+    amber: { bg: "rgba(180,83,9,0.2)", fg: "#FCD34D" },
+    slate: { bg: "rgba(148,163,184,0.16)", fg: "#CBD5E1" },
+  };
+  const t = (mode === "dark" ? tonesDark : tonesLight)[tone] ?? (mode === "dark" ? tonesDark : tonesLight).blue;
   return (
-    <div style={{ borderRadius: 16, border: "1px solid #E5E7EB", background: "#FFFFFF", padding: "13px 15px", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+    <div style={{ borderRadius: 16, border: `1px solid ${theme.border}`, background: theme.panel, padding: "13px 15px", boxShadow: `0 1px 2px ${theme.shadow}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {Icon ? (
           <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 10, background: t.bg, color: t.fg, flexShrink: 0 }}>
@@ -45,14 +54,14 @@ function KpiCard({
           </span>
         ) : null}
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 20, fontWeight: 700, lineHeight: 1, color: "#0F172A" }}>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 20, fontWeight: 700, lineHeight: 1, color: theme.heading }}>
             {value}
           </div>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", color: "#94A3B8", marginTop: 5 }}>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", color: theme.textFaint, marginTop: 5 }}>
             {label}
           </div>
           {hint ? (
-            <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94A3B8", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: theme.textFaint, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {hint}
             </div>
           ) : null}

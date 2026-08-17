@@ -38,12 +38,15 @@ import {
   avatarColor,
   leadDisplayName,
   stageDot,
+  type LeadCrmThemeTokens,
 } from "./leadCrmFormat";
+import { useLeadCrmTheme } from "./LeadCrmTheme";
 
 const CARD_CAP = 50;
 
 export default function PipelinePage() {
   const { toast } = useToast();
+  const { theme } = useLeadCrmTheme();
   const [columns, setColumns] = useState<BoardColumn[]>([]);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
@@ -127,13 +130,13 @@ export default function PipelinePage() {
   const isEmpty = !isLoading && columns.every((c) => c.total === 0);
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#F8FAFC" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: theme.bg }}>
       {/* Header */}
       <div
         style={{
           padding: "16px 24px",
-          borderBottom: "1px solid #E5E7EB",
-          background: "#FFFFFF",
+          borderBottom: `1px solid ${theme.border}`,
+          background: theme.panel,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -142,25 +145,25 @@ export default function PipelinePage() {
         }}
       >
         <div>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, color: "#3B82F6", letterSpacing: "0.22em", textTransform: "uppercase" }}>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, color: theme.accent, letterSpacing: "0.22em", textTransform: "uppercase" }}>
             Pipeline
           </div>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 700, color: "#0F172A", letterSpacing: "-0.02em" }}>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 700, color: theme.heading, letterSpacing: "-0.02em" }}>
             Leads board
           </div>
         </div>
       </div>
 
       {isLoading ? (
-        <div style={centerMsg}>
+        <div style={centerMsg(theme)}>
           <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite" }} /> Loading pipeline…
         </div>
       ) : columns.length === 0 ? (
-        <div style={{ ...centerMsg, flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 52, height: 52, borderRadius: "50%", background: "#F1F5F9" }}>
-            <KanbanSquare style={{ width: 22, height: 22, color: "#94a3b8" }} />
+        <div style={{ ...centerMsg(theme), flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 52, height: 52, borderRadius: "50%", background: theme.panelMuted }}>
+            <KanbanSquare style={{ width: 22, height: 22, color: theme.textFaint }} />
           </div>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 600, color: "#0F172A" }}>No pipeline yet</div>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 600, color: theme.heading }}>No pipeline yet</div>
         </div>
       ) : (
         <div style={{ flex: 1, overflowX: "auto", overflowY: "hidden", padding: 16 }}>
@@ -182,21 +185,21 @@ export default function PipelinePage() {
                     flexShrink: 0,
                     display: "flex",
                     flexDirection: "column",
-                    background: isOver ? "#EFF6FF" : "#F1F5F9",
-                    border: isOver ? "1.5px dashed #3B82F6" : "1px solid #E5E7EB",
+                    background: isOver ? theme.accentSoft : theme.panelAlt,
+                    border: isOver ? `1.5px dashed ${theme.accentBorder}` : `1px solid ${theme.border}`,
                     borderRadius: 14,
                     overflow: "hidden",
                     transition: "background 120ms, border-color 120ms",
                   }}
                 >
                   {/* Column header — stage color + count */}
-                  <div style={{ padding: "12px 14px", borderBottom: "1px solid #E5E7EB", background: "#FFFFFF" }}>
+                  <div style={{ padding: "12px 14px", borderBottom: `1px solid ${theme.border}`, background: theme.panel }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ width: 9, height: 9, borderRadius: "50%", background: stageDot(col.color), flexShrink: 0 }} />
-                      <span style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: "#0F172A", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <span style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: theme.heading, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {asText(col.stage_name) || "Stage"}
                       </span>
-                      <span style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 700, color: "#64748b", background: "#F1F5F9", borderRadius: 9999, padding: "1px 8px" }}>
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 700, color: theme.textMuted, background: theme.panelMuted, borderRadius: 9999, padding: "1px 8px" }}>
                         {asText(col.total)}
                       </span>
                     </div>
@@ -205,7 +208,7 @@ export default function PipelinePage() {
                   {/* Cards */}
                   <div style={{ flex: 1, overflowY: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                     {col.leads.length === 0 ? (
-                      <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8", textAlign: "center", padding: "16px 0" }}>
+                      <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint, textAlign: "center", padding: "16px 0" }}>
                         Drop leads here
                       </div>
                     ) : (
@@ -221,7 +224,7 @@ export default function PipelinePage() {
                           />
                         ))}
                         {hidden > 0 ? (
-                          <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: "#94a3b8", textAlign: "center", padding: "6px 0" }}>
+                          <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: theme.textFaint, textAlign: "center", padding: "6px 0" }}>
                             +{asText(hidden)} more — view in Leads
                           </div>
                         ) : null}
@@ -261,6 +264,7 @@ function LeadCardView({
   onDragEnd: () => void;
   onOpen: () => void;
 }) {
+  const { theme } = useLeadCrmTheme();
   const name = leadDisplayName(lead.full_name, lead.email);
   const company = lead.company_name || lead.company_domain || null;
   return (
@@ -270,12 +274,12 @@ function LeadCardView({
       onDragEnd={onDragEnd}
       onClick={onOpen}
       style={{
-        background: "#FFFFFF",
-        border: "1px solid #E5E7EB",
+        background: theme.panel,
+        border: `1px solid ${theme.border}`,
         borderRadius: 12,
         padding: 11,
         cursor: "grab",
-        boxShadow: "0 1px 2px rgba(15,23,42,0.05)",
+        boxShadow: `0 1px 2px ${theme.shadow}`,
         opacity: dragging ? 0.5 : 1,
       }}
     >
@@ -296,11 +300,11 @@ function LeadCardView({
           </span>
         )}
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: theme.heading, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {asText(name)}
           </div>
           {company ? (
-            <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: theme.textFaint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {asText(company)}
             </div>
           ) : null}
@@ -308,7 +312,7 @@ function LeadCardView({
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 9 }}>
-        <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700, color: lead.lead_score != null ? "#1d4ed8" : "#94A3B8" }}>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700, color: lead.lead_score != null ? theme.accentSoftText : theme.textFaint }}>
           {lead.lead_score != null ? `Score ${asText(lead.lead_score)}` : "—"}
         </span>
         {lead.assignee_name ? (
@@ -319,20 +323,22 @@ function LeadCardView({
             {asText(initials(lead.assignee_name))}
           </span>
         ) : (
-          <span style={{ fontFamily: FONT_BODY, fontSize: 10, color: "#cbd5e1" }}>Unassigned</span>
+          <span style={{ fontFamily: FONT_BODY, fontSize: 10, color: theme.textFaint }}>Unassigned</span>
         )}
       </div>
     </div>
   );
 }
 
-const centerMsg: React.CSSProperties = {
-  flex: 1,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 10,
-  color: "#64748b",
-  fontFamily: FONT_BODY,
-  fontSize: 14,
-};
+function centerMsg(theme: LeadCrmThemeTokens): React.CSSProperties {
+  return {
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    color: theme.textMuted,
+    fontFamily: FONT_BODY,
+    fontSize: 14,
+  };
+}

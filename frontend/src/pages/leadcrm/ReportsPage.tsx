@@ -30,6 +30,7 @@ import {
   type AuditRow, type DuplicateGroup, type AttioSyncStatus,
 } from "@/api/leadCrm";
 import { asText, textOr, formatDate, formatRelative, kindLabel, FONT_HEAD, FONT_BODY } from "./leadCrmFormat";
+import { useLeadCrmTheme } from "./LeadCrmTheme";
 
 type Days = 7 | 30 | 90;
 
@@ -37,14 +38,15 @@ const STAGE_COLORS = ["#94a3b8", "#38bdf8", "#818cf8", "#f59e0b", "#22c55e"];
 
 export default function ReportsPage() {
   const { isPlatformAdmin } = useLeadCrmAccess();
+  const { theme } = useLeadCrmTheme();
   const [days, setDays] = useState<Days>(30);
 
   return (
-    <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "20px 22px 48px" }}>
+    <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "20px 22px 48px", background: theme.bg }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 20, fontWeight: 800, color: "#0F172A" }}>Reports</div>
-          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: "#64748b", marginTop: 2 }}>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 20, fontWeight: 800, color: theme.heading }}>Reports</div>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: theme.textMuted, marginTop: 2 }}>
             Lifecycle performance across the pipeline. Excludes internal &amp; suspended users.
           </div>
         </div>
@@ -84,16 +86,17 @@ export default function ReportsPage() {
 // ── Shared chrome ────────────────────────────────────────────────────────────
 
 function DaysFilter({ days, onChange }: { days: Days; onChange: (d: Days) => void }) {
+  const { theme } = useLeadCrmTheme();
   return (
-    <div style={{ display: "inline-flex", background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 10, padding: 3 }}>
+    <div style={{ display: "inline-flex", background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 10, padding: 3 }}>
       {([7, 30, 90] as Days[]).map((d) => (
         <button
           key={d}
           onClick={() => onChange(d)}
           style={{
             padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer",
-            background: days === d ? "#0F172A" : "transparent",
-            color: days === d ? "#FFFFFF" : "#64748b",
+            background: days === d ? theme.accent : "transparent",
+            color: days === d ? theme.accentText : theme.textMuted,
             fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 700,
           }}
         >
@@ -107,12 +110,13 @@ function DaysFilter({ days, onChange }: { days: Days; onChange: (d: Days) => voi
 function DeckCard({ title, subtitle, right, children }: {
   title: string; subtitle?: string; right?: React.ReactNode; children: React.ReactNode;
 }) {
+  const { theme } = useLeadCrmTheme();
   return (
-    <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 16, padding: 18, boxShadow: "0 1px 3px rgba(15,23,42,0.04)" }}>
+    <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 18, boxShadow: `0 1px 3px ${theme.shadow}` }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
         <div>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 14.5, fontWeight: 700, color: "#0F172A" }}>{asText(title)}</div>
-          {subtitle ? <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{asText(subtitle)}</div> : null}
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 14.5, fontWeight: 700, color: theme.heading }}>{asText(title)}</div>
+          {subtitle ? <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint, marginTop: 2 }}>{asText(subtitle)}</div> : null}
         </div>
         {right}
       </div>
@@ -124,52 +128,56 @@ function DeckCard({ title, subtitle, right, children }: {
 function KpiCard({ label, value, hint, icon: Icon, tone = "blue" }: {
   label: string; value: React.ReactNode; hint?: string; icon: any; tone?: string;
 }) {
+  const { theme } = useLeadCrmTheme();
   const tones: Record<string, string> = {
     blue: "#2563EB", cyan: "#0891B2", violet: "#7C3AED", amber: "#B45309", emerald: "#047857", rose: "#E11D48", slate: "#475569",
   };
   const c = tones[tone] ?? tones.blue;
   return (
-    <div style={{ background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 14, padding: 14 }}>
+    <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 14, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <div style={{ width: 28, height: 28, borderRadius: 8, background: `${c}14`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: 28, height: 28, borderRadius: 8, background: `${c}22`, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <Icon style={{ width: 15, height: 15, color: c }} />
         </div>
-        <span style={{ fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        <span style={{ fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700, color: theme.textMuted, textTransform: "uppercase", letterSpacing: "0.04em" }}>
           {asText(label)}
         </span>
       </div>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 800, color: "#0F172A", lineHeight: 1.1 }}>{value}</div>
-      {hint ? <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: "#94a3b8", marginTop: 3 }}>{asText(hint)}</div> : null}
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 800, color: theme.heading, lineHeight: 1.1 }}>{value}</div>
+      {hint ? <div style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: theme.textFaint, marginTop: 3 }}>{asText(hint)}</div> : null}
     </div>
   );
 }
 
 function SectionHeader({ icon: Icon, title, subtitle }: { icon: any; title: string; subtitle?: string }) {
+  const { theme } = useLeadCrmTheme();
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-      <div style={{ width: 32, height: 32, borderRadius: 9, background: "#0F172A", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Icon style={{ width: 17, height: 17, color: "#FFFFFF" }} />
+      <div style={{ width: 32, height: 32, borderRadius: 9, background: theme.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon style={{ width: 17, height: 17, color: theme.accentText }} />
       </div>
       <div>
-        <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 800, color: "#0F172A" }}>{asText(title)}</div>
-        {subtitle ? <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8" }}>{asText(subtitle)}</div> : null}
+        <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 800, color: theme.heading }}>{asText(title)}</div>
+        {subtitle ? <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint }}>{asText(subtitle)}</div> : null}
       </div>
     </div>
   );
 }
 
 function Empty({ label = "No data for this period yet." }: { label?: string }) {
+  const { theme } = useLeadCrmTheme();
   return (
-    <div style={{ padding: "28px 12px", textAlign: "center", fontFamily: FONT_BODY, fontSize: 13, color: "#94a3b8" }}>
+    <div style={{ padding: "28px 12px", textAlign: "center", fontFamily: FONT_BODY, fontSize: 13, color: theme.textFaint }}>
       {asText(label)}
     </div>
   );
 }
 
 function Spinner() {
+  const { theme } = useLeadCrmTheme();
   return (
     <div style={{ padding: 28, display: "flex", justifyContent: "center" }}>
-      <Loader2 style={{ width: 20, height: 20, color: "#94a3b8", animation: "spin 1s linear infinite" }} />
+      <Loader2 style={{ width: 20, height: 20, color: theme.textFaint, animation: "spin 1s linear infinite" }} />
     </div>
   );
 }
@@ -226,10 +234,11 @@ function FunnelSection({ days }: { days: Days }) {
 }
 
 function ConvChip({ label, v, strong }: { label: string; v: number | null; strong?: boolean }) {
+  const { theme } = useLeadCrmTheme();
   return (
-    <div style={{ background: strong ? "#ECFDF5" : "#F8FAFC", border: `1px solid ${strong ? "#A7F3D0" : "#E5E7EB"}`, borderRadius: 10, padding: "8px 10px" }}>
-      <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#64748b" }}>{asText(label)}</div>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 800, color: strong ? "#047857" : "#0F172A" }}>{pct(v)}</div>
+    <div style={{ background: strong ? theme.successSoft : theme.panelAlt, border: `1px solid ${strong ? theme.success : theme.border}`, borderRadius: 10, padding: "8px 10px" }}>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: theme.textMuted }}>{asText(label)}</div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 800, color: strong ? theme.success : theme.heading }}>{pct(v)}</div>
     </div>
   );
 }
@@ -276,6 +285,7 @@ function SourceSection({ days }: { days: Days }) {
 // ── Won / Lost ───────────────────────────────────────────────────────────────
 
 function WonLostSection({ days }: { days: Days }) {
+  const { theme } = useLeadCrmTheme();
   const [data, setData] = useState<WonLostReport | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -294,16 +304,16 @@ function WonLostSection({ days }: { days: Days }) {
           </div>
           {data.lost_reasons.length > 0 ? (
             <div>
-              <div style={{ fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 6 }}>Lost reasons</div>
+              <div style={{ fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 700, color: theme.textMuted, marginBottom: 6 }}>Lost reasons</div>
               {data.lost_reasons.map((r, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: i ? "1px solid #F1F5F9" : "none", fontFamily: FONT_BODY, fontSize: 12.5 }}>
-                  <span style={{ color: "#334155" }}>{textOr(r.reason, "Unspecified")}</span>
-                  <span style={{ fontFamily: FONT_HEAD, fontWeight: 700, color: "#0F172A" }}>{asText(r.count)}</span>
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: i ? `1px solid ${theme.border}` : "none", fontFamily: FONT_BODY, fontSize: 12.5 }}>
+                  <span style={{ color: theme.text }}>{textOr(r.reason, "Unspecified")}</span>
+                  <span style={{ fontFamily: FONT_HEAD, fontWeight: 700, color: theme.heading }}>{asText(r.count)}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8" }}>No lost reasons captured this period.</div>
+            <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint }}>No lost reasons captured this period.</div>
           )}
         </>
       ) : <Empty />}
@@ -364,6 +374,7 @@ function VelocitySection({ days }: { days: Days }) {
 // ── By rep ───────────────────────────────────────────────────────────────────
 
 function RepSection({ days }: { days: Days }) {
+  const { theme } = useLeadCrmTheme();
   const [rows, setRows] = useState<RepRow[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -387,8 +398,8 @@ function RepSection({ days }: { days: Days }) {
               {rows.map((r) => (
                 <tr key={asText(r.user_id)} style={{ borderTop: "1px solid #F1F5F9" }}>
                   <td style={tdStyle}>
-                    <div style={{ fontWeight: 600, color: "#0F172A" }}>{textOr(r.name)}</div>
-                    <div style={{ fontSize: 11, color: "#94a3b8" }}>{textOr(r.email, "")}</div>
+                    <div style={{ fontWeight: 600, color: theme.heading }}>{textOr(r.name)}</div>
+                    <div style={{ fontSize: 11, color: theme.textFaint }}>{textOr(r.email, "")}</div>
                   </td>
                   <td style={tdNum}>{asText(r.assigned)}</td>
                   <td style={tdNum}>{asText(r.worked)}</td>
@@ -411,6 +422,7 @@ function RepSection({ days }: { days: Days }) {
 // ── Duplicates / merge ───────────────────────────────────────────────────────
 
 function DuplicatesSection() {
+  const { theme } = useLeadCrmTheme();
   const [groups, setGroups] = useState<DuplicateGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -456,21 +468,21 @@ function DuplicatesSection() {
           {groups.map((g, gi) => {
             const primary = g.leads[0];
             return (
-              <div key={gi} style={{ border: "1px solid #E5E7EB", borderRadius: 12, padding: 12, background: "#F8FAFC" }}>
+              <div key={gi} style={{ border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, background: theme.panelAlt }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: "#7C3AED", background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 999, padding: "2px 9px" }}>
+                  <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: "#A78BFA", background: "rgba(124,58,237,0.16)", border: "1px solid rgba(124,58,237,0.35)", borderRadius: 999, padding: "2px 9px" }}>
                     {asText(keyLabel(g.key_kind))}
                   </span>
-                  <span style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#64748b" }}>{textOr(g.key_val, "")} · {asText(g.count)} leads</span>
+                  <span style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textMuted }}>{textOr(g.key_val, "")} · {asText(g.count)} leads</span>
                 </div>
                 {g.leads.map((l, li) => (
-                  <div key={l.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "7px 0", borderTop: li ? "1px solid #E5E7EB" : "none" }}>
+                  <div key={l.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "7px 0", borderTop: li ? `1px solid ${theme.border}` : "none" }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: "#0F172A" }}>
+                      <div style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: theme.heading }}>
                         {textOr(l.full_name, textOr(l.company_name, "Lead"))}
-                        {li === 0 ? <span style={{ marginLeft: 8, fontSize: 10.5, color: "#047857", fontWeight: 700 }}>PRIMARY</span> : null}
+                        {li === 0 ? <span style={{ marginLeft: 8, fontSize: 10.5, color: "#059669", fontWeight: 700 }}>PRIMARY</span> : null}
                       </div>
-                      <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: "#94a3b8" }}>
+                      <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: theme.textFaint }}>
                         {textOr(l.company_name, "")} · score {asText(l.lead_score ?? 0)} · last {formatRelative(l.last_activity_at)}
                       </div>
                     </div>
@@ -498,6 +510,7 @@ function DuplicatesSection() {
 // ── Attio migration + cutover ────────────────────────────────────────────────
 
 function AttioMigrationSection() {
+  const { theme } = useLeadCrmTheme();
   const [status, setStatus] = useState<AttioSyncStatus | null>(null);
   const [raw, setRaw] = useState("");
   const [importing, setImporting] = useState(false);
@@ -580,10 +593,10 @@ function AttioMigrationSection() {
             {status?.enabled ? <ShieldCheck style={{ width: 20, height: 20, color: "#047857" }} /> : <Power style={{ width: 20, height: 20, color: "#94a3b8" }} />}
           </div>
           <div>
-            <div style={{ fontFamily: FONT_HEAD, fontSize: 14, fontWeight: 700, color: "#0F172A" }}>
+            <div style={{ fontFamily: FONT_HEAD, fontSize: 14, fontWeight: 700, color: theme.heading }}>
               Attio sync is {status == null ? "…" : status.enabled ? "ON" : "OFF"}
             </div>
-            <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: "#94a3b8" }}>
+            <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: theme.textFaint }}>
               {status?.updated_at ? `Changed ${formatDate(status.updated_at)}` : "Default — pushing to Attio"}
             </div>
           </div>
@@ -604,6 +617,7 @@ function AttioMigrationSection() {
 // ── Audit ────────────────────────────────────────────────────────────────────
 
 function AuditSection({ days }: { days: Days }) {
+  const { theme } = useLeadCrmTheme();
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -617,16 +631,16 @@ function AuditSection({ days }: { days: Days }) {
       {loading ? <Spinner /> : rows.length > 0 ? (
         <div style={{ maxHeight: 420, overflowY: "auto" }}>
           {rows.map((r, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i ? "1px solid #F1F5F9" : "none" }}>
-              <div style={{ minWidth: 96, fontFamily: FONT_BODY, fontSize: 11, color: "#94a3b8" }}>{formatRelative(r.occurred_at)}</div>
-              <div style={{ flex: 1, minWidth: 0, fontFamily: FONT_BODY, fontSize: 12.5, color: "#334155" }}>
-                <span style={{ fontWeight: 600, color: "#0F172A" }}>{textOr(r.actor_name, "Someone")}</span>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i ? `1px solid ${theme.border}` : "none" }}>
+              <div style={{ minWidth: 96, fontFamily: FONT_BODY, fontSize: 11, color: theme.textFaint }}>{formatRelative(r.occurred_at)}</div>
+              <div style={{ flex: 1, minWidth: 0, fontFamily: FONT_BODY, fontSize: 12.5, color: theme.text }}>
+                <span style={{ fontWeight: 600, color: theme.heading }}>{textOr(r.actor_name, "Someone")}</span>
                 {" "}
                 <span>{asText(kindLabel(r.kind)).toLowerCase() || asText(r.kind)}</span>
                 {" · "}
-                <span style={{ color: "#64748b" }}>{textOr(r.lead_label, "a lead")}</span>
+                <span style={{ color: theme.textMuted }}>{textOr(r.lead_label, "a lead")}</span>
               </div>
-              <span style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, color: "#64748b", background: "#F1F5F9", borderRadius: 999, padding: "2px 8px", textTransform: "uppercase" }}>
+              <span style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, color: theme.textMuted, background: theme.panelMuted, borderRadius: 999, padding: "2px 8px", textTransform: "uppercase" }}>
                 {textOr(r.source, "system")}
               </span>
             </div>
@@ -641,17 +655,20 @@ function AuditSection({ days }: { days: Days }) {
 
 const thStyle: React.CSSProperties = { padding: "6px 8px", fontWeight: 700 };
 const thNum: React.CSSProperties = { ...thStyle, textAlign: "right" };
-const tdStyle: React.CSSProperties = { padding: "8px 8px", color: "#334155" };
+// Note: tdStyle/tdNum keep a neutral slate that is legible on BOTH the light
+// white card and the dark deep-slate DeckCard (#334155 reads on both). Cells
+// that need theme-accurate color use `theme` directly at the call site.
+const tdStyle: React.CSSProperties = { padding: "8px 8px", color: "#64748B" };
 const tdNum: React.CSSProperties = { ...tdStyle, textAlign: "right" };
 
 const ghostBtn: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 9,
-  border: "1px solid #E5E7EB", background: "#FFFFFF", color: "#475569",
+  border: "1px solid #64748B55", background: "transparent", color: "#64748B",
   fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 600, cursor: "pointer",
 };
 const primaryBtn: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10,
-  border: "none", background: "#0F172A", color: "#FFFFFF",
+  border: "none", background: "#2563EB", color: "#FFFFFF",
   fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 700, cursor: "pointer",
 };
 const dangerBtn: React.CSSProperties = {

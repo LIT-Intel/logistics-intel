@@ -1,30 +1,35 @@
 "use client";
 
 /**
- * Lead-CRM minimal shell — the standalone workspace chrome for `/app/leads`.
+ * Lead-CRM shell — the standalone workspace chrome for `/app/leads`.
  *
- * Deliberately NOT AdminCommandDeck and NOT the full app AppShell: a SALES REP
- * gets a focused, brand-consistent workspace with just its own header + nav
- * (Leads · Pipeline · Team) and NOTHING else from the admin deck. The route
- * gate (`RequireLeadCrm`) lives here too so every child renders only for
- * lead-CRM members; a non-member sees the friendly "no access" card.
+ * Attio-style app layout: a persistent LEFT SIDEBAR (brand wordmark + vertical
+ * nav + back-to-app + user/logout) and a FULL-WIDTH content area with a thin
+ * top bar (section title + theme toggle + Add affordance). NOT AdminCommandDeck
+ * and NOT the full app AppShell — a sales rep gets a focused, dense CRM.
  *
- * Brand: same slate wordmark + Space Grotesk / DM Sans type as AppShell, so it
- * reads as part of Logistics Intel without pulling in the app's sidebar.
+ * The route gate (`RequireLeadCrm`) still calls `lit_my_lead_crm_access()` and
+ * renders the workspace only for members. Everything is wrapped in
+ * `LeadCrmThemeProvider` so every child reads light/dark tokens from context.
+ *
+ * Responsive: below ~880px the sidebar collapses into a top bar with a slide-in
+ * drawer (hamburger), keeping the workspace fully usable on mobile.
  */
-import React from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Users, KanbanSquare, ListChecks, BarChart3, UserCog, Loader2, LogOut, ArrowLeft } from "lucide-react";
+import React, { useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import {
+  Users, KanbanSquare, ListChecks, BarChart3, UserCog, Loader2, LogOut,
+  ArrowLeft, Sun, Moon, Menu,
+} from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { logout } from "@/auth/supabaseAuthClient";
 import { useLeadCrmAccess } from "@/hooks/useLeadCrmAccess";
 import { FONT_HEAD, FONT_BODY, initials, avatarColor } from "./leadCrmFormat";
+import { LeadCrmThemeProvider, useLeadCrmTheme } from "./LeadCrmTheme";
 
 /**
  * Route gate. Calls `lit_my_lead_crm_access()` via the hook and renders the
- * workspace only when `is_member`. A non-platform-admin REP is admitted purely
- * on membership — no admin, no plan checks. Non-members get a friendly screen
- * (never a redirect loop).
+ * workspace only when `is_member`. Non-members get a friendly screen.
  */
 export function RequireLeadCrm({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -104,65 +109,202 @@ export function RequireLeadCrm({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** The shell chrome — header + nav tabs + the routed child page. */
+/** Nav item descriptor. */
+type NavItem = { to: string; end?: boolean; icon: React.ReactNode; label: string };
+
+/** Human title per route for the top bar. */
+const SECTION_TITLES: { match: (p: string) => boolean; title: string }[] = [
+  { match: (p) => p.endsWith("/pipeline"), title: "Pipeline" },
+  { match: (p) => p.endsWith("/tasks"), title: "Tasks" },
+  { match: (p) => p.endsWith("/reports"), title: "Reports" },
+  { match: (p) => p.endsWith("/team"), title: "Team" },
+  { match: () => true, title: "Leads" },
+];
+
+/** Outer: provide the theme, then render the shell. */
 export default function LeadCrmLayout() {
+  return (
+    <LeadCrmThemeProvider>
+      <LeadCrmShell />
+    </LeadCrmThemeProvider>
+  );
+}
+
+function LeadCrmShell() {
   const { user, fullName } = useAuth();
   const { isPlatformAdmin, role } = useLeadCrmAccess();
-  const navigate = useNavigate();
+  const { theme, mode, toggle } = useLeadCrmTheme();
+  const location = useLocation();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const displayName =
     fullName ||
     (user as any)?.displayName ||
     (user?.email ? user.email.split("@")[0] : "Rep");
 
+  const roleLabel = role === "manager" ? "Manager" : role === "rep" ? "Sales rep" : "Member";
+
+  const navItems: NavItem[] = [
+    { to: "/app/leads", end: true, icon: <Users style={navIco} />, label: "Leads" },
+    { to: "/app/leads/pipeline", icon: <KanbanSquare style={navIco} />, label: "Pipeline" },
+    { to: "/app/leads/tasks", icon: <ListChecks style={navIco} />, label: "Tasks" },
+    { to: "/app/leads/reports", icon: <BarChart3 style={navIco} />, label: "Reports" },
+    ...(isPlatformAdmin ? [{ to: "/app/leads/team", icon: <UserCog style={navIco} />, label: "Team" } as NavItem] : []),
+  ];
+
+  const sectionTitle = SECTION_TITLES.find((s) => s.match(location.pathname))?.title ?? "Leads";
+
+  const sidebarInner = (
+    <SidebarContent
+      navItems={navItems}
+      displayName={displayName}
+      roleLabel={roleLabel}
+      onNavigate={() => setMobileNavOpen(false)}
+    />
+  );
+
   return (
-    <div style={{ minHeight: "100vh", background: "#F8FAFC", display: "flex", flexDirection: "column" }}>
-      {/* Header — slate bar, brand wordmark + workspace label + identity. */}
-      <header
+    <div
+      style={{
+        minHeight: "100vh",
+        height: "100vh",
+        background: theme.bg,
+        display: "flex",
+        overflow: "hidden",
+      }}
+    >
+      {/* Desktop sidebar (persistent, ≥md). Hidden on mobile via CSS class. */}
+      <aside
+        className="hidden md:flex"
         style={{
-          background: "linear-gradient(180deg, #0F172A 0%, #1E293B 100%)",
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
-          padding: "0 20px",
-          height: 56,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
+          width: 220,
           flexShrink: 0,
+          flexDirection: "column",
+          background: theme.sidebar,
+          borderRight: `1px solid ${theme.sidebarBorder}`,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-          {/* Back to the main app — platform admins especially need to return
-              to the admin deck; every member returns to /app. */}
-          <button
-            type="button"
-            onClick={() => navigate("/app")}
-            title="Back to Logistics Intel"
-            aria-label="Back to Logistics Intel"
+        {sidebarInner}
+      </aside>
+
+      {/* Mobile slide-in drawer */}
+      {mobileNavOpen ? (
+        <div className="md:hidden" style={{ position: "fixed", inset: 0, zIndex: 80 }}>
+          <div onClick={() => setMobileNavOpen(false)} style={{ position: "absolute", inset: 0, background: theme.overlay }} />
+          <aside
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "6px 11px",
-              borderRadius: 9,
-              border: "1px solid rgba(255,255,255,0.14)",
-              background: "rgba(255,255,255,0.04)",
-              color: "#CBD5E1",
-              fontFamily: FONT_HEAD,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              flexShrink: 0,
+              position: "absolute",
+              top: 0,
+              left: 0,
+              bottom: 0,
+              width: 240,
+              display: "flex",
+              flexDirection: "column",
+              background: theme.sidebar,
+              borderRight: `1px solid ${theme.sidebarBorder}`,
+              boxShadow: `8px 0 24px ${theme.shadow}`,
             }}
           >
-            <ArrowLeft style={{ width: 14, height: 14 }} />
-            <span className="hidden sm:inline">Back to Logistics Intel</span>
-          </button>
+            {sidebarInner}
+          </aside>
+        </div>
+      ) : null}
+
+      {/* Content column — full remaining width */}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Top bar */}
+        <header
+          style={{
+            height: 52,
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            padding: "0 16px",
+            background: theme.panel,
+            borderBottom: `1px solid ${theme.border}`,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <button
+              type="button"
+              className="md:hidden"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label="Open navigation"
+              style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                width: 34, height: 34, borderRadius: 9, border: `1px solid ${theme.border}`,
+                background: theme.panel, color: theme.textMuted, cursor: "pointer", flexShrink: 0,
+              }}
+            >
+              <Menu style={{ width: 16, height: 16 }} />
+            </button>
+            <span
+              style={{
+                fontFamily: FONT_HEAD,
+                fontSize: 16,
+                fontWeight: 700,
+                letterSpacing: "-0.02em",
+                color: theme.heading,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {sectionTitle}
+            </span>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              onClick={toggle}
+              title={mode === "dark" ? "Switch to light" : "Switch to dark"}
+              aria-label="Toggle theme"
+              style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                width: 34, height: 34, borderRadius: 9, border: `1px solid ${theme.border}`,
+                background: theme.panelAlt, color: theme.textMuted, cursor: "pointer",
+              }}
+            >
+              {mode === "dark" ? <Sun style={{ width: 16, height: 16 }} /> : <Moon style={{ width: 16, height: 16 }} />}
+            </button>
+          </div>
+        </header>
+
+        <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  );
+}
+
+/** The sidebar contents (shared by the desktop rail + the mobile drawer). */
+function SidebarContent({
+  navItems,
+  displayName,
+  roleLabel,
+  onNavigate,
+}: {
+  navItems: NavItem[];
+  displayName: string;
+  roleLabel: string;
+  onNavigate: () => void;
+}) {
+  const navigate = useNavigate();
+  const { theme } = useLeadCrmTheme();
+
+  return (
+    <>
+      {/* Brand */}
+      <div style={{ padding: "16px 16px 14px", borderBottom: `1px solid ${theme.sidebarBorder}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span
             style={{
               fontFamily: FONT_HEAD,
-              fontSize: 17,
+              fontSize: 15,
               fontWeight: 700,
               letterSpacing: "-0.02em",
               color: "#FFFFFF",
@@ -171,65 +313,117 @@ export default function LeadCrmLayout() {
           >
             Logistics Intel
           </span>
-          <span
-            style={{
-              display: "inline-flex",
+        </div>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            marginTop: 8,
+            padding: "2px 9px",
+            borderRadius: 999,
+            background: "rgba(59,130,246,0.18)",
+            border: "1px solid rgba(59,130,246,0.35)",
+            color: "#93C5FD",
+            fontFamily: FONT_HEAD,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+          }}
+        >
+          Lead CRM
+        </span>
+      </div>
+
+      {/* Nav */}
+      <nav style={{ flex: 1, overflowY: "auto", padding: "12px 10px", display: "flex", flexDirection: "column", gap: 2 }}>
+        {navItems.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.end}
+            onClick={onNavigate}
+            style={({ isActive }) => ({
+              display: "flex",
               alignItems: "center",
-              padding: "2px 9px",
-              borderRadius: 999,
-              background: "rgba(59,130,246,0.18)",
-              border: "1px solid rgba(59,130,246,0.35)",
-              color: "#93C5FD",
+              gap: 10,
+              padding: "9px 11px",
+              borderRadius: 9,
+              textDecoration: "none",
               fontFamily: FONT_HEAD,
-              fontSize: 10.5,
+              fontSize: 13.5,
+              fontWeight: 600,
+              color: isActive ? theme.sidebarActiveText : theme.sidebarMuted,
+              background: isActive ? theme.sidebarActiveBg : "transparent",
+            })}
+          >
+            {item.icon}
+            {item.label}
+          </NavLink>
+        ))}
+      </nav>
+
+      {/* Footer: back to app + user + logout */}
+      <div style={{ padding: "10px", borderTop: `1px solid ${theme.sidebarBorder}`, display: "flex", flexDirection: "column", gap: 6 }}>
+        <button
+          type="button"
+          onClick={() => navigate("/app")}
+          title="Back to Logistics Intel"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            width: "100%",
+            padding: "8px 11px",
+            borderRadius: 9,
+            border: "none",
+            background: "transparent",
+            color: theme.sidebarMuted,
+            fontFamily: FONT_HEAD,
+            fontSize: 12.5,
+            fontWeight: 600,
+            cursor: "pointer",
+            textAlign: "left",
+          }}
+        >
+          <ArrowLeft style={navIco} />
+          Back to Logistics Intel
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 8px 0", minWidth: 0 }}>
+          <div
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: "50%",
+              background: avatarColor(displayName),
+              color: "#FFFFFF",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontFamily: FONT_HEAD,
+              fontSize: 11,
               fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
+              flexShrink: 0,
             }}
           >
-            Lead CRM
-          </span>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            {initials(displayName)}
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: "50%",
-                background: avatarColor(displayName),
-                color: "#FFFFFF",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
                 fontFamily: FONT_HEAD,
-                fontSize: 11,
-                fontWeight: 700,
-                flexShrink: 0,
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: theme.sidebarText,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
-              {initials(displayName)}
+              {displayName}
             </div>
-            <div style={{ minWidth: 0 }}>
-              <div
-                style={{
-                  fontFamily: FONT_HEAD,
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  color: "#E2E8F0",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  maxWidth: 160,
-                }}
-              >
-                {displayName}
-              </div>
-              <div style={{ fontFamily: FONT_BODY, fontSize: 10, color: "#94A3B8", textTransform: "capitalize" }}>
-                {role === "manager" ? "Manager" : role === "rep" ? "Sales rep" : "Member"}
-              </div>
-            </div>
+            <div style={{ fontFamily: FONT_BODY, fontSize: 10, color: theme.sidebarMuted }}>{roleLabel}</div>
           </div>
           <button
             onClick={async () => {
@@ -243,120 +437,26 @@ export default function LeadCrmLayout() {
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: 5,
-              padding: "6px 11px",
-              borderRadius: 9,
-              border: "1px solid rgba(255,255,255,0.14)",
-              background: "rgba(255,255,255,0.04)",
-              color: "#CBD5E1",
-              fontFamily: FONT_HEAD,
-              fontSize: 12,
-              fontWeight: 600,
+              justifyContent: "center",
+              width: 30,
+              height: 30,
+              borderRadius: 8,
+              border: `1px solid ${theme.sidebarBorder}`,
+              background: "transparent",
+              color: theme.sidebarMuted,
               cursor: "pointer",
+              flexShrink: 0,
             }}
           >
-            <LogOut style={{ width: 13, height: 13 }} />
-            Logout
+            <LogOut style={{ width: 14, height: 14 }} />
           </button>
         </div>
-      </header>
-
-      {/* Nav tabs — Leads · Pipeline (phase 2) · Team (platform admin only). */}
-      <nav
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 2,
-          padding: "0 16px",
-          background: "#FFFFFF",
-          borderBottom: "1px solid #E5E7EB",
-          flexShrink: 0,
-        }}
-      >
-        <ShellTab to="/app/leads" end icon={<Users style={{ width: 14, height: 14 }} />} label="Leads" />
-        <ShellTab
-          to="/app/leads/pipeline"
-          icon={<KanbanSquare style={{ width: 14, height: 14 }} />}
-          label="Pipeline"
-        />
-        <ShellTab
-          to="/app/leads/tasks"
-          icon={<ListChecks style={{ width: 14, height: 14 }} />}
-          label="Tasks"
-        />
-        <ShellTab
-          to="/app/leads/reports"
-          icon={<BarChart3 style={{ width: 14, height: 14 }} />}
-          label="Reports"
-        />
-        {isPlatformAdmin ? (
-          <ShellTab to="/app/leads/team" icon={<UserCog style={{ width: 14, height: 14 }} />} label="Team" />
-        ) : null}
-      </nav>
-
-      <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <Outlet />
-      </main>
-    </div>
+      </div>
+    </>
   );
 }
 
-function ShellTab({
-  to,
-  end,
-  icon,
-  label,
-  badge,
-}: {
-  to: string;
-  end?: boolean;
-  icon: React.ReactNode;
-  label: string;
-  badge?: string;
-}) {
-  return (
-    <NavLink
-      to={to}
-      end={end}
-      style={({ isActive }) => ({
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "12px 14px",
-        border: "none",
-        borderBottom: `2px solid ${isActive ? "#3B82F6" : "transparent"}`,
-        background: "transparent",
-        color: isActive ? "#1D4ED8" : "#64748b",
-        fontFamily: FONT_HEAD,
-        fontSize: 13,
-        fontWeight: 700,
-        textDecoration: "none",
-        marginBottom: -1,
-      })}
-    >
-      {icon}
-      {label}
-      {badge ? (
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            padding: "1px 6px",
-            borderRadius: 999,
-            background: "#F1F5F9",
-            color: "#94A3B8",
-            fontSize: 9,
-            fontWeight: 700,
-            letterSpacing: "0.04em",
-            textTransform: "uppercase",
-          }}
-        >
-          {badge}
-        </span>
-      ) : null}
-    </NavLink>
-  );
-}
+const navIco: React.CSSProperties = { width: 16, height: 16, flexShrink: 0 };
 
 const centerScreen: React.CSSProperties = {
   minHeight: "100vh",
