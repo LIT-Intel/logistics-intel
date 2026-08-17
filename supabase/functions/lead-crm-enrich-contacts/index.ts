@@ -68,6 +68,46 @@ Deno.serve(async (req: Request) => {
     );
   }
 
+  // Domain/name-only leads need a canonical lit_companies UUID before Apollo
+  // results are persisted; lit_contacts.company_id is what the Lead CRM contact
+  // panel reads. Reuse an existing domain row or create one deterministic Apollo
+  // identity row, then link the lead before discovery/enrichment.
+  if (!lead.company_id) {
+    let companyId: string | null = null;
+    if (hasDomain) {
+      const { data: existing } = await admin
+        .from("lit_companies")
+        .select("id")
+        .eq("domain", lead.company_domain.trim().toLowerCase())
+        .limit(1)
+        .maybeSingle();
+      companyId = existing?.id ?? null;
+    }
+    if (!companyId) {
+      const key = hasDomain
+        ? lead.company_domain.trim().toLowerCase()
+        : `leadcrm-${leadId}`;
+      const { data: canonical, error: canonicalErr } = await admin
+        .from("lit_companies")
+        .upsert({
+          source: "apollo",
+          source_company_key: key,
+          name: hasName ? lead.company_name.trim() : key,
+          normalized_name: (hasName ? lead.company_name : key).trim().toLowerCase(),
+          domain: hasDomain ? lead.company_domain.trim().toLowerCase() : null,
+          website: hasDomain ? `https://${lead.company_domain.trim().toLowerCase()}` : null,
+        }, { onConflict: "source,source_company_key" })
+        .select("id")
+        .single();
+      if (canonicalErr || !canonical?.id) {
+        return json({ ok: false, error: "Could not create a company record for enrichment", code: "COMPANY_LINK_FAILED" }, 500);
+      }
+      companyId = canonical.id;
+    }
+    await admin.from("lit_admin_leads").update({ company_id: companyId, updated_at: new Date().toISOString() }).eq("id", leadId);
+    lead.company_id = companyId;
+  }
+
   // 4) Kill-switch check (respect the provider flag; apollo has no dedicated flag
   //    today so this defaults fail-open, matching the ledger's design invariant).
   const enabled = await isProviderEnabled(admin, PROVIDER_FLAGS.IMPORTYETI_ENABLED);
@@ -77,12 +117,65 @@ Deno.serve(async (req: Request) => {
     log.warn("provider_flag_disabled_but_apollo_uncontrolled", { lead_id: leadId });
   }
 
-  // 5) Forward to the product's orchestrator with the SAME user JWT. Passing
-  //    company_id lets the orchestrator discover + enrich the company's contacts
-  //    via the org's provider cascade; it self-gates + meters + writes lit_contacts.
+  // 5) Discover people at the company first. The enrichment orchestrator enriches
+  //    contact TARGETS; it does not turn a company id/domain into people. The old
+  //    wrapper skipped this step, so Apollo received no contacts and returned
+  //    NO_TARGETS even though APOLLO_API_KEY was valid.
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const orchestratorUrl = `${supabaseUrl}/functions/v1/enrich-contact-orchestrator`;
   const forwardAuth = req.headers.get("Authorization")!;
+
+  let discoveredContacts: any[] = [];
+  try {
+    const search = await fetch(`${supabaseUrl}/functions/v1/apollo-contact-search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: forwardAuth,
+        apikey: Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      },
+      body: JSON.stringify({
+        company_id: lead.company_id ?? undefined,
+        domain: lead.company_domain ?? undefined,
+        company_name: lead.company_name ?? undefined,
+        titles: [
+          "Owner", "Founder", "President", "CEO", "Chief Executive Officer",
+          "VP Sales", "Vice President Sales", "Director of Sales",
+          "Operations Manager", "Director of Operations",
+        ],
+        seniorities: ["owner", "founder", "c_suite", "vp", "director", "manager"],
+        email_statuses: ["verified", "likely to engage"],
+        page: 1,
+        per_page: 25,
+      }),
+    });
+    const searchBody = await search.json().catch(() => ({}));
+    if (!search.ok || searchBody?.ok === false) {
+      return json({
+        ok: false,
+        error: searchBody?.message || searchBody?.error || "Contact discovery failed",
+        code: searchBody?.code || "CONTACT_DISCOVERY_FAILED",
+      }, search.status || 502);
+    }
+    discoveredContacts = Array.isArray(searchBody?.contacts) ? searchBody.contacts : [];
+  } catch (err) {
+    log.error("contact_discovery_failed", { err: String(err), lead_id: leadId });
+    return json({ ok: false, error: "Contact discovery service unavailable", code: "CONTACT_DISCOVERY_UNAVAILABLE" }, 502);
+  }
+
+  if (!discoveredContacts.length) {
+    return json({
+      ok: true,
+      provider: "apollo",
+      count: 0,
+      contacts: [],
+      exhausted: true,
+      credits_note: "No matching decision-makers were found — no enrichment credits consumed.",
+    });
+  }
+
+  // 6) Enrich the discovered people through the existing usage-gated provider
+  //    cascade. This is the path that persists rows into lit_contacts.
+  const orchestratorUrl = `${supabaseUrl}/functions/v1/enrich-contact-orchestrator`;
 
   let orchResp: any = null;
   let orchStatus = 0;
@@ -95,6 +188,7 @@ Deno.serve(async (req: Request) => {
         apikey: Deno.env.get("SUPABASE_ANON_KEY") ?? "",
       },
       body: JSON.stringify({
+        contacts: discoveredContacts,
         company_id: lead.company_id ?? undefined,
         domain: lead.company_domain ?? undefined,
         company_name: lead.company_name ?? undefined,
@@ -119,7 +213,7 @@ Deno.serve(async (req: Request) => {
   const count = Number(orchResp?.count ?? 0) || 0;
   const pending = orchResp?.pending === true;
 
-  // 6) CRM audit: activity row + provider_usage_events (attributes CRM spend).
+  // 7) CRM audit: activity row + provider_usage_events (attributes CRM spend).
   //    The orchestrator already consumed usage; this is an additional cost-ledger
   //    breadcrumb tagged to the lead-CRM feature. credits_consumed is left null so
   //    the ledger fills it from provider_pricing(apollo, contact_enrichment).
