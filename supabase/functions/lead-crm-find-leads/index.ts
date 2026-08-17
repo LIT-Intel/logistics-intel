@@ -12,10 +12,9 @@ Deno.serve(async (req) => {
 
   const url = Deno.env.get("SUPABASE_URL") || "";
   const anon = Deno.env.get("SUPABASE_ANON_KEY") || "";
-  const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   const apolloKey = Deno.env.get("APOLLO_API_KEY") || "";
   const authorization = req.headers.get("Authorization") || "";
-  if (!authorization || !url || !anon || !service) return json({ ok: false, error: "Unauthorized" }, 401);
+  if (!authorization || !url || !anon) return json({ ok: false, error: "Unauthorized" }, 401);
 
   const caller = createClient(url, anon, { global: { headers: { Authorization: authorization } } });
   const { data: userData, error: userError } = await caller.auth.getUser(authorization.replace(/^Bearer\s+/i, ""));
@@ -39,19 +38,11 @@ Deno.serve(async (req) => {
   if (!response.ok) return json({ ok: false, error: payload?.message || payload?.error || "Apollo search failed", provider_status: response.status }, response.status === 429 ? 429 : 502);
 
   const rows = Array.isArray(payload?.organizations) ? payload.organizations : Array.isArray(payload?.accounts) ? payload.accounts : [];
-  const apolloIds = rows.map((org: any) => String(org.id || "")).filter(Boolean);
-  const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
-  const [{ data: leadEnvelope, error: leadsError }, { data: qualificationRows, error: qualificationError }] = await Promise.all([
-    caller.rpc("lit_leadcrm_list_leads", {
-      p_stage_id: null, p_source: null, p_assignee: null, p_q: null,
-      p_limit: 500, p_offset: 0, p_status: "all",
-    }),
-    admin.from("lit_lead_company_qualifications")
-      .select("provider_company_id,status,company_type,confidence,reason,checked_at,expires_at")
-      .eq("provider", "apollo").in("provider_company_id", apolloIds),
-  ]);
+  const { data: leadEnvelope, error: leadsError } = await caller.rpc("lit_leadcrm_list_leads", {
+    p_stage_id: null, p_source: null, p_assignee: null, p_q: null,
+    p_limit: 500, p_offset: 0, p_status: "all",
+  });
   if (leadsError) console.error("saved lead lookup failed", leadsError);
-  if (qualificationError) console.error("qualification lookup failed", qualificationError);
 
   const leadRows = Array.isArray((leadEnvelope as any)?.leads) ? (leadEnvelope as any).leads : [];
   const savedByDomain = new Map<string, any>();
@@ -62,13 +53,10 @@ Deno.serve(async (req) => {
     if (domain) savedByDomain.set(domain, lead);
     if (name) savedByName.set(name, lead);
   }
-  const qualifications = new Map((qualificationRows || []).map((row: any) => [String(row.provider_company_id), row]));
   const companies = rows.map((org: any) => {
     const id = String(org.id || `${org.name || "company"}-${org.primary_domain || ""}`);
     const domain = cleanDomain(org.primary_domain || org.website_url);
     const existing = (domain ? savedByDomain.get(domain) : null) || savedByName.get(canonicalName(org.name));
-    const qualification: any = qualifications.get(id);
-    const qualificationFresh = qualification && new Date(qualification.expires_at).getTime() > Date.now();
     const savedStatus = existing ? existing.deleted_at ? "deleted" : existing.archived_at ? "archived" : "active" : null;
     return {
       id,
@@ -85,11 +73,11 @@ Deno.serve(async (req) => {
       saved: Boolean(existing),
       saved_lead_id: existing?.id || null,
       saved_status: savedStatus,
-      qualification_status: qualificationFresh ? qualification.status : "unverified",
-      qualification_company_type: qualificationFresh ? qualification.company_type : null,
-      qualification_confidence: qualificationFresh ? Number(qualification.confidence) : null,
-      qualification_reason: qualificationFresh ? qualification.reason : null,
-      safe_to_enrich: Boolean(qualificationFresh && qualification.status === "qualified" && Number(qualification.confidence) >= 0.75),
+      qualification_status: "unverified",
+      qualification_company_type: null,
+      qualification_confidence: null,
+      qualification_reason: null,
+      safe_to_enrich: false,
     };
   });
   return json({ ok: true, companies, pagination: payload?.pagination || { page, per_page: perPage }, provider: "apollo" });
