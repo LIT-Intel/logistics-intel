@@ -55,3 +55,8 @@ Version 1 uses prompt policy, approved/forbidden examples, deterministic graders
 - `evals/`: real-path behavior and tone evaluations
 - `tests/`: deterministic unit tests
 
+
+## Architecture diagrams
+
+- `docs/agent-interactions.png`: product and approval boundary
+- `docs/agent-sequence.png`: validation, generation, evaluation, and escalation sequence
