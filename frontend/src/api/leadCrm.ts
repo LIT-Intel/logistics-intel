@@ -43,6 +43,11 @@ export type Lead = {
   email: string | null;
   full_name: string | null;
   company_name: string | null;
+  // Manually-editable contact + company details (migration 20260817100000).
+  phone: string | null;
+  title: string | null;
+  website: string | null;
+  address: string | null;
   primary_source: string | null;
   magnet_slug: string | null;
   utm_source: string | null;
@@ -374,6 +379,10 @@ function normalizeLead(row: any): Lead {
     email: row.email ?? null,
     full_name: row.full_name ?? null,
     company_name: row.company_name ?? null,
+    phone: row.phone ?? null,
+    title: row.title ?? null,
+    website: row.website ?? null,
+    address: row.address ?? null,
     primary_source: row.primary_source ?? null,
     magnet_slug: row.magnet_slug ?? null,
     utm_source: row.utm_source ?? null,
@@ -916,6 +925,61 @@ export async function createLead(params: {
     lead_id: row?.lead_id != null ? String(row.lead_id) : undefined,
     created: Boolean(row?.created),
     merged: Boolean(row?.merged),
+    reason: row?.reason,
+  };
+}
+
+/** Result of `lit_leadcrm_update_lead()`. */
+export type UpdateLeadResult = { ok: boolean; lead_id?: string; reason?: string };
+
+/**
+ * Manually PATCH a lead's contact + company details (`lit_leadcrm_update_lead`).
+ *
+ * PATCH semantics: pass `undefined` (or omit) to leave a field untouched; pass a
+ * string (including "") to set/clear it. We forward `undefined` → null so the RPC
+ * treats it as "keep existing". Setting a `website` server-derives company_domain
+ * + refreshes the logo when no explicit domain is given, which also unblocks the
+ * Contacts "Enrich" button. Returns {ok:false, reason:'email_in_use'} on a
+ * partial-unique(email) conflict instead of throwing. Throws only on transport error.
+ */
+export async function updateLead(
+  leadId: string,
+  fields: {
+    fullName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    title?: string | null;
+    companyName?: string | null;
+    website?: string | null;
+    companyDomain?: string | null;
+    address?: string | null;
+    companyCity?: string | null;
+    companyState?: string | null;
+    companyCountry?: string | null;
+  },
+): Promise<UpdateLeadResult> {
+  // `undefined` → null (PATCH: keep existing). An explicit "" is forwarded as ""
+  // so the RPC clears that field.
+  const nz = (v: string | null | undefined): string | null => (v === undefined ? null : v);
+  const { data, error } = await supabase.rpc("lit_leadcrm_update_lead", {
+    p_lead_id: leadId,
+    p_full_name: nz(fields.fullName),
+    p_email: nz(fields.email),
+    p_phone: nz(fields.phone),
+    p_title: nz(fields.title),
+    p_company_name: nz(fields.companyName),
+    p_website: nz(fields.website),
+    p_company_domain: nz(fields.companyDomain),
+    p_address: nz(fields.address),
+    p_company_city: nz(fields.companyCity),
+    p_company_state: nz(fields.companyState),
+    p_company_country: nz(fields.companyCountry),
+  });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as any;
+  return {
+    ok: Boolean(row?.ok),
+    lead_id: row?.lead_id != null ? String(row.lead_id) : undefined,
     reason: row?.reason,
   };
 }

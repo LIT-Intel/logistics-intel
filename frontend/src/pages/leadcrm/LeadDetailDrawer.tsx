@@ -39,6 +39,8 @@ import {
   ArchiveRestore,
   Trash2,
   RotateCcw,
+  Pencil,
+  Save,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -57,6 +59,7 @@ import {
   assignLead,
   addNote,
   logTouch,
+  updateLead,
   archiveLead,
   deleteLead,
   restoreLead,
@@ -123,6 +126,7 @@ export default function LeadDetailDrawer({
   const [savingStage, setSavingStage] = useState(false);
   const [savingAssignee, setSavingAssignee] = useState(false);
 
+  const [editing, setEditing] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [noteBusy, setNoteBusy] = useState(false);
   const [touchText, setTouchText] = useState("");
@@ -500,17 +504,63 @@ export default function LeadDetailDrawer({
             <LeadCommunicationPanel lead={lead} onLogged={refresh} />
           ) : tab === "details" ? (
             <>
-              {/* Company intelligence (recognition + snapshot) */}
-              <CompanyPanel lead={lead} onRecognized={refresh} />
+              {editing ? (
+                <EditDetailsForm
+                  lead={lead}
+                  onCancel={() => setEditing(false)}
+                  onSaved={async () => {
+                    setEditing(false);
+                    await refresh();
+                  }}
+                />
+              ) : (
+                <>
+                  {/* Contact details (editable) */}
+                  <Section
+                    title="Contact"
+                    action={
+                      <button
+                        onClick={() => setEditing(true)}
+                        style={{ ...ghostBtn, padding: "5px 10px", fontSize: 11.5 }}
+                        title="Edit lead & company details"
+                      >
+                        <Pencil style={{ width: 12, height: 12 }} />
+                        Edit details
+                      </button>
+                    }
+                  >
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <Stat label="Full name" value={asText(lead.full_name) || "—"} />
+                      <Stat label="Title" value={asText(lead.title) || "—"} />
+                      <Stat label="Email" value={asText(lead.email) || "—"} />
+                      <Stat label="Phone" value={asText(lead.phone) || "—"} />
+                      <Stat label="Company" value={asText(lead.company_name) || "—"} />
+                      <Stat label="Website" value={asText(lead.website) || asText(lead.company_domain) || "—"} />
+                      <Stat label="Address" value={asText(lead.address) || "—"} />
+                      <Stat
+                        label="Location"
+                        value={
+                          asText(
+                            [lead.company_city, lead.company_state, lead.company_country]
+                              .filter(Boolean)
+                              .join(", "),
+                          ) || "—"
+                        }
+                      />
+                    </div>
+                  </Section>
 
-              {/* Company contacts + enrichment */}
-              <ContactsPanel lead={lead} />
+                  {/* Company intelligence (recognition + snapshot) */}
+                  <CompanyPanel lead={lead} onRecognized={refresh} />
 
-              {/* Tasks / follow-ups */}
-              <TasksSection leadId={lead.id} assignees={assignees} onChanged={onChanged} />
+                  {/* Company contacts + enrichment */}
+                  <ContactsPanel lead={lead} />
 
-              {/* Subscription / plan panel */}
-              <Section title="Subscription">
+                  {/* Tasks / follow-ups */}
+                  <TasksSection leadId={lead.id} assignees={assignees} onChanged={onChanged} />
+
+                  {/* Subscription / plan panel */}
+                  <Section title="Subscription">
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <Stat label="Plan" value={asText(lead.current_plan) || "—"} />
                   <Stat label="Status" value={asText(lead.current_status) || asText(lead.status) || "—"} />
@@ -530,6 +580,8 @@ export default function LeadDetailDrawer({
                   <Stat label="Signed up" value={formatDate(lead.signup_at)} />
                 </div>
               </Section>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -830,14 +882,154 @@ function TasksSection({
   );
 }
 
+// ── Edit details form (manual lead + company edit) ─────────────────────────
+
+/**
+ * Editable form for a lead's contact + company details. Prefilled from the
+ * current lead (get_lead), controlled inputs, themed via tokens. On save it
+ * PATCHes via updateLead — only changed fields are sent so untouched values are
+ * never wiped. Setting a company website server-derives the domain + logo, which
+ * unblocks the Contacts "Enrich" button. All read views elsewhere keep asText().
+ */
+function EditDetailsForm({
+  lead,
+  onCancel,
+  onSaved,
+}: {
+  lead: Lead;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const { theme } = useLeadCrmTheme();
+  const inputStyle = makeInputStyle(theme);
+  const primaryBtn = makePrimaryBtn(theme);
+  const ghostBtn = makeGhostBtn(theme);
+
+  const [fullName, setFullName] = useState(lead.full_name ?? "");
+  const [title, setTitle] = useState(lead.title ?? "");
+  const [email, setEmail] = useState(lead.email ?? "");
+  const [phone, setPhone] = useState(lead.phone ?? "");
+  const [companyName, setCompanyName] = useState(lead.company_name ?? "");
+  const [website, setWebsite] = useState(lead.website ?? lead.company_domain ?? "");
+  const [address, setAddress] = useState(lead.address ?? "");
+  const [city, setCity] = useState(lead.company_city ?? "");
+  const [state, setState] = useState(lead.company_state ?? "");
+  const [country, setCountry] = useState(lead.company_country ?? "");
+  const [saving, setSaving] = useState(false);
+
+  // Only send a field when it changed from its original value; forward "" to
+  // clear, `undefined` to keep. This preserves the RPC's PATCH semantics.
+  function diff(next: string, original: string | null | undefined): string | undefined {
+    const orig = original ?? "";
+    return next === orig ? undefined : next;
+  }
+
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await updateLead(lead.id, {
+        fullName: diff(fullName, lead.full_name),
+        title: diff(title, lead.title),
+        email: diff(email, lead.email),
+        phone: diff(phone, lead.phone),
+        companyName: diff(companyName, lead.company_name),
+        // website drives server-side domain + logo derivation.
+        website: diff(website, lead.website ?? lead.company_domain),
+        address: diff(address, lead.address),
+        companyCity: diff(city, lead.company_city),
+        companyState: diff(state, lead.company_state),
+        companyCountry: diff(country, lead.company_country),
+      });
+      if (!res.ok) {
+        toast({
+          title: res.reason === "email_in_use" ? "That email is already on another lead" : "Could not save",
+          description: res.reason === "email_in_use" ? "Use a different email address." : res.reason,
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: "Details saved" });
+      onSaved();
+    } catch (e: any) {
+      toast({ title: "Could not save", description: e?.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Section title="Edit details">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Field label="Full name">
+          <input value={fullName} onChange={(e) => setFullName(e.target.value)} style={inputStyle} placeholder="Full name" />
+        </Field>
+        <Field label="Title">
+          <input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} placeholder="e.g. Ops Manager" />
+        </Field>
+        <Field label="Email">
+          <input value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle} placeholder="name@company.com" type="email" />
+        </Field>
+        <Field label="Phone">
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} style={inputStyle} placeholder="+1…" />
+        </Field>
+        <Field label="Company">
+          <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} style={inputStyle} placeholder="Company name" />
+        </Field>
+        <Field label="Company website">
+          <input value={website} onChange={(e) => setWebsite(e.target.value)} style={inputStyle} placeholder="company.com" />
+        </Field>
+      </div>
+      <Field label="Address">
+        <input value={address} onChange={(e) => setAddress(e.target.value)} style={inputStyle} placeholder="Street address" />
+      </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+        <Field label="City">
+          <input value={city} onChange={(e) => setCity(e.target.value)} style={inputStyle} placeholder="City" />
+        </Field>
+        <Field label="State">
+          <input value={state} onChange={(e) => setState(e.target.value)} style={inputStyle} placeholder="State" />
+        </Field>
+        <Field label="Country">
+          <input value={country} onChange={(e) => setCountry(e.target.value)} style={inputStyle} placeholder="Country" />
+        </Field>
+      </div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: theme.textFaint }}>
+        Adding a company website lets you enrich contacts even when the company isn't auto-recognized.
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={handleSave} disabled={saving} style={primaryBtn}>
+          {saving ? <Loader2 style={spinIcon} /> : <Save style={{ width: 14, height: 14 }} />}
+          Save
+        </button>
+        <button onClick={onCancel} disabled={saving} style={ghostBtn}>
+          Cancel
+        </button>
+      </div>
+    </Section>
+  );
+}
+
 // ── Small UI atoms (mirror DealDetailDrawer) ───────────────────────────────
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
   const { theme } = useLeadCrmTheme();
   return (
     <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 14, padding: 14 }}>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: theme.textMuted, marginBottom: 10 }}>
-        {title}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+        <div style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: theme.textMuted }}>
+          {title}
+        </div>
+        {action}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
     </div>

@@ -55,9 +55,15 @@ Deno.serve(async (req: Request) => {
     .eq("id", leadId)
     .maybeSingle();
   if (leadErr || !lead) return json({ ok: false, error: "Lead not found", code: "NO_LEAD" }, 404);
-  if (!lead.company_id && !lead.company_domain) {
+  // Enrichment identity: a recognized company_id is best, but a MANUALLY-entered
+  // company_domain (derived from a hand-typed website via lit_leadcrm_update_lead)
+  // OR a company_name is enough for the orchestrator to enrich by domain/name.
+  // Only block when we have no identity at all.
+  const hasDomain = typeof lead.company_domain === "string" && lead.company_domain.trim() !== "";
+  const hasName = typeof lead.company_name === "string" && lead.company_name.trim() !== "";
+  if (!lead.company_id && !hasDomain && !hasName) {
     return json(
-      { ok: false, error: "Company not recognized for this lead — recognize the company first.", code: "COMPANY_NOT_RECOGNIZED" },
+      { ok: false, error: "No company identity for this lead — add a company name or website first.", code: "COMPANY_NOT_RECOGNIZED" },
       409,
     );
   }

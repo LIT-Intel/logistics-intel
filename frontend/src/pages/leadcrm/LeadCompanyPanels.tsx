@@ -232,7 +232,7 @@ export function ContactsPanel({ lead }: { lead: Lead }) {
           title: "Enrichment unavailable",
           description:
             res.code === "COMPANY_NOT_RECOGNIZED"
-              ? "Recognize the company first."
+              ? "Add a company name or website first (Edit details)."
               : res.error || "Try again later.",
           variant: "destructive",
         });
@@ -244,13 +244,21 @@ export function ContactsPanel({ lead }: { lead: Lead }) {
     }
   }
 
-  const canEnrich = Boolean(lead.company_id || lead.company_domain);
+  // Enrich is unblocked once the lead has ANY company identity: a recognized
+  // company_id, a (manually-entered/derived) domain, OR a company name.
+  const canEnrich = Boolean(lead.company_id || lead.company_domain || lead.company_name);
+  const companyLabel = lead.company_name || lead.company_domain || "this company";
 
   return (
     <Panel
       title="Contacts"
       action={
-        <button onClick={handleEnrich} disabled={enriching || !canEnrich} style={primaryMini} title={canEnrich ? "Enrich via Apollo (uses credits)" : "Recognize a company first"}>
+        <button
+          onClick={handleEnrich}
+          disabled={enriching || !canEnrich}
+          style={primaryMini}
+          title={canEnrich ? "Enrich via Apollo (uses credits)" : "Add a company name or website first"}
+        >
           {enriching ? <Loader2 style={spin14} /> : <UserPlus style={{ width: 13, height: 13 }} />}
           Enrich contacts
         </button>
@@ -263,8 +271,12 @@ export function ContactsPanel({ lead }: { lead: Lead }) {
       ) : !companyLinked ? (
         <EmptyRow
           icon={<Mail style={{ width: 16, height: 16 }} />}
-          title="No company linked"
-          detail="Recognize this lead's company to pull and enrich its contacts."
+          title="No contacts yet"
+          detail={
+            canEnrich
+              ? `Enrich to find contacts at ${companyLabel}.`
+              : "Add a company name or website (Edit details) to enrich its contacts."
+          }
         />
       ) : contacts.length === 0 ? (
         <EmptyRow
