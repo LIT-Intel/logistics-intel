@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { ArrowLeft, Building2, Check, Loader2, MapPin, Search, Users } from "lucide-react";
+import React, { useMemo, useRef, useState } from "react";
+import { ArrowLeft, Building2, Check, ChevronLeft, ChevronRight, Loader2, MapPin, Search, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { createLead } from "@/api/leadCrm";
@@ -25,11 +25,27 @@ type ApolloCompany = {
 };
 
 const DEFAULT_KEYWORDS = "freight broker, freight forwarder";
+const PAGE_SIZE = 50;
+
+type ApolloPagination = {
+  page: number;
+  perPage: number;
+  totalEntries: number | null;
+  totalPages: number | null;
+};
+
+const INITIAL_PAGINATION: ApolloPagination = {
+  page: 1,
+  perPage: PAGE_SIZE,
+  totalEntries: null,
+  totalPages: null,
+};
 
 export default function FindLeadsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { theme } = useLeadCrmTheme();
+  const pageRef = useRef<HTMLDivElement>(null);
   const [keywords, setKeywords] = useState(DEFAULT_KEYWORDS);
   const [location, setLocation] = useState("United States");
   const [results, setResults] = useState<ApolloCompany[]>([]);
@@ -38,24 +54,37 @@ export default function FindLeadsPage() {
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [pagination, setPagination] = useState<ApolloPagination>(INITIAL_PAGINATION);
 
   const selectableIds = useMemo(() => results.filter((r) => !saved.has(r.id)).map((r) => r.id), [results, saved]);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
-  async function runSearch() {
+  async function runSearch(requestedPage = 1) {
     if (!keywords.trim()) return;
     setSearching(true);
     setSearched(true);
     setSelected(new Set());
     try {
       const { data, error } = await supabase.functions.invoke("lead-crm-find-leads", {
-        body: { keywords: keywords.split(",").map((v) => v.trim()).filter(Boolean), location: location.trim() || null, page: 1, per_page: 50 },
+        body: { keywords: keywords.split(",").map((v) => v.trim()).filter(Boolean), location: location.trim() || null, page: requestedPage, per_page: PAGE_SIZE },
       });
       if (error) throw error;
       if (!data?.ok) throw new Error(data?.error || "Apollo search failed");
-      setResults(Array.isArray(data.companies) ? data.companies : []);
+      const companies = Array.isArray(data.companies) ? data.companies : [];
+      const meta = data?.pagination ?? {};
+      const totalEntries = Number(meta.total_entries ?? meta.totalEntries);
+      const totalPages = Number(meta.total_pages ?? meta.totalPages);
+      setResults(companies);
+      setPagination({
+        page: Number(meta.page) || requestedPage,
+        perPage: Number(meta.per_page ?? meta.perPage) || PAGE_SIZE,
+        totalEntries: Number.isFinite(totalEntries) ? totalEntries : null,
+        totalPages: Number.isFinite(totalPages) ? totalPages : null,
+      });
+      if (requestedPage > 1) pageRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error: any) {
       setResults([]);
+      setPagination((current) => ({ ...current, page: requestedPage }));
       toast({ title: "Search failed", description: error?.message || "Could not search Apollo.", variant: "destructive" });
     } finally {
       setSearching(false);
@@ -95,6 +124,7 @@ export default function FindLeadsPage() {
 
   return (
     <div
+      ref={pageRef}
       style={{
         flex: 1,
         minHeight: 0,
@@ -125,13 +155,19 @@ export default function FindLeadsPage() {
         <section style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1fr) minmax(210px, .55fr) auto", gap: 10, padding: 16, border: `1px solid ${theme.border}`, borderRadius: 14, background: theme.panel }} className="max-md:!grid-cols-1">
           <Field label="Company keywords" theme={theme}><input value={keywords} onChange={(e) => setKeywords(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runSearch()} placeholder={DEFAULT_KEYWORDS} style={inputStyle(theme)} /></Field>
           <Field label="Company location" theme={theme}><input value={location} onChange={(e) => setLocation(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runSearch()} placeholder="United States" style={inputStyle(theme)} /></Field>
-          <button disabled={searching || !keywords.trim()} onClick={runSearch} style={{ ...primaryButton(theme, searching || !keywords.trim()), alignSelf: "end", height: 39 }}>
+          <button disabled={searching || !keywords.trim()} onClick={() => runSearch(1)} style={{ ...primaryButton(theme, searching || !keywords.trim()), alignSelf: "end", height: 39 }}>
             {searching ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />} Search Apollo
           </button>
         </section>
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "18px 0 10px", minHeight: 28 }}>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: theme.heading }}>{searched ? `${results.length} companies found` : "Ready to search"}</div>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: theme.heading }}>
+            {searched
+              ? pagination.totalEntries != null
+                ? `Showing ${(pagination.page - 1) * pagination.perPage + (results.length ? 1 : 0)}–${(pagination.page - 1) * pagination.perPage + results.length} of ${pagination.totalEntries.toLocaleString()} companies`
+                : `${results.length} companies found · Page ${pagination.page}`
+              : "Ready to search"}
+          </div>
           {results.length > 0 ? <button onClick={() => setSelected(allSelected ? new Set() : new Set(selectableIds))} style={linkButton(theme.accent)}>{allSelected ? "Clear selection" : "Select all"}</button> : null}
         </div>
 
@@ -142,7 +178,7 @@ export default function FindLeadsPage() {
             {results.map((company) => {
               const isSelected = selected.has(company.id); const isSaved = saved.has(company.id);
               return <article key={company.id} onClick={() => toggle(company.id)} style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr) auto", gap: 12, alignItems: "center", padding: 14, borderRadius: 12, border: `1px solid ${isSelected ? theme.accentBorder : theme.border}`, background: isSelected ? theme.accentSoft : theme.panel, cursor: isSaved ? "default" : "pointer" }}>
-                <CompanyAvatar company={{ name: company.name, domain: company.domain, logo_url: company.logo_url }} size={40} />
+                <CompanyAvatar name={company.name} domain={company.domain} logoUrl={company.logo_url} size="md" />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontFamily: FONT_HEAD, fontSize: 14, fontWeight: 700, color: theme.heading, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{company.name}</div>
                   <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 4, color: theme.textMuted, fontSize: 12 }}>
@@ -157,6 +193,30 @@ export default function FindLeadsPage() {
               </article>;
             })}
           </div>}
+
+        {searched && results.length > 0 ? (
+          <nav aria-label="Apollo search result pages" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "20px 0 4px" }}>
+            <button
+              type="button"
+              disabled={searching || pagination.page <= 1}
+              onClick={() => runSearch(pagination.page - 1)}
+              style={paginationButton(theme, searching || pagination.page <= 1)}
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+            <span style={{ minWidth: 92, textAlign: "center", fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 700, color: theme.textMuted }}>
+              Page {pagination.page}{pagination.totalPages ? ` of ${pagination.totalPages}` : ""}
+            </span>
+            <button
+              type="button"
+              disabled={searching || (pagination.totalPages != null ? pagination.page >= pagination.totalPages : results.length < pagination.perPage)}
+              onClick={() => runSearch(pagination.page + 1)}
+              style={paginationButton(theme, searching || (pagination.totalPages != null ? pagination.page >= pagination.totalPages : results.length < pagination.perPage))}
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </nav>
+        ) : null}
       </main>
     </div>
   );
@@ -167,4 +227,5 @@ function Empty({ icon, title, detail, theme }: any) { return <div style={{ paddi
 function inputStyle(theme: any): React.CSSProperties { return { width: "100%", height: 39, borderRadius: 9, border: `1.5px solid ${theme.borderStrong}`, background: theme.inputBg, color: theme.text, padding: "0 11px", outline: "none", fontFamily: FONT_BODY, fontSize: 13 }; }
 function primaryButton(theme: any, disabled = false): React.CSSProperties { return { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "9px 14px", border: 0, borderRadius: 9, background: theme.accent, color: theme.accentText, opacity: disabled ? .5 : 1, cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 700 }; }
 function secondaryButton(theme: any): React.CSSProperties { return { display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", borderRadius: 8, border: `1px solid ${theme.borderStrong}`, background: theme.panel, color: theme.text, fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 700, cursor: "pointer" }; }
+function paginationButton(theme: any, disabled: boolean): React.CSSProperties { return { display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, border: `1px solid ${theme.borderStrong}`, background: theme.panel, color: theme.text, opacity: disabled ? .45 : 1, cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 700 }; }
 function linkButton(color: string): React.CSSProperties { return { display: "inline-flex", alignItems: "center", gap: 6, border: 0, padding: 0, background: "transparent", color, fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 700, cursor: "pointer" }; }
