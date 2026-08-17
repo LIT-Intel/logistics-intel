@@ -132,7 +132,7 @@ export default function LeadDetailDrawer({
   const [touchText, setTouchText] = useState("");
   const [touchBusy, setTouchBusy] = useState<"call" | "email" | null>(null);
 
-  const name = leadDisplayName(lead.full_name, lead.email);
+  const name = lead.full_name?.trim() || lead.company_name?.trim() || leadDisplayName(lead.full_name, lead.email);
   const currentStage = useMemo(
     () => stages.find((s) => s.id === (lead.stage_id ?? stageId)),
     [stages, lead.stage_id, stageId],
@@ -554,7 +554,7 @@ export default function LeadDetailDrawer({
                   <CompanyPanel lead={lead} onRecognized={refresh} />
 
                   {/* Company contacts + enrichment */}
-                  <ContactsPanel lead={lead} />
+                  <ContactsPanel lead={lead} onChanged={refresh} />
 
                   {/* Tasks / follow-ups */}
                   <TasksSection leadId={lead.id} assignees={assignees} onChanged={onChanged} />

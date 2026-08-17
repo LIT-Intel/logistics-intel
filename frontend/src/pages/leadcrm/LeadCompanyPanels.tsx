@@ -27,6 +27,8 @@ import {
   UserPlus,
   Building2,
   RefreshCw,
+  Check,
+  Save,
 } from "lucide-react";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { useToast } from "@/components/ui/use-toast";
@@ -38,6 +40,8 @@ import {
   getLeadContacts,
   enrichLeadContacts,
   recognizeCompany,
+  getSavedContactIds,
+  saveLeadContacts,
 } from "@/api/leadCrm";
 import { FONT_HEAD, FONT_BODY, FONT_MONO, asText } from "./leadCrmFormat";
 
@@ -187,19 +191,43 @@ export function CompanyPanel({ lead, onRecognized }: { lead: Lead; onRecognized:
 
 // ── Contacts panel ──────────────────────────────────────────────────────────
 
-export function ContactsPanel({ lead }: { lead: Lead }) {
+export function ContactsPanel({ lead, onChanged }: { lead: Lead; onChanged?: () => void }) {
   const { toast } = useToast();
   const [contacts, setContacts] = useState<LeadContact[]>([]);
   const [companyLinked, setCompanyLinked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [enriching, setEnriching] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
 
   async function load() {
     setLoading(true);
     const { companyLinked: linked, contacts: rows } = await getLeadContacts(lead.id);
     setCompanyLinked(linked);
     setContacts(rows);
+    setSavedIds(await getSavedContactIds(rows.map((contact) => contact.id)));
+    setSelected(new Set());
     setLoading(false);
+  }
+
+  async function handleSaveSelected() {
+    const rows = contacts.filter((contact) => selected.has(contact.id) && !savedIds.has(contact.id));
+    if (!rows.length) return;
+    setSaving(true);
+    try {
+      await saveLeadContacts(rows, lead.company_id);
+      setSavedIds((current) => new Set([...current, ...rows.map((contact) => contact.id)]));
+      setSelected(new Set());
+      toast({
+        title: `Saved ${rows.length} contact${rows.length === 1 ? "" : "s"}`,
+        description: "Saved contacts remain linked to this company and its tags for segmentation and reporting.",
+      });
+    } catch (e: any) {
+      toast({ title: "Could not save contacts", description: e?.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
   }
 
   useEffect(() => {
@@ -210,6 +238,8 @@ export function ContactsPanel({ lead }: { lead: Lead }) {
       if (!alive) return;
       setCompanyLinked(linked);
       setContacts(rows);
+      setSavedIds(await getSavedContactIds(rows.map((contact) => contact.id)));
+      setSelected(new Set());
       setLoading(false);
     })();
     return () => {
@@ -227,6 +257,7 @@ export function ContactsPanel({ lead }: { lead: Lead }) {
           description: res.credits_note,
         });
         await load();
+        onChanged?.();
       } else {
         toast({
           title: "Enrichment unavailable",
@@ -286,8 +317,32 @@ export function ContactsPanel({ lead }: { lead: Lead }) {
         />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {contacts.map((c) => (
-            <ContactCard key={c.id} contact={c} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: FONT_BODY, fontSize: 11.5, color: "#64748b", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={contacts.some((contact) => !savedIds.has(contact.id)) && contacts.filter((contact) => !savedIds.has(contact.id)).every((contact) => selected.has(contact.id))}
+                onChange={(event) => setSelected(event.target.checked ? new Set(contacts.filter((contact) => !savedIds.has(contact.id)).map((contact) => contact.id)) : new Set())}
+              />
+              Select unsaved
+            </label>
+            <button onClick={handleSaveSelected} disabled={saving || selected.size === 0} style={{ ...primaryMini, opacity: saving || selected.size === 0 ? 0.55 : 1 }}>
+              {saving ? <Loader2 style={spin14} /> : <Save style={{ width: 13, height: 13 }} />}
+              Save selected ({selected.size})
+            </button>
+          </div>
+          {contacts.map((contact) => (
+            <ContactCard
+              key={contact.id}
+              contact={contact}
+              selected={selected.has(contact.id)}
+              saved={savedIds.has(contact.id)}
+              onToggle={() => setSelected((current) => {
+                const next = new Set(current);
+                if (next.has(contact.id)) next.delete(contact.id); else next.add(contact.id);
+                return next;
+              })}
+            />
           ))}
         </div>
       )}
@@ -300,12 +355,14 @@ export function ContactsPanel({ lead }: { lead: Lead }) {
   );
 }
 
-function ContactCard({ contact }: { contact: LeadContact }) {
+function ContactCard({ contact, selected, saved, onToggle }: { contact: LeadContact; selected: boolean; saved: boolean; onToggle: () => void }) {
   const name = contact.full_name || "Unknown contact";
   return (
-    <div style={{ border: "1px solid #E5E7EB", borderRadius: 10, padding: "9px 11px", background: "#FFFFFF" }}>
+    <div style={{ border: `1px solid ${selected ? "#3B82F6" : "#E5E7EB"}`, borderRadius: 10, padding: "9px 11px", background: selected ? "#EFF6FF" : "#FFFFFF" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <input type="checkbox" checked={selected || saved} disabled={saved} onChange={onToggle} aria-label={`Select ${name}`} />
+          <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {asText(name)}
           </div>
@@ -314,8 +371,13 @@ function ContactCard({ contact }: { contact: LeadContact }) {
               {asText(contact.title)}
             </div>
           ) : null}
+          </div>
         </div>
-        {contact.linkedin_url ? (
+        {saved ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#15803d", fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700 }}>
+            <Check style={{ width: 13, height: 13 }} /> Saved
+          </span>
+        ) : contact.linkedin_url ? (
           <a href={contact.linkedin_url} target="_blank" rel="noreferrer" style={{ color: "#0a66c2", flexShrink: 0 }}>
             <Linkedin style={{ width: 15, height: 15 }} />
           </a>
