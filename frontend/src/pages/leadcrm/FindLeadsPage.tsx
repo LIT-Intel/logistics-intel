@@ -4,7 +4,6 @@ import React, { useMemo, useRef, useState } from "react";
 import { ArrowLeft, Building2, Check, ChevronLeft, ChevronRight, Loader2, MapPin, Search, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { createLead, updateLead } from "@/api/leadCrm";
 import { useToast } from "@/components/ui/use-toast";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { FONT_BODY, FONT_HEAD } from "./leadCrmFormat";
