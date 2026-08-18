@@ -399,11 +399,12 @@ function LinkedInBlock({
               <button onClick={() => approve(latest)} disabled={busy || !latest.message.trim()} style={primaryBtn}><Send style={{ width: 13, height: 13 }} /> Approve &amp; send</button>
               <button onClick={() => cancelAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#B45309" }}><XCircle style={{ width: 13, height: 13 }} /> Cancel</button>
             </div>
-          ) : latest.status === "approved" || latest.status === "failed" ? (
+          ) : latest.status === "approved" ? (
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button onClick={() => cancelAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#B45309" }}><XCircle style={{ width: 13, height: 13 }} /> Cancel unsent action</button>
-              {latest.status === "failed" ? <button onClick={() => deleteAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#BE123C" }}><Trash2 style={{ width: 13, height: 13 }} /> Delete</button> : null}
             </div>
+          ) : latest.status === "failed" ? (
+            <div style={{ marginTop: 10 }}><button onClick={() => deleteAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#BE123C" }}><Trash2 style={{ width: 13, height: 13 }} /> Delete failed attempt</button></div>
           ) : latest.status === "cancelled" ? (
             <div style={{ marginTop: 10 }}><button onClick={() => deleteAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#BE123C" }}><Trash2 style={{ width: 13, height: 13 }} /> Delete unsent draft</button></div>
           ) : latest.status === "sent" || latest.status === "replied" ? (

@@ -172,7 +172,7 @@ async function dispatch(auth: any, actionId: string) {
     }
 
     const sentAt = new Date().toISOString();
-    const providerEventId = String(response.id || response.message_id || response.chat_id || "") || null;
+    const providerEventId = String(response.invitation_id || response.id || response.message_id || response.chat_id || "") || null;
     const { data: sent } = await auth.admin.from("lit_linkedin_outreach_actions").update({
       status: "sent", sent_at: sentAt, recipient_provider_id: providerId,
       provider_chat_id: response.chat_id || response.id || action.provider_chat_id,
@@ -220,10 +220,14 @@ async function dispatch(auth: any, actionId: string) {
     return json({ ok: true, action: sent });
   } catch (error) {
     const failedAt = new Date().toISOString();
+    const rawError = error instanceof Error ? error.message : "Unipile send failed";
+    const displayError = /delay new invitation/i.test(rawError)
+      ? "LinkedIn blocked this duplicate request because an invitation is already pending for this recipient."
+      : rawError;
     await auth.admin.from("lit_linkedin_outreach_actions").update({
-      status: "failed", failed_at: failedAt, last_error: error instanceof Error ? error.message : "Unipile send failed", updated_at: failedAt,
+      status: "failed", failed_at: failedAt, last_error: displayError, updated_at: failedAt,
     }).eq("id", action.id);
-    return json({ ok: false, code: unipileErrorCode(error), error: error instanceof Error ? error.message : "Unipile send failed" }, Number((error as any)?.status) || 502);
+    return json({ ok: false, code: /delay new invitation/i.test(rawError) ? "INVITATION_ALREADY_PENDING" : unipileErrorCode(error), error: displayError }, Number((error as any)?.status) || 502);
   }
 }
 
