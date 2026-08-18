@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { PLAN_LIMITS, normalizePlan as normalizePlanCode } from "@/lib/planLimits";
 import { listEmailAccounts, startGmailOAuth, startOutlookOAuth, sendTestEmail, disconnectEmailAccount } from "@/lib/api";
-import { listUnipileAccounts, refreshUnipileAccount, startUnipileLinkedIn, type UnipileAccount } from "@/api/outreach";
+import { listUnipileAccounts, refreshUnipileAccount, startUnipileLinkedIn, updateUnipileAccount, type UnipileAccount } from "@/api/outreach";
 import { resetOnboarding } from "@/lib/onboardingState";
 import { useInboxStatus } from "@/features/outbound/hooks/useInboxStatus";
 import type { LitEmailAccountRow } from "@/types/lit-outbound";
@@ -2193,14 +2193,33 @@ function LinkedInUnipileSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function load() {
-    setLoading(true);
-    try { setAccounts(await listUnipileAccounts(orgId || undefined)); }
-    catch (e: any) { setError(e?.message || "Could not load LinkedIn accounts"); }
-    finally { setLoading(false); }
+  async function load(quiet = false): Promise<UnipileAccount[]> {
+    if (!quiet) setLoading(true);
+    try {
+      const rows = await listUnipileAccounts(orgId || undefined);
+      setAccounts(rows);
+      return rows;
+    }
+    catch (e: any) {
+      setError(e?.message || "Could not load LinkedIn accounts");
+      return [];
+    }
+    finally { if (!quiet) setLoading(false); }
   }
 
-  useEffect(() => { void load(); }, [orgId]);
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const returnedFromUnipile = new URLSearchParams(window.location.search).get("unipile") === "connected";
+    let attemptsRemaining = returnedFromUnipile ? 8 : 1;
+    const poll = async () => {
+      const rows = await load(attemptsRemaining < (returnedFromUnipile ? 8 : 1));
+      if (cancelled || rows.some((row) => row.status === "OK") || --attemptsRemaining <= 0) return;
+      timer = setTimeout(() => void poll(), 1500);
+    };
+    void poll();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [orgId]);
 
   async function connect(accountId?: string) {
     setBusy(true); setError(null);
@@ -2222,6 +2241,21 @@ function LinkedInUnipileSection() {
     setBusy(true); setError(null);
     try { await refreshUnipileAccount(accountId); await load(); }
     catch (e: any) { setError(e?.message || "Could not refresh LinkedIn status"); }
+    finally { setBusy(false); }
+  }
+
+  async function updateUsage(account: UnipileAccount, patch: Partial<Pick<UnipileAccount, "use_for_campaigns" | "use_for_lead_crm">>) {
+    setBusy(true); setError(null);
+    try {
+      await updateUnipileAccount({
+        accountId: account.id,
+        useForCampaigns: patch.use_for_campaigns ?? account.use_for_campaigns,
+        useForLeadCrm: patch.use_for_lead_crm ?? account.use_for_lead_crm,
+        dailyInviteCap: account.daily_invite_cap,
+        dailyMessageCap: account.daily_message_cap,
+      });
+      await load(true);
+    } catch (e: any) { setError(e?.message || "Could not update LinkedIn assignment"); }
     finally { setBusy(false); }
   }
 
@@ -2257,8 +2291,21 @@ function LinkedInUnipileSection() {
         )}
       </div>
       {error ? <StatusMsg error={error} /> : null}
+      {connected ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 10, margin: "4px 0 12px" }}>
+          {[
+            { key: "campaigns", label: "Customer Campaigns", copy: "Use this sender for approved campaign invitations and messages.", checked: connected.use_for_campaigns },
+            { key: "lead_crm", label: "Internal Lead CRM", copy: "Use this sender for LIT prospecting and one-to-one communication.", checked: connected.use_for_lead_crm },
+          ].map((item) => (
+            <label key={item.key} style={{ display: "flex", gap: 10, padding: 12, border: `1px solid ${item.checked ? "#BFDBFE" : "#E2E8F0"}`, background: item.checked ? "#EFF6FF" : "#F8FAFC", borderRadius: 10, cursor: busy ? "wait" : "pointer" }}>
+              <input type="checkbox" checked={item.checked} disabled={busy} onChange={(e) => void updateUsage(connected, item.key === "campaigns" ? { use_for_campaigns: e.target.checked } : { use_for_lead_crm: e.target.checked })} style={{ accentColor: "#2563EB", marginTop: 2 }} />
+              <span><span style={{ display: "block", fontFamily: "Space Grotesk,sans-serif", fontSize: 12.5, fontWeight: 700, color: "#0F172A" }}>{item.label}</span><span style={{ display: "block", fontFamily: "DM Sans,sans-serif", fontSize: 11.5, lineHeight: 1.4, color: "#64748B", marginTop: 2 }}>{item.copy}</span></span>
+            </label>
+          ))}
+        </div>
+      ) : null}
       <div style={{ fontFamily: "DM Sans,sans-serif", fontSize: 11.5, color: "#94A3B8" }}>
-        Safety defaults: 20 invitations/day and 40 messages/day per account, with provider errors stopping the send instead of retrying aggressively.
+        Safety limits: {connected?.daily_invite_cap ?? 20} invitations/day and {connected?.daily_message_cap ?? 40} messages/day. Provider errors stop delivery instead of retrying aggressively.
       </div>
     </SCard>
   );
