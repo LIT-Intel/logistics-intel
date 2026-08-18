@@ -95,6 +95,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
           icon: Megaphone,
           locked: !canUseCampaigns,
         },
+        { label: "Communication Center", href: "/app/inbox", icon: Inbox },
         { label: "Quoting", href: "/app/quoting", icon: FileText },
         // Lead CRM — only rendered for lead-CRM members. Standalone route
         // (/app/leads) with its own shell; reps who are members reach it here.

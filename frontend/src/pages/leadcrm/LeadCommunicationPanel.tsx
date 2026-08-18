@@ -30,6 +30,8 @@ import {
   Linkedin,
   UserPlus,
   CheckCircle2,
+  Trash2,
+  XCircle,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -48,9 +50,12 @@ import {
   setCalUrl,
   logCallBookingOpened,
   getLeadLinkedInUrl,
+  getLeadTimeline,
 } from "@/api/leadCrm";
 import {
   approveAndSendLinkedIn,
+  cancelLinkedInOutreach,
+  deleteLinkedInOutreach,
   draftLinkedInOutreach,
   listLinkedInOutreach,
   listUnipileAccounts,
@@ -148,6 +153,11 @@ export default function LeadCommunicationPanel({
 }) {
   const { toast } = useToast();
   const [emailInfo, setEmailInfo] = useState<LeadEmailInfo | null>(null);
+  const [communicationVersion, setCommunicationVersion] = useState(0);
+  const handleLogged = () => {
+    setCommunicationVersion((version) => version + 1);
+    onLogged();
+  };
 
   useEffect(() => {
     let alive = true;
@@ -171,14 +181,14 @@ export default function LeadCommunicationPanel({
         hasEmail={hasEmail}
         suppressed={suppressed}
         suppressedReason={emailInfo?.suppressed_reason ?? null}
-        onLogged={onLogged}
+        onLogged={handleLogged}
         toast={toast}
       />
-      <ThreadsBlock lead={lead} />
-      <LinkedInBlock lead={lead} onLogged={onLogged} toast={toast} />
-      <DemoInviteBlock lead={lead} email={email} hasEmail={hasEmail} onLogged={onLogged} toast={toast} />
-      <CampaignBlock lead={lead} hasEmail={hasEmail} onLogged={onLogged} toast={toast} />
-      <BookCallBlock lead={lead} email={email} onLogged={onLogged} toast={toast} />
+      <ThreadsBlock lead={lead} refreshKey={communicationVersion} />
+      <LinkedInBlock lead={lead} onLogged={handleLogged} toast={toast} />
+      <DemoInviteBlock lead={lead} email={email} hasEmail={hasEmail} onLogged={handleLogged} toast={toast} />
+      <CampaignBlock lead={lead} hasEmail={hasEmail} onLogged={handleLogged} toast={toast} />
+      <BookCallBlock lead={lead} email={email} onLogged={handleLogged} toast={toast} />
     </div>
   );
 }
@@ -226,7 +236,7 @@ function LinkedInBlock({
     }
   }
 
-  async function draft() {
+  async function draft(regenerate = false) {
     if (!linkedinUrl.trim() || busy) return;
     setBusy(true);
     try {
@@ -236,6 +246,7 @@ function LinkedInBlock({
         actionType,
         accountId: accounts[0]?.id,
         angle: angle.trim() || undefined,
+        regenerate,
       });
       setActions((prev) => [action, ...prev.filter((a) => a.id !== action.id)]);
       toast({ title: "Draft ready for review" });
@@ -248,9 +259,14 @@ function LinkedInBlock({
     if (busy || !window.confirm(`Approve and send this LinkedIn ${action.action_type}?`)) return;
     setBusy(true);
     try {
-      const sent = await approveAndSendLinkedIn(action.id);
+      const sent = await approveAndSendLinkedIn(action.id, action.message.trim());
       setActions((prev) => [sent, ...prev.filter((a) => a.id !== sent.id)]);
-      toast({ title: action.action_type === "invite" ? "Connection request sent" : "LinkedIn message sent" });
+      toast({
+        title: action.action_type === "invite" ? "Connection request accepted by LinkedIn" : "LinkedIn message accepted",
+        description: sent.provider_event_id || sent.provider_chat_id
+          ? `Provider confirmation: ${sent.provider_event_id || sent.provider_chat_id}`
+          : "Unipile accepted the delivery request. Open Communication Center to monitor the provider event.",
+      });
       onLogged();
     } catch (e: any) {
       toast({ title: "LinkedIn send stopped", description: asText(e?.message), variant: "destructive" });
@@ -266,6 +282,32 @@ function LinkedInBlock({
       toast({ title: "LinkedIn draft updated" });
     } catch (e: any) {
       toast({ title: "Could not update draft", description: asText(e?.message), variant: "destructive" });
+    } finally { setBusy(false); }
+  }
+
+  async function cancelAction(action: LinkedInOutreachAction) {
+    if (busy || !window.confirm("Cancel this unsent LinkedIn action? It will not be delivered.")) return;
+    setBusy(true);
+    try {
+      await cancelLinkedInOutreach(action.id);
+      setActions((prev) => prev.map((item) => item.id === action.id ? { ...item, status: "cancelled" } : item));
+      toast({ title: "LinkedIn action cancelled", description: "This message will not be sent." });
+    } catch (e: any) {
+      toast({ title: "Could not cancel", description: asText(e?.message), variant: "destructive" });
+      await load();
+    } finally { setBusy(false); }
+  }
+
+  async function deleteAction(action: LinkedInOutreachAction) {
+    if (busy || !window.confirm("Delete this unsent draft permanently?")) return;
+    setBusy(true);
+    try {
+      await deleteLinkedInOutreach(action.id);
+      setActions((prev) => prev.filter((item) => item.id !== action.id));
+      toast({ title: "Unsent LinkedIn draft deleted" });
+    } catch (e: any) {
+      toast({ title: "Could not delete", description: asText(e?.message), variant: "destructive" });
+      await load();
     } finally { setBusy(false); }
   }
 
@@ -287,7 +329,7 @@ function LinkedInBlock({
             </select>
             <input value={angle} onChange={(e) => setAngle(e.target.value)} placeholder="Optional context or angle" style={inputStyle} />
           </div>
-          <button onClick={draft} disabled={busy || !linkedinUrl.trim()} style={{ ...ghostBtn, alignSelf: "flex-start", opacity: !linkedinUrl.trim() ? 0.5 : 1 }}>
+          <button onClick={() => draft(false)} disabled={busy || !linkedinUrl.trim()} style={{ ...ghostBtn, alignSelf: "flex-start", opacity: !linkedinUrl.trim() ? 0.5 : 1 }}>
             {busy ? <Loader2 style={spinIcon} /> : <UserPlus style={{ width: 14, height: 14 }} />} Draft with outreach agent
           </button>
         </>
@@ -299,21 +341,44 @@ function LinkedInBlock({
             <span style={{ fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, color: "#334155", textTransform: "uppercase" }}>{latest.status.replaceAll("_", " ")}</span>
           </div>
           {latest.status === "pending_approval" ? (
+            <>
+            {Array.isArray(latest.metadata?.draft_options) ? (
+              <div style={{ display: "grid", gap: 7, marginBottom: 9 }}>
+                {latest.metadata.draft_options.map((option) => {
+                  const selected = option.message === latest.message;
+                  return <button key={option.tone} type="button" onClick={() => setActions((prev) => prev.map((a) => a.id === latest.id ? { ...a, message: option.message, agent_rationale: option.rationale } : a))} style={{ textAlign: "left", border: selected ? "1.5px solid #3B82F6" : "1px solid #E2E8F0", background: selected ? "#EFF6FF" : "#FFFFFF", borderRadius: 9, padding: "8px 10px", cursor: "pointer" }}>
+                    <div style={{ fontFamily: FONT_HEAD, fontSize: 10, fontWeight: 700, color: selected ? "#1D4ED8" : "#64748B", textTransform: "uppercase" }}>{option.tone}</div>
+                    <div style={{ fontFamily: FONT_BODY, fontSize: 12, lineHeight: 1.45, color: "#0F172A", marginTop: 3 }}>{option.message}</div>
+                  </button>;
+                })}
+              </div>
+            ) : null}
             <textarea
               value={latest.message}
               onChange={(e) => setActions((prev) => prev.map((a) => a.id === latest.id ? { ...a, message: e.target.value } : a))}
               rows={4}
-              maxLength={latest.action_type === "invite" ? 280 : 1000}
+              maxLength={latest.action_type === "invite" ? 200 : 1000}
               style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }}
             />
+            <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94A3B8", marginTop: 4 }}>{latest.message.length}/{latest.action_type === "invite" ? 200 : 1000} · The exact text shown here will be sent.</div>
+            </>
           ) : <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, lineHeight: 1.55, color: "#0F172A", whiteSpace: "pre-wrap" }}>{latest.message}</div>}
           {latest.agent_rationale ? <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: "#94A3B8", marginTop: 7 }}>Why this draft: {latest.agent_rationale}</div> : null}
           {latest.last_error ? <Hint warn>{latest.last_error}</Hint> : null}
           {latest.status === "pending_approval" ? (
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button onClick={() => saveDraft(latest)} disabled={busy || !latest.message.trim()} style={ghostBtn}>Save edits</button>
+              <button onClick={() => draft(true)} disabled={busy} style={ghostBtn}>Generate 5 new options</button>
               <button onClick={() => approve(latest)} disabled={busy || !latest.message.trim()} style={primaryBtn}><Send style={{ width: 13, height: 13 }} /> Approve &amp; send</button>
+              <button onClick={() => cancelAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#B45309" }}><XCircle style={{ width: 13, height: 13 }} /> Cancel</button>
             </div>
+          ) : latest.status === "approved" || latest.status === "failed" ? (
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button onClick={() => cancelAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#B45309" }}><XCircle style={{ width: 13, height: 13 }} /> Cancel unsent action</button>
+              {latest.status === "failed" ? <button onClick={() => deleteAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#BE123C" }}><Trash2 style={{ width: 13, height: 13 }} /> Delete</button> : null}
+            </div>
+          ) : latest.status === "cancelled" ? (
+            <div style={{ marginTop: 10 }}><button onClick={() => deleteAction(latest)} disabled={busy} style={{ ...ghostBtn, color: "#BE123C" }}><Trash2 style={{ width: 13, height: 13 }} /> Delete unsent draft</button></div>
           ) : null}
         </div>
       ) : null}
@@ -406,7 +471,7 @@ function SendEmailBlock({
 }
 
 // ── 2. Email threads (read-only inbox mirror) ────────────────────────────────
-function ThreadsBlock({ lead }: { lead: Lead }) {
+function ThreadsBlock({ lead, refreshKey }: { lead: Lead; refreshKey: number }) {
   const [loading, setLoading] = useState(true);
   const [hasEmail, setHasEmail] = useState(false);
   const [threads, setThreads] = useState<LeadThread[]>([]);
@@ -415,16 +480,35 @@ function ThreadsBlock({ lead }: { lead: Lead }) {
     let alive = true;
     setLoading(true);
     (async () => {
-      const res = await getLeadThreads(lead.id);
+      const [res, timeline] = await Promise.all([getLeadThreads(lead.id), getLeadTimeline(lead.id)]);
       if (!alive) return;
       setHasEmail(res.hasEmail);
-      setThreads(res.threads);
+      const persistedIds = new Set(res.threads.map((thread) => thread.id));
+      const activityThreads: LeadThread[] = timeline
+        .filter((entry) => entry.kind === "email_sent" || entry.kind === "demo_invite_sent")
+        .map((entry, index) => {
+          const detail = entry.detail && typeof entry.detail === "object" ? entry.detail as any : {};
+          const id = `activity-${entry.kind}-${entry.occurred_at || index}`;
+          return {
+            id,
+            subject: detail.subject || (entry.kind === "demo_invite_sent" ? "Your LIT access invitation" : "Email sent from Lead CRM"),
+            participants: null,
+            last_message_at: entry.occurred_at,
+            message_count: 1,
+            unread_count: 0,
+            provider: detail.provider || "resend",
+            status: "sent",
+            last_snippet: detail.preview || (entry.kind === "demo_invite_sent" ? "Demo invitation sent" : "Outbound email sent"),
+          };
+        })
+        .filter((thread) => !persistedIds.has(thread.id));
+      setThreads([...res.threads, ...activityThreads].sort((a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()));
       setLoading(false);
     })();
     return () => {
       alive = false;
     };
-  }, [lead.id]);
+  }, [lead.id, refreshKey]);
 
   return (
     <Section title="Email threads" icon={<Inbox style={{ width: 13, height: 13, color: "#64748b" }} />}>
@@ -436,7 +520,7 @@ function ThreadsBlock({ lead }: { lead: Lead }) {
         <Hint>
           {!hasEmail
             ? "No email yet — enrich this lead to match inbox threads."
-            : "No email threads yet — connect a mailbox in Settings. (Gmail inbound is pending CASA review; Outlook syncs today.)"}
+            : "No email communication yet. Messages sent from Lead CRM and synced mailbox replies appear here."}
         </Hint>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -544,6 +628,9 @@ function DemoInviteBlock({
         return;
       }
       toast({ title: "Demo invite sent" });
+      if (res.logged === false && res.warning) {
+        toast({ title: "Invite sent, but activity logging needs attention", description: asText(res.warning), variant: "destructive" });
+      }
       onLogged();
     } catch (e: any) {
       toast({ title: "Could not send invite", description: asText(e?.message), variant: "destructive" });
@@ -587,15 +674,22 @@ function CampaignBlock({
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     (async () => {
-      const rows = await listLeadCampaigns();
-      if (!alive) return;
-      setCampaigns(rows);
-      setLoading(false);
+      try {
+        const rows = await listLeadCampaigns();
+        if (!alive) return;
+        setCampaigns(rows);
+        setLoadError(null);
+      } catch (e: any) {
+        if (alive) setLoadError(asText(e?.message) || "Campaigns could not be loaded");
+      } finally {
+        if (alive) setLoading(false);
+      }
     })();
     return () => {
       alive = false;
@@ -633,6 +727,8 @@ function CampaignBlock({
         <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#94a3b8", fontFamily: FONT_BODY, fontSize: 12 }}>
           <Loader2 style={spinIcon} /> Loading campaigns…
         </div>
+      ) : loadError ? (
+        <Hint warn>{loadError}</Hint>
       ) : campaigns.length === 0 ? (
         <Hint>No campaigns available to enrol into yet.</Hint>
       ) : (

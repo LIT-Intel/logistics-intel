@@ -1179,7 +1179,7 @@ export async function sendLeadDemoInvite(params: {
   name?: string | null;
   company?: string | null;
   note?: string | null;
-}): Promise<{ ok: boolean; sent?: boolean; error?: string; code?: string }> {
+}): Promise<{ ok: boolean; sent?: boolean; logged?: boolean; error?: string; code?: string; warning?: string }> {
   const { data, error } = await supabase.functions.invoke("send-demo-invite", {
     body: {
       email: params.email,
@@ -1203,29 +1203,23 @@ export async function sendLeadDemoInvite(params: {
   const res = (data as any) ?? {};
   if (res.ok && (res.sent ?? true)) {
     // Log the demo-invite touch onto the lead timeline (best-effort).
-    try {
-      await supabase.rpc("lit_leadcrm_log_demo_invite", { p_lead_id: params.leadId });
-    } catch {
-      /* non-fatal */
-    }
+    const { error: logError } = await supabase.rpc("lit_leadcrm_log_demo_invite", { p_lead_id: params.leadId });
+    return { ok: true, sent: true, logged: !logError, warning: logError?.message };
   }
-  return { ok: Boolean(res.ok), sent: Boolean(res.sent), error: res.error, code: res.code };
+  return { ok: Boolean(res.ok), sent: Boolean(res.sent), logged: false, error: res.error, code: res.code };
 }
 
 /** Campaigns the team can enroll this lead into. Silent-fail → empty. */
 export async function listLeadCampaigns(): Promise<LeadCampaign[]> {
-  try {
-    const { data, error } = await supabase.rpc("lit_leadcrm_list_campaigns");
-    const rows = (data as any)?.campaigns;
-    if (error || !Array.isArray(rows)) return [];
-    return (rows as any[]).map((c) => ({
-      id: String(c.id),
-      name: c.name ?? null,
-      status: c.status ?? null,
-    }));
-  } catch {
-    return [];
-  }
+  const { data, error } = await supabase.rpc("lit_leadcrm_list_campaigns");
+  if (error) throw new Error(error.message);
+  const rows = (data as any)?.campaigns;
+  if (!Array.isArray(rows)) throw new Error("Campaign service returned an invalid response");
+  return (rows as any[]).map((c) => ({
+    id: String(c.id),
+    name: c.name ?? null,
+    status: c.status ?? null,
+  }));
 }
 
 /** Enroll the lead's email into a campaign. Returns the (possibly !ok) result. */

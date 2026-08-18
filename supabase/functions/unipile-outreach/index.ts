@@ -4,22 +4,27 @@ import { z } from "npm:zod@4.2.0";
 import { handlePreflight, json, requireUser } from "../_shared/auth.ts";
 import { linkedinPublicIdentifier, unipileErrorCode, unipileRequest } from "../_shared/unipile.ts";
 
-const DraftOutput = z.object({
+const DraftOption = z.object({
+  tone: z.enum(["simple", "warm", "peer", "curious", "direct"]),
   message: z.string().min(1).max(1000),
-  rationale: z.string().max(500),
+  rationale: z.string().max(240),
 });
+const DraftOutput = z.object({ options: z.array(DraftOption).length(5) });
 
-const AGENT_INSTRUCTIONS = `You are LIT's human sales outreach writer. Write like a thoughtful logistics professional, never like an AI or a mass-mail bot.
+const AGENT_INSTRUCTIONS = `You write LinkedIn notes that sound like a real person starting a conversation, never like an AI, SDR sequence, or mass-mail bot.
 
 Rules:
 - Use only supplied facts. Never invent familiarity, shipment facts, pain points, licenses, customers, or mutual connections.
-- Sound natural, specific, calm, and concise. Use plain language and contractions where natural.
+- Return exactly five meaningfully different options: simple, warm, peer, curious, and direct.
+- Every option must be light, natural, and only 2-3 short sentences. Use contractions where natural.
 - No hype, fake compliments, generic "I hope this finds you well", "unlock", "revolutionize", "game-changing", "synergy", emojis, or exclamation-heavy copy.
-- Do not mention AI, enrichment, scraping, Apollo, Unipile, tracking, data providers, or internal scoring.
-- A connection invitation must be 280 characters or fewer and must not pitch aggressively.
-- A message should normally be 35–90 words with one clear, low-pressure question.
-- Respect the recipient's role and company context. If the evidence is too thin, use a simple relevance check instead of fabricating personalization.
-- Return only the structured draft and a short internal rationale. A human must approve every draft before sending.`;
+- Never stack company facts, service categories, acronyms, or freight keywords to prove personalization.
+- Do not mention AI, enrichment, scraping, Apollo, Unipile, tracking, providers, scoring, or internal research.
+- Connection invitation: 12-35 words, maximum 200 characters, no product pitch, no meeting request, no "learn how you're approaching" discovery question. Its only job is to make connecting feel normal.
+- Post-acceptance message: 20-55 words, one easy question at most, no calendar ask in the first message.
+- Prefer genuine relevance over manufactured personalization. If context is thin, be honest and simple.
+- Do not say "I'd be interested", "I'd love to learn", "pick your brain", "connect and explore synergies", or "would you be open to connecting?"
+- The five options must vary in framing, not merely swap adjectives. A human selects and may edit one before sending.`;
 
 type Target = {
   orgId: string;
@@ -248,7 +253,8 @@ Deno.serve(async (req) => {
       const baseKey = await sha256([target.leadId || target.campaignContactId, target.campaignStepId || "manual", actionType].join(":"));
       const { data: existing } = await auth.admin.from("lit_linkedin_outreach_actions").select("*")
         .eq("idempotency_key", baseKey).maybeSingle();
-      if (existing && ["pending_approval","approved","sending","sent","replied"].includes(existing.status)) {
+      const hasFiveOptions = Array.isArray(existing?.metadata?.draft_options) && existing.metadata.draft_options.length === 5;
+      if (existing && (["approved","sending","sent","replied"].includes(existing.status) || (existing.status === "pending_approval" && hasFiveOptions && body.regenerate !== true))) {
         return json({ ok: true, action: existing, duplicate_prevented: true });
       }
 
@@ -262,21 +268,23 @@ Deno.serve(async (req) => {
         recipient: { name: target.name, title: target.title, linkedin_url: target.linkedinUrl },
         company: { name: target.company, domain: target.companyDomain },
         qualification: target.qualification,
-        user_angle: String(body.angle || "Start a relevant conversation about their freight operations and whether LIT can help identify opportunities."),
-        hard_limit: actionType === "invite" ? "280 characters" : "90 words",
+        user_angle: String(body.angle || "Keep it simple. Establish relevance without pitching or forcing a business question."),
+        hard_limit: actionType === "invite" ? "12-35 words; 200 characters" : "20-55 words",
       };
       const result = await withTrace("lit_linkedin_outreach_draft", async () => run(agent, JSON.stringify(context)));
       const draft = result.finalOutput;
-      if (!draft) throw new Error("Outreach agent returned no draft");
-      if (actionType === "invite" && draft.message.length > 280) return json({ ok: false, code: "DRAFT_TOO_LONG", error: "Agent invitation draft exceeded 280 characters" }, 502);
+      if (!draft?.options?.length) throw new Error("Outreach agent returned no draft options");
+      const options = draft.options.map((option) => ({ ...option, message: option.message.trim() }));
+      if (actionType === "invite" && options.some((option) => option.message.length > 200)) return json({ ok: false, code: "DRAFT_TOO_LONG", error: "Agent invitation draft exceeded 200 characters" }, 502);
+      const selected = options[0];
       const draftRow = {
         org_id: target.orgId, created_by: auth.user.id, unipile_account_id: account.id,
         lead_id: target.leadId, campaign_id: target.campaignId, campaign_step_id: target.campaignStepId,
         campaign_contact_id: target.campaignContactId, contact_id: target.contactId,
         action_type: actionType, status: "pending_approval", recipient_name: target.name,
-        recipient_linkedin_url: target.linkedinUrl, message: draft.message,
-        agent_version: `outreach-human-v1:${model}`, agent_rationale: draft.rationale, idempotency_key: baseKey,
-        metadata: { company: target.company, title: target.title, qualification: target.qualification },
+        recipient_linkedin_url: target.linkedinUrl, message: selected.message,
+        agent_version: `outreach-human-v2:${model}`, agent_rationale: selected.rationale, idempotency_key: baseKey,
+        metadata: { company: target.company, title: target.title, qualification: target.qualification, draft_options: options, selected_tone: selected.tone },
         approved_by: null, approved_at: null, sent_at: null, failed_at: null,
         provider_event_id: null, last_error: null, updated_at: new Date().toISOString(),
       };
@@ -292,19 +300,19 @@ Deno.serve(async (req) => {
       const actionId = String(body.action_id || "");
       const message = String(body.message || "").trim();
       const { data: row } = await auth.admin.from("lit_linkedin_outreach_actions")
-        .select("id,org_id,status,action_type").eq("id", actionId).maybeSingle();
+        .select("id,org_id,status,action_type,metadata").eq("id", actionId).maybeSingle();
       if (!row || !(await isOrgMember(auth.admin, auth.user.id, row.org_id))) {
         return json({ ok: false, code: "ACTION_NOT_FOUND", error: "Outreach action not found" }, 404);
       }
       if (row.status !== "pending_approval") {
         return json({ ok: false, code: "DRAFT_LOCKED", error: "Only a pending draft can be edited" }, 409);
       }
-      if (!message || message.length > 1000 || (row.action_type === "invite" && message.length > 280)) {
-        return json({ ok: false, code: "INVALID_MESSAGE", error: row.action_type === "invite" ? "Invitation must be 1–280 characters" : "Message must be 1–1000 characters" }, 400);
+      if (!message || message.length > 1000 || (row.action_type === "invite" && message.length > 200)) {
+        return json({ ok: false, code: "INVALID_MESSAGE", error: row.action_type === "invite" ? "Invitation must be 1–200 characters" : "Message must be 1–1000 characters" }, 400);
       }
       const { data: updated, error } = await auth.admin.from("lit_linkedin_outreach_actions").update({
         message, agent_rationale: null,
-        metadata: { edited_by_human: true, edited_at: new Date().toISOString() },
+        metadata: { ...(row.metadata || {}), edited_by_human: true, edited_at: new Date().toISOString() },
         updated_at: new Date().toISOString(),
       }).eq("id", actionId).select().single();
       if (error) throw error;
@@ -313,7 +321,7 @@ Deno.serve(async (req) => {
 
     if (operation === "approve_and_send") {
       const actionId = String(body.action_id || "");
-      const { data: row } = await auth.admin.from("lit_linkedin_outreach_actions").select("id,org_id,status,lead_id")
+      const { data: row } = await auth.admin.from("lit_linkedin_outreach_actions").select("id,org_id,status,lead_id,action_type")
         .eq("id", actionId).maybeSingle();
       if (!row || !(await isOrgMember(auth.admin, auth.user.id, row.org_id))) return json({ ok: false, code: "ACTION_NOT_FOUND", error: "Outreach action not found" }, 404);
       if (row.lead_id) {
@@ -322,7 +330,12 @@ Deno.serve(async (req) => {
         if (!gate?.is_member) return json({ ok: false, code: "LEAD_CRM_REQUIRED", error: "Lead CRM membership required" }, 403);
       }
       if (row.status === "pending_approval") {
+        const approvedMessage = typeof body.message === "string" ? body.message.trim() : "";
+        if (approvedMessage && (approvedMessage.length > 1000 || (row.action_type === "invite" && approvedMessage.length > 200))) {
+          return json({ ok: false, code: "INVALID_MESSAGE", error: "The approved LinkedIn text is outside the allowed length" }, 400);
+        }
         await auth.admin.from("lit_linkedin_outreach_actions").update({
+          ...(approvedMessage ? { message: approvedMessage, agent_rationale: null } : {}),
           status: "approved", approved_by: auth.user.id, approved_at: new Date().toISOString(), updated_at: new Date().toISOString(),
         }).eq("id", actionId).eq("status", "pending_approval");
       }
@@ -335,6 +348,21 @@ Deno.serve(async (req) => {
       if (!row || !(await isOrgMember(auth.admin, auth.user.id, row.org_id))) return json({ ok: false, code: "ACTION_NOT_FOUND", error: "Outreach action not found" }, 404);
       if (!["pending_approval","approved","failed"].includes(row.status)) return json({ ok: false, code: "CANNOT_CANCEL", error: "This action can no longer be cancelled" }, 409);
       await auth.admin.from("lit_linkedin_outreach_actions").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("id", actionId);
+      return json({ ok: true });
+    }
+    if (operation === "delete") {
+      const actionId = String(body.action_id || "");
+      const { data: row } = await auth.admin.from("lit_linkedin_outreach_actions")
+        .select("org_id,status,sent_at,provider_event_id,provider_chat_id").eq("id", actionId).maybeSingle();
+      if (!row || !(await isOrgMember(auth.admin, auth.user.id, row.org_id))) {
+        return json({ ok: false, code: "ACTION_NOT_FOUND", error: "Outreach action not found" }, 404);
+      }
+      const providerConfirmed = Boolean(row.sent_at || row.provider_event_id || row.provider_chat_id);
+      if (!['cancelled', 'failed'].includes(row.status) || providerConfirmed) {
+        return json({ ok: false, code: "CANNOT_DELETE", error: "Only cancelled or failed drafts that were never sent can be deleted" }, 409);
+      }
+      const { error } = await auth.admin.from("lit_linkedin_outreach_actions").delete().eq("id", actionId);
+      if (error) throw error;
       return json({ ok: true });
     }
     return json({ ok: false, code: "UNKNOWN_ACTION", error: "Unknown action" }, 400);

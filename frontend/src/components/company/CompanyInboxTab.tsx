@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
-import { Inbox, RefreshCw } from "lucide-react";
+import { Inbox, Linkedin, Mail, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 type ConversationType = "direct" | "campaign" | "reply";
@@ -24,7 +24,37 @@ type Thread = {
   message_count: number | null;
   unread_count: number | null;
   conversation_type: ConversationType | null;
+  channel: "email";
 };
+
+type LinkedInThread = {
+  id: string;
+  subject: string | null;
+  participants: Array<{ name?: string | null; display_name?: string | null; profile_url?: string | null }> | null;
+  last_message_at: string | null;
+  unread_count: number | null;
+  campaign_id: string | null;
+  contact_id: string | null;
+  channel: "linkedin";
+};
+
+type LinkedInAction = {
+  id: string;
+  recipient_name: string | null;
+  message: string;
+  status: string;
+  action_type: string;
+  sent_at: string | null;
+  created_at: string;
+  contact_id: string | null;
+  provider_event_id: string | null;
+  provider_chat_id: string | null;
+  last_message_at: string;
+  unread_count: number;
+  channel: "linkedin_action";
+};
+
+type CompanyThread = Thread | LinkedInThread | LinkedInAction;
 
 const CONV_CHIP: Record<ConversationType, { label: string; cls: string }> = {
   direct: { label: "Direct", cls: "bg-slate-100 text-slate-600" },
@@ -53,7 +83,7 @@ export default function CompanyInboxTab({
   companyId: string | null | undefined;
   navigate: (path: string) => void;
 }) {
-  const [threads, setThreads] = useState<Thread[]>([]);
+  const [threads, setThreads] = useState<CompanyThread[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -73,7 +103,7 @@ export default function CompanyInboxTab({
     setLoading(true);
     setErr(null);
     try {
-      const { data, error } = await supabase
+      const { data: emailData, error: emailError } = await supabase
         .from("lit_email_threads")
         .select(
           "id, subject, participants, last_message_at, message_count, unread_count, conversation_type",
@@ -81,8 +111,43 @@ export default function CompanyInboxTab({
         .eq("company_id", companyId)
         .order("last_message_at", { ascending: false, nullsFirst: false })
         .limit(50);
-      if (error) throw error;
-      setThreads((data ?? []) as Thread[]);
+      if (emailError) throw emailError;
+
+      const { data: contacts, error: contactsError } = await supabase
+        .from("lit_contacts")
+        .select("id")
+        .eq("company_id", companyId)
+        .limit(500);
+      if (contactsError) throw contactsError;
+
+      const contactIds = (contacts ?? []).map((contact) => contact.id).filter(Boolean);
+      let linkedinData: Omit<LinkedInThread, "channel">[] = [];
+      let linkedinActions: Omit<LinkedInAction, "channel" | "last_message_at" | "unread_count">[] = [];
+      if (contactIds.length > 0) {
+        const [threadResult, actionResult] = await Promise.all([
+          supabase.from("lit_linkedin_threads")
+            .select("id, subject, participants, last_message_at, unread_count, campaign_id, contact_id")
+            .in("contact_id", contactIds)
+            .order("last_message_at", { ascending: false, nullsFirst: false })
+            .limit(50),
+          supabase.from("lit_linkedin_outreach_actions")
+            .select("id, recipient_name, message, status, action_type, sent_at, created_at, contact_id, provider_event_id, provider_chat_id")
+            .in("contact_id", contactIds)
+            .order("created_at", { ascending: false })
+            .limit(50),
+        ]);
+        if (threadResult.error) throw threadResult.error;
+        if (actionResult.error) throw actionResult.error;
+        linkedinData = (threadResult.data ?? []) as Omit<LinkedInThread, "channel">[];
+        linkedinActions = (actionResult.data ?? []) as Omit<LinkedInAction, "channel" | "last_message_at" | "unread_count">[];
+      }
+
+      const combined: CompanyThread[] = [
+        ...((emailData ?? []) as Omit<Thread, "channel">[]).map((thread) => ({ ...thread, channel: "email" as const })),
+        ...linkedinData.map((thread) => ({ ...thread, channel: "linkedin" as const })),
+        ...linkedinActions.map((action) => ({ ...action, channel: "linkedin_action" as const, last_message_at: action.sent_at || action.created_at, unread_count: 0 })),
+      ].sort((a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime());
+      setThreads(combined);
     } catch (e: any) {
       setErr(e?.message || "Couldn't load conversations");
     } finally {
@@ -127,8 +192,7 @@ export default function CompanyInboxTab({
             Conversations
           </div>
           <div className="text-[11px] text-slate-500">
-            Email threads with anyone at this company. Replies stay in the same
-            thread the recipient sees.
+            Email and LinkedIn conversations with contacts at this company, kept in one timeline.
           </div>
         </div>
         <button
@@ -166,27 +230,30 @@ export default function CompanyInboxTab({
           <div className="px-4 py-6 text-[12px] text-rose-700">{err}</div>
         ) : threads.length === 0 ? (
           <div className="px-4 py-8 text-center text-[12px] text-slate-500">
-            No email conversations with this company yet.
+            No email or LinkedIn conversations with this company yet.
             <br />
             <span className="text-slate-400">
               {isUuid
-                ? "Conversations from your connected mailbox thread here automatically. Use “Sync now” to pull the latest."
+                ? "Mailbox sync and LinkedIn webhook activity will appear here automatically."
                 : "This profile is loaded from a slug; open it from your saved Command Center to see the linked inbox."}
             </span>
           </div>
         ) : (
           threads.map((t) => {
-            const counterpart =
-              (t.participants || []).find((p) => p && p.email) || ({} as any);
+            const counterpart = t.channel === "email"
+              ? ((t.participants || []).find((p) => p && p.email) || ({} as any))
+              : t.channel === "linkedin"
+                ? ((t.participants || [])[0] || ({} as any))
+                : { name: t.recipient_name };
             const isUnread = (t.unread_count || 0) > 0;
             return (
               <button
                 key={t.id}
                 type="button"
                 onClick={() =>
-                  navigate(
-                    `/app/inbox?thread=${encodeURIComponent(t.id)}&company_id=${encodeURIComponent(companyId || "")}`,
-                  )
+                  navigate(t.channel === "email"
+                    ? `/app/inbox?thread=${encodeURIComponent(t.id)}&company_id=${encodeURIComponent(companyId || "")}`
+                    : `/app/inbox?channel=linkedin${t.contact_id ? `&contact_id=${encodeURIComponent(t.contact_id)}` : ""}`)
                 }
                 className="flex w-full items-start gap-2 border-b border-slate-100 px-4 py-2.5 text-left hover:bg-slate-50"
               >
@@ -195,7 +262,7 @@ export default function CompanyInboxTab({
                     <div
                       className={`truncate text-[12.5px] ${isUnread ? "font-bold text-[#0F172A]" : "font-semibold text-slate-700"}`}
                     >
-                      {counterpart.name || counterpart.email || "Unknown"}
+                      {counterpart.name || counterpart.display_name || counterpart.email || "Unknown"}
                     </div>
                     <div className="ml-auto text-[10px] text-slate-400 tabular-nums">
                       {t.last_message_at
@@ -207,13 +274,14 @@ export default function CompanyInboxTab({
                     <div
                       className={`truncate text-[11.5px] ${isUnread ? "font-semibold text-[#0F172A]" : "text-slate-500"}`}
                     >
-                      {t.subject || "(no subject)"}
+                      {t.channel === "email" ? (t.subject || "(no subject)") : t.channel === "linkedin" ? (t.subject || "LinkedIn conversation") : t.message}
                     </div>
-                    <ConversationTypeChip type={t.conversation_type} />
+                    {t.channel === "email" ? <ConversationTypeChip type={t.conversation_type} /> : (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded bg-sky-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#0A66C2]"><Linkedin className="h-2.5 w-2.5" /> {t.channel === "linkedin_action" ? t.status.replaceAll("_", " ") : "LinkedIn"}</span>
+                    )}
                   </div>
                   <div className="mt-0.5 text-[10px] text-slate-400">
-                    {t.message_count} msg
-                    {t.message_count === 1 ? "" : "s"}
+                    {t.channel === "email" ? <><Mail className="mr-1 inline h-2.5 w-2.5" />{t.message_count} msg{t.message_count === 1 ? "" : "s"}</> : t.channel === "linkedin" ? <><Linkedin className="mr-1 inline h-2.5 w-2.5" />Provider-synced conversation</> : <><Linkedin className="mr-1 inline h-2.5 w-2.5" />{t.provider_event_id || t.provider_chat_id ? "Provider confirmed" : "Awaiting provider confirmation"}</>}
                     {isUnread ? (
                       <span className="ml-2 inline-flex items-center gap-1 text-blue-600">
                         <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />

@@ -96,7 +96,7 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
     if (!window.confirm(`Approve and send this LinkedIn ${action.action_type}?`)) return;
     setBusyId(recipientId); setError(null);
     try {
-      const sent = await approveAndSendLinkedIn(action.id);
+      const sent = await approveAndSendLinkedIn(action.id, action.message.trim());
       setActions((prev) => [sent, ...prev.filter((a) => a.id !== sent.id)]);
     } catch (e: any) { setError(e?.message || "LinkedIn send stopped"); await load(); }
     finally { setBusyId(null); }
@@ -149,9 +149,13 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
                     {nextStep ? `Step ${nextStep.step_order}: ${nextStep.step_type.replaceAll("_", " ")}` : "LinkedIn sequence complete"}
                   </div>
                   {action?.status === "pending_approval" ? (
-                    <textarea value={action.message} maxLength={action.action_type === "invite" ? 280 : 1000}
+                    <div className="mt-2">
+                    {Array.isArray(action.metadata?.draft_options) ? <div className="mb-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-5">{action.metadata.draft_options.map((option) => <button key={option.tone} type="button" onClick={() => setActions((prev) => prev.map((a) => a.id === action.id ? { ...a, message: option.message, agent_rationale: option.rationale } : a))} className={`rounded-lg border p-2 text-left ${option.message === action.message ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white hover:border-blue-200"}`}><div className="text-[9px] font-bold uppercase tracking-wide text-blue-700">{option.tone}</div><div className="mt-1 text-[10.5px] leading-4 text-slate-700">{option.message}</div></button>)}</div> : null}
+                    <textarea value={action.message} maxLength={action.action_type === "invite" ? 200 : 1000}
                       onChange={(e) => setActions((prev) => prev.map((a) => a.id === action.id ? { ...a, message: e.target.value } : a))}
                       rows={3} className="mt-2 w-full resize-y rounded-md border border-slate-200 px-2 py-1.5 text-[11px] leading-4 text-slate-700" />
+                    <div className="mt-1 text-[10px] text-slate-400">{action.message.length}/{action.action_type === "invite" ? 200 : 1000} · The exact text shown will be sent.</div>
+                    </div>
                   ) : action ? <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-700">{action.message}</div> : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -159,7 +163,7 @@ export default function LinkedInApprovalQueue({ campaignId }: { campaignId: stri
                     <><button type="button" disabled={busy || !action.message.trim()} onClick={() => void saveDraft(action, recipient.id)} className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50">Save edits</button>
                     <button type="button" disabled={busy || !action.message.trim()} onClick={() => void approve(action, recipient.id)} className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"><Send className="h-3 w-3" /> Approve &amp; send</button></>
                   ) : !nextStep ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Complete</span>
+                    <span title={action?.provider_event_id || action?.provider_chat_id || "Provider accepted"} className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Provider accepted</span>
                   ) : (
                     <button type="button" disabled={!connected || !recipient.linkedin_url || busy} onClick={() => void createDraft(recipient, nextStep)} className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 disabled:opacity-50"><Sparkles className="h-3 w-3" /> {busy ? "Drafting…" : action?.status === "failed" || action?.status === "cancelled" ? "Redraft" : "Create draft"}</button>
                   )}

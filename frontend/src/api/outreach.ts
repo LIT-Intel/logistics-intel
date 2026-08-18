@@ -89,6 +89,9 @@ export interface LinkedInOutreachAction {
   recipient_linkedin_url: string;
   message: string;
   agent_rationale: string | null;
+  metadata?: { draft_options?: Array<{ tone: "simple" | "warm" | "peer" | "curious" | "direct"; message: string; rationale: string }>; selected_tone?: string; [key: string]: unknown };
+  provider_event_id?: string | null;
+  provider_chat_id?: string | null;
   sent_at: string | null;
   last_error: string | null;
   created_at: string;
@@ -213,6 +216,7 @@ export async function draftLinkedInOutreach(params: {
   actionType: "invite" | "message";
   accountId?: string;
   angle?: string;
+  regenerate?: boolean;
 }): Promise<LinkedInOutreachAction> {
   const result = await invokeEdge<{ action: LinkedInOutreachAction }>("unipile-outreach", {
     action: "draft",
@@ -223,14 +227,16 @@ export async function draftLinkedInOutreach(params: {
     action_type: params.actionType,
     ...(params.accountId ? { account_id: params.accountId } : {}),
     ...(params.angle ? { angle: params.angle } : {}),
+    ...(params.regenerate ? { regenerate: true } : {}),
   });
   return result.action;
 }
 
-export async function approveAndSendLinkedIn(actionId: string): Promise<LinkedInOutreachAction> {
+export async function approveAndSendLinkedIn(actionId: string, message?: string): Promise<LinkedInOutreachAction> {
   const result = await invokeEdge<{ action: LinkedInOutreachAction }>("unipile-outreach", {
     action: "approve_and_send",
     action_id: actionId,
+    ...(message ? { message } : {}),
   });
   return result.action;
 }
@@ -246,4 +252,9 @@ export async function updateLinkedInDraft(actionId: string, message: string): Pr
 
 export async function cancelLinkedInOutreach(actionId: string): Promise<void> {
   await invokeEdge("unipile-outreach", { action: "cancel", action_id: actionId });
+}
+
+/** Permanently remove a draft that never reached LinkedIn. Sent actions are immutable. */
+export async function deleteLinkedInOutreach(actionId: string): Promise<void> {
+  await invokeEdge("unipile-outreach", { action: "delete", action_id: actionId });
 }

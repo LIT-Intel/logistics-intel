@@ -13,12 +13,14 @@ import {
   Award,
   ExternalLink,
   Users,
+  Inbox,
+  FileText,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { usePartnerStatus } from "@/lib/affiliate";
-import { PulseIcon } from "@/components/shared/AppIcons";
 import SidebarUsageChip from "@/components/shared/SidebarUsageChip";
+import { useLeadCrmAccess } from "@/hooks/useLeadCrmAccess";
 import "@/layout/lit/litLogo.css";
 import NotificationBell from "@/components/layout/NotificationBell";
 import HeaderSearch from "@/components/layout/HeaderSearch";
@@ -29,7 +31,7 @@ const BASE_MOBILE_SECTIONS = [
     title: "Menu",
     items: [
       { label: "Dashboard", href: "/app/dashboard", icon: LayoutDashboard },
-      { label: "Search", href: "/app/search", icon: Search },
+      { label: "Intelligence Explorer", href: "/app/search", icon: Search },
       // Command Center surfaces a contextual submenu on mobile when the
       // user is already navigating inside it — same pattern as the
       // desktop sidebar so the two surfaces don't drift on feature parity.
@@ -43,8 +45,8 @@ const BASE_MOBILE_SECTIONS = [
         ],
       },
       { label: "Campaigns", href: "/app/campaigns", icon: Megaphone },
-      // PulseIcon + the "Pulse" label to match the desktop sidebar exactly.
-      { label: "Pulse", href: "/app/prospecting", icon: PulseIcon },
+      { label: "Communication Center", href: "/app/inbox", icon: Inbox },
+      { label: "Quoting", href: "/app/quoting", icon: FileText },
     ],
   },
   {
@@ -78,6 +80,9 @@ const PAGE_META = [
   { match: /^\/app\/search/, title: "Search", subtitle: "Find companies and shipment intelligence" },
   { match: /^\/app\/command-center/, title: "Command Center", subtitle: "Your saved accounts and CRM workspace" },
   { match: /^\/app\/campaigns/, title: "Campaigns", subtitle: "Create and manage campaigns" },
+  { match: /^\/app\/inbox/, title: "Communication Center", subtitle: "Email and LinkedIn conversations" },
+  { match: /^\/app\/quoting/, title: "Quoting", subtitle: "Build and manage freight quotes" },
+  { match: /^\/app\/leads/, title: "Lead CRM", subtitle: "Sales pipeline and communication" },
   { match: /^\/app\/prospecting/, title: "Pulse", subtitle: "AI lead intelligence" },
   { match: /^\/app\/settings/, title: "Settings", subtitle: "Manage profile, preferences, and account" },
   { match: /^\/app\/billing/, title: "Billing", subtitle: "Plan, invoices, and payment methods" },
@@ -102,6 +107,7 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
   const location = useLocation();
   const { user, fullName, role, isSuperAdmin, logout } = useAuth();
   const partner = usePartnerStatus(user?.id);
+  const { isMember: isLeadCrmMember } = useLeadCrmAccess();
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -111,6 +117,14 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
   // affiliate sees their dashboard while a non-partner sees the apply CTA.
   const mobileSections = useMemo(() => {
     const sections = BASE_MOBILE_SECTIONS.map((section) => {
+      if (section.title === "Menu") {
+        return {
+          ...section,
+          items: isLeadCrmMember
+            ? [...section.items, { label: "Lead CRM", href: "/app/leads", icon: Users }]
+            : section.items,
+        };
+      }
       if (section.title !== "Account") return section;
       const items = section.items.map((item) => {
         if (item.label !== "Affiliate") return item;
@@ -121,7 +135,7 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
       return { ...section, items };
     });
     return isSuperAdmin ? [...sections, ADMIN_MOBILE_SECTION] : sections;
-  }, [isSuperAdmin, partner.isPartner]);
+  }, [isSuperAdmin, isLeadCrmMember, partner.isPartner]);
 
   const currentMeta = useMemo(
     () => PAGE_META.find((item) => item.match.test(location.pathname)) || PAGE_META[0],
