@@ -27,6 +27,31 @@ export class EdgeFunctionError extends Error {
   }
 }
 
+type SupabaseFunctionError = Error & {
+  context?: Response;
+};
+
+async function normalizeInvokeError(name: string, error: SupabaseFunctionError): Promise<EdgeFunctionError> {
+  const response = error.context;
+  if (response) {
+    let payload: { error?: string; message?: string; code?: string } | null = null;
+    try {
+      payload = await response.clone().json();
+    } catch {
+      payload = null;
+    }
+    const message = payload?.error || payload?.message;
+    if (message) {
+      return new EdgeFunctionError(message, payload?.code || "EDGE_HTTP_ERROR", response.status);
+    }
+  }
+  return new EdgeFunctionError(
+    error.message || `Edge function "${name}" failed`,
+    "INVOKE_FAILED",
+    response?.status,
+  );
+}
+
 /**
  * Call an edge function with the current Supabase user session attached.
  * Throws `EdgeFunctionError` on transport or non-2xx responses; returns the
@@ -42,8 +67,7 @@ export async function invokeEdge<T = unknown>(
 ): Promise<T> {
   const { data, error } = await supabase.functions.invoke(name, { body });
   if (error) {
-    const msg = error.message || `Edge function "${name}" failed`;
-    throw new EdgeFunctionError(msg, "INVOKE_FAILED");
+    throw await normalizeInvokeError(name, error as SupabaseFunctionError);
   }
   // Edge functions in this repo return { ok: true, ... } on success and
   // { ok: false, error: "...", code: "..." } on application-level failure.
