@@ -13,6 +13,16 @@ function safeReturnUrl(value: unknown): string {
   return `${appUrl}/app/settings?section=integrations`;
 }
 
+async function signCallback(sessionId: string): Promise<string> {
+  const secret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  if (!secret) throw new Error("Callback signing is not configured");
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(sessionId));
+  return Array.from(new Uint8Array(signature)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 Deno.serve(async (req) => {
   const preflight = handlePreflight(req);
   if (preflight) return preflight;
@@ -68,12 +78,13 @@ Deno.serve(async (req) => {
       const cfg = getUnipileConfig();
       const returnUrl = safeReturnUrl(body.return_url);
       const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+      const callbackSignature = await signCallback(session.id);
       const hostedPayload: Record<string, unknown> = {
         type: reconnectAccount ? "reconnect" : "create",
         providers: ["LINKEDIN"],
         api_url: cfg.baseUrl,
         expiresOn: expiresAt,
-        notify_url: `${supabaseUrl}/functions/v1/unipile-account-callback`,
+        notify_url: `${supabaseUrl}/functions/v1/unipile-account-callback?session=${encodeURIComponent(session.id)}&signature=${callbackSignature}`,
         success_redirect_url: `${returnUrl}${returnUrl.includes("?") ? "&" : "?"}unipile=connected`,
         failure_redirect_url: `${returnUrl}${returnUrl.includes("?") ? "&" : "?"}unipile=failed`,
         name: session.id,

@@ -3,6 +3,21 @@ import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 import { corsHeaders, json } from "../_shared/auth.ts";
 import { getUnipileConfig, unipileRequest } from "../_shared/unipile.ts";
 
+async function expectedSignature(sessionId: string, secret: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(sessionId));
+  return Array.from(new Uint8Array(signature)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < left.length; i += 1) mismatch |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  return mismatch === 0;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ ok: false }, 405);
@@ -12,11 +27,16 @@ Deno.serve(async (req) => {
   let body: Record<string, unknown> = {};
   try { body = await req.json(); } catch { return json({ ok: false }, 400); }
   const sessionId = String(body.name || "");
+  const callbackSession = new URL(req.url).searchParams.get("session") || "";
+  const callbackSignature = new URL(req.url).searchParams.get("signature") || "";
   const remoteAccountId = String(body.account_id || "");
   const callbackStatus = String(body.status || "").toUpperCase();
-  if (!sessionId || !remoteAccountId || !["CREATION_SUCCESS", "RECONNECTED"].includes(callbackStatus)) {
+  if (!sessionId || callbackSession !== sessionId || !remoteAccountId || !["CREATION_SUCCESS", "RECONNECTED"].includes(callbackStatus)) {
     return json({ ok: false }, 400);
   }
+
+  const expected = await expectedSignature(sessionId, service);
+  if (!callbackSignature || !constantTimeEqual(callbackSignature, expected)) return json({ ok: false }, 401);
 
   const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data: session } = await admin.from("lit_unipile_auth_sessions").select("*")
